@@ -882,7 +882,7 @@ OpenAI-compatible profile defaults:
 | `supports_stream_usage` | `false` | `true`, `false` |
 | `empty_tools` | `preserve` | `preserve`, `omit`, `preserve_with_tool_history` |
 
-`empty_tools: omit` removes `tools: []` from Chat Completions and Responses requests for providers such as DashScope/Qwen that reject an empty array. `preserve_with_tool_history` omits an otherwise empty array but retains it when the request contains function-tool history, which is required by some LiteLLM/Anthropic proxy routes. The default `preserve` keeps existing stateless proxy behavior.
+`empty_tools: omit` removes `tools: []` from Chat Completions and Responses requests for providers such as DashScope/Qwen that reject an empty array. When an empty array is omitted, neutral `tool_choice` values (`auto`, `none`, or `null`) are omitted with it; `required` and named choices are rejected locally because no tool can satisfy them. `preserve_with_tool_history` omits an otherwise empty array but retains it and `tool_choice` when the request contains function-tool history, which is required by some LiteLLM/Anthropic proxy routes. The default `preserve` keeps existing stateless proxy behavior.
 
 OpenRouter policy fields:
 

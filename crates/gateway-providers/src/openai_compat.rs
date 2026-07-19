@@ -356,7 +356,7 @@ impl OpenAiCompatProvider {
         if endpoint_suffix == "responses" {
             crate::replay_id::normalize_openai_responses_replay_ids(&mut body)?;
         }
-        apply_openai_compat_empty_tools_profile(&mut body, context);
+        apply_openai_compat_empty_tools_profile(&mut body, context)?;
         if apply_compatibility_profile {
             apply_openai_compat_request_profile(&mut body, context);
             apply_openrouter_routing_policy(&mut body, context)?;
@@ -521,18 +521,21 @@ fn apply_openai_compat_request_profile(body: &mut Value, context: &ProviderReque
     apply_openai_compat_profile_to_body(body, profile);
 }
 
-fn apply_openai_compat_empty_tools_profile(body: &mut Value, context: &ProviderRequestContext) {
+fn apply_openai_compat_empty_tools_profile(
+    body: &mut Value,
+    context: &ProviderRequestContext,
+) -> Result<(), ProviderError> {
     let Some(profile) = context.compatibility.openai_compat.as_ref() else {
-        return;
+        return Ok(());
     };
     let Some(object) = body.as_object_mut() else {
-        return;
+        return Ok(());
     };
     if !object
         .get("tools")
         .is_some_and(|tools| matches!(tools, Value::Array(tools) if tools.is_empty()))
     {
-        return;
+        return Ok(());
     }
 
     let preserve = match profile.empty_tools {
@@ -540,9 +543,21 @@ fn apply_openai_compat_empty_tools_profile(body: &mut Value, context: &ProviderR
         OpenAiCompatEmptyTools::Omit => false,
         OpenAiCompatEmptyTools::PreserveWithToolHistory => has_tool_history(object),
     };
-    if !preserve {
-        object.remove("tools");
+    if preserve {
+        return Ok(());
     }
+
+    if object.get("tool_choice").is_some_and(|tool_choice| {
+        !tool_choice.is_null() && !matches!(tool_choice.as_str(), Some("none" | "auto"))
+    }) {
+        return Err(ProviderError::InvalidRequest(
+            "`tool_choice` must be `none`, `auto`, or null when empty `tools` are omitted by the OpenAI-compatible profile".to_string(),
+        ));
+    }
+
+    object.remove("tools");
+    object.remove("tool_choice");
+    Ok(())
 }
 
 fn has_tool_history(body: &Map<String, Value>) -> bool {
@@ -1350,7 +1365,10 @@ mod tests {
                 extra: BTreeMap::new(),
             }],
             stream: false,
-            extra: BTreeMap::from([("tools".to_string(), json!([]))]),
+            extra: BTreeMap::from([
+                ("tools".to_string(), json!([])),
+                ("tool_choice".to_string(), json!("auto")),
+            ]),
         };
         let context = context_with_profile(OpenAiCompatRouteCompatibility {
             empty_tools: OpenAiCompatEmptyTools::Omit,
@@ -1360,7 +1378,9 @@ mod tests {
         let built = provider
             .build_chat_request(&request, &context)
             .expect("build request");
-        assert!(request_body_json(&built).get("tools").is_none());
+        let body = request_body_json(&built);
+        assert!(body.get("tools").is_none());
+        assert!(body.get("tool_choice").is_none());
     }
 
     #[test]
@@ -1379,13 +1399,18 @@ mod tests {
                 extra: BTreeMap::new(),
             }],
             stream: false,
-            extra: BTreeMap::from([("tools".to_string(), json!([]))]),
+            extra: BTreeMap::from([
+                ("tools".to_string(), json!([])),
+                ("tool_choice".to_string(), json!("auto")),
+            ]),
         };
 
         let without_history = provider
             .build_chat_request(&request, &context_with_profile(profile.clone()))
             .expect("build request");
-        assert!(request_body_json(&without_history).get("tools").is_none());
+        let body = request_body_json(&without_history);
+        assert!(body.get("tools").is_none());
+        assert!(body.get("tool_choice").is_none());
 
         request.messages.push(CoreChatMessage {
             role: "tool".to_string(),
@@ -1396,7 +1421,9 @@ mod tests {
         let with_history = provider
             .build_chat_request(&request, &context_with_profile(profile))
             .expect("build request");
-        assert_eq!(request_body_json(&with_history)["tools"], json!([]));
+        let body = request_body_json(&with_history);
+        assert_eq!(body["tools"], json!([]));
+        assert_eq!(body["tool_choice"], json!("auto"));
     }
 
     #[test]
@@ -1404,6 +1431,7 @@ mod tests {
         let provider = provider();
         let mut request = responses_request(false);
         request.tools = Some(json!([]));
+        request.tool_choice = Some(json!("auto"));
         let context = context_with_profile(OpenAiCompatRouteCompatibility {
             empty_tools: OpenAiCompatEmptyTools::Omit,
             ..Default::default()
@@ -1416,8 +1444,47 @@ mod tests {
             .build_responses_stream_request(&request, &context)
             .expect("build stream request");
 
-        assert!(request_body_json(&regular).get("tools").is_none());
-        assert!(request_body_json(&streaming).get("tools").is_none());
+        for body in [request_body_json(&regular), request_body_json(&streaming)] {
+            assert!(body.get("tools").is_none());
+            assert!(body.get("tool_choice").is_none());
+        }
+    }
+
+    #[test]
+    fn rejects_non_neutral_tool_choice_when_omitting_empty_tools() {
+        let provider = provider();
+        let context = context_with_profile(OpenAiCompatRouteCompatibility {
+            empty_tools: OpenAiCompatEmptyTools::Omit,
+            ..Default::default()
+        });
+        let chat_request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: json!("hello"),
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: false,
+            extra: BTreeMap::from([
+                ("tools".to_string(), json!([])),
+                ("tool_choice".to_string(), json!("required")),
+            ]),
+        };
+        let chat_error = provider
+            .build_chat_request(&chat_request, &context)
+            .expect_err("required Chat tool choice rejected")
+            .to_string();
+        assert!(chat_error.contains("when empty `tools` are omitted"));
+
+        let mut responses_request = responses_request(false);
+        responses_request.tools = Some(json!([]));
+        responses_request.tool_choice = Some(json!({"type":"function","name":"lookup"}));
+        let responses_error = provider
+            .build_responses_request(&responses_request, &context)
+            .expect_err("named Responses tool choice rejected")
+            .to_string();
+        assert!(responses_error.contains("when empty `tools` are omitted"));
     }
 
     #[test]
@@ -1429,11 +1496,14 @@ mod tests {
         };
         let mut request = responses_request(false);
         request.tools = Some(json!([]));
+        request.tool_choice = Some(json!("auto"));
 
         let without_history = provider
             .build_responses_request(&request, &context_with_profile(profile.clone()))
             .expect("build request");
-        assert!(request_body_json(&without_history).get("tools").is_none());
+        let body = request_body_json(&without_history);
+        assert!(body.get("tools").is_none());
+        assert!(body.get("tool_choice").is_none());
 
         request.input = json!([{
             "type": "function_call_output",
@@ -1443,7 +1513,9 @@ mod tests {
         let with_history = provider
             .build_responses_stream_request(&request, &context_with_profile(profile))
             .expect("build stream request");
-        assert_eq!(request_body_json(&with_history)["tools"], json!([]));
+        let body = request_body_json(&with_history);
+        assert_eq!(body["tools"], json!([]));
+        assert_eq!(body["tool_choice"], json!("auto"));
     }
 
     #[test]

@@ -283,8 +283,8 @@ These profile transforms apply to Chat Completions request-shape quirks unless e
 `openai_compat.empty_tools`
 
 - default: `preserve`
-- `omit` removes an explicit empty `tools` array from both Chat Completions and Responses requests
-- `preserve_with_tool_history` removes an empty array unless function-tool history is present, for LiteLLM/Anthropic proxy compatibility
+- `omit` removes an explicit empty `tools` array from both Chat Completions and Responses requests; neutral `tool_choice` values (`auto`, `none`, or `null`) are removed with it, while `required` and named choices are rejected locally
+- `preserve_with_tool_history` removes an empty array unless function-tool history is present, for LiteLLM/Anthropic proxy compatibility; preserved arrays retain `tool_choice`
 
 ## OpenRouter Routing Policy
 
