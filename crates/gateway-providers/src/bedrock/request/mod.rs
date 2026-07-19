@@ -27,11 +27,12 @@ pub(super) fn map_chat_request_to_converse(
             "user" => {
                 messages.push(json!({
                     "role": "user",
-                    "content": map_bedrock_content_blocks(&message.content)?
+                    "content": map_bedrock_message_content_blocks(&message.content, "user")?
                 }));
             }
             "assistant" => {
-                let mut content = map_bedrock_content_blocks(&message.content)?;
+                let mut content =
+                    map_bedrock_message_content_blocks(&message.content, "assistant")?;
                 content.extend(map_assistant_tool_uses(message)?);
                 messages.push(json!({
                     "role": "assistant",
@@ -77,7 +78,16 @@ pub(super) fn map_chat_request_to_converse(
         );
     }
 
-    if let Some(tool_config) = extract_tool_config(&mut passthrough)? {
+    let supports_strict_tools = context
+        .compatibility
+        .aws_bedrock
+        .as_ref()
+        .and_then(|compatibility| compatibility.supports_strict_tools);
+    if let Some(tool_config) = extract_tool_config(
+        &mut passthrough,
+        &context.upstream_model,
+        supports_strict_tools,
+    )? {
         body.insert("toolConfig".to_string(), tool_config);
     }
 
@@ -87,7 +97,9 @@ pub(super) fn map_chat_request_to_converse(
     if let Some(additional) = passthrough.remove("additional_model_request_fields") {
         body.insert("additionalModelRequestFields".to_string(), additional);
     }
+    extract_converse_request_controls(&mut body, &mut passthrough, request.stream)?;
     merge_object_overrides(&mut body, &context.extra_body);
+    validate_converse_request_controls(&body, request.stream)?;
     apply_converse_anthropic_thinking_compatibility(
         &mut body,
         &mut passthrough,
@@ -146,6 +158,7 @@ pub(super) fn map_openai_responses_request(
         }
         enforce_bedrock_responses_hosted_tool_compatibility(object, context)?;
     }
+    crate::replay_id::normalize_openai_responses_replay_ids(&mut body)?;
     Ok(body)
 }
 

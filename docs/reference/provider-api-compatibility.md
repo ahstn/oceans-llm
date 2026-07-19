@@ -67,6 +67,7 @@ models:
             developer_role: system
             reasoning_effort: omit
             supports_stream_usage: true
+            empty_tools: omit
 ```
 
 Bedrock routes use an explicit AWS Bedrock profile:
@@ -92,6 +93,8 @@ models:
 ```
 
 `api_style` values are `runtime_converse`, `runtime_anthropic_invoke`, `runtime_openai_chat`, `mantle_openai_responses`, `mantle_openai_chat`, and `mantle_anthropic_messages`. OpenAI-shaped styles require `openai_base_path`. Only `mantle_openai_responses` routes can enable `responses` and `json_schema`; those routes must disable `chat_completions`.
+
+Runtime Converse compatibility also accepts optional `supports_strict_tools`. When absent, transparent model IDs use model-family detection; set it explicitly for opaque application-inference-profile IDs or ARNs so Claude Opus 4.7/4.8 routes omit the unsupported `strict` field while supported models retain it.
 
 ## Effective Capabilities
 
@@ -235,6 +238,10 @@ For Bedrock Converse and ConverseStream, Claude thinking controls are written to
 
 Vision is supported only for Bedrock-compatible base64 image payloads. Remote image URLs are rejected because Bedrock Anthropic Messages requires base64 image sources. Tools and tool-result turns are supported for Claude 3+ models, subject to the model's Bedrock feature availability.
 
+Converse tool results accept text, JSON, base64 images, and Bedrock document formats (`pdf`, `csv`, `doc`, `docx`, `xls`, `xlsx`, `html`, `md`, and `txt`). The same image/document conversion is used for ordinary user content. Document names are stripped of extensions and normalized to Bedrock's allowed characters. Claude Opus 4.7 and 4.8 tool specifications omit `strict`, which those Bedrock models reject; other models retain an explicit `strict` value.
+
+Request-scoped Converse and ConverseStream requests may include `requestMetadata`, `performanceConfig`, `guardrailConfig`, and `additionalModelResponseFieldPaths` (or their snake_case aliases). Oceans validates AWS limits, enum values, guardrail shapes, and RFC 6901 response paths before dispatch. `streamProcessingMode` is accepted only for ConverseStream. Route `extra_body` is merged afterward and remains the final admin-controlled override.
+
 Chat Completions response policy for Anthropic thinking is deliberately conservative. Native Anthropic `thinking` and `redacted_thinking` blocks, plus Bedrock Converse `reasoningContent` text, signatures, and redacted data, are never concatenated into `choices[*].message.content` or streamed as `delta.content`. The visible Chat Completions content remains answer text and tool calls only. Reasoning state that providers require for debugging or tool-use continuity is preserved under `choices[*].message.provider_metadata.aws_bedrock.reasoning` for non-streaming responses, and under `choices[*].delta.provider_metadata.aws_bedrock.reasoning` for ConverseStream chunks. The public Anthropic Messages route keeps the same non-leaking split when it uses chat-backed provider execution.
 
 Anthropic documents that Claude 4 models can return summarized thinking, encrypted signatures, and `redacted_thinking` blocks. Claude Opus 4.7 defaults thinking display to `omitted`, so a stream can open an empty thinking block, emit only a signature delta, and then begin normal text. Bedrock Converse represents equivalent state as `reasoningContent`, including `reasoningText.text`, `reasoningText.signature`, and redacted content. The gateway preserves those fields as provider metadata and treats billed output token counts as provider usage until exact reasoning accounting is implemented.
@@ -272,6 +279,12 @@ These profile transforms apply to Chat Completions request-shape quirks unless e
 
 - default: `false`
 - when `true`, streaming Chat Completions requests include `stream_options.include_usage = true`
+
+`openai_compat.empty_tools`
+
+- default: `preserve`
+- `omit` removes an explicit empty `tools` array from both Chat Completions and Responses requests; neutral `tool_choice` values (`auto`, `none`, or `null`) are removed with it, while `required` and named choices are rejected locally
+- `preserve_with_tool_history` removes an empty array unless function-tool history is present, for LiteLLM/Anthropic proxy compatibility; preserved arrays retain `tool_choice`
 
 ## OpenRouter Routing Policy
 
@@ -318,19 +331,23 @@ This policy is OpenRouter upstream behavior. It does not add Oceans-side multi-r
 
 The Chat Completions stream adapter keeps the SSE transcript OpenAI-shaped while normalizing common provider variants:
 
-- appends one final `data: [DONE]` when the upstream omits it after valid payload events
+- appends one final `data: [DONE]` only after an upstream `[DONE]` marker or a chunk with a non-empty string `finish_reason`
 - promotes `choices[*].usage` to top-level `usage` when top-level usage is absent
 - preserves final usage-only chunks
 - maps `delta.reasoning_content` and `delta.reasoning_text` into `delta.reasoning` when no canonical reasoning field exists
-- emits structured SSE error chunks for malformed or incomplete streams instead of pretending the stream completed normally
+- emits structured SSE error chunks for malformed streams, top-level errors, or EOF before terminal semantics, and never appends `[DONE]` after failure
 
 This is intentionally narrower than full tool-call streaming normalization. Tool-call streaming needs a richer gateway event model and is tracked separately.
 
-The Responses stream adapter is separate. It parses SSE frames for transport safety, preserves `event: response.*` names and JSON payloads, surfaces malformed or incomplete streams as structured SSE error chunks, and appends one final `data: [DONE]` only after a successful upstream stream that omitted it.
+The Responses stream adapter is separate. It parses SSE frames for transport safety, preserves `event: response.*` names and JSON payloads, accepts `response.completed` and `response.incomplete` as successful terminal states, and surfaces `response.failed`, top-level errors, conflicting status/type fields, Chat Completions protocol mismatches, and premature EOF without synthesizing `[DONE]`. One final `data: [DONE]` is appended only after a valid completed or incomplete terminal event.
 
 Bedrock chat streaming is a separate transport adapter because Bedrock Runtime does not return SSE for ConverseStream. It decodes AWS Smithy/EventStream frames, reads string headers such as `:message-type`, `:event-type`, and `:exception-type`, and normalizes ConverseStream events into Chat Completions SSE chunks. `messageStart` emits the assistant role, `contentBlockDelta` emits text, function-tool argument deltas, or provider reasoning metadata deltas, `messageStop` emits the terminal finish reason, and `metadata.usage` emits an OpenAI-shaped usage chunk when present. EventStream exception frames and malformed or incomplete frames emit structured SSE error chunks and do not receive a final `[DONE]`.
 
 The current Bedrock frame parser validates frame lengths, header boundaries, supported header encodings, JSON payload shape, and clean finalization. It recognizes the prelude CRC and message CRC fields but does not validate CRC checksums in this slice. Provider-native `InvokeModelWithResponseStream` mappings, including Anthropic-specific native streaming payloads, remain separate provider-family work tracked by [issue #139](https://github.com/ahstn/oceans-llm/issues/139).
+
+## Cross-Provider Replay Identifiers
+
+The gateway preserves provider-native IDs that already satisfy the target API. Invalid or overlong Bedrock tool-use/result IDs are replaced with the same deterministic, bounded `tool_<SHA-256>` value on both sides of the pair. OpenAI Responses replay preserves valid native `fc_`, `rs_`, and `msg_` item IDs, hashes foreign or invalid item IDs into the corresponding bounded namespace, and applies the same deterministic normalization to matching `function_call` and `function_call_output` `call_id` values. Missing optional Responses item IDs remain missing. This normalization is request-local and stateless; it does not claim that an ID belongs to a stored upstream response.
 
 ## Accounting Boundary
 

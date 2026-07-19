@@ -1,6 +1,7 @@
 mod bedrock;
 mod http;
 mod openai_compat;
+mod replay_id;
 mod streaming;
 mod token;
 mod vertex;

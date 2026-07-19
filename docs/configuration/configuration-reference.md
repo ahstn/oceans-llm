@@ -815,6 +815,7 @@ models:
             developer_role: system
             reasoning_effort: omit
             supports_stream_usage: true
+            empty_tools: omit
 ```
 
 OpenRouter route policy:
@@ -870,6 +871,8 @@ models:
 - `mantle_openai_chat`
 - `mantle_anthropic_messages`
 
+`compatibility.aws_bedrock.supports_strict_tools` is optional. When unset, Runtime Converse routes infer support from transparent upstream model IDs and omit `strict` for Claude Opus 4.7/4.8. Set it to `false` for opaque application-inference-profile IDs or ARNs backed by those models; explicit `true` or `false` overrides inference.
+
 OpenAI-compatible profile defaults:
 
 | Field | Default | Supported values |
@@ -879,6 +882,9 @@ OpenAI-compatible profile defaults:
 | `developer_role` | `developer` | `developer`, `system` |
 | `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
 | `supports_stream_usage` | `false` | `true`, `false` |
+| `empty_tools` | `preserve` | `preserve`, `omit`, `preserve_with_tool_history` |
+
+`empty_tools: omit` removes `tools: []` from Chat Completions and Responses requests for providers such as DashScope/Qwen that reject an empty array. When an empty array is omitted, neutral `tool_choice` values (`auto`, `none`, or `null`) are omitted with it; `required` and named choices are rejected locally because no tool can satisfy them. `preserve_with_tool_history` omits an otherwise empty array but retains it and `tool_choice` when the request contains function-tool history, which is required by some LiteLLM/Anthropic proxy routes. The default `preserve` keeps existing stateless proxy behavior.
 
 OpenRouter policy fields:
 

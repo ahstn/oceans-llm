@@ -59,6 +59,7 @@ fn context_with_api_style(
             aws_bedrock: Some(AwsBedrockRouteCompatibility {
                 api_style,
                 openai_base_path: openai_base_path.map(ToString::to_string),
+                supports_strict_tools: None,
             }),
             ..Default::default()
         },

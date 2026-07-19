@@ -2497,6 +2497,8 @@ pub struct AwsBedrockRouteCompatibility {
     pub api_style: AwsBedrockApiStyle,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openai_base_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_strict_tools: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -2548,6 +2550,8 @@ pub struct OpenAiCompatRouteCompatibility {
     pub reasoning_effort: OpenAiCompatReasoningEffort,
     #[serde(default)]
     pub supports_stream_usage: bool,
+    #[serde(default)]
+    pub empty_tools: OpenAiCompatEmptyTools,
 }
 
 impl Default for OpenAiCompatRouteCompatibility {
@@ -2558,6 +2562,7 @@ impl Default for OpenAiCompatRouteCompatibility {
             developer_role: OpenAiCompatDeveloperRole::default(),
             reasoning_effort: OpenAiCompatReasoningEffort::default(),
             supports_stream_usage: false,
+            empty_tools: OpenAiCompatEmptyTools::default(),
         }
     }
 }
@@ -2585,6 +2590,15 @@ pub enum OpenAiCompatReasoningEffort {
     Passthrough,
     Omit,
     ReasoningObject,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiCompatEmptyTools {
+    #[default]
+    Preserve,
+    Omit,
+    PreserveWithToolHistory,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
