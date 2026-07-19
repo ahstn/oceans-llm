@@ -53,6 +53,8 @@ Complete the project configuration:
 
 ![Google Auth Platform project configuration steps](../public/images/google-oauth/google-auth-platform-branding.jpg)
 
+In **Branding → Authorized domains**, add the top private domain for the public Oceans host before creating the client. For example, add `example.com` for `oceans.example.com`. Google requires domains used by redirect URIs to be registered here. If Google requires domain verification, a project owner or editor must verify the domain property in Google Search Console.
+
 In **Data Access**, keep the requested identity data limited to:
 
 - `openid`
@@ -160,9 +162,9 @@ Check the Oceans user policy:
 - Google must return both `email` and `email_verified: true`
 - disabled Oceans users remain denied
 
-### A user outside the organization can reach Google sign-in
+### A user outside the organization can authorize the app
 
-Confirm the Google audience is **Internal** and that the project belongs to the intended Google Workspace or Cloud Identity organization. Oceans does not enforce Google's `hd` claim itself.
+An outside user may still see the Oceans sign-in option and reach Google's authorization page. With an **Internal** audience, Google should reject authorization with an `org_internal` error. If the user completes authorization and returns to Oceans, confirm the audience is **Internal** and that the project belongs to the intended Google Workspace or Cloud Identity organization. Oceans does not enforce Google's `hd` claim itself.
 
 ## Security Notes
 
