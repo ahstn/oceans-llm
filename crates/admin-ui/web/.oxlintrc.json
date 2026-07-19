@@ -4,5 +4,24 @@
     "browser": true,
     "es2024": true
   },
-  "ignorePatterns": ["node_modules", "dist", ".output"]
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    ".output"
+  ],
+  "rules": {
+    "react/jsx-props-no-spread-multi": "error",
+    "react/jsx-no-duplicate-props": "error",
+    "react/no-array-index-key": "error",
+    "react/no-did-update-set-state": "error",
+    "react/no-did-mount-set-state": "error",
+    "react/no-object-type-as-default-prop": "error",
+    "react/no-this-in-sfc": "error",
+    "react/no-render-return-value": "error",
+    "react/void-dom-elements-no-children": "error",
+    "react-perf/jsx-no-new-function-as-prop": "error",
+    "react-perf/jsx-no-new-object-as-prop": "error",
+    "react-perf/jsx-no-new-array-as-prop": "error",
+    "react-perf/jsx-no-jsx-as-prop": "error"
+  }
 }
