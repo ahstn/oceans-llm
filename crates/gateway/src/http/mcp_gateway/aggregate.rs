@@ -177,7 +177,6 @@ async fn handle_post(
         }
     }
 }
-
 async fn initialize_session(
     state: &AppState,
     auth: &AuthenticatedApiKey,
@@ -370,7 +369,7 @@ async fn call_builtin_tool(
             catalog
                 .search_tools(auth, input)
                 .await
-                .map(|output| ("Search completed", serde_json::to_value(output)))
+                .map(serde_json::to_value)
         }
         "describe_tool" => {
             let input: DescribeMcpToolInput = match serde_json::from_value(arguments) {
@@ -386,7 +385,7 @@ async fn call_builtin_tool(
             catalog
                 .describe_tool(auth, input)
                 .await
-                .map(|output| ("Tool described", serde_json::to_value(output)))
+                .map(serde_json::to_value)
         }
         "call_tool" => {
             let input: CallMcpToolInput = match serde_json::from_value(arguments) {
@@ -415,13 +414,16 @@ async fn call_builtin_tool(
     };
 
     match result {
-        Ok((text, Ok(structured))) => json_rpc_response(
-            StatusCode::OK,
-            json_rpc_success(id, call_tool_result(text, structured))
-                .unwrap_or_else(serialization_error),
-            None,
-        ),
-        Ok((_text, Err(error))) => json_rpc_response(
+        Ok(Ok(structured)) => {
+            let text = structured.to_string();
+            json_rpc_response(
+                StatusCode::OK,
+                json_rpc_success(id, call_tool_result(text, structured))
+                    .unwrap_or_else(serialization_error),
+                None,
+            )
+        }
+        Ok(Err(error)) => json_rpc_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             json_rpc_error(Some(id), JSON_RPC_INVALID_PARAMS, error.to_string()),
             None,

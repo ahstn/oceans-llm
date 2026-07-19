@@ -233,6 +233,29 @@ mod tests {
     }
 
     #[test]
+    fn success_response_omits_error_member() {
+        let response =
+            json_rpc_success(JsonRpcId::Number(1), json!({"ok": true})).expect("success response");
+        assert_eq!(
+            response,
+            json!({"jsonrpc": "2.0", "id": 1, "result": {"ok": true}})
+        );
+    }
+
+    #[test]
+    fn tools_list_response_omits_absent_optional_members() {
+        let response = tools_list_result(vec![McpTool {
+            name: "search".to_string(),
+            description: None,
+            input_schema: json!({"type": "object"}),
+        }]);
+        assert_eq!(
+            serde_json::to_value(response).expect("tools list response"),
+            json!({"tools": [{"name": "search", "inputSchema": {"type": "object"}}]})
+        );
+    }
+
+    #[test]
     fn rejects_batches() {
         let error = parse_client_message(br#"[]"#).expect_err("batch rejected");
         assert_eq!(error.code, JSON_RPC_INVALID_REQUEST);
