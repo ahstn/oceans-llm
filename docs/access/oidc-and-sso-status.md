@@ -1,6 +1,6 @@
 # OIDC and SSO
 
-`See also`: [Identity and Access](identity-and-access.md), [GitHub OAuth SSO Setup for Admins](github-oauth-admin-setup.md), [Testing Authentication Locally](../contributing/development/authentication-testing.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Control Plane](admin-control-plane.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Authentik Local SSO Test IdP](../adr/2026-05-15-authentik-local-sso-test-idp.md), [ADR: Local SSO Compose Fixture and Browser Origin](../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
+`See also`: [Identity and Access](identity-and-access.md), [Google OAuth 2.0 / OIDC SSO Setup for Admins](google-oauth-admin-setup.md), [GitHub OAuth SSO Setup for Admins](github-oauth-admin-setup.md), [Testing Authentication Locally](../contributing/development/authentication-testing.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Control Plane](admin-control-plane.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Authentik Local SSO Test IdP](../adr/2026-05-15-authentik-local-sso-test-idp.md), [ADR: Local SSO Compose Fixture and Browser Origin](../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
 
 Oceans LLM supports OIDC and OAuth SSO for the admin control plane. The browser ends each flow with the same `ogw_session` HttpOnly cookie used by password login.
 
@@ -18,6 +18,7 @@ The OIDC/OAuth flow includes:
 - invited/config-declared OIDC users activate on first successful provider login
 - provider-specific JIT user creation can assign explicit global role, team membership, and request logging defaults
 - direct GitHub OAuth requires a GitHub-verified primary email by default, can use `sso_email_verification_enabled: false` as an admin escape hatch, and can restrict sign-in and JIT provisioning to configured email domains
+- Google Auth Platform OAuth 2.0 clients work through the generic OIDC provider using issuer `https://accounts.google.com`; use an Internal Google audience when Google must restrict sign-in to one Workspace or Cloud Identity organization
 - local Authentik compose profiles provide a repeatable manual IdP fixture
 
 ## Security Boundary

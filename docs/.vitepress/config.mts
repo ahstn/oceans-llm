@@ -99,6 +99,10 @@ const primarySidebar = [
       { text: "Budgets", link: "/access/budgets" },
       { text: "OIDC and SSO", link: "/access/oidc-and-sso-status" },
       {
+        text: "Google OAuth 2.0 / OIDC SSO Setup",
+        link: "/access/google-oauth-admin-setup",
+      },
+      {
         text: "GitHub OAuth SSO Setup",
         link: "/access/github-oauth-admin-setup",
       },

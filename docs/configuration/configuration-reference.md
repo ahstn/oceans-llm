@@ -366,6 +366,8 @@ auth:
         enabled: true
 ```
 
+Google Auth Platform OAuth 2.0 clients use this generic OIDC shape with issuer `https://accounts.google.com`. For audience selection, the exact callback URL, and client creation, see [Google OAuth 2.0 / OIDC SSO Setup for Admins](../access/google-oauth-admin-setup.md).
+
 OAuth providers are separate from OIDC providers. GitHub is the first supported direct OAuth provider:
 
 ```yaml
