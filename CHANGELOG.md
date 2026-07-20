@@ -6,6 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.19.0] - 2026-07-20
+### :rocket: New features
+- Initial mise.toml by @ahstn
+- *(build)* Adding react doctor by @ahstn
+- *(build)* Enabling stricter react oxlint rules by @ahstn
+- *(build)* Fix oxfmt by @ahstn
+
+### :bug: Bug fixes
+- *(harness)* Address integration review findings by @ahstn
+- *(harness)* Address security and contract review by @ahstn
+- *(harness)* Disable Pi startup network checks by @ahstn
+- *(providers)* Harden upstream compatibility by @ahstn
+- *(providers)* Address compatibility review by @ahstn
+- *(providers)* Resolve automated review findings by @ahstn
+- *(bedrock)* Revalidate merged Converse controls by @ahstn
+- *(openai-compat)* Normalize empty tool choice by @ahstn
+- *(providers)* Harden upstream compatibility by @ahstn in [#252](https://github.com/ahstn/oceans-llm/pull/252)
+- *(gateway)* Gate chat file inputs by capability by @ahstn
+- *(gateway)* Gate chat file inputs by capability by @ahstn in [#254](https://github.com/ahstn/oceans-llm/pull/254)
+
+### Build
+- Post release tasks - v0.18.0 by @ahstn
+
+### Documentation
+- *(auth)* Add Google OIDC setup guide by @ahstn
+- *(auth)* Address Google SSO review feedback by @ahstn
+- *(auth)* Add Google OIDC setup guide by @ahstn in [#253](https://github.com/ahstn/oceans-llm/pull/253)
+
+### Miscellaneous
+- *(deps)* Update age-qualified Rust dependencies by @ahstn
+- *(deps)* Update age-qualified Rust dependencies by @ahstn in [#251](https://github.com/ahstn/oceans-llm/pull/251)
+- *(pricing)* Updating model catalog
+- *(version)* V0.19.0
+
+### Testing
+- Add native harness integration coverage by @ahstn
+- *(harness)* Cover user model allowlists by @ahstn
+- *(gateway)* Add native harness integration coverage by @ahstn in [#249](https://github.com/ahstn/oceans-llm/pull/249)
+- *(harness)* Verify MCP tool completion by @ahstn
+
+
+
+
 ## [0.18.0] - 2026-07-17
 ### :rocket: New features
 - *(admin-ui)* Show running Oceans version by @ahstn
@@ -35,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(rust)* Satisfy current clippy by @ahstn
 - *(deps)* Update Rust dependencies by @ahstn
 - Merge origin/main by @ahstn
-- *(version)* V0.18.0
+- *(version)* V0.18.0 by @ahstn
 
 ### Testing
 - *(gateway)* Close override coverage gaps by @ahstn
@@ -763,6 +806,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.19.0]: https://github.com/ahstn/oceans-llm/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/ahstn/oceans-llm/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/ahstn/oceans-llm/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/ahstn/oceans-llm/compare/v0.15.0...v0.16.0
