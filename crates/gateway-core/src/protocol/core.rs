@@ -248,9 +248,11 @@ fn content_part_has_vision_input(value: &Value) -> bool {
         return false;
     };
 
+    // `vision` is the gateway's capability gate for non-text inputs. Keep the Chat file
+    // aliases accepted by provider adapters aligned with Responses `input_file` routing.
     matches!(
         object.get("type").and_then(Value::as_str),
-        Some("image_url" | "input_image")
+        Some("image_url" | "input_image" | "file" | "input_file" | "document")
     ) || object.contains_key("image_url")
 }
 
@@ -303,6 +305,34 @@ mod tests {
         assert!(requirements.developer_role);
         assert!(!requirements.embeddings);
         assert!(!requirements.responses);
+    }
+
+    #[test]
+    fn chat_file_content_parts_require_vision_capability() {
+        for content_type in ["file", "input_file", "document"] {
+            let request = ChatRequest {
+                model: "document-reader".to_string(),
+                messages: vec![ChatMessage {
+                    role: "user".to_string(),
+                    content: json!([{
+                        "type": content_type,
+                        "file": {
+                            "file_data": "data:application/pdf;base64,cGRm",
+                            "filename": "document.pdf"
+                        }
+                    }]),
+                    name: None,
+                    extra: BTreeMap::new(),
+                }],
+                stream: false,
+                extra: BTreeMap::new(),
+            };
+
+            assert!(
+                request.requirements().vision,
+                "{content_type} must require a vision-capable route"
+            );
+        }
     }
 
     #[test]

@@ -90,10 +90,10 @@ function defineHarnessContract(adapter: HarnessAdapter, gateway: GatewayRuntime)
       );
     });
 
-    test("gets useful Vitest documentation from Context7 through aggregate MCP", async () => {
+    test("proxies Context7 tools through aggregate MCP", async () => {
       const result = await adapter.run(
         workspace,
-        "Use the configured Oceans MCP server and perform exactly these operations in order before answering: first invoke the Oceans aggregate tool named search_tools with a query for Context7 library-documentation tools; then use that result to invoke the aggregate tool named call_tool and ask Context7 which async Vitest API advances fake timers by a duration. Both aggregate tool calls are mandatory. Include the exact API in the final answer.",
+        "Use the configured Oceans MCP server and perform exactly these operations in order before answering: first invoke the Oceans aggregate tool named search_tools with a query for Context7 library-documentation tools; then use that result to invoke the aggregate tool named call_tool and ask Context7 for Vitest documentation about advancing fake timers. Both aggregate tool calls are mandatory. After the MCP request responds, briefly acknowledge completion.",
       );
 
       const discoveryIndex = result.toolCalls.findIndex(
@@ -108,7 +108,12 @@ function defineHarnessContract(adapter: HarnessAdapter, gateway: GatewayRuntime)
       const toolEvidence = JSON.stringify(result.toolCalls);
       expect(discoveryIndex, toolEvidence).toBeGreaterThanOrEqual(0);
       expect(documentationIndex, toolEvidence).toBeGreaterThan(discoveryIndex);
-      expect(result.output).toMatch(/advanceTimersByTimeAsync/i);
+      expect(result.toolCalls[discoveryIndex]?.status, toolEvidence).toBe("completed");
+      expect(result.toolCalls[documentationIndex]?.status, toolEvidence).toBe("completed");
+
+      // This contract verifies successful aggregate MCP proxying, not the nondeterministic Context7
+      // payload or model synthesis. Completion comes from each harness's terminal tool event, while
+      // adapter.run separately requires a successful, non-empty final assistant response.
     });
   });
 }

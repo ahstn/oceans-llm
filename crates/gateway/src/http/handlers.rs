@@ -1955,9 +1955,9 @@ mod tests {
     use axum::body::to_bytes;
     use axum::http::{HeaderMap, HeaderValue};
     use gateway_core::{
-        CoreChatRequest, CoreEmbeddingsRequest, CoreRequestRequirements, CoreResponsesRequest,
-        GatewayError, ModelRoute, ProviderCapabilities, ProviderClient, ProviderError,
-        ProviderRegistry, ProviderRequestContext, ProviderStream,
+        CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, CoreRequestRequirements,
+        CoreResponsesRequest, GatewayError, ModelRoute, ProviderCapabilities, ProviderClient,
+        ProviderError, ProviderRegistry, ProviderRequestContext, ProviderStream,
     };
     use serde_json::{Value, json};
     use tower_http::request_id::RequestId;
@@ -2134,6 +2134,49 @@ mod tests {
                 .0
                 .upstream_model,
             "google/text-embedding-005"
+        );
+    }
+
+    #[test]
+    fn chat_file_inputs_only_select_vision_capable_routes() {
+        let provider = Arc::new(StaticProvider {
+            provider_type: "openai_compat",
+            capabilities: ProviderCapabilities::all_enabled(),
+        });
+        let mut providers = ProviderRegistry::new();
+        providers.register(provider);
+
+        let mut text_only_capabilities = ProviderCapabilities::all_enabled();
+        text_only_capabilities.vision = false;
+        let routes = vec![
+            route("text-only", text_only_capabilities),
+            route("document-capable", ProviderCapabilities::all_enabled()),
+        ];
+        let request = CoreChatRequest {
+            model: "documents".to_string(),
+            messages: vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: json!([{
+                    "type": "file",
+                    "file": {
+                        "file_data": "data:application/pdf;base64,cGRm",
+                        "filename": "document.pdf"
+                    }
+                }]),
+                name: None,
+                extra: Default::default(),
+            }],
+            stream: false,
+            extra: Default::default(),
+        };
+
+        let (eligible_route_count, selected) =
+            select_first_eligible_route(&providers, &routes, request.requirements());
+
+        assert_eq!(eligible_route_count, 1);
+        assert_eq!(
+            selected.expect("vision-capable route").0.upstream_model,
+            "document-capable"
         );
     }
 

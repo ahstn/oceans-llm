@@ -4,15 +4,24 @@ import type { ToolCall } from "../types.js";
 
 const PiToolEventSchema = z.object({
   type: z.literal("tool_execution_start"),
+  toolCallId: z.string(),
   toolName: z.string(),
   args: z.unknown(),
+});
+
+const PiToolEndEventSchema = z.object({
+  type: z.literal("tool_execution_end"),
+  toolCallId: z.string(),
+  isError: z.boolean(),
 });
 
 const OpenCodeToolEventSchema = z.object({
   type: z.literal("tool_use"),
   part: z.object({
     tool: z.string(),
-    state: z.object({ input: z.unknown() }).passthrough(),
+    state: z
+      .object({ input: z.unknown(), status: z.enum(["completed", "error"]) })
+      .passthrough(),
   }),
 });
 
@@ -45,10 +54,25 @@ const OpenCodeErrorEventSchema = z.object({
 
 export function parseToolCalls(output: string): ToolCall[] {
   const toolCalls: ToolCall[] = [];
+  const piToolCalls = new Map<string, ToolCall>();
   for (const event of parseJsonEvents(output)) {
     const piEvent = PiToolEventSchema.safeParse(event);
     if (piEvent.success) {
-      toolCalls.push({ input: piEvent.data.args, name: piEvent.data.toolName });
+      const toolCall: ToolCall = {
+        input: piEvent.data.args,
+        name: piEvent.data.toolName,
+        status: "started",
+      };
+      toolCalls.push(toolCall);
+      piToolCalls.set(piEvent.data.toolCallId, toolCall);
+      continue;
+    }
+    const piEndEvent = PiToolEndEventSchema.safeParse(event);
+    if (piEndEvent.success) {
+      const toolCall = piToolCalls.get(piEndEvent.data.toolCallId);
+      if (toolCall) {
+        toolCall.status = piEndEvent.data.isError ? "error" : "completed";
+      }
       continue;
     }
     const openCodeEvent = OpenCodeToolEventSchema.safeParse(event);
@@ -56,6 +80,7 @@ export function parseToolCalls(output: string): ToolCall[] {
       toolCalls.push({
         input: openCodeEvent.data.part.state.input,
         name: openCodeEvent.data.part.tool,
+        status: openCodeEvent.data.part.state.status,
       });
     }
   }
