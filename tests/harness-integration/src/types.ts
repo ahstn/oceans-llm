@@ -13,6 +13,7 @@ export interface GatewayRuntime {
 export interface ToolCall {
   input: unknown;
   name: string;
+  status: "started" | "completed" | "error";
 }
 
 export interface HarnessRun {

@@ -108,10 +108,12 @@ function defineHarnessContract(adapter: HarnessAdapter, gateway: GatewayRuntime)
       const toolEvidence = JSON.stringify(result.toolCalls);
       expect(discoveryIndex, toolEvidence).toBeGreaterThanOrEqual(0);
       expect(documentationIndex, toolEvidence).toBeGreaterThan(discoveryIndex);
+      expect(result.toolCalls[discoveryIndex]?.status, toolEvidence).toBe("completed");
+      expect(result.toolCalls[documentationIndex]?.status, toolEvidence).toBe("completed");
 
-      // This contract verifies aggregate MCP proxying, not model recall or synthesis. adapter.run
-      // already requires a successful, non-empty final response; its wording and factual content
-      // are intentionally left unasserted because live model and Context7 output is nondeterministic.
+      // This contract verifies successful aggregate MCP proxying, not the nondeterministic Context7
+      // payload or model synthesis. Completion comes from each harness's terminal tool event, while
+      // adapter.run separately requires a successful, non-empty final assistant response.
     });
   });
 }
