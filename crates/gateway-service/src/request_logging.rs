@@ -91,6 +91,7 @@ pub struct StreamResponseCollector {
 pub struct LoggedRequest {
     pub request_log_id: Uuid,
     pub wrote: bool,
+    pub response_payload_truncated: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -946,6 +947,7 @@ where
             return Ok(LoggedRequest {
                 request_log_id: context.request_log_id,
                 wrote: false,
+                response_payload_truncated: false,
             });
         }
 
@@ -1004,6 +1006,7 @@ where
         Ok(LoggedRequest {
             request_log_id: context.request_log_id,
             wrote: true,
+            response_payload_truncated: has_payload && response_payload_truncated,
         })
     }
 }

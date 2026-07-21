@@ -125,9 +125,7 @@ pub(crate) fn agent_task_analysis_matches(
         && stored.cohort_fallback_level == candidate.cohort_fallback_level
         && stored.cohort_sample_size == candidate.cohort_sample_size
         && stored.cohort_snapshot_digest == candidate.cohort_snapshot_digest
-        && same_timestamp(stored.analyzed_at, candidate.analyzed_at)
         && stored.report == candidate.report
-        && same_timestamp(stored.expires_at, candidate.expires_at)
         && stored.ownership_scope_key == candidate.ownership_scope_key
         && stored.user_id == candidate.user_id
         && stored.service_account_id == candidate.service_account_id

@@ -363,14 +363,17 @@ where
                 attempts,
             )
             .await?;
-        self.record_passive_request(
-            auth,
-            context,
-            logged.wrote.then_some(logged.request_log_id),
-            Some(response_body),
-            Some(true),
-        )
-        .await;
+        if logged.wrote {
+            self.record_passive_request(
+                auth,
+                context,
+                Some(logged.request_log_id),
+                Some(response_body),
+                Some(true),
+                logged.response_payload_truncated,
+            )
+            .await;
+        }
         Ok(logged)
     }
 
@@ -400,14 +403,17 @@ where
                 attempts,
             )
             .await?;
-        self.record_passive_request(
-            auth,
-            context,
-            logged.wrote.then_some(logged.request_log_id),
-            None,
-            Some(false),
-        )
-        .await;
+        if logged.wrote {
+            self.record_passive_request(
+                auth,
+                context,
+                Some(logged.request_log_id),
+                None,
+                Some(false),
+                logged.response_payload_truncated,
+            )
+            .await;
+        }
         Ok(logged)
     }
 
@@ -432,14 +438,17 @@ where
             .request_logging
             .log_stream_result(auth, context, stream_result)
             .await?;
-        self.record_passive_request(
-            auth,
-            context,
-            logged.wrote.then_some(logged.request_log_id),
-            response_body.as_ref(),
-            terminal_success,
-        )
-        .await;
+        if logged.wrote {
+            self.record_passive_request(
+                auth,
+                context,
+                Some(logged.request_log_id),
+                response_body.as_ref(),
+                terminal_success,
+                logged.response_payload_truncated,
+            )
+            .await;
+        }
         Ok(logged)
     }
 
@@ -450,6 +459,7 @@ where
         request_log_id: Option<Uuid>,
         response_body: Option<&Value>,
         terminal_success: Option<bool>,
+        response_payload_truncated: bool,
     ) where
         S: AgentSessionAnalysisRepository,
     {
@@ -486,7 +496,7 @@ where
         let metadata = context.analysis_metadata.clone();
         let analysis_payload_permitted = context.analysis_payload_permitted;
         let occurred_at = context.started_at;
-        let payload_truncated = context.request_payload_truncated;
+        let payload_truncated = response_payload_truncated;
         let response_body = response_body.cloned();
         tokio::spawn(async move {
             let completed_at = OffsetDateTime::now_utc();

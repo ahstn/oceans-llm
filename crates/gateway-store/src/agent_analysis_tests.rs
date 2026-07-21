@@ -408,16 +408,16 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
             .await
             .expect("duplicate analysis")
     );
-    assert!(matches!(
-        store
+    assert!(
+        !store
             .append_agent_task_analysis(&AgentTaskAnalysisRecord {
-                analysis_id: Uuid::new_v4(),
                 analyzed_at: analysis.analyzed_at + Duration::seconds(1),
+                expires_at: analysis.expires_at + Duration::seconds(1),
                 ..analysis.clone()
             })
-            .await,
-        Err(StoreError::Conflict(_))
-    ));
+            .await
+            .expect("retry analysis")
+    );
     let mut advanced_task = task.clone();
     advanced_task.input_watermark_at += Duration::seconds(1);
     advanced_task.updated_at += Duration::seconds(1);

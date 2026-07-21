@@ -330,12 +330,14 @@ where
                 .await?;
         }
     }
-    if let Some(existing_task) = open_task.as_ref()
-        && store
+    while let Some(existing_task) = open_task.as_ref() {
+        if store
             .count_agent_task_requests(existing_task.agent_task_id)
             .await?
-            >= gateway_core::MAX_AGENT_TASK_REQUESTS
-    {
+            < gateway_core::MAX_AGENT_TASK_REQUESTS
+        {
+            break;
+        }
         let expected_watermark = existing_task.input_watermark_at;
         let mut finalized = existing_task.clone();
         finalized.lifecycle = TaskLifecycleState::Finalized;
@@ -358,6 +360,15 @@ where
             )
             .await?;
             open_task = None;
+        } else {
+            open_task = store
+                .get_open_agent_task(
+                    &ownership_scope_key,
+                    session_id,
+                    &input.harness_key,
+                    &input.boundary_group_key,
+                )
+                .await?;
         }
     }
     let mut task = if let Some(task) = open_task {
