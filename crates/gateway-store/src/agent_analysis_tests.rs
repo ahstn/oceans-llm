@@ -1,0 +1,797 @@
+use gateway_core::{
+    AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,
+    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
+    AgentSessionRecord, AgentTaskAnalysisRecord, AgentTaskListQuery, AgentTaskRequestLinkRecord,
+    AgentTaskWindowRecord, AuthMode, BoundedObservationFacts, Confidence, EvidenceQuality,
+    GlobalRole, InferredObservation, InferredObservationKind, LimitationCode, ScoreMaturity,
+    StoreError, TaskLifecycleState, UserStatus,
+};
+use serial_test::serial;
+use tempfile::tempdir;
+use time::{Duration, OffsetDateTime};
+use uuid::Uuid;
+
+use crate::tests::{create_postgres_test_database, drop_postgres_test_database};
+use crate::{
+    LibsqlStore, PostgresStore, StoreConnectionOptions, run_migrations, run_migrations_with_options,
+};
+
+#[tokio::test]
+async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
+    let temporary = tempdir().expect("tempdir");
+    let database_path = temporary.path().join("gateway.db");
+    run_migrations(&database_path).await.expect("migrations");
+    let store = LibsqlStore::new_local(database_path.to_str().expect("database path"))
+        .await
+        .expect("store");
+    let user = store
+        .create_identity_user(
+            "Analyst",
+            "analyst@example.com",
+            "analyst@example.com",
+            GlobalRole::User,
+            AuthMode::Password,
+            UserStatus::Active,
+        )
+        .await
+        .expect("user");
+    let api_key_id = Uuid::new_v4();
+    let now = OffsetDateTime::now_utc();
+    store
+        .connection()
+        .execute(
+            "INSERT INTO api_keys (id, public_id, secret_hash, name, status, owner_kind, owner_user_id, created_at) VALUES (?1, ?2, 'hash', 'analysis', 'active', 'user', ?3, ?4)",
+            libsql::params![
+                api_key_id.to_string(),
+                format!("gw_test_{}", Uuid::new_v4()),
+                user.user_id.to_string(),
+                now.unix_timestamp()
+            ],
+        )
+        .await
+        .expect("api key");
+
+    let request_log_id = Uuid::new_v4();
+    store
+        .connection()
+        .execute(
+            "INSERT INTO request_logs (request_log_id, request_id, api_key_id, user_id, model_key, provider_key, status_code, latency_ms, metadata_json, occurred_at, resolved_model_key) VALUES (?1, 'request-1', ?2, ?3, 'test-model', 'test-provider', 200, 1000, '{}', ?4, 'test-model')",
+            libsql::params![
+                request_log_id.to_string(),
+                api_key_id.to_string(),
+                user.user_id.to_string(),
+                now.unix_timestamp()
+            ],
+        )
+        .await
+        .expect("request log");
+
+    let scope = format!("user:{}", user.user_id);
+    let session = AgentSessionRecord {
+        agent_session_id: Uuid::new_v4(),
+        ownership_scope_key: scope.clone(),
+        api_key_id,
+        user_id: Some(user.user_id),
+        team_id: None,
+        service_account_id: None,
+        actor_user_id: None,
+        normalized_session_id: "session-1".to_string(),
+        adapter_namespace: "codex".to_string(),
+        adapter_version: "v1".to_string(),
+        source_provenance: "session_id_header".to_string(),
+        harness_key: "codex".to_string(),
+        harness_label: "Codex".to_string(),
+        first_seen_at: now,
+        last_seen_at: now,
+        created_at: now,
+        updated_at: now,
+    };
+    let stored_session = store.upsert_agent_session(&session).await.expect("session");
+    assert_eq!(stored_session.agent_session_id, session.agent_session_id);
+    assert_eq!(
+        store
+            .load_agent_session(session.agent_session_id)
+            .await
+            .expect("load session"),
+        Some(stored_session)
+    );
+
+    let later_session = store
+        .upsert_agent_session(&AgentSessionRecord {
+            first_seen_at: now + Duration::seconds(10),
+            last_seen_at: now + Duration::seconds(10),
+            updated_at: now + Duration::seconds(10),
+            ..session.clone()
+        })
+        .await
+        .expect("later session observation");
+    let out_of_order_session = store
+        .upsert_agent_session(&AgentSessionRecord {
+            first_seen_at: now - Duration::seconds(5),
+            last_seen_at: now - Duration::seconds(5),
+            updated_at: now - Duration::seconds(5),
+            ..session.clone()
+        })
+        .await
+        .expect("out-of-order session observation");
+    assert_eq!(
+        out_of_order_session.first_seen_at.unix_timestamp(),
+        (now - Duration::seconds(5)).unix_timestamp()
+    );
+    assert_eq!(
+        out_of_order_session.last_seen_at,
+        later_session.last_seen_at
+    );
+    assert_eq!(out_of_order_session.updated_at, later_session.updated_at);
+    assert!(matches!(
+        store
+            .upsert_agent_session(&AgentSessionRecord {
+                adapter_version: "v2".to_string(),
+                source_provenance: "different_source".to_string(),
+                updated_at: now + Duration::seconds(20),
+                ..session.clone()
+            })
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+    let unchanged_session = store
+        .load_agent_session(session.agent_session_id)
+        .await
+        .expect("load unchanged session")
+        .expect("unchanged session");
+    assert_eq!(unchanged_session.adapter_version, "v1");
+    assert_eq!(unchanged_session.source_provenance, "session_id_header");
+
+    let task = AgentTaskWindowRecord {
+        agent_task_id: Uuid::new_v4(),
+        agent_session_id: Some(session.agent_session_id),
+        ownership_scope_key: scope.clone(),
+        api_key_id,
+        user_id: Some(user.user_id),
+        team_id: None,
+        service_account_id: None,
+        actor_user_id: None,
+        requested_model_key: "gpt-5.6".to_string(),
+        operation: "responses".to_string(),
+        caller_class: "user".to_string(),
+        request_tags: serde_json::json!({"environment": "test"}),
+        boundary_group_key: "sha256:boundary".to_string(),
+        harness_key: "codex".to_string(),
+        boundary_policy_version: agent_session_analysis::TASK_BOUNDARY_POLICY_VERSION.to_string(),
+        lifecycle: TaskLifecycleState::Finalized,
+        boundary_confidence: Confidence::High,
+        started_at: now,
+        ended_at: Some(now + Duration::seconds(1)),
+        input_watermark_at: now + Duration::seconds(1),
+        finalized_reason: Some("idle_gap".to_string()),
+        created_at: now,
+        updated_at: now,
+    };
+    assert!(
+        store
+            .insert_agent_task_if_absent(&task)
+            .await
+            .expect("task")
+    );
+    assert!(
+        !store
+            .insert_agent_task_if_absent(&task)
+            .await
+            .expect("exact task replay")
+    );
+    assert!(matches!(
+        store
+            .insert_agent_task_if_absent(&AgentTaskWindowRecord {
+                requested_model_key: "different-model".to_string(),
+                ..task.clone()
+            })
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+
+    let request_link = AgentTaskRequestLinkRecord {
+        agent_task_id: task.agent_task_id,
+        request_id: "request-1".to_string(),
+        request_log_id: Some(request_log_id),
+        usage_event_id: None,
+        ordinal: 0,
+        execution_id: Some("turn-1".to_string()),
+        parent_execution_id: None,
+        normalized_session_id: Some("sha256:session-1".to_string()),
+        correlation_confidence: Confidence::High,
+        limitation_codes: vec![],
+        occurred_at: now,
+        completed_at: Some(now + Duration::seconds(1)),
+        terminal_success: Some(true),
+    };
+    assert!(
+        store
+            .append_agent_task_request(&request_link)
+            .await
+            .expect("request link")
+    );
+    assert!(
+        !store
+            .append_agent_task_request(&request_link)
+            .await
+            .expect("idempotent request link")
+    );
+    let conflicting_request_link = AgentTaskRequestLinkRecord {
+        terminal_success: Some(false),
+        ..request_link.clone()
+    };
+    assert!(matches!(
+        store
+            .append_agent_task_request(&conflicting_request_link)
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+    store
+        .link_request_log_to_agent_task(&AgentRequestLogLinkRecord {
+            request_log_id,
+            agent_session_id: Some(session.agent_session_id),
+            agent_task_id: task.agent_task_id,
+            analysis_source: "passive".to_string(),
+            coverage: serde_json::json!({"request_metadata": true}),
+        })
+        .await
+        .expect("request log analytics link");
+    let mut linked_rows = store
+        .connection()
+        .query(
+            "SELECT agent_session_id, agent_task_id, agent_analysis_source, agent_analysis_coverage_json FROM request_logs WHERE request_log_id = ?1",
+            [request_log_id.to_string()],
+        )
+        .await
+        .expect("linked request log query");
+    let linked = linked_rows
+        .next()
+        .await
+        .expect("linked request log row")
+        .expect("linked request log");
+    assert_eq!(
+        linked.get::<String>(0).expect("linked session"),
+        session.agent_session_id.to_string()
+    );
+    assert_eq!(
+        linked.get::<String>(1).expect("linked task"),
+        task.agent_task_id.to_string()
+    );
+    assert_eq!(linked.get::<String>(2).expect("analysis source"), "passive");
+    assert_eq!(
+        linked.get::<String>(3).expect("analysis coverage"),
+        r#"{"request_metadata":true}"#
+    );
+    let observation_set = AgentObservationSetRecord {
+        observation_set_id: Uuid::new_v4(),
+        agent_task_id: task.agent_task_id,
+        parser_version: "passive-observations-v1".to_string(),
+        source_watermark_at: now,
+        coverage: serde_json::json!({"payload": true}),
+        created_at: now,
+        observations: vec![InferredObservation {
+            observation_id: Uuid::new_v4(),
+            kind: InferredObservationKind::FileEditSuspected,
+            source_request_id: "request-1".to_string(),
+            parser_version: "passive-observations-v1".to_string(),
+            evidence: EvidenceQuality::InferredHigh,
+            occurred_at: now,
+            facts: BoundedObservationFacts {
+                opaque_file_id: Some("sha256:file".to_string()),
+                ..Default::default()
+            },
+            limitations: vec![LimitationCode::SemanticVerificationUnavailable],
+        }],
+    };
+    assert!(
+        store
+            .append_agent_observation_set(&observation_set)
+            .await
+            .expect("observations")
+    );
+    assert!(
+        !store
+            .append_agent_observation_set(&observation_set)
+            .await
+            .expect("exact observation set replay")
+    );
+    assert!(matches!(
+        store
+            .append_agent_observation_set(&AgentObservationSetRecord {
+                coverage: serde_json::json!({"payload": "conflicting"}),
+                ..observation_set.clone()
+            })
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+
+    let second_observation_set = AgentObservationSetRecord {
+        observation_set_id: Uuid::new_v4(),
+        parser_version: "passive-observations-v1".to_string(),
+        source_watermark_at: task.input_watermark_at,
+        observations: vec![InferredObservation {
+            observation_id: Uuid::new_v4(),
+            kind: InferredObservationKind::FileReadSuspected,
+            source_request_id: "request-2".to_string(),
+            parser_version: "passive-observations-v1".to_string(),
+            evidence: EvidenceQuality::InferredHigh,
+            occurred_at: now + Duration::milliseconds(1),
+            facts: BoundedObservationFacts::default(),
+            limitations: vec![],
+        }],
+        ..observation_set.clone()
+    };
+    assert!(
+        store
+            .append_agent_observation_set(&second_observation_set)
+            .await
+            .expect("second observations")
+    );
+    let third_observation_set = AgentObservationSetRecord {
+        observation_set_id: Uuid::new_v4(),
+        parser_version: "passive-observations-v2".to_string(),
+        created_at: now + Duration::seconds(1),
+        observations: vec![InferredObservation {
+            observation_id: Uuid::new_v4(),
+            kind: InferredObservationKind::FileReadSuspected,
+            source_request_id: "request-1".to_string(),
+            parser_version: "passive-observations-v2".to_string(),
+            evidence: EvidenceQuality::InferredHigh,
+            occurred_at: now + Duration::milliseconds(2),
+            facts: BoundedObservationFacts::default(),
+            limitations: vec![],
+        }],
+        ..observation_set.clone()
+    };
+    assert!(
+        store
+            .append_agent_observation_set(&third_observation_set)
+            .await
+            .expect("third observations")
+    );
+
+    let report = agent_session_analysis::analyze_task(
+        &agent_session_analysis::TaskTrace {
+            requests: vec![],
+            activity_intervals: vec![],
+            observations: vec![],
+            lifecycle: task.lifecycle,
+            boundary_confidence: task.boundary_confidence,
+            evidence: agent_session_analysis::TraceEvidence::default(),
+        },
+        &agent_session_analysis::AnalysisPolicy::default(),
+        None,
+    )
+    .expect("analysis report");
+    let analysis = AgentTaskAnalysisRecord {
+        analysis_id: Uuid::new_v4(),
+        agent_task_id: task.agent_task_id,
+        boundary_policy_version: task.boundary_policy_version.clone(),
+        input_watermark_at: task.input_watermark_at,
+        observation_set_id: third_observation_set.observation_set_id,
+        observation_parser_version: third_observation_set.parser_version.clone(),
+        pricing_policy_version: "cache-aware-v1".to_string(),
+        cohort_version: "no-cohort-v1".to_string(),
+        cohort_fallback_level: 7,
+        cohort_sample_size: 0,
+        cohort_snapshot_digest: "sha256:no-cohort".to_string(),
+        analyzed_at: now,
+        report,
+        stale: false,
+        superseded_by_analysis_id: None,
+        expires_at: now + Duration::days(90),
+        ownership_scope_key: scope.clone(),
+        user_id: Some(user.user_id),
+        service_account_id: None,
+    };
+    assert!(
+        store
+            .append_agent_task_analysis(&analysis)
+            .await
+            .expect("analysis")
+    );
+    assert!(
+        !store
+            .append_agent_task_analysis(&AgentTaskAnalysisRecord {
+                analysis_id: Uuid::new_v4(),
+                ..analysis.clone()
+            })
+            .await
+            .expect("duplicate analysis")
+    );
+    assert!(matches!(
+        store
+            .append_agent_task_analysis(&AgentTaskAnalysisRecord {
+                analysis_id: Uuid::new_v4(),
+                analyzed_at: analysis.analyzed_at + Duration::seconds(1),
+                ..analysis.clone()
+            })
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+    let mut advanced_task = task.clone();
+    advanced_task.input_watermark_at += Duration::seconds(1);
+    advanced_task.updated_at += Duration::seconds(1);
+    store
+        .update_agent_task_window(&advanced_task)
+        .await
+        .expect("advance task watermark");
+    assert!(
+        !store
+            .append_agent_task_analysis(&AgentTaskAnalysisRecord {
+                analysis_id: Uuid::new_v4(),
+                cohort_version: "late-worker-v1".to_string(),
+                ..analysis.clone()
+            })
+            .await
+            .expect("stale worker analysis")
+    );
+    assert!(
+        store
+            .append_agent_task_analysis(&AgentTaskAnalysisRecord {
+                analysis_id: Uuid::new_v4(),
+                input_watermark_at: advanced_task.input_watermark_at,
+                analyzed_at: now + Duration::seconds(1),
+                ..analysis.clone()
+            })
+            .await
+            .expect("finalized watermark analysis")
+    );
+
+    let trace = store
+        .load_agent_task_trace(task.agent_task_id)
+        .await
+        .expect("trace")
+        .expect("task trace");
+    assert_eq!(trace.requests.len(), 1);
+    assert_eq!(trace.requests[0].terminal_success, Some(true));
+    let observations = trace
+        .latest_observation_set
+        .expect("observation set")
+        .observations;
+    assert_eq!(observations.len(), 3);
+    assert_eq!(
+        observations
+            .iter()
+            .filter(|observation| observation.parser_version == "passive-observations-v1")
+            .count(),
+        2
+    );
+    assert_eq!(
+        observations
+            .iter()
+            .filter(|observation| observation.parser_version == "passive-observations-v2")
+            .count(),
+        1
+    );
+    assert!(
+        observations
+            .iter()
+            .any(|observation| observation.source_request_id == "request-2")
+    );
+    let page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            ownership_scope_key: Some(scope),
+            ..Default::default()
+        })
+        .await
+        .expect("task page");
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].task.agent_task_id, task.agent_task_id);
+    let session_page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            agent_session_id: Some(session.agent_session_id),
+            ..Default::default()
+        })
+        .await
+        .expect("session page");
+    assert_eq!(session_page.total, 1);
+    let missing_session_page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            agent_session_id: Some(Uuid::new_v4()),
+            ..Default::default()
+        })
+        .await
+        .expect("missing session page");
+    assert_eq!(missing_session_page.total, 0);
+    let harness_page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            harness_key: Some("codex".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("harness page");
+    assert_eq!(harness_page.total, 1);
+    let empty_harness_page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            harness_key: Some("opencode".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("empty harness page");
+    assert_eq!(empty_harness_page.total, 0);
+    let confidence_page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            score_confidence: Some(Confidence::Low),
+            ..Default::default()
+        })
+        .await
+        .expect("confidence page");
+    assert_eq!(confidence_page.total, 1);
+    let empty_confidence_page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            score_confidence: Some(Confidence::High),
+            ..Default::default()
+        })
+        .await
+        .expect("empty confidence page");
+    assert_eq!(empty_confidence_page.total, 0);
+    let dimension_page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            requested_model_key: Some(task.requested_model_key.clone()),
+            operation: Some(task.operation.clone()),
+            caller_class: Some(task.caller_class.clone()),
+            gateway_outcome: Some(analysis.report.gateway_outcome),
+            score_maturity: Some(analysis.report.maturity),
+            minimum_coverage_percent: Some(analysis.report.coverage.overall_percent),
+            normalized_session_id: Some(session.normalized_session_id.clone()),
+            request_tag_key: Some("environment".to_string()),
+            request_tag_value: Some("test".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("task dimension filters");
+    assert_eq!(dimension_page.total, 1);
+    let missing_tag_page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            request_tag_key: Some("environment".to_string()),
+            request_tag_value: Some("production".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("missing request tag filter");
+    assert_eq!(missing_tag_page.total, 0);
+
+    let queue = AgentAnalysisQueueRecord {
+        queue_item_id: Uuid::new_v4(),
+        agent_task_id: task.agent_task_id,
+        reason: "new_input".to_string(),
+        desired_versions: AgentAnalysisDesiredVersions {
+            report_schema_version: agent_session_analysis::REPORT_SCHEMA_VERSION.to_string(),
+            boundary_policy_version: agent_session_analysis::TASK_BOUNDARY_POLICY_VERSION
+                .to_string(),
+            observation_parser_version: agent_session_analysis::OBSERVATION_PARSER_VERSION
+                .to_string(),
+            analyzer_version: agent_session_analysis::ANALYZER_VERSION.to_string(),
+            score_policy_version: "outcome-cost-time-v1".to_string(),
+            pricing_policy_version: "cache-aware-v1".to_string(),
+            cohort_version: "successful-boundary-group-v2".to_string(),
+            score_maturity: ScoreMaturity::Experimental,
+            calibration_approval_id: None,
+        },
+        status: AgentAnalysisQueueStatus::Pending,
+        lease_owner: None,
+        lease_expires_at: None,
+        attempts: 0,
+        max_attempts: 3,
+        last_error: None,
+        available_at: now,
+        created_at: now,
+        updated_at: now,
+        completed_at: None,
+    };
+    assert!(store.enqueue_agent_analysis(&queue).await.expect("enqueue"));
+    let claimed = store
+        .claim_agent_analysis("worker", now, now + Duration::minutes(1))
+        .await
+        .expect("claim")
+        .expect("queue item");
+    assert_eq!(claimed.status, AgentAnalysisQueueStatus::Leased);
+    assert_eq!(claimed.attempts, 1);
+    assert!(
+        store
+            .complete_agent_analysis(
+                queue.queue_item_id,
+                "stale-worker",
+                now + Duration::seconds(1),
+            )
+            .await
+            .is_err()
+    );
+    store
+        .complete_agent_analysis(queue.queue_item_id, "worker", now + Duration::seconds(2))
+        .await
+        .expect("complete");
+    let purged = store
+        .purge_agent_analysis_before(now + Duration::seconds(3))
+        .await
+        .expect("purge analysis facts");
+    assert!(purged >= 2);
+    let retained_trace = store
+        .load_agent_task_trace(task.agent_task_id)
+        .await
+        .expect("trace after fact retention")
+        .expect("retained task and report");
+    assert!(retained_trace.requests.is_empty());
+    assert!(retained_trace.latest_observation_set.is_none());
+    assert!(retained_trace.latest_analysis.is_some());
+    let mut retained_report_rows = store
+        .connection()
+        .query(
+            "SELECT COUNT(*) FROM agent_task_analyses WHERE analysis_id = ?1",
+            [analysis.analysis_id.to_string()],
+        )
+        .await
+        .expect("retained report query");
+    let retained_report = retained_report_rows
+        .next()
+        .await
+        .expect("retained report row")
+        .expect("retained report");
+    assert_eq!(retained_report.get::<i64>(0).expect("report count"), 1);
+
+    let expired = store
+        .purge_expired_agent_analysis(now + Duration::days(91), now + Duration::seconds(3))
+        .await
+        .expect("purge expired reports and queue");
+    assert!(expired >= 2);
+
+    store
+        .connection()
+        .execute(
+            "DELETE FROM users WHERE user_id = ?1",
+            [user.user_id.to_string()],
+        )
+        .await
+        .expect("delete user");
+    assert!(
+        store
+            .load_agent_task_trace(task.agent_task_id)
+            .await
+            .expect("trace after deletion")
+            .is_none()
+    );
+    let mut deleted_report_rows = store
+        .connection()
+        .query(
+            "SELECT COUNT(*) FROM agent_task_analyses WHERE analysis_id = ?1",
+            [analysis.analysis_id.to_string()],
+        )
+        .await
+        .expect("deleted report query");
+    let deleted_report = deleted_report_rows
+        .next()
+        .await
+        .expect("deleted report row")
+        .expect("deleted report");
+    assert_eq!(deleted_report.get::<i64>(0).expect("report count"), 0);
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_agent_task_dimensions_round_trip_and_filter() {
+    let Some(test_db) = create_postgres_test_database().await else {
+        eprintln!("skipping postgres agent analysis test because TEST_POSTGRES_URL is not set");
+        return;
+    };
+    let options = StoreConnectionOptions::Postgres {
+        url: test_db.database_url.clone(),
+        max_connections: 2,
+    };
+    run_migrations_with_options(&options)
+        .await
+        .expect("postgres migrations");
+    let store = PostgresStore::connect(&test_db.database_url, 2)
+        .await
+        .expect("postgres store");
+    let user = store
+        .create_identity_user(
+            "Postgres Analyst",
+            "postgres-analyst@example.com",
+            "postgres-analyst@example.com",
+            GlobalRole::User,
+            AuthMode::Password,
+            UserStatus::Active,
+        )
+        .await
+        .expect("user");
+    let api_key_id = Uuid::new_v4();
+    let now = OffsetDateTime::now_utc();
+    sqlx::query(
+        "INSERT INTO api_keys (id, public_id, secret_hash, name, status, owner_kind, owner_user_id, created_at) VALUES ($1, $2, 'hash', 'analysis', 'active', 'user', $3, $4)",
+    )
+    .bind(api_key_id.to_string())
+    .bind(format!("gw_test_{}", Uuid::new_v4()))
+    .bind(user.user_id.to_string())
+    .bind(now.unix_timestamp())
+    .execute(store.pool())
+    .await
+    .expect("api key");
+
+    let ownership_scope_key = format!("user:{}", user.user_id);
+    let session = AgentSessionRecord {
+        agent_session_id: Uuid::new_v4(),
+        ownership_scope_key: ownership_scope_key.clone(),
+        api_key_id,
+        user_id: Some(user.user_id),
+        team_id: None,
+        service_account_id: None,
+        actor_user_id: None,
+        normalized_session_id: "postgres-session".to_string(),
+        adapter_namespace: "codex".to_string(),
+        adapter_version: "v1".to_string(),
+        source_provenance: "session_id_header".to_string(),
+        harness_key: "codex".to_string(),
+        harness_label: "Codex".to_string(),
+        first_seen_at: now,
+        last_seen_at: now,
+        created_at: now,
+        updated_at: now,
+    };
+    store.upsert_agent_session(&session).await.expect("session");
+
+    let task = AgentTaskWindowRecord {
+        agent_task_id: Uuid::new_v4(),
+        agent_session_id: Some(session.agent_session_id),
+        ownership_scope_key,
+        api_key_id,
+        user_id: Some(user.user_id),
+        team_id: None,
+        service_account_id: None,
+        actor_user_id: None,
+        requested_model_key: "claude-opus-4-1".to_string(),
+        operation: "chat".to_string(),
+        caller_class: "user".to_string(),
+        request_tags: serde_json::json!({"environment": "postgres"}),
+        boundary_group_key: "sha256:postgres-boundary".to_string(),
+        harness_key: "codex".to_string(),
+        boundary_policy_version: agent_session_analysis::TASK_BOUNDARY_POLICY_VERSION.to_string(),
+        lifecycle: TaskLifecycleState::Finalized,
+        boundary_confidence: Confidence::High,
+        started_at: now,
+        ended_at: Some(now + Duration::seconds(1)),
+        input_watermark_at: now + Duration::seconds(1),
+        finalized_reason: Some("idle_gap".to_string()),
+        created_at: now,
+        updated_at: now,
+    };
+    assert!(
+        store
+            .insert_agent_task_if_absent(&task)
+            .await
+            .expect("insert task")
+    );
+    assert!(
+        !store
+            .insert_agent_task_if_absent(&task)
+            .await
+            .expect("idempotent replay")
+    );
+    assert!(matches!(
+        store
+            .insert_agent_task_if_absent(&AgentTaskWindowRecord {
+                operation: "responses".to_string(),
+                ..task.clone()
+            })
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+
+    let page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            requested_model_key: Some("claude-opus-4-1".to_string()),
+            operation: Some("chat".to_string()),
+            caller_class: Some("user".to_string()),
+            normalized_session_id: Some("postgres-session".to_string()),
+            request_tag_key: Some("environment".to_string()),
+            request_tag_value: Some("postgres".to_string()),
+            ..AgentTaskListQuery::default()
+        })
+        .await
+        .expect("list tasks");
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].task, task);
+
+    store.pool().close().await;
+    drop_postgres_test_database(&test_db).await;
+}

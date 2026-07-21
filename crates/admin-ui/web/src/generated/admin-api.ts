@@ -548,6 +548,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/observability/agent-sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_agent_session_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/observability/agent-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_agent_tasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/observability/agent-tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_agent_task_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/observability/harness-usage": {
         parameters: {
             query?: never;
@@ -1440,8 +1488,304 @@ export interface components {
             teams: components["schemas"]["AdminTeamManagementView"][];
             users: components["schemas"]["AdminTeamAssignableUserView"][];
         };
+        AgentContextDiagnosticsView: {
+            /** Format: int64 */
+            initial_prompt_tokens?: number | null;
+            /** Format: int64 */
+            maximum_prompt_tokens?: number | null;
+            /** Format: int64 */
+            median_prompt_tokens?: number | null;
+            /** Format: int64 */
+            p90_prompt_tokens?: number | null;
+            /** Format: int64 */
+            prompt_growth_per_active_minute?: number | null;
+            /** Format: int64 */
+            prompt_growth_per_turn?: number | null;
+            /** Format: int32 */
+            suspected_compactions: number;
+            /** Format: int32 */
+            suspected_context_resets: number;
+        };
+        AgentObservationCoverageView: {
+            request_metadata: boolean;
+            response_payload: boolean;
+            response_payload_truncated: boolean;
+        };
+        AgentObservationFactsView: {
+            attributes: unknown;
+            error_signature?: string | null;
+            file_kind?: string | null;
+            /** Format: int32 */
+            message_count?: number | null;
+            opaque_file_id?: string | null;
+            /** Format: int64 */
+            prompt_bytes?: number | null;
+            /** Format: int64 */
+            result_bytes?: number | null;
+            /** Format: int32 */
+            supplied_tool_count?: number | null;
+            tool_name?: string | null;
+            /** Format: int64 */
+            tool_schema_bytes?: number | null;
+            tool_schema_hash?: string | null;
+            /** Format: int64 */
+            tool_schema_token_estimate?: number | null;
+        };
+        AgentObservationView: {
+            evidence: string;
+            facts: components["schemas"]["AgentObservationFactsView"];
+            kind: string;
+            limitations: string[];
+            observation_id: string;
+            occurred_at: string;
+            parser_version: string;
+            source_request_id: string;
+        };
+        AgentSessionDetailView: {
+            session: components["schemas"]["AgentSessionView"];
+            tasks: components["schemas"]["AgentTaskPageView"];
+        };
+        AgentSessionView: {
+            adapter_namespace: string;
+            adapter_version: string;
+            external_session_id: string;
+            first_seen_at: string;
+            harness_key: string;
+            harness_label: string;
+            last_seen_at: string;
+            session_id: string;
+            source_provenance: string;
+        };
+        AgentTaskAnalysisIdentityView: {
+            analysis_id: string;
+            analyzed_at: string;
+            boundary_policy_version: string;
+            /** Format: int32 */
+            cohort_fallback_level: number;
+            /** Format: int64 */
+            cohort_sample_size: number;
+            cohort_snapshot_digest: string;
+            cohort_version: string;
+            expires_at: string;
+            input_watermark_at: string;
+            observation_parser_version: string;
+            observation_set_id: string;
+            pricing_policy_version: string;
+        };
+        AgentTaskDetailView: {
+            analysis?: null | components["schemas"]["AgentTaskAnalysisIdentityView"];
+            coverage?: null | components["schemas"]["AgentObservationCoverageView"];
+            observations: components["schemas"]["AgentObservationView"][];
+            report?: null | components["schemas"]["AgentTaskEfficiencyReportView"];
+            requests: components["schemas"]["AgentTaskRequestView"][];
+            session?: null | components["schemas"]["AgentSessionView"];
+            task: components["schemas"]["AgentTaskSummaryView"];
+        };
+        AgentTaskDiagnosticsView: {
+            context: components["schemas"]["AgentContextDiagnosticsView"];
+            semantic_verification_available: boolean;
+            token_and_cache: components["schemas"]["AgentTokenAndCacheDiagnosticsView"];
+            tools_and_changes: components["schemas"]["AgentToolAndChangeDiagnosticsView"];
+        };
+        AgentTaskEfficiencyComponentsView: {
+            /** Format: int32 */
+            active_time_efficiency_basis_points?: number | null;
+            /** Format: int64 */
+            active_time_ms: number;
+            /** Format: int64 */
+            actual_cost_10000?: number | null;
+            /** Format: int32 */
+            cohort_fallback_level?: number | null;
+            cohort_sample_size: number;
+            cohort_version?: string | null;
+            /** Format: int32 */
+            cost_efficiency_basis_points?: number | null;
+            /** Format: int64 */
+            excluded_gap_time_ms: number;
+            outcome: components["schemas"]["AgentTaskOutcomeView"];
+            /** Format: int64 */
+            overlap_savings_ms: number;
+            /** Format: int64 */
+            summed_work_time_ms: number;
+            /** Format: int64 */
+            unknown_wait_time_ms?: number | null;
+            /** Format: int64 */
+            wall_time_ms: number;
+        };
+        AgentTaskEfficiencyReportView: {
+            analyzer_version: string;
+            calibration_approval_id?: string | null;
+            components: components["schemas"]["AgentTaskEfficiencyComponentsView"];
+            confidence: string;
+            coverage: components["schemas"]["AgentTelemetryCoverageView"];
+            diagnostics: components["schemas"]["AgentTaskDiagnosticsView"];
+            gateway_outcome: string;
+            limitations: string[];
+            maturity: string;
+            observation_parser_version: string;
+            report_schema_version: string;
+            /** Format: int32 */
+            score?: number | null;
+            score_policy_version: string;
+        };
+        AgentTaskOutcomeView: {
+            /** Format: int32 */
+            determinate_requests: number;
+            /** Format: int32 */
+            factor_basis_points: number;
+            /** Format: int32 */
+            incomplete_requests: number;
+            state: string;
+            /** Format: int32 */
+            successful_requests: number;
+        };
+        AgentTaskPageView: {
+            items: components["schemas"]["AgentTaskSummaryView"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
+        AgentTaskRequestView: {
+            completed_at?: string | null;
+            correlation_confidence: string;
+            execution_id?: string | null;
+            limitation_codes: string[];
+            occurred_at: string;
+            /** Format: int64 */
+            ordinal: number;
+            parent_execution_id?: string | null;
+            request_id: string;
+            request_log_id?: string | null;
+            terminal_success?: boolean | null;
+            usage_event_id?: string | null;
+        };
+        AgentTaskSummaryView: {
+            /** Format: int64 */
+            active_time_ms?: number | null;
+            analyzer_version?: string | null;
+            boundary_confidence: string;
+            calibration_approval_id?: string | null;
+            caller_class: string;
+            /** Format: int32 */
+            cohort_fallback_level?: number | null;
+            cohort_sample_size?: number | null;
+            cohort_version?: string | null;
+            /** Format: int32 */
+            efficiency_score?: number | null;
+            ended_at?: string | null;
+            external_session_id?: string | null;
+            external_session_observed: boolean;
+            gateway_outcome?: string | null;
+            harness_key?: string | null;
+            harness_label?: string | null;
+            lifecycle: string;
+            limitations: string[];
+            /** Format: double */
+            normalized_cost_usd?: number | null;
+            operation: string;
+            ownership_scope_key: string;
+            pricing_policy_version?: string | null;
+            report_schema_version?: string | null;
+            /** Format: int64 */
+            request_count: number;
+            requested_model_key: string;
+            score_confidence?: string | null;
+            score_maturity?: string | null;
+            score_policy_version?: string | null;
+            service_account_id?: string | null;
+            session_id?: string | null;
+            started_at: string;
+            task_id: string;
+            team_id?: string | null;
+            /** Format: int32 */
+            telemetry_coverage_percent?: number | null;
+            user_id?: string | null;
+            /** Format: int64 */
+            wall_time_ms?: number | null;
+        };
+        AgentTelemetryCoverageView: {
+            /** Format: int32 */
+            cohort_percent: number;
+            /** Format: int32 */
+            cost_percent: number;
+            /** Format: int32 */
+            outcome_percent: number;
+            /** Format: int32 */
+            overall_percent: number;
+            /** Format: int32 */
+            payload_percent: number;
+            /** Format: int32 */
+            timing_percent: number;
+        };
+        AgentTokenAndCacheDiagnosticsView: {
+            /** Format: int64 */
+            cache_creation_tokens?: number | null;
+            /** Format: int64 */
+            cache_read_tokens?: number | null;
+            /** Format: int32 */
+            cache_read_write_ratio_basis_points?: number | null;
+            /** Format: int64 */
+            cache_savings_10000?: number | null;
+            /** Format: int32 */
+            cache_savings_basis_points?: number | null;
+            /** Format: int64 */
+            fresh_input_tokens?: number | null;
+            /** Format: int64 */
+            legacy_cost_10000?: number | null;
+            /** Format: int64 */
+            normalized_cost_10000?: number | null;
+            /** Format: int64 */
+            output_tokens?: number | null;
+            pricing_policy_versions: string[];
+            /** Format: int64 */
+            provider_total_tokens?: number | null;
+            /** Format: int64 */
+            reasoning_tokens?: number | null;
+            /** Format: int64 */
+            uncached_input_cost_10000?: number | null;
+        };
+        AgentToolAndChangeDiagnosticsView: {
+            /** Format: int32 */
+            classified_tool_calls: number;
+            /** Format: int64 */
+            direct_mcp_duration_ms?: number | null;
+            /** Format: int32 */
+            file_creates_suspected: number;
+            /** Format: int32 */
+            file_edits_suspected: number;
+            /** Format: int32 */
+            file_overwrites_suspected: number;
+            /** Format: int32 */
+            file_reads_suspected: number;
+            /** Format: int32 */
+            file_searches_suspected: number;
+            /** Format: int32 */
+            observed_tool_calls: number;
+            /** Format: int32 */
+            rework_spans_suspected: number;
+            /** Format: int64 */
+            supplied_tool_definitions?: number | null;
+            /** Format: int64 */
+            supplied_tool_schema_bytes?: number | null;
+            /** Format: int32 */
+            unique_opaque_files: number;
+            /** Format: int32 */
+            verification_results_classified: number;
+        };
         /** @enum {string} */
         ApiKeyModelGrantModeView: "all" | "explicit";
+        AuthSessionCapabilitiesView: {
+            agent_analysis: boolean;
+            aggregate_monitoring_enabled: boolean;
+            calibrated_score_visible: boolean;
+            passive_analysis_enabled: boolean;
+            platform_admin: boolean;
+            shadow_diagnostics_visible: boolean;
+            team_admin_analytics_enabled: boolean;
+        };
         AuthSessionUserView: {
             email: string;
             global_role: string;
@@ -1449,7 +1793,10 @@ export interface components {
             name: string;
         };
         AuthSessionView: {
+            capabilities: components["schemas"]["AuthSessionCapabilitiesView"];
             must_change_password: boolean;
+            team_id?: string | null;
+            team_role?: string | null;
             user: components["schemas"]["AuthSessionUserView"];
         };
         BudgetAlertHistoryItemView: {
@@ -1738,9 +2085,43 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_AgentSessionDetailView: {
+            data: {
+                session: components["schemas"]["AgentSessionView"];
+                tasks: components["schemas"]["AgentTaskPageView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_AgentTaskDetailView: {
+            data: {
+                analysis?: null | components["schemas"]["AgentTaskAnalysisIdentityView"];
+                coverage?: null | components["schemas"]["AgentObservationCoverageView"];
+                observations: components["schemas"]["AgentObservationView"][];
+                report?: null | components["schemas"]["AgentTaskEfficiencyReportView"];
+                requests: components["schemas"]["AgentTaskRequestView"][];
+                session?: null | components["schemas"]["AgentSessionView"];
+                task: components["schemas"]["AgentTaskSummaryView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_AgentTaskPageView: {
+            data: {
+                items: components["schemas"]["AgentTaskSummaryView"][];
+                /** Format: int32 */
+                page: number;
+                /** Format: int32 */
+                page_size: number;
+                /** Format: int64 */
+                total: number;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_AuthSessionView: {
             data: {
+                capabilities: components["schemas"]["AuthSessionCapabilitiesView"];
                 must_change_password: boolean;
+                team_id?: string | null;
+                team_role?: string | null;
                 user: components["schemas"]["AuthSessionUserView"];
             };
             meta: components["schemas"]["ResponseMeta"];
@@ -1949,7 +2330,10 @@ export interface components {
         };
         Envelope_Option_AuthSessionView: {
             data: null | {
+                capabilities: components["schemas"]["AuthSessionCapabilitiesView"];
                 must_change_password: boolean;
+                team_id?: string | null;
+                team_role?: string | null;
                 user: components["schemas"]["AuthSessionUserView"];
             };
             meta: components["schemas"]["ResponseMeta"];
@@ -3951,6 +4335,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_RefreshModelPricingCatalogResponse"];
+                };
+            };
+        };
+    };
+    get_agent_session_detail: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Observed agent session identifier */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AgentSessionDetailView"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_agent_tasks: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                user_id?: string;
+                team_id?: string;
+                service_account_id?: string;
+                harness_key?: string;
+                requested_model_key?: string;
+                operation?: string;
+                caller_class?: string;
+                gateway_outcome?: string;
+                score_maturity?: string;
+                minimum_coverage_percent?: number;
+                session_id?: string;
+                external_session_id?: string;
+                request_tag_key?: string;
+                request_tag_value?: string;
+                lifecycle?: string;
+                started_after?: string;
+                started_before?: string;
+                score_confidence?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AgentTaskPageView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    get_agent_task_detail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent task identifier */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AgentTaskDetailView"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
         };

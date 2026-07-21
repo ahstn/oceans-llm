@@ -16,6 +16,16 @@ vi.mock('@/server/admin-data.functions', () => ({
   logoutAdminSession: () => logoutAdminSession(),
 }))
 
+const platformAdminCapabilities = {
+  platform_admin: true,
+  agent_analysis: false,
+  passive_analysis_enabled: true,
+  shadow_diagnostics_visible: false,
+  calibrated_score_visible: false,
+  team_admin_analytics_enabled: false,
+  aggregate_monitoring_enabled: false,
+}
+
 describe('AppShell', () => {
   const originalLocation = window.location
 
@@ -38,6 +48,9 @@ describe('AppShell', () => {
         <AppShell
           oceansVersion="0.17.0"
           session={{
+            capabilities: platformAdminCapabilities,
+            team_id: null,
+            team_role: null,
             must_change_password: false,
             user: {
               id: 'user_1',
@@ -77,6 +90,9 @@ describe('AppShell', () => {
         <AppShell
           oceansVersion={null}
           session={{
+            capabilities: platformAdminCapabilities,
+            team_id: null,
+            team_role: null,
             must_change_password: false,
             user: {
               id: 'user_1',
@@ -101,6 +117,9 @@ describe('AppShell', () => {
         <AppShell
           oceansVersion="0.17.0"
           session={{
+            capabilities: platformAdminCapabilities,
+            team_id: null,
+            team_role: null,
             must_change_password: false,
             user: {
               id: 'user_1',

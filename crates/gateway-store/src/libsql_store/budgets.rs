@@ -329,7 +329,8 @@ impl BudgetRepository for LibsqlStore {
                     input_cost_per_million_tokens_10000,
                     output_cost_per_million_tokens_10000,
                     cache_read_cost_per_million_tokens_10000,
-                    cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at
+                    cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
+                    normalized_usage_json
                 FROM usage_cost_events
                 WHERE request_id = ?1
                   AND ownership_scope_key = ?2
@@ -1062,6 +1063,11 @@ impl BudgetRepository for LibsqlStore {
         event: &UsageLedgerRecord,
     ) -> Result<bool, StoreError> {
         let provider_usage_json = crate::shared::serialize_json(&event.provider_usage)?;
+        let normalized_usage_json = event
+            .normalized_usage
+            .as_ref()
+            .map(crate::shared::serialize_json)
+            .transpose()?;
 
         let written = self
             .connection
@@ -1077,11 +1083,12 @@ impl BudgetRepository for LibsqlStore {
                     input_cost_per_million_tokens_10000,
                     output_cost_per_million_tokens_10000,
                     cache_read_cost_per_million_tokens_10000,
-                    cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at
+                    cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
+                    normalized_usage_json
                 ) VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
                     ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28,
-                    ?29, ?30, ?31
+                    ?29, ?30, ?31, ?32
                 )
                 ON CONFLICT(request_id, ownership_scope_key) DO NOTHING
                 "#,
@@ -1126,7 +1133,8 @@ impl BudgetRepository for LibsqlStore {
                         .cache_write_cost_per_million_tokens
                         .map(Money4::as_scaled_i64),
                     event.computed_cost_usd.as_scaled_i64(),
-                    event.occurred_at.unix_timestamp()
+                    event.occurred_at.unix_timestamp(),
+                    normalized_usage_json
                 ],
             )
             .await

@@ -430,6 +430,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             } else {
                 json!({"status_code": fixture.status_code, "error_code": fixture.error_code})
             },
+            normalized_usage: None,
             pricing_status: if priced {
                 UsagePricingStatus::Priced
             } else {

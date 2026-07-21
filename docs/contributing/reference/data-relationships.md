@@ -46,6 +46,12 @@ This document is schema-oriented. It describes the persistent relationships that
 19. `external_mcp_tools` stores discovered MCP tools, stable tool ids, schema hashes, schema versions, and active/inactive state
 20. `external_mcp_discovery_runs` stores immutable discovery attempt diagnostics
 21. `mcp_upstream_credential_bindings` stores redacted, principal-scoped upstream credentials for MCP execution
+22. `agent_sessions` stores owner-scoped, bounded normalized external session correlation evidence
+23. `agent_task_windows` stores open/finalized operational task boundaries
+24. `agent_task_window_requests` links ordered request facts to tasks
+25. `agent_inferred_observation_sets` and `agent_inferred_observations` store parser-versioned bounded classifications
+26. `agent_task_analyses` stores immutable versioned reports
+27. `agent_analysis_recompute_queue` stores leased recomputation work
 
 ## Table Catalog
 
@@ -130,8 +136,8 @@ Model-centric overlays:
   - Constraint: one active budget per canonical `scope_key`
   - Notes: supported scope kinds are `user`, `service_account`, and `user_model`; teams are not budget principals
 - `usage_cost_events`
-  - Key columns: `usage_event_id`, `request_id`, `ownership_scope_key`, `api_key_id`, `user_id`, `team_id`, `actor_user_id`, `model_id`, `provider_key`, `upstream_model`, `pricing_status`, `unpriced_reason`, `pricing_row_id`, `pricing_provider_id`, `computed_cost_10000`, `provider_usage`, `occurred_at`
-  - Notes: this is the canonical spend ledger used for enforcement and reporting
+  - Key columns: `usage_event_id`, `request_id`, `ownership_scope_key`, `api_key_id`, `user_id`, `team_id`, `actor_user_id`, `model_id`, `provider_key`, `upstream_model`, `pricing_status`, `unpriced_reason`, `pricing_row_id`, `pricing_provider_id`, `computed_cost_10000`, `normalized_usage_json`, `provider_usage`, `occurred_at`
+  - Notes: this is the canonical spend ledger used for enforcement and reporting. `computed_cost_10000` remains the legacy authoritative charge during the cache-aware shadow period; `normalized_usage_json` stores versioned bucket costs, discrepancy, coverage, and authority.
 - `request_logs`
   - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `resolved_model_key`, `provider_key`, `caller_service`, `caller_component`, `caller_env`, `status_code`, `referenced_mcp_server_count`, `exposed_tool_count`, `invoked_tool_count`, `filtered_tool_count`, `user_agent_raw`, `agent_harness_key`, `agent_harness_label`, `metadata_json`, `occurred_at`
   - Notes: one summary row per final request outcome; `metadata_json.payload_policy` records the capture mode and limits used for the row when request logging is enabled; tool-cardinality columns are nullable typed facts, with historical or not-yet-observable dimensions left `null`; agent harness usage groups by `agent_harness_key` while preserving bounded raw `User-Agent` detail evidence
@@ -156,6 +162,27 @@ Model-centric overlays:
 - `mcp_upstream_credential_bindings`
   - Key columns: `credential_binding_id`, `mcp_server_id`, `owner_scope_kind`, `owner_scope_key`, `owner_user_id`, `owner_team_id`, `owner_service_account_id`, `material_kind`, `header_name`, `storage_kind`, `secret_ciphertext`, `secret_nonce`, `secret_key_id`, `secret_ref`, `expires_at`, `last_used_at`, `revoked_at`
   - Notes: bindings are separate from server registry rows and grants. Active uniqueness is `(mcp_server_id, owner_scope_key)`. Encrypted blobs store ciphertext and nonce only; `secret_ref` rows reference `env/OCEANS_MCP_CREDENTIAL_*`. Admin responses must not expose raw secret material.
+
+### Agent Analysis Tables
+
+- `agent_sessions`
+  - Key columns: `agent_session_id`, `ownership_scope_key`, `api_key_id`, `user_id`, `team_id`, `service_account_id`, `adapter_namespace`, `adapter_version`, `normalized_session_id`, `source_provenance`, `harness_key`, `harness_label`, `first_seen_at`, `last_seen_at`
+  - Notes: the bounded external identifier supports exact owner-scoped admin filtering and is operational correlation, never authenticated identity
+- `agent_task_windows`
+  - Key columns: `agent_task_id`, `agent_session_id`, ownership columns, `harness_key`, `boundary_policy_version`, `lifecycle`, `boundary_confidence`, `started_at`, `ended_at`, `input_watermark_at`, `finalized_reason`
+  - Notes: partial unique indexes enforce one compatible open task per observed session or per sessionless ownership-and-harness scope
+- `agent_task_window_requests`
+  - Key columns: `agent_task_id`, `request_id`, `request_log_id`, `usage_event_id`, `ordinal`, `execution_id`, `parent_execution_id`, `normalized_session_id`, `correlation_confidence`, `limitation_codes_json`, `occurred_at`, `completed_at`, `terminal_success`
+  - Notes: request insertion and ordinal assignment are atomic and idempotent; terminal outcome remains available after request-log purge
+- `agent_inferred_observation_sets`, `agent_inferred_observations`
+  - Key columns: task/request IDs, parser version, source watermark, coverage, evidence quality, bounded fact JSON, and limitation codes
+  - Notes: observations are append-only classifications and exclude raw prompts, payloads, file paths/content, and tool arguments/outputs
+- `agent_task_analyses`
+  - Key columns: `analysis_id`, `agent_task_id`, report/analyzer/score/pricing/cohort versions, `report_json`, `analyzed_at`, `stale`, `superseded_by_analysis_id`, `expires_at`, `ownership_scope_key`, `user_id`, `service_account_id`
+  - Notes: reports are immutable and publish only when their input watermark still matches the task. Their retained owner linkage permits independent report retention and owner-deletion cascades after task facts expire.
+- `agent_analysis_recompute_queue`
+  - Key columns: `queue_item_id`, `agent_task_id`, reason, desired versions, status, lease, attempts, availability, error, and timestamps
+  - Notes: leased work is retried independently of model delivery and authoritative billing
 
 ### External MCP Registry Tables
 

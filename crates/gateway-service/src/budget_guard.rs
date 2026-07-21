@@ -352,6 +352,7 @@ mod tests {
             completion_tokens: Some(50),
             total_tokens: Some(150),
             provider_usage: json!({"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}),
+            normalized_usage: None,
             pricing_status,
             unpriced_reason: None,
             pricing_row_id: None,

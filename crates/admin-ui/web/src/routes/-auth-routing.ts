@@ -1,6 +1,7 @@
 import type { AuthSessionView } from '@/types/api'
 
 export const DEFAULT_SIGNED_IN_PATH = '/api-keys'
+export const DEFAULT_TEAM_ADMIN_PATH = '/observability/agent-tasks'
 
 export function normalizeAdminPath(pathname: string) {
   return pathname.replace(/^\/admin(?=\/|$)/, '') || '/'
@@ -33,6 +34,26 @@ export function isPlatformAdminSession(session: AuthSessionView | null | undefin
   return session?.user.global_role === 'platform_admin'
 }
 
+export function isAdminSession(session: AuthSessionView | null | undefined) {
+  return (
+    session?.capabilities.platform_admin === true || session?.capabilities.agent_analysis === true
+  )
+}
+
+export function canAccessAdminPath(session: AuthSessionView, currentPath: string) {
+  if (
+    currentPath === DEFAULT_TEAM_ADMIN_PATH ||
+    currentPath.startsWith(`${DEFAULT_TEAM_ADMIN_PATH}/`)
+  ) {
+    return session.capabilities.agent_analysis
+  }
+  return session.capabilities.platform_admin
+}
+
+export function defaultSignedInPath(session: AuthSessionView) {
+  return session.capabilities.platform_admin ? DEFAULT_SIGNED_IN_PATH : DEFAULT_TEAM_ADMIN_PATH
+}
+
 export function signedInAdminHref(redirect?: string) {
   return `/admin${redirect ?? DEFAULT_SIGNED_IN_PATH}`
 }
@@ -44,5 +65,5 @@ export function postLoginAdminHref(session: AuthSessionView, redirect?: string) 
       : '/admin/change-password'
   }
 
-  return signedInAdminHref(redirect)
+  return signedInAdminHref(redirect ?? defaultSignedInPath(session))
 }

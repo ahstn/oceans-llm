@@ -8,6 +8,15 @@ use crate::observability::GatewayMetrics;
 
 pub type AppGatewayService = GatewayService<AnyStore, WeightedRoutePlanner>;
 
+#[derive(Debug, Clone, Copy)]
+pub struct AgentAnalysisRuntimeCapabilities {
+    pub passive_analysis_enabled: bool,
+    pub shadow_diagnostics_visible: bool,
+    pub calibrated_score_visible: bool,
+    pub team_admin_analytics_enabled: bool,
+    pub aggregate_monitoring_enabled: bool,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub service: Arc<AppGatewayService>,
@@ -20,4 +29,5 @@ pub struct AppState {
     pub oauth_public_base_url: Arc<Option<String>>,
     pub client_config_gateway_base_url: Arc<Option<String>>,
     pub budget_defaults: Arc<SeedHumanBudgetDefaults>,
+    pub agent_analysis: AgentAnalysisRuntimeCapabilities,
 }

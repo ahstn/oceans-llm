@@ -21,9 +21,10 @@ import { getAuthSession, getOceansVersion } from '@/server/admin-data.functions'
 import globalsCss from '@/styles/globals.css?url'
 import faviconUrl from '@/assets/oceans-logo-rounded-square.png?url'
 import {
-  DEFAULT_SIGNED_IN_PATH,
   buildRedirectTarget,
-  isPlatformAdminSession,
+  canAccessAdminPath,
+  defaultSignedInPath,
+  isAdminSession,
   isPublicAdminRoute,
   normalizeAdminPath,
 } from '@/routes/-auth-routing'
@@ -47,12 +48,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     const currentPath = normalizeAdminPath(location.pathname)
     const isPublicRoute = isPublicAdminRoute(currentPath)
     const { data: session } = await loadAuthSession()
-    const adminSession = isPlatformAdminSession(session) ? session : null
+    const adminSession = isAdminSession(session) ? session : null
 
     if (isPublicRoute) {
       if (currentPath === '/login' && adminSession) {
         throw redirect({
-          to: adminSession.must_change_password ? '/change-password' : DEFAULT_SIGNED_IN_PATH,
+          to: adminSession.must_change_password
+            ? '/change-password'
+            : defaultSignedInPath(adminSession),
         })
       }
 
@@ -77,6 +80,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
     if (adminSession.must_change_password && currentPath !== '/change-password') {
       throw redirect({ to: '/change-password' })
+    }
+
+    if (!canAccessAdminPath(adminSession, currentPath)) {
+      throw redirect({ to: defaultSignedInPath(adminSession) })
     }
 
     const oceansVersion = await loadOceansVersion().catch(() => null)

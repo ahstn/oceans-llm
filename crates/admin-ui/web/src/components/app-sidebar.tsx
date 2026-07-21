@@ -42,6 +42,17 @@ export function AppSidebar({
   signOutPending,
   onSignOut,
 }: AppSidebarProps) {
+  const visibleSections = adminNavSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) =>
+        item.to === '/observability/agent-tasks'
+          ? session.capabilities.agent_analysis
+          : session.capabilities.platform_admin,
+      ),
+    }))
+    .filter((section) => section.items.length > 0)
+
   return (
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="gap-3 p-3 pb-2">
@@ -71,7 +82,7 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent className="px-2 py-3">
-        {adminNavSections.map((section) => (
+        {visibleSections.map((section) => (
           <SidebarGroup key={section.label} className="px-0 py-1">
             <SidebarGroupLabel className="px-2 text-xs font-medium">
               {section.label}

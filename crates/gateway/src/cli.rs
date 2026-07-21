@@ -24,6 +24,7 @@ pub enum Command {
     Serve(ServeArgs),
     Migrate(MigrateArgs),
     PurgeRequestLogs(PurgeRequestLogsArgs),
+    RecomputeAgentAnalysis(RecomputeAgentAnalysisArgs),
     BootstrapAdmin,
     SeedConfig,
     SeedLocalDemo,
@@ -85,6 +86,19 @@ pub struct PurgeRequestLogsArgs {
 
     #[arg(long, action = ArgAction::SetTrue)]
     pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct RecomputeAgentAnalysisArgs {
+    #[arg(long, conflicts_with = "limit")]
+    pub task_id: Option<String>,
+
+    #[arg(
+        long,
+        default_value_t = 100,
+        value_parser = clap::value_parser!(u32).range(1..=1_000)
+    )]
+    pub limit: u32,
 }
 
 fn parse_request_log_retention_window(value: &str) -> Result<RequestLogRetentionWindow, String> {
@@ -187,5 +201,27 @@ mod tests {
             .expect_err("retention should be rejected");
 
         assert!(error.to_string().contains("invalid value '14d'"));
+    }
+
+    #[test]
+    fn parses_bounded_agent_analysis_recompute() {
+        let cli = Cli::parse_from([
+            "gateway",
+            "recompute-agent-analysis",
+            "--task-id",
+            "00000000-0000-0000-0000-000000000001",
+        ]);
+        let Command::RecomputeAgentAnalysis(args) = cli.command.expect("command") else {
+            panic!("expected recompute-agent-analysis command");
+        };
+        assert_eq!(
+            args.task_id.as_deref(),
+            Some("00000000-0000-0000-0000-000000000001")
+        );
+        assert_eq!(args.limit, 100);
+
+        let error = Cli::try_parse_from(["gateway", "recompute-agent-analysis", "--limit", "1001"])
+            .expect_err("limit should be bounded");
+        assert!(error.to_string().contains("1001"));
     }
 }

@@ -1827,6 +1827,383 @@
         ]
       }
     },
+    "/api/v1/admin/observability/agent-sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "crate::http::observability"
+        ],
+        "operationId": "get_agent_session_detail",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "Observed agent session identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AgentSessionDetailView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/observability/agent-tasks": {
+      "get": {
+        "tags": [
+          "crate::http::observability"
+        ],
+        "operationId": "list_agent_tasks",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "team_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service_account_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "harness_key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requested_model_key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "caller_class",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "gateway_outcome",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "score_maturity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "minimum_coverage_percent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "external_session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request_tag_key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request_tag_value",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lifecycle",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "started_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "started_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "score_confidence",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AgentTaskPageView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/observability/agent-tasks/{task_id}": {
+      "get": {
+        "tags": [
+          "crate::http::observability"
+        ],
+        "operationId": "get_agent_task_detail",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "description": "Agent task identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AgentTaskDetailView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/observability/harness-usage": {
       "get": {
         "tags": [
@@ -5217,12 +5594,1191 @@
           }
         }
       },
+      "AgentContextDiagnosticsView": {
+        "type": "object",
+        "required": [
+          "suspected_compactions",
+          "suspected_context_resets"
+        ],
+        "properties": {
+          "initial_prompt_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "maximum_prompt_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "median_prompt_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "p90_prompt_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "prompt_growth_per_active_minute": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "prompt_growth_per_turn": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "suspected_compactions": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "suspected_context_resets": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentObservationCoverageView": {
+        "type": "object",
+        "required": [
+          "request_metadata",
+          "response_payload",
+          "response_payload_truncated"
+        ],
+        "properties": {
+          "request_metadata": {
+            "type": "boolean"
+          },
+          "response_payload": {
+            "type": "boolean"
+          },
+          "response_payload_truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AgentObservationFactsView": {
+        "type": "object",
+        "required": [
+          "attributes"
+        ],
+        "properties": {
+          "attributes": {},
+          "error_signature": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "opaque_file_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "result_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "supplied_tool_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "tool_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tool_schema_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "tool_schema_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tool_schema_token_estimate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentObservationView": {
+        "type": "object",
+        "required": [
+          "observation_id",
+          "kind",
+          "source_request_id",
+          "parser_version",
+          "evidence",
+          "occurred_at",
+          "facts",
+          "limitations"
+        ],
+        "properties": {
+          "evidence": {
+            "type": "string"
+          },
+          "facts": {
+            "$ref": "#/components/schemas/AgentObservationFactsView"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "observation_id": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "parser_version": {
+            "type": "string"
+          },
+          "source_request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentSessionDetailView": {
+        "type": "object",
+        "required": [
+          "session",
+          "tasks"
+        ],
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/AgentSessionView"
+          },
+          "tasks": {
+            "$ref": "#/components/schemas/AgentTaskPageView"
+          }
+        }
+      },
+      "AgentSessionView": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "external_session_id",
+          "adapter_namespace",
+          "adapter_version",
+          "source_provenance",
+          "harness_key",
+          "harness_label",
+          "first_seen_at",
+          "last_seen_at"
+        ],
+        "properties": {
+          "adapter_namespace": {
+            "type": "string"
+          },
+          "adapter_version": {
+            "type": "string"
+          },
+          "external_session_id": {
+            "type": "string"
+          },
+          "first_seen_at": {
+            "type": "string"
+          },
+          "harness_key": {
+            "type": "string"
+          },
+          "harness_label": {
+            "type": "string"
+          },
+          "last_seen_at": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "source_provenance": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentTaskAnalysisIdentityView": {
+        "type": "object",
+        "required": [
+          "analysis_id",
+          "input_watermark_at",
+          "observation_set_id",
+          "boundary_policy_version",
+          "observation_parser_version",
+          "pricing_policy_version",
+          "cohort_version",
+          "cohort_fallback_level",
+          "cohort_sample_size",
+          "cohort_snapshot_digest",
+          "analyzed_at",
+          "expires_at"
+        ],
+        "properties": {
+          "analysis_id": {
+            "type": "string"
+          },
+          "analyzed_at": {
+            "type": "string"
+          },
+          "boundary_policy_version": {
+            "type": "string"
+          },
+          "cohort_fallback_level": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "cohort_sample_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "cohort_snapshot_digest": {
+            "type": "string"
+          },
+          "cohort_version": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "input_watermark_at": {
+            "type": "string"
+          },
+          "observation_parser_version": {
+            "type": "string"
+          },
+          "observation_set_id": {
+            "type": "string"
+          },
+          "pricing_policy_version": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentTaskDetailView": {
+        "type": "object",
+        "required": [
+          "task",
+          "requests",
+          "observations"
+        ],
+        "properties": {
+          "analysis": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentTaskAnalysisIdentityView"
+              }
+            ]
+          },
+          "coverage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentObservationCoverageView"
+              }
+            ]
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentObservationView"
+            }
+          },
+          "report": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentTaskEfficiencyReportView"
+              }
+            ]
+          },
+          "requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentTaskRequestView"
+            }
+          },
+          "session": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentSessionView"
+              }
+            ]
+          },
+          "task": {
+            "$ref": "#/components/schemas/AgentTaskSummaryView"
+          }
+        }
+      },
+      "AgentTaskDiagnosticsView": {
+        "type": "object",
+        "required": [
+          "token_and_cache",
+          "context",
+          "tools_and_changes",
+          "semantic_verification_available"
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/AgentContextDiagnosticsView"
+          },
+          "semantic_verification_available": {
+            "type": "boolean"
+          },
+          "token_and_cache": {
+            "$ref": "#/components/schemas/AgentTokenAndCacheDiagnosticsView"
+          },
+          "tools_and_changes": {
+            "$ref": "#/components/schemas/AgentToolAndChangeDiagnosticsView"
+          }
+        }
+      },
+      "AgentTaskEfficiencyComponentsView": {
+        "type": "object",
+        "required": [
+          "outcome",
+          "active_time_ms",
+          "wall_time_ms",
+          "summed_work_time_ms",
+          "excluded_gap_time_ms",
+          "overlap_savings_ms",
+          "cohort_sample_size"
+        ],
+        "properties": {
+          "active_time_efficiency_basis_points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "active_time_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "actual_cost_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cohort_fallback_level": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "cohort_sample_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cohort_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cost_efficiency_basis_points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "excluded_gap_time_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/AgentTaskOutcomeView"
+          },
+          "overlap_savings_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "summed_work_time_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unknown_wait_time_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "wall_time_ms": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "AgentTaskEfficiencyReportView": {
+        "type": "object",
+        "required": [
+          "report_schema_version",
+          "analyzer_version",
+          "score_policy_version",
+          "observation_parser_version",
+          "maturity",
+          "confidence",
+          "gateway_outcome",
+          "coverage",
+          "components",
+          "diagnostics",
+          "limitations"
+        ],
+        "properties": {
+          "analyzer_version": {
+            "type": "string"
+          },
+          "calibration_approval_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "components": {
+            "$ref": "#/components/schemas/AgentTaskEfficiencyComponentsView"
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/AgentTelemetryCoverageView"
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/AgentTaskDiagnosticsView"
+          },
+          "gateway_outcome": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "maturity": {
+            "type": "string"
+          },
+          "observation_parser_version": {
+            "type": "string"
+          },
+          "report_schema_version": {
+            "type": "string"
+          },
+          "score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "score_policy_version": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentTaskOutcomeView": {
+        "type": "object",
+        "required": [
+          "state",
+          "factor_basis_points",
+          "successful_requests",
+          "determinate_requests",
+          "incomplete_requests"
+        ],
+        "properties": {
+          "determinate_requests": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "factor_basis_points": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "incomplete_requests": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string"
+          },
+          "successful_requests": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentTaskPageView": {
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentTaskSummaryView"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentTaskRequestView": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "ordinal",
+          "correlation_confidence",
+          "limitation_codes",
+          "occurred_at"
+        ],
+        "properties": {
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "correlation_confidence": {
+            "type": "string"
+          },
+          "execution_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limitation_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "parent_execution_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "request_log_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "terminal_success": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "usage_event_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AgentTaskSummaryView": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "ownership_scope_key",
+          "requested_model_key",
+          "operation",
+          "caller_class",
+          "external_session_observed",
+          "lifecycle",
+          "boundary_confidence",
+          "started_at",
+          "request_count",
+          "limitations"
+        ],
+        "properties": {
+          "active_time_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "analyzer_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "boundary_confidence": {
+            "type": "string"
+          },
+          "calibration_approval_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "caller_class": {
+            "type": "string"
+          },
+          "cohort_fallback_level": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "cohort_sample_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "cohort_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "efficiency_score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "external_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "external_session_observed": {
+            "type": "boolean"
+          },
+          "gateway_outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "harness_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "harness_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lifecycle": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "normalized_cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "ownership_scope_key": {
+            "type": "string"
+          },
+          "pricing_policy_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "report_schema_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "requested_model_key": {
+            "type": "string"
+          },
+          "score_confidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "score_maturity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "score_policy_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "team_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "telemetry_coverage_percent": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wall_time_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentTelemetryCoverageView": {
+        "type": "object",
+        "required": [
+          "outcome_percent",
+          "cost_percent",
+          "timing_percent",
+          "payload_percent",
+          "cohort_percent",
+          "overall_percent"
+        ],
+        "properties": {
+          "cohort_percent": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "cost_percent": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "outcome_percent": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "overall_percent": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "payload_percent": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "timing_percent": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentTokenAndCacheDiagnosticsView": {
+        "type": "object",
+        "required": [
+          "pricing_policy_versions"
+        ],
+        "properties": {
+          "cache_creation_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cache_read_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cache_read_write_ratio_basis_points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "cache_savings_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cache_savings_basis_points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "fresh_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "legacy_cost_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "normalized_cost_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "pricing_policy_versions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "provider_total_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "reasoning_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "uncached_input_cost_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "AgentToolAndChangeDiagnosticsView": {
+        "type": "object",
+        "required": [
+          "observed_tool_calls",
+          "classified_tool_calls",
+          "file_reads_suspected",
+          "file_searches_suspected",
+          "file_creates_suspected",
+          "file_edits_suspected",
+          "file_overwrites_suspected",
+          "unique_opaque_files",
+          "verification_results_classified",
+          "rework_spans_suspected"
+        ],
+        "properties": {
+          "classified_tool_calls": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "direct_mcp_duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "file_creates_suspected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "file_edits_suspected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "file_overwrites_suspected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "file_reads_suspected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "file_searches_suspected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "observed_tool_calls": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "rework_spans_suspected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "supplied_tool_definitions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "supplied_tool_schema_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "unique_opaque_files": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "verification_results_classified": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "ApiKeyModelGrantModeView": {
         "type": "string",
         "enum": [
           "all",
           "explicit"
         ]
+      },
+      "AuthSessionCapabilitiesView": {
+        "type": "object",
+        "required": [
+          "platform_admin",
+          "agent_analysis",
+          "passive_analysis_enabled",
+          "shadow_diagnostics_visible",
+          "calibrated_score_visible",
+          "team_admin_analytics_enabled",
+          "aggregate_monitoring_enabled"
+        ],
+        "properties": {
+          "agent_analysis": {
+            "type": "boolean"
+          },
+          "aggregate_monitoring_enabled": {
+            "type": "boolean"
+          },
+          "calibrated_score_visible": {
+            "type": "boolean"
+          },
+          "passive_analysis_enabled": {
+            "type": "boolean"
+          },
+          "platform_admin": {
+            "type": "boolean"
+          },
+          "shadow_diagnostics_visible": {
+            "type": "boolean"
+          },
+          "team_admin_analytics_enabled": {
+            "type": "boolean"
+          }
+        }
       },
       "AuthSessionUserView": {
         "type": "object",
@@ -5251,11 +6807,27 @@
         "type": "object",
         "required": [
           "user",
+          "capabilities",
           "must_change_password"
         ],
         "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/AuthSessionCapabilitiesView"
+          },
           "must_change_password": {
             "type": "boolean"
+          },
+          "team_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "team_role": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "user": {
             "$ref": "#/components/schemas/AuthSessionUserView"
@@ -6475,6 +8047,154 @@
           }
         }
       },
+      "Envelope_AgentSessionDetailView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "session",
+              "tasks"
+            ],
+            "properties": {
+              "session": {
+                "$ref": "#/components/schemas/AgentSessionView"
+              },
+              "tasks": {
+                "$ref": "#/components/schemas/AgentTaskPageView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_AgentTaskDetailView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "task",
+              "requests",
+              "observations"
+            ],
+            "properties": {
+              "analysis": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AgentTaskAnalysisIdentityView"
+                  }
+                ]
+              },
+              "coverage": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AgentObservationCoverageView"
+                  }
+                ]
+              },
+              "observations": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AgentObservationView"
+                }
+              },
+              "report": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AgentTaskEfficiencyReportView"
+                  }
+                ]
+              },
+              "requests": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AgentTaskRequestView"
+                }
+              },
+              "session": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AgentSessionView"
+                  }
+                ]
+              },
+              "task": {
+                "$ref": "#/components/schemas/AgentTaskSummaryView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_AgentTaskPageView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items",
+              "page",
+              "page_size",
+              "total"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AgentTaskSummaryView"
+                }
+              },
+              "page": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "page_size": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "total": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_AuthSessionView": {
         "type": "object",
         "required": [
@@ -6486,11 +8206,27 @@
             "type": "object",
             "required": [
               "user",
+              "capabilities",
               "must_change_password"
             ],
             "properties": {
+              "capabilities": {
+                "$ref": "#/components/schemas/AuthSessionCapabilitiesView"
+              },
               "must_change_password": {
                 "type": "boolean"
+              },
+              "team_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "team_role": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "user": {
                 "$ref": "#/components/schemas/AuthSessionUserView"
@@ -7349,11 +9085,27 @@
                 "type": "object",
                 "required": [
                   "user",
+                  "capabilities",
                   "must_change_password"
                 ],
                 "properties": {
+                  "capabilities": {
+                    "$ref": "#/components/schemas/AuthSessionCapabilitiesView"
+                  },
                   "must_change_password": {
                     "type": "boolean"
+                  },
+                  "team_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "team_role": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   },
                   "user": {
                     "$ref": "#/components/schemas/AuthSessionUserView"

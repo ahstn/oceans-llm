@@ -1838,7 +1838,7 @@ fn record_provider_execution_span_fields(span: &Span, provider_key: &str) {
 fn record_usage_metrics_from_ref(
     metrics: &crate::observability::GatewayMetrics,
     labels: &ChatMetricLabels<'_>,
-    usage: &gateway_service::RecordedChatUsage,
+    usage: &gateway_service::RecordedUsage,
 ) {
     metrics.record_usage(
         labels,
@@ -1871,7 +1871,7 @@ async fn finalize_successful_usage_accounting_from_parts(
     provider_usage: Option<Value>,
 ) {
     match service
-        .record_chat_usage(
+        .record_usage(
             context.auth,
             context.model,
             context.route,

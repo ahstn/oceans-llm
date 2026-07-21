@@ -610,6 +610,7 @@ pub(super) fn decode_usage_ledger_record(row: &PgRow) -> Result<UsageLedgerRecor
         row.try_get(28).map_err(to_query_error)?;
     let computed_cost_10000: i64 = row.try_get(29).map_err(to_query_error)?;
     let occurred_at: i64 = row.try_get(30).map_err(to_query_error)?;
+    let normalized_usage_json: Option<String> = row.try_get(31).map_err(to_query_error)?;
 
     Ok(UsageLedgerRecord {
         usage_event_id: parse_uuid(&usage_event_id)?,
@@ -628,6 +629,11 @@ pub(super) fn decode_usage_ledger_record(row: &PgRow) -> Result<UsageLedgerRecor
         completion_tokens: row.try_get(13).map_err(to_query_error)?,
         total_tokens: row.try_get(14).map_err(to_query_error)?,
         provider_usage: serde_json::from_str(&provider_usage_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        normalized_usage: normalized_usage_json
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         pricing_status: UsagePricingStatus::from_db(&pricing_status).ok_or_else(|| {
             StoreError::Serialization(format!("unknown usage pricing status `{pricing_status}`"))

@@ -19,6 +19,11 @@
     "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
+    "@base-ui/react": "^1.6.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/modifiers": "^9.0.0",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@fontsource-variable/geist": "5.2.9",
     "@hugeicons/core-free-icons": "4.2.2",
     "@hugeicons/react": "1.1.9",
@@ -32,6 +37,7 @@
     "@tanstack/react-router": "1.170.16",
     "@tanstack/react-router-ssr-query": "1.167.1",
     "@tanstack/react-start": "1.168.26",
+    "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "3.14.4",
     "boring-avatars": "^2.0.4",
     "class-variance-authority": "^0.7.1",

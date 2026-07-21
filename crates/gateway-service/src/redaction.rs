@@ -134,7 +134,7 @@ const DEFAULT_RESPONSE_MAX_BYTES: usize = 64 * 1024;
 const DEFAULT_STREAM_MAX_EVENTS: usize = 128;
 const PAYLOAD_POLICY_VERSION: &str = "builtin:v1";
 const SECRET_MASK: &str = "********";
-const REDACTED_VALUE: &str = "[REDACTED]";
+pub(crate) const REDACTED_VALUE: &str = "[REDACTED]";
 const LARGE_FIELD_PREVIEW_BYTES: usize = 96;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

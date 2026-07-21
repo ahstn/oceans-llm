@@ -6,32 +6,43 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    AdminApiKeyRepository, BudgetRepository, GatewayError, IdentityRepository,
-    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpTokenOverheadRepository, McpToolInvocationDetail,
+    AdminApiKeyRepository, AgentSessionAnalysisRepository, AgentSessionRecord, AgentTaskListQuery,
+    AgentTaskTraceRecord, AuthError, BudgetRepository, Confidence, GatewayError,
+    GatewayOutcomeState, IdentityRepository, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE,
+    MAX_REQUEST_LOG_PAGE_SIZE, McpTokenOverheadRepository, McpToolInvocationDetail,
     McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
     McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection, ProviderRepository,
     RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery,
     RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord, RequestTag, RequestTags,
+    ScoreMaturity, TaskLifecycleState,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
     resolve_provider_display,
 };
 use gateway_store::GatewayStore;
+use serde::Serialize;
 use serde_json::{Map, Value};
 use time::{Duration, OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
 use crate::http::{
-    admin_auth::require_platform_admin,
+    admin_auth::{AdminDataScope, require_agent_analysis_scope, require_platform_admin},
     admin_contract::{
-        Envelope, HarnessUsageChartHarnessView, HarnessUsageLeaderView, HarnessUsageQuery,
-        HarnessUsageSeriesPointView, HarnessUsageSeriesValueView, HarnessUsageView,
-        LeaderboardChartUserView, LeaderboardLeaderView, LeaderboardQuery,
-        LeaderboardSeriesPointView, LeaderboardSeriesValueView, LeaderboardView,
-        McpToolInvocationDetailView, McpToolInvocationListQuery, McpToolInvocationPageView,
-        McpToolInvocationPayloadView, McpToolInvocationSummaryView, OpenAiErrorEnvelopeView,
-        RequestAttemptView, RequestLogDetailView, RequestLogListQuery, RequestLogPageView,
+        AgentContextDiagnosticsView, AgentObservationCoverageView, AgentObservationFactsView,
+        AgentObservationView, AgentSessionDetailRequestQuery, AgentSessionDetailView,
+        AgentSessionView, AgentTaskAnalysisIdentityView, AgentTaskDetailView,
+        AgentTaskDiagnosticsView, AgentTaskEfficiencyComponentsView, AgentTaskEfficiencyReportView,
+        AgentTaskListRequestQuery, AgentTaskOutcomeView, AgentTaskPageView, AgentTaskRequestView,
+        AgentTaskSummaryView, AgentTelemetryCoverageView, AgentTokenAndCacheDiagnosticsView,
+        AgentToolAndChangeDiagnosticsView, Envelope, HarnessUsageChartHarnessView,
+        HarnessUsageLeaderView, HarnessUsageQuery, HarnessUsageSeriesPointView,
+        HarnessUsageSeriesValueView, HarnessUsageView, LeaderboardChartUserView,
+        LeaderboardLeaderView, LeaderboardQuery, LeaderboardSeriesPointView,
+        LeaderboardSeriesValueView, LeaderboardView, McpToolInvocationDetailView,
+        McpToolInvocationListQuery, McpToolInvocationPageView, McpToolInvocationPayloadView,
+        McpToolInvocationSummaryView, OpenAiErrorEnvelopeView, RequestAttemptView,
+        RequestLogDetailView, RequestLogListQuery, RequestLogPageView,
         RequestLogPayloadCaptureModeView, RequestLogPayloadPolicyView, RequestLogPayloadView,
         RequestLogSummaryView, RequestMcpTokenOverheadView, RequestTagView, RequestTagsView,
         RequestToolCardinalityAveragesView, RequestToolCardinalityView, envelope, format_timestamp,
@@ -43,7 +54,6 @@ use crate::http::{
 
 const DEFAULT_PAGE: u32 = 1;
 const DEFAULT_PAGE_SIZE: u32 = 100;
-const MAX_PAGE_SIZE: u32 = 500;
 const LEADERBOARD_BUCKET_HOURS: u8 = 12;
 const LEADERBOARD_CHART_USERS: usize = 5;
 const LEADERBOARD_LIMIT: u32 = 30;
@@ -264,6 +274,591 @@ pub async fn get_harness_usage(
 
 #[utoipa::path(
     get,
+    path = "/api/v1/admin/observability/agent-tasks",
+    params(AgentTaskListRequestQuery),
+    responses(
+        (status = 200, body = Envelope<AgentTaskPageView>),
+        (status = 400, body = OpenAiErrorEnvelopeView),
+        (status = 401, body = OpenAiErrorEnvelopeView),
+        (status = 403, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
+pub async fn list_agent_tasks(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<AgentTaskListRequestQuery>,
+) -> Result<Json<Envelope<AgentTaskPageView>>, AppError> {
+    let scope = require_agent_analysis_scope(&state, &headers).await?;
+    let requested_team_id = parse_optional_uuid(query.team_id.as_deref(), "team_id")?;
+    let team_id = match scope {
+        AdminDataScope::Platform => requested_team_id,
+        AdminDataScope::Team(team_id) => {
+            if requested_team_id.is_some_and(|requested| requested != team_id) {
+                return Err(AppError(GatewayError::Auth(
+                    AuthError::InsufficientPrivileges,
+                )));
+            }
+            Some(team_id)
+        }
+    };
+    let lifecycle = match query.lifecycle.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some("open") => Some(TaskLifecycleState::Open),
+        Some("finalized") => Some(TaskLifecycleState::Finalized),
+        Some(value) => {
+            return Err(AppError(GatewayError::InvalidRequest(format!(
+                "unsupported lifecycle `{value}`"
+            ))));
+        }
+    };
+    let page_number = query.page.unwrap_or(DEFAULT_PAGE);
+    let page_size = query.page_size.unwrap_or(DEFAULT_PAGE_SIZE);
+    if page_number == 0 || !(1..=gateway_core::MAX_AGENT_TASK_PAGE_SIZE).contains(&page_size) {
+        return Err(AppError(GatewayError::InvalidRequest(format!(
+            "page must be at least 1 and page_size must be between 1 and {}",
+            gateway_core::MAX_AGENT_TASK_PAGE_SIZE
+        ))));
+    }
+    let started_after = parse_optional_timestamp(query.started_after.as_deref(), "started_after")?;
+    let started_before =
+        parse_optional_timestamp(query.started_before.as_deref(), "started_before")?;
+    if started_after
+        .zip(started_before)
+        .is_some_and(|(after, before)| after >= before)
+    {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "started_after must be earlier than started_before".to_string(),
+        )));
+    }
+    if query
+        .minimum_coverage_percent
+        .is_some_and(|value| value > 100)
+    {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "minimum_coverage_percent must be between 0 and 100".to_string(),
+        )));
+    }
+    let request_tag_key = normalized_filter(query.request_tag_key);
+    let request_tag_value = normalized_filter(query.request_tag_value);
+    if request_tag_key.is_some() != request_tag_value.is_some() {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "request_tag_key and request_tag_value must be provided together".to_string(),
+        )));
+    }
+    let gateway_outcome = match query.gateway_outcome.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some("succeeded") => Some(GatewayOutcomeState::Succeeded),
+        Some("partial") => Some(GatewayOutcomeState::Partial),
+        Some("failed") => Some(GatewayOutcomeState::Failed),
+        Some("unknown") => Some(GatewayOutcomeState::Unknown),
+        Some(value) => {
+            return Err(AppError(GatewayError::InvalidRequest(format!(
+                "unsupported gateway outcome `{value}`"
+            ))));
+        }
+    };
+    let score_maturity = match query.score_maturity.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some("experimental") => Some(ScoreMaturity::Experimental),
+        Some("calibrated") => Some(ScoreMaturity::Calibrated),
+        Some(value) => {
+            return Err(AppError(GatewayError::InvalidRequest(format!(
+                "unsupported score maturity `{value}`"
+            ))));
+        }
+    };
+    let page = state
+        .store
+        .list_agent_tasks(&AgentTaskListQuery {
+            page: page_number,
+            page_size,
+            ownership_scope_key: None,
+            agent_session_id: parse_optional_uuid(query.session_id.as_deref(), "session_id")?,
+            user_id: parse_optional_uuid(query.user_id.as_deref(), "user_id")?,
+            team_id,
+            service_account_id: parse_optional_uuid(
+                query.service_account_id.as_deref(),
+                "service_account_id",
+            )?,
+            harness_key: normalized_filter(query.harness_key),
+            requested_model_key: normalized_filter(query.requested_model_key),
+            operation: normalized_filter(query.operation),
+            caller_class: normalized_filter(query.caller_class),
+            gateway_outcome,
+            score_maturity,
+            minimum_coverage_percent: query.minimum_coverage_percent,
+            normalized_session_id: normalized_filter(query.external_session_id),
+            request_tag_key,
+            request_tag_value,
+            lifecycle,
+            started_after,
+            started_before,
+            score_confidence: match query.score_confidence.as_deref().map(str::trim) {
+                None | Some("") => None,
+                Some("low") => Some(Confidence::Low),
+                Some("medium") => Some(Confidence::Medium),
+                Some("high") => Some(Confidence::High),
+                Some(value) => {
+                    return Err(AppError(GatewayError::InvalidRequest(format!(
+                        "unsupported score confidence `{value}`"
+                    ))));
+                }
+            },
+        })
+        .await?;
+    Ok(Json(envelope(AgentTaskPageView {
+        items: page
+            .items
+            .iter()
+            .map(|trace| agent_task_summary(trace, state.agent_analysis.calibrated_score_visible))
+            .collect(),
+        page: page.page,
+        page_size: page.page_size,
+        total: page.total,
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/observability/agent-tasks/{task_id}",
+    params(("task_id" = Uuid, Path, description = "Agent task identifier")),
+    responses(
+        (status = 200, body = Envelope<AgentTaskDetailView>),
+        (status = 401, body = OpenAiErrorEnvelopeView),
+        (status = 403, body = OpenAiErrorEnvelopeView),
+        (status = 404, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
+pub async fn get_agent_task_detail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<Envelope<AgentTaskDetailView>>, AppError> {
+    let scope = require_agent_analysis_scope(&state, &headers).await?;
+    let trace = state
+        .store
+        .load_agent_task_trace(task_id)
+        .await?
+        .ok_or_else(|| {
+            AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
+                "agent task not found".to_string(),
+            )))
+        })?;
+    authorize_agent_analysis_owner(
+        &state,
+        scope,
+        trace.task.user_id,
+        trace.task.service_account_id,
+    )
+    .await?;
+    let observations = trace
+        .latest_observation_set
+        .as_ref()
+        .map(|set| {
+            set.observations
+                .iter()
+                .map(|observation| AgentObservationView {
+                    observation_id: observation.observation_id.to_string(),
+                    kind: enum_name(observation.kind),
+                    source_request_id: observation.source_request_id.clone(),
+                    parser_version: observation.parser_version.clone(),
+                    evidence: enum_name(observation.evidence),
+                    occurred_at: format_timestamp(observation.occurred_at),
+                    facts: AgentObservationFactsView {
+                        message_count: observation.facts.message_count,
+                        prompt_bytes: observation.facts.prompt_bytes,
+                        supplied_tool_count: observation.facts.supplied_tool_count,
+                        tool_schema_bytes: observation.facts.tool_schema_bytes,
+                        tool_schema_token_estimate: observation.facts.tool_schema_token_estimate,
+                        tool_name: observation.facts.tool_name.clone(),
+                        tool_schema_hash: observation.facts.tool_schema_hash.clone(),
+                        opaque_file_id: observation.facts.opaque_file_id.clone(),
+                        file_kind: observation.facts.file_kind.clone(),
+                        result_bytes: observation.facts.result_bytes,
+                        error_signature: observation.facts.error_signature.clone(),
+                        attributes: Value::Object(observation.facts.attributes.clone()),
+                    },
+                    limitations: observation
+                        .limitations
+                        .iter()
+                        .copied()
+                        .map(enum_name)
+                        .collect(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let requests = trace
+        .requests
+        .iter()
+        .map(|request| AgentTaskRequestView {
+            request_id: request.request_id.clone(),
+            request_log_id: request.request_log_id.map(|value| value.to_string()),
+            usage_event_id: request.usage_event_id.map(|value| value.to_string()),
+            ordinal: request.ordinal,
+            execution_id: request.execution_id.clone(),
+            parent_execution_id: request.parent_execution_id.clone(),
+            correlation_confidence: enum_name(request.correlation_confidence),
+            limitation_codes: request
+                .limitation_codes
+                .iter()
+                .copied()
+                .map(enum_name)
+                .collect(),
+            occurred_at: format_timestamp(request.occurred_at),
+            completed_at: request.completed_at.map(format_timestamp),
+            terminal_success: request.terminal_success,
+        })
+        .collect();
+    let analysis = trace
+        .latest_analysis
+        .as_ref()
+        .map(agent_task_analysis_identity);
+    let report = trace.latest_analysis.as_ref().map(|analysis| {
+        agent_task_efficiency_report(
+            &analysis.report,
+            state.agent_analysis.calibrated_score_visible,
+        )
+    });
+    let coverage = trace
+        .latest_observation_set
+        .as_ref()
+        .map(|set| AgentObservationCoverageView {
+            request_metadata: coverage_flag(&set.coverage, "request_metadata"),
+            response_payload: coverage_flag(&set.coverage, "response_payload"),
+            response_payload_truncated: coverage_flag(&set.coverage, "response_payload_truncated"),
+        });
+    let session = trace.session.as_ref().map(agent_session_view);
+    Ok(Json(envelope(AgentTaskDetailView {
+        task: agent_task_summary(&trace, state.agent_analysis.calibrated_score_visible),
+        session,
+        requests,
+        observations,
+        analysis,
+        report,
+        coverage,
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/observability/agent-sessions/{session_id}",
+    params(
+        ("session_id" = Uuid, Path, description = "Observed agent session identifier"),
+        AgentSessionDetailRequestQuery
+    ),
+    responses(
+        (status = 200, body = Envelope<AgentSessionDetailView>),
+        (status = 401, body = OpenAiErrorEnvelopeView),
+        (status = 403, body = OpenAiErrorEnvelopeView),
+        (status = 404, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
+pub async fn get_agent_session_detail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(session_id): Path<Uuid>,
+    Query(query): Query<AgentSessionDetailRequestQuery>,
+) -> Result<Json<Envelope<AgentSessionDetailView>>, AppError> {
+    let scope = require_agent_analysis_scope(&state, &headers).await?;
+    let session = state
+        .store
+        .load_agent_session(session_id)
+        .await?
+        .ok_or_else(|| {
+            AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
+                "agent session not found".to_string(),
+            )))
+        })?;
+    authorize_agent_analysis_owner(&state, scope, session.user_id, session.service_account_id)
+        .await?;
+    let tasks = state
+        .store
+        .list_agent_tasks(&AgentTaskListQuery {
+            page: query.page.unwrap_or(DEFAULT_PAGE).max(1),
+            page_size: query
+                .page_size
+                .unwrap_or(DEFAULT_PAGE_SIZE)
+                .clamp(1, gateway_core::MAX_AGENT_TASK_PAGE_SIZE),
+            agent_session_id: Some(session_id),
+            ..Default::default()
+        })
+        .await?;
+    Ok(Json(envelope(AgentSessionDetailView {
+        session: agent_session_view(&session),
+        tasks: AgentTaskPageView {
+            items: tasks
+                .items
+                .iter()
+                .map(|trace| {
+                    agent_task_summary(trace, state.agent_analysis.calibrated_score_visible)
+                })
+                .collect(),
+            page: tasks.page,
+            page_size: tasks.page_size,
+            total: tasks.total,
+        },
+    })))
+}
+
+async fn authorize_agent_analysis_owner(
+    state: &AppState,
+    scope: AdminDataScope,
+    user_id: Option<Uuid>,
+    service_account_id: Option<Uuid>,
+) -> Result<(), AppError> {
+    let AdminDataScope::Team(team_id) = scope else {
+        return Ok(());
+    };
+    let authorized = if let Some(user_id) = user_id {
+        state
+            .store
+            .get_team_membership_for_user(user_id)
+            .await?
+            .is_some_and(|membership| membership.team_id == team_id)
+    } else if let Some(service_account_id) = service_account_id {
+        state
+            .store
+            .get_service_account_by_id(service_account_id)
+            .await?
+            .is_some_and(|service_account| service_account.team_id == team_id)
+    } else {
+        false
+    };
+    if !authorized {
+        return Err(AppError(GatewayError::Auth(
+            AuthError::InsufficientPrivileges,
+        )));
+    }
+    Ok(())
+}
+
+fn agent_task_analysis_identity(
+    analysis: &gateway_core::AgentTaskAnalysisRecord,
+) -> AgentTaskAnalysisIdentityView {
+    AgentTaskAnalysisIdentityView {
+        analysis_id: analysis.analysis_id.to_string(),
+        input_watermark_at: format_timestamp(analysis.input_watermark_at),
+        observation_set_id: analysis.observation_set_id.to_string(),
+        boundary_policy_version: analysis.boundary_policy_version.clone(),
+        observation_parser_version: analysis.observation_parser_version.clone(),
+        pricing_policy_version: analysis.pricing_policy_version.clone(),
+        cohort_version: analysis.cohort_version.clone(),
+        cohort_fallback_level: analysis.cohort_fallback_level,
+        cohort_sample_size: analysis.cohort_sample_size,
+        cohort_snapshot_digest: analysis.cohort_snapshot_digest.clone(),
+        analyzed_at: format_timestamp(analysis.analyzed_at),
+        expires_at: format_timestamp(analysis.expires_at),
+    }
+}
+
+fn agent_task_efficiency_report(
+    report: &gateway_core::TaskEfficiencyReport,
+    calibrated_score_visible: bool,
+) -> AgentTaskEfficiencyReportView {
+    let components = &report.components;
+    let diagnostics = &report.diagnostics;
+    let score_visible = calibrated_score_visible
+        && report.maturity == ScoreMaturity::Calibrated
+        && report
+            .calibration_approval_id
+            .as_deref()
+            .is_some_and(|value| !value.is_empty());
+    AgentTaskEfficiencyReportView {
+        report_schema_version: report.report_schema_version.clone(),
+        analyzer_version: report.analyzer_version.clone(),
+        score_policy_version: report.score_policy_version.clone(),
+        observation_parser_version: report.observation_parser_version.clone(),
+        calibration_approval_id: report.calibration_approval_id.clone(),
+        maturity: enum_name(report.maturity),
+        confidence: enum_name(report.confidence),
+        gateway_outcome: enum_name(report.gateway_outcome),
+        score: score_visible.then_some(report.score).flatten(),
+        coverage: AgentTelemetryCoverageView {
+            outcome_percent: report.coverage.outcome_percent,
+            cost_percent: report.coverage.cost_percent,
+            timing_percent: report.coverage.timing_percent,
+            payload_percent: report.coverage.payload_percent,
+            cohort_percent: report.coverage.cohort_percent,
+            overall_percent: report.coverage.overall_percent,
+        },
+        components: AgentTaskEfficiencyComponentsView {
+            outcome: AgentTaskOutcomeView {
+                state: enum_name(components.outcome.state),
+                factor_basis_points: components.outcome.factor_basis_points,
+                successful_requests: components.outcome.successful_requests,
+                determinate_requests: components.outcome.determinate_requests,
+                incomplete_requests: components.outcome.incomplete_requests,
+            },
+            cost_efficiency_basis_points: components.cost_efficiency_basis_points,
+            active_time_efficiency_basis_points: components.active_time_efficiency_basis_points,
+            actual_cost_10000: components.actual_cost_10000,
+            active_time_ms: components.active_time_ms,
+            wall_time_ms: components.wall_time_ms,
+            summed_work_time_ms: components.summed_work_time_ms,
+            excluded_gap_time_ms: components.excluded_gap_time_ms,
+            overlap_savings_ms: components.overlap_savings_ms,
+            unknown_wait_time_ms: components.unknown_wait_time_ms,
+            cohort_version: components.cohort_version.clone(),
+            cohort_fallback_level: components.cohort_fallback_level,
+            cohort_sample_size: components.cohort_sample_size,
+        },
+        diagnostics: AgentTaskDiagnosticsView {
+            token_and_cache: AgentTokenAndCacheDiagnosticsView {
+                fresh_input_tokens: diagnostics.token_and_cache.fresh_input_tokens,
+                cache_read_tokens: diagnostics.token_and_cache.cache_read_tokens,
+                cache_creation_tokens: diagnostics.token_and_cache.cache_creation_tokens,
+                output_tokens: diagnostics.token_and_cache.output_tokens,
+                reasoning_tokens: diagnostics.token_and_cache.reasoning_tokens,
+                provider_total_tokens: diagnostics.token_and_cache.provider_total_tokens,
+                legacy_cost_10000: diagnostics.token_and_cache.legacy_cost_10000,
+                normalized_cost_10000: diagnostics.token_and_cache.normalized_cost_10000,
+                uncached_input_cost_10000: diagnostics.token_and_cache.uncached_input_cost_10000,
+                cache_savings_10000: diagnostics.token_and_cache.cache_savings_10000,
+                cache_savings_basis_points: diagnostics.token_and_cache.cache_savings_basis_points,
+                cache_read_write_ratio_basis_points: diagnostics
+                    .token_and_cache
+                    .cache_read_write_ratio_basis_points,
+                pricing_policy_versions: diagnostics
+                    .token_and_cache
+                    .pricing_policy_versions
+                    .clone(),
+            },
+            context: AgentContextDiagnosticsView {
+                initial_prompt_tokens: diagnostics.context.initial_prompt_tokens,
+                median_prompt_tokens: diagnostics.context.median_prompt_tokens,
+                p90_prompt_tokens: diagnostics.context.p90_prompt_tokens,
+                maximum_prompt_tokens: diagnostics.context.maximum_prompt_tokens,
+                prompt_growth_per_turn: diagnostics.context.prompt_growth_per_turn,
+                prompt_growth_per_active_minute: diagnostics
+                    .context
+                    .prompt_growth_per_active_minute,
+                suspected_compactions: diagnostics.context.suspected_compactions,
+                suspected_context_resets: diagnostics.context.suspected_context_resets,
+            },
+            tools_and_changes: AgentToolAndChangeDiagnosticsView {
+                supplied_tool_definitions: diagnostics.tools_and_changes.supplied_tool_definitions,
+                supplied_tool_schema_bytes: diagnostics
+                    .tools_and_changes
+                    .supplied_tool_schema_bytes,
+                observed_tool_calls: diagnostics.tools_and_changes.observed_tool_calls,
+                classified_tool_calls: diagnostics.tools_and_changes.classified_tool_calls,
+                file_reads_suspected: diagnostics.tools_and_changes.file_reads_suspected,
+                file_searches_suspected: diagnostics.tools_and_changes.file_searches_suspected,
+                file_creates_suspected: diagnostics.tools_and_changes.file_creates_suspected,
+                file_edits_suspected: diagnostics.tools_and_changes.file_edits_suspected,
+                file_overwrites_suspected: diagnostics.tools_and_changes.file_overwrites_suspected,
+                unique_opaque_files: diagnostics.tools_and_changes.unique_opaque_files,
+                verification_results_classified: diagnostics
+                    .tools_and_changes
+                    .verification_results_classified,
+                rework_spans_suspected: diagnostics.tools_and_changes.rework_spans_suspected,
+                direct_mcp_duration_ms: diagnostics.tools_and_changes.direct_mcp_duration_ms,
+            },
+            semantic_verification_available: diagnostics.semantic_verification_available,
+        },
+        limitations: report.limitations.iter().copied().map(enum_name).collect(),
+    }
+}
+
+fn coverage_flag(coverage: &Value, field: &str) -> bool {
+    coverage
+        .get(field)
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+fn agent_session_view(session: &AgentSessionRecord) -> AgentSessionView {
+    AgentSessionView {
+        session_id: session.agent_session_id.to_string(),
+        external_session_id: session.normalized_session_id.clone(),
+        adapter_namespace: session.adapter_namespace.clone(),
+        adapter_version: session.adapter_version.clone(),
+        source_provenance: session.source_provenance.clone(),
+        harness_key: session.harness_key.clone(),
+        harness_label: session.harness_label.clone(),
+        first_seen_at: format_timestamp(session.first_seen_at),
+        last_seen_at: format_timestamp(session.last_seen_at),
+    }
+}
+
+fn agent_task_summary(
+    trace: &AgentTaskTraceRecord,
+    calibrated_score_visible: bool,
+) -> AgentTaskSummaryView {
+    let analysis = trace.latest_analysis.as_ref();
+    let report = analysis.map(|analysis| &analysis.report);
+    let score_visible = report.is_some_and(|report| {
+        calibrated_score_visible
+            && report.maturity == ScoreMaturity::Calibrated
+            && report
+                .calibration_approval_id
+                .as_deref()
+                .is_some_and(|value| !value.is_empty())
+    });
+    AgentTaskSummaryView {
+        task_id: trace.task.agent_task_id.to_string(),
+        session_id: trace.task.agent_session_id.map(|value| value.to_string()),
+        external_session_id: trace
+            .session
+            .as_ref()
+            .map(|session| session.normalized_session_id.clone()),
+        ownership_scope_key: trace.task.ownership_scope_key.clone(),
+        user_id: trace.task.user_id.map(|value| value.to_string()),
+        team_id: trace.task.team_id.map(|value| value.to_string()),
+        service_account_id: trace.task.service_account_id.map(|value| value.to_string()),
+        harness_key: Some(trace.task.harness_key.clone()),
+        harness_label: trace.session.as_ref().map_or_else(
+            || Some(trace.task.harness_key.clone()),
+            |value| Some(value.harness_label.clone()),
+        ),
+        requested_model_key: trace.task.requested_model_key.clone(),
+        operation: trace.task.operation.clone(),
+        caller_class: trace.task.caller_class.clone(),
+        external_session_observed: trace.task.agent_session_id.is_some(),
+        lifecycle: enum_name(trace.task.lifecycle),
+        boundary_confidence: enum_name(trace.task.boundary_confidence),
+        started_at: format_timestamp(trace.task.started_at),
+        ended_at: trace.task.ended_at.map(format_timestamp),
+        request_count: u64::try_from(trace.requests.len()).unwrap_or(u64::MAX),
+        efficiency_score: score_visible
+            .then(|| report.and_then(|report| report.score))
+            .flatten(),
+        score_confidence: report.map(|report| enum_name(report.confidence)),
+        score_maturity: report.map(|report| enum_name(report.maturity)),
+        gateway_outcome: report.map(|report| enum_name(report.gateway_outcome)),
+        telemetry_coverage_percent: report.map(|report| report.coverage.overall_percent),
+        cohort_version: report.and_then(|report| report.components.cohort_version.clone()),
+        cohort_fallback_level: report.and_then(|report| report.components.cohort_fallback_level),
+        cohort_sample_size: report.map(|report| report.components.cohort_sample_size),
+        calibration_approval_id: report.and_then(|report| report.calibration_approval_id.clone()),
+        normalized_cost_usd: report
+            .and_then(|report| report.components.actual_cost_10000)
+            .map(|value| value as f64 / 10_000.0),
+        active_time_ms: report
+            .and_then(|report| u64::try_from(report.components.active_time_ms).ok()),
+        wall_time_ms: report.and_then(|report| u64::try_from(report.components.wall_time_ms).ok()),
+        report_schema_version: report.map(|report| report.report_schema_version.clone()),
+        analyzer_version: report.map(|report| report.analyzer_version.clone()),
+        score_policy_version: report.map(|report| report.score_policy_version.clone()),
+        pricing_policy_version: analysis.map(|analysis| analysis.pricing_policy_version.clone()),
+        limitations: report
+            .map(|report| report.limitations.iter().copied().map(enum_name).collect())
+            .unwrap_or_default(),
+    }
+}
+
+fn enum_name<T: Serialize>(value: T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+#[utoipa::path(
+    get,
     path = "/api/v1/admin/observability/request-logs",
     params(RequestLogListQuery),
     responses((status = 200, body = Envelope<RequestLogPageView>)),
@@ -281,7 +876,7 @@ pub async fn list_request_logs(
         page_size: query
             .page_size
             .unwrap_or(DEFAULT_PAGE_SIZE)
-            .clamp(1, MAX_PAGE_SIZE),
+            .clamp(1, MAX_REQUEST_LOG_PAGE_SIZE),
         request_id: empty_to_none(query.request_id),
         model_key: empty_to_none(query.model_key),
         provider_key: empty_to_none(query.provider_key),
@@ -780,6 +1375,12 @@ fn request_tag_view(tag: &RequestTag) -> RequestTagView {
         key: tag.key.clone(),
         value: tag.value.clone(),
     }
+}
+
+fn normalized_filter(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn parse_optional_uuid(value: Option<&str>, field_name: &str) -> Result<Option<Uuid>, AppError> {

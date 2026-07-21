@@ -85,6 +85,10 @@ const primarySidebar = [
         ],
       },
       {
+        text: "Agent Session Analysis",
+        link: "/operations/agent-session-analysis",
+      },
+      {
         text: "Agent Harness Usage",
         link: "/operations/agent-harness-usage",
       },
@@ -156,6 +160,10 @@ const contributingSidebar = [
   {
     text: "Contracts and Tests",
     items: [
+      {
+        text: "Agent Session Analysis Architecture",
+        link: "/contributing/reference/agent-session-analysis",
+      },
       {
         text: "Admin API Contract Workflow",
         link: "/contributing/reference/admin-api-contract-workflow",

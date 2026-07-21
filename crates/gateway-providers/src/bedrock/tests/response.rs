@@ -110,6 +110,7 @@ fn normalizes_text_response_with_usage() {
     assert_eq!(normalized["usage"]["prompt_tokens"], 12);
     assert_eq!(normalized["usage"]["completion_tokens"], 5);
     assert_eq!(normalized["usage"]["total_tokens"], 17);
+    assert_eq!(normalized["usage"]["usage_source"], "bedrock");
     assert_eq!(
         normalized["usage"]["provider_usage"]["cacheReadInputTokens"],
         2
@@ -271,6 +272,7 @@ fn normalizes_anthropic_messages_response_with_usage_and_cache_tokens() {
     assert_eq!(normalized["usage"]["prompt_tokens"], 12);
     assert_eq!(normalized["usage"]["completion_tokens"], 5);
     assert_eq!(normalized["usage"]["total_tokens"], 17);
+    assert_eq!(normalized["usage"]["usage_source"], "bedrock");
     assert_eq!(
         normalized["usage"]["provider_usage"]["cache_read_input_tokens"],
         2

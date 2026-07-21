@@ -1,5 +1,8 @@
 import type {
   AddTeamMembersInput,
+  AgentTaskDetailView,
+  AgentTaskFiltersInput,
+  AgentTaskPageView,
   ApiEnvelope,
   ApiKeysPayload,
   AuthSessionView,
@@ -289,6 +292,28 @@ export async function deactivateBudget(
   return unwrapGatewayResponse(
     await client.POST('/api/v1/admin/spend/budgets/deactivate', {
       body: input,
+    }),
+  )
+}
+
+export async function listAgentTasks(
+  filters: AgentTaskFiltersInput = {},
+): Promise<ApiEnvelope<AgentTaskPageView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/observability/agent-tasks', {
+      params: { query: filters },
+    }),
+  )
+}
+
+export async function getAgentTaskDetail(
+  taskId: string,
+): Promise<ApiEnvelope<AgentTaskDetailView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/observability/agent-tasks/{task_id}', {
+      params: { path: { task_id: taskId } },
     }),
   )
 }

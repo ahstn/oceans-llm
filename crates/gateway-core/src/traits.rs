@@ -1,3 +1,5 @@
+pub use crate::agent_analysis::AgentSessionAnalysisRepository;
+
 use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 use async_trait::async_trait;

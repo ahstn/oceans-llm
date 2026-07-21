@@ -3,6 +3,7 @@
 //! Split plan: keep this root as a narrow export surface and move the large
 //! backend integration test module into domain-focused files under
 //! `tests/` or private test submodules as store domains continue to grow.
+mod any_store_agent_analysis;
 mod any_store_mcp_access;
 mod any_store_mcp_aggregate_sessions;
 mod any_store_mcp_credentials;
@@ -30,16 +31,20 @@ pub use store::{AnyStore, GatewayStore, StoreConnectionOptions};
 pub(crate) use migrate::{MigrationTestHook, run_migrations_with_options_for_test};
 
 #[cfg(test)]
-mod tests {
+mod agent_analysis_tests;
+
+#[cfg(test)]
+pub(crate) mod tests {
     use std::env;
 
     use gateway_core::domain::ModelAllowlistPolicy;
     use gateway_core::{
+        AgentSessionAnalysisRepository, AgentTaskRequestLinkRecord, AgentTaskWindowRecord,
         ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
         BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
         BudgetAlertHistoryQuery, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence,
         BudgetModelSelector, BudgetRepository, BudgetScope, BudgetSettings, BudgetSource,
-        BudgetSourceKind, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
+        BudgetSourceKind, Confidence, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
         ExternalMcpDiscoveryStatus, ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole,
         IdentityRepository, ManagedApiKeySource, McpRegistryRepository,
         McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
@@ -60,9 +65,9 @@ mod tests {
         SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
         SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
         SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError, StoreHealth,
-        UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
-        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
-        UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        TaskLifecycleState, UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord,
+        UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord,
+        UpsertReviewAgentPullRequestRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -710,6 +715,7 @@ mod tests {
                 "completion_tokens": 50,
                 "total_tokens": 150
             }),
+            normalized_usage: None,
             pricing_status,
             unpriced_reason,
             pricing_row_id: None,
@@ -7682,6 +7688,7 @@ mod tests {
             completion_tokens: Some(5),
             total_tokens: Some(15),
             provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
+            normalized_usage: None,
             pricing_status: UsagePricingStatus::Priced,
             unpriced_reason: None,
             pricing_row_id: Some(pricing_record.model_pricing_id),
@@ -7715,6 +7722,7 @@ mod tests {
             completion_tokens: Some(5),
             total_tokens: Some(15),
             provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
+            normalized_usage: None,
             pricing_status: UsagePricingStatus::Unpriced,
             unpriced_reason: Some("missing_pricing".to_string()),
             pricing_row_id: None,
@@ -7817,6 +7825,77 @@ mod tests {
         let resolved_model_key: String = row.try_get(2).expect("resolved model key");
         assert_eq!(model_key, "fast");
         assert_eq!(resolved_model_key, "fast-v2");
+
+        let now = OffsetDateTime::now_utc();
+        let task = AgentTaskWindowRecord {
+            agent_task_id: Uuid::new_v4(),
+            agent_session_id: None,
+            ownership_scope_key: format!("user:{}", member.user_id),
+            api_key_id: key.id,
+            user_id: Some(member.user_id),
+            team_id: Some(team.team_id),
+            service_account_id: None,
+            actor_user_id: None,
+            requested_model_key: "fast".to_string(),
+            operation: "chat_completions".to_string(),
+            caller_class: "user".to_string(),
+            request_tags: serde_json::json!({"environment": "test"}),
+            boundary_group_key: "sha256:postgres-conflict".to_string(),
+            harness_key: "codex".to_string(),
+            boundary_policy_version: agent_session_analysis::TASK_BOUNDARY_POLICY_VERSION
+                .to_string(),
+            lifecycle: TaskLifecycleState::Open,
+            boundary_confidence: Confidence::High,
+            started_at: now,
+            ended_at: None,
+            input_watermark_at: now,
+            finalized_reason: None,
+            created_at: now,
+            updated_at: now,
+        };
+        assert!(
+            store
+                .insert_agent_task_if_absent(&task)
+                .await
+                .expect("insert agent task")
+        );
+        let request_link = AgentTaskRequestLinkRecord {
+            agent_task_id: task.agent_task_id,
+            request_id: "request-conflict".to_string(),
+            request_log_id: None,
+            usage_event_id: None,
+            ordinal: 0,
+            execution_id: Some("turn-1".to_string()),
+            parent_execution_id: None,
+            normalized_session_id: None,
+            correlation_confidence: Confidence::High,
+            limitation_codes: vec![],
+            occurred_at: now,
+            completed_at: Some(now + Duration::seconds(1)),
+            terminal_success: Some(true),
+        };
+        assert!(
+            store
+                .append_agent_task_request(&request_link)
+                .await
+                .expect("insert agent task request")
+        );
+        assert!(
+            !store
+                .append_agent_task_request(&request_link)
+                .await
+                .expect("repeat identical agent task request")
+        );
+        let conflicting_request_link = AgentTaskRequestLinkRecord {
+            terminal_success: Some(false),
+            ..request_link
+        };
+        assert!(matches!(
+            store
+                .append_agent_task_request(&conflicting_request_link)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
 
         drop(store);
         drop_postgres_test_database(&test_db).await;
@@ -8939,13 +9018,13 @@ mod tests {
         );
     }
 
-    struct PostgresTestDatabase {
+    pub(crate) struct PostgresTestDatabase {
         admin_url: String,
-        database_url: String,
+        pub(crate) database_url: String,
         database_name: String,
     }
 
-    async fn create_postgres_test_database() -> Option<PostgresTestDatabase> {
+    pub(crate) async fn create_postgres_test_database() -> Option<PostgresTestDatabase> {
         let base_url = env::var("TEST_POSTGRES_URL").ok()?;
         let mut admin_url = Url::parse(&base_url).expect("valid postgres url");
         admin_url.set_path("/postgres");
@@ -8973,7 +9052,7 @@ mod tests {
         })
     }
 
-    async fn drop_postgres_test_database(database: &PostgresTestDatabase) {
+    pub(crate) async fn drop_postgres_test_database(database: &PostgresTestDatabase) {
         let admin_pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(1)
             .connect(&database.admin_url)

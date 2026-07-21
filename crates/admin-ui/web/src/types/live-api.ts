@@ -99,6 +99,14 @@ export type RequestTagView = components['schemas']['RequestTagView']
 export type RequestLogTagsView = components['schemas']['RequestTagsView']
 export type RequestLogView = components['schemas']['RequestLogSummaryView']
 export type RequestLogPayloadView = components['schemas']['RequestLogPayloadView']
+export type AgentTaskSummaryView = components['schemas']['AgentTaskSummaryView']
+export type AgentTaskPageView = components['schemas']['AgentTaskPageView']
+export type AgentTaskDetailView = components['schemas']['AgentTaskDetailView']
+export type AgentTaskRequestView = components['schemas']['AgentTaskRequestView']
+export type AgentObservationView = components['schemas']['AgentObservationView']
+export type AgentTaskFiltersInput = NonNullable<
+  operations['list_agent_tasks']['parameters']['query']
+>
 export type RequestLogDetailView = components['schemas']['RequestLogDetailView']
 export type RequestLogPageView = components['schemas']['RequestLogPageView']
 export type RequestLogFiltersInput = NonNullable<

@@ -148,6 +148,15 @@ run = 'cargo run -p gateway --bin gateway -- purge-request-logs --retention "${R
 description = "Purge old request logs against `gateway.yaml`; override retention with RETENTION=1d|3d|7d"
 run = 'cargo run -p gateway --bin gateway -- purge-request-logs --retention "${RETENTION:-7d}"'
 
+[tasks.gateway-recompute-agent-analysis]
+description = "Queue retained agent tasks for analysis against `gateway.yaml`; override batch size with LIMIT"
+run = 'cargo run -p gateway --bin gateway -- recompute-agent-analysis --limit "${LIMIT:-100}"'
+
+[tasks.gateway-recompute-agent-analysis-prod]
+description = "Queue retained agent tasks for analysis against `gateway.prod.yaml`; override batch size with LIMIT"
+env = { POSTGRES_URL = { required = true } }
+run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml recompute-agent-analysis --limit "${LIMIT:-100}"'
+
 [tasks.gateway-purge-request-logs-dry-run-prod]
 description = "Preview request-log purge against `gateway.prod.yaml`; override retention with RETENTION=1d|3d|7d"
 env = { POSTGRES_URL = { required = true } }

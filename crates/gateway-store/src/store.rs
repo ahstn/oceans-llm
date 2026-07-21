@@ -2,17 +2,17 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use gateway_core::{
-    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, AuthMode,
-    BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository, IdentityUserRecord,
-    McpAccessRepository, McpAggregateSessionRepository, McpRegistryRepository,
-    McpTokenOverheadRepository, McpToolInvocationRepository, McpUpstreamCredentialRepository,
-    MembershipRole, ModelRepository, OauthLoginStateRecord, OauthProviderRecord,
-    OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogRepository,
-    ProviderRepository, RequestLogRepository, RequestTag, ReviewAgentRepository, SeedApiKey,
-    SeedHumanBudgetDefaults, SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider,
-    SeedServiceAccount, SeedTeam, SeedUser, StoreError, StoreHealth, TeamMembershipRecord,
-    TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
-    UserSessionRecord, UserStatus,
+    AdminApiKeyRepository, AdminIdentityRepository, AgentSessionAnalysisRepository,
+    ApiKeyRepository, AuthMode, BudgetAlertRepository, BudgetRepository, GlobalRole,
+    IdentityRepository, IdentityUserRecord, McpAccessRepository, McpAggregateSessionRepository,
+    McpRegistryRepository, McpTokenOverheadRepository, McpToolInvocationRepository,
+    McpUpstreamCredentialRepository, MembershipRole, ModelRepository, OauthLoginStateRecord,
+    OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord,
+    PricingCatalogRepository, ProviderRepository, RequestLogRepository, RequestTag,
+    ReviewAgentRepository, SeedApiKey, SeedHumanBudgetDefaults, SeedModel, SeedOauthProvider,
+    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, StoreError,
+    StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -57,6 +57,7 @@ pub trait GatewayStore:
     + McpTokenOverheadRepository
     + McpToolInvocationRepository
     + PricingCatalogRepository
+    + AgentSessionAnalysisRepository
     + StoreHealth
     + Send
     + Sync

@@ -16,6 +16,8 @@ import {
   disableMcpServer,
   listBudgetAlertHistory,
   reactivateUser,
+  getAgentTaskDetail,
+  listAgentTasks,
   getRequestLogDetail,
   getHarnessUsage,
   getMcpInvocationDetail,
@@ -197,6 +199,18 @@ export const saveBudget = createServerFn({ method: 'POST' }).handler(
 export const removeBudget = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: Parameters<typeof deactivateBudget>[0] }) => {
     return deactivateBudget(data)
+  },
+)
+
+export const getAgentTasks = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data?: Parameters<typeof listAgentTasks>[0] }) => {
+    return listAgentTasks(data)
+  },
+)
+
+export const getObservabilityAgentTaskDetail = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data: { taskId: string } }) => {
+    return getAgentTaskDetail(data.taskId)
   },
 )
 

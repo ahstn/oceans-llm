@@ -201,6 +201,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V40__route_metadata_overrides.sql"),
         postgres_sql: include_str!("../migrations/postgres/V40__route_metadata_overrides.sql"),
     },
+    MigrationManifest {
+        version: 41,
+        name: "agent_session_analysis",
+        checksum: "V41__agent_session_analysis.sql",
+        libsql_sql: include_str!("../migrations/V41__agent_session_analysis.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V41__agent_session_analysis.sql"),
+    },
 ];
 
 #[cfg(test)]
