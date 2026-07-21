@@ -13,7 +13,7 @@ This page is the maintainer reference for the passive correlation, immutable ana
 | Passive request metadata and correlation workflow | `crates/gateway-service/src/agent_analysis.rs` |
 | LibSQL/PostgreSQL persistence | `crates/gateway-store/src/{libsql_store,postgres_store}/agent_analysis.rs` |
 | Backend dispatch | `crates/gateway-store/src/any_store_agent_analysis.rs` |
-| Paired schema | `crates/gateway-store/migrations/{postgres,libsql}/V41__agent_session_analysis.sql` |
+| Paired schema | `crates/gateway-store/migrations/V41__agent_session_analysis.sql`, `crates/gateway-store/migrations/postgres/V41__agent_session_analysis.sql` |
 | Background finalization and queue worker | `crates/gateway/src/main.rs` |
 | Admin HTTP contract and handlers | `crates/gateway/src/http/{admin_contract,observability}.rs` |
 | Runtime authorization capability matrix | `crates/gateway/src/http/{state,admin_auth,identity}.rs` |
@@ -54,9 +54,9 @@ The paired V41 migrations must remain behaviorally equivalent. Validate apply, r
 
 ## Passive Session Adapter Registry
 
-`gateway-service::agent_analysis` owns the versioned allowlist. The current adapters are `claude-code-v1`, `codex-v1`, `opencode-v1`, `pi-v1`, and `oh-my-pi-v1`. Each adapter declares accepted session-header aliases and whether bounded body metadata may supply a session candidate. Adapter-specific headers take precedence over generic aliases, which take precedence over payload-policy-permitted `metadata.session_id`/`session_id` fields. Stored provenance names the canonical header or body path.
+`gateway-service::agent_analysis` owns the versioned allowlist. The current adapters are `claude-code-v1`, `codex-v1`, `opencode-v1`, `pi-v1`, and `oh-my-pi-v1`. Each adapter declares accepted session-header aliases and whether bounded body metadata may supply a session candidate. Every accepted alias for a request must resolve to the same normalized value; conflicting aliases are rejected rather than resolved by precedence. Stored provenance records the accepted canonical header or body path.
 
-Unknown harnesses and known harnesses with stripped or policy-blocked metadata remain sessionless. Conversation IDs, request IDs, telemetry IDs, and cache keys are never fallback session candidates. Add or change an alias only with synthetic precedence, conflict, policy-blocking, and unsupported-harness fixtures; bump the adapter version whenever the accepted evidence changes.
+Unknown harnesses and known harnesses with stripped or policy-blocked metadata remain sessionless. Conversation IDs, request IDs, telemetry IDs, and cache keys are never fallback session candidates. Add or change an alias only with synthetic agreement, conflict, policy-blocking, and unsupported-harness fixtures; bump the adapter version whenever the accepted evidence changes.
 
 ## Analysis Contract
 
@@ -124,7 +124,7 @@ Focused checks:
 cargo test -p agent-session-analysis
 cargo test -p gateway-service agent_analysis::tests
 cargo test -p gateway-store libsql_agent_analysis_repository_round_trips_and_cascades
-cargo test -p gateway-store migrations_apply_apply_and_are_idempotent
+cargo test -p gateway-store migrations_apply_and_are_idempotent
 mise run admin-contract-check
 bun run --cwd crates/admin-ui/web build
 ```

@@ -32,6 +32,9 @@ const ANALYSIS_ID_NAMESPACE: Uuid = Uuid::from_u128(0x6e390d51_3f14_4cee_9b85_c0
 const QUEUE_ID_NAMESPACE: Uuid = Uuid::from_u128(0x08d4bc47_3379_4137_843c_3e63be6d500d);
 const MAX_EXTERNAL_IDENTIFIER_BYTES: usize = 256;
 const MAX_TURN_METADATA_BYTES: usize = 4_096;
+const MAX_INFERRED_TOOL_CALLS: usize = 128;
+const MAX_TOOL_CALL_SCAN_DEPTH: usize = 32;
+const MAX_TOOL_CALL_SCAN_NODES: usize = 4_096;
 
 #[derive(Debug, Clone, Copy)]
 struct HarnessAdapter {
@@ -221,16 +224,6 @@ impl PassiveRequestRecord<'_> {
 }
 
 pub(crate) async fn record_prepared_passive_request<S>(
-    store: &S,
-    input: PreparedPassiveRequestRecord,
-) -> Result<Uuid, GatewayError>
-where
-    S: AgentSessionAnalysisRepository + BudgetRepository + IdentityRepository + Sync,
-{
-    record_passive_request_inner(store, input).await
-}
-
-async fn record_passive_request_inner<S>(
     store: &S,
     input: PreparedPassiveRequestRecord,
 ) -> Result<Uuid, GatewayError>
@@ -875,6 +868,7 @@ where
             .list_agent_tasks(&AgentTaskListQuery {
                 harness_key: Some(current.task.harness_key.clone()),
                 lifecycle: Some(TaskLifecycleState::Finalized),
+                ownership_scope_key: Some(current.task.ownership_scope_key.clone()),
                 page: page_number,
                 page_size: gateway_core::MAX_AGENT_TASK_PAGE_SIZE,
                 ..Default::default()
@@ -1031,14 +1025,19 @@ fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredOb
         });
     }
     if let Some(response) = input.response_body {
-        let ownership_scope_key = usage_ownership_scope_key(input.auth).ok();
         let mut calls = Vec::new();
-        collect_tool_calls(response, &mut calls);
+        let scan_truncated = collect_tool_calls(response, &mut calls);
+        let first_observation = observations.len();
         observations.extend(
             calls
                 .into_iter()
-                .map(|call| classify_tool_call(input, ownership_scope_key.as_deref(), call)),
+                .map(|call| classify_tool_call(input, call)),
         );
+        if scan_truncated && let Some(observation) = observations.get_mut(first_observation) {
+            observation
+                .limitations
+                .push(LimitationCode::PayloadTruncated);
+        }
     }
     observations
 }
@@ -1048,13 +1047,28 @@ struct ToolCall<'a> {
     arguments: Option<&'a str>,
 }
 
-fn collect_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'a>>) {
+fn collect_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'a>>) -> bool {
+    let mut remaining_nodes = MAX_TOOL_CALL_SCAN_NODES;
+    collect_tool_calls_bounded(value, calls, 0, &mut remaining_nodes)
+}
+
+fn collect_tool_calls_bounded<'a>(
+    value: &'a Value,
+    calls: &mut Vec<ToolCall<'a>>,
+    depth: usize,
+    remaining_nodes: &mut usize,
+) -> bool {
+    if calls.len() >= MAX_INFERRED_TOOL_CALLS
+        || depth > MAX_TOOL_CALL_SCAN_DEPTH
+        || *remaining_nodes == 0
+    {
+        return true;
+    }
+    *remaining_nodes -= 1;
     match value {
-        Value::Array(values) => {
-            for value in values {
-                collect_tool_calls(value, calls);
-            }
-        }
+        Value::Array(values) => values
+            .iter()
+            .any(|value| collect_tool_calls_bounded(value, calls, depth + 1, remaining_nodes)),
         Value::Object(object) => {
             if let Some(function) = object.get("function").and_then(Value::as_object)
                 && let Some(name) = function.get("name").and_then(Value::as_str)
@@ -1073,28 +1087,26 @@ fn collect_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'a>>) {
                     arguments: object.get("arguments").and_then(Value::as_str),
                 });
             }
-            for value in object.values() {
-                collect_tool_calls(value, calls);
-            }
+            object
+                .values()
+                .any(|value| collect_tool_calls_bounded(value, calls, depth + 1, remaining_nodes))
         }
-        _ => {}
+        _ => false,
     }
 }
 
-fn classify_tool_call(
-    input: &PassiveRequestRecord<'_>,
-    ownership_scope_key: Option<&str>,
-    call: ToolCall<'_>,
-) -> InferredObservation {
+fn classify_tool_call(input: &PassiveRequestRecord<'_>, call: ToolCall<'_>) -> InferredObservation {
     let normalized = call.name.to_ascii_lowercase();
     let kind = if normalized.contains("search") || normalized.contains("grep") {
         InferredObservationKind::FileSearchSuspected
     } else if normalized.contains("read") {
         InferredObservationKind::FileReadSuspected
-    } else if normalized.contains("create") || normalized.contains("write") {
-        InferredObservationKind::FileCreateSuspected
+    } else if normalized.contains("overwrite") {
+        InferredObservationKind::FileOverwriteSuspected
     } else if normalized.contains("edit") || normalized.contains("patch") {
         InferredObservationKind::FileEditSuspected
+    } else if normalized.contains("create") || normalized.contains("write") {
+        InferredObservationKind::FileCreateSuspected
     } else if normalized.contains("test")
         || normalized.contains("check")
         || normalized.contains("lint")
@@ -1104,14 +1116,9 @@ fn classify_tool_call(
     } else {
         InferredObservationKind::ToolCallClassified
     };
-    let arguments = call
-        .arguments
-        .and_then(|value| serde_json::from_str::<Value>(value).ok());
-    let opaque_file_id = arguments
-        .as_ref()
-        .and_then(extract_file_identifier)
-        .zip(ownership_scope_key)
-        .map(|(value, scope)| hash_scoped_identifier(scope, "file-observation-v1", value));
+    // Tool arguments may contain sensitive paths. Classify the operation but
+    // never persist a deterministic path-derived identifier.
+    let _arguments = call.arguments;
     InferredObservation {
         observation_id: Uuid::nil(),
         kind,
@@ -1121,20 +1128,13 @@ fn classify_tool_call(
         occurred_at: input.completed_at,
         facts: BoundedObservationFacts {
             tool_name: Some(call.name.chars().take(128).collect()),
-            opaque_file_id,
             ..Default::default()
         },
         limitations: vec![LimitationCode::SemanticVerificationUnavailable],
     }
 }
 
-fn extract_file_identifier(value: &Value) -> Option<&str> {
-    ["path", "file", "file_path", "filename"]
-        .into_iter()
-        .find_map(|key| value.get(key).and_then(Value::as_str))
-}
-
-pub(crate) fn caller_class(auth: &AuthenticatedApiKey) -> &'static str {
+fn caller_class(auth: &AuthenticatedApiKey) -> &'static str {
     if auth.owner_service_account_id.is_some() {
         "service_account"
     } else if auth.owner_user_id.is_some() {
@@ -1144,12 +1144,7 @@ pub(crate) fn caller_class(auth: &AuthenticatedApiKey) -> &'static str {
     }
 }
 
-pub(crate) fn task_boundary_group_key(
-    _model_key: &str,
-    _operation: &str,
-    _caller_class: &str,
-    tags: &RequestTags,
-) -> String {
+pub(crate) fn task_boundary_group_key(tags: &RequestTags) -> String {
     let mut bespoke = tags
         .bespoke
         .iter()
@@ -1174,16 +1169,6 @@ fn stable_uuid(namespace: Uuid, canonical: &str) -> Uuid {
 fn hash_identifier(value: &str) -> String {
     let digest = Sha256::digest(value.as_bytes());
     format!("sha256:{digest:x}")
-}
-
-fn hash_scoped_identifier(scope: &str, namespace: &str, value: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(scope.as_bytes());
-    hasher.update([0]);
-    hasher.update(namespace.as_bytes());
-    hasher.update([0]);
-    hasher.update(value.as_bytes());
-    format!("sha256:{:x}", hasher.finalize())
 }
 
 fn hash_lineage_candidate(
@@ -1595,7 +1580,7 @@ mod tests {
     }
 
     #[test]
-    fn task_boundary_group_is_order_independent_and_excludes_cohort_dimensions() {
+    fn task_boundary_group_is_order_independent() {
         let first = RequestTags {
             service: Some("api".to_string()),
             bespoke: vec![
@@ -1614,20 +1599,16 @@ mod tests {
         reordered.bespoke.reverse();
 
         assert_eq!(
-            task_boundary_group_key("gpt-5.6", "chat", "user", &first),
-            task_boundary_group_key("gpt-5.6", "chat", "user", &reordered)
-        );
-        assert_eq!(
-            task_boundary_group_key("gpt-5.6", "chat", "user", &first),
-            task_boundary_group_key("claude-opus-4.1", "embeddings", "service_account", &first)
+            task_boundary_group_key(&first),
+            task_boundary_group_key(&reordered)
         );
         let different_tags = RequestTags {
             service: Some("different".to_string()),
             ..first.clone()
         };
         assert_ne!(
-            task_boundary_group_key("gpt-5.6", "chat", "user", &first),
-            task_boundary_group_key("gpt-5.6", "chat", "user", &different_tags)
+            task_boundary_group_key(&first),
+            task_boundary_group_key(&different_tags)
         );
     }
     #[test]
@@ -2167,7 +2148,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_classification_hashes_file_identity_without_retaining_path() {
+    fn tool_classification_omits_file_identity_and_distinguishes_overwrites() {
         let input = PassiveRequestRecord {
             auth: &AuthenticatedApiKey {
                 id: Uuid::nil(),
@@ -2207,18 +2188,34 @@ mod tests {
         };
         let observation = classify_tool_call(
             &input,
-            Some("user:test"),
             ToolCall {
                 name: "edit_file",
                 arguments: Some(r#"{"path":"/private/source.rs"}"#),
             },
         );
         assert_eq!(observation.kind, InferredObservationKind::FileEditSuspected);
-        let opaque = observation
-            .facts
-            .opaque_file_id
-            .expect("opaque file identity");
-        assert!(opaque.starts_with("sha256:"));
-        assert!(!opaque.contains("source.rs"));
+        assert!(observation.facts.opaque_file_id.is_none());
+        let overwrite = classify_tool_call(
+            &input,
+            ToolCall {
+                name: "overwrite_file",
+                arguments: None,
+            },
+        );
+        assert_eq!(
+            overwrite.kind,
+            InferredObservationKind::FileOverwriteSuspected
+        );
+    }
+    #[test]
+    fn tool_call_collection_is_bounded() {
+        let response = Value::Array(vec![
+            json!({"function": {"name": "read_file", "arguments": "{}"}});
+            MAX_INFERRED_TOOL_CALLS + 1
+        ]);
+        let mut calls = Vec::new();
+
+        assert!(collect_tool_calls(&response, &mut calls));
+        assert_eq!(calls.len(), MAX_INFERRED_TOOL_CALLS);
     }
 }

@@ -22,8 +22,8 @@ use crate::{
     RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
     ResolvedProviderConnection, StreamLogResultInput, StreamResponseCollector,
     agent_analysis::{
-        PassiveRequestRecord, REPORT_RETENTION, caller_class, finalize_idle_tasks,
-        process_next_analysis, record_prepared_passive_request, task_boundary_group_key,
+        PassiveRequestRecord, REPORT_RETENTION, finalize_idle_tasks, process_next_analysis,
+        record_prepared_passive_request, task_boundary_group_key,
     },
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::BudgetGuard,
@@ -481,7 +481,6 @@ where
             }
         };
         let operation = context.operation;
-        let caller_class = caller_class(&auth).to_string();
         let harness_key = context.agent_harness_key.clone();
         let harness_label = context.agent_harness_label.clone();
         let metadata = context.analysis_metadata.clone();
@@ -491,12 +490,7 @@ where
         let response_body = response_body.cloned();
         tokio::spawn(async move {
             let completed_at = OffsetDateTime::now_utc();
-            let boundary_group_key = task_boundary_group_key(
-                &resolved_model_key,
-                operation,
-                &caller_class,
-                &request_tags,
-            );
+            let boundary_group_key = task_boundary_group_key(&request_tags);
             let input = PassiveRequestRecord {
                 auth: &auth,
                 request_id: &request_id,

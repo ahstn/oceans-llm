@@ -1117,6 +1117,13 @@ function DataGridTableBodyRow<TData>({
       data-index={dataIndex}
       data-row-pinned={isRowPinned || undefined}
       data-row-pinned-boundary={pinnedBoundary}
+      tabIndex={props.onRowClick ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (props.onRowClick && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault()
+          props.onRowClick(row.original)
+        }
+      }}
       onClick={() => props.onRowClick && props.onRowClick(row.original)}
       className={cn(
         'hover:bg-muted/40 data-[state=selected]:bg-muted/50',

@@ -257,6 +257,28 @@ describe('AgentTasksPage', () => {
     expect(screen.queryByText('82')).not.toBeInTheDocument()
   })
 
+  it('opens task diagnostics from the keyboard and labels the current page', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [task], page: 1, page_size: 50, total: 51 },
+    })
+    render(<AgentTasksPage />)
+
+    const taskRow = screen.getByRole('row', { name: /Opencode/ })
+    expect(taskRow).toHaveAttribute('tabindex', '0')
+    fireEvent.keyDown(taskRow, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/agent-tasks',
+        search: expect.objectContaining({ task_id: 'task_1' }),
+      })
+    })
+    expect(screen.getByRole('button', { name: 'Go to page 1' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+  })
+
   it('deep-links to task diagnostics with request outcomes and retained observations', async () => {
     routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, task_id: 'task_1' })
     getAgentTaskDetailMock.mockResolvedValue({ data: detail })

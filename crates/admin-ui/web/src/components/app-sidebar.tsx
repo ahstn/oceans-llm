@@ -42,16 +42,14 @@ export function AppSidebar({
   signOutPending,
   onSignOut,
 }: AppSidebarProps) {
-  const visibleSections = adminNavSections
-    .map((section) => ({
-      ...section,
-      items: section.items.filter((item) =>
-        item.to === '/observability/agent-tasks'
-          ? session.capabilities.agent_analysis
-          : session.capabilities.platform_admin,
-      ),
-    }))
-    .filter((section) => section.items.length > 0)
+  const visibleSections = adminNavSections.flatMap((section) => {
+    const items = section.items.filter((item) =>
+      item.to === '/observability/agent-tasks'
+        ? session.capabilities.agent_analysis
+        : session.capabilities.platform_admin,
+    )
+    return items.length > 0 ? [{ ...section, items }] : []
+  })
 
   return (
     <Sidebar collapsible="icon" variant="inset">

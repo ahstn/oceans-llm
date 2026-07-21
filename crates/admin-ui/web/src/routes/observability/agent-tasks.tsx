@@ -38,10 +38,29 @@ import type {
 
 type AgentTaskRouteSearch = AgentTaskFiltersInput & { task_id?: string }
 
+const timestampFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+const currencyFormatters = {
+  standard: new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }),
+  precise: new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  }),
+}
+
 export const Route = createFileRoute('/observability/agent-tasks')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
   validateSearch: (search: Record<string, unknown>) => normalizeSearch(search),
   loaderDeps: ({ search }) => search,
+  beforeLoad: ({ location }) => requireAdminSession(location),
   loader: ({ deps }) => {
     const { task_id: _taskId, ...filters } = deps
     return getAgentTasks({ data: filters })
@@ -303,6 +322,7 @@ export function AgentTasksPage() {
   const table = useReactTable({
     data: taskPage.items,
     columns,
+    getRowId: (row) => row.task_id,
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
     rowCount: taskPage.total,
@@ -585,11 +605,26 @@ function TaskDetail({ detail, showScore }: { detail: AgentTaskDetailView; showSc
           label="Overall telemetry coverage"
           value={formatPercent(telemetryCoverage?.overall_percent)}
         />
-        <DiagnosticRow label="Outcome coverage" value={formatPercent(telemetryCoverage?.outcome_percent)} />
-        <DiagnosticRow label="Cost coverage" value={formatPercent(telemetryCoverage?.cost_percent)} />
-        <DiagnosticRow label="Timing coverage" value={formatPercent(telemetryCoverage?.timing_percent)} />
-        <DiagnosticRow label="Payload coverage" value={formatPercent(telemetryCoverage?.payload_percent)} />
-        <DiagnosticRow label="Cohort coverage" value={formatPercent(telemetryCoverage?.cohort_percent)} />
+        <DiagnosticRow
+          label="Outcome coverage"
+          value={formatPercent(telemetryCoverage?.outcome_percent)}
+        />
+        <DiagnosticRow
+          label="Cost coverage"
+          value={formatPercent(telemetryCoverage?.cost_percent)}
+        />
+        <DiagnosticRow
+          label="Timing coverage"
+          value={formatPercent(telemetryCoverage?.timing_percent)}
+        />
+        <DiagnosticRow
+          label="Payload coverage"
+          value={formatPercent(telemetryCoverage?.payload_percent)}
+        />
+        <DiagnosticRow
+          label="Cohort coverage"
+          value={formatPercent(telemetryCoverage?.cohort_percent)}
+        />
         <DiagnosticRow
           label="Raw evidence"
           value={
@@ -936,8 +971,8 @@ function integerInRange(value: unknown, minimum: number, maximum: number) {
 function hasActiveSearch(search: AgentTaskFiltersInput) {
   return Boolean(
     taskFilterFields.some((field) => search[field] !== null && search[field] !== undefined) ||
-      search.started_after ||
-      search.started_before,
+    search.started_after ||
+    search.started_before,
   )
 }
 
@@ -954,21 +989,12 @@ function fromLocalDateInput(value: string) {
 }
 
 function formatTimestamp(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
+  return timestampFormatter.format(new Date(value))
 }
 
 function formatCost(value?: number | null) {
-  return value === null || value === undefined
-    ? '—'
-    : new Intl.NumberFormat(undefined, {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: value < 0.01 ? 4 : 2,
-        maximumFractionDigits: value < 0.01 ? 4 : 2,
-      }).format(value)
+  if (value === null || value === undefined) return '—'
+  return currencyFormatters[value < 0.01 ? 'precise' : 'standard'].format(value)
 }
 
 function formatDuration(value?: number | null) {
