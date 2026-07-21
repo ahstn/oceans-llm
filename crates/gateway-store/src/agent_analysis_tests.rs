@@ -781,7 +781,8 @@ async fn postgres_agent_task_dimensions_round_trip_and_filter() {
         .await
         .expect("user");
     let api_key_id = Uuid::new_v4();
-    let now = OffsetDateTime::now_utc();
+    let now = OffsetDateTime::from_unix_timestamp(OffsetDateTime::now_utc().unix_timestamp())
+        .expect("current timestamp");
     sqlx::query(
         "INSERT INTO api_keys (id, public_id, secret_hash, name, status, owner_kind, owner_user_id, created_at) VALUES ($1, $2, 'hash', 'analysis', 'active', 'user', $3, $4)",
     )
