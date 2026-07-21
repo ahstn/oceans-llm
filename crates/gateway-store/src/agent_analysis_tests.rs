@@ -17,6 +17,7 @@ use crate::{
 };
 
 #[tokio::test]
+#[serial]
 async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     let temporary = tempdir().expect("tempdir");
     let database_path = temporary.path().join("gateway.db");
@@ -100,11 +101,16 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .upsert_agent_session(&AgentSessionRecord {
             first_seen_at: now + Duration::seconds(10),
             last_seen_at: now + Duration::seconds(10),
+            created_at: now + Duration::seconds(10),
             updated_at: now + Duration::seconds(10),
             ..session.clone()
         })
         .await
         .expect("later session observation");
+    assert_eq!(
+        later_session.created_at.unix_timestamp(),
+        now.unix_timestamp()
+    );
     let out_of_order_session = store
         .upsert_agent_session(&AgentSessionRecord {
             first_seen_at: now - Duration::seconds(5),
@@ -154,7 +160,10 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         requested_model_key: "gpt-5.6".to_string(),
         operation: "responses".to_string(),
         caller_class: "user".to_string(),
-        request_tags: serde_json::json!({"environment": "test"}),
+        request_tags: serde_json::json!({
+            "environment": "test",
+            "bespoke": [{"key": "customer_tier", "value": "enterprise"}]
+        }),
         boundary_group_key: "sha256:boundary".to_string(),
         harness_key: "codex".to_string(),
         boundary_policy_version: agent_session_analysis::TASK_BOUNDARY_POLICY_VERSION.to_string(),
@@ -437,7 +446,44 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
             .await
             .expect("finalized watermark analysis")
     );
+    let foreign_task = AgentTaskWindowRecord {
+        agent_task_id: Uuid::new_v4(),
+        boundary_group_key: "sha256:foreign-boundary".to_string(),
+        ..advanced_task.clone()
+    };
+    assert!(
+        store
+            .insert_agent_task_if_absent(&foreign_task)
+            .await
+            .expect("foreign task")
+    );
+    assert!(
+        !store
+            .append_agent_task_analysis(&AgentTaskAnalysisRecord {
+                analysis_id: Uuid::new_v4(),
+                agent_task_id: foreign_task.agent_task_id,
+                input_watermark_at: foreign_task.input_watermark_at,
+                cohort_version: "foreign-observation-v1".to_string(),
+                ..analysis.clone()
+            })
+            .await
+            .expect("reject foreign observation set"),
+        "analysis must not reference another task's observation set"
+    );
+    store
+        .connection()
+        .execute(
+            "DELETE FROM agent_task_windows WHERE agent_task_id = ?1",
+            [foreign_task.agent_task_id.to_string()],
+        )
+        .await
+        .expect("delete foreign task fixture");
 
+    let observation_sets = store
+        .load_agent_observation_sets(task.agent_task_id)
+        .await
+        .expect("all observation sets");
+    assert_eq!(observation_sets.len(), 3);
     let trace = store
         .load_agent_task_trace(task.agent_task_id)
         .await
@@ -542,6 +588,23 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .await
         .expect("task dimension filters");
     assert_eq!(dimension_page.total, 1);
+    let key_only_tag_page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            request_tag_key: Some("environment".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("key-only request tag filter");
+    assert_eq!(key_only_tag_page.total, 1);
+    let bespoke_tag_page = store
+        .list_agent_tasks(&AgentTaskListQuery {
+            request_tag_key: Some("customer_tier".to_string()),
+            request_tag_value: Some("enterprise".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("bespoke request tag filter");
+    assert_eq!(bespoke_tag_page.total, 1);
     let missing_tag_page = store
         .list_agent_tasks(&AgentTaskListQuery {
             request_tag_key: Some("environment".to_string()),
@@ -589,6 +652,28 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     assert_eq!(claimed.status, AgentAnalysisQueueStatus::Leased);
     assert_eq!(claimed.attempts, 1);
     assert!(
+        !store
+            .renew_agent_analysis_lease(
+                queue.queue_item_id,
+                "stale-worker",
+                now + Duration::seconds(10),
+                now + Duration::seconds(70),
+            )
+            .await
+            .expect("reject foreign lease renewal")
+    );
+    assert!(
+        store
+            .renew_agent_analysis_lease(
+                queue.queue_item_id,
+                "worker",
+                now + Duration::seconds(10),
+                now + Duration::seconds(70),
+            )
+            .await
+            .expect("renew owned lease")
+    );
+    assert!(
         store
             .complete_agent_analysis(
                 queue.queue_item_id,
@@ -613,7 +698,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("trace after fact retention")
         .expect("retained task and report");
     assert!(retained_trace.requests.is_empty());
-    assert!(retained_trace.latest_observation_set.is_none());
+    assert!(retained_trace.latest_observation_set.is_some());
     assert!(retained_trace.latest_analysis.is_some());
     let mut retained_report_rows = store
         .connection()

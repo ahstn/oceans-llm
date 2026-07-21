@@ -111,7 +111,8 @@ CREATE TABLE IF NOT EXISTS agent_inferred_observation_sets (
   source_watermark_at INTEGER NOT NULL,
   coverage_json TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  FOREIGN KEY (agent_task_id) REFERENCES agent_task_windows(agent_task_id) ON DELETE CASCADE
+  FOREIGN KEY (agent_task_id) REFERENCES agent_task_windows(agent_task_id) ON DELETE CASCADE,
+  UNIQUE (observation_set_id, agent_task_id)
 );
 
 CREATE TABLE IF NOT EXISTS agent_inferred_observations (
@@ -124,8 +125,9 @@ CREATE TABLE IF NOT EXISTS agent_inferred_observations (
   occurred_at INTEGER NOT NULL,
   facts_json TEXT NOT NULL,
   limitation_codes_json TEXT NOT NULL,
-  FOREIGN KEY (observation_set_id) REFERENCES agent_inferred_observation_sets(observation_set_id) ON DELETE CASCADE,
-  FOREIGN KEY (agent_task_id) REFERENCES agent_task_windows(agent_task_id) ON DELETE CASCADE
+  FOREIGN KEY (observation_set_id, agent_task_id)
+    REFERENCES agent_inferred_observation_sets(observation_set_id, agent_task_id)
+    ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_inferred_observations_set_time
@@ -165,7 +167,11 @@ CREATE TABLE IF NOT EXISTS agent_task_analyses (
   ),
   FOREIGN KEY (superseded_by_analysis_id) REFERENCES agent_task_analyses(analysis_id) ON DELETE SET NULL,
   FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-  FOREIGN KEY (service_account_id) REFERENCES service_accounts(service_account_id) ON DELETE CASCADE
+  FOREIGN KEY (service_account_id) REFERENCES service_accounts(service_account_id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_task_id) REFERENCES agent_task_windows(agent_task_id) ON DELETE CASCADE,
+  FOREIGN KEY (observation_set_id, agent_task_id)
+    REFERENCES agent_inferred_observation_sets(observation_set_id, agent_task_id)
+    ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_task_analyses_latest
@@ -192,8 +198,12 @@ CREATE TABLE IF NOT EXISTS agent_analysis_recompute_queue (
   FOREIGN KEY (agent_task_id) REFERENCES agent_task_windows(agent_task_id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_agent_analysis_queue_claim
-  ON agent_analysis_recompute_queue(status, available_at, lease_expires_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_analysis_queue_pending
+  ON agent_analysis_recompute_queue(available_at, created_at)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_agent_analysis_queue_leased
+  ON agent_analysis_recompute_queue(lease_expires_at, created_at)
+  WHERE status = 'leased';
 
 ALTER TABLE request_logs ADD COLUMN agent_session_id TEXT;
 ALTER TABLE request_logs ADD COLUMN agent_task_id TEXT;

@@ -14,7 +14,6 @@ pub struct AgentAnalysisRuntimeCapabilities {
     pub shadow_diagnostics_visible: bool,
     pub calibrated_score_visible: bool,
     pub team_admin_analytics_enabled: bool,
-    pub aggregate_monitoring_enabled: bool,
 }
 
 #[derive(Clone)]

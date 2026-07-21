@@ -2227,8 +2227,6 @@ async fn build_auth_session_view(
                 && state.agent_analysis.shadow_diagnostics_visible,
             calibrated_score_visible: state.agent_analysis.calibrated_score_visible,
             team_admin_analytics_enabled: state.agent_analysis.team_admin_analytics_enabled,
-            aggregate_monitoring_enabled: platform_admin
-                && state.agent_analysis.aggregate_monitoring_enabled,
         },
         must_change_password: user.must_change_password,
     })

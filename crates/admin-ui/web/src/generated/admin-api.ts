@@ -1575,8 +1575,10 @@ export interface components {
         AgentTaskDetailView: {
             analysis?: null | components["schemas"]["AgentTaskAnalysisIdentityView"];
             coverage?: null | components["schemas"]["AgentObservationCoverageView"];
+            observation_history_truncated: boolean;
             observations: components["schemas"]["AgentObservationView"][];
             report?: null | components["schemas"]["AgentTaskEfficiencyReportView"];
+            request_history_truncated: boolean;
             requests: components["schemas"]["AgentTaskRequestView"][];
             session?: null | components["schemas"]["AgentSessionView"];
             task: components["schemas"]["AgentTaskSummaryView"];
@@ -1779,7 +1781,6 @@ export interface components {
         ApiKeyModelGrantModeView: "all" | "explicit";
         AuthSessionCapabilitiesView: {
             agent_analysis: boolean;
-            aggregate_monitoring_enabled: boolean;
             calibrated_score_visible: boolean;
             passive_analysis_enabled: boolean;
             platform_admin: boolean;
@@ -2096,8 +2097,10 @@ export interface components {
             data: {
                 analysis?: null | components["schemas"]["AgentTaskAnalysisIdentityView"];
                 coverage?: null | components["schemas"]["AgentObservationCoverageView"];
+                observation_history_truncated: boolean;
                 observations: components["schemas"]["AgentObservationView"][];
                 report?: null | components["schemas"]["AgentTaskEfficiencyReportView"];
+                request_history_truncated: boolean;
                 requests: components["schemas"]["AgentTaskRequestView"][];
                 session?: null | components["schemas"]["AgentSessionView"];
                 task: components["schemas"]["AgentTaskSummaryView"];

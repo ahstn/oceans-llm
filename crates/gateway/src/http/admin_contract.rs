@@ -390,7 +390,6 @@ pub struct AuthSessionCapabilitiesView {
     pub shadow_diagnostics_visible: bool,
     pub calibrated_score_visible: bool,
     pub team_admin_analytics_enabled: bool,
-    pub aggregate_monitoring_enabled: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1496,6 +1495,8 @@ pub struct AgentTaskDetailView {
     pub session: Option<AgentSessionView>,
     pub requests: Vec<AgentTaskRequestView>,
     pub observations: Vec<AgentObservationView>,
+    pub request_history_truncated: bool,
+    pub observation_history_truncated: bool,
     pub analysis: Option<AgentTaskAnalysisIdentityView>,
     pub report: Option<AgentTaskEfficiencyReportView>,
     pub coverage: Option<AgentObservationCoverageView>,

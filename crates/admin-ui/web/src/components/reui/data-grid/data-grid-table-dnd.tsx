@@ -281,7 +281,7 @@ function DataGridTableDnd<TData>({
           <DataGridTableHead>
             {table.getHeaderGroups().map((headerGroup: HeaderGroup<TData>, index) => {
               return (
-                <DataGridTableHeadRow key={index} rowId={headerGroup.id}>
+                <DataGridTableHeadRow key={index}>
                   <SortableContext
                     items={table.getState().columnOrder}
                     strategy={horizontalListSortingStrategy}

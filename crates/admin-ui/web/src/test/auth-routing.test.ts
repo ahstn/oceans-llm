@@ -20,7 +20,6 @@ function session(overrides: Partial<AuthSessionView['capabilities']>): AuthSessi
       shadow_diagnostics_visible: false,
       calibrated_score_visible: false,
       team_admin_analytics_enabled: false,
-      aggregate_monitoring_enabled: false,
       ...overrides,
     },
     must_change_password: false,

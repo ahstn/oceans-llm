@@ -23,7 +23,6 @@ const platformAdminCapabilities = {
   shadow_diagnostics_visible: false,
   calibrated_score_visible: false,
   team_admin_analytics_enabled: false,
-  aggregate_monitoring_enabled: false,
 }
 
 describe('AppShell', () => {

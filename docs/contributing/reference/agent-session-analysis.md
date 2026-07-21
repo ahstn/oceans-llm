@@ -32,8 +32,8 @@ Keep formulas in the dependency-light analysis crate. Do not move store, provide
 6. The background loop finalizes task windows whose input watermark is older than the versioned 30-minute idle gap. Finalization advances the task watermark because the lifecycle transition is report input.
 7. Finalization enqueues a versioned recomputation request.
 8. A leased worker loads the immutable task trace and builds a cohort from successful reports with matching report/analyzer/score/pricing/parser versions. Selection follows the fixed exact-boundary → harness/model/operation/caller → harness/model → harness cascade, requires at least ten peers at every level, and records the selected fallback level. The sorted peer-analysis IDs and values produce a persisted cohort-snapshot digest, so a changed peer population produces a distinct immutable report identity. A late fact makes an older in-flight insert a no-op.
-9. Queue completion and failure require the current lease owner. Expired leases at the attempt limit become terminal failures rather than remaining leased forever.
-10. Admin list/detail handlers load only the latest non-stale report, expose a typed report/coverage/identity contract, and enforce the same platform/team scope.
+9. While a report is being generated, the worker renews its one-minute lease on a 20-second heartbeat. Queue completion and failure still require the current lease owner. Expired leases at the attempt limit become terminal failures rather than remaining leased forever.
+10. Admin list/detail handlers load only the latest non-stale report, expose a typed report/coverage/identity contract, enforce the same platform/team scope, cap list pages at 200 tasks, and cap request and observation histories at 1,000 rows each with explicit truncation flags.
 
 The task link's ordinal is repository-assigned. Callers must not calculate `MAX(ordinal) + 1`; both stores serialize the assignment with a transaction or database lock.
 
@@ -72,7 +72,7 @@ Unknown harnesses and known harnesses with stripped or policy-blocked metadata r
 - cohort version, fallback level, sample size, and snapshot digest;
 - explicit limitations.
 
-The score is the outcome-weighted geometric combination of outcome, lower-cost cohort rank, and lower-active-time cohort rank. A determinate all-failure outcome returns zero. No cohort means cost/time ranks and the numeric score are unavailable. Missing evidence must not be represented by a neutral midpoint.
+The score is the outcome-weighted geometric combination of outcome, lower-cost cohort rank, and lower-active-time cohort rank. The nominal weights are 0.5, 0.3, and 0.2 respectively; when cost or time is unavailable, the available weights are re-normalized rather than suppressing the whole score. A determinate all-failure outcome returns zero. No cohort means both efficiency ranks and the numeric score are unavailable. Missing evidence must not be represented by a neutral midpoint.
 
 An exact cohort is score-eligible only with at least ten successful tasks for both cost and active-time samples. Smaller exact cohorts leave the score unavailable. Versioned fallback cohorts remain usable at reduced confidence and disclose their fallback level and sample size.
 
@@ -86,7 +86,6 @@ Active time is the union of request intervals with the fixed orchestration-gap a
 - platform analysis access requires shadow diagnostics or calibrated score visibility;
 - shadow visibility is platform-only;
 - team Owner/Admin access requires both calibrated-score and team-admin flags;
-- aggregate monitoring is a separate platform gate;
 - ordinary members and inactive users have no analysis access.
 
 `require_agent_analysis_scope` is the server-side authority. UI route checks and sidebar filtering are convenience and must mirror, never replace, that check.
@@ -139,4 +138,4 @@ Browser QA must cover the platform shadow state, calibrated score state, denied 
 
 ## Deliberate Gate
 
-Aggregate monitoring is not published yet. The plan requires shadow grouping review, score sensitivity analysis, minimum-cohort validation, and a dated pricing cutover before the aggregate route can be enabled. `AGENT_ANALYSIS_AGGREGATES_ENABLED` reserves the independent runtime gate; it does not imply that an aggregate endpoint exists.
+Aggregate monitoring remains future work. It requires shadow grouping review, score sensitivity analysis, minimum-cohort validation, and a dated pricing cutover before an aggregate contract or runtime capability is introduced.

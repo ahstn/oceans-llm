@@ -330,6 +330,36 @@ where
                 .await?;
         }
     }
+    if let Some(existing_task) = open_task.as_ref()
+        && store
+            .count_agent_task_requests(existing_task.agent_task_id)
+            .await?
+            >= gateway_core::MAX_AGENT_TASK_REQUESTS
+    {
+        let expected_watermark = existing_task.input_watermark_at;
+        let mut finalized = existing_task.clone();
+        finalized.lifecycle = TaskLifecycleState::Finalized;
+        finalized.ended_at = Some(expected_watermark);
+        finalized.finalized_reason = Some("request_limit".to_string());
+        finalized.updated_at = input.completed_at;
+        if store
+            .finalize_agent_task_if_unchanged(&finalized, expected_watermark)
+            .await?
+        {
+            store
+                .mark_agent_task_analyses_stale(finalized.agent_task_id, None)
+                .await?;
+            enqueue_analysis(
+                store,
+                finalized.agent_task_id,
+                "task_finalized",
+                &expected_watermark.unix_timestamp_nanos().to_string(),
+                input.completed_at,
+            )
+            .await?;
+            open_task = None;
+        }
+    }
     let mut task = if let Some(task) = open_task {
         task
     } else {
@@ -570,15 +600,11 @@ where
                 page_size: gateway_core::MAX_AGENT_TASK_PAGE_SIZE,
                 lifecycle: Some(TaskLifecycleState::Open),
                 started_before: Some(cutoff),
+                input_watermark_before: Some(cutoff),
                 ..Default::default()
             })
             .await?;
-        let candidates: Vec<_> = page
-            .items
-            .into_iter()
-            .map(|trace| trace.task)
-            .filter(|task| task.input_watermark_at <= cutoff)
-            .collect();
+        let candidates: Vec<_> = page.items.into_iter().map(|trace| trace.task).collect();
         if candidates.is_empty() {
             break;
         }
@@ -630,18 +656,46 @@ where
     else {
         return Ok(false);
     };
-    let result = generate_report(
+    let report = generate_report(
         store,
         queue.agent_task_id,
         &queue.desired_versions,
         now,
         report_retention,
-    )
-    .await;
+    );
+    tokio::pin!(report);
+    let lease_interval = std::time::Duration::from_secs(20);
+    let mut heartbeat =
+        tokio::time::interval_at(tokio::time::Instant::now() + lease_interval, lease_interval);
+    let result = loop {
+        tokio::select! {
+            result = &mut report => break result,
+            _ = heartbeat.tick() => {
+                let renewed_at = OffsetDateTime::now_utc();
+                if !store
+                    .renew_agent_analysis_lease(
+                        queue.queue_item_id,
+                        lease_owner,
+                        renewed_at,
+                        renewed_at + Duration::minutes(1),
+                    )
+                    .await?
+                {
+                    break Err(GatewayError::Internal(
+                        "agent analysis lease was lost during report generation".to_string(),
+                    ));
+                }
+            }
+        }
+    };
     match result {
         Ok(()) => {
             store
-                .complete_agent_analysis(queue.queue_item_id, lease_owner, now)
+                .complete_agent_analysis(
+                    queue.queue_item_id,
+                    lease_owner,
+                    OffsetDateTime::now_utc(),
+                )
                 .await?;
             Ok(true)
         }
@@ -683,16 +737,45 @@ where
             trace.task.boundary_policy_version, versions.boundary_policy_version
         )));
     }
-    let observation_set = trace
-        .latest_observation_set
-        .as_ref()
-        .ok_or_else(|| GatewayError::Internal("agent task has no observation set".to_string()))?;
-    if observation_set.parser_version != versions.observation_parser_version {
+    if trace.requests.len() > gateway_core::MAX_AGENT_TASK_REQUESTS as usize {
         return Err(GatewayError::Internal(format!(
-            "agent observation parser `{}` does not match queued version `{}`",
-            observation_set.parser_version, versions.observation_parser_version
+            "agent task `{agent_task_id}` exceeds the bounded request limit"
         )));
     }
+
+    let observation_sets = store.load_agent_observation_sets(agent_task_id).await?;
+    if observation_sets.is_empty() {
+        return Err(GatewayError::Internal(
+            "agent task has no observation set".to_string(),
+        ));
+    }
+    if observation_sets.len() > gateway_core::MAX_AGENT_TASK_REQUESTS as usize {
+        return Err(GatewayError::Internal(format!(
+            "agent task `{agent_task_id}` exceeds the bounded observation-set limit"
+        )));
+    }
+    if observation_sets
+        .iter()
+        .any(|set| set.parser_version != versions.observation_parser_version)
+    {
+        return Err(GatewayError::Internal(
+            "agent task contains observations from an unsupported parser version".to_string(),
+        ));
+    }
+    let observation_set = observation_sets
+        .last()
+        .expect("observation sets are known to be non-empty");
+    let observations = observation_sets
+        .iter()
+        .flat_map(|set| set.observations.iter().cloned())
+        .collect();
+    let request_metadata_count =
+        observation_coverage_count(&observation_sets, "request_metadata", trace.requests.len());
+    let response_payload_count =
+        observation_coverage_count(&observation_sets, "response_payload", trace.requests.len());
+    let truncated_payload_count =
+        observation_coverage_count(&observation_sets, "response_payload_truncated", usize::MAX);
+
     let mut requests = Vec::with_capacity(trace.requests.len());
     let mut intervals = Vec::with_capacity(trace.requests.len());
     for link in &trace.requests {
@@ -702,7 +785,6 @@ where
                 &trace.task.ownership_scope_key,
             )
             .await?;
-        let task_usage = usage.as_ref().map(task_usage_fact);
         if let Some(interval) = link
             .completed_at
             .and_then(|completed_at| ActivityInterval::new(link.occurred_at, completed_at))
@@ -714,36 +796,23 @@ where
             occurred_at: link.occurred_at,
             completed_at: link.completed_at,
             terminal_success: link.terminal_success,
-            usage: task_usage,
+            usage: usage.as_ref().map(task_usage_fact),
         });
     }
+
     let cohort = load_successful_harness_cohort(store, &trace, versions).await?;
-    let coverage = observation_set.coverage.as_object();
     let report = agent_session_analysis::analyze_task(
         &TaskTrace {
             requests,
             activity_intervals: intervals,
-            observations: observation_set.observations.clone(),
+            observations,
             lifecycle: trace.task.lifecycle,
             boundary_confidence: trace.task.boundary_confidence,
             evidence: TraceEvidence {
                 session_observed: trace.task.agent_session_id.is_some(),
-                request_metadata_count: coverage
-                    .and_then(|value| value.get("request_metadata"))
-                    .and_then(Value::as_bool)
-                    .filter(|available| *available)
-                    .map_or(0, |_| trace.requests.len().try_into().unwrap_or(u32::MAX)),
-                response_payload_count: coverage
-                    .and_then(|value| value.get("response_payload"))
-                    .and_then(Value::as_bool)
-                    .filter(|available| *available)
-                    .map_or(0, |_| trace.requests.len().try_into().unwrap_or(u32::MAX)),
-                truncated_payload_count: u32::from(
-                    coverage
-                        .and_then(|value| value.get("response_payload_truncated"))
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false),
-                ),
+                request_metadata_count,
+                response_payload_count,
+                truncated_payload_count,
                 direct_mcp_intervals: vec![],
             },
         },
@@ -807,6 +876,24 @@ where
     }
     Ok(())
 }
+
+fn observation_coverage_count(
+    sets: &[AgentObservationSetRecord],
+    key: &str,
+    maximum: usize,
+) -> u32 {
+    sets.iter()
+        .filter(|set| {
+            set.coverage
+                .get(key)
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count()
+        .min(maximum)
+        .try_into()
+        .unwrap_or(u32::MAX)
+}
 fn task_usage_fact(record: &UsageLedgerRecord) -> TaskUsageFact {
     let accounting = record.normalized_usage.as_ref();
     TaskUsageFact {
@@ -869,6 +956,7 @@ where
                 harness_key: Some(current.task.harness_key.clone()),
                 lifecycle: Some(TaskLifecycleState::Finalized),
                 ownership_scope_key: Some(current.task.ownership_scope_key.clone()),
+                input_watermark_before: Some(current.task.input_watermark_at),
                 page: page_number,
                 page_size: gateway_core::MAX_AGENT_TASK_PAGE_SIZE,
                 ..Default::default()

@@ -8,9 +8,8 @@ const gatewayApiKey = process.env.E2E_GATEWAY_API_KEY ?? 'gwk_e2e.secret-value'
 test('correlates a live agent request and exposes it through the admin task explorer', async ({
   request,
   page,
-  baseURL,
 }) => {
-  const root = baseURL ?? requireEnv('E2E_BASE_URL')
+  const root = requireEnv('E2E_BASE_URL')
   const adminCookie = await ensureAdminSession(page, request, root)
   const externalSessionId = `e2e-agent-session-${Date.now()}`
 

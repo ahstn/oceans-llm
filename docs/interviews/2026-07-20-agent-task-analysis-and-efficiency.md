@@ -189,6 +189,8 @@ The resulting plan narrows v1 to passive gateway observation while preserving a 
 
 **Decision:** Accept any bounded `session_id` header.
 
+**Superseded during implementation:** Accept only bounded session identifiers supplied by a versioned, recognized harness adapter. Unknown or policy-blocked harnesses remain sessionless. See [Passive Agent Correlation](../contributing/reference/agent-session-analysis.md#passive-correlation-and-task-boundaries).
+
 **Safety constraints added to the plan:**
 
 - treat it as self-reported correlation, never identity;
@@ -516,9 +518,9 @@ Repository rules determined the split rather than a product preference question.
 
 ### Admin-Facing Canonical Page
 
-Create `docs/operations/agent-task-efficiency.md` for:
+The implementation publishes [Agent Session Analysis](../operations/agent-session-analysis.md) as the canonical admin-facing page for:
 
-- Agent tasks and inferred boundaries;
+- agent tasks and inferred boundaries;
 - gateway-observed outcome;
 - score/maturity/confidence/coverage/cohort;
 - shadow/calibrated behavior;
@@ -527,14 +529,10 @@ Create `docs/operations/agent-task-efficiency.md` for:
 
 ### Maintainer-Facing Canonical Pages
 
-Create:
+The implementation publishes:
 
-- ADR for identity, inference, score, persistence, privacy, and authorization;
-- metric reference;
-- provider normalization matrix;
-- passive correlation reference;
-- privacy/retention reference;
-- score/pricing version changelog.
+- [ADR: Passive Agent Task Analysis](../adr/2026-07-21-passive-agent-task-analysis.md) for identity, inference, score, persistence, privacy, and authorization;
+- [Agent Session Analysis Reference](../contributing/reference/agent-session-analysis.md) for metrics, provider normalization, passive correlation, privacy, retention, and version policy.
 
 Update existing request-log, harness, MCP, pricing, budget, data-relationship, admin-contract, E2E, and admin-control-plane pages without duplicating canonical policy.
 

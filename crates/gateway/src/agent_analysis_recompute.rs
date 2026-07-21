@@ -1,7 +1,10 @@
 use anyhow::{Context, bail};
 use gateway::{cli::RecomputeAgentAnalysisArgs, config::GatewayConfig};
-use gateway_core::{AgentSessionAnalysisRepository, AgentTaskListQuery};
-use gateway_service::enqueue_agent_analysis;
+use gateway_core::{
+    AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AgentTaskListQuery,
+    AgentTaskTraceRecord, TaskLifecycleState,
+};
+use gateway_service::{desired_versions, enqueue_agent_analysis};
 use gateway_store::AnyStore;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -29,13 +32,14 @@ pub async fn run_command(
         };
         vec![trace.task]
     } else {
+        let desired = desired_versions();
         let mut tasks = Vec::with_capacity(args.limit as usize);
         let mut page = 1;
+        let page_size = gateway_core::MAX_AGENT_TASK_PAGE_SIZE;
         while tasks.len() < args.limit as usize {
-            let remaining = args.limit as usize - tasks.len();
-            let page_size = u32::try_from(remaining.min(200)).expect("bounded page size");
             let result = store
                 .list_agent_tasks(&AgentTaskListQuery {
+                    lifecycle: Some(TaskLifecycleState::Finalized),
                     page,
                     page_size,
                     ..AgentTaskListQuery::default()
@@ -43,12 +47,19 @@ pub async fn run_command(
                 .await
                 .context("failed to list agent tasks")?;
             let item_count = result.items.len();
-            tasks.extend(result.items.into_iter().map(|trace| trace.task));
+            tasks.extend(
+                result
+                    .items
+                    .into_iter()
+                    .filter(|trace| !analysis_is_current(trace, &desired))
+                    .map(|trace| trace.task),
+            );
             if item_count < page_size as usize {
                 break;
             }
             page = page.saturating_add(1);
         }
+        tasks.truncate(args.limit as usize);
         tasks
     };
 
@@ -78,4 +89,25 @@ pub async fn run_command(
     println!("matched_count: {matched_count}");
     println!("enqueued_count: {enqueued_count}");
     Ok(())
+}
+
+fn analysis_is_current(
+    trace: &AgentTaskTraceRecord,
+    desired: &AgentAnalysisDesiredVersions,
+) -> bool {
+    let Some(analysis) = trace.latest_analysis.as_ref() else {
+        return false;
+    };
+    !analysis.stale
+        && analysis.input_watermark_at == trace.task.input_watermark_at
+        && analysis.boundary_policy_version == desired.boundary_policy_version
+        && analysis.observation_parser_version == desired.observation_parser_version
+        && analysis.pricing_policy_version == desired.pricing_policy_version
+        && analysis.cohort_version == desired.cohort_version
+        && analysis.report.report_schema_version == desired.report_schema_version
+        && analysis.report.observation_parser_version == desired.observation_parser_version
+        && analysis.report.analyzer_version == desired.analyzer_version
+        && analysis.report.score_policy_version == desired.score_policy_version
+        && analysis.report.maturity == desired.score_maturity
+        && analysis.report.calibration_approval_id == desired.calibration_approval_id
 }

@@ -59,7 +59,6 @@ pub(crate) fn agent_session_identity_matches(
         && stored.source_provenance == candidate.source_provenance
         && stored.harness_key == candidate.harness_key
         && stored.harness_label == candidate.harness_label
-        && same_timestamp(stored.created_at, candidate.created_at)
 }
 
 pub(crate) fn agent_task_identity_matches(

@@ -215,6 +215,7 @@ pub struct AgentTaskListQuery {
     pub lifecycle: Option<TaskLifecycleState>,
     pub started_after: Option<OffsetDateTime>,
     pub started_before: Option<OffsetDateTime>,
+    pub input_watermark_before: Option<OffsetDateTime>,
     pub score_confidence: Option<Confidence>,
 }
 
@@ -227,6 +228,7 @@ pub struct AgentTaskListPage {
 }
 
 pub const MAX_AGENT_TASK_PAGE_SIZE: u32 = 200;
+pub const MAX_AGENT_TASK_REQUESTS: u64 = 1_000;
 
 #[async_trait]
 pub trait AgentSessionAnalysisRepository {
@@ -271,10 +273,20 @@ pub trait AgentSessionAnalysisRepository {
         link: &AgentTaskRequestLinkRecord,
     ) -> Result<bool, StoreError>;
 
+    async fn count_agent_task_requests(
+        &self,
+        agent_task_id: AgentTaskId,
+    ) -> Result<u64, StoreError>;
+
     async fn append_agent_observation_set(
         &self,
         set: &AgentObservationSetRecord,
     ) -> Result<bool, StoreError>;
+
+    async fn load_agent_observation_sets(
+        &self,
+        agent_task_id: AgentTaskId,
+    ) -> Result<Vec<AgentObservationSetRecord>, StoreError>;
 
     async fn link_request_log_to_agent_task(
         &self,
@@ -313,6 +325,14 @@ pub trait AgentSessionAnalysisRepository {
         now: OffsetDateTime,
         lease_expires_at: OffsetDateTime,
     ) -> Result<Option<AgentAnalysisQueueRecord>, StoreError>;
+
+    async fn renew_agent_analysis_lease(
+        &self,
+        queue_item_id: Uuid,
+        lease_owner: &str,
+        updated_at: OffsetDateTime,
+        lease_expires_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
 
     async fn complete_agent_analysis(
         &self,

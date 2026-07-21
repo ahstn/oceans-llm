@@ -269,7 +269,7 @@ function DataGridTableDndRows<TData>({
           <DataGridTableHead>
             {table.getHeaderGroups().map((headerGroup: HeaderGroup<TData>, index) => {
               return (
-                <DataGridTableHeadRow key={index} rowId={headerGroup.id}>
+                <DataGridTableHeadRow key={index}>
                   {headerGroup.headers.map((header, index) => {
                     const { column } = header
 

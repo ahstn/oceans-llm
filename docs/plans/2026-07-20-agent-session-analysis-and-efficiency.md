@@ -1,9 +1,9 @@
 # Agent Task Analysis and Efficiency
 
-`See also`: [Agent Harness Usage](../operations/agent-harness-usage.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Tool Access](../mcp/mcp-tool-access.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Data Relationships](../contributing/reference/data-relationships.md), [ADR: MCP Tool Grants and Token Overhead](../adr/2026-06-09-mcp-tool-grants-and-token-overhead.md)
+`See also`: [Agent Session Analysis](../operations/agent-session-analysis.md), [Agent Session Analysis Architecture](../contributing/reference/agent-session-analysis.md), [Passive, Versioned Agent Task Analysis](../adr/2026-07-21-passive-agent-task-analysis.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Tool Access](../mcp/mcp-tool-access.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Data Relationships](../contributing/reference/data-relationships.md)
 
 - Date: 2026-07-20
-- Status: Reviewed draft plan
+- Status: Implemented
 - Tracking issue: [#255: Add outcome-aware agent session efficiency analytics](https://github.com/ahstn/oceans-llm/issues/255)
 - Primary product resource: `Agent task`
 - Headline: `Task Efficiency Score`
@@ -981,15 +981,14 @@ Follow `docs/AGENTS.md` terminology and audience boundaries. Use `admins`, not `
 
 ### Primary Admin-Facing Docs
 
-Create:
+Implemented as [Agent Session Analysis](../operations/agent-session-analysis.md), covering:
 
-- `docs/operations/agent-task-efficiency.md`
-  - what Agent tasks are;
-  - gateway-observed versus semantic outcome;
-  - score, maturity, confidence, coverage, cohort, and limitations;
-  - shadow/calibrated feature behavior;
-  - privacy and retention summary;
-  - admin list/detail workflow.
+- what Agent tasks are;
+- gateway-observed versus semantic outcome;
+- score, maturity, confidence, coverage, cohort, and limitations;
+- shadow/calibrated feature behavior;
+- privacy and retention summary;
+- admin list/detail workflow.
 
 Update canonical owners:
 
@@ -1002,14 +1001,10 @@ Update canonical owners:
 
 ### Maintainer-Facing Docs
 
-Create:
+Implemented as:
 
-- `docs/adr/2026-07-20-agent-session-analysis-and-efficiency.md`;
-- `docs/contributing/reference/agent-session-analysis-metrics.md`;
-- `docs/contributing/reference/provider-usage-normalization.md`;
-- `docs/contributing/reference/passive-agent-correlation.md`;
-- `docs/contributing/reference/agent-analysis-privacy-retention.md`;
-- `docs/contributing/reference/agent-analysis-score-changelog.md`.
+- [ADR: Passive Agent Task Analysis](../adr/2026-07-21-passive-agent-task-analysis.md);
+- [Agent Session Analysis Reference](../contributing/reference/agent-session-analysis.md), which owns metrics, provider normalization, passive correlation, privacy, retention, and score-version policy.
 
 Update:
 

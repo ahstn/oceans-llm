@@ -36,6 +36,7 @@ vi.mock('@/server/admin-data.functions', () => ({
 const task: AgentTaskSummaryView = {
   task_id: 'task_1',
   session_id: 'session_1',
+  external_session_observed: true,
   ownership_scope_key: 'user:user_1',
   user_id: 'user_1',
   team_id: null,
@@ -99,6 +100,8 @@ const detail: AgentTaskDetailView = {
       limitations: [],
     },
   ],
+  request_history_truncated: false,
+  observation_history_truncated: false,
   analysis: {
     analysis_id: 'analysis_1',
     input_watermark_at: '2026-07-21T10:00:42Z',
@@ -273,10 +276,12 @@ describe('AgentTasksPage', () => {
         search: expect.objectContaining({ task_id: 'task_1' }),
       })
     })
-    expect(screen.getByRole('button', { name: 'Go to page 1' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    )
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Go to page 1' })).toHaveAttribute(
+        'aria-current',
+        'page',
+      )
+    })
   })
 
   it('deep-links to task diagnostics with request outcomes and retained observations', async () => {
@@ -298,5 +303,23 @@ describe('AgentTasksPage', () => {
     expect(screen.getAllByText('93%').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('1,200')).toHaveLength(2)
     expect(screen.getByText('Tool Invoked')).toBeInTheDocument()
+  })
+
+  it('warns when retained request or observation history exceeds the detail cap', async () => {
+    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, task_id: 'task_1' })
+    getAgentTaskDetailMock.mockResolvedValue({
+      data: {
+        ...detail,
+        request_history_truncated: true,
+        observation_history_truncated: true,
+      },
+    })
+
+    render(<AgentTasksPage />)
+
+    expect(await screen.findByText('Request history truncated')).toBeInTheDocument()
+    expect(screen.getByText('Observation history truncated')).toBeInTheDocument()
+    expect(screen.getByText('Requests (1+)')).toBeInTheDocument()
+    expect(screen.getByText('Inferred observations (1+)')).toBeInTheDocument()
   })
 })

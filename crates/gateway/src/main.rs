@@ -457,9 +457,9 @@ fn load_client_config_gateway_base_url() -> anyhow::Result<Option<String>> {
 
 fn load_agent_analysis_capabilities() -> anyhow::Result<AgentAnalysisRuntimeCapabilities> {
     let calibrated_score_visible =
-        environment_flag("AGENT_ANALYSIS_CALIBRATED_SCORE_ENABLED", false);
-    let team_admin_analytics_enabled = environment_flag("AGENT_ANALYSIS_TEAM_ADMIN_ENABLED", false);
-    let aggregate_monitoring_enabled = environment_flag("AGENT_ANALYSIS_AGGREGATES_ENABLED", false);
+        environment_flag("AGENT_ANALYSIS_CALIBRATED_SCORE_ENABLED", false)?;
+    let team_admin_analytics_enabled =
+        environment_flag("AGENT_ANALYSIS_TEAM_ADMIN_ENABLED", false)?;
     let calibration_approval_id = env::var("AGENT_ANALYSIS_CALIBRATION_APPROVAL_ID")
         .ok()
         .map(|value| value.trim().to_string())
@@ -475,18 +475,17 @@ fn load_agent_analysis_capabilities() -> anyhow::Result<AgentAnalysisRuntimeCapa
     {
         anyhow::bail!("AGENT_ANALYSIS_CALIBRATION_APPROVAL_ID must not exceed 256 bytes");
     }
-    if (team_admin_analytics_enabled || aggregate_monitoring_enabled) && !calibrated_score_visible {
-        anyhow::bail!("team and aggregate agent analytics require calibrated score visibility");
+    if team_admin_analytics_enabled && !calibrated_score_visible {
+        anyhow::bail!("team agent analytics require calibrated score visibility");
     }
     Ok(AgentAnalysisRuntimeCapabilities {
-        passive_analysis_enabled: environment_flag("AGENT_ANALYSIS_ENABLED", true),
+        passive_analysis_enabled: environment_flag("AGENT_ANALYSIS_ENABLED", true)?,
         shadow_diagnostics_visible: environment_flag(
             "AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED",
             false,
-        ),
+        )?,
         calibrated_score_visible,
         team_admin_analytics_enabled,
-        aggregate_monitoring_enabled,
     })
 }
 
@@ -511,14 +510,17 @@ fn load_usage_cost_policy() -> anyhow::Result<UsageCostPolicy> {
     }
 }
 
-fn environment_flag(name: &str, default: bool) -> bool {
-    let Ok(value) = env::var(name) else {
-        return default;
+fn environment_flag(name: &str, default: bool) -> anyhow::Result<bool> {
+    let value = match env::var(name) {
+        Ok(value) => value,
+        Err(env::VarError::NotPresent) => return Ok(default),
+        Err(env::VarError::NotUnicode(_)) => anyhow::bail!("{name} must be valid UTF-8"),
     };
-    matches!(
-        value.trim().to_ascii_lowercase().as_str(),
-        "1" | "true" | "yes" | "on"
-    )
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        _ => anyhow::bail!("{name} must be a boolean"),
+    }
 }
 
 fn spawn_pricing_catalog_refresh_loop(
@@ -641,8 +643,9 @@ fn env_u64(key: &str, default: u64) -> u64 {
 }
 
 fn env_days(key: &str, default: u64) -> time::Duration {
-    let days = env_u64(key, default).min(i64::MAX as u64);
-    time::Duration::days(days as i64)
+    const MAX_RETENTION_DAYS: u64 = 36_500;
+    let days = env_u64(key, default).min(MAX_RETENTION_DAYS);
+    time::Duration::days(i64::try_from(days).expect("retention limit fits i64"))
 }
 
 fn load_identity_token_secret() -> String {

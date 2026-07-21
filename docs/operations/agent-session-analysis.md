@@ -15,11 +15,10 @@ Passive fact collection is enabled by default. The admin surface is separately g
 | `AGENT_ANALYSIS_CALIBRATED_SCORE_ENABLED` | `false` | Show the compact score after calibration approval. |
 | `AGENT_ANALYSIS_CALIBRATION_APPROVAL_ID` | unset | Immutable deployment approval identifier embedded in newly queued calibrated reports; required when calibrated score visibility is enabled and limited to 256 bytes. |
 | `AGENT_ANALYSIS_TEAM_ADMIN_ENABLED` | `false` | Permit active team Owners/Admins to inspect their current team's tasks, but only when calibrated scores are also enabled. |
-| `AGENT_ANALYSIS_AGGREGATES_ENABLED` | `false` | Reserved for the separately validated aggregate-monitoring rollout. No aggregate admin route is published yet. |
 | `AGENT_ANALYSIS_REPORT_RETENTION_DAYS` | `90` | Retain immutable reports independently after request-aligned task facts expire. |
 | `AGENT_ANALYSIS_QUEUE_RETENTION_DAYS` | `7` | Retain completed and terminally failed queue rows for operational diagnosis. |
 
-Boolean variables accept `1`, `true`, `yes`, and `on`, case-insensitively. Retention variables accept unsigned day counts and fall back to their defaults when invalid. Restart the gateway after changing a variable.
+Boolean variables accept `1`, `true`, `yes`, and `on` or `0`, `false`, `no`, and `off`, case-insensitively; other values fail startup. Retention variables accept unsigned day counts, fall back to their defaults when invalid, and are capped at 36,500 days. Restart the gateway after changing a variable.
 
 The safe initial deployment is passive collection with all presentation flags disabled. Enable shadow diagnostics for platform admins only after confirming the retention and access policy for the deployment.
 
@@ -29,11 +28,11 @@ When shadow or calibrated access is enabled, open **Observability → Agent task
 
 The task explorer supports:
 
-- server-side pagination;
-- lifecycle, confidence, user, harness, and UTC start-time filters;
+- server-side pagination capped at 200 tasks per page;
+- lifecycle, confidence, user, service-account, harness, model, operation, caller-class, outcome, score-maturity, coverage, normalized-session, request-tag, and UTC start-time filters;
 - URL-backed filters and `task_id` selection, so refresh, back/forward navigation, and shared links preserve the selected task;
 - a dense task table with outcome, confidence, cost, active time, request count, and explicit data-quality limitations;
-- a detail sheet with score components, outcome evidence, cohort metadata, typed coverage, immutable analysis identity, complete version boundaries, request correlations, and inferred observations.
+- a detail sheet with score components, outcome evidence, cohort metadata, typed coverage, immutable analysis identity, complete version boundaries, and bounded request and inferred-observation histories.
 
 In shadow mode, the normal headline score is replaced with **Shadow** or **Withheld in shadow**. Components and evidence remain visible so platform admins can validate grouping and coverage without presenting an experimental number as authoritative.
 
@@ -60,12 +59,14 @@ An open task is reused only within the same ownership scope, harness, explicit r
 - **Active time** unions overlapping request intervals and caps orchestration gaps. It is not wall-clock elapsed time.
 - **Confidence** describes the quality of the available evidence, not the quality of the answer.
 - **Coverage** records whether bounded request metadata and response-derived evidence were available and whether the payload was truncated.
-- **Observations** in task detail include all retained request-level observation sets through the latest parser watermark, preserve each observation's parser version, and never silently relabel historical facts with a newer parser.
+- **Observations** in task detail include retained request-level observation sets through the latest parser watermark, preserve each observation's parser version, and never silently relabel historical facts with a newer parser. Request and observation histories are each capped at 1,000 rows; the detail response and UI identify either truncated history explicitly.
 - **Cohort** selects prior successful, version-compatible tasks in a fixed fallback cascade: exact boundary, same harness/model/operation/caller, same harness/model, then same harness. Every level requires at least ten peers. The chosen level, sample size, and immutable snapshot digest remain visible; otherwise the score stays unavailable.
 - **Limitations** are first-class output. Missing facts are unavailable; they are not converted to neutral or zero values.
 - **Versions and identity** expose the immutable analysis ID, input watermark, observation-set ID, cohort-snapshot digest, report schema, analyzer, score policy, pricing policy, observation parser, and task-boundary policy needed to reproduce an interpretation.
 
 A failed determinate gateway outcome scores zero. An unknown outcome uses the disclosed fixed prior and remains distinguishable from success. A numeric zero is therefore not interchangeable with unavailable data.
+
+The score combines outcome, lower-cost cohort rank, and lower-active-time cohort rank with nominal weights of 0.5, 0.3, and 0.2. When one efficiency component is unavailable, it re-normalizes the available weights instead of discarding the remaining valid rank. The component values and limitations disclose which evidence contributed.
 
 ## Recompute Retained Tasks
 

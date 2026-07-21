@@ -486,7 +486,7 @@ function DataGridTableVirtual<TData>({
         {renderHeader && (
           <DataGridTableHead>
             {mergedHeaderGroups.map((headerGroup) => (
-              <DataGridTableHeadRow key={headerGroup.id} rowId={headerGroup.id}>
+              <DataGridTableHeadRow key={headerGroup.id}>
                 {headerGroup.headers
                   .filter((header) => header.column.getIsPinned() !== 'right')
                   .map((header) => {

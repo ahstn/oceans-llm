@@ -341,9 +341,9 @@ pub async fn list_agent_tasks(
     }
     let request_tag_key = normalized_filter(query.request_tag_key);
     let request_tag_value = normalized_filter(query.request_tag_value);
-    if request_tag_key.is_some() != request_tag_value.is_some() {
+    if request_tag_key.is_none() && request_tag_value.is_some() {
         return Err(AppError(GatewayError::InvalidRequest(
-            "request_tag_key and request_tag_value must be provided together".to_string(),
+            "request_tag_key is required when request_tag_value is provided".to_string(),
         )));
     }
     let gateway_outcome = match query.gateway_outcome.as_deref().map(str::trim) {
@@ -394,6 +394,7 @@ pub async fn list_agent_tasks(
             lifecycle,
             started_after,
             started_before,
+            input_watermark_before: None,
             score_confidence: match query.score_confidence.as_deref().map(str::trim) {
                 None | Some("") => None,
                 Some("low") => Some(Confidence::Low),
@@ -449,50 +450,56 @@ pub async fn get_agent_task_detail(
     authorize_agent_analysis_owner(
         &state,
         scope,
+        trace.task.team_id,
         trace.task.user_id,
         trace.task.service_account_id,
     )
     .await?;
-    let observations = trace
-        .latest_observation_set
-        .as_ref()
-        .map(|set| {
-            set.observations
+    let observation_sets = state.store.load_agent_observation_sets(task_id).await?;
+    let observation_count = observation_sets
+        .iter()
+        .map(|set| set.observations.len())
+        .sum::<usize>();
+    let observation_history_truncated = observation_count
+        > gateway_core::MAX_AGENT_TASK_REQUESTS as usize
+        || observation_sets.len() > gateway_core::MAX_AGENT_TASK_REQUESTS as usize;
+    let observations = observation_sets
+        .iter()
+        .flat_map(|set| set.observations.iter())
+        .take(gateway_core::MAX_AGENT_TASK_REQUESTS as usize)
+        .map(|observation| AgentObservationView {
+            observation_id: observation.observation_id.to_string(),
+            kind: enum_name(observation.kind),
+            source_request_id: observation.source_request_id.clone(),
+            parser_version: observation.parser_version.clone(),
+            evidence: enum_name(observation.evidence),
+            occurred_at: format_timestamp(observation.occurred_at),
+            facts: AgentObservationFactsView {
+                message_count: observation.facts.message_count,
+                prompt_bytes: observation.facts.prompt_bytes,
+                supplied_tool_count: observation.facts.supplied_tool_count,
+                tool_schema_bytes: observation.facts.tool_schema_bytes,
+                tool_schema_token_estimate: observation.facts.tool_schema_token_estimate,
+                tool_name: observation.facts.tool_name.clone(),
+                tool_schema_hash: observation.facts.tool_schema_hash.clone(),
+                opaque_file_id: observation.facts.opaque_file_id.clone(),
+                file_kind: observation.facts.file_kind.clone(),
+                result_bytes: observation.facts.result_bytes,
+                error_signature: observation.facts.error_signature.clone(),
+                attributes: Value::Object(observation.facts.attributes.clone()),
+            },
+            limitations: observation
+                .limitations
                 .iter()
-                .map(|observation| AgentObservationView {
-                    observation_id: observation.observation_id.to_string(),
-                    kind: enum_name(observation.kind),
-                    source_request_id: observation.source_request_id.clone(),
-                    parser_version: observation.parser_version.clone(),
-                    evidence: enum_name(observation.evidence),
-                    occurred_at: format_timestamp(observation.occurred_at),
-                    facts: AgentObservationFactsView {
-                        message_count: observation.facts.message_count,
-                        prompt_bytes: observation.facts.prompt_bytes,
-                        supplied_tool_count: observation.facts.supplied_tool_count,
-                        tool_schema_bytes: observation.facts.tool_schema_bytes,
-                        tool_schema_token_estimate: observation.facts.tool_schema_token_estimate,
-                        tool_name: observation.facts.tool_name.clone(),
-                        tool_schema_hash: observation.facts.tool_schema_hash.clone(),
-                        opaque_file_id: observation.facts.opaque_file_id.clone(),
-                        file_kind: observation.facts.file_kind.clone(),
-                        result_bytes: observation.facts.result_bytes,
-                        error_signature: observation.facts.error_signature.clone(),
-                        attributes: Value::Object(observation.facts.attributes.clone()),
-                    },
-                    limitations: observation
-                        .limitations
-                        .iter()
-                        .copied()
-                        .map(enum_name)
-                        .collect(),
-                })
-                .collect()
+                .copied()
+                .map(enum_name)
+                .collect(),
         })
-        .unwrap_or_default();
+        .collect();
     let requests = trace
         .requests
         .iter()
+        .take(gateway_core::MAX_AGENT_TASK_REQUESTS as usize)
         .map(|request| AgentTaskRequestView {
             request_id: request.request_id.clone(),
             request_log_id: request.request_log_id.map(|value| value.to_string()),
@@ -522,19 +529,27 @@ pub async fn get_agent_task_detail(
             state.agent_analysis.calibrated_score_visible,
         )
     });
-    let coverage = trace
-        .latest_observation_set
-        .as_ref()
-        .map(|set| AgentObservationCoverageView {
-            request_metadata: coverage_flag(&set.coverage, "request_metadata"),
-            response_payload: coverage_flag(&set.coverage, "response_payload"),
-            response_payload_truncated: coverage_flag(&set.coverage, "response_payload_truncated"),
+    let coverage = observation_sets
+        .last()
+        .map(|_| AgentObservationCoverageView {
+            request_metadata: observation_sets
+                .iter()
+                .any(|set| coverage_flag(&set.coverage, "request_metadata")),
+            response_payload: observation_sets
+                .iter()
+                .any(|set| coverage_flag(&set.coverage, "response_payload")),
+            response_payload_truncated: observation_sets
+                .iter()
+                .any(|set| coverage_flag(&set.coverage, "response_payload_truncated")),
         });
     let session = trace.session.as_ref().map(agent_session_view);
     Ok(Json(envelope(AgentTaskDetailView {
         task: agent_task_summary(&trace, state.agent_analysis.calibrated_score_visible),
         session,
         requests,
+        request_history_truncated: trace.requests.len()
+            > gateway_core::MAX_AGENT_TASK_REQUESTS as usize,
+        observation_history_truncated,
         observations,
         analysis,
         report,
@@ -573,8 +588,14 @@ pub async fn get_agent_session_detail(
                 "agent session not found".to_string(),
             )))
         })?;
-    authorize_agent_analysis_owner(&state, scope, session.user_id, session.service_account_id)
-        .await?;
+    authorize_agent_analysis_owner(
+        &state,
+        scope,
+        session.team_id,
+        session.user_id,
+        session.service_account_id,
+    )
+    .await?;
     let tasks = state
         .store
         .list_agent_tasks(&AgentTaskListQuery {
@@ -607,13 +628,16 @@ pub async fn get_agent_session_detail(
 async fn authorize_agent_analysis_owner(
     state: &AppState,
     scope: AdminDataScope,
+    owner_team_id: Option<Uuid>,
     user_id: Option<Uuid>,
     service_account_id: Option<Uuid>,
 ) -> Result<(), AppError> {
     let AdminDataScope::Team(team_id) = scope else {
         return Ok(());
     };
-    let authorized = if let Some(user_id) = user_id {
+    let authorized = if let Some(owner_team_id) = owner_team_id {
+        owner_team_id == team_id
+    } else if let Some(user_id) = user_id {
         state
             .store
             .get_team_membership_for_user(user_id)

@@ -497,7 +497,13 @@ export function AgentTasksPage() {
                 </AlertDescription>
               </Alert>
             ) : null}
-            {selectedDetail ? <TaskDetail detail={selectedDetail} showScore={showScore} /> : null}
+            {selectedDetail ? (
+              <TaskDetail
+                key={selectedDetail.task.task_id}
+                detail={selectedDetail}
+                showScore={showScore}
+              />
+            ) : null}
           </div>
         </SheetContent>
       </Sheet>
@@ -539,6 +545,16 @@ function TaskDetail({ detail, showScore }: { detail: AgentTaskDetailView; showSc
         <Alert>
           <AlertTitle>Provisional evidence</AlertTitle>
           <AlertDescription>{detail.task.limitations.map(humanize).join(' · ')}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {detail.request_history_truncated || detail.observation_history_truncated ? (
+        <Alert>
+          <AlertTitle>History capped</AlertTitle>
+          <AlertDescription>
+            This response shows at most 1,000 requests and observations. Use request logs for the
+            complete retained history.
+          </AlertDescription>
         </Alert>
       ) : null}
 
@@ -787,26 +803,96 @@ function TaskDetail({ detail, showScore }: { detail: AgentTaskDetailView; showSc
         />
       </DiagnosticSection>
 
-      <DiagnosticSection title={`Requests (${detail.requests.length})`}>
-        <div className="space-y-3">
-          {detail.requests.map((request) => (
-            <RequestFact key={request.request_id} request={request} />
-          ))}
-        </div>
-      </DiagnosticSection>
-
-      <DiagnosticSection title={`Inferred observations (${detail.observations.length})`}>
-        {detail.observations.length > 0 ? (
-          <div className="space-y-3">
-            {detail.observations.map((observation) => (
-              <ObservationFact key={observation.observation_id} observation={observation} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-muted-foreground text-sm">No inferred observations.</p>
-        )}
-      </DiagnosticSection>
+      <RequestHistory
+        requests={detail.requests}
+        historyTruncated={detail.request_history_truncated}
+      />
+      <ObservationHistory
+        observations={detail.observations}
+        historyTruncated={detail.observation_history_truncated}
+      />
     </>
+  )
+}
+
+function RequestHistory({
+  requests,
+  historyTruncated,
+}: {
+  requests: AgentTaskRequestView[]
+  historyTruncated: boolean
+}) {
+  const [visibleCount, setVisibleCount] = useState(25)
+  const visible = requests.slice(0, visibleCount)
+  return (
+    <DiagnosticSection title={`Requests (${requests.length}${historyTruncated ? '+' : ''})`}>
+      {historyTruncated ? (
+        <Alert>
+          <AlertTitle>Request history truncated</AlertTitle>
+          <AlertDescription>
+            This view contains the first 1,000 retained requests. Use request logs for the remaining
+            history.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <div className="space-y-3">
+        {visible.map((request) => (
+          <RequestFact key={request.request_id} request={request} />
+        ))}
+        {visibleCount < requests.length ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setVisibleCount((count) => Math.min(count + 25, requests.length))}
+          >
+            Show 25 more requests
+          </Button>
+        ) : null}
+      </div>
+    </DiagnosticSection>
+  )
+}
+
+function ObservationHistory({
+  observations,
+  historyTruncated,
+}: {
+  observations: AgentObservationView[]
+  historyTruncated: boolean
+}) {
+  const [visibleCount, setVisibleCount] = useState(25)
+  const visible = observations.slice(0, visibleCount)
+  return (
+    <DiagnosticSection
+      title={`Inferred observations (${observations.length}${historyTruncated ? '+' : ''})`}
+    >
+      {historyTruncated ? (
+        <Alert>
+          <AlertTitle>Observation history truncated</AlertTitle>
+          <AlertDescription>
+            This view contains the first 1,000 retained observations.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {observations.length > 0 ? (
+        <div className="space-y-3">
+          {visible.map((observation) => (
+            <ObservationFact key={observation.observation_id} observation={observation} />
+          ))}
+          {visibleCount < observations.length ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setVisibleCount((count) => Math.min(count + 25, observations.length))}
+            >
+              Show 25 more observations
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-sm">No inferred observations.</p>
+      )}
+    </DiagnosticSection>
   )
 }
 

@@ -74,6 +74,34 @@ import {
 } from '@/server/admin-data.server'
 import { resolveBrowserGatewayOrigin } from '@/server/gateway-client.server'
 
+type AgentTaskFilters = NonNullable<Parameters<typeof listAgentTasks>[0]>
+
+function validateAgentTaskFilters(data: unknown): AgentTaskFilters {
+  if (data === undefined) return {}
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Agent task filters must be an object')
+  }
+  if (
+    Object.values(data).some(
+      (value) => value !== undefined && typeof value !== 'string' && typeof value !== 'number',
+    )
+  ) {
+    throw new Error('Agent task filter values must be strings or numbers')
+  }
+  return data as AgentTaskFilters
+}
+
+function validateAgentTaskDetailInput(data: unknown): { taskId: string } {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Agent task detail input must be an object')
+  }
+  const taskId = Reflect.get(data, 'taskId')
+  if (typeof taskId !== 'string' || taskId.trim() === '') {
+    throw new Error('taskId is required')
+  }
+  return { taskId }
+}
+
 export const getOceansVersion = createServerFn({ method: 'GET' }).handler(async () => {
   return getGatewayVersion()
 })
@@ -202,17 +230,17 @@ export const removeBudget = createServerFn({ method: 'POST' }).handler(
   },
 )
 
-export const getAgentTasks = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data?: Parameters<typeof listAgentTasks>[0] }) => {
+export const getAgentTasks = createServerFn({ method: 'POST' })
+  .validator(validateAgentTaskFilters)
+  .handler(async ({ data }) => {
     return listAgentTasks(data)
-  },
-)
+  })
 
-export const getObservabilityAgentTaskDetail = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data: { taskId: string } }) => {
+export const getObservabilityAgentTaskDetail = createServerFn({ method: 'GET' })
+  .validator(validateAgentTaskDetailInput)
+  .handler(async ({ data }) => {
     return getAgentTaskDetail(data.taskId)
-  },
-)
+  })
 
 export const getRequestLogs = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data?: Parameters<typeof listRequestLogs>[0] }) => {

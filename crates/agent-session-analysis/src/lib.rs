@@ -443,18 +443,30 @@ fn active_time_milliseconds(
 #[must_use]
 fn task_efficiency_score(
     outcome_basis_points: u16,
-    cost_basis_points: u16,
-    time_basis_points: u16,
-) -> u8 {
-    if outcome_basis_points == 0 {
-        return 0;
+    cost_basis_points: Option<u16>,
+    time_basis_points: Option<u16>,
+) -> Option<u8> {
+    if cost_basis_points.is_none() && time_basis_points.is_none() {
+        return None;
     }
-    let outcome = f64::from(outcome_basis_points) / 10_000.0;
-    let cost = f64::from(cost_basis_points) / 10_000.0;
-    let time = f64::from(time_basis_points) / 10_000.0;
-    (100.0 * outcome.powf(0.50) * cost.powf(0.30) * time.powf(0.20))
-        .round()
-        .clamp(0.0, 100.0) as u8
+    if outcome_basis_points == 0 {
+        return Some(0);
+    }
+    let mut weighted_log_sum = 0.50 * (f64::from(outcome_basis_points) / 10_000.0).ln();
+    let mut included_weight = 0.50;
+    if let Some(cost) = cost_basis_points {
+        weighted_log_sum += 0.30 * (f64::from(cost) / 10_000.0).ln();
+        included_weight += 0.30;
+    }
+    if let Some(time) = time_basis_points {
+        weighted_log_sum += 0.20 * (f64::from(time) / 10_000.0).ln();
+        included_weight += 0.20;
+    }
+    Some(
+        (100.0 * (weighted_log_sum / included_weight).exp())
+            .round()
+            .clamp(0.0, 100.0) as u8,
+    )
 }
 
 fn validate_policy(policy: &AnalysisPolicy) -> Result<(), AnalysisError> {
@@ -562,6 +574,14 @@ fn sum_usage(
         .try_fold(0_i64, |total, value| {
             value.and_then(|value| total.checked_add(value))
         })
+}
+
+fn ratio_basis_points(numerator: i64, denominator: i64) -> Option<i32> {
+    if denominator <= 0 {
+        return None;
+    }
+    let ratio = i128::from(numerator) * 10_000 / i128::from(denominator);
+    Some(ratio.clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32)
 }
 
 fn coverage_percent(observed: usize, total: usize) -> u8 {
@@ -750,9 +770,11 @@ pub fn analyze_task(
     let active_time_efficiency_basis_points = scoring_cohort.and_then(|cohort| {
         lower_is_better_efficiency_basis_points(active_time_ms, &cohort.successful_active_time_ms)
     });
-    let score = cost_efficiency_basis_points
-        .zip(active_time_efficiency_basis_points)
-        .map(|(cost, time)| task_efficiency_score(outcome.factor_basis_points, cost, time));
+    let score = task_efficiency_score(
+        outcome.factor_basis_points,
+        cost_efficiency_basis_points,
+        active_time_efficiency_basis_points,
+    );
 
     let request_count = trace.requests.len();
     let outcome_coverage = coverage_percent(outcome.determinate_requests as usize, request_count);
@@ -835,20 +857,12 @@ pub fn analyze_task(
             normalized_cost_10000: normalized_cost,
             uncached_input_cost_10000: uncached_input_cost,
             cache_savings_10000: cache_savings,
-            cache_savings_basis_points: cache_savings.zip(uncached_input_cost).and_then(
-                |(savings, uncached)| {
-                    (uncached > 0)
-                        .then(|| savings.saturating_mul(10_000) / uncached)
-                        .and_then(|value| i32::try_from(value).ok())
-                },
-            ),
-            cache_read_write_ratio_basis_points: cache_read.zip(cache_creation).and_then(
-                |(read, write)| {
-                    (write > 0)
-                        .then(|| read.saturating_mul(10_000) / write)
-                        .and_then(|value| i32::try_from(value).ok())
-                },
-            ),
+            cache_savings_basis_points: cache_savings
+                .zip(uncached_input_cost)
+                .and_then(|(savings, uncached)| ratio_basis_points(savings, uncached)),
+            cache_read_write_ratio_basis_points: cache_read
+                .zip(cache_creation)
+                .and_then(|(read, write)| ratio_basis_points(read, write)),
             pricing_policy_versions,
         },
         context: context_diagnostics(&trace.requests, active_time_ms, &trace.observations),
@@ -1047,7 +1061,24 @@ mod tests {
 
     #[test]
     fn failed_task_scores_zero() {
-        assert_eq!(task_efficiency_score(0, 10_000, 10_000), 0);
+        assert_eq!(
+            task_efficiency_score(0, Some(10_000), Some(10_000)),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn score_renormalizes_when_one_efficiency_component_is_missing() {
+        assert_eq!(task_efficiency_score(10_000, Some(2_500), None), Some(59));
+        assert_eq!(task_efficiency_score(10_000, None, Some(2_500)), Some(67));
+        assert_eq!(task_efficiency_score(10_000, None, None), None);
+    }
+
+    #[test]
+    fn diagnostic_ratios_saturate_instead_of_disappearing() {
+        assert_eq!(ratio_basis_points(i64::MAX, 1), Some(i32::MAX));
+        assert_eq!(ratio_basis_points(i64::MIN, 1), Some(i32::MIN));
+        assert_eq!(ratio_basis_points(1, 0), None);
     }
 
     #[test]

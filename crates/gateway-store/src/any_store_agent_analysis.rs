@@ -101,6 +101,13 @@ impl AgentSessionAnalysisRepository for AnyStore {
         }
     }
 
+    async fn count_agent_task_requests(&self, task_id: Uuid) -> Result<u64, StoreError> {
+        match self {
+            Self::Libsql(store) => store.count_agent_task_requests(task_id).await,
+            Self::Postgres(store) => store.count_agent_task_requests(task_id).await,
+        }
+    }
+
     async fn append_agent_observation_set(
         &self,
         set: &gateway_core::AgentObservationSetRecord,
@@ -108,6 +115,16 @@ impl AgentSessionAnalysisRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.append_agent_observation_set(set).await,
             Self::Postgres(store) => store.append_agent_observation_set(set).await,
+        }
+    }
+
+    async fn load_agent_observation_sets(
+        &self,
+        task_id: Uuid,
+    ) -> Result<Vec<gateway_core::AgentObservationSetRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.load_agent_observation_sets(task_id).await,
+            Self::Postgres(store) => store.load_agent_observation_sets(task_id).await,
         }
     }
 
@@ -189,6 +206,27 @@ impl AgentSessionAnalysisRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.claim_agent_analysis(owner, now, expires_at).await,
             Self::Postgres(store) => store.claim_agent_analysis(owner, now, expires_at).await,
+        }
+    }
+
+    async fn renew_agent_analysis_lease(
+        &self,
+        item_id: Uuid,
+        owner: &str,
+        updated_at: OffsetDateTime,
+        expires_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .renew_agent_analysis_lease(item_id, owner, updated_at, expires_at)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .renew_agent_analysis_lease(item_id, owner, updated_at, expires_at)
+                    .await
+            }
         }
     }
 

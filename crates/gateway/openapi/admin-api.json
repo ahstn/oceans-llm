@@ -5925,7 +5925,9 @@
         "required": [
           "task",
           "requests",
-          "observations"
+          "observations",
+          "request_history_truncated",
+          "observation_history_truncated"
         ],
         "properties": {
           "analysis": {
@@ -5948,6 +5950,9 @@
               }
             ]
           },
+          "observation_history_truncated": {
+            "type": "boolean"
+          },
           "observations": {
             "type": "array",
             "items": {
@@ -5963,6 +5968,9 @@
                 "$ref": "#/components/schemas/AgentTaskEfficiencyReportView"
               }
             ]
+          },
+          "request_history_truncated": {
+            "type": "boolean"
           },
           "requests": {
             "type": "array",
@@ -6753,14 +6761,10 @@
           "passive_analysis_enabled",
           "shadow_diagnostics_visible",
           "calibrated_score_visible",
-          "team_admin_analytics_enabled",
-          "aggregate_monitoring_enabled"
+          "team_admin_analytics_enabled"
         ],
         "properties": {
           "agent_analysis": {
-            "type": "boolean"
-          },
-          "aggregate_monitoring_enabled": {
             "type": "boolean"
           },
           "calibrated_score_visible": {
@@ -8086,7 +8090,9 @@
             "required": [
               "task",
               "requests",
-              "observations"
+              "observations",
+              "request_history_truncated",
+              "observation_history_truncated"
             ],
             "properties": {
               "analysis": {
@@ -8109,6 +8115,9 @@
                   }
                 ]
               },
+              "observation_history_truncated": {
+                "type": "boolean"
+              },
               "observations": {
                 "type": "array",
                 "items": {
@@ -8124,6 +8133,9 @@
                     "$ref": "#/components/schemas/AgentTaskEfficiencyReportView"
                   }
                 ]
+              },
+              "request_history_truncated": {
+                "type": "boolean"
               },
               "requests": {
                 "type": "array",

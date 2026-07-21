@@ -13,7 +13,7 @@ pub use agent_analysis::{
     AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
     AgentSessionRecord, AgentTaskAnalysisRecord, AgentTaskListPage, AgentTaskListQuery,
     AgentTaskRequestLinkRecord, AgentTaskTraceRecord, AgentTaskWindowRecord,
-    MAX_AGENT_TASK_PAGE_SIZE,
+    MAX_AGENT_TASK_PAGE_SIZE, MAX_AGENT_TASK_REQUESTS,
 };
 pub use agent_session_analysis::{
     ActivityInterval, AgentSessionId, AgentTaskId, AnalysisId, BoundedObservationFacts,
