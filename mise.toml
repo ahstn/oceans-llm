@@ -169,7 +169,7 @@ run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-re
 
 [tasks.gateway-seed-local-demo]
 description = "Seed the local-only demo dataset (teams, users, service accounts, budgets, api keys, request history) against `gateway.yaml`"
-run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- seed-local-demo'
+run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo'
 
 [tasks.gateway-reset-local-demo]
 description = "Recreate local `gateway.db` with the local-only demo dataset"
