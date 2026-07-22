@@ -48,8 +48,7 @@ Default local endpoints:
 - active config: `./gateway.yaml`
 - database backend: local libsql or SQLite
 
-On a first `mise run dev-stack` with no `./gateway.db`, the local demo dataset is seeded automatically.
-Use `mise run gateway-reset-local-demo` any time you want to recreate that richer sample state from scratch.
+`mise run dev-stack` refreshes the local demo dataset on startup and enables platform-admin shadow diagnostics. Sign in with the seeded platform admin and open **Observability → Agent tasks** to inspect the sample task reports. Use `mise run gateway-reset-local-demo` any time you want to recreate the complete sample state from scratch.
 
 ## Core Commands
 

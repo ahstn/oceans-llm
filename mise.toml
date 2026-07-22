@@ -168,12 +168,12 @@ env = { POSTGRES_URL = { required = true } }
 run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-request-logs --retention "${RETENTION:-7d}"'
 
 [tasks.gateway-seed-local-demo]
-description = "Seed the local-only demo dataset (teams, users, service accounts, budgets, api keys, request history) against `gateway.yaml`"
+description = "Seed the local-only demo dataset (identity, budgets, api keys, request history, and agent task diagnostics) against `gateway.yaml`"
 run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo'
 
 [tasks.gateway-reset-local-demo]
 description = "Recreate local `gateway.db` with the local-only demo dataset"
-run = 'rm -f gateway.db && OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- seed-local-demo'
+run = 'rm -f gateway.db && OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo'
 
 [tasks.gateway-serve-prod]
 description = "Run production-shaped local `gateway serve` against `gateway.prod.yaml`"
@@ -208,12 +208,9 @@ ADMIN_UI_INTERNAL_PORT="${ADMIN_UI_INTERNAL_PORT:-3001}"
 ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_PORT}}"
 
 export OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
+export AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED="${AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED:-true}"
 
-if [[ ! -f "$ROOT_DIR/gateway.db" ]]; then
-  cargo run -p gateway --bin gateway -- seed-local-demo
-else
-  cargo run -p gateway --bin gateway -- seed-config
-fi
+cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo
 
 
 cleanup() {
@@ -227,7 +224,7 @@ trap cleanup EXIT INT TERM
 bun run --cwd "$WEB_DIR" dev -- --port "$ADMIN_UI_INTERNAL_PORT" &
 UI_PID=$!
 
-ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" PORT="$GATEWAY_PORT" cargo run -p gateway --bin gateway -- serve
+ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" PORT="$GATEWAY_PORT" cargo run -p gateway --bin gateway -- --config gateway.yaml serve
 """
 
 [tasks.prod-stack]

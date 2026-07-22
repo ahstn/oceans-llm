@@ -22,6 +22,12 @@ Boolean variables accept `1`, `true`, `yes`, and `on` or `0`, `false`, `no`, and
 
 The safe initial deployment is passive collection with all presentation flags disabled. Enable shadow diagnostics for platform admins only after confirming the retention and access policy for the deployment.
 
+## Local Development
+
+`mise run dev-stack` refreshes the local demo request and agent-task fixtures, enables shadow diagnostics by default, and starts the report worker. The **Observability → Agent tasks** page becomes available to the seeded platform admin; reports populate as the queued demo analyses are processed. Set `AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED=false` before starting the stack to exercise the hidden-surface state.
+
+Running `mise run gateway-seed-local-demo` separately seeds the same finalized task fixtures and queues their analyses, but does not start the gateway worker or change presentation flags. Start the gateway with shadow or calibrated access afterward to expose the page and process the queue.
+
 ## Admin Workflow
 
 When shadow or calibrated access is enabled, open **Observability → Agent tasks** at `/admin/observability/agent-tasks`.

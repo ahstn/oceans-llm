@@ -15,6 +15,7 @@ use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+mod agent_analysis;
 mod api_keys;
 mod models;
 mod teams;
@@ -373,7 +374,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             has_payload: payload.is_some(),
             request_payload_truncated,
             response_payload_truncated,
-            request_tags,
+            request_tags: request_tags.clone(),
             tool_cardinality: usage::demo_tool_cardinality(fixture),
             user_agent_raw: Some("opencode/1.0.0 (local demo)".to_string()),
             agent_harness_key: "opencode".to_string(),
@@ -485,6 +486,17 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                     fixture.api_key_public_id
                 )
             })?;
+        agent_analysis::seed_demo_agent_task(
+            store,
+            fixture,
+            api_key,
+            team_id,
+            &ledger.ownership_scope_key,
+            &request_tags,
+            occurred_at,
+            response_payload_truncated,
+        )
+        .await?;
     }
 
     Ok(raw_keys)
