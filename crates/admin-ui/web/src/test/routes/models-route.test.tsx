@@ -307,12 +307,15 @@ describe('ModelsPage', () => {
     expect(within(table).queryByText('Resolved')).not.toBeInTheDocument()
     expect(headers).toEqual([
       '',
-      'Model id',
+      'Model ID',
       'Actions',
-      'Provider and model',
+      'Provider & Model',
       'Cost / 1M tokens',
       'Model allowlist',
     ])
+    expect(within(table).getByRole('columnheader', { name: 'Provider & Model' })).toHaveClass(
+      'w-[18rem]',
+    )
 
     const identityCell = screen.getAllByTestId('models-desktop-cell-backup-fast')[0]
     expect(within(identityCell).getByText('backup-fast')).toBeInTheDocument()
@@ -322,6 +325,9 @@ describe('ModelsPage', () => {
     const backupRow = within(table).getByText('backup-fast').closest('tr')
     expect(backupRow).not.toBeNull()
     const backupCells = within(backupRow as HTMLElement).getAllByRole('cell')
+    for (const cell of backupCells) {
+      expect(cell).toHaveClass('py-1')
+    }
 
     expect(
       within(backupCells[2] as HTMLElement).getByRole('button', { name: 'Info' }),

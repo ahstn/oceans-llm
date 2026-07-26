@@ -111,12 +111,12 @@ export function ModelsPage() {
     selectableModels.every((model) => selectedModelIdSet.has(model.id))
   const desktopTableMinWidth =
     visibleColumns.contextWindow && visibleColumns.capabilities
-      ? 'min-w-[109rem]'
+      ? 'min-w-[103rem]'
       : visibleColumns.capabilities
-        ? 'min-w-[97rem]'
+        ? 'min-w-[91rem]'
         : visibleColumns.contextWindow
-          ? 'min-w-[91rem]'
-          : 'min-w-[79rem]'
+          ? 'min-w-[85rem]'
+          : 'min-w-[73rem]'
 
   function navigateToPage(page: number) {
     void router.navigate({
@@ -391,13 +391,13 @@ export function ModelsPage() {
                         />
                       </TableHead>
                       <TableHead className="sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)] shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]">
-                        Model id
+                        Model ID
                       </TableHead>
                       <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                         Actions
                       </TableHead>
-                      <TableHead className="w-[24rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Provider and model
+                      <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Provider &amp; Model
                       </TableHead>
                       <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                         Cost / 1M tokens
@@ -420,7 +420,7 @@ export function ModelsPage() {
                   <TableBody>
                     {modelPage.items.map((model) => (
                       <TableRow key={model.id} className="align-middle">
-                        <TableCell className="bg-card sticky left-0 z-20 px-3 py-3">
+                        <TableCell className="bg-card sticky left-0 z-20 px-3 py-1">
                           <ModelCheckbox
                             aria-label={`Select model ${model.id}`}
                             checked={selectedModelIdSet.has(model.id)}
@@ -429,7 +429,7 @@ export function ModelsPage() {
                           />
                         </TableCell>
                         <TableCell
-                          className="bg-card sticky left-[3rem] z-20 px-3 py-3 shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]"
+                          className="bg-card sticky left-[3rem] z-20 px-3 py-1 shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]"
                           data-testid={`models-desktop-cell-${model.id}`}
                         >
                           <div className="flex min-w-0 flex-col gap-2 py-1">
@@ -465,14 +465,14 @@ export function ModelsPage() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="px-3 py-3 whitespace-normal">
+                        <TableCell className="px-3 py-1 whitespace-normal">
                           <ModelActions
                             model={model}
                             onOpenClientConfig={openSingleClientConfig}
                             onOpenInfo={openModelInfo}
                           />
                         </TableCell>
-                        <TableCell className="px-3 py-3">
+                        <TableCell className="px-3 py-1">
                           <div className="flex min-w-0 flex-col gap-2 py-1">
                             <div className="flex min-w-0 items-center gap-2">
                               <BrandIcon iconKey={model.model_icon_key} size={14} />
@@ -490,7 +490,7 @@ export function ModelsPage() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="px-3 py-3 whitespace-normal">
+                        <TableCell className="px-3 py-1 whitespace-normal">
                           <StackedMetric
                             topLabel="Input"
                             topValue={formatCost(model.input_cost_per_million_tokens_usd_10000)}
@@ -499,7 +499,7 @@ export function ModelsPage() {
                           />
                         </TableCell>
                         {visibleColumns.contextWindow ? (
-                          <TableCell className="px-3 py-3 whitespace-normal">
+                          <TableCell className="px-3 py-1 whitespace-normal">
                             <StackedMetric
                               topLabel="Input"
                               topValue={formatWindow(
@@ -511,11 +511,11 @@ export function ModelsPage() {
                           </TableCell>
                         ) : null}
                         {visibleColumns.capabilities ? (
-                          <TableCell className="px-3 py-3 whitespace-normal">
+                          <TableCell className="px-3 py-1 whitespace-normal">
                             <CapabilityBadges model={model} />
                           </TableCell>
                         ) : null}
-                        <TableCell className="px-3 py-3 whitespace-normal">
+                        <TableCell className="px-3 py-1 whitespace-normal">
                           <ModelAllowlistDetail model={model} compact />
                         </TableCell>
                       </TableRow>
