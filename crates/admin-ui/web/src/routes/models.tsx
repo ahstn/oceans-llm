@@ -336,7 +336,7 @@ export function ModelsPage() {
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="outline"
                   size="sm"
                   className="gap-2"
                   onClick={openSelectedClientConfig}
@@ -428,7 +428,7 @@ export function ModelsPage() {
                         </TableHead>
                       ) : null}
                       <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Model allowlist
+                        Allow List
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1181,6 +1181,30 @@ function ModelAllowlistDetail({ compact = false, model }: { compact?: boolean; m
         <AppIcon icon={CircleCheckIcon} size={compact ? 13 : 14} stroke={1.5} />
         Unrestricted
       </span>
+    )
+  }
+
+  if (compact) {
+    const userCount = model.allowlist.users.length
+    const teamCount = model.allowlist.teams.length
+
+    return (
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="inline-flex items-center gap-1.5 text-sm text-[var(--color-text)]">
+          <AppIcon icon={CircleCheckIcon} size={13} stroke={1.5} />
+          Restricted
+        </span>
+        {userCount > 0 || teamCount > 0 ? (
+          <span className="flex flex-wrap gap-x-2 text-xs text-[var(--color-text-soft)]">
+            {userCount > 0 ? (
+              <span>{`${userCount} ${userCount === 1 ? 'User' : 'Users'}`}</span>
+            ) : null}
+            {teamCount > 0 ? (
+              <span>{`${teamCount} ${teamCount === 1 ? 'Team' : 'Teams'}`}</span>
+            ) : null}
+          </span>
+        ) : null}
+      </div>
     )
   }
 
