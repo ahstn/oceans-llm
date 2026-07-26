@@ -250,98 +250,113 @@ export function ModelsPage() {
               Page {modelPage.page} of {totalPages}
             </span>
           </div>
-          <div className="hidden flex-wrap items-center justify-between gap-3 rounded-md border border-[color:var(--color-border)] px-3 py-2 md:flex">
+          <div className="hidden flex-wrap items-center justify-between gap-3 border-t border-[color:var(--color-border)] pt-2 md:flex">
             <span className="text-sm text-[var(--color-text-muted)]">
-              {selectedModelIds.length} selected for client config
+              {selectedModelIds.length === 0
+                ? 'Select models to generate multi-model config'
+                : `${selectedModelIds.length} selected for client config`}
             </span>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedModelsById({})}
-                disabled={selectedModelIds.length === 0 || isGeneratingConfig}
-              >
-                Clear
-              </Button>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button type="button" variant="outline" size="sm" className="gap-2">
-                    <AppIcon icon={ColumnsThreeCogIcon} size={14} stroke={1.5} />
-                    Columns
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-64 gap-3 p-3">
-                  <div className="flex flex-col gap-1">
-                    <h2 className="text-sm font-medium text-[var(--color-text)]">Table columns</h2>
-                    <p className="text-xs text-[var(--color-text-muted)]">
-                      Show secondary model details in the desktop table.
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
-                      <ModelCheckbox
-                        className="mt-0.5"
-                        checked={visibleColumns.contextWindow}
-                        onChange={(event) => {
-                          const checked = event.currentTarget.checked
-                          setVisibleColumns((current) => ({
-                            ...current,
-                            contextWindow: checked,
-                          }))
-                        }}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedModelsById({})}
+                  disabled={selectedModelIds.length === 0 || isGeneratingConfig}
+                >
+                  Clear
+                </Button>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="gap-2">
+                      <AppIcon
+                        icon={ColumnsThreeCogIcon}
+                        size={14}
+                        stroke={1.5}
+                        data-icon="inline-start"
                       />
-                      <span className="flex min-w-0 flex-col gap-0.5">
-                        <span className="font-medium text-[var(--color-text)]">Context window</span>
-                        <span className="text-xs text-[var(--color-text-muted)]">
-                          Input and output token limits.
+                      Columns
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-64 gap-3 p-3">
+                    <div className="flex flex-col gap-1">
+                      <h2 className="text-sm font-medium text-[var(--color-text)]">
+                        Table columns
+                      </h2>
+                      <p className="text-xs text-[var(--color-text-muted)]">
+                        Show secondary model details in the desktop table.
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
+                        <ModelCheckbox
+                          className="mt-0.5"
+                          checked={visibleColumns.contextWindow}
+                          onChange={(event) => {
+                            const checked = event.currentTarget.checked
+                            setVisibleColumns((current) => ({
+                              ...current,
+                              contextWindow: checked,
+                            }))
+                          }}
+                        />
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="font-medium text-[var(--color-text)]">
+                            Context window
+                          </span>
+                          <span className="text-xs text-[var(--color-text-muted)]">
+                            Input and output token limits.
+                          </span>
                         </span>
-                      </span>
-                    </label>
-                    <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
-                      <ModelCheckbox
-                        className="mt-0.5"
-                        checked={visibleColumns.capabilities}
-                        onChange={(event) => {
-                          const checked = event.currentTarget.checked
-                          setVisibleColumns((current) => ({
-                            ...current,
-                            capabilities: checked,
-                          }))
-                        }}
-                      />
-                      <span className="flex min-w-0 flex-col gap-0.5">
-                        <span className="font-medium text-[var(--color-text)]">Capabilities</span>
-                        <span className="text-xs text-[var(--color-text-muted)]">
-                          Streaming, vision, tools, and attachment support.
+                      </label>
+                      <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
+                        <ModelCheckbox
+                          className="mt-0.5"
+                          checked={visibleColumns.capabilities}
+                          onChange={(event) => {
+                            const checked = event.currentTarget.checked
+                            setVisibleColumns((current) => ({
+                              ...current,
+                              capabilities: checked,
+                            }))
+                          }}
+                        />
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="font-medium text-[var(--color-text)]">Capabilities</span>
+                          <span className="text-xs text-[var(--color-text-muted)]">
+                            Streaming, vision, tools, and attachment support.
+                          </span>
                         </span>
-                      </span>
-                    </label>
-                  </div>
-                </PopoverContent>
-              </Popover>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="gap-2"
-                onClick={openSelectedClientConfig}
-                disabled={selectedModelIds.length === 0 || isGeneratingConfig}
-              >
-                <AppIcon icon={CodeIcon} size={14} stroke={1.5} data-icon="inline-start" />
-                Generate config
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() => void refreshPricing()}
-                disabled={isRefreshingPricing}
-              >
-                <AppIcon icon={RefreshIcon} size={14} stroke={1.5} data-icon="inline-start" />
-                {isRefreshingPricing ? 'Refreshing...' : 'Refresh pricing'}
-              </Button>
+                      </label>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="gap-2"
+                  onClick={openSelectedClientConfig}
+                  disabled={selectedModelIds.length === 0 || isGeneratingConfig}
+                >
+                  <AppIcon icon={CodeIcon} size={14} stroke={1.5} data-icon="inline-start" />
+                  Generate config
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => void refreshPricing()}
+                  disabled={isRefreshingPricing}
+                >
+                  <AppIcon icon={RefreshIcon} size={14} stroke={1.5} data-icon="inline-start" />
+                  {isRefreshingPricing ? 'Refreshing...' : 'Refresh pricing'}
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -419,8 +434,8 @@ export function ModelsPage() {
                   </TableHeader>
                   <TableBody>
                     {modelPage.items.map((model) => (
-                      <TableRow key={model.id} className="align-middle">
-                        <TableCell className="bg-card sticky left-0 z-20 px-3 py-1">
+                      <TableRow key={model.id} className="group align-middle">
+                        <TableCell className="bg-card group-hover:bg-muted/50 sticky left-0 z-20 px-3 py-1 transition-colors">
                           <ModelCheckbox
                             aria-label={`Select model ${model.id}`}
                             checked={selectedModelIdSet.has(model.id)}
@@ -429,7 +444,7 @@ export function ModelsPage() {
                           />
                         </TableCell>
                         <TableCell
-                          className="bg-card sticky left-[3rem] z-20 px-3 py-1 shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]"
+                          className="bg-card group-hover:bg-muted/50 sticky left-[3rem] z-20 px-3 py-1 shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)] transition-colors"
                           data-testid={`models-desktop-cell-${model.id}`}
                         >
                           <div className="flex min-w-0 flex-col gap-2 py-1">
@@ -666,12 +681,12 @@ function ModelActions({
         <TooltipTrigger asChild>
           <Button
             type="button"
-            variant="secondary"
+            variant="outline"
             size="sm"
             className="gap-2"
             onClick={() => onOpenInfo(model)}
           >
-            <AppIcon icon={BadgeInfoIcon} size={14} stroke={1.5} />
+            <AppIcon icon={BadgeInfoIcon} size={14} stroke={1.5} data-icon="inline-start" />
             Info
           </Button>
         </TooltipTrigger>
@@ -725,13 +740,13 @@ function ClientConfigButton({
       <TooltipTrigger asChild>
         <Button
           type="button"
-          variant={compact ? 'secondary' : 'outline'}
+          variant="outline"
           size="sm"
           className="gap-2"
           aria-label={compact ? label : undefined}
           onClick={() => onOpen(model)}
         >
-          <AppIcon icon={CodeIcon} size={14} stroke={1.5} />
+          <AppIcon icon={CodeIcon} size={14} stroke={1.5} data-icon="inline-start" />
           {compact ? 'Config' : 'Client config'}
         </Button>
       </TooltipTrigger>

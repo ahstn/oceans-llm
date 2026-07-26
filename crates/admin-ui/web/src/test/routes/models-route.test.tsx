@@ -288,6 +288,7 @@ describe('ModelsPage', () => {
     expect(
       screen.getByText('Review routed models, upstream targets, and current health status.'),
     ).toBeInTheDocument()
+    expect(screen.getByText('Select models to generate multi-model config')).toBeInTheDocument()
   })
 
   it('renders the desktop table with the expected column order and stacked routing cells', () => {
@@ -324,14 +325,23 @@ describe('ModelsPage', () => {
 
     const backupRow = within(table).getByText('backup-fast').closest('tr')
     expect(backupRow).not.toBeNull()
+    expect(backupRow).toHaveClass('group')
     const backupCells = within(backupRow as HTMLElement).getAllByRole('cell')
     for (const cell of backupCells) {
       expect(cell).toHaveClass('py-1')
     }
+    expect(backupCells[0]).toHaveClass('group-hover:bg-muted/50')
+    expect(backupCells[1]).toHaveClass('group-hover:bg-muted/50')
 
-    expect(
-      within(backupCells[2] as HTMLElement).getByRole('button', { name: 'Info' }),
-    ).toBeInTheDocument()
+    const infoButton = within(backupCells[2] as HTMLElement).getByRole('button', { name: 'Info' })
+    expect(infoButton).toHaveAttribute('data-variant', 'outline')
+
+    const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
+    expect(claudeRow).not.toBeNull()
+    const configButton = within(claudeRow as HTMLElement).getByRole('button', {
+      name: 'Generate client config for claude-sonnet',
+    })
+    expect(configButton).toHaveAttribute('data-variant', 'outline')
     expect(
       within(backupCells[3] as HTMLElement).getByText('google/gemini-2.0-flash'),
     ).toBeInTheDocument()
