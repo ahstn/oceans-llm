@@ -294,7 +294,8 @@ describe('ModelsPage', () => {
     const generateConfigButton = screen.getByRole('button', { name: 'Generate config' })
     expect(clearButton).toBeDisabled()
     expect(generateConfigButton).toBeDisabled()
-    expect(generateConfigButton).toHaveAttribute('data-variant', clearButton.dataset.variant)
+    expect(clearButton).toHaveAttribute('data-variant', 'outline')
+    expect(generateConfigButton).toHaveAttribute('data-variant', 'outline')
   })
 
   it('renders the desktop table with the expected column order and stacked routing cells', () => {
@@ -358,7 +359,31 @@ describe('ModelsPage', () => {
   })
 
   it('renders model allowlists in the desktop table as read-only details', () => {
-    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    const allowlistPage: ModelPageView = {
+      ...modelPage,
+      items: modelPage.items.map((model) => {
+        if (model.id === 'fast') {
+          return {
+            ...model,
+            allowlist: {
+              users: ['solo@example.com'],
+              teams: [],
+            },
+          }
+        }
+        if (model.id === 'backup-fast') {
+          return {
+            ...model,
+            allowlist: {
+              users: [],
+              teams: ['platform', 'research'],
+            },
+          }
+        }
+        return model
+      }),
+    }
+    routeMock.useLoaderData.mockReturnValue({ data: allowlistPage })
 
     render(
       <TooltipProvider>
@@ -372,7 +397,18 @@ describe('ModelsPage', () => {
     const fastRow = within(table).getByText('fast').closest('tr')
     expect(fastRow).not.toBeNull()
     const fastAllowlistCell = within(fastRow as HTMLElement).getAllByRole('cell')[5] as HTMLElement
-    expect(within(fastAllowlistCell).getByText('Unrestricted')).toBeInTheDocument()
+    expect(within(fastAllowlistCell).getByText('Restricted')).toBeInTheDocument()
+    expect(within(fastAllowlistCell).getByText('1 User')).toBeInTheDocument()
+    expect(within(fastAllowlistCell).queryByText(/Teams?/)).not.toBeInTheDocument()
+
+    const backupRow = within(table).getByText('backup-fast').closest('tr')
+    expect(backupRow).not.toBeNull()
+    const backupAllowlistCell = within(backupRow as HTMLElement).getAllByRole(
+      'cell',
+    )[5] as HTMLElement
+    expect(within(backupAllowlistCell).getByText('Restricted')).toBeInTheDocument()
+    expect(within(backupAllowlistCell).getByText('2 Teams')).toBeInTheDocument()
+    expect(within(backupAllowlistCell).queryByText(/Users?/)).not.toBeInTheDocument()
 
     const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
     expect(claudeRow).not.toBeNull()
@@ -382,13 +418,11 @@ describe('ModelsPage', () => {
     expect(within(claudeAllowlistCell).getByText('Restricted')).toBeInTheDocument()
     expect(within(claudeAllowlistCell).getByText('2 Users')).toBeInTheDocument()
     expect(within(claudeAllowlistCell).getByText('1 Team')).toBeInTheDocument()
-    expect(within(claudeAllowlistCell).queryByText('0 Users')).not.toBeInTheDocument()
-    expect(within(claudeAllowlistCell).queryByText('0 Teams')).not.toBeInTheDocument()
     expect(within(claudeAllowlistCell).queryByText('alice@example.com')).not.toBeInTheDocument()
     expect(within(claudeAllowlistCell).queryByText('bob@example.com')).not.toBeInTheDocument()
     expect(within(claudeAllowlistCell).queryByText('platform')).not.toBeInTheDocument()
 
-    for (const allowlistCell of [fastAllowlistCell, claudeAllowlistCell]) {
+    for (const allowlistCell of [fastAllowlistCell, backupAllowlistCell, claudeAllowlistCell]) {
       expect(within(allowlistCell).queryByRole('button')).not.toBeInTheDocument()
       expect(within(allowlistCell).queryByRole('link')).not.toBeInTheDocument()
       expect(within(allowlistCell).queryByRole('checkbox')).not.toBeInTheDocument()
