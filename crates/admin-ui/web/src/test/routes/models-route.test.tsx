@@ -289,6 +289,12 @@ describe('ModelsPage', () => {
       screen.getByText('Review routed models, upstream targets, and current health status.'),
     ).toBeInTheDocument()
     expect(screen.getByText('Select models to generate multi-model config')).toBeInTheDocument()
+
+    const clearButton = screen.getByRole('button', { name: 'Clear' })
+    const generateConfigButton = screen.getByRole('button', { name: 'Generate config' })
+    expect(clearButton).toBeDisabled()
+    expect(generateConfigButton).toBeDisabled()
+    expect(generateConfigButton).toHaveAttribute('data-variant', clearButton.dataset.variant)
   })
 
   it('renders the desktop table with the expected column order and stacked routing cells', () => {
@@ -312,7 +318,7 @@ describe('ModelsPage', () => {
       'Actions',
       'Provider & Model',
       'Cost / 1M tokens',
-      'Model allowlist',
+      'Allow List',
     ])
     expect(within(table).getByRole('columnheader', { name: 'Provider & Model' })).toHaveClass(
       'w-[18rem]',
@@ -361,7 +367,7 @@ describe('ModelsPage', () => {
     )
 
     const table = screen.getAllByTestId('models-desktop-table')[0]
-    expect(within(table).getByRole('columnheader', { name: 'Model allowlist' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Allow List' })).toBeInTheDocument()
 
     const fastRow = within(table).getByText('fast').closest('tr')
     expect(fastRow).not.toBeNull()
@@ -373,11 +379,14 @@ describe('ModelsPage', () => {
     const claudeAllowlistCell = within(claudeRow as HTMLElement).getAllByRole(
       'cell',
     )[5] as HTMLElement
-    expect(within(claudeAllowlistCell).getByText('Users')).toBeInTheDocument()
-    expect(within(claudeAllowlistCell).getByText('alice@example.com')).toBeInTheDocument()
-    expect(within(claudeAllowlistCell).getByText('bob@example.com')).toBeInTheDocument()
-    expect(within(claudeAllowlistCell).getByText('Teams')).toBeInTheDocument()
-    expect(within(claudeAllowlistCell).getByText('platform')).toBeInTheDocument()
+    expect(within(claudeAllowlistCell).getByText('Restricted')).toBeInTheDocument()
+    expect(within(claudeAllowlistCell).getByText('2 Users')).toBeInTheDocument()
+    expect(within(claudeAllowlistCell).getByText('1 Team')).toBeInTheDocument()
+    expect(within(claudeAllowlistCell).queryByText('0 Users')).not.toBeInTheDocument()
+    expect(within(claudeAllowlistCell).queryByText('0 Teams')).not.toBeInTheDocument()
+    expect(within(claudeAllowlistCell).queryByText('alice@example.com')).not.toBeInTheDocument()
+    expect(within(claudeAllowlistCell).queryByText('bob@example.com')).not.toBeInTheDocument()
+    expect(within(claudeAllowlistCell).queryByText('platform')).not.toBeInTheDocument()
 
     for (const allowlistCell of [fastAllowlistCell, claudeAllowlistCell]) {
       expect(within(allowlistCell).queryByRole('button')).not.toBeInTheDocument()
