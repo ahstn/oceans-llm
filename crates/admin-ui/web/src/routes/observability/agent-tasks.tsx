@@ -260,17 +260,16 @@ export function AgentTasksPage() {
         accessorKey: 'efficiency_score',
         header: 'Efficiency',
         cell: ({ row }) => (
-          <span className="font-medium tabular-nums">
-            {showScore ? (row.original.efficiency_score ?? '—') : 'Shadow'}
-          </span>
+          <div>
+            <p className="font-medium tabular-nums">
+              {showScore ? (row.original.efficiency_score ?? '—') : 'Shadow'}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {humanize(row.original.score_confidence)} Confidence
+            </p>
+          </div>
         ),
-        size: 100,
-      },
-      {
-        accessorKey: 'score_confidence',
-        header: 'Confidence',
-        cell: ({ row }) => row.original.score_confidence ?? '—',
-        size: 105,
+        size: 120,
       },
       {
         accessorKey: 'normalized_cost_usd',
