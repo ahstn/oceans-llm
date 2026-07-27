@@ -1685,6 +1685,8 @@ export interface components {
             harness_label?: string | null;
             lifecycle: string;
             limitations: string[];
+            /** Format: int32 */
+            mcp_call_count?: number | null;
             /** Format: double */
             normalized_cost_usd?: number | null;
             operation: string;
@@ -1704,6 +1706,8 @@ export interface components {
             team_id?: string | null;
             /** Format: int32 */
             telemetry_coverage_percent?: number | null;
+            /** Format: int32 */
+            tool_call_count?: number | null;
             user_id?: string | null;
             /** Format: int64 */
             wall_time_ms?: number | null;
@@ -1752,6 +1756,8 @@ export interface components {
         AgentToolAndChangeDiagnosticsView: {
             /** Format: int32 */
             classified_tool_calls: number;
+            /** Format: int32 */
+            direct_mcp_calls: number;
             /** Format: int64 */
             direct_mcp_duration_ms?: number | null;
             /** Format: int32 */

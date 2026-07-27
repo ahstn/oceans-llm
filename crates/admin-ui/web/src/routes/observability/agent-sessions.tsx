@@ -251,12 +251,6 @@ export function AgentSessionsPage() {
         size: 105,
       },
       {
-        accessorKey: 'gateway_outcome',
-        header: 'Outcome',
-        cell: ({ row }) => <StateBadge value={row.original.gateway_outcome ?? 'unknown'} />,
-        size: 110,
-      },
-      {
         accessorKey: 'efficiency_score',
         header: 'Efficiency',
         cell: ({ row }) => (
@@ -290,14 +284,16 @@ export function AgentSessionsPage() {
         size: 90,
       },
       {
-        accessorKey: 'telemetry_coverage_percent',
-        header: 'Coverage',
-        cell: ({ row }) =>
-          row.original.telemetry_coverage_percent === null ||
-          row.original.telemetry_coverage_percent === undefined
-            ? '—'
-            : `${row.original.telemetry_coverage_percent}%`,
-        size: 95,
+        accessorKey: 'tool_call_count',
+        header: 'Tool calls',
+        cell: ({ row }) => formatCount(row.original.tool_call_count),
+        size: 90,
+      },
+      {
+        accessorKey: 'mcp_call_count',
+        header: 'MCP calls',
+        cell: ({ row }) => formatCount(row.original.mcp_call_count),
+        size: 90,
       },
       {
         accessorKey: 'limitations',
@@ -694,6 +690,10 @@ function TaskDetail({ detail, showScore }: { detail: AgentTaskDetailView; showSc
           }
         />
         <DiagnosticRow
+          label="Direct MCP calls"
+          value={formatTokenCount(diagnostics?.tools_and_changes.direct_mcp_calls)}
+        />
+        <DiagnosticRow
           label="Supplied tool definitions"
           value={formatTokenCount(diagnostics?.tools_and_changes.supplied_tool_definitions)}
         />
@@ -1076,6 +1076,10 @@ function formatBasisPoints(value?: number | null) {
 
 function formatPercent(value?: number | null) {
   return value === null || value === undefined ? 'Unavailable' : `${value}%`
+}
+
+function formatCount(value?: number | null) {
+  return value === null || value === undefined ? '—' : value.toLocaleString()
 }
 
 function formatTokenCount(value?: number | null) {

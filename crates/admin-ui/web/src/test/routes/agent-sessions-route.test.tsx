@@ -51,6 +51,8 @@ const task: AgentTaskSummaryView = {
   started_at: '2026-07-21T10:00:00Z',
   ended_at: '2026-07-21T10:01:00Z',
   request_count: 1,
+  tool_call_count: 8,
+  mcp_call_count: 2,
   gateway_outcome: 'succeeded',
   efficiency_score: 82,
   score_confidence: 'high',
@@ -64,7 +66,7 @@ const task: AgentTaskSummaryView = {
   active_time_ms: 42_000,
   wall_time_ms: 60_000,
   limitations: [],
-  report_schema_version: 'agent-task-report-v2',
+  report_schema_version: 'agent-task-report-v3',
   analyzer_version: 'task-efficiency-v2',
   score_policy_version: 'outcome-cost-time-v1',
   pricing_policy_version: 'cache-aware-v1',
@@ -117,7 +119,7 @@ const detail: AgentTaskDetailView = {
     expires_at: '2026-10-19T10:00:43Z',
   },
   report: {
-    report_schema_version: 'agent-task-report-v2',
+    report_schema_version: 'agent-task-report-v3',
     analyzer_version: 'task-efficiency-v2',
     score_policy_version: 'outcome-cost-time-v1',
     observation_parser_version: 'passive-observations-v1',
@@ -176,6 +178,7 @@ const detail: AgentTaskDetailView = {
         classified_tool_calls: 8,
         supplied_tool_definitions: 12,
         supplied_tool_schema_bytes: 4_096,
+        direct_mcp_calls: 2,
         direct_mcp_duration_ms: 250,
         file_reads_suspected: 2,
         file_searches_suspected: 1,
@@ -258,6 +261,9 @@ describe('AgentSessionsPage', () => {
     expect(screen.getByText('Opencode')).toBeInTheDocument()
     expect(screen.getByText('Shadow')).toBeInTheDocument()
     expect(screen.queryByText('82')).not.toBeInTheDocument()
+    const sessionRow = screen.getByRole('row', { name: /Opencode/ })
+    expect(sessionRow).toHaveTextContent('8')
+    expect(sessionRow).toHaveTextContent('2')
   })
 
   it('opens session diagnostics from the keyboard and labels the current page', async () => {
@@ -295,7 +301,7 @@ describe('AgentSessionsPage', () => {
       expect(screen.getByText('Withheld in shadow')).toBeInTheDocument()
     })
     expect(screen.getByText('Requests (1)')).toBeInTheDocument()
-    expect(screen.getAllByText('Succeeded')).toHaveLength(2)
+    expect(screen.getByText('Succeeded')).toBeInTheDocument()
     expect(screen.getByText('Inferred observations (1)')).toBeInTheDocument()
     expect(screen.getByText('Token and cache diagnostics')).toBeInTheDocument()
     expect(screen.getByText('Tools and changes')).toBeInTheDocument()

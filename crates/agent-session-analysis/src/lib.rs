@@ -6,7 +6,7 @@ use std::collections::{BTreeSet, HashSet};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-pub const REPORT_SCHEMA_VERSION: &str = "agent-task-report-v2";
+pub const REPORT_SCHEMA_VERSION: &str = "agent-task-report-v3";
 pub const TASK_BOUNDARY_POLICY_VERSION: &str = "passive-gap-v2";
 pub const OBSERVATION_PARSER_VERSION: &str = "passive-observations-v1";
 pub const ANALYZER_VERSION: &str = "task-efficiency-v2";
@@ -317,6 +317,8 @@ pub struct ToolAndChangeDiagnostics {
     pub unique_opaque_files: u32,
     pub verification_results_classified: u32,
     pub rework_spans_suspected: u32,
+    #[serde(default)]
+    pub direct_mcp_calls: u32,
     pub direct_mcp_duration_ms: Option<i64>,
 }
 
@@ -697,6 +699,7 @@ fn tool_and_change_diagnostics(
             counts[index] = counts[index].saturating_add(1);
         }
     }
+    let direct_mcp_calls = direct_mcp_intervals.len().try_into().unwrap_or(u32::MAX);
     let direct_mcp_duration_ms = (!direct_mcp_intervals.is_empty()).then(|| {
         direct_mcp_intervals.iter().fold(0_i64, |total, interval| {
             let duration = (interval.ended_at - interval.started_at).whole_milliseconds();
@@ -716,6 +719,7 @@ fn tool_and_change_diagnostics(
         unique_opaque_files: opaque_files.len().try_into().unwrap_or(u32::MAX),
         verification_results_classified: counts[5],
         rework_spans_suspected: counts[6],
+        direct_mcp_calls,
         direct_mcp_duration_ms,
     }
 }
@@ -1220,6 +1224,7 @@ mod tests {
                 .cache_savings_basis_points,
             Some(3_500)
         );
+        assert_eq!(report.diagnostics.tools_and_changes.direct_mcp_calls, 1);
         assert_eq!(
             report.diagnostics.tools_and_changes.direct_mcp_duration_ms,
             Some(500)

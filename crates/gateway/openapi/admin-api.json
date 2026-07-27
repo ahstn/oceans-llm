@@ -6416,6 +6416,14 @@
               "type": "string"
             }
           },
+          "mcp_call_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
           "normalized_cost_usd": {
             "type": [
               "number",
@@ -6492,6 +6500,14 @@
             ]
           },
           "telemetry_coverage_percent": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "tool_call_count": {
             "type": [
               "integer",
               "null"
@@ -6668,10 +6684,16 @@
           "file_overwrites_suspected",
           "unique_opaque_files",
           "verification_results_classified",
-          "rework_spans_suspected"
+          "rework_spans_suspected",
+          "direct_mcp_calls"
         ],
         "properties": {
           "classified_tool_calls": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "direct_mcp_calls": {
             "type": "integer",
             "format": "int32",
             "minimum": 0

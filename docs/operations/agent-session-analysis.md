@@ -37,7 +37,7 @@ The session explorer supports:
 - server-side pagination capped at 200 sessions per page;
 - lifecycle, confidence, user, service-account, harness, model, operation, caller-class, outcome, score-maturity, coverage, normalized-session, request-tag, and start-date range filters;
 - URL-backed filters and `task_id` selection, so refresh, back/forward navigation, and shared links preserve the selected session;
-- a dense session table with outcome, confidence, cost, active time, request count, and explicit data-quality limitations;
+- a dense session table with confidence, cost, active time, request, tool-call, direct-MCP-call, and explicit data-quality values;
 - a detail sheet with score components, outcome evidence, cohort metadata, typed coverage, immutable analysis identity, complete version boundaries, and bounded request and inferred-observation histories.
 
 In shadow mode, the normal headline score is replaced with **Shadow** or **Withheld in shadow**. Components and evidence remain visible so platform admins can validate grouping and coverage without presenting an experimental number as authoritative.

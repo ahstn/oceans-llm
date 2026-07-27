@@ -780,6 +780,7 @@ fn agent_task_efficiency_report(
                     .tools_and_changes
                     .verification_results_classified,
                 rework_spans_suspected: diagnostics.tools_and_changes.rework_spans_suspected,
+                direct_mcp_calls: diagnostics.tools_and_changes.direct_mcp_calls,
                 direct_mcp_duration_ms: diagnostics.tools_and_changes.direct_mcp_duration_ms,
             },
             semantic_verification_available: diagnostics.semantic_verification_available,
@@ -847,6 +848,9 @@ fn agent_task_summary(
         started_at: format_timestamp(trace.task.started_at),
         ended_at: trace.task.ended_at.map(format_timestamp),
         request_count: u64::try_from(trace.requests.len()).unwrap_or(u64::MAX),
+        tool_call_count: report
+            .map(|report| report.diagnostics.tools_and_changes.observed_tool_calls),
+        mcp_call_count: report.map(|report| report.diagnostics.tools_and_changes.direct_mcp_calls),
         efficiency_score: score_visible
             .then(|| report.and_then(|report| report.score))
             .flatten(),

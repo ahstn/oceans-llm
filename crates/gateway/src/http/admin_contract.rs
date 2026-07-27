@@ -1283,6 +1283,8 @@ pub struct AgentTaskSummaryView {
     pub started_at: String,
     pub ended_at: Option<String>,
     pub request_count: u64,
+    pub tool_call_count: Option<u32>,
+    pub mcp_call_count: Option<u32>,
     pub efficiency_score: Option<u8>,
     pub score_confidence: Option<String>,
     pub score_maturity: Option<String>,
@@ -1445,6 +1447,7 @@ pub struct AgentToolAndChangeDiagnosticsView {
     pub unique_opaque_files: u32,
     pub verification_results_classified: u32,
     pub rework_spans_suspected: u32,
+    pub direct_mcp_calls: u32,
     pub direct_mcp_duration_ms: Option<i64>,
 }
 
