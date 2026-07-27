@@ -266,6 +266,22 @@ describe('AgentSessionsPage', () => {
     expect(sessionRow).toHaveTextContent('2')
   })
 
+  it('explains missing call metrics from an outdated gateway contract', () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        items: [{ ...task, tool_call_count: undefined, mcp_call_count: undefined }],
+        page: 1,
+        page_size: 50,
+        total: 1,
+      },
+    })
+
+    render(<AgentSessionsPage />)
+
+    expect(screen.getByText('Session call metrics unavailable')).toBeInTheDocument()
+    expect(screen.getByText('mise run gateway-reset-local-demo')).toBeInTheDocument()
+  })
+
   it('opens session diagnostics from the keyboard and labels the current page', async () => {
     routeMock.useLoaderData.mockReturnValue({
       data: { items: [task], page: 1, page_size: 50, total: 51 },

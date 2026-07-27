@@ -63,6 +63,7 @@ export function AgentSessionDateFilter({
       >
         <div className="min-h-0 overflow-y-auto overscroll-contain p-3">
           <DateSelector
+            className="w-[min(20rem,calc(100vw-3.5rem))] sm:w-80"
             value={value}
             onChange={setDraft}
             allowRange

@@ -363,6 +363,11 @@ export function AgentSessionsPage() {
 
   const activeFilters =
     filterDraft.searchKey === filterSearchKey ? filterDraft.filters : filtersFromSearch(search)
+  const hasUnavailableCallMetrics = taskPage.items.some(
+    (item) =>
+      item.report_schema_version != null &&
+      (item.tool_call_count == null || item.mcp_call_count == null),
+  )
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-6 p-4 sm:p-6 lg:p-8">
@@ -422,6 +427,17 @@ export function AgentSessionsPage() {
               ) : null}
             </div>
           </div>
+
+          {hasUnavailableCallMetrics ? (
+            <Alert>
+              <AlertTitle>Session call metrics unavailable</AlertTitle>
+              <AlertDescription>
+                The API omitted tool or MCP counts for analyzed sessions. Restart the gateway after
+                updating it; for local demo data, run{' '}
+                <code className="font-mono">mise run gateway-reset-local-demo</code>.
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
           <div className={isListPending ? 'opacity-60 transition-opacity' : undefined}>
             <DataGrid
