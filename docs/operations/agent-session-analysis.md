@@ -24,9 +24,9 @@ The safe initial deployment is passive collection with all presentation flags di
 
 ## Local Development
 
-`mise run dev-stack` refreshes the local demo request and agent-session fixtures, enables shadow diagnostics by default, and starts the report worker. The **Observability → Agent Sessions** page becomes available to the seeded platform admin; reports populate as the queued demo analyses are processed. The curated data includes a five-request operations workflow and a nine-request repository workflow with seven read, write, or edit calls. Set `AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED=false` before starting the stack to exercise the hidden-surface state.
+`mise run dev-stack` refreshes the local demo request and agent-session fixtures, enables shadow diagnostics by default, and starts the report worker. The **Observability → Agent Sessions** page becomes available to the seeded platform admin; reports populate as the queued demo analyses are processed. The curated data includes a five-request operations workflow, a nine-request repository workflow with seven read, write, or edit calls, and a three-request incident workflow with two direct MCP calls. Set `AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED=false` before starting the stack to exercise the hidden-surface state.
 
-Running `mise run gateway-seed-local-demo` separately seeds the same finalized session fixtures and queues their analyses, but does not start the gateway worker or change presentation flags. Start the gateway with shadow or calibrated access afterward to expose the page and process the queue.
+Running `mise run gateway-seed-local-demo` separately seeds the same finalized session fixtures, their direct MCP invocation records, and queued analyses, but does not start the gateway worker or change presentation flags. Start the gateway with shadow or calibrated access afterward to expose the page and process the queue. Restart a running gateway after pulling backend changes; frontend hot reload does not replace the Rust process. Use `mise run gateway-reset-local-demo` to replace older fixture reports with the current report schema.
 
 ## Admin Workflow
 

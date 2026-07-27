@@ -3,7 +3,8 @@ use gateway_core::{
     AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
     AgentSessionRecord, AgentTaskRequestLinkRecord, AgentTaskWindowRecord, ApiKeyRecord,
     BoundedObservationFacts, Confidence, EvidenceQuality, InferredObservation,
-    InferredObservationKind, LimitationCode, RequestTags, TaskLifecycleState,
+    InferredObservationKind, LimitationCode, McpToolInvocationRecord, McpToolInvocationRepository,
+    McpToolInvocationStatus, McpToolPolicyResult, RequestTags, TaskLifecycleState,
 };
 use gateway_service::{desired_versions, enqueue_agent_analysis};
 use gateway_store::AnyStore;
@@ -154,6 +155,13 @@ pub(super) async fn seed_demo_agent_task(
         .await
         .with_context(|| format!("failed linking demo request log `{}`", fixture.request_id))?;
 
+    if let Some(request) = session_request
+        && let Some(mcp_tool_name) = request.mcp_tool_name
+    {
+        seed_demo_mcp_invocation(store, fixture, api_key, request, mcp_tool_name, occurred_at)
+            .await?;
+    }
+
     let should_finalize_observations = session_request
         .map(|request| request.step + 1 == request.session.request_count)
         .unwrap_or(true);
@@ -194,6 +202,52 @@ pub(super) async fn seed_demo_agent_task(
         .with_context(|| format!("failed queueing demo agent task `{task_key}`"))?;
 
     Ok(())
+}
+
+async fn seed_demo_mcp_invocation(
+    store: &AnyStore,
+    fixture: &LocalDemoRequestFixture,
+    api_key: &ApiKeyRecord,
+    request: agent_session_fixtures::DemoAgentSessionRequest,
+    tool_name: &str,
+    request_completed_at: OffsetDateTime,
+) -> anyhow::Result<()> {
+    let latency_ms = 180 + i64::try_from(request.step).unwrap_or_default() * 40;
+    store
+        .insert_mcp_tool_invocation(
+            &McpToolInvocationRecord {
+                mcp_tool_invocation_id: local_demo_uuid("mcp_tool_invocation", fixture.request_id),
+                request_log_id: Some(demo_request_log_uuid(fixture.request_id)),
+                request_id: format!("demo-mcp-{}", request.step + 1),
+                api_key_id: Some(api_key.id),
+                user_id: api_key.owner_user_id,
+                team_id: api_key.owner_team_id,
+                owner_kind: api_key.owner_kind,
+                server_id: None,
+                server_display_key: "incident-runbooks".to_string(),
+                server_display_name: "Incident Runbooks".to_string(),
+                tool_id: None,
+                tool_display_key: tool_name.to_string(),
+                tool_display_name: tool_name.replace('_', " "),
+                status: McpToolInvocationStatus::Success,
+                policy_result: McpToolPolicyResult::Allowed,
+                latency_ms: Some(latency_ms),
+                error_code: None,
+                has_payload: false,
+                arguments_payload_truncated: false,
+                result_payload_truncated: false,
+                arguments_payload_redacted: false,
+                result_payload_redacted: false,
+                metadata: serde_json::Map::from_iter([(
+                    "fixture".to_string(),
+                    json!("incident-runbook-coordination"),
+                )]),
+                occurred_at: request_completed_at - time::Duration::milliseconds(100),
+            },
+            None,
+        )
+        .await
+        .with_context(|| format!("failed inserting demo MCP invocation `{tool_name}`"))
 }
 
 async fn seed_demo_session(
@@ -350,6 +404,12 @@ mod tests {
             let mut tools = BTreeSet::new();
             let mut file_tool_calls = 0;
             let first = fixtures.first().expect("demo session has requests");
+            let mcp_calls = fixtures
+                .iter()
+                .filter_map(|fixture| agent_session_fixtures::request_metadata(fixture))
+                .filter(|request| request.mcp_tool_name.is_some())
+                .count();
+            assert_eq!(mcp_calls, session.expected_mcp_calls);
             for (expected_step, fixture) in fixtures.iter().enumerate() {
                 let request = agent_session_fixtures::request_metadata(fixture)
                     .expect("session request should have metadata");

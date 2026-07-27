@@ -11,6 +11,8 @@ pub(super) struct DemoAgentSessionFixture {
     pub request_count: usize,
     #[cfg(test)]
     pub expected_file_tool_calls: usize,
+    #[cfg(test)]
+    pub expected_mcp_calls: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -18,6 +20,7 @@ pub(super) struct DemoAgentSessionRequest {
     pub session: &'static DemoAgentSessionFixture,
     pub step: usize,
     pub tool_name: &'static str,
+    pub mcp_tool_name: Option<&'static str>,
     pub observation_kind: InferredObservationKind,
 }
 
@@ -28,6 +31,8 @@ const GREENHOUSE_SESSION: DemoAgentSessionFixture = DemoAgentSessionFixture {
     request_count: 5,
     #[cfg(test)]
     expected_file_tool_calls: 0,
+    #[cfg(test)]
+    expected_mcp_calls: 0,
 };
 
 const ROUTE_MIGRATION_SESSION: DemoAgentSessionFixture = DemoAgentSessionFixture {
@@ -37,11 +42,27 @@ const ROUTE_MIGRATION_SESSION: DemoAgentSessionFixture = DemoAgentSessionFixture
     request_count: 9,
     #[cfg(test)]
     expected_file_tool_calls: 7,
+    #[cfg(test)]
+    expected_mcp_calls: 0,
+};
+
+const INCIDENT_RUNBOOK_SESSION: DemoAgentSessionFixture = DemoAgentSessionFixture {
+    key: "incident-runbook-coordination",
+    normalized_session_id: "demo-incident-runbook-coordination-2026-07",
+    tool_description: "Coordinate a fictional incident using direct MCP runbook tools.",
+    request_count: 3,
+    #[cfg(test)]
+    expected_file_tool_calls: 0,
+    #[cfg(test)]
+    expected_mcp_calls: 2,
 };
 
 #[cfg(test)]
-pub(super) const DEMO_AGENT_SESSIONS: &[DemoAgentSessionFixture] =
-    &[GREENHOUSE_SESSION, ROUTE_MIGRATION_SESSION];
+pub(super) const DEMO_AGENT_SESSIONS: &[DemoAgentSessionFixture] = &[
+    GREENHOUSE_SESSION,
+    ROUTE_MIGRATION_SESSION,
+    INCIDENT_RUNBOOK_SESSION,
+];
 
 pub(super) const ADDITIONAL_SESSION_REQUESTS: &[LocalDemoRequestFixture] = &[
     LocalDemoRequestFixture {
@@ -269,6 +290,81 @@ pub(super) const ADDITIONAL_SESSION_REQUESTS: &[LocalDemoRequestFixture] = &[
         error_code: None,
         payload_profile: super::DemoPayloadProfile::Streamed,
     },
+    LocalDemoRequestFixture {
+        request_id: "demo-agent-mcp-001",
+        api_key_public_id: "locdemogina1",
+        days_ago: 0,
+        hours_ago: 2,
+        minutes_ago: 18,
+        model_key: "claude-sonnet",
+        resolved_model_key: "claude-sonnet",
+        provider_key: "vertex-claude",
+        upstream_model: "anthropic/claude-sonnet-4-6",
+        prompt_tokens: Some(1_240),
+        completion_tokens: Some(220),
+        cost_scaled: 2_480,
+        status_code: 200,
+        latency_ms: 920,
+        service: "reliability",
+        component: "incident-response",
+        env: "local",
+        bespoke_key: "workflow",
+        bespoke_value: "incident-runbook",
+        prompt: "Open the fictional payment latency incident and load the current response runbook.",
+        completion: "The incident is acknowledged and the runbook identifies the first three diagnostic checks.",
+        error_code: None,
+        payload_profile: super::DemoPayloadProfile::Standard,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-agent-mcp-002",
+        api_key_public_id: "locdemogina1",
+        days_ago: 0,
+        hours_ago: 2,
+        minutes_ago: 12,
+        model_key: "claude-sonnet",
+        resolved_model_key: "claude-sonnet",
+        provider_key: "vertex-claude",
+        upstream_model: "anthropic/claude-sonnet-4-6",
+        prompt_tokens: Some(1_860),
+        completion_tokens: Some(290),
+        cost_scaled: 3_620,
+        status_code: 200,
+        latency_ms: 1_080,
+        service: "reliability",
+        component: "incident-response",
+        env: "local",
+        bespoke_key: "workflow",
+        bespoke_value: "incident-runbook",
+        prompt: "Attach the latest fictional latency graph and advance the incident runbook.",
+        completion: "The graph is attached and the runbook now points to the degraded regional dependency.",
+        error_code: None,
+        payload_profile: super::DemoPayloadProfile::Standard,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-agent-mcp-003",
+        api_key_public_id: "locdemogina1",
+        days_ago: 0,
+        hours_ago: 2,
+        minutes_ago: 6,
+        model_key: "claude-sonnet",
+        resolved_model_key: "claude-sonnet",
+        provider_key: "vertex-claude",
+        upstream_model: "anthropic/claude-sonnet-4-6",
+        prompt_tokens: Some(2_320),
+        completion_tokens: Some(340),
+        cost_scaled: 4_460,
+        status_code: 200,
+        latency_ms: 840,
+        service: "reliability",
+        component: "incident-response",
+        env: "local",
+        bespoke_key: "workflow",
+        bespoke_value: "incident-runbook",
+        prompt: "Summarize the fictional mitigation, owner handoff, and verification evidence.",
+        completion: "The mitigation is stable, ownership is transferred, and the verification window is recorded.",
+        error_code: None,
+        payload_profile: super::DemoPayloadProfile::Streamed,
+    },
 ];
 
 pub(super) fn request_metadata(
@@ -359,12 +455,36 @@ pub(super) fn request_metadata(
             "write_validation_report",
             InferredObservationKind::FileCreateSuspected,
         ),
+        "demo-agent-mcp-001" => (
+            &INCIDENT_RUNBOOK_SESSION,
+            0,
+            "load_incident_runbook",
+            InferredObservationKind::ToolCallClassified,
+        ),
+        "demo-agent-mcp-002" => (
+            &INCIDENT_RUNBOOK_SESSION,
+            1,
+            "attach_incident_evidence",
+            InferredObservationKind::ToolCallClassified,
+        ),
+        "demo-agent-mcp-003" => (
+            &INCIDENT_RUNBOOK_SESSION,
+            2,
+            "summarize_incident_handoff",
+            InferredObservationKind::ToolCallClassified,
+        ),
         _ => return None,
+    };
+    let mcp_tool_name = match fixture.request_id {
+        "demo-agent-mcp-001" => Some("runbooks_get"),
+        "demo-agent-mcp-002" => Some("incidents_update"),
+        _ => None,
     };
     Some(DemoAgentSessionRequest {
         session,
         step,
         tool_name,
+        mcp_tool_name,
         observation_kind,
     })
 }
@@ -387,6 +507,15 @@ pub(super) fn tool_arguments(request: DemoAgentSessionRequest) -> Value {
             _ => "repair-plan",
         };
         json!({"zone": "seven", "sample": sample})
+    } else if request.session.key == INCIDENT_RUNBOOK_SESSION.key {
+        json!({
+            "incident": "INC-DEMO-42",
+            "phase": match request.step {
+                0 => "diagnosis",
+                1 => "mitigation",
+                _ => "handoff",
+            }
+        })
     } else {
         let path = match request.step {
             0 => "crates/admin-ui/web/src/routes/observability",

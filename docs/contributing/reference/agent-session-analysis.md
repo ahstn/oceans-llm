@@ -43,7 +43,7 @@ The task link's ordinal is repository-assigned. Callers must not calculate `MAX(
 - `agent_task_windows`: open/finalized task boundary, stable boundary-group key, watermarks, confidence, and ownership dimensions.
 - `agent_task_window_requests`: ordered request correlations and bounded limitation codes.
 - `agent_inferred_observation_sets` and `agent_inferred_observations`: parser-versioned, append-only classifications derived without raw content. Observation queries preserve the originating set's parser version.
-- `agent_task_analyses`: immutable versioned reports. The task watermark and cohort-snapshot digest are part of uniqueness, so lifecycle revisions and different cohort populations cannot collide.
+- `agent_task_analyses`: immutable versioned reports. The task watermark, cohort-snapshot digest, and direct-MCP-invocation snapshot are part of uniqueness, so lifecycle revisions and different evidence populations cannot collide.
 - `agent_analysis_recompute_queue`: leased work with attempts, failure state, desired version tuple, and owner-checked terminal transitions.
 
 Request-log cutoff pruning deletes request links and inferred observation sets. A minimal task shell remains while a report or queue row references it, keeping reports queryable through their independent expiry. Reports retain `ownership_scope_key`, `user_id`, and `service_account_id`; owner deletion still cascades through the shell and reports. An hourly loop enforces report expiry and terminal queue retention even when passive analysis is disabled. The gateway defaults these windows to 90 and 7 days through `AGENT_ANALYSIS_REPORT_RETENTION_DAYS` and `AGENT_ANALYSIS_QUEUE_RETENTION_DAYS`.
@@ -77,6 +77,8 @@ The score is the outcome-weighted geometric combination of outcome, lower-cost c
 An exact cohort is score-eligible only with at least ten successful tasks for both cost and active-time samples. Smaller exact cohorts leave the score unavailable. Versioned fallback cohorts remain usable at reduced confidence and disclose their fallback level and sample size.
 
 Active time is the union of request intervals with the fixed orchestration-gap allowance. Wall time is retained separately. Do not substitute one for the other in UI or aggregates.
+
+Direct MCP evidence comes from invocation records for the task's API key whose completion timestamp falls within the finalized task window. Stored latency reconstructs each call interval; missing latency produces a zero-duration point interval so the invocation still contributes to the count. The analysis identity includes a deterministic snapshot of the matched invocation IDs, timestamps, and latencies. This is temporal attribution rather than a session identifier join, so overlapping tasks sharing one API key can remain ambiguous.
 
 ## Runtime Capability Matrix
 

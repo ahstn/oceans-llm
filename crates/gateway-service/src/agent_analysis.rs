@@ -10,8 +10,9 @@ use gateway_core::{
     AgentSessionRecord, AgentTaskAnalysisRecord, AgentTaskListQuery, AgentTaskRequestLinkRecord,
     AgentTaskTraceRecord, AgentTaskWindowRecord, AuthenticatedApiKey, BoundedObservationFacts,
     BudgetRepository, Confidence, EvidenceQuality, GatewayError, GatewayOutcomeState,
-    IdentityRepository, InferredObservation, InferredObservationKind, LimitationCode, RequestTags,
-    TaskLifecycleState, UsageLedgerRecord,
+    IdentityRepository, InferredObservation, InferredObservationKind, LimitationCode,
+    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationQuery, McpToolInvocationRepository,
+    RequestTags, TaskLifecycleState, UsageLedgerRecord,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -659,7 +660,7 @@ pub async fn process_next_analysis<S>(
     report_retention: Duration,
 ) -> Result<bool, GatewayError>
 where
-    S: AgentSessionAnalysisRepository + BudgetRepository + Sync,
+    S: AgentSessionAnalysisRepository + BudgetRepository + McpToolInvocationRepository + Sync,
 {
     let Some(queue) = store
         .claim_agent_analysis(lease_owner, now, now + Duration::minutes(1))
@@ -735,7 +736,7 @@ async fn generate_report<S>(
     report_retention: Duration,
 ) -> Result<(), GatewayError>
 where
-    S: AgentSessionAnalysisRepository + BudgetRepository + Sync,
+    S: AgentSessionAnalysisRepository + BudgetRepository + McpToolInvocationRepository + Sync,
 {
     ensure_supported_versions(versions)?;
     let trace = store
@@ -811,6 +812,10 @@ where
         });
     }
 
+    let DirectMcpEvidence {
+        intervals: direct_mcp_intervals,
+        snapshot_digest: direct_mcp_snapshot_digest,
+    } = load_direct_mcp_evidence(store, &trace.task).await?;
     let cohort = load_successful_harness_cohort(store, &trace, versions).await?;
     let report = agent_session_analysis::analyze_task(
         &TaskTrace {
@@ -824,7 +829,7 @@ where
                 request_metadata_count,
                 response_payload_count,
                 truncated_payload_count,
-                direct_mcp_intervals: vec![],
+                direct_mcp_intervals,
             },
         },
         &AnalysisPolicy {
@@ -848,6 +853,7 @@ where
                 "observation_set": observation_set.observation_set_id,
                 "versions": versions,
                 "cohort_snapshot": cohort.as_ref().map(|value| &value.snapshot_digest),
+                "direct_mcp_snapshot": direct_mcp_snapshot_digest,
             })
             .to_string(),
         ),
@@ -886,6 +892,62 @@ where
             .await?;
     }
     Ok(())
+}
+
+struct DirectMcpEvidence {
+    intervals: Vec<ActivityInterval>,
+    snapshot_digest: String,
+}
+
+async fn load_direct_mcp_evidence<S>(
+    store: &S,
+    task: &AgentTaskWindowRecord,
+) -> Result<DirectMcpEvidence, GatewayError>
+where
+    S: McpToolInvocationRepository + Sync,
+{
+    let page_size = MAX_MCP_TOOL_INVOCATION_PAGE_SIZE;
+    let mut page = 1;
+    let mut intervals = Vec::new();
+    let mut snapshot = Vec::new();
+    loop {
+        let result = store
+            .list_mcp_tool_invocations(&McpToolInvocationQuery {
+                page,
+                page_size,
+                api_key_id: Some(task.api_key_id),
+                occurred_at_start: Some(task.started_at),
+                occurred_at_end: Some(task.ended_at.unwrap_or(task.input_watermark_at)),
+                ..McpToolInvocationQuery::default()
+            })
+            .await?;
+        for invocation in &result.items {
+            let latency_ms = invocation.latency_ms.unwrap_or_default().max(0);
+            let started_at = invocation.occurred_at - Duration::milliseconds(latency_ms);
+            if let Some(interval) = ActivityInterval::new(started_at, invocation.occurred_at) {
+                intervals.push(interval);
+            }
+            snapshot.push((
+                invocation.mcp_tool_invocation_id,
+                invocation.occurred_at.unix_timestamp_nanos(),
+                invocation.latency_ms,
+            ));
+        }
+        if u64::from(page) * u64::from(page_size) >= result.total || result.items.is_empty() {
+            break;
+        }
+        page = page
+            .checked_add(1)
+            .ok_or_else(|| GatewayError::Internal("MCP invocation page overflow".to_string()))?;
+    }
+    snapshot.sort_unstable();
+    Ok(DirectMcpEvidence {
+        intervals,
+        snapshot_digest: hash_identifier(
+            &serde_json::to_string(&snapshot)
+                .map_err(|error| GatewayError::Internal(error.to_string()))?,
+        ),
+    })
 }
 
 fn observation_coverage_count(

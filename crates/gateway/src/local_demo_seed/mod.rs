@@ -901,3 +901,66 @@ fn pricing_provider_id_for_demo_provider(provider_key: &str) -> Option<&'static 
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use gateway_core::AgentSessionAnalysisRepository;
+    use gateway_service::{GatewayService, WeightedRoutePlanner};
+    use gateway_store::{AnyStore, StoreConnectionOptions};
+    use std::sync::Arc;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn seeded_incident_session_reports_direct_mcp_calls() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let options = StoreConnectionOptions::Libsql {
+            path: directory.path().join("gateway.db"),
+        };
+        crate::maybe_run_migrations(&options, true)
+            .await
+            .expect("migrations");
+        let store = AnyStore::connect(&options).await.expect("store");
+        let config_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.yaml");
+        let config = gateway::config::GatewayConfig::from_path(&config_path).expect("config");
+        let mut providers = config.seed_providers().expect("providers");
+        for provider in &mut providers {
+            provider.secrets = None;
+        }
+        store
+            .seed_from_inputs(
+                &providers,
+                &config.seed_models().expect("models"),
+                &[],
+                &[],
+                &[],
+                &[],
+                &config.seed_teams().expect("teams"),
+                &config.seed_users().expect("users"),
+            )
+            .await
+            .expect("seed config");
+        seed_local_demo_data(&store).await.expect("seed demo data");
+        let service = GatewayService::new(
+            Arc::new(store.clone()),
+            Arc::new(WeightedRoutePlanner::default()),
+        );
+        let now = OffsetDateTime::now_utc();
+        while service
+            .process_next_agent_analysis("demo-mcp-test", now)
+            .await
+            .expect("process analysis")
+        {}
+
+        let task_id = local_demo_uuid("agent_task", "incident-runbook-coordination");
+        let trace = store
+            .load_agent_task_trace(task_id)
+            .await
+            .expect("load task")
+            .expect("incident task");
+        let report = &trace.latest_analysis.expect("incident report").report;
+        assert_eq!(report.diagnostics.tools_and_changes.observed_tool_calls, 3);
+        assert_eq!(report.diagnostics.tools_and_changes.direct_mcp_calls, 2);
+    }
+}
