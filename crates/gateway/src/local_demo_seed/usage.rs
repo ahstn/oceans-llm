@@ -1,4 +1,4 @@
-use super::{DemoPayloadProfile, LocalDemoRequestFixture};
+use super::{DemoPayloadProfile, LocalDemoRequestFixture, agent_session_fixtures};
 
 pub(super) const LOCAL_DEMO_REQUESTS: &[LocalDemoRequestFixture] = &[
     LocalDemoRequestFixture {
@@ -1178,29 +1178,10 @@ pub(super) const LOCAL_DEMO_REQUESTS: &[LocalDemoRequestFixture] = &[
     },
 ];
 
-pub(super) const DEMO_AGENT_SESSION_REQUEST_COUNT: usize = 5;
-
-pub(super) fn demo_agent_session_step(
-    fixture: &LocalDemoRequestFixture,
-) -> Option<(usize, &'static str)> {
-    match fixture.request_id {
-        "demo-agent-session-001" => Some((0, "inventory_telemetry_batches")),
-        "demo-agent-session-002" => Some((1, "compare_valve_schedule")),
-        "demo-agent-session-003" => Some((2, "trace_controller_retry")),
-        "demo-agent-session-004" => Some((3, "validate_replay_guard")),
-        "demo-agent-session-005" => Some((4, "save_repair_plan")),
-        _ => None,
-    }
-}
-
-pub(super) fn is_demo_agent_session_request(fixture: &LocalDemoRequestFixture) -> bool {
-    demo_agent_session_step(fixture).is_some()
-}
-
 pub(super) fn demo_tool_cardinality(
     fixture: &LocalDemoRequestFixture,
 ) -> gateway_core::RequestToolCardinality {
-    if is_demo_agent_session_request(fixture) {
+    if agent_session_fixtures::request_metadata(fixture).is_some() {
         return gateway_core::RequestToolCardinality {
             referenced_mcp_server_count: Some(1),
             exposed_tool_count: Some(12),

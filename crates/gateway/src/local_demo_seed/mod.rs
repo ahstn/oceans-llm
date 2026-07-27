@@ -17,6 +17,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 mod agent_analysis;
+mod agent_session_fixtures;
 mod api_keys;
 mod models;
 mod teams;
@@ -247,8 +248,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
     // Demo usage rows are re-anchored to the current clock on every run: any
     // previously seeded rows are removed by their fixed request ids, then
     // reinserted with deterministic ids and fresh relative timestamps.
-    let demo_request_ids = usage::LOCAL_DEMO_REQUESTS
-        .iter()
+    let demo_request_ids = local_demo_request_fixtures()
         .map(|fixture| fixture.request_id.to_string())
         .collect::<Vec<_>>();
     store
@@ -260,7 +260,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
         .await
         .context("failed deleting previously seeded demo usage events")?;
 
-    for fixture in usage::LOCAL_DEMO_REQUESTS {
+    for fixture in local_demo_request_fixtures() {
         let api_key = api_keys.get(fixture.api_key_public_id).ok_or_else(|| {
             anyhow::anyhow!("missing demo api key `{}`", fixture.api_key_public_id)
         })?;
@@ -515,10 +515,16 @@ fn demo_fixture_occurred_at(
         - time::Duration::minutes(fixture.minutes_ago)
 }
 
+fn local_demo_request_fixtures() -> impl Iterator<Item = &'static LocalDemoRequestFixture> {
+    usage::LOCAL_DEMO_REQUESTS
+        .iter()
+        .chain(agent_session_fixtures::ADDITIONAL_SESSION_REQUESTS)
+}
+
 fn demo_agent_harness(
     fixture: &LocalDemoRequestFixture,
 ) -> (&'static str, &'static str, &'static str) {
-    if usage::is_demo_agent_session_request(fixture) {
+    if agent_session_fixtures::request_metadata(fixture).is_some() {
         ("codex/1.0.0 (local demo)", "codex", "Codex")
     } else {
         ("opencode/1.0.0 (local demo)", "opencode", "Opencode")
@@ -620,7 +626,7 @@ fn demo_payload_record(
         ),
     };
 
-    let session_step = usage::demo_agent_session_step(fixture);
+    let session_request = agent_session_fixtures::request_metadata(fixture);
     let mut request_json = json!({
         "model": fixture.model_key,
         "messages": messages,
@@ -628,31 +634,32 @@ fn demo_payload_record(
         "temperature": 0.2,
     });
     let mut response_message = json!({"role": "assistant", "content": completion});
-    if let Some((step, tool_name)) = session_step {
+    if let Some(session_request) = session_request {
         request_json["client_metadata"] =
-            json!({"session_id": "demo-greenhouse-irrigation-2026-07"});
+            json!({"session_id": session_request.session.normalized_session_id});
         request_json["tools"] = json!([{
             "type": "function",
             "function": {
-                "name": tool_name,
-                "description": "Inspect the fictional greenhouse operations dataset.",
+                "name": session_request.tool_name,
+                "description": session_request.session.tool_description,
                 "parameters": {
                     "type": "object",
                     "properties": {
+                        "repository": {"type": "string"},
+                        "path": {"type": "string"},
                         "zone": {"type": "string"},
                         "sample": {"type": "string"}
                     },
-                    "required": ["zone", "sample"],
                     "additionalProperties": false
                 }
             }
         }]);
         response_message["tool_calls"] = json!([{
-            "id": format!("call_{}_{}", fixture.request_id, step + 1),
+            "id": format!("call_{}_{}", fixture.request_id, session_request.step + 1),
             "type": "function",
             "function": {
-                "name": tool_name,
-                "arguments": demo_agent_tool_arguments(step).to_string()
+                "name": session_request.tool_name,
+                "arguments": agent_session_fixtures::tool_arguments(session_request).to_string()
             }
         }]);
     }
@@ -688,17 +695,6 @@ fn demo_payload_record(
             })
         },
     })
-}
-
-fn demo_agent_tool_arguments(step: usize) -> Value {
-    let sample = match step {
-        0 => "batch-inventory",
-        1 => "valve-schedule",
-        2 => "controller-retry",
-        3 => "seven-day-validation",
-        _ => "repair-plan",
-    };
-    json!({"zone": "seven", "sample": sample})
 }
 
 fn demo_longform_messages(fixture: &LocalDemoRequestFixture) -> Vec<Value> {

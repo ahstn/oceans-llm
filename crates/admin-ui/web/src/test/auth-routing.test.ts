@@ -32,11 +32,11 @@ describe('admin route capabilities', () => {
 
     expect(isAdminSession(platformAdmin)).toBe(true)
     expect(canAccessAdminPath(platformAdmin, '/api-keys')).toBe(true)
-    expect(canAccessAdminPath(platformAdmin, '/observability/agent-tasks')).toBe(false)
+    expect(canAccessAdminPath(platformAdmin, '/observability/agent-sessions')).toBe(false)
     expect(defaultSignedInPath(platformAdmin)).toBe('/api-keys')
   })
 
-  it('limits calibrated team admins to agent tasks', () => {
+  it('limits calibrated team admins to agent sessions', () => {
     const teamAdmin = session({
       agent_analysis: true,
       calibrated_score_visible: true,
@@ -44,16 +44,16 @@ describe('admin route capabilities', () => {
     })
 
     expect(isAdminSession(teamAdmin)).toBe(true)
-    expect(canAccessAdminPath(teamAdmin, '/observability/agent-tasks')).toBe(true)
-    expect(canAccessAdminPath(teamAdmin, '/observability/agent-tasks/task-1')).toBe(true)
+    expect(canAccessAdminPath(teamAdmin, '/observability/agent-sessions')).toBe(true)
+    expect(canAccessAdminPath(teamAdmin, '/observability/agent-sessions/session-1')).toBe(true)
     expect(canAccessAdminPath(teamAdmin, '/api-keys')).toBe(false)
-    expect(defaultSignedInPath(teamAdmin)).toBe('/observability/agent-tasks')
+    expect(defaultSignedInPath(teamAdmin)).toBe('/observability/agent-sessions')
   })
 
   it('rejects ordinary members from the admin application', () => {
     const member = session({})
 
     expect(isAdminSession(member)).toBe(false)
-    expect(canAccessAdminPath(member, '/observability/agent-tasks')).toBe(false)
+    expect(canAccessAdminPath(member, '/observability/agent-sessions')).toBe(false)
   })
 })

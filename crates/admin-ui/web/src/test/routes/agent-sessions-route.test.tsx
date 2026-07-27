@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { AgentTasksPage } from '@/routes/observability/agent-tasks'
+import { AgentSessionsPage } from '@/routes/observability/agent-sessions'
 import type { AgentTaskDetailView, AgentTaskSummaryView } from '@/types/api'
 
 const { getAgentTaskDetailMock, navigateMock, routeMock } = vi.hoisted(() => ({
@@ -217,7 +217,7 @@ function setCapabilities(calibratedScoreVisible: boolean) {
   })
 }
 
-describe('AgentTasksPage', () => {
+describe('AgentSessionsPage', () => {
   afterEach(cleanup)
 
   beforeEach(() => {
@@ -239,7 +239,7 @@ describe('AgentTasksPage', () => {
       .mockRejectedValueOnce(new Error('temporary failure'))
       .mockResolvedValueOnce({ data: detail })
 
-    render(<AgentTasksPage />)
+    render(<AgentSessionsPage />)
 
     expect(await screen.findByText('temporary failure')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
@@ -251,20 +251,20 @@ describe('AgentTasksPage', () => {
   })
 
   it('renders dense shadow diagnostics without exposing the experimental score', () => {
-    render(<AgentTasksPage />)
+    render(<AgentSessionsPage />)
 
-    expect(screen.getByRole('heading', { name: 'Agent tasks' })).toBeInTheDocument()
-    expect(screen.getByText('1 task')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Agent sessions' })).toBeInTheDocument()
+    expect(screen.getByText('1 session')).toBeInTheDocument()
     expect(screen.getByText('Opencode')).toBeInTheDocument()
     expect(screen.getByText('Shadow')).toBeInTheDocument()
     expect(screen.queryByText('82')).not.toBeInTheDocument()
   })
 
-  it('opens task diagnostics from the keyboard and labels the current page', async () => {
+  it('opens session diagnostics from the keyboard and labels the current page', async () => {
     routeMock.useLoaderData.mockReturnValue({
       data: { items: [task], page: 1, page_size: 50, total: 51 },
     })
-    render(<AgentTasksPage />)
+    render(<AgentSessionsPage />)
 
     const taskRow = screen.getByRole('row', { name: /Opencode/ })
     expect(taskRow).toHaveAttribute('tabindex', '0')
@@ -272,7 +272,7 @@ describe('AgentTasksPage', () => {
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
-        to: '/observability/agent-tasks',
+        to: '/observability/agent-sessions',
         search: expect.objectContaining({ task_id: 'task_1' }),
       })
     })
@@ -288,7 +288,7 @@ describe('AgentTasksPage', () => {
     routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, task_id: 'task_1' })
     getAgentTaskDetailMock.mockResolvedValue({ data: detail })
 
-    render(<AgentTasksPage />)
+    render(<AgentSessionsPage />)
 
     await waitFor(() => {
       expect(getAgentTaskDetailMock).toHaveBeenCalledWith({ data: { taskId: 'task_1' } })
@@ -315,7 +315,7 @@ describe('AgentTasksPage', () => {
       },
     })
 
-    render(<AgentTasksPage />)
+    render(<AgentSessionsPage />)
 
     expect(await screen.findByText('Request history truncated')).toBeInTheDocument()
     expect(screen.getByText('Observation history truncated')).toBeInTheDocument()

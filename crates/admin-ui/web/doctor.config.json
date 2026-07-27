@@ -4,7 +4,7 @@
     "files": ["src/components/reui/**"],
     "overrides": [
       {
-        "files": ["src/routes/observability/agent-tasks.tsx"],
+        "files": ["src/routes/observability/agent-sessions.tsx"],
         "rules": [
           "react-doctor/no-giant-component",
           "react-doctor/tanstack-start-no-navigate-in-render"

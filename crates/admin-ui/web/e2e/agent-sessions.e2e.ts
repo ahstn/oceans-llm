@@ -5,7 +5,7 @@ import { requireEnv } from './env'
 
 const gatewayApiKey = process.env.E2E_GATEWAY_API_KEY ?? 'gwk_e2e.secret-value'
 
-test('correlates a live agent request and exposes it through the admin task explorer', async ({
+test('correlates a live agent request and exposes it through the admin session explorer', async ({
   request,
   page,
 }) => {
@@ -89,13 +89,13 @@ test('correlates a live agent request and exposes it through the admin task expl
   expect(detailBody.data.report).toBeNull()
 
   await page.goto(
-    `/admin/observability/agent-tasks?external_session_id=${encodeURIComponent(externalSessionId)}`,
+    `/admin/observability/agent-sessions?external_session_id=${encodeURIComponent(externalSessionId)}`,
   )
-  await expect(page.getByRole('heading', { name: 'Agent tasks' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Agent sessions' })).toBeVisible()
   await expect(page.getByText('fast').first()).toBeVisible()
   await expect(page.getByText('Open').first()).toBeVisible()
   await page.getByText('fast').first().click()
-  await expect(page.getByText('Task diagnostics')).toBeVisible()
+  await expect(page.getByText('Agent session diagnostics')).toBeVisible()
   await expect(page.getByText(externalSessionId)).toBeVisible()
   await expect(page.getByText('Shadow diagnostics')).toBeVisible()
 })

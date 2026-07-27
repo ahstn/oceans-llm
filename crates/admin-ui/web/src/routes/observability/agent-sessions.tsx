@@ -11,12 +11,12 @@ import {
 import { DataGrid } from '@/components/reui/data-grid/data-grid'
 import { DataGridPagination } from '@/components/reui/data-grid/data-grid-pagination'
 import { DataGridTable } from '@/components/reui/data-grid/data-grid-table'
+import { AgentSessionDateFilter } from '@/components/reui/agent-session-date-filter'
 import { Filters, type Filter, type FilterFieldConfig } from '@/components/reui/filters'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
@@ -57,7 +57,7 @@ const currencyFormatters = {
   }),
 }
 
-export const Route = createFileRoute('/observability/agent-tasks')({
+export const Route = createFileRoute('/observability/agent-sessions')({
   validateSearch: (search: Record<string, unknown>) => normalizeSearch(search),
   loaderDeps: ({ search }) => search,
   beforeLoad: ({ location }) => requireAdminSession(location),
@@ -65,7 +65,7 @@ export const Route = createFileRoute('/observability/agent-tasks')({
     const { task_id: _taskId, ...filters } = deps
     return getAgentTasks({ data: filters })
   },
-  component: AgentTasksPage,
+  component: AgentSessionsPage,
 })
 
 const taskFilterFields = [
@@ -161,7 +161,7 @@ const filterFields: FilterFieldConfig<string>[] = [
   },
 ]
 
-export function AgentTasksPage() {
+export function AgentSessionsPage() {
   const { data: taskPage } = Route.useLoaderData()
   const { session } = Route.useRouteContext()
   const search = Route.useSearch()
@@ -332,7 +332,7 @@ export function AgentTasksPage() {
   function navigate(next: AgentTaskRouteSearch) {
     startListTransition(async () => {
       await router.navigate({
-        to: '/observability/agent-tasks',
+        to: '/observability/agent-sessions',
         search: normalizeSearch(next as Record<string, unknown>),
       })
     })
@@ -374,26 +374,26 @@ export function AgentTasksPage() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-muted-foreground text-sm">Observability</p>
-            <h1 className="text-2xl font-semibold tracking-tight">Agent tasks</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Agent sessions</h1>
           </div>
           <Badge variant="outline" className="tabular-nums">
-            {taskPage.total.toLocaleString()} {taskPage.total === 1 ? 'task' : 'tasks'}
+            {taskPage.total.toLocaleString()} {taskPage.total === 1 ? 'session' : 'sessions'}
           </Badge>
         </div>
         <p className="text-muted-foreground max-w-3xl text-sm">
-          Outcome-aware task efficiency from passively correlated model requests. Scores remain
+          Outcome-aware session efficiency from passively correlated model requests. Scores remain
           experimental until calibrated cohorts are available.
         </p>
       </header>
 
       <Card>
         <CardHeader className="gap-1 border-b">
-          <CardTitle className="text-base">Task explorer</CardTitle>
+          <CardTitle className="text-base">Session explorer</CardTitle>
           <CardDescription>
-            Filter by task ownership, harness, confidence, lifecycle, or start time.
+            Filter by session ownership, harness, confidence, lifecycle, or start date.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4 pt-5">
+        <CardContent className="flex flex-col gap-4 pt-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <Filters
               filters={activeFilters}
@@ -403,32 +403,17 @@ export function AgentTasksPage() {
               enableShortcut
             />
             <div className="flex flex-wrap items-center gap-2">
-              <Input
-                aria-label="Started after"
-                type="datetime-local"
-                value={toLocalDateInput(search.started_after)}
-                onChange={(event) =>
+              <AgentSessionDateFilter
+                startedAfter={search.started_after}
+                startedBefore={search.started_before}
+                onChange={({ startedAfter, startedBefore }) =>
                   navigate({
                     ...search,
                     page: 1,
-                    started_after: fromLocalDateInput(event.currentTarget.value),
+                    started_after: startedAfter,
+                    started_before: startedBefore,
                   })
                 }
-                className="w-[13.5rem]"
-              />
-              <span className="text-muted-foreground text-xs">to</span>
-              <Input
-                aria-label="Started before"
-                type="datetime-local"
-                value={toLocalDateInput(search.started_before)}
-                onChange={(event) =>
-                  navigate({
-                    ...search,
-                    page: 1,
-                    started_before: fromLocalDateInput(event.currentTarget.value),
-                  })
-                }
-                className="w-[13.5rem]"
               />
               {hasActiveSearch(search) ? (
                 <Button
@@ -448,7 +433,7 @@ export function AgentTasksPage() {
               recordCount={taskPage.total}
               isLoading={isListPending}
               loadingMode="skeleton"
-              emptyMessage="No agent tasks match these filters."
+              emptyMessage="No agent sessions match these filters."
               onRowClick={(row) => void openDetail(row)}
               tableLayout={{
                 dense: true,
@@ -484,7 +469,7 @@ export function AgentTasksPage() {
       >
         <SheetContent className="w-full overflow-y-auto sm:max-w-3xl">
           <SheetHeader>
-            <SheetTitle>Agent task diagnostics</SheetTitle>
+            <SheetTitle>Agent session diagnostics</SheetTitle>
             <SheetDescription className="font-mono text-xs">{selectedTaskId}</SheetDescription>
           </SheetHeader>
           <div className="space-y-6 px-4 pb-6">
@@ -1067,18 +1052,6 @@ function hasActiveSearch(search: AgentTaskFiltersInput) {
     search.started_after ||
     search.started_before,
   )
-}
-
-function toLocalDateInput(value?: string | null) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-  return local.toISOString().slice(0, 16)
-}
-
-function fromLocalDateInput(value: string) {
-  return value ? new Date(value).toISOString() : undefined
 }
 
 function formatTimestamp(value: string) {

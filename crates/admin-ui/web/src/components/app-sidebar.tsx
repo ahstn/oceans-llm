@@ -44,7 +44,7 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const visibleSections = adminNavSections.flatMap((section) => {
     const items = section.items.filter((item) =>
-      item.to === '/observability/agent-tasks'
+      item.to === '/observability/agent-sessions'
         ? session.capabilities.agent_analysis
         : session.capabilities.platform_admin,
     )

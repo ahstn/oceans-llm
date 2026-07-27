@@ -18,7 +18,7 @@ This page is the maintainer reference for the passive correlation, immutable ana
 | Admin HTTP contract and handlers | `crates/gateway/src/http/{admin_contract,observability}.rs` |
 | Runtime authorization capability matrix | `crates/gateway/src/http/{state,admin_auth,identity}.rs` |
 | Generated contract | `crates/gateway/openapi/admin-api.json`, `crates/admin-ui/web/src/generated/admin-api.ts` |
-| Admin route | `crates/admin-ui/web/src/routes/observability/agent-tasks.tsx` |
+| Admin route | `crates/admin-ui/web/src/routes/observability/agent-sessions.tsx` |
 
 Keep formulas in the dependency-light analysis crate. Do not move store, provider, HTTP, or configuration dependencies into it. Keep backend SQL in the backend modules rather than branching inside the domain model.
 
@@ -101,18 +101,19 @@ mise run admin-contract-check
 
 Use generated aliases from `src/types/live-api.ts`. Do not duplicate response interfaces in the UI. Server adapters use `createGatewayApiClient` and `unwrapGatewayResponse`.
 
-The list route is `/api/v1/admin/observability/agent-tasks`; detail is `/api/v1/admin/observability/agent-tasks/{task_id}`. The UI route is `/admin/observability/agent-tasks`, and selected detail is the `task_id` URL search parameter.
+The backend list route remains `/api/v1/admin/observability/agent-tasks`; detail remains `/api/v1/admin/observability/agent-tasks/{task_id}` because reports are keyed by internal task windows. The admin-facing UI is **Agent Sessions** at `/admin/observability/agent-sessions`, and selected detail remains the `task_id` URL search parameter.
 
 The maintenance command `gateway recompute-agent-analysis` scans retained finalized tasks with missing or stale latest reports and enqueues the desired version tuple. `--task-id` narrows to one UUID and `--limit` is bounded to `1..=1000`. Queue IDs preserve idempotency; the command does not calculate reports inline.
 
 ## ReUI Contract
 
-The route reuses the installed ReUI `DataGrid`, `DataGridTable`, `DataGridPagination`, and `Filters` components. The TanStack table is manually paginated from the gateway response. Filters and selection are URL-backed; text-filter drafts update locally and debounce only navigation so controlled inputs never drop keystrokes. Keep registry component source intact except for upstream compatibility fixes; application-specific layout and copy belong in the route.
+The route reuses the installed ReUI `DataGrid`, `DataGridTable`, `DataGridPagination`, `Filters`, and `DateSelector` components. The application-owned `agent-session-date-filter.tsx` composes `DateSelector` in a shadcn Popover, stages changes until Apply, supports single-sided and bounded date filters, and converts local calendar days to UTC query boundaries. The TanStack table is manually paginated from the gateway response. Filters and selection are URL-backed; text-filter drafts update locally and debounce only navigation so controlled inputs never drop keystrokes. Keep registry component source intact except for upstream compatibility fixes; application-specific layout and copy belong outside registry files.
 
 ReUI references:
 
 - [Data Grid API and preview](https://reui.io/components/data-grid)
 - [Filters API and preview](https://reui.io/components/filters)
+- [Date Selector API and preview](https://reui.io/components/date-selector)
 - [Dense grid example](https://reui.io/preview/base/components/c-data-grid-3)
 
 ## Verification

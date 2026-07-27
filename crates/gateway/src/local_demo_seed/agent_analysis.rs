@@ -12,12 +12,9 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::{
-    DemoPayloadProfile, LocalDemoRequestFixture, demo_fixture_occurred_at, demo_request_log_uuid,
-    demo_usage_event_uuid, local_demo_uuid, usage,
+    DemoPayloadProfile, LocalDemoRequestFixture, agent_session_fixtures, demo_fixture_occurred_at,
+    demo_request_log_uuid, demo_usage_event_uuid, local_demo_uuid, usage,
 };
-
-const FEATURED_SESSION_KEY: &str = "greenhouse-irrigation-reconciliation";
-const FEATURED_NORMALIZED_SESSION_ID: &str = "demo-greenhouse-irrigation-2026-07";
 
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn seed_demo_agent_task(
@@ -31,8 +28,9 @@ pub(super) async fn seed_demo_agent_task(
     seeded_at: OffsetDateTime,
     response_payload_truncated: bool,
 ) -> anyhow::Result<()> {
-    let session_step = usage::demo_agent_session_step(fixture);
-    let task_key = session_step.map_or(fixture.request_id, |_| FEATURED_SESSION_KEY);
+    let session_request = agent_session_fixtures::request_metadata(fixture);
+    let session = session_request.map(|request| request.session);
+    let task_key = session.map_or(fixture.request_id, |session| session.key);
     let agent_task_id = local_demo_uuid("agent_task", task_key);
     let existing = store
         .load_agent_task_trace(agent_task_id)
@@ -49,12 +47,11 @@ pub(super) async fn seed_demo_agent_task(
 
     let versions = desired_versions();
     let (started_at, ended_at) = task_bounds(fixture, seeded_at);
-    let agent_session_id =
-        session_step.map(|_| local_demo_uuid("agent_session", FEATURED_SESSION_KEY));
-    if let Some(agent_session_id) = agent_session_id {
-        seed_featured_session(
+    let agent_session_id = session.map(|session| local_demo_uuid("agent_session", session.key));
+    if let Some(session) = session {
+        seed_demo_session(
             store,
-            agent_session_id,
+            session,
             api_key,
             team_id,
             ownership_scope_key,
@@ -65,14 +62,12 @@ pub(super) async fn seed_demo_agent_task(
     }
 
     if existing.is_none() {
-        let requested_model_key = if session_step.is_some() {
-            featured_session_fixtures()
+        let requested_model_key = session.map_or(fixture.resolved_model_key, |session| {
+            session_fixtures(session)
                 .next()
-                .expect("featured session fixture exists")
+                .expect("demo session fixture exists")
                 .resolved_model_key
-        } else {
-            fixture.resolved_model_key
-        };
+        });
         let task = AgentTaskWindowRecord {
             agent_task_id,
             agent_session_id,
@@ -82,7 +77,7 @@ pub(super) async fn seed_demo_agent_task(
             team_id,
             service_account_id: api_key.owner_service_account_id,
             actor_user_id: None,
-            harness_key: if session_step.is_some() {
+            harness_key: if session.is_some() {
                 "codex"
             } else {
                 "opencode"
@@ -101,7 +96,7 @@ pub(super) async fn seed_demo_agent_task(
             boundary_group_key: local_demo_uuid("agent_task_boundary", task_key).to_string(),
             boundary_policy_version: versions.boundary_policy_version.clone(),
             lifecycle: TaskLifecycleState::Finalized,
-            boundary_confidence: if session_step.is_some() {
+            boundary_confidence: if session.is_some() {
                 Confidence::High
             } else {
                 Confidence::Medium
@@ -119,7 +114,7 @@ pub(super) async fn seed_demo_agent_task(
             .with_context(|| format!("failed inserting demo agent task `{task_key}`"))?;
     }
 
-    let correlation_confidence = if session_step.is_some() {
+    let correlation_confidence = if session.is_some() {
         Confidence::High
     } else {
         Confidence::Medium
@@ -133,13 +128,12 @@ pub(super) async fn seed_demo_agent_task(
             ordinal: 0,
             execution_id: None,
             parent_execution_id: None,
-            normalized_session_id: agent_session_id
-                .map(|_| FEATURED_NORMALIZED_SESSION_ID.to_string()),
+            normalized_session_id: session.map(|session| session.normalized_session_id.to_string()),
             correlation_confidence,
             limitation_codes: request_limitations(
                 fixture,
                 response_payload_truncated,
-                session_step.is_none(),
+                session.is_none(),
             ),
             occurred_at: occurred_at - time::Duration::milliseconds(fixture.latency_ms.max(1)),
             completed_at: Some(occurred_at),
@@ -148,7 +142,7 @@ pub(super) async fn seed_demo_agent_task(
         .await
         .with_context(|| format!("failed linking demo agent task `{task_key}`"))?;
 
-    let coverage = request_coverage(fixture, response_payload_truncated, session_step.is_some());
+    let coverage = request_coverage(fixture, response_payload_truncated, session.is_some());
     store
         .link_request_log_to_agent_task(&AgentRequestLogLinkRecord {
             request_log_id: demo_request_log_uuid(fixture.request_id),
@@ -160,15 +154,15 @@ pub(super) async fn seed_demo_agent_task(
         .await
         .with_context(|| format!("failed linking demo request log `{}`", fixture.request_id))?;
 
-    let should_finalize_observations = session_step.is_none()
-        || session_step
-            .is_some_and(|(step, _)| step + 1 == usage::DEMO_AGENT_SESSION_REQUEST_COUNT);
+    let should_finalize_observations = session_request
+        .map(|request| request.step + 1 == request.session.request_count)
+        .unwrap_or(true);
     if !should_finalize_observations {
         return Ok(());
     }
 
-    let observations = if session_step.is_some() {
-        featured_session_fixtures()
+    let observations = if let Some(session) = session {
+        session_fixtures(session)
             .flat_map(|request| {
                 demo_observations(
                     request,
@@ -202,15 +196,16 @@ pub(super) async fn seed_demo_agent_task(
     Ok(())
 }
 
-async fn seed_featured_session(
+async fn seed_demo_session(
     store: &AnyStore,
-    agent_session_id: Uuid,
+    session: &'static agent_session_fixtures::DemoAgentSessionFixture,
     api_key: &ApiKeyRecord,
     team_id: Option<Uuid>,
     ownership_scope_key: &str,
     first_seen_at: OffsetDateTime,
     last_seen_at: OffsetDateTime,
 ) -> anyhow::Result<()> {
+    let agent_session_id = local_demo_uuid("agent_session", session.key);
     store
         .upsert_agent_session(&AgentSessionRecord {
             agent_session_id,
@@ -220,7 +215,7 @@ async fn seed_featured_session(
             team_id,
             service_account_id: api_key.owner_service_account_id,
             actor_user_id: None,
-            normalized_session_id: FEATURED_NORMALIZED_SESSION_ID.to_string(),
+            normalized_session_id: session.normalized_session_id.to_string(),
             adapter_namespace: "codex".to_string(),
             adapter_version: "codex-v1".to_string(),
             source_provenance: "body:client_metadata.session_id".to_string(),
@@ -232,7 +227,7 @@ async fn seed_featured_session(
             updated_at: last_seen_at,
         })
         .await
-        .context("failed inserting the featured demo agent session")?;
+        .with_context(|| format!("failed inserting demo agent session `{}`", session.key))?;
     Ok(())
 }
 
@@ -240,12 +235,12 @@ fn task_bounds(
     fixture: &LocalDemoRequestFixture,
     seeded_at: OffsetDateTime,
 ) -> (OffsetDateTime, OffsetDateTime) {
-    if usage::is_demo_agent_session_request(fixture) {
-        let first = featured_session_fixtures()
+    if let Some(request) = agent_session_fixtures::request_metadata(fixture) {
+        let first = session_fixtures(request.session)
             .next()
-            .expect("featured session fixture exists");
+            .expect("demo session fixture exists");
         let first_completed_at = demo_fixture_occurred_at(seeded_at, first);
-        featured_session_fixtures().skip(1).fold(
+        session_fixtures(request.session).skip(1).fold(
             (
                 first_completed_at - time::Duration::milliseconds(first.latency_ms.max(1)),
                 first_completed_at,
@@ -269,10 +264,10 @@ fn task_bounds(
     }
 }
 
-fn featured_session_fixtures() -> impl Iterator<Item = &'static LocalDemoRequestFixture> {
-    usage::LOCAL_DEMO_REQUESTS
-        .iter()
-        .filter(|fixture| usage::is_demo_agent_session_request(fixture))
+fn session_fixtures(
+    session: &'static agent_session_fixtures::DemoAgentSessionFixture,
+) -> impl Iterator<Item = &'static LocalDemoRequestFixture> {
+    agent_session_fixtures::session_requests(session)
 }
 
 fn request_limitations(
@@ -315,12 +310,14 @@ fn demo_observations(
     let Some(supplied_tool_count) = cardinality.exposed_tool_count else {
         return Vec::new();
     };
-    let tool_name =
-        usage::demo_agent_session_step(fixture).map(|(_, tool_name)| tool_name.to_string());
-
+    let session_request = agent_session_fixtures::request_metadata(fixture);
+    let tool_name = session_request.map(|request| request.tool_name.to_string());
+    let kind = session_request
+        .map(|request| request.observation_kind)
+        .unwrap_or(InferredObservationKind::ToolCallClassified);
     vec![InferredObservation {
         observation_id: local_demo_uuid("agent_observation", fixture.request_id),
-        kind: InferredObservationKind::ToolCallClassified,
+        kind,
         source_request_id: fixture.request_id.to_string(),
         parser_version: parser_version.to_string(),
         evidence: EvidenceQuality::InferredHigh,
@@ -345,28 +342,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn featured_session_has_five_complete_tool_using_requests() {
-        let fixtures = featured_session_fixtures().collect::<Vec<_>>();
-        assert_eq!(fixtures.len(), usage::DEMO_AGENT_SESSION_REQUEST_COUNT);
+    fn demo_sessions_have_complete_ordered_tool_using_requests() {
+        for session in agent_session_fixtures::DEMO_AGENT_SESSIONS {
+            let fixtures = session_fixtures(session).collect::<Vec<_>>();
+            assert_eq!(fixtures.len(), session.request_count);
 
-        let mut tools = BTreeSet::new();
-        for (expected_step, fixture) in fixtures.iter().enumerate() {
-            let (step, tool_name) = usage::demo_agent_session_step(fixture)
-                .expect("featured request should have session metadata");
-            assert_eq!(step, expected_step);
-            assert!(tools.insert(tool_name));
-            assert_eq!(fixture.api_key_public_id, "locdemodiego1");
-            assert_eq!(fixture.service, "field-operations");
-            assert_eq!(fixture.component, "greenhouse-audit");
-            assert_eq!(fixture.bespoke_value, "irrigation-reconciliation");
-            assert!(fixture.error_code.is_none());
-            assert!(fixture.prompt_tokens.is_some());
-            assert!(fixture.completion_tokens.is_some());
-            assert_ne!(fixture.payload_profile, DemoPayloadProfile::SummaryOnly);
-            assert_eq!(
-                usage::demo_tool_cardinality(fixture).invoked_tool_count,
-                Some(1)
-            );
+            let mut tools = BTreeSet::new();
+            let mut file_tool_calls = 0;
+            let first = fixtures.first().expect("demo session has requests");
+            for (expected_step, fixture) in fixtures.iter().enumerate() {
+                let request = agent_session_fixtures::request_metadata(fixture)
+                    .expect("session request should have metadata");
+                assert_eq!(request.session.key, session.key);
+                assert_eq!(request.step, expected_step);
+                assert!(tools.insert(request.tool_name));
+                assert_eq!(fixture.api_key_public_id, first.api_key_public_id);
+                assert_eq!(fixture.service, first.service);
+                assert_eq!(fixture.component, first.component);
+                assert_eq!(fixture.bespoke_value, first.bespoke_value);
+                assert!(fixture.error_code.is_none());
+                assert!(fixture.prompt_tokens.is_some());
+                assert!(fixture.completion_tokens.is_some());
+                assert_ne!(fixture.payload_profile, DemoPayloadProfile::SummaryOnly);
+                assert_eq!(
+                    usage::demo_tool_cardinality(fixture).invoked_tool_count,
+                    Some(1)
+                );
+                if matches!(
+                    request.observation_kind,
+                    InferredObservationKind::FileReadSuspected
+                        | InferredObservationKind::FileCreateSuspected
+                        | InferredObservationKind::FileEditSuspected
+                        | InferredObservationKind::FileOverwriteSuspected
+                ) {
+                    file_tool_calls += 1;
+                }
+            }
+            assert_eq!(file_tool_calls, session.expected_file_tool_calls);
         }
+    }
+
+    #[test]
+    fn route_migration_session_exercises_long_read_write_workflow() {
+        let session = agent_session_fixtures::DEMO_AGENT_SESSIONS
+            .iter()
+            .find(|session| session.key == "repository-route-migration")
+            .expect("route migration session exists");
+        assert!(session.request_count > 8);
+        assert!(session.expected_file_tool_calls > 3);
     }
 }

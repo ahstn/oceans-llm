@@ -1,7 +1,7 @@
 import type { AuthSessionView } from '@/types/api'
 
 export const DEFAULT_SIGNED_IN_PATH = '/api-keys'
-export const DEFAULT_TEAM_ADMIN_PATH = '/observability/agent-tasks'
+export const DEFAULT_TEAM_ADMIN_PATH = '/observability/agent-sessions'
 
 export function normalizeAdminPath(pathname: string) {
   return pathname.replace(/^\/admin(?=\/|$)/, '') || '/'

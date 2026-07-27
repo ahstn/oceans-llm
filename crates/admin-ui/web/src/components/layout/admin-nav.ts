@@ -60,8 +60,8 @@ export const adminNavSections: AdminNavSection[] = [
     icon: Notification03Icon,
     items: [
       {
-        label: 'Agent tasks',
-        to: '/observability/agent-tasks',
+        label: 'Agent Sessions',
+        to: '/observability/agent-sessions',
         icon: RoboticIcon,
       },
       {
