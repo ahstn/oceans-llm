@@ -454,13 +454,21 @@ export function AgentTasksPage() {
               tableLayout={{
                 dense: true,
                 rowBorder: true,
-                headerBackground: true,
+                headerBackground: false,
                 headerSticky: true,
                 columnsResizable: true,
                 width: 'fixed',
               }}
+              tableClassNames={{
+                base: 'text-[var(--color-text)]',
+                headerRow:
+                  'bg-[color:var(--color-surface-muted)] [&>th]:font-semibold [&>th]:text-[var(--color-text-soft)]',
+                bodyRow: 'transition-colors',
+              }}
             >
-              <DataGridTable />
+              <div className="min-w-0 overflow-x-auto rounded-md border border-[color:var(--color-border)]">
+                <DataGridTable />
+              </div>
               <DataGridPagination sizes={[25, 50, 100]} />
             </DataGrid>
           </div>
