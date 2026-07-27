@@ -1,10 +1,10 @@
 use anyhow::Context;
 use gateway_core::{
     AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
-    AgentSessionRecord, AgentTaskRequestLinkRecord, AgentTaskWindowRecord, ApiKeyRecord,
+    AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord, ApiKeyRecord,
     BoundedObservationFacts, Confidence, EvidenceQuality, InferredObservation,
     InferredObservationKind, LimitationCode, McpToolInvocationRecord, McpToolInvocationRepository,
-    McpToolInvocationStatus, McpToolPolicyResult, RequestTags, TaskLifecycleState,
+    McpToolInvocationStatus, McpToolPolicyResult, RequestTags, SessionLifecycleState,
 };
 use gateway_service::{desired_versions, enqueue_agent_analysis};
 use gateway_store::AnyStore;
@@ -18,7 +18,7 @@ use super::{
 };
 
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn seed_demo_agent_task(
+pub(super) async fn seed_demo_agent_session(
     store: &AnyStore,
     fixture: &LocalDemoRequestFixture,
     api_key: &ApiKeyRecord,
@@ -31,12 +31,12 @@ pub(super) async fn seed_demo_agent_task(
 ) -> anyhow::Result<()> {
     let session_request = agent_session_fixtures::request_metadata(fixture);
     let session = session_request.map(|request| request.session);
-    let task_key = session.map_or(fixture.request_id, |session| session.key);
-    let agent_task_id = local_demo_uuid("agent_task", task_key);
+    let session_key = session.map_or(fixture.request_id, |session| session.key);
+    let agent_session_id = local_demo_uuid("agent_session", session_key);
     let existing = store
-        .load_agent_task_trace(agent_task_id)
+        .load_agent_session_trace(agent_session_id)
         .await
-        .context("failed checking for an existing demo agent task")?;
+        .context("failed checking for an existing demo agent session")?;
     if existing.as_ref().is_some_and(|trace| {
         trace
             .requests
@@ -47,8 +47,9 @@ pub(super) async fn seed_demo_agent_task(
     }
 
     let versions = desired_versions();
-    let (started_at, ended_at) = task_bounds(fixture, seeded_at);
-    let agent_session_id = session.map(|session| local_demo_uuid("agent_session", session.key));
+    let (started_at, ended_at) = session_bounds(fixture, seeded_at);
+    let agent_session_source_id =
+        session.map(|session| local_demo_uuid("agent_session", session.key));
     if let Some(session) = session {
         seed_demo_session(
             store,
@@ -69,9 +70,9 @@ pub(super) async fn seed_demo_agent_task(
                 .expect("demo session fixture exists")
                 .resolved_model_key
         });
-        let task = AgentTaskWindowRecord {
-            agent_task_id,
+        let session = AgentSessionRecord {
             agent_session_id,
+            agent_session_source_id,
             ownership_scope_key: ownership_scope_key.to_string(),
             api_key_id: api_key.id,
             user_id: api_key.owner_user_id,
@@ -93,10 +94,10 @@ pub(super) async fn seed_demo_agent_task(
             }
             .to_string(),
             request_tags: serde_json::to_value(request_tags)
-                .context("failed serializing demo agent task request tags")?,
-            boundary_group_key: local_demo_uuid("agent_task_boundary", task_key).to_string(),
+                .context("failed serializing demo agent session request tags")?,
+            boundary_group_key: local_demo_uuid("agent_session_boundary", session_key).to_string(),
             boundary_policy_version: versions.boundary_policy_version.clone(),
-            lifecycle: TaskLifecycleState::Finalized,
+            lifecycle: SessionLifecycleState::Finalized,
             boundary_confidence: if session.is_some() {
                 Confidence::High
             } else {
@@ -110,9 +111,9 @@ pub(super) async fn seed_demo_agent_task(
             updated_at: ended_at,
         };
         store
-            .insert_agent_task_if_absent(&task)
+            .insert_agent_session_if_absent(&session)
             .await
-            .with_context(|| format!("failed inserting demo agent task `{task_key}`"))?;
+            .with_context(|| format!("failed inserting demo agent session `{session_key}`"))?;
     }
 
     let correlation_confidence = if session.is_some() {
@@ -121,8 +122,8 @@ pub(super) async fn seed_demo_agent_task(
         Confidence::Medium
     };
     store
-        .append_agent_task_request(&AgentTaskRequestLinkRecord {
-            agent_task_id,
+        .append_agent_session_request(&AgentSessionRequestLinkRecord {
+            agent_session_id,
             request_id: fixture.request_id.to_string(),
             request_log_id: Some(demo_request_log_uuid(fixture.request_id)),
             usage_event_id: Some(demo_usage_event_uuid(fixture.request_id)),
@@ -141,14 +142,14 @@ pub(super) async fn seed_demo_agent_task(
             terminal_success: Some(fixture.error_code.is_none() && fixture.status_code < 400),
         })
         .await
-        .with_context(|| format!("failed linking demo agent task `{task_key}`"))?;
+        .with_context(|| format!("failed linking demo agent session `{session_key}`"))?;
 
     let coverage = request_coverage(fixture, response_payload_truncated, session.is_some());
     store
-        .link_request_log_to_agent_task(&AgentRequestLogLinkRecord {
+        .link_request_log_to_agent_session(&AgentRequestLogLinkRecord {
             request_log_id: demo_request_log_uuid(fixture.request_id),
+            agent_session_source_id,
             agent_session_id,
-            agent_task_id,
             analysis_source: "local_demo_seed".to_string(),
             coverage: coverage.clone(),
         })
@@ -182,11 +183,11 @@ pub(super) async fn seed_demo_agent_task(
     } else {
         demo_observations(fixture, occurred_at, &versions.observation_parser_version)
     };
-    let observation_set_id = local_demo_uuid("agent_observation_set", task_key);
+    let observation_set_id = local_demo_uuid("agent_observation_set", session_key);
     store
         .append_agent_observation_set(&AgentObservationSetRecord {
             observation_set_id,
-            agent_task_id,
+            agent_session_id,
             parser_version: versions.observation_parser_version,
             source_watermark_at: ended_at,
             coverage,
@@ -195,11 +196,17 @@ pub(super) async fn seed_demo_agent_task(
         })
         .await
         .with_context(|| {
-            format!("failed inserting observations for demo agent task `{task_key}`")
+            format!("failed inserting observations for demo agent session `{session_key}`")
         })?;
-    enqueue_agent_analysis(store, agent_task_id, "local_demo_seed", task_key, ended_at)
-        .await
-        .with_context(|| format!("failed queueing demo agent task `{task_key}`"))?;
+    enqueue_agent_analysis(
+        store,
+        agent_session_id,
+        "local_demo_seed",
+        session_key,
+        ended_at,
+    )
+    .await
+    .with_context(|| format!("failed queueing demo agent session `{session_key}`"))?;
 
     Ok(())
 }
@@ -224,8 +231,8 @@ async fn seed_demo_mcp_invocation(
                 team_id: api_key.owner_team_id,
                 owner_kind: api_key.owner_kind,
                 server_id: None,
-                server_display_key: "incident-runbooks".to_string(),
-                server_display_name: "Incident Runbooks".to_string(),
+                server_display_key: "jira".to_string(),
+                server_display_name: "Jira".to_string(),
                 tool_id: None,
                 tool_display_key: tool_name.to_string(),
                 tool_display_name: tool_name.replace('_', " "),
@@ -240,7 +247,7 @@ async fn seed_demo_mcp_invocation(
                 result_payload_redacted: false,
                 metadata: serde_json::Map::from_iter([(
                     "fixture".to_string(),
-                    json!("incident-runbook-coordination"),
+                    json!("jira-release-coordination"),
                 )]),
                 occurred_at: request_completed_at - time::Duration::milliseconds(100),
             },
@@ -259,10 +266,10 @@ async fn seed_demo_session(
     first_seen_at: OffsetDateTime,
     last_seen_at: OffsetDateTime,
 ) -> anyhow::Result<()> {
-    let agent_session_id = local_demo_uuid("agent_session", session.key);
+    let agent_session_source_id = local_demo_uuid("agent_session", session.key);
     store
-        .upsert_agent_session(&AgentSessionRecord {
-            agent_session_id,
+        .upsert_agent_session_source(&AgentSessionSourceRecord {
+            agent_session_source_id,
             ownership_scope_key: ownership_scope_key.to_string(),
             api_key_id: api_key.id,
             user_id: api_key.owner_user_id,
@@ -285,7 +292,7 @@ async fn seed_demo_session(
     Ok(())
 }
 
-fn task_bounds(
+fn session_bounds(
     fixture: &LocalDemoRequestFixture,
     seeded_at: OffsetDateTime,
 ) -> (OffsetDateTime, OffsetDateTime) {

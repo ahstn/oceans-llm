@@ -149,11 +149,11 @@ description = "Purge old request logs against `gateway.yaml`; override retention
 run = 'cargo run -p gateway --bin gateway -- purge-request-logs --retention "${RETENTION:-7d}"'
 
 [tasks.gateway-recompute-agent-analysis]
-description = "Queue retained agent tasks for analysis against `gateway.yaml`; override batch size with LIMIT"
+description = "Queue retained agent sessions for analysis against `gateway.yaml`; override batch size with LIMIT"
 run = 'cargo run -p gateway --bin gateway -- recompute-agent-analysis --limit "${LIMIT:-100}"'
 
 [tasks.gateway-recompute-agent-analysis-prod]
-description = "Queue retained agent tasks for analysis against `gateway.prod.yaml`; override batch size with LIMIT"
+description = "Queue retained agent sessions for analysis against `gateway.prod.yaml`; override batch size with LIMIT"
 env = { POSTGRES_URL = { required = true } }
 run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml recompute-agent-analysis --limit "${LIMIT:-100}"'
 
@@ -168,7 +168,7 @@ env = { POSTGRES_URL = { required = true } }
 run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-request-logs --retention "${RETENTION:-7d}"'
 
 [tasks.gateway-seed-local-demo]
-description = "Seed the local-only demo dataset (identity, budgets, api keys, request history, and agent task diagnostics) against `gateway.yaml`"
+description = "Seed the local-only demo dataset (identity, budgets, API keys, request history, and agent session diagnostics) against `gateway.yaml`"
 run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo'
 
 [tasks.gateway-reset-local-demo]

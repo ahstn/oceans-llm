@@ -22,8 +22,8 @@ use crate::{
     RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
     ResolvedProviderConnection, StreamLogResultInput, StreamResponseCollector,
     agent_analysis::{
-        PassiveRequestRecord, REPORT_RETENTION, finalize_idle_tasks, process_next_analysis,
-        record_prepared_passive_request, task_boundary_group_key,
+        PassiveRequestRecord, REPORT_RETENTION, finalize_idle_sessions, process_next_analysis,
+        record_prepared_passive_request, session_boundary_group_key,
     },
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::BudgetGuard,
@@ -500,7 +500,7 @@ where
         let response_body = response_body.cloned();
         tokio::spawn(async move {
             let completed_at = OffsetDateTime::now_utc();
-            let boundary_group_key = task_boundary_group_key(&request_tags);
+            let boundary_group_key = session_boundary_group_key(&request_tags);
             let input = PassiveRequestRecord {
                 auth: &auth,
                 request_id: &request_id,
@@ -531,11 +531,14 @@ where
             drop(permit);
         });
     }
-    pub async fn finalize_idle_agent_tasks(&self, now: OffsetDateTime) -> Result<u64, GatewayError>
+    pub async fn finalize_idle_agent_sessions(
+        &self,
+        now: OffsetDateTime,
+    ) -> Result<u64, GatewayError>
     where
         S: AgentSessionAnalysisRepository,
     {
-        finalize_idle_tasks(self.store.as_ref(), now).await
+        finalize_idle_sessions(self.store.as_ref(), now).await
     }
 
     pub async fn process_next_agent_analysis(

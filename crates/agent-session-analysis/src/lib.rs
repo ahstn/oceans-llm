@@ -6,23 +6,23 @@ use std::collections::{BTreeSet, HashSet};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-pub const REPORT_SCHEMA_VERSION: &str = "agent-task-report-v3";
-pub const TASK_BOUNDARY_POLICY_VERSION: &str = "passive-gap-v2";
+pub const REPORT_SCHEMA_VERSION: &str = "agent-session-report-v4";
+pub const SESSION_BOUNDARY_POLICY_VERSION: &str = "passive-gap-v2";
 pub const OBSERVATION_PARSER_VERSION: &str = "passive-observations-v1";
-pub const ANALYZER_VERSION: &str = "task-efficiency-v2";
+pub const ANALYZER_VERSION: &str = "session-efficiency-v3";
 pub const SCORE_POLICY_VERSION: &str = "outcome-cost-time-v1";
 pub const DEFAULT_ORCHESTRATION_GAP: Duration = Duration::minutes(2);
-pub const MIN_EXACT_COHORT_SIZE: usize = 10;
+pub const MIN_EXACT_COHORT_SIZE: usize = 6;
 
+pub type AgentSessionSourceId = Uuid;
 pub type AgentSessionId = Uuid;
-pub type AgentTaskId = Uuid;
 pub type AnalysisId = Uuid;
 pub type ObservationId = Uuid;
 pub type ObservationSetId = Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TaskLifecycleState {
+pub enum SessionLifecycleState {
     Open,
     Finalized,
 }
@@ -138,7 +138,7 @@ impl ActivityInterval {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct TaskUsageFact {
+pub struct SessionUsageFact {
     pub fresh_input_tokens: Option<i64>,
     pub cache_read_tokens: Option<i64>,
     pub cache_creation_tokens: Option<i64>,
@@ -159,12 +159,12 @@ pub struct TaskUsageFact {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TaskRequestFact {
+pub struct SessionRequestFact {
     pub request_id: String,
     pub occurred_at: OffsetDateTime,
     pub completed_at: Option<OffsetDateTime>,
     pub terminal_success: Option<bool>,
-    pub usage: Option<TaskUsageFact>,
+    pub usage: Option<SessionUsageFact>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,11 +185,11 @@ pub struct TraceEvidence {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TaskTrace {
-    pub requests: Vec<TaskRequestFact>,
+pub struct SessionTrace {
+    pub requests: Vec<SessionRequestFact>,
     pub activity_intervals: Vec<ActivityInterval>,
     pub observations: Vec<InferredObservation>,
-    pub lifecycle: TaskLifecycleState,
+    pub lifecycle: SessionLifecycleState,
     pub boundary_confidence: Confidence,
     pub evidence: TraceEvidence,
 }
@@ -238,7 +238,7 @@ impl std::fmt::Display for AnalysisError {
                 formatter.write_str("calibrated analysis requires an approval identity")
             }
             Self::DuplicateRequest(request_id) => {
-                write!(formatter, "duplicate task request `{request_id}`")
+                write!(formatter, "duplicate session request `{request_id}`")
             }
             Self::InvalidRequestInterval(request_id) => {
                 write!(
@@ -323,7 +323,7 @@ pub struct ToolAndChangeDiagnostics {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TaskDiagnostics {
+pub struct SessionDiagnostics {
     pub token_and_cache: TokenAndCacheDiagnostics,
     pub context: ContextDiagnostics,
     pub tools_and_changes: ToolAndChangeDiagnostics,
@@ -331,7 +331,7 @@ pub struct TaskDiagnostics {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TaskEfficiencyComponents {
+pub struct SessionEfficiencyComponents {
     pub outcome: OutcomeComponent,
     pub cost_efficiency_basis_points: Option<u16>,
     pub active_time_efficiency_basis_points: Option<u16>,
@@ -348,7 +348,7 @@ pub struct TaskEfficiencyComponents {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TaskEfficiencyReport {
+pub struct SessionEfficiencyReport {
     pub report_schema_version: String,
     pub analyzer_version: String,
     pub score_policy_version: String,
@@ -359,13 +359,13 @@ pub struct TaskEfficiencyReport {
     pub gateway_outcome: GatewayOutcomeState,
     pub score: Option<u8>,
     pub coverage: TelemetryCoverage,
-    pub components: TaskEfficiencyComponents,
-    pub diagnostics: TaskDiagnostics,
+    pub components: SessionEfficiencyComponents,
+    pub diagnostics: SessionDiagnostics,
     pub limitations: Vec<LimitationCode>,
 }
 
 #[must_use]
-fn outcome_component(requests: &[TaskRequestFact]) -> OutcomeComponent {
+fn outcome_component(requests: &[SessionRequestFact]) -> OutcomeComponent {
     let mut successful_requests = 0_u32;
     let mut determinate_requests = 0_u32;
     let mut incomplete_requests = 0_u32;
@@ -443,7 +443,7 @@ fn active_time_milliseconds(
 }
 
 #[must_use]
-fn task_efficiency_score(
+fn session_efficiency_score(
     outcome_basis_points: u16,
     cost_basis_points: Option<u16>,
     time_basis_points: Option<u16>,
@@ -512,7 +512,7 @@ fn validate_policy(policy: &AnalysisPolicy) -> Result<(), AnalysisError> {
     Ok(())
 }
 
-fn validate_trace(trace: &TaskTrace) -> Result<(), AnalysisError> {
+fn validate_trace(trace: &SessionTrace) -> Result<(), AnalysisError> {
     let mut request_ids = HashSet::with_capacity(trace.requests.len());
     for request in &trace.requests {
         if !request_ids.insert(request.request_id.as_str()) {
@@ -564,8 +564,8 @@ fn validate_trace(trace: &TaskTrace) -> Result<(), AnalysisError> {
 }
 
 fn sum_usage(
-    requests: &[TaskRequestFact],
-    field: fn(&TaskUsageFact) -> Option<i64>,
+    requests: &[SessionRequestFact],
+    field: fn(&SessionUsageFact) -> Option<i64>,
 ) -> Option<i64> {
     if requests.is_empty() {
         return None;
@@ -606,7 +606,7 @@ fn percentile(values: &[i64], numerator: usize, denominator: usize) -> Option<i6
 }
 
 fn context_diagnostics(
-    requests: &[TaskRequestFact],
+    requests: &[SessionRequestFact],
     active_time_ms: i64,
     observations: &[InferredObservation],
 ) -> ContextDiagnostics {
@@ -724,11 +724,11 @@ fn tool_and_change_diagnostics(
     }
 }
 
-pub fn analyze_task(
-    trace: &TaskTrace,
+pub fn analyze_session(
+    trace: &SessionTrace,
     policy: &AnalysisPolicy,
     cohort: Option<&CohortReference>,
-) -> Result<TaskEfficiencyReport, AnalysisError> {
+) -> Result<SessionEfficiencyReport, AnalysisError> {
     validate_policy(policy)?;
     validate_trace(trace)?;
     let outcome = outcome_component(&trace.requests);
@@ -743,6 +743,7 @@ pub fn analyze_task(
         });
     let mut activity_intervals = trace.activity_intervals.clone();
     activity_intervals.extend(trace.evidence.direct_mcp_intervals.iter().cloned());
+    let concurrent_time_ms = active_time_milliseconds(activity_intervals.clone(), Duration::ZERO);
     let active_time_ms = active_time_milliseconds(activity_intervals, policy.orchestration_gap);
     let started_at = trace
         .requests
@@ -759,8 +760,10 @@ pub fn analyze_task(
         .map(|(start, end)| i64::try_from((end - start).whole_milliseconds()).unwrap_or(i64::MAX))
         .unwrap_or_default()
         .max(0);
-    let excluded_gap_time_ms = wall_time_ms.saturating_sub(active_time_ms);
-    let overlap_savings_ms = summed_work_time_ms.saturating_sub(active_time_ms);
+    let excluded_gap_time_ms = wall_time_ms.saturating_sub(active_time_ms).max(0);
+    let overlap_savings_ms = summed_work_time_ms
+        .saturating_sub(concurrent_time_ms)
+        .max(0);
     let scoring_cohort = cohort.filter(|cohort| {
         cohort.fallback_level > 0
             || (cohort.successful_costs_10000.len() >= MIN_EXACT_COHORT_SIZE
@@ -774,7 +777,7 @@ pub fn analyze_task(
     let active_time_efficiency_basis_points = scoring_cohort.and_then(|cohort| {
         lower_is_better_efficiency_basis_points(active_time_ms, &cohort.successful_active_time_ms)
     });
-    let score = task_efficiency_score(
+    let score = session_efficiency_score(
         outcome.factor_basis_points,
         cost_efficiency_basis_points,
         active_time_efficiency_basis_points,
@@ -849,7 +852,7 @@ pub fn analyze_task(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let diagnostics = TaskDiagnostics {
+    let diagnostics = SessionDiagnostics {
         token_and_cache: TokenAndCacheDiagnostics {
             fresh_input_tokens: sum_usage(&trace.requests, |usage| usage.fresh_input_tokens),
             cache_read_tokens: cache_read,
@@ -908,7 +911,7 @@ pub fn analyze_task(
     limitations.sort_unstable_by_key(|value| *value as u8);
     limitations.dedup();
 
-    let confidence = if trace.lifecycle == TaskLifecycleState::Open
+    let confidence = if trace.lifecycle == SessionLifecycleState::Open
         || outcome.state == GatewayOutcomeState::Unknown
         || score.is_none()
         || overall_coverage < 60
@@ -927,7 +930,7 @@ pub fn analyze_task(
         Confidence::Medium
     };
 
-    Ok(TaskEfficiencyReport {
+    Ok(SessionEfficiencyReport {
         report_schema_version: policy.report_schema_version.clone(),
         analyzer_version: policy.analyzer_version.clone(),
         score_policy_version: policy.score_policy_version.clone(),
@@ -938,7 +941,7 @@ pub fn analyze_task(
         gateway_outcome: outcome.state,
         score,
         coverage,
-        components: TaskEfficiencyComponents {
+        components: SessionEfficiencyComponents {
             outcome,
             cost_efficiency_basis_points,
             active_time_efficiency_basis_points,
@@ -967,14 +970,19 @@ pub fn analyze_task(
 mod tests {
     use super::*;
 
-    fn request(id: &str, second: i64, success: Option<bool>, cost: Option<i64>) -> TaskRequestFact {
+    fn request(
+        id: &str,
+        second: i64,
+        success: Option<bool>,
+        cost: Option<i64>,
+    ) -> SessionRequestFact {
         let occurred_at = OffsetDateTime::UNIX_EPOCH + Duration::seconds(second);
-        TaskRequestFact {
+        SessionRequestFact {
             request_id: id.to_string(),
             occurred_at,
             completed_at: Some(occurred_at + Duration::seconds(1)),
             terminal_success: success,
-            usage: Some(TaskUsageFact {
+            usage: Some(SessionUsageFact {
                 fresh_input_tokens: Some(100),
                 cache_read_tokens: Some(0),
                 output_tokens: Some(10),
@@ -982,12 +990,12 @@ mod tests {
                 normalized_cost_10000: cost,
                 uncached_input_cost_10000: cost,
                 pricing_policy_version: Some("test-pricing-v1".to_string()),
-                ..TaskUsageFact::default()
+                ..SessionUsageFact::default()
             }),
         }
     }
 
-    fn trace(requests: Vec<TaskRequestFact>) -> TaskTrace {
+    fn trace(requests: Vec<SessionRequestFact>) -> SessionTrace {
         let activity_intervals = requests
             .iter()
             .filter_map(|request| {
@@ -996,11 +1004,11 @@ mod tests {
                     .and_then(|end| ActivityInterval::new(request.occurred_at, end))
             })
             .collect();
-        TaskTrace {
+        SessionTrace {
             requests,
             activity_intervals,
             observations: vec![],
-            lifecycle: TaskLifecycleState::Finalized,
+            lifecycle: SessionLifecycleState::Finalized,
             boundary_confidence: Confidence::High,
             evidence: TraceEvidence {
                 session_observed: true,
@@ -1064,18 +1072,24 @@ mod tests {
     }
 
     #[test]
-    fn failed_task_scores_zero() {
+    fn failed_session_scores_zero() {
         assert_eq!(
-            task_efficiency_score(0, Some(10_000), Some(10_000)),
+            session_efficiency_score(0, Some(10_000), Some(10_000)),
             Some(0)
         );
     }
 
     #[test]
     fn score_renormalizes_when_one_efficiency_component_is_missing() {
-        assert_eq!(task_efficiency_score(10_000, Some(2_500), None), Some(59));
-        assert_eq!(task_efficiency_score(10_000, None, Some(2_500)), Some(67));
-        assert_eq!(task_efficiency_score(10_000, None, None), None);
+        assert_eq!(
+            session_efficiency_score(10_000, Some(2_500), None),
+            Some(59)
+        );
+        assert_eq!(
+            session_efficiency_score(10_000, None, Some(2_500)),
+            Some(67)
+        );
+        assert_eq!(session_efficiency_score(10_000, None, None), None);
     }
 
     #[test]
@@ -1087,7 +1101,7 @@ mod tests {
 
     #[test]
     fn report_keeps_score_optional_without_a_cohort_and_exposes_coverage() {
-        let report = analyze_task(
+        let report = analyze_session(
             &trace(vec![request("a", 0, Some(true), Some(100))]),
             &AnalysisPolicy::default(),
             None,
@@ -1105,14 +1119,14 @@ mod tests {
     }
 
     #[test]
-    fn exact_cohort_requires_ten_successful_tasks() {
+    fn exact_cohort_requires_six_successful_sessions() {
         let cohort = CohortReference {
             cohort_version: "exact-v1".to_string(),
             fallback_level: 0,
             successful_costs_10000: vec![100; MIN_EXACT_COHORT_SIZE - 1],
             successful_active_time_ms: vec![1_000; MIN_EXACT_COHORT_SIZE - 1],
         };
-        let report = analyze_task(
+        let report = analyze_session(
             &trace(vec![request("a", 0, Some(true), Some(100))]),
             &AnalysisPolicy::default(),
             Some(&cohort),
@@ -1134,21 +1148,21 @@ mod tests {
             request("same", 1, Some(true), Some(1)),
         ]);
         assert!(matches!(
-            analyze_task(&duplicate, &AnalysisPolicy::default(), None),
+            analyze_session(&duplicate, &AnalysisPolicy::default(), None),
             Err(AnalysisError::DuplicateRequest(id)) if id == "same"
         ));
 
         let mut negative = request("negative", 0, Some(true), Some(1));
         negative.usage.as_mut().expect("usage").fresh_input_tokens = Some(-1);
         assert!(matches!(
-            analyze_task(&trace(vec![negative]), &AnalysisPolicy::default(), None),
+            analyze_session(&trace(vec![negative]), &AnalysisPolicy::default(), None),
             Err(AnalysisError::InvalidUsage(id)) if id == "negative"
         ));
 
         let mut invalid_interval = request("interval", 0, Some(true), Some(1));
         invalid_interval.completed_at = Some(invalid_interval.occurred_at - Duration::SECOND);
         assert!(matches!(
-            analyze_task(
+            analyze_session(
                 &trace(vec![invalid_interval]),
                 &AnalysisPolicy::default(),
                 None
@@ -1165,7 +1179,7 @@ mod tests {
             ..AnalysisPolicy::default()
         };
         assert!(matches!(
-            analyze_task(&input, &unsupported, None),
+            analyze_session(&input, &unsupported, None),
             Err(AnalysisError::UnsupportedVersion {
                 field: "analyzer version",
                 ..
@@ -1176,7 +1190,7 @@ mod tests {
             ..AnalysisPolicy::default()
         };
         assert_eq!(
-            analyze_task(&input, &unapproved, None),
+            analyze_session(&input, &unapproved, None),
             Err(AnalysisError::MissingCalibrationApproval)
         );
     }
@@ -1189,16 +1203,16 @@ mod tests {
             successful_costs_10000: vec![50; MIN_EXACT_COHORT_SIZE],
             successful_active_time_ms: vec![500; MIN_EXACT_COHORT_SIZE],
         };
-        let mut task_request = request("a", 0, Some(true), Some(100));
-        let usage = task_request.usage.as_mut().expect("usage");
+        let mut session_request = request("a", 0, Some(true), Some(100));
+        let usage = session_request.usage.as_mut().expect("usage");
         usage.cache_read_tokens = Some(50);
         usage.cache_creation_tokens = Some(10);
         usage.fresh_input_cost_10000 = Some(100);
         usage.cache_read_cost_10000 = Some(10);
         usage.cache_creation_cost_10000 = Some(20);
         usage.uncached_input_cost_10000 = Some(200);
-        let mut task_trace = trace(vec![task_request]);
-        task_trace.evidence.direct_mcp_intervals = vec![
+        let mut session_trace = trace(vec![session_request]);
+        session_trace.evidence.direct_mcp_intervals = vec![
             ActivityInterval::new(
                 OffsetDateTime::UNIX_EPOCH,
                 OffsetDateTime::UNIX_EPOCH + Duration::milliseconds(500),
@@ -1206,8 +1220,8 @@ mod tests {
             .expect("interval"),
         ];
 
-        let report =
-            analyze_task(&task_trace, &AnalysisPolicy::default(), Some(&cohort)).expect("report");
+        let report = analyze_session(&session_trace, &AnalysisPolicy::default(), Some(&cohort))
+            .expect("report");
         assert_eq!(report.score, Some(10));
         assert_eq!(report.gateway_outcome, GatewayOutcomeState::Succeeded);
         assert_eq!(report.components.active_time_ms, 1_000);
@@ -1232,6 +1246,21 @@ mod tests {
     }
 
     #[test]
+    fn orchestration_gaps_do_not_create_negative_overlap_savings() {
+        let session_trace = trace(vec![
+            request("a", 0, Some(true), Some(100)),
+            request("b", 10, Some(true), Some(100)),
+        ]);
+
+        let report =
+            analyze_session(&session_trace, &AnalysisPolicy::default(), None).expect("report");
+
+        assert_eq!(report.components.summed_work_time_ms, 2_000);
+        assert_eq!(report.components.active_time_ms, 11_000);
+        assert_eq!(report.components.overlap_savings_ms, 0);
+    }
+
+    #[test]
     fn report_serialization_is_deterministic_and_round_trips() {
         let cohort = CohortReference {
             cohort_version: "exact-v1".to_string(),
@@ -1239,16 +1268,16 @@ mod tests {
             successful_costs_10000: vec![50; MIN_EXACT_COHORT_SIZE],
             successful_active_time_ms: vec![500; MIN_EXACT_COHORT_SIZE],
         };
-        let task_trace = trace(vec![request("a", 0, Some(true), Some(100))]);
-        let report =
-            analyze_task(&task_trace, &AnalysisPolicy::default(), Some(&cohort)).expect("report");
-        let recomputed =
-            analyze_task(&task_trace, &AnalysisPolicy::default(), Some(&cohort)).expect("report");
+        let session_trace = trace(vec![request("a", 0, Some(true), Some(100))]);
+        let report = analyze_session(&session_trace, &AnalysisPolicy::default(), Some(&cohort))
+            .expect("report");
+        let recomputed = analyze_session(&session_trace, &AnalysisPolicy::default(), Some(&cohort))
+            .expect("report");
         let first = serde_json::to_string(&report).expect("serialize");
         let second = serde_json::to_string(&recomputed).expect("serialize");
         assert_eq!(first, second);
         assert_eq!(
-            serde_json::from_str::<TaskEfficiencyReport>(&first).expect("deserialize"),
+            serde_json::from_str::<SessionEfficiencyReport>(&first).expect("deserialize"),
             report
         );
     }

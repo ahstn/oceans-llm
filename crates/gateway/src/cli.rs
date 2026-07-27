@@ -91,7 +91,7 @@ pub struct PurgeRequestLogsArgs {
 #[derive(Debug, Clone, Args)]
 pub struct RecomputeAgentAnalysisArgs {
     #[arg(long, conflicts_with = "limit")]
-    pub task_id: Option<String>,
+    pub session_id: Option<String>,
 
     #[arg(
         long,
@@ -208,14 +208,14 @@ mod tests {
         let cli = Cli::parse_from([
             "gateway",
             "recompute-agent-analysis",
-            "--task-id",
+            "--session-id",
             "00000000-0000-0000-0000-000000000001",
         ]);
         let Command::RecomputeAgentAnalysis(args) = cli.command.expect("command") else {
             panic!("expected recompute-agent-analysis command");
         };
         assert_eq!(
-            args.task_id.as_deref(),
+            args.session_id.as_deref(),
             Some("00000000-0000-0000-0000-000000000001")
         );
         assert_eq!(args.limit, 100);

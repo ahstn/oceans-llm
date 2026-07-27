@@ -1827,99 +1827,12 @@
         ]
       }
     },
-    "/api/v1/admin/observability/agent-sessions/{session_id}": {
+    "/api/v1/admin/observability/agent-sessions": {
       "get": {
         "tags": [
           "crate::http::observability"
         ],
-        "operationId": "get_agent_session_detail",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "description": "Observed agent session identifier",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "page_size",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_AgentSessionDetailView"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          }
-        ]
-      }
-    },
-    "/api/v1/admin/observability/agent-tasks": {
-      "get": {
-        "tags": [
-          "crate::http::observability"
-        ],
-        "operationId": "list_agent_tasks",
+        "operationId": "list_agent_sessions",
         "parameters": [
           {
             "name": "page",
@@ -2024,7 +1937,7 @@
             }
           },
           {
-            "name": "session_id",
+            "name": "session_source_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -2094,7 +2007,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_AgentTaskPageView"
+                  "$ref": "#/components/schemas/Envelope_AgentSessionPageView"
                 }
               }
             }
@@ -2137,17 +2050,17 @@
         ]
       }
     },
-    "/api/v1/admin/observability/agent-tasks/{task_id}": {
+    "/api/v1/admin/observability/agent-sessions/{session_id}": {
       "get": {
         "tags": [
           "crate::http::observability"
         ],
-        "operationId": "get_agent_task_detail",
+        "operationId": "get_agent_session_detail",
         "parameters": [
           {
-            "name": "task_id",
+            "name": "session_id",
             "in": "path",
-            "description": "Agent task identifier",
+            "description": "Agent session identifier",
             "required": true,
             "schema": {
               "type": "string",
@@ -2161,7 +2074,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_AgentTaskDetailView"
+                  "$ref": "#/components/schemas/Envelope_AgentSessionDetailView"
                 }
               }
             }
@@ -5803,65 +5716,7 @@
           }
         }
       },
-      "AgentSessionDetailView": {
-        "type": "object",
-        "required": [
-          "session",
-          "tasks"
-        ],
-        "properties": {
-          "session": {
-            "$ref": "#/components/schemas/AgentSessionView"
-          },
-          "tasks": {
-            "$ref": "#/components/schemas/AgentTaskPageView"
-          }
-        }
-      },
-      "AgentSessionView": {
-        "type": "object",
-        "required": [
-          "session_id",
-          "external_session_id",
-          "adapter_namespace",
-          "adapter_version",
-          "source_provenance",
-          "harness_key",
-          "harness_label",
-          "first_seen_at",
-          "last_seen_at"
-        ],
-        "properties": {
-          "adapter_namespace": {
-            "type": "string"
-          },
-          "adapter_version": {
-            "type": "string"
-          },
-          "external_session_id": {
-            "type": "string"
-          },
-          "first_seen_at": {
-            "type": "string"
-          },
-          "harness_key": {
-            "type": "string"
-          },
-          "harness_label": {
-            "type": "string"
-          },
-          "last_seen_at": {
-            "type": "string"
-          },
-          "session_id": {
-            "type": "string"
-          },
-          "source_provenance": {
-            "type": "string"
-          }
-        }
-      },
-      "AgentTaskAnalysisIdentityView": {
+      "AgentSessionAnalysisIdentityView": {
         "type": "object",
         "required": [
           "analysis_id",
@@ -5920,10 +5775,10 @@
           }
         }
       },
-      "AgentTaskDetailView": {
+      "AgentSessionDetailView": {
         "type": "object",
         "required": [
-          "task",
+          "session",
           "requests",
           "observations",
           "request_history_truncated",
@@ -5936,7 +5791,7 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/AgentTaskAnalysisIdentityView"
+                "$ref": "#/components/schemas/AgentSessionAnalysisIdentityView"
               }
             ]
           },
@@ -5965,7 +5820,7 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/AgentTaskEfficiencyReportView"
+                "$ref": "#/components/schemas/AgentSessionEfficiencyReportView"
               }
             ]
           },
@@ -5975,25 +5830,25 @@
           "requests": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/AgentTaskRequestView"
+              "$ref": "#/components/schemas/AgentSessionRequestView"
             }
           },
           "session": {
+            "$ref": "#/components/schemas/AgentSessionSummaryView"
+          },
+          "session_source": {
             "oneOf": [
               {
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/AgentSessionView"
+                "$ref": "#/components/schemas/AgentSessionSourceView"
               }
             ]
-          },
-          "task": {
-            "$ref": "#/components/schemas/AgentTaskSummaryView"
           }
         }
       },
-      "AgentTaskDiagnosticsView": {
+      "AgentSessionDiagnosticsView": {
         "type": "object",
         "required": [
           "token_and_cache",
@@ -6016,7 +5871,7 @@
           }
         }
       },
-      "AgentTaskEfficiencyComponentsView": {
+      "AgentSessionEfficiencyComponentsView": {
         "type": "object",
         "required": [
           "outcome",
@@ -6078,7 +5933,7 @@
             "format": "int64"
           },
           "outcome": {
-            "$ref": "#/components/schemas/AgentTaskOutcomeView"
+            "$ref": "#/components/schemas/AgentSessionOutcomeView"
           },
           "overlap_savings_ms": {
             "type": "integer",
@@ -6101,7 +5956,7 @@
           }
         }
       },
-      "AgentTaskEfficiencyReportView": {
+      "AgentSessionEfficiencyReportView": {
         "type": "object",
         "required": [
           "report_schema_version",
@@ -6127,7 +5982,7 @@
             ]
           },
           "components": {
-            "$ref": "#/components/schemas/AgentTaskEfficiencyComponentsView"
+            "$ref": "#/components/schemas/AgentSessionEfficiencyComponentsView"
           },
           "confidence": {
             "type": "string"
@@ -6136,7 +5991,7 @@
             "$ref": "#/components/schemas/AgentTelemetryCoverageView"
           },
           "diagnostics": {
-            "$ref": "#/components/schemas/AgentTaskDiagnosticsView"
+            "$ref": "#/components/schemas/AgentSessionDiagnosticsView"
           },
           "gateway_outcome": {
             "type": "string"
@@ -6169,7 +6024,7 @@
           }
         }
       },
-      "AgentTaskOutcomeView": {
+      "AgentSessionOutcomeView": {
         "type": "object",
         "required": [
           "state",
@@ -6204,7 +6059,7 @@
           }
         }
       },
-      "AgentTaskPageView": {
+      "AgentSessionPageView": {
         "type": "object",
         "required": [
           "items",
@@ -6216,7 +6071,7 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/AgentTaskSummaryView"
+              "$ref": "#/components/schemas/AgentSessionSummaryView"
             }
           },
           "page": {
@@ -6236,7 +6091,7 @@
           }
         }
       },
-      "AgentTaskRequestView": {
+      "AgentSessionRequestView": {
         "type": "object",
         "required": [
           "request_id",
@@ -6303,15 +6158,58 @@
           }
         }
       },
-      "AgentTaskSummaryView": {
+      "AgentSessionSourceView": {
         "type": "object",
         "required": [
-          "task_id",
+          "session_source_id",
+          "external_session_id",
+          "adapter_namespace",
+          "adapter_version",
+          "source_provenance",
+          "harness_key",
+          "harness_label",
+          "first_seen_at",
+          "last_seen_at"
+        ],
+        "properties": {
+          "adapter_namespace": {
+            "type": "string"
+          },
+          "adapter_version": {
+            "type": "string"
+          },
+          "external_session_id": {
+            "type": "string"
+          },
+          "first_seen_at": {
+            "type": "string"
+          },
+          "harness_key": {
+            "type": "string"
+          },
+          "harness_label": {
+            "type": "string"
+          },
+          "last_seen_at": {
+            "type": "string"
+          },
+          "session_source_id": {
+            "type": "string"
+          },
+          "source_provenance": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentSessionSummaryView": {
+        "type": "object",
+        "required": [
+          "session_id",
           "ownership_scope_key",
           "requested_model_key",
           "operation",
           "caller_class",
-          "external_session_observed",
+          "session_source_observed",
           "lifecycle",
           "boundary_confidence",
           "started_at",
@@ -6385,9 +6283,6 @@
               "string",
               "null"
             ]
-          },
-          "external_session_observed": {
-            "type": "boolean"
           },
           "gateway_outcome": {
             "type": [
@@ -6482,15 +6377,18 @@
             ]
           },
           "session_id": {
+            "type": "string"
+          },
+          "session_source_id": {
             "type": [
               "string",
               "null"
             ]
           },
-          "started_at": {
-            "type": "string"
+          "session_source_observed": {
+            "type": "boolean"
           },
-          "task_id": {
+          "started_at": {
             "type": "string"
           },
           "team_id": {
@@ -8084,33 +7982,6 @@
             "type": "object",
             "required": [
               "session",
-              "tasks"
-            ],
-            "properties": {
-              "session": {
-                "$ref": "#/components/schemas/AgentSessionView"
-              },
-              "tasks": {
-                "$ref": "#/components/schemas/AgentTaskPageView"
-              }
-            }
-          },
-          "meta": {
-            "$ref": "#/components/schemas/ResponseMeta"
-          }
-        }
-      },
-      "Envelope_AgentTaskDetailView": {
-        "type": "object",
-        "required": [
-          "data",
-          "meta"
-        ],
-        "properties": {
-          "data": {
-            "type": "object",
-            "required": [
-              "task",
               "requests",
               "observations",
               "request_history_truncated",
@@ -8123,7 +7994,7 @@
                     "type": "null"
                   },
                   {
-                    "$ref": "#/components/schemas/AgentTaskAnalysisIdentityView"
+                    "$ref": "#/components/schemas/AgentSessionAnalysisIdentityView"
                   }
                 ]
               },
@@ -8152,7 +8023,7 @@
                     "type": "null"
                   },
                   {
-                    "$ref": "#/components/schemas/AgentTaskEfficiencyReportView"
+                    "$ref": "#/components/schemas/AgentSessionEfficiencyReportView"
                   }
                 ]
               },
@@ -8162,21 +8033,21 @@
               "requests": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/AgentTaskRequestView"
+                  "$ref": "#/components/schemas/AgentSessionRequestView"
                 }
               },
               "session": {
+                "$ref": "#/components/schemas/AgentSessionSummaryView"
+              },
+              "session_source": {
                 "oneOf": [
                   {
                     "type": "null"
                   },
                   {
-                    "$ref": "#/components/schemas/AgentSessionView"
+                    "$ref": "#/components/schemas/AgentSessionSourceView"
                   }
                 ]
-              },
-              "task": {
-                "$ref": "#/components/schemas/AgentTaskSummaryView"
               }
             }
           },
@@ -8185,7 +8056,7 @@
           }
         }
       },
-      "Envelope_AgentTaskPageView": {
+      "Envelope_AgentSessionPageView": {
         "type": "object",
         "required": [
           "data",
@@ -8204,7 +8075,7 @@
               "items": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/AgentTaskSummaryView"
+                  "$ref": "#/components/schemas/AgentSessionSummaryView"
                 }
               },
               "page": {

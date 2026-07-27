@@ -3,10 +3,10 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AgentSessionsPage } from '@/routes/observability/agent-sessions'
-import type { AgentTaskDetailView, AgentTaskSummaryView } from '@/types/api'
+import type { AgentSessionDetailView, AgentSessionSummaryView } from '@/types/api'
 
-const { getAgentTaskDetailMock, navigateMock, routeMock } = vi.hoisted(() => ({
-  getAgentTaskDetailMock: vi.fn(),
+const { getAgentSessionDetailMock, navigateMock, routeMock } = vi.hoisted(() => ({
+  getAgentSessionDetailMock: vi.fn(),
   navigateMock: vi.fn(),
   routeMock: {
     useLoaderData: vi.fn(),
@@ -29,14 +29,14 @@ vi.mock('@tanstack/react-virtual', () => ({
 }))
 
 vi.mock('@/server/admin-data.functions', () => ({
-  getAgentTasks: vi.fn(),
-  getObservabilityAgentTaskDetail: (...args: unknown[]) => getAgentTaskDetailMock(...args),
+  getAgentSessions: vi.fn(),
+  getObservabilityAgentSessionDetail: (...args: unknown[]) => getAgentSessionDetailMock(...args),
 }))
 
-const task: AgentTaskSummaryView = {
-  task_id: 'task_1',
+const session: AgentSessionSummaryView = {
   session_id: 'session_1',
-  external_session_observed: true,
+  session_source_id: 'session_source_1',
+  session_source_observed: true,
   ownership_scope_key: 'user:user_1',
   user_id: 'user_1',
   team_id: null,
@@ -66,15 +66,15 @@ const task: AgentTaskSummaryView = {
   active_time_ms: 42_000,
   wall_time_ms: 60_000,
   limitations: [],
-  report_schema_version: 'agent-task-report-v3',
-  analyzer_version: 'task-efficiency-v2',
+  report_schema_version: 'agent-session-report-v3',
+  analyzer_version: 'session-efficiency-v2',
   score_policy_version: 'outcome-cost-time-v1',
   pricing_policy_version: 'cache-aware-v1',
 }
 
-const detail: AgentTaskDetailView = {
-  task,
-  session: null,
+const detail: AgentSessionDetailView = {
+  session,
+  session_source: null,
   requests: [
     {
       request_id: 'req_1',
@@ -119,8 +119,8 @@ const detail: AgentTaskDetailView = {
     expires_at: '2026-10-19T10:00:43Z',
   },
   report: {
-    report_schema_version: 'agent-task-report-v3',
-    analyzer_version: 'task-efficiency-v2',
+    report_schema_version: 'agent-session-report-v3',
+    analyzer_version: 'session-efficiency-v2',
     score_policy_version: 'outcome-cost-time-v1',
     observation_parser_version: 'passive-observations-v1',
     calibration_approval_id: 'calibration_1',
@@ -228,17 +228,17 @@ describe('AgentSessionsPage', () => {
     routeMock.useRouteContext.mockReset()
     routeMock.useSearch.mockReset()
 
-    getAgentTaskDetailMock.mockReset()
+    getAgentSessionDetailMock.mockReset()
     navigateMock.mockReset()
     routeMock.useLoaderData.mockReturnValue({
-      data: { items: [task], page: 1, page_size: 50, total: 1 },
+      data: { items: [session], page: 1, page_size: 50, total: 1 },
     })
     routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50 })
     setCapabilities(false)
   })
-  it('retries a failed detail request without closing the task sheet', async () => {
-    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, task_id: 'task_1' })
-    getAgentTaskDetailMock
+  it('retries a failed detail request without closing the session sheet', async () => {
+    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, session_id: 'session_1' })
+    getAgentSessionDetailMock
       .mockRejectedValueOnce(new Error('temporary failure'))
       .mockResolvedValueOnce({ data: detail })
 
@@ -248,7 +248,7 @@ describe('AgentSessionsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
 
     await waitFor(() => {
-      expect(getAgentTaskDetailMock).toHaveBeenCalledTimes(2)
+      expect(getAgentSessionDetailMock).toHaveBeenCalledTimes(2)
       expect(screen.getByText('Requests (1)')).toBeInTheDocument()
     })
   })
@@ -269,7 +269,7 @@ describe('AgentSessionsPage', () => {
   it('explains missing call metrics from an outdated gateway contract', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
-        items: [{ ...task, tool_call_count: undefined, mcp_call_count: undefined }],
+        items: [{ ...session, tool_call_count: undefined, mcp_call_count: undefined }],
         page: 1,
         page_size: 50,
         total: 1,
@@ -284,18 +284,18 @@ describe('AgentSessionsPage', () => {
 
   it('opens session diagnostics from the keyboard and labels the current page', async () => {
     routeMock.useLoaderData.mockReturnValue({
-      data: { items: [task], page: 1, page_size: 50, total: 51 },
+      data: { items: [session], page: 1, page_size: 50, total: 51 },
     })
     render(<AgentSessionsPage />)
 
-    const taskRow = screen.getByRole('row', { name: /Opencode/ })
-    expect(taskRow).toHaveAttribute('tabindex', '0')
-    fireEvent.keyDown(taskRow, { key: 'Enter' })
+    const sessionRow = screen.getByRole('row', { name: /Opencode/ })
+    expect(sessionRow).toHaveAttribute('tabindex', '0')
+    fireEvent.keyDown(sessionRow, { key: 'Enter' })
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
         to: '/observability/agent-sessions',
-        search: expect.objectContaining({ task_id: 'task_1' }),
+        search: expect.objectContaining({ session_id: 'session_1' }),
       })
     })
     await waitFor(() => {
@@ -306,14 +306,14 @@ describe('AgentSessionsPage', () => {
     })
   })
 
-  it('deep-links to task diagnostics with request outcomes and retained observations', async () => {
-    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, task_id: 'task_1' })
-    getAgentTaskDetailMock.mockResolvedValue({ data: detail })
+  it('deep-links to session diagnostics with request outcomes and retained observations', async () => {
+    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, session_id: 'session_1' })
+    getAgentSessionDetailMock.mockResolvedValue({ data: detail })
 
     render(<AgentSessionsPage />)
 
     await waitFor(() => {
-      expect(getAgentTaskDetailMock).toHaveBeenCalledWith({ data: { taskId: 'task_1' } })
+      expect(getAgentSessionDetailMock).toHaveBeenCalledWith({ data: { sessionId: 'session_1' } })
       expect(screen.getByText('Withheld in shadow')).toBeInTheDocument()
     })
     expect(screen.getByText('Requests (1)')).toBeInTheDocument()
@@ -328,8 +328,8 @@ describe('AgentSessionsPage', () => {
   })
 
   it('warns when retained request or observation history exceeds the detail cap', async () => {
-    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, task_id: 'task_1' })
-    getAgentTaskDetailMock.mockResolvedValue({
+    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, session_id: 'session_1' })
+    getAgentSessionDetailMock.mockResolvedValue({
       data: {
         ...detail,
         request_history_truncated: true,

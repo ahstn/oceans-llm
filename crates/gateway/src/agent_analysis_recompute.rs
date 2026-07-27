@@ -1,8 +1,8 @@
 use anyhow::{Context, bail};
 use gateway::{cli::RecomputeAgentAnalysisArgs, config::GatewayConfig};
 use gateway_core::{
-    AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AgentTaskListQuery,
-    AgentTaskTraceRecord, TaskLifecycleState,
+    AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AgentSessionListQuery,
+    AgentSessionTraceRecord, SessionLifecycleState,
 };
 use gateway_service::{desired_versions, enqueue_agent_analysis};
 use gateway_store::AnyStore;
@@ -21,60 +21,60 @@ pub async fn run_command(
         .await
         .context("failed to initialize gateway store")?;
 
-    let tasks = if let Some(task_id) = args.task_id {
-        let task_id = Uuid::parse_str(&task_id).context("--task-id must be a UUID")?;
+    let sessions = if let Some(session_id) = args.session_id {
+        let session_id = Uuid::parse_str(&session_id).context("--session-id must be a UUID")?;
         let Some(trace) = store
-            .load_agent_task_trace(task_id)
+            .load_agent_session_trace(session_id)
             .await
-            .context("failed to load agent task")?
+            .context("failed to load agent session")?
         else {
-            bail!("agent task `{task_id}` was not found");
+            bail!("agent session `{session_id}` was not found");
         };
-        vec![trace.task]
+        vec![trace.session]
     } else {
         let desired = desired_versions();
-        let mut tasks = Vec::with_capacity(args.limit as usize);
+        let mut sessions = Vec::with_capacity(args.limit as usize);
         let mut page = 1;
-        let page_size = gateway_core::MAX_AGENT_TASK_PAGE_SIZE;
-        while tasks.len() < args.limit as usize {
+        let page_size = gateway_core::MAX_AGENT_SESSION_PAGE_SIZE;
+        while sessions.len() < args.limit as usize {
             let result = store
-                .list_agent_tasks(&AgentTaskListQuery {
-                    lifecycle: Some(TaskLifecycleState::Finalized),
+                .list_agent_sessions(&AgentSessionListQuery {
+                    lifecycle: Some(SessionLifecycleState::Finalized),
                     page,
                     page_size,
-                    ..AgentTaskListQuery::default()
+                    ..AgentSessionListQuery::default()
                 })
                 .await
-                .context("failed to list agent tasks")?;
+                .context("failed to list agent sessions")?;
             let item_count = result.items.len();
-            tasks.extend(
+            sessions.extend(
                 result
                     .items
                     .into_iter()
                     .filter(|trace| !analysis_is_current(trace, &desired))
-                    .map(|trace| trace.task),
+                    .map(|trace| trace.session),
             );
             if item_count < page_size as usize {
                 break;
             }
             page = page.saturating_add(1);
         }
-        tasks.truncate(args.limit as usize);
-        tasks
+        sessions.truncate(args.limit as usize);
+        sessions
     };
 
     let now = OffsetDateTime::now_utc();
-    let matched_count = tasks.len();
+    let matched_count = sessions.len();
     let mut enqueued_count = 0_usize;
-    for task in tasks {
+    for session in sessions {
         let dedupe_key = format!(
             "{}:{}",
-            task.agent_task_id,
-            task.input_watermark_at.unix_timestamp_nanos()
+            session.agent_session_id,
+            session.input_watermark_at.unix_timestamp_nanos()
         );
         if enqueue_agent_analysis(
             &store,
-            task.agent_task_id,
+            session.agent_session_id,
             "manual_recompute",
             &dedupe_key,
             now,
@@ -92,14 +92,14 @@ pub async fn run_command(
 }
 
 fn analysis_is_current(
-    trace: &AgentTaskTraceRecord,
+    trace: &AgentSessionTraceRecord,
     desired: &AgentAnalysisDesiredVersions,
 ) -> bool {
     let Some(analysis) = trace.latest_analysis.as_ref() else {
         return false;
     };
     !analysis.stale
-        && analysis.input_watermark_at == trace.task.input_watermark_at
+        && analysis.input_watermark_at == trace.session.input_watermark_at
         && analysis.boundary_policy_version == desired.boundary_policy_version
         && analysis.observation_parser_version == desired.observation_parser_version
         && analysis.pricing_policy_version == desired.pricing_policy_version

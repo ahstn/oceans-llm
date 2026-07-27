@@ -4,7 +4,7 @@ use crate::{Confidence, GatewayOutcomeState};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CalibrationSample {
-    pub task_id: String,
+    pub session_id: String,
     pub predicted_group: String,
     pub reviewed_group: String,
     pub score: Option<u8>,
@@ -18,9 +18,9 @@ pub struct CalibrationSample {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CalibrationPolicy {
     pub policy_version: String,
-    pub minimum_reviewed_tasks: usize,
+    pub minimum_reviewed_sessions: usize,
     pub maximum_grouping_error_basis_points: u16,
-    pub minimum_scored_tasks: usize,
+    pub minimum_scored_sessions: usize,
     pub minimum_median_coverage_percent: u8,
     pub maximum_score_shift_under_sensitivity: u8,
 }
@@ -28,10 +28,10 @@ pub struct CalibrationPolicy {
 impl Default for CalibrationPolicy {
     fn default() -> Self {
         Self {
-            policy_version: "task-calibration-v1".to_string(),
-            minimum_reviewed_tasks: 100,
+            policy_version: "session-calibration-v1".to_string(),
+            minimum_reviewed_sessions: 100,
             maximum_grouping_error_basis_points: 500,
-            minimum_scored_tasks: 50,
+            minimum_scored_sessions: 50,
             minimum_median_coverage_percent: 80,
             maximum_score_shift_under_sensitivity: 10,
         }
@@ -50,8 +50,8 @@ pub struct CalibrationDistribution {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CalibrationAssessment {
     pub policy_version: String,
-    pub reviewed_task_count: usize,
-    pub scored_task_count: usize,
+    pub reviewed_session_count: usize,
+    pub scored_session_count: usize,
     pub grouping_error_basis_points: u16,
     pub median_coverage_percent: u8,
     pub score_distribution: CalibrationDistribution,
@@ -69,8 +69,8 @@ pub struct CalibrationAssessment {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalibrationError {
-    DuplicateTask(String),
-    InvalidCoverage { task_id: String, value: u8 },
+    DuplicateSession(String),
+    InvalidCoverage { session_id: String, value: u8 },
     NegativeCost(String),
     NegativeActiveTime(String),
 }
@@ -78,17 +78,23 @@ pub enum CalibrationError {
 impl std::fmt::Display for CalibrationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::DuplicateTask(task_id) => {
-                write!(formatter, "duplicate calibration task `{task_id}`")
+            Self::DuplicateSession(session_id) => {
+                write!(formatter, "duplicate calibration session `{session_id}`")
             }
-            Self::InvalidCoverage { task_id, value } => {
-                write!(formatter, "task `{task_id}` has invalid coverage `{value}`")
+            Self::InvalidCoverage { session_id, value } => {
+                write!(
+                    formatter,
+                    "session `{session_id}` has invalid coverage `{value}`"
+                )
             }
-            Self::NegativeCost(task_id) => {
-                write!(formatter, "task `{task_id}` has negative normalized cost")
+            Self::NegativeCost(session_id) => {
+                write!(
+                    formatter,
+                    "session `{session_id}` has negative normalized cost"
+                )
             }
-            Self::NegativeActiveTime(task_id) => {
-                write!(formatter, "task `{task_id}` has negative active time")
+            Self::NegativeActiveTime(session_id) => {
+                write!(formatter, "session `{session_id}` has negative active time")
             }
         }
     }
@@ -137,7 +143,7 @@ pub fn assess_calibration(
     policy: &CalibrationPolicy,
     maximum_score_shift_under_sensitivity: u8,
 ) -> Result<CalibrationAssessment, CalibrationError> {
-    let mut task_ids = std::collections::HashSet::with_capacity(samples.len());
+    let mut session_ids = std::collections::HashSet::with_capacity(samples.len());
     let mut grouping_errors = 0_usize;
     let mut scores = Vec::new();
     let mut costs = Vec::new();
@@ -147,20 +153,24 @@ pub fn assess_calibration(
     let mut confidence_counts = [0_usize; 3];
 
     for sample in samples {
-        if !task_ids.insert(sample.task_id.as_str()) {
-            return Err(CalibrationError::DuplicateTask(sample.task_id.clone()));
+        if !session_ids.insert(sample.session_id.as_str()) {
+            return Err(CalibrationError::DuplicateSession(
+                sample.session_id.clone(),
+            ));
         }
         if sample.coverage_percent > 100 {
             return Err(CalibrationError::InvalidCoverage {
-                task_id: sample.task_id.clone(),
+                session_id: sample.session_id.clone(),
                 value: sample.coverage_percent,
             });
         }
         if sample.normalized_cost_10000.is_some_and(|cost| cost < 0) {
-            return Err(CalibrationError::NegativeCost(sample.task_id.clone()));
+            return Err(CalibrationError::NegativeCost(sample.session_id.clone()));
         }
         if sample.active_time_ms < 0 {
-            return Err(CalibrationError::NegativeActiveTime(sample.task_id.clone()));
+            return Err(CalibrationError::NegativeActiveTime(
+                sample.session_id.clone(),
+            ));
         }
         grouping_errors += usize::from(sample.predicted_group != sample.reviewed_group);
         scores.extend(sample.score.map(i64::from));
@@ -171,12 +181,12 @@ pub fn assess_calibration(
         confidence_counts[confidence_index(sample.confidence)] += 1;
     }
 
-    let reviewed_task_count = samples.len();
-    let scored_task_count = scores.len();
+    let reviewed_session_count = samples.len();
+    let scored_session_count = scores.len();
     let grouping_error_basis_points = grouping_errors
         .saturating_mul(10_000)
-        .saturating_add(reviewed_task_count / 2)
-        .checked_div(reviewed_task_count)
+        .saturating_add(reviewed_session_count / 2)
+        .checked_div(reviewed_session_count)
         .and_then(|value| u16::try_from(value).ok())
         .unwrap_or(10_000);
     let median_coverage_percent = percentile(coverages, 1, 2)
@@ -185,15 +195,15 @@ pub fn assess_calibration(
     let grouping_review_passed =
         grouping_error_basis_points <= policy.maximum_grouping_error_basis_points;
     let coverage_review_passed = median_coverage_percent >= policy.minimum_median_coverage_percent;
-    let sample_size_passed = reviewed_task_count >= policy.minimum_reviewed_tasks
-        && scored_task_count >= policy.minimum_scored_tasks;
+    let sample_size_passed = reviewed_session_count >= policy.minimum_reviewed_sessions
+        && scored_session_count >= policy.minimum_scored_sessions;
     let sensitivity_review_passed =
         maximum_score_shift_under_sensitivity <= policy.maximum_score_shift_under_sensitivity;
 
     Ok(CalibrationAssessment {
         policy_version: policy.policy_version.clone(),
-        reviewed_task_count,
-        scored_task_count,
+        reviewed_session_count,
+        scored_session_count,
         grouping_error_basis_points,
         median_coverage_percent,
         score_distribution: distribution(scores),
@@ -219,7 +229,7 @@ mod tests {
 
     fn sample(index: usize) -> CalibrationSample {
         CalibrationSample {
-            task_id: format!("task-{index}"),
+            session_id: format!("session-{index}"),
             predicted_group: "group-a".to_string(),
             reviewed_group: "group-a".to_string(),
             score: Some(75),
@@ -264,7 +274,7 @@ mod tests {
         let duplicate = vec![sample(1), sample(1)];
         assert!(matches!(
             assess_calibration(&duplicate, &CalibrationPolicy::default(), 0),
-            Err(CalibrationError::DuplicateTask(id)) if id == "task-1"
+            Err(CalibrationError::DuplicateSession(id)) if id == "session-1"
         ));
         let mut invalid = sample(2);
         invalid.coverage_percent = 101;

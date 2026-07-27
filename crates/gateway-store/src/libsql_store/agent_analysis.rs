@@ -1,14 +1,16 @@
 use super::*;
 use crate::shared::{
-    agent_observation_set_matches, agent_session_identity_matches, agent_task_analysis_matches,
-    agent_task_identity_matches, agent_task_request_matches, parse_uuid, unix_to_datetime,
+    agent_observation_set_matches, agent_session_analysis_matches, agent_session_identity_matches,
+    agent_session_request_matches, agent_session_source_identity_matches, parse_uuid,
+    unix_to_datetime,
 };
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,
-    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
-    AgentSessionRecord, AgentTaskAnalysisRecord, AgentTaskListPage, AgentTaskListQuery,
-    AgentTaskRequestLinkRecord, AgentTaskTraceRecord, AgentTaskWindowRecord, Confidence,
-    InferredObservation, MAX_AGENT_TASK_PAGE_SIZE, TaskLifecycleState,
+    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
+    AgentSessionAnalysisRepository, AgentSessionListPage, AgentSessionListQuery,
+    AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
+    AgentSessionTraceRecord, Confidence, InferredObservation, MAX_AGENT_SESSION_PAGE_SIZE,
+    SessionLifecycleState,
 };
 use serde::Serialize;
 
@@ -26,7 +28,7 @@ fn parse_confidence(value: &str) -> Result<Confidence, StoreError> {
         .map_err(|error| StoreError::Serialization(error.to_string()))
 }
 
-fn parse_lifecycle(value: &str) -> Result<TaskLifecycleState, StoreError> {
+fn parse_lifecycle(value: &str) -> Result<SessionLifecycleState, StoreError> {
     serde_json::from_value(serde_json::Value::String(value.to_string()))
         .map_err(|error| StoreError::Serialization(error.to_string()))
 }
@@ -35,9 +37,9 @@ fn parse_optional_uuid(value: Option<String>) -> Result<Option<Uuid>, StoreError
     value.as_deref().map(parse_uuid).transpose()
 }
 
-fn decode_session(row: &libsql::Row) -> Result<AgentSessionRecord, StoreError> {
-    Ok(AgentSessionRecord {
-        agent_session_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
+fn decode_session_source(row: &libsql::Row) -> Result<AgentSessionSourceRecord, StoreError> {
+    Ok(AgentSessionSourceRecord {
+        agent_session_source_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
         ownership_scope_key: row.get(1).map_err(to_query_error)?,
         api_key_id: parse_uuid(&row.get::<String>(2).map_err(to_query_error)?)?,
         user_id: parse_optional_uuid(row.get(3).map_err(to_query_error)?)?,
@@ -57,14 +59,14 @@ fn decode_session(row: &libsql::Row) -> Result<AgentSessionRecord, StoreError> {
     })
 }
 
-fn decode_task(row: &libsql::Row) -> Result<AgentTaskWindowRecord, StoreError> {
+fn decode_session(row: &libsql::Row) -> Result<AgentSessionRecord, StoreError> {
     let request_tags_json: String = row.get(11).map_err(to_query_error)?;
     let lifecycle: String = row.get(15).map_err(to_query_error)?;
     let confidence: String = row.get(16).map_err(to_query_error)?;
     let ended_at: Option<i64> = row.get(18).map_err(to_query_error)?;
-    Ok(AgentTaskWindowRecord {
-        agent_task_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
-        agent_session_id: parse_optional_uuid(row.get(1).map_err(to_query_error)?)?,
+    Ok(AgentSessionRecord {
+        agent_session_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
+        agent_session_source_id: parse_optional_uuid(row.get(1).map_err(to_query_error)?)?,
         ownership_scope_key: row.get(2).map_err(to_query_error)?,
         api_key_id: parse_uuid(&row.get::<String>(3).map_err(to_query_error)?)?,
         user_id: parse_optional_uuid(row.get(4).map_err(to_query_error)?)?,
@@ -90,12 +92,12 @@ fn decode_task(row: &libsql::Row) -> Result<AgentTaskWindowRecord, StoreError> {
     })
 }
 
-fn decode_request_link(row: &libsql::Row) -> Result<AgentTaskRequestLinkRecord, StoreError> {
+fn decode_request_link(row: &libsql::Row) -> Result<AgentSessionRequestLinkRecord, StoreError> {
     let confidence: String = row.get(8).map_err(to_query_error)?;
     let limitations_json: String = row.get(9).map_err(to_query_error)?;
     let completed_at: Option<i64> = row.get(11).map_err(to_query_error)?;
-    Ok(AgentTaskRequestLinkRecord {
-        agent_task_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
+    Ok(AgentSessionRequestLinkRecord {
+        agent_session_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
         request_id: row.get(1).map_err(to_query_error)?,
         request_log_id: parse_optional_uuid(row.get(2).map_err(to_query_error)?)?,
         usage_event_id: parse_optional_uuid(row.get(3).map_err(to_query_error)?)?,
@@ -136,12 +138,12 @@ fn decode_observation(row: &libsql::Row) -> Result<InferredObservation, StoreErr
     })
 }
 
-fn decode_analysis(row: &libsql::Row) -> Result<AgentTaskAnalysisRecord, StoreError> {
+fn decode_analysis(row: &libsql::Row) -> Result<AgentSessionAnalysisRecord, StoreError> {
     let report_json: String = row.get(14).map_err(to_query_error)?;
     let superseded_by: Option<String> = row.get(16).map_err(to_query_error)?;
-    Ok(AgentTaskAnalysisRecord {
+    Ok(AgentSessionAnalysisRecord {
         analysis_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
-        agent_task_id: parse_uuid(&row.get::<String>(1).map_err(to_query_error)?)?,
+        agent_session_id: parse_uuid(&row.get::<String>(1).map_err(to_query_error)?)?,
         boundary_policy_version: row.get(3).map_err(to_query_error)?,
         input_watermark_at: unix_to_datetime(row.get(4).map_err(to_query_error)?)?,
         observation_set_id: parse_uuid(&row.get::<String>(5).map_err(to_query_error)?)?,
@@ -172,7 +174,7 @@ fn decode_queue(row: &libsql::Row) -> Result<AgentAnalysisQueueRecord, StoreErro
     let completed_at: Option<i64> = row.get(13).map_err(to_query_error)?;
     Ok(AgentAnalysisQueueRecord {
         queue_item_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
-        agent_task_id: parse_uuid(&row.get::<String>(1).map_err(to_query_error)?)?,
+        agent_session_id: parse_uuid(&row.get::<String>(1).map_err(to_query_error)?)?,
         reason: row.get(2).map_err(to_query_error)?,
         desired_versions: serde_json::from_str::<AgentAnalysisDesiredVersions>(
             &desired_versions_json,
@@ -195,21 +197,21 @@ fn decode_queue(row: &libsql::Row) -> Result<AgentAnalysisQueueRecord, StoreErro
     })
 }
 
-const SESSION_COLUMNS: &str = "agent_session_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, normalized_session_hash, adapter_namespace, adapter_version, source_provenance, harness_key, harness_label, first_seen_at, last_seen_at, created_at, updated_at";
-const TASK_COLUMNS: &str = "agent_task_id, agent_session_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, requested_model_key, operation, caller_class, request_tags_json, harness_key, boundary_group_key, boundary_policy_version, lifecycle, boundary_confidence, started_at, ended_at, input_watermark_at, finalized_reason, created_at, updated_at";
-const REQUEST_COLUMNS: &str = "agent_task_id, request_id, request_log_id, usage_event_id, ordinal, execution_id, parent_execution_id, normalized_session_id, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success";
-const ANALYSIS_COLUMNS: &str = "analysis_id, agent_task_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, report_json, analyzed_at, superseded_by_analysis_id, stale, expires_at, ownership_scope_key, user_id, service_account_id";
-const QUEUE_COLUMNS: &str = "queue_item_id, agent_task_id, reason, desired_versions_json, status, lease_owner, lease_expires_at, attempts, max_attempts, last_error, available_at, created_at, updated_at, completed_at";
+const SESSION_SOURCE_COLUMNS: &str = "agent_session_source_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, normalized_session_hash, adapter_namespace, adapter_version, source_provenance, harness_key, harness_label, first_seen_at, last_seen_at, created_at, updated_at";
+const SESSION_COLUMNS: &str = "agent_session_id, agent_session_source_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, requested_model_key, operation, caller_class, request_tags_json, harness_key, boundary_group_key, boundary_policy_version, lifecycle, boundary_confidence, started_at, ended_at, input_watermark_at, finalized_reason, created_at, updated_at";
+const REQUEST_COLUMNS: &str = "agent_session_id, request_id, request_log_id, usage_event_id, ordinal, execution_id, parent_execution_id, normalized_session_id, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success";
+const ANALYSIS_COLUMNS: &str = "analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, report_json, analyzed_at, superseded_by_analysis_id, stale, expires_at, ownership_scope_key, user_id, service_account_id";
+const QUEUE_COLUMNS: &str = "queue_item_id, agent_session_id, reason, desired_versions_json, status, lease_owner, lease_expires_at, attempts, max_attempts, last_error, available_at, created_at, updated_at, completed_at";
 
 impl LibsqlStore {
-    async fn query_session_by_natural_key(
+    async fn query_session_source_by_natural_key(
         &self,
         ownership_scope_key: &str,
         adapter_namespace: &str,
         normalized_session_id: &str,
-    ) -> Result<Option<AgentSessionRecord>, StoreError> {
+    ) -> Result<Option<AgentSessionSourceRecord>, StoreError> {
         let sql = format!(
-            "SELECT {SESSION_COLUMNS} FROM agent_sessions WHERE ownership_scope_key = ?1 AND adapter_namespace = ?2 AND normalized_session_hash = ?3"
+            "SELECT {SESSION_SOURCE_COLUMNS} FROM agent_session_sources WHERE ownership_scope_key = ?1 AND adapter_namespace = ?2 AND normalized_session_hash = ?3"
         );
         let mut rows = self
             .connection
@@ -227,136 +229,11 @@ impl LibsqlStore {
             .await
             .map_err(to_query_error)?
             .as_ref()
-            .map(decode_session)
+            .map(decode_session_source)
             .transpose()
     }
 
-    async fn query_task_by_id(
-        &self,
-        agent_task_id: Uuid,
-    ) -> Result<Option<AgentTaskWindowRecord>, StoreError> {
-        let sql = format!("SELECT {TASK_COLUMNS} FROM agent_task_windows WHERE agent_task_id = ?1");
-        let mut rows = self
-            .connection
-            .query(&sql, [agent_task_id.to_string()])
-            .await
-            .map_err(to_query_error)?;
-        rows.next()
-            .await
-            .map_err(to_query_error)?
-            .as_ref()
-            .map(decode_task)
-            .transpose()
-    }
-
-    async fn load_observation_set(
-        &self,
-        agent_task_id: Uuid,
-    ) -> Result<Option<AgentObservationSetRecord>, StoreError> {
-        let mut rows = self.connection.query(
-            "SELECT observation_set_id, agent_task_id, parser_version, source_watermark_at, coverage_json, created_at FROM agent_inferred_observation_sets WHERE agent_task_id = ?1 ORDER BY source_watermark_at DESC, created_at DESC LIMIT 1",
-            [agent_task_id.to_string()],
-        ).await.map_err(to_query_error)?;
-        let Some(row) = rows.next().await.map_err(to_query_error)? else {
-            return Ok(None);
-        };
-        let observation_set_id = parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?;
-        let coverage_json: String = row.get(4).map_err(to_query_error)?;
-        let mut observation_rows = self.connection.query(
-            "SELECT o.observation_id, o.kind, o.source_request_id, o.evidence, o.occurred_at, o.facts_json, o.limitation_codes_json, s.parser_version FROM agent_inferred_observations o JOIN agent_inferred_observation_sets s ON s.observation_set_id = o.observation_set_id WHERE o.agent_task_id = ?1 ORDER BY o.occurred_at, o.observation_id",
-            [agent_task_id.to_string()],
-        ).await.map_err(to_query_error)?;
-        let mut observations = Vec::new();
-        while let Some(observation_row) = observation_rows.next().await.map_err(to_query_error)? {
-            observations.push(decode_observation(&observation_row)?);
-        }
-        Ok(Some(AgentObservationSetRecord {
-            observation_set_id,
-            agent_task_id: parse_uuid(&row.get::<String>(1).map_err(to_query_error)?)?,
-            parser_version: row.get(2).map_err(to_query_error)?,
-            source_watermark_at: unix_to_datetime(row.get(3).map_err(to_query_error)?)?,
-            coverage: serde_json::from_str(&coverage_json)
-                .map_err(|error| StoreError::Serialization(error.to_string()))?,
-            created_at: unix_to_datetime(row.get(5).map_err(to_query_error)?)?,
-            observations,
-        }))
-    }
-    async fn query_observation_set_by_id(
-        &self,
-        observation_set_id: Uuid,
-    ) -> Result<Option<AgentObservationSetRecord>, StoreError> {
-        let mut rows = self.connection.query(
-            "SELECT observation_set_id, agent_task_id, parser_version, source_watermark_at, coverage_json, created_at FROM agent_inferred_observation_sets WHERE observation_set_id = ?1",
-            [observation_set_id.to_string()],
-        ).await.map_err(to_query_error)?;
-        let Some(row) = rows.next().await.map_err(to_query_error)? else {
-            return Ok(None);
-        };
-        let coverage_json: String = row.get(4).map_err(to_query_error)?;
-        let mut observation_rows = self.connection.query(
-            "SELECT o.observation_id, o.kind, o.source_request_id, o.evidence, o.occurred_at, o.facts_json, o.limitation_codes_json, s.parser_version FROM agent_inferred_observations o JOIN agent_inferred_observation_sets s ON s.observation_set_id = o.observation_set_id WHERE o.observation_set_id = ?1 ORDER BY o.occurred_at, o.observation_id",
-            [observation_set_id.to_string()],
-        ).await.map_err(to_query_error)?;
-        let mut observations = Vec::new();
-        while let Some(observation_row) = observation_rows.next().await.map_err(to_query_error)? {
-            observations.push(decode_observation(&observation_row)?);
-        }
-        Ok(Some(AgentObservationSetRecord {
-            observation_set_id,
-            agent_task_id: parse_uuid(&row.get::<String>(1).map_err(to_query_error)?)?,
-            parser_version: row.get(2).map_err(to_query_error)?,
-            source_watermark_at: unix_to_datetime(row.get(3).map_err(to_query_error)?)?,
-            coverage: serde_json::from_str(&coverage_json)
-                .map_err(|error| StoreError::Serialization(error.to_string()))?,
-            created_at: unix_to_datetime(row.get(5).map_err(to_query_error)?)?,
-            observations,
-        }))
-    }
-}
-
-#[async_trait]
-impl AgentSessionAnalysisRepository for LibsqlStore {
-    async fn upsert_agent_session(
-        &self,
-        session: &AgentSessionRecord,
-    ) -> Result<AgentSessionRecord, StoreError> {
-        self.connection.execute(
-            "INSERT INTO agent_sessions (agent_session_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, normalized_session_hash, adapter_namespace, adapter_version, source_provenance, harness_key, harness_label, first_seen_at, last_seen_at, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) ON CONFLICT DO NOTHING",
-            libsql::params![session.agent_session_id.to_string(), session.ownership_scope_key.as_str(), session.api_key_id.to_string(), session.user_id.map(|value| value.to_string()), session.team_id.map(|value| value.to_string()), session.service_account_id.map(|value| value.to_string()), session.actor_user_id.map(|value| value.to_string()), session.normalized_session_id.as_str(), session.adapter_namespace.as_str(), session.adapter_version.as_str(), session.source_provenance.as_str(), session.harness_key.as_str(), session.harness_label.as_str(), session.first_seen_at.unix_timestamp(), session.last_seen_at.unix_timestamp(), session.created_at.unix_timestamp(), session.updated_at.unix_timestamp()],
-        ).await.map_err(to_query_error)?;
-        let existing = self
-            .query_session_by_natural_key(
-                &session.ownership_scope_key,
-                &session.adapter_namespace,
-                &session.normalized_session_id,
-            )
-            .await?
-            .ok_or_else(|| {
-                StoreError::Conflict(format!(
-                    "agent session `{}` conflicts with the existing record",
-                    session.agent_session_id
-                ))
-            })?;
-        if !agent_session_identity_matches(&existing, session) {
-            return Err(StoreError::Conflict(format!(
-                "agent session `{}` conflicts with the existing record",
-                session.agent_session_id
-            )));
-        }
-        self.connection.execute(
-            "UPDATE agent_sessions SET first_seen_at = MIN(first_seen_at, ?2), last_seen_at = MAX(last_seen_at, ?3), updated_at = MAX(updated_at, ?4) WHERE agent_session_id = ?1",
-            libsql::params![session.agent_session_id.to_string(), session.first_seen_at.unix_timestamp(), session.last_seen_at.unix_timestamp(), session.updated_at.unix_timestamp()],
-        ).await.map_err(to_query_error)?;
-        self.query_session_by_natural_key(
-            &session.ownership_scope_key,
-            &session.adapter_namespace,
-            &session.normalized_session_id,
-        )
-        .await?
-        .ok_or_else(|| StoreError::Unexpected("upserted agent session was not found".to_string()))
-    }
-
-    async fn load_agent_session(
+    async fn query_session_by_id(
         &self,
         agent_session_id: Uuid,
     ) -> Result<Option<AgentSessionRecord>, StoreError> {
@@ -375,15 +252,142 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             .transpose()
     }
 
-    async fn get_open_agent_task(
+    async fn load_observation_set(
+        &self,
+        agent_session_id: Uuid,
+    ) -> Result<Option<AgentObservationSetRecord>, StoreError> {
+        let mut rows = self.connection.query(
+            "SELECT observation_set_id, agent_session_id, parser_version, source_watermark_at, coverage_json, created_at FROM agent_inferred_observation_sets WHERE agent_session_id = ?1 ORDER BY source_watermark_at DESC, created_at DESC LIMIT 1",
+            [agent_session_id.to_string()],
+        ).await.map_err(to_query_error)?;
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+        let observation_set_id = parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?;
+        let coverage_json: String = row.get(4).map_err(to_query_error)?;
+        let mut observation_rows = self.connection.query(
+            "SELECT o.observation_id, o.kind, o.source_request_id, o.evidence, o.occurred_at, o.facts_json, o.limitation_codes_json, s.parser_version FROM agent_inferred_observations o JOIN agent_inferred_observation_sets s ON s.observation_set_id = o.observation_set_id WHERE o.agent_session_id = ?1 ORDER BY o.occurred_at, o.observation_id",
+            [agent_session_id.to_string()],
+        ).await.map_err(to_query_error)?;
+        let mut observations = Vec::new();
+        while let Some(observation_row) = observation_rows.next().await.map_err(to_query_error)? {
+            observations.push(decode_observation(&observation_row)?);
+        }
+        Ok(Some(AgentObservationSetRecord {
+            observation_set_id,
+            agent_session_id: parse_uuid(&row.get::<String>(1).map_err(to_query_error)?)?,
+            parser_version: row.get(2).map_err(to_query_error)?,
+            source_watermark_at: unix_to_datetime(row.get(3).map_err(to_query_error)?)?,
+            coverage: serde_json::from_str(&coverage_json)
+                .map_err(|error| StoreError::Serialization(error.to_string()))?,
+            created_at: unix_to_datetime(row.get(5).map_err(to_query_error)?)?,
+            observations,
+        }))
+    }
+    async fn query_observation_set_by_id(
+        &self,
+        observation_set_id: Uuid,
+    ) -> Result<Option<AgentObservationSetRecord>, StoreError> {
+        let mut rows = self.connection.query(
+            "SELECT observation_set_id, agent_session_id, parser_version, source_watermark_at, coverage_json, created_at FROM agent_inferred_observation_sets WHERE observation_set_id = ?1",
+            [observation_set_id.to_string()],
+        ).await.map_err(to_query_error)?;
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+        let coverage_json: String = row.get(4).map_err(to_query_error)?;
+        let mut observation_rows = self.connection.query(
+            "SELECT o.observation_id, o.kind, o.source_request_id, o.evidence, o.occurred_at, o.facts_json, o.limitation_codes_json, s.parser_version FROM agent_inferred_observations o JOIN agent_inferred_observation_sets s ON s.observation_set_id = o.observation_set_id WHERE o.observation_set_id = ?1 ORDER BY o.occurred_at, o.observation_id",
+            [observation_set_id.to_string()],
+        ).await.map_err(to_query_error)?;
+        let mut observations = Vec::new();
+        while let Some(observation_row) = observation_rows.next().await.map_err(to_query_error)? {
+            observations.push(decode_observation(&observation_row)?);
+        }
+        Ok(Some(AgentObservationSetRecord {
+            observation_set_id,
+            agent_session_id: parse_uuid(&row.get::<String>(1).map_err(to_query_error)?)?,
+            parser_version: row.get(2).map_err(to_query_error)?,
+            source_watermark_at: unix_to_datetime(row.get(3).map_err(to_query_error)?)?,
+            coverage: serde_json::from_str(&coverage_json)
+                .map_err(|error| StoreError::Serialization(error.to_string()))?,
+            created_at: unix_to_datetime(row.get(5).map_err(to_query_error)?)?,
+            observations,
+        }))
+    }
+}
+
+#[async_trait]
+impl AgentSessionAnalysisRepository for LibsqlStore {
+    async fn upsert_agent_session_source(
+        &self,
+        session: &AgentSessionSourceRecord,
+    ) -> Result<AgentSessionSourceRecord, StoreError> {
+        self.connection.execute(
+            "INSERT INTO agent_session_sources (agent_session_source_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, normalized_session_hash, adapter_namespace, adapter_version, source_provenance, harness_key, harness_label, first_seen_at, last_seen_at, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) ON CONFLICT DO NOTHING",
+            libsql::params![session.agent_session_source_id.to_string(), session.ownership_scope_key.as_str(), session.api_key_id.to_string(), session.user_id.map(|value| value.to_string()), session.team_id.map(|value| value.to_string()), session.service_account_id.map(|value| value.to_string()), session.actor_user_id.map(|value| value.to_string()), session.normalized_session_id.as_str(), session.adapter_namespace.as_str(), session.adapter_version.as_str(), session.source_provenance.as_str(), session.harness_key.as_str(), session.harness_label.as_str(), session.first_seen_at.unix_timestamp(), session.last_seen_at.unix_timestamp(), session.created_at.unix_timestamp(), session.updated_at.unix_timestamp()],
+        ).await.map_err(to_query_error)?;
+        let existing = self
+            .query_session_source_by_natural_key(
+                &session.ownership_scope_key,
+                &session.adapter_namespace,
+                &session.normalized_session_id,
+            )
+            .await?
+            .ok_or_else(|| {
+                StoreError::Conflict(format!(
+                    "agent session `{}` conflicts with the existing record",
+                    session.agent_session_source_id
+                ))
+            })?;
+        if !agent_session_source_identity_matches(&existing, session) {
+            return Err(StoreError::Conflict(format!(
+                "agent session `{}` conflicts with the existing record",
+                session.agent_session_source_id
+            )));
+        }
+        self.connection.execute(
+            "UPDATE agent_session_sources SET first_seen_at = MIN(first_seen_at, ?2), last_seen_at = MAX(last_seen_at, ?3), updated_at = MAX(updated_at, ?4) WHERE agent_session_source_id = ?1",
+            libsql::params![session.agent_session_source_id.to_string(), session.first_seen_at.unix_timestamp(), session.last_seen_at.unix_timestamp(), session.updated_at.unix_timestamp()],
+        ).await.map_err(to_query_error)?;
+        self.query_session_source_by_natural_key(
+            &session.ownership_scope_key,
+            &session.adapter_namespace,
+            &session.normalized_session_id,
+        )
+        .await?
+        .ok_or_else(|| StoreError::Unexpected("upserted agent session was not found".to_string()))
+    }
+
+    async fn load_agent_session_source(
+        &self,
+        agent_session_source_id: Uuid,
+    ) -> Result<Option<AgentSessionSourceRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {SESSION_SOURCE_COLUMNS} FROM agent_session_sources WHERE agent_session_source_id = ?1"
+        );
+        let mut rows = self
+            .connection
+            .query(&sql, [agent_session_source_id.to_string()])
+            .await
+            .map_err(to_query_error)?;
+        rows.next()
+            .await
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode_session_source)
+            .transpose()
+    }
+
+    async fn get_open_agent_session(
         &self,
         ownership_scope_key: &str,
-        agent_session_id: Option<Uuid>,
+        agent_session_source_id: Option<Uuid>,
         harness_key: &str,
         boundary_group_key: &str,
-    ) -> Result<Option<AgentTaskWindowRecord>, StoreError> {
+    ) -> Result<Option<AgentSessionRecord>, StoreError> {
         let sql = format!(
-            "SELECT {TASK_COLUMNS} FROM agent_task_windows WHERE ownership_scope_key = ?1 AND lifecycle = 'open' AND boundary_group_key = ?4 AND ((?2 IS NULL AND agent_session_id IS NULL AND harness_key = ?3) OR agent_session_id = ?2) ORDER BY started_at DESC LIMIT 1"
+            "SELECT {SESSION_COLUMNS} FROM agent_session_sources WHERE ownership_scope_key = ?1 AND lifecycle = 'open' AND boundary_group_key = ?4 AND ((?2 IS NULL AND agent_session_source_id IS NULL AND harness_key = ?3) OR agent_session_source_id = ?2) ORDER BY started_at DESC LIMIT 1"
         );
         let mut rows = self
             .connection
@@ -391,7 +395,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
                 &sql,
                 libsql::params![
                     ownership_scope_key,
-                    agent_session_id.map(|value| value.to_string()),
+                    agent_session_source_id.map(|value| value.to_string()),
                     harness_key,
                     boundary_group_key,
                 ],
@@ -402,65 +406,65 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             .await
             .map_err(to_query_error)?
             .as_ref()
-            .map(decode_task)
+            .map(decode_session)
             .transpose()
     }
 
-    async fn insert_agent_task_if_absent(
+    async fn insert_agent_session_if_absent(
         &self,
-        task: &AgentTaskWindowRecord,
+        session: &AgentSessionRecord,
     ) -> Result<bool, StoreError> {
         let written = self.connection.execute(
-            "INSERT INTO agent_task_windows (agent_task_id, agent_session_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, requested_model_key, operation, caller_class, request_tags_json, harness_key, boundary_group_key, boundary_policy_version, lifecycle, boundary_confidence, started_at, ended_at, input_watermark_at, finalized_reason, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23) ON CONFLICT DO NOTHING",
-            libsql::params![task.agent_task_id.to_string(), task.agent_session_id.map(|value| value.to_string()), task.ownership_scope_key.as_str(), task.api_key_id.to_string(), task.user_id.map(|value| value.to_string()), task.team_id.map(|value| value.to_string()), task.service_account_id.map(|value| value.to_string()), task.actor_user_id.map(|value| value.to_string()), task.requested_model_key.as_str(), task.operation.as_str(), task.caller_class.as_str(), crate::shared::serialize_json(&task.request_tags)?, task.harness_key.as_str(), task.boundary_group_key.as_str(), task.boundary_policy_version.as_str(), enum_name(task.lifecycle)?, enum_name(task.boundary_confidence)?, task.started_at.unix_timestamp(), task.ended_at.map(OffsetDateTime::unix_timestamp), task.input_watermark_at.unix_timestamp(), task.finalized_reason.as_deref(), task.created_at.unix_timestamp(), task.updated_at.unix_timestamp()],
+            "INSERT INTO agent_sessions (agent_session_id, agent_session_source_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, requested_model_key, operation, caller_class, request_tags_json, harness_key, boundary_group_key, boundary_policy_version, lifecycle, boundary_confidence, started_at, ended_at, input_watermark_at, finalized_reason, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23) ON CONFLICT DO NOTHING",
+            libsql::params![session.agent_session_id.to_string(), session.agent_session_source_id.map(|value| value.to_string()), session.ownership_scope_key.as_str(), session.api_key_id.to_string(), session.user_id.map(|value| value.to_string()), session.team_id.map(|value| value.to_string()), session.service_account_id.map(|value| value.to_string()), session.actor_user_id.map(|value| value.to_string()), session.requested_model_key.as_str(), session.operation.as_str(), session.caller_class.as_str(), crate::shared::serialize_json(&session.request_tags)?, session.harness_key.as_str(), session.boundary_group_key.as_str(), session.boundary_policy_version.as_str(), enum_name(session.lifecycle)?, enum_name(session.boundary_confidence)?, session.started_at.unix_timestamp(), session.ended_at.map(OffsetDateTime::unix_timestamp), session.input_watermark_at.unix_timestamp(), session.finalized_reason.as_deref(), session.created_at.unix_timestamp(), session.updated_at.unix_timestamp()],
         ).await.map_err(to_query_error)?;
         if written > 0 {
             return Ok(true);
         }
-        let Some(existing) = self.query_task_by_id(task.agent_task_id).await? else {
+        let Some(existing) = self.query_session_by_id(session.agent_session_id).await? else {
             return Ok(false);
         };
-        if agent_task_identity_matches(&existing, task) {
+        if agent_session_identity_matches(&existing, session) {
             Ok(false)
         } else {
             Err(StoreError::Conflict(format!(
-                "agent task `{}` conflicts with the existing record",
-                task.agent_task_id
+                "agent session `{}` conflicts with the existing record",
+                session.agent_session_id
             )))
         }
     }
 
-    async fn update_agent_task_window(
+    async fn update_agent_session_window(
         &self,
-        task: &AgentTaskWindowRecord,
+        session: &AgentSessionRecord,
     ) -> Result<(), StoreError> {
         let updated = self.connection.execute(
-            "UPDATE agent_task_windows SET lifecycle = ?2, boundary_confidence = ?3, ended_at = ?4, input_watermark_at = MAX(input_watermark_at, ?5), finalized_reason = ?6, updated_at = MAX(updated_at, ?7) WHERE agent_task_id = ?1",
-            libsql::params![task.agent_task_id.to_string(), enum_name(task.lifecycle)?, enum_name(task.boundary_confidence)?, task.ended_at.map(OffsetDateTime::unix_timestamp), task.input_watermark_at.unix_timestamp(), task.finalized_reason.as_deref(), task.updated_at.unix_timestamp()],
+            "UPDATE agent_sessions SET lifecycle = ?2, boundary_confidence = ?3, ended_at = ?4, input_watermark_at = MAX(input_watermark_at, ?5), finalized_reason = ?6, updated_at = MAX(updated_at, ?7) WHERE agent_session_id = ?1",
+            libsql::params![session.agent_session_id.to_string(), enum_name(session.lifecycle)?, enum_name(session.boundary_confidence)?, session.ended_at.map(OffsetDateTime::unix_timestamp), session.input_watermark_at.unix_timestamp(), session.finalized_reason.as_deref(), session.updated_at.unix_timestamp()],
         ).await.map_err(to_query_error)?;
         if updated == 0 {
             return Err(StoreError::NotFound(
-                "agent task window not found".to_string(),
+                "agent session window not found".to_string(),
             ));
         }
         Ok(())
     }
 
-    async fn finalize_agent_task_if_unchanged(
+    async fn finalize_agent_session_if_unchanged(
         &self,
-        task: &AgentTaskWindowRecord,
+        session: &AgentSessionRecord,
         expected_input_watermark_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
         let updated = self.connection.execute(
-            "UPDATE agent_task_windows SET lifecycle = ?2, boundary_confidence = ?3, ended_at = ?4, input_watermark_at = ?5, finalized_reason = ?6, updated_at = ?7 WHERE agent_task_id = ?1 AND lifecycle = 'open' AND input_watermark_at = ?8",
-            libsql::params![task.agent_task_id.to_string(), enum_name(task.lifecycle)?, enum_name(task.boundary_confidence)?, task.ended_at.map(OffsetDateTime::unix_timestamp), task.input_watermark_at.unix_timestamp(), task.finalized_reason.as_deref(), task.updated_at.unix_timestamp(), expected_input_watermark_at.unix_timestamp()],
+            "UPDATE agent_sessions SET lifecycle = ?2, boundary_confidence = ?3, ended_at = ?4, input_watermark_at = ?5, finalized_reason = ?6, updated_at = ?7 WHERE agent_session_id = ?1 AND lifecycle = 'open' AND input_watermark_at = ?8",
+            libsql::params![session.agent_session_id.to_string(), enum_name(session.lifecycle)?, enum_name(session.boundary_confidence)?, session.ended_at.map(OffsetDateTime::unix_timestamp), session.input_watermark_at.unix_timestamp(), session.finalized_reason.as_deref(), session.updated_at.unix_timestamp(), expected_input_watermark_at.unix_timestamp()],
         ).await.map_err(to_query_error)?;
         Ok(updated > 0)
     }
 
-    async fn append_agent_task_request(
+    async fn append_agent_session_request(
         &self,
-        link: &AgentTaskRequestLinkRecord,
+        link: &AgentSessionRequestLinkRecord,
     ) -> Result<bool, StoreError> {
         let limitations_json = crate::shared::serialize_json(&link.limitation_codes)?;
         let activity_at = link.completed_at.unwrap_or(link.occurred_at);
@@ -470,20 +474,20 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             .await
             .map_err(to_query_error)?;
         let written = transaction.execute(
-            "INSERT INTO agent_task_window_requests (agent_task_id, request_id, request_log_id, usage_event_id, ordinal, execution_id, parent_execution_id, normalized_session_id, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success) VALUES (?1, ?2, ?3, ?4, (SELECT COALESCE(MAX(ordinal) + 1, 0) FROM agent_task_window_requests WHERE agent_task_id = ?1), ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) ON CONFLICT(agent_task_id, request_id) DO NOTHING",
-            libsql::params![link.agent_task_id.to_string(), link.request_id.as_str(), link.request_log_id.map(|value| value.to_string()), link.usage_event_id.map(|value| value.to_string()), link.execution_id.as_deref(), link.parent_execution_id.as_deref(), link.normalized_session_id.as_deref(), enum_name(link.correlation_confidence)?, limitations_json, link.occurred_at.unix_timestamp(), link.completed_at.map(OffsetDateTime::unix_timestamp), link.terminal_success.map(i64::from)],
+            "INSERT INTO agent_session_requests (agent_session_id, request_id, request_log_id, usage_event_id, ordinal, execution_id, parent_execution_id, normalized_session_id, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success) VALUES (?1, ?2, ?3, ?4, (SELECT COALESCE(MAX(ordinal) + 1, 0) FROM agent_session_requests WHERE agent_session_id = ?1), ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) ON CONFLICT(agent_session_id, request_id) DO NOTHING",
+            libsql::params![link.agent_session_id.to_string(), link.request_id.as_str(), link.request_log_id.map(|value| value.to_string()), link.usage_event_id.map(|value| value.to_string()), link.execution_id.as_deref(), link.parent_execution_id.as_deref(), link.normalized_session_id.as_deref(), enum_name(link.correlation_confidence)?, limitations_json, link.occurred_at.unix_timestamp(), link.completed_at.map(OffsetDateTime::unix_timestamp), link.terminal_success.map(i64::from)],
         ).await.map_err(to_query_error)?;
         let inserted = written > 0;
         if inserted {
-            transaction.execute("UPDATE agent_task_windows SET input_watermark_at = MAX(input_watermark_at, ?2), updated_at = MAX(updated_at, ?2) WHERE agent_task_id = ?1", libsql::params![link.agent_task_id.to_string(), activity_at.unix_timestamp()]).await.map_err(to_query_error)?;
+            transaction.execute("UPDATE agent_sessions SET input_watermark_at = MAX(input_watermark_at, ?2), updated_at = MAX(updated_at, ?2) WHERE agent_session_id = ?1", libsql::params![link.agent_session_id.to_string(), activity_at.unix_timestamp()]).await.map_err(to_query_error)?;
         } else {
             let sql = format!(
-                "SELECT {REQUEST_COLUMNS} FROM agent_task_window_requests WHERE agent_task_id = ?1 AND request_id = ?2"
+                "SELECT {REQUEST_COLUMNS} FROM agent_session_requests WHERE agent_session_id = ?1 AND request_id = ?2"
             );
             let mut rows = transaction
                 .query(
                     &sql,
-                    libsql::params![link.agent_task_id.to_string(), link.request_id.as_str()],
+                    libsql::params![link.agent_session_id.to_string(), link.request_id.as_str()],
                 )
                 .await
                 .map_err(to_query_error)?;
@@ -495,11 +499,11 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
                 .map(decode_request_link)
                 .transpose()?
                 .ok_or_else(|| {
-                    StoreError::Query("agent task request conflict row disappeared".to_string())
+                    StoreError::Query("agent session request conflict row disappeared".to_string())
                 })?;
-            if !agent_task_request_matches(&existing, link) {
+            if !agent_session_request_matches(&existing, link) {
                 return Err(StoreError::Conflict(format!(
-                    "agent task request `{}` conflicts with the existing record",
+                    "agent session request `{}` conflicts with the existing record",
                     link.request_id
                 )));
             }
@@ -508,12 +512,15 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         Ok(inserted)
     }
 
-    async fn count_agent_task_requests(&self, agent_task_id: Uuid) -> Result<u64, StoreError> {
+    async fn count_agent_session_requests(
+        &self,
+        agent_session_id: Uuid,
+    ) -> Result<u64, StoreError> {
         let mut rows = self
             .connection
             .query(
-                "SELECT COUNT(*) FROM agent_task_window_requests WHERE agent_task_id = ?1",
-                [agent_task_id.to_string()],
+                "SELECT COUNT(*) FROM agent_session_requests WHERE agent_session_id = ?1",
+                [agent_session_id.to_string()],
             )
             .await
             .map_err(to_query_error)?;
@@ -521,7 +528,9 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             .next()
             .await
             .map_err(to_query_error)?
-            .ok_or_else(|| StoreError::Unexpected("agent task request count missing".to_string()))?
+            .ok_or_else(|| {
+                StoreError::Unexpected("agent session request count missing".to_string())
+            })?
             .get::<i64>(0)
             .map_err(to_query_error)?;
         u64::try_from(count).map_err(|error| StoreError::Serialization(error.to_string()))
@@ -538,14 +547,14 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             .map_err(to_query_error)?;
         let coverage_json = crate::shared::serialize_json(&set.coverage)?;
         let written = transaction.execute(
-            "INSERT INTO agent_inferred_observation_sets (observation_set_id, agent_task_id, parser_version, source_watermark_at, coverage_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(observation_set_id) DO NOTHING",
-            libsql::params![set.observation_set_id.to_string(), set.agent_task_id.to_string(), set.parser_version.as_str(), set.source_watermark_at.unix_timestamp(), coverage_json, set.created_at.unix_timestamp()],
+            "INSERT INTO agent_inferred_observation_sets (observation_set_id, agent_session_id, parser_version, source_watermark_at, coverage_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(observation_set_id) DO NOTHING",
+            libsql::params![set.observation_set_id.to_string(), set.agent_session_id.to_string(), set.parser_version.as_str(), set.source_watermark_at.unix_timestamp(), coverage_json, set.created_at.unix_timestamp()],
         ).await.map_err(to_query_error)?;
         if written > 0 {
             for observation in &set.observations {
                 let observation_written = transaction.execute(
-                    "INSERT INTO agent_inferred_observations (observation_id, observation_set_id, agent_task_id, kind, source_request_id, evidence, occurred_at, facts_json, limitation_codes_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(observation_id) DO NOTHING",
-                    libsql::params![observation.observation_id.to_string(), set.observation_set_id.to_string(), set.agent_task_id.to_string(), enum_name(observation.kind)?, observation.source_request_id.as_str(), enum_name(observation.evidence)?, observation.occurred_at.unix_timestamp(), crate::shared::serialize_json(&observation.facts)?, crate::shared::serialize_json(&observation.limitations)?],
+                    "INSERT INTO agent_inferred_observations (observation_id, observation_set_id, agent_session_id, kind, source_request_id, evidence, occurred_at, facts_json, limitation_codes_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(observation_id) DO NOTHING",
+                    libsql::params![observation.observation_id.to_string(), set.observation_set_id.to_string(), set.agent_session_id.to_string(), enum_name(observation.kind)?, observation.source_request_id.as_str(), enum_name(observation.evidence)?, observation.occurred_at.unix_timestamp(), crate::shared::serialize_json(&observation.facts)?, crate::shared::serialize_json(&observation.limitations)?],
                 ).await.map_err(to_query_error)?;
                 if observation_written == 0 {
                     return Err(StoreError::Conflict(format!(
@@ -577,13 +586,13 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
 
     async fn load_agent_observation_sets(
         &self,
-        agent_task_id: Uuid,
+        agent_session_id: Uuid,
     ) -> Result<Vec<AgentObservationSetRecord>, StoreError> {
         let mut rows = self
             .connection
             .query(
-                "SELECT observation_set_id FROM agent_inferred_observation_sets WHERE agent_task_id = ?1 ORDER BY source_watermark_at, created_at, observation_set_id LIMIT 1001",
-                [agent_task_id.to_string()],
+                "SELECT observation_set_id FROM agent_inferred_observation_sets WHERE agent_session_id = ?1 ORDER BY source_watermark_at, created_at, observation_set_id LIMIT 1001",
+                [agent_session_id.to_string()],
             )
             .await
             .map_err(to_query_error)?;
@@ -601,13 +610,13 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         Ok(sets)
     }
 
-    async fn link_request_log_to_agent_task(
+    async fn link_request_log_to_agent_session(
         &self,
         link: &AgentRequestLogLinkRecord,
     ) -> Result<(), StoreError> {
         let updated = self.connection.execute(
-            "UPDATE request_logs SET agent_session_id = ?2, agent_task_id = ?3, agent_analysis_source = ?4, agent_analysis_coverage_json = ?5 WHERE request_log_id = ?1",
-            libsql::params![link.request_log_id.to_string(), link.agent_session_id.map(|value| value.to_string()), link.agent_task_id.to_string(), link.analysis_source.as_str(), crate::shared::serialize_json(&link.coverage)?],
+            "UPDATE request_logs SET agent_session_source_id = ?2, agent_session_id = ?3, agent_analysis_source = ?4, agent_analysis_coverage_json = ?5 WHERE request_log_id = ?1",
+            libsql::params![link.request_log_id.to_string(), link.agent_session_source_id.map(|value| value.to_string()), link.agent_session_id.to_string(), link.analysis_source.as_str(), crate::shared::serialize_json(&link.coverage)?],
         ).await.map_err(to_query_error)?;
         if updated == 0 {
             return Err(StoreError::NotFound("request log not found".to_string()));
@@ -615,57 +624,58 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         Ok(())
     }
 
-    async fn load_agent_task_trace(
+    async fn load_agent_session_trace(
         &self,
-        agent_task_id: Uuid,
-    ) -> Result<Option<AgentTaskTraceRecord>, StoreError> {
-        let task_sql =
-            format!("SELECT {TASK_COLUMNS} FROM agent_task_windows WHERE agent_task_id = ?1");
-        let mut task_rows = self
+        agent_session_id: Uuid,
+    ) -> Result<Option<AgentSessionTraceRecord>, StoreError> {
+        let session_sql =
+            format!("SELECT {SESSION_COLUMNS} FROM agent_sessions WHERE agent_session_id = ?1");
+        let mut session_rows = self
             .connection
-            .query(&task_sql, [agent_task_id.to_string()])
+            .query(&session_sql, [agent_session_id.to_string()])
             .await
             .map_err(to_query_error)?;
-        let Some(task_row) = task_rows.next().await.map_err(to_query_error)? else {
+        let Some(session_row) = session_rows.next().await.map_err(to_query_error)? else {
             return Ok(None);
         };
-        let task = decode_task(&task_row)?;
-        let session = if let Some(session_id) = task.agent_session_id {
-            let sql =
-                format!("SELECT {SESSION_COLUMNS} FROM agent_sessions WHERE agent_session_id = ?1");
+        let session = decode_session(&session_row)?;
+        let session_source = if let Some(session_source_id) = session.agent_session_source_id {
+            let sql = format!(
+                "SELECT {SESSION_SOURCE_COLUMNS} FROM agent_session_sources WHERE agent_session_source_id = ?1"
+            );
             let mut rows = self
                 .connection
-                .query(&sql, [session_id.to_string()])
+                .query(&sql, [session_source_id.to_string()])
                 .await
                 .map_err(to_query_error)?;
             rows.next()
                 .await
                 .map_err(to_query_error)?
                 .as_ref()
-                .map(decode_session)
+                .map(decode_session_source)
                 .transpose()?
         } else {
             None
         };
         let request_sql = format!(
-            "SELECT {REQUEST_COLUMNS} FROM agent_task_window_requests WHERE agent_task_id = ?1 ORDER BY occurred_at, ordinal LIMIT 1001"
+            "SELECT {REQUEST_COLUMNS} FROM agent_session_requests WHERE agent_session_id = ?1 ORDER BY occurred_at, ordinal LIMIT 1001"
         );
         let mut request_rows = self
             .connection
-            .query(&request_sql, [agent_task_id.to_string()])
+            .query(&request_sql, [agent_session_id.to_string()])
             .await
             .map_err(to_query_error)?;
         let mut requests = Vec::new();
         while let Some(row) = request_rows.next().await.map_err(to_query_error)? {
             requests.push(decode_request_link(&row)?);
         }
-        let latest_observation_set = self.load_observation_set(agent_task_id).await?;
+        let latest_observation_set = self.load_observation_set(agent_session_id).await?;
         let analysis_sql = format!(
-            "SELECT {ANALYSIS_COLUMNS} FROM agent_task_analyses WHERE agent_task_id = ?1 AND stale = 0 ORDER BY analyzed_at DESC LIMIT 1"
+            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = ?1 AND stale = 0 ORDER BY analyzed_at DESC LIMIT 1"
         );
         let mut analysis_rows = self
             .connection
-            .query(&analysis_sql, [agent_task_id.to_string()])
+            .query(&analysis_sql, [agent_session_id.to_string()])
             .await
             .map_err(to_query_error)?;
         let latest_analysis = analysis_rows
@@ -675,35 +685,35 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             .as_ref()
             .map(decode_analysis)
             .transpose()?;
-        Ok(Some(AgentTaskTraceRecord {
-            task,
+        Ok(Some(AgentSessionTraceRecord {
             session,
+            session_source,
             requests,
             latest_observation_set,
             latest_analysis,
         }))
     }
 
-    async fn append_agent_task_analysis(
+    async fn append_agent_session_analysis(
         &self,
-        analysis: &AgentTaskAnalysisRecord,
+        analysis: &AgentSessionAnalysisRecord,
     ) -> Result<bool, StoreError> {
         let written = self.connection.execute(
-            "INSERT INTO agent_task_analyses (analysis_id, agent_task_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, analyzed_at, report_json, stale, superseded_by_analysis_id, expires_at, ownership_scope_key, user_id, service_account_id) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22 WHERE EXISTS (SELECT 1 FROM agent_task_windows WHERE agent_task_id = ?2 AND input_watermark_at = ?5) AND EXISTS (SELECT 1 FROM agent_inferred_observation_sets WHERE observation_set_id = ?6 AND agent_task_id = ?2) ON CONFLICT DO NOTHING",
-            libsql::params![analysis.analysis_id.to_string(), analysis.agent_task_id.to_string(), analysis.report.report_schema_version.as_str(), analysis.boundary_policy_version.as_str(), analysis.input_watermark_at.unix_timestamp(), analysis.observation_set_id.to_string(), analysis.observation_parser_version.as_str(), analysis.report.analyzer_version.as_str(), analysis.report.score_policy_version.as_str(), analysis.pricing_policy_version.as_str(), analysis.cohort_version.as_str(), i64::from(analysis.cohort_fallback_level), i64::try_from(analysis.cohort_sample_size).map_err(|error| StoreError::Serialization(error.to_string()))?, analysis.cohort_snapshot_digest.as_str(), analysis.analyzed_at.unix_timestamp(), crate::shared::serialize_json(&analysis.report)?, i64::from(analysis.stale), analysis.superseded_by_analysis_id.map(|value| value.to_string()), analysis.expires_at.unix_timestamp(), analysis.ownership_scope_key.as_str(), analysis.user_id.map(|value| value.to_string()), analysis.service_account_id.map(|value| value.to_string())],
+            "INSERT INTO agent_session_analyses (analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, analyzed_at, report_json, stale, superseded_by_analysis_id, expires_at, ownership_scope_key, user_id, service_account_id) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22 WHERE EXISTS (SELECT 1 FROM agent_sessions WHERE agent_session_id = ?2 AND input_watermark_at = ?5) AND EXISTS (SELECT 1 FROM agent_inferred_observation_sets WHERE observation_set_id = ?6 AND agent_session_id = ?2) ON CONFLICT DO NOTHING",
+            libsql::params![analysis.analysis_id.to_string(), analysis.agent_session_id.to_string(), analysis.report.report_schema_version.as_str(), analysis.boundary_policy_version.as_str(), analysis.input_watermark_at.unix_timestamp(), analysis.observation_set_id.to_string(), analysis.observation_parser_version.as_str(), analysis.report.analyzer_version.as_str(), analysis.report.score_policy_version.as_str(), analysis.pricing_policy_version.as_str(), analysis.cohort_version.as_str(), i64::from(analysis.cohort_fallback_level), i64::try_from(analysis.cohort_sample_size).map_err(|error| StoreError::Serialization(error.to_string()))?, analysis.cohort_snapshot_digest.as_str(), analysis.analyzed_at.unix_timestamp(), crate::shared::serialize_json(&analysis.report)?, i64::from(analysis.stale), analysis.superseded_by_analysis_id.map(|value| value.to_string()), analysis.expires_at.unix_timestamp(), analysis.ownership_scope_key.as_str(), analysis.user_id.map(|value| value.to_string()), analysis.service_account_id.map(|value| value.to_string())],
         ).await.map_err(to_query_error)?;
         if written > 0 {
             return Ok(true);
         }
         let sql = format!(
-            "SELECT {ANALYSIS_COLUMNS} FROM agent_task_analyses WHERE agent_task_id = ?1 AND report_schema_version = ?2 AND boundary_policy_version = ?3 AND input_watermark_at = ?4 AND observation_set_id = ?5 AND observation_parser_version = ?6 AND analyzer_version = ?7 AND score_policy_version = ?8 AND pricing_policy_version = ?9 AND cohort_version = ?10 AND cohort_fallback_level = ?11 AND cohort_sample_size = ?12 AND cohort_snapshot_digest = ?13"
+            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = ?1 AND report_schema_version = ?2 AND boundary_policy_version = ?3 AND input_watermark_at = ?4 AND observation_set_id = ?5 AND observation_parser_version = ?6 AND analyzer_version = ?7 AND score_policy_version = ?8 AND pricing_policy_version = ?9 AND cohort_version = ?10 AND cohort_fallback_level = ?11 AND cohort_sample_size = ?12 AND cohort_snapshot_digest = ?13"
         );
         let mut rows = self
             .connection
             .query(
                 &sql,
                 libsql::params![
-                    analysis.agent_task_id.to_string(),
+                    analysis.agent_session_id.to_string(),
                     analysis.report.report_schema_version.as_str(),
                     analysis.boundary_policy_version.as_str(),
                     analysis.input_watermark_at.unix_timestamp(),
@@ -723,44 +733,44 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             .map_err(to_query_error)?;
         if let Some(row) = rows.next().await.map_err(to_query_error)? {
             let existing = decode_analysis(&row)?;
-            return if agent_task_analysis_matches(&existing, analysis) {
+            return if agent_session_analysis_matches(&existing, analysis) {
                 Ok(false)
             } else {
                 Err(StoreError::Conflict(format!(
-                    "agent task analysis for task `{}` conflicts with the existing record",
-                    analysis.agent_task_id
+                    "agent session analysis for session `{}` conflicts with the existing record",
+                    analysis.agent_session_id
                 )))
             };
         }
         let mut id_rows = self
             .connection
             .query(
-                "SELECT 1 FROM agent_task_analyses WHERE analysis_id = ?1",
+                "SELECT 1 FROM agent_session_analyses WHERE analysis_id = ?1",
                 [analysis.analysis_id.to_string()],
             )
             .await
             .map_err(to_query_error)?;
         if id_rows.next().await.map_err(to_query_error)?.is_some() {
             return Err(StoreError::Conflict(format!(
-                "agent task analysis `{}` conflicts with the existing record",
+                "agent session analysis `{}` conflicts with the existing record",
                 analysis.analysis_id
             )));
         }
         Ok(false)
     }
 
-    async fn list_agent_tasks(
+    async fn list_agent_sessions(
         &self,
-        query: &AgentTaskListQuery,
-    ) -> Result<AgentTaskListPage, StoreError> {
+        query: &AgentSessionListQuery,
+    ) -> Result<AgentSessionListPage, StoreError> {
         let page = query.page.max(1);
-        let page_size = query.page_size.clamp(1, MAX_AGENT_TASK_PAGE_SIZE);
+        let page_size = query.page_size.clamp(1, MAX_AGENT_SESSION_PAGE_SIZE);
         let offset = i64::from(page.saturating_sub(1).saturating_mul(page_size));
         let lifecycle = query.lifecycle.map(enum_name).transpose()?;
         let score_confidence = query.score_confidence.map(enum_name).transpose()?;
         let gateway_outcome = query.gateway_outcome.map(enum_name).transpose()?;
         let score_maturity = query.score_maturity.map(enum_name).transpose()?;
-        let from_sql = "agent_task_windows t LEFT JOIN agent_sessions s ON s.agent_session_id = t.agent_session_id LEFT JOIN agent_task_analyses latest_analysis ON latest_analysis.analysis_id = (SELECT a.analysis_id FROM agent_task_analyses a WHERE a.agent_task_id = t.agent_task_id AND a.stale = 0 ORDER BY a.analyzed_at DESC, a.analysis_id DESC LIMIT 1)";
+        let from_sql = "agent_sessions t LEFT JOIN agent_session_sources s ON s.agent_session_source_id = t.agent_session_source_id LEFT JOIN agent_session_analyses latest_analysis ON latest_analysis.analysis_id = (SELECT a.analysis_id FROM agent_session_analyses a WHERE a.agent_session_id = t.agent_session_id AND a.stale = 0 ORDER BY a.analyzed_at DESC, a.analysis_id DESC LIMIT 1)";
         let where_sql = concat!(
             "(?1 IS NULL OR t.ownership_scope_key = ?1)",
             " AND (?2 IS NULL OR t.user_id = ?2)",
@@ -774,7 +784,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             " AND (?8 IS NULL OR t.started_at < ?8)",
             " AND (?9 IS NULL OR t.input_watermark_at < ?9)",
             " AND (?10 IS NULL OR json_extract(latest_analysis.report_json, '$.confidence') = ?10)",
-            " AND (?11 IS NULL OR t.agent_session_id = ?11)",
+            " AND (?11 IS NULL OR t.agent_session_source_id = ?11)",
             " AND (?12 IS NULL OR t.requested_model_key = ?12)",
             " AND (?13 IS NULL OR t.operation = ?13)",
             " AND (?14 IS NULL OR t.caller_class = ?14)",
@@ -807,7 +817,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
                         .input_watermark_before
                         .map(OffsetDateTime::unix_timestamp),
                     score_confidence.as_deref(),
-                    query.agent_session_id.map(|value| value.to_string()),
+                    query.agent_session_source_id.map(|value| value.to_string()),
                     query.requested_model_key.as_deref(),
                     query.operation.as_deref(),
                     query.caller_class.as_deref(),
@@ -826,13 +836,13 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
                 .next()
                 .await
                 .map_err(to_query_error)?
-                .ok_or_else(|| StoreError::Unexpected("agent task count missing".to_string()))?
+                .ok_or_else(|| StoreError::Unexpected("agent session count missing".to_string()))?
                 .get::<i64>(0)
                 .map_err(to_query_error)?,
         )
         .map_err(|error| StoreError::Serialization(error.to_string()))?;
         let list_sql = format!(
-            "SELECT t.agent_task_id FROM {from_sql} WHERE {where_sql} ORDER BY t.started_at DESC, t.agent_task_id LIMIT ?21 OFFSET ?22"
+            "SELECT t.agent_session_id FROM {from_sql} WHERE {where_sql} ORDER BY t.started_at DESC, t.agent_session_id LIMIT ?21 OFFSET ?22"
         );
         let mut rows = self
             .connection
@@ -851,7 +861,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
                         .input_watermark_before
                         .map(OffsetDateTime::unix_timestamp),
                     score_confidence.as_deref(),
-                    query.agent_session_id.map(|value| value.to_string()),
+                    query.agent_session_source_id.map(|value| value.to_string()),
                     query.requested_model_key.as_deref(),
                     query.operation.as_deref(),
                     query.caller_class.as_deref(),
@@ -873,11 +883,11 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         }
         let mut items = Vec::with_capacity(ids.len());
         for id in ids {
-            if let Some(trace) = self.load_agent_task_trace(id).await? {
+            if let Some(trace) = self.load_agent_session_trace(id).await? {
                 items.push(trace);
             }
         }
-        Ok(AgentTaskListPage {
+        Ok(AgentSessionListPage {
             items,
             page,
             page_size,
@@ -885,12 +895,12 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         })
     }
 
-    async fn mark_agent_task_analyses_stale(
+    async fn mark_agent_session_analyses_stale(
         &self,
-        agent_task_id: Uuid,
+        agent_session_id: Uuid,
         superseded_by: Option<Uuid>,
     ) -> Result<u64, StoreError> {
-        self.connection.execute("UPDATE agent_task_analyses SET stale = 1, superseded_by_analysis_id = ?2 WHERE agent_task_id = ?1 AND stale = 0 AND (?2 IS NULL OR analysis_id <> ?2)", libsql::params![agent_task_id.to_string(), superseded_by.map(|value| value.to_string())]).await.map_err(to_query_error)
+        self.connection.execute("UPDATE agent_session_analyses SET stale = 1, superseded_by_analysis_id = ?2 WHERE agent_session_id = ?1 AND stale = 0 AND (?2 IS NULL OR analysis_id <> ?2)", libsql::params![agent_session_id.to_string(), superseded_by.map(|value| value.to_string())]).await.map_err(to_query_error)
     }
 
     async fn enqueue_agent_analysis(
@@ -898,8 +908,8 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         item: &AgentAnalysisQueueRecord,
     ) -> Result<bool, StoreError> {
         let written = self.connection.execute(
-            "INSERT INTO agent_analysis_recompute_queue (queue_item_id, agent_task_id, reason, desired_versions_json, status, lease_owner, lease_expires_at, attempts, max_attempts, last_error, available_at, created_at, updated_at, completed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) ON CONFLICT(queue_item_id) DO NOTHING",
-            libsql::params![item.queue_item_id.to_string(), item.agent_task_id.to_string(), item.reason.as_str(), crate::shared::serialize_json(&item.desired_versions)?, item.status.as_str(), item.lease_owner.as_deref(), item.lease_expires_at.map(OffsetDateTime::unix_timestamp), i64::from(item.attempts), i64::from(item.max_attempts), item.last_error.as_deref(), item.available_at.unix_timestamp(), item.created_at.unix_timestamp(), item.updated_at.unix_timestamp(), item.completed_at.map(OffsetDateTime::unix_timestamp)],
+            "INSERT INTO agent_analysis_recompute_queue (queue_item_id, agent_session_id, reason, desired_versions_json, status, lease_owner, lease_expires_at, attempts, max_attempts, last_error, available_at, created_at, updated_at, completed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) ON CONFLICT(queue_item_id) DO NOTHING",
+            libsql::params![item.queue_item_id.to_string(), item.agent_session_id.to_string(), item.reason.as_str(), crate::shared::serialize_json(&item.desired_versions)?, item.status.as_str(), item.lease_owner.as_deref(), item.lease_expires_at.map(OffsetDateTime::unix_timestamp), i64::from(item.attempts), i64::from(item.max_attempts), item.last_error.as_deref(), item.available_at.unix_timestamp(), item.created_at.unix_timestamp(), item.updated_at.unix_timestamp(), item.completed_at.map(OffsetDateTime::unix_timestamp)],
         ).await.map_err(to_query_error)?;
         Ok(written > 0)
     }
@@ -1020,7 +1030,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         let reports = self
             .connection
             .execute(
-                "DELETE FROM agent_task_analyses WHERE expires_at < ?1",
+                "DELETE FROM agent_session_analyses WHERE expires_at < ?1",
                 [expires_before.unix_timestamp()],
             )
             .await
@@ -1034,33 +1044,33 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         request_cutoff: OffsetDateTime,
     ) -> Result<u64, StoreError> {
         let observations = self.connection.execute(
-            "DELETE FROM agent_inferred_observation_sets WHERE agent_task_id IN (SELECT agent_task_id FROM agent_task_windows WHERE lifecycle = 'finalized' AND input_watermark_at < ?1) AND NOT EXISTS (SELECT 1 FROM agent_task_analyses a WHERE a.observation_set_id = agent_inferred_observation_sets.observation_set_id AND a.agent_task_id = agent_inferred_observation_sets.agent_task_id)",
+            "DELETE FROM agent_inferred_observation_sets WHERE agent_session_id IN (SELECT agent_session_id FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < ?1) AND NOT EXISTS (SELECT 1 FROM agent_session_analyses a WHERE a.observation_set_id = agent_inferred_observation_sets.observation_set_id AND a.agent_session_id = agent_inferred_observation_sets.agent_session_id)",
             [request_cutoff.unix_timestamp()],
         ).await.map_err(to_query_error)?;
         let requests = self.connection.execute(
-            "DELETE FROM agent_task_window_requests WHERE agent_task_id IN (SELECT agent_task_id FROM agent_task_windows WHERE lifecycle = 'finalized' AND input_watermark_at < ?1)",
+            "DELETE FROM agent_session_requests WHERE agent_session_id IN (SELECT agent_session_id FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < ?1)",
             [request_cutoff.unix_timestamp()],
         ).await.map_err(to_query_error)?;
-        let tasks = self
+        let sessions = self
             .connection
             .execute(
-                "DELETE FROM agent_task_windows WHERE lifecycle = 'finalized' AND input_watermark_at < ?1 AND NOT EXISTS (SELECT 1 FROM agent_task_analyses a WHERE a.agent_task_id = agent_task_windows.agent_task_id) AND NOT EXISTS (SELECT 1 FROM agent_analysis_recompute_queue q WHERE q.agent_task_id = agent_task_windows.agent_task_id)",
+                "DELETE FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < ?1 AND NOT EXISTS (SELECT 1 FROM agent_session_analyses a WHERE a.agent_session_id = agent_sessions.agent_session_id) AND NOT EXISTS (SELECT 1 FROM agent_analysis_recompute_queue q WHERE q.agent_session_id = agent_sessions.agent_session_id)",
                 [request_cutoff.unix_timestamp()],
             )
             .await
             .map_err(to_query_error)?;
-        let sessions = self
+        let session_sources = self
             .connection
             .execute(
-                "DELETE FROM agent_sessions WHERE last_seen_at < ?1 AND NOT EXISTS (SELECT 1 FROM agent_task_windows t WHERE t.agent_session_id = agent_sessions.agent_session_id)",
+                "DELETE FROM agent_session_sources WHERE last_seen_at < ?1 AND NOT EXISTS (SELECT 1 FROM agent_sessions s WHERE s.agent_session_source_id = agent_session_sources.agent_session_source_id)",
                 [request_cutoff.unix_timestamp()],
             )
             .await
             .map_err(to_query_error)?;
         Ok(observations
             .saturating_add(requests)
-            .saturating_add(tasks)
-            .saturating_add(sessions))
+            .saturating_add(sessions)
+            .saturating_add(session_sources))
     }
 
     async fn delete_agent_analysis_for_owner(
@@ -1070,15 +1080,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         let reports = self
             .connection
             .execute(
-                "DELETE FROM agent_task_analyses WHERE ownership_scope_key = ?1",
-                [ownership_scope_key],
-            )
-            .await
-            .map_err(to_query_error)?;
-        let tasks = self
-            .connection
-            .execute(
-                "DELETE FROM agent_task_windows WHERE ownership_scope_key = ?1",
+                "DELETE FROM agent_session_analyses WHERE ownership_scope_key = ?1",
                 [ownership_scope_key],
             )
             .await
@@ -1091,6 +1093,16 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             )
             .await
             .map_err(to_query_error)?;
-        Ok(reports.saturating_add(tasks).saturating_add(sessions))
+        let session_sources = self
+            .connection
+            .execute(
+                "DELETE FROM agent_session_sources WHERE ownership_scope_key = ?1",
+                [ownership_scope_key],
+            )
+            .await
+            .map_err(to_query_error)?;
+        Ok(reports
+            .saturating_add(sessions)
+            .saturating_add(session_sources))
     }
 }

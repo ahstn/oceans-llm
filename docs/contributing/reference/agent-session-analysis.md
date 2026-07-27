@@ -1,6 +1,6 @@
 # Agent Session Analysis Architecture
 
-`See also`: [Agent Session Analysis](../../operations/agent-session-analysis.md), [Admin API Contract Workflow](admin-api-contract-workflow.md), [Data Relationships](data-relationships.md), [Passive, Versioned Agent Task Analysis](../../adr/2026-07-21-passive-agent-task-analysis.md)
+`See also`: [Agent Session Analysis](../../operations/agent-session-analysis.md), [Admin API Contract Workflow](admin-api-contract-workflow.md), [Data Relationships](data-relationships.md), [Passive, Versioned Agent Session Analysis](../../adr/2026-07-21-passive-agent-session-analysis.md)
 
 This page is the maintainer reference for the passive correlation, immutable analysis, storage, API, and admin-UI pipeline tracked by [issue #255](https://github.com/ahstn/oceans-llm/issues/255). Admin-facing behavior and runtime flags belong in [Agent Session Analysis](../../operations/agent-session-analysis.md).
 
@@ -26,27 +26,27 @@ Keep formulas in the dependency-light analysis crate. Do not move store, provide
 
 1. Request logging builds bounded `PassiveRequestMetadata` from authenticated ownership, recognized session headers, and only payload-policy-permitted request metadata.
 2. Successful or failed request finalization prepares bounded observations and dispatches passive persistence to a Tokio task only when `AGENT_ANALYSIS_ENABLED` is active. A 64-permit non-blocking semaphore bounds in-flight persistence; saturation skips analysis with a warning instead of delaying the model response. Background failures never change response delivery or authoritative billing.
-3. Correlation derives an ownership scope, bounded normalized external session identifier, deterministic session ID, harness, and a stable boundary-group key over canonical request tags. Model, operation, and caller class remain analysis dimensions but do not split a task. Open-task lookup requires the same boundary key and compatible observed session.
-4. The repository inserts the task-request link, persists its determinate or explicitly unknown terminal gateway outcome independently of request logs, and assigns its task-local ordinal atomically. Repeating the same canonical request is idempotent; reusing its task/request key with different facts returns a store conflict.
+3. Correlation derives an ownership scope, bounded normalized external session identifier, deterministic session ID, harness, and a stable boundary-group key over canonical request tags. Model, operation, and caller class remain analysis dimensions but do not split a session. Open-session lookup requires the same boundary key and compatible observed session.
+4. The repository inserts the session-request link, persists its determinate or explicitly unknown terminal gateway outcome independently of request logs, and assigns its session-local ordinal atomically. Repeating the same canonical request is idempotent; reusing its session/request key with different facts returns a store conflict.
 5. Each request appends a deterministic, parser-versioned observation set. Non-stream responses and bounded stream-event snapshots use the same response observation classifier. Trace loading aggregates retained observations across all sets through the latest watermark and joins each observation to the parser version that produced it.
-6. The background loop finalizes task windows whose input watermark is older than the versioned 30-minute idle gap. Finalization advances the task watermark because the lifecycle transition is report input.
+6. The background loop finalizes session windows whose input watermark is older than the versioned 30-minute idle gap. Finalization advances the session watermark because the lifecycle transition is report input.
 7. Finalization enqueues a versioned recomputation request.
-8. A leased worker loads the immutable task trace and builds a cohort from successful reports with matching report/analyzer/score/pricing/parser versions. Selection follows the fixed exact-boundary → harness/model/operation/caller → harness/model → harness cascade, requires at least ten peers at every level, and records the selected fallback level. The sorted peer-analysis IDs and values produce a persisted cohort-snapshot digest, so a changed peer population produces a distinct immutable report identity. A late fact makes an older in-flight insert a no-op.
+8. A leased worker loads the immutable session trace and builds a cohort from successful reports with matching report/analyzer/score/pricing/parser versions. Selection follows the fixed exact-boundary → harness/model/operation/caller → harness/model → harness cascade, requires at least six peers at every level, and records the selected fallback level. The sorted peer-analysis IDs and values produce a persisted cohort-snapshot digest, so a changed peer population produces a distinct immutable report identity. A late fact makes an older in-flight insert a no-op.
 9. While a report is being generated, the worker renews its one-minute lease on a 20-second heartbeat. Queue completion and failure still require the current lease owner. Expired leases at the attempt limit become terminal failures rather than remaining leased forever.
-10. Admin list/detail handlers load only the latest non-stale report, expose a typed report/coverage/identity contract, enforce the same platform/team scope, cap list pages at 200 tasks, and cap request and observation histories at 1,000 rows each with explicit truncation flags.
+10. Admin list/detail handlers load only the latest non-stale report, expose a typed report/coverage/identity contract, enforce the same platform/team scope, cap list pages at 200 sessions, and cap request and observation histories at 1,000 rows each with explicit truncation flags.
 
-The task link's ordinal is repository-assigned. Callers must not calculate `MAX(ordinal) + 1`; both stores serialize the assignment with a transaction or database lock.
+The session link's ordinal is repository-assigned. Callers must not calculate `MAX(ordinal) + 1`; both stores serialize the assignment with a transaction or database lock.
 
 ## Data Model and Invariants
 
-- `agent_sessions`: observed, owner-scoped session correlation. The bounded normalized external identifier is retained for exact admin filtering and display; the deterministic internal UUID remains the relational key.
-- `agent_task_windows`: open/finalized task boundary, stable boundary-group key, watermarks, confidence, and ownership dimensions.
-- `agent_task_window_requests`: ordered request correlations and bounded limitation codes.
+- `agent_session_sources`: observed, owner-scoped session correlation. The bounded normalized external identifier is retained for exact admin filtering and display; the deterministic internal UUID remains the relational key.
+- `agent_sessions`: open/finalized session boundary, stable boundary-group key, watermarks, confidence, and ownership dimensions.
+- `agent_session_requests`: ordered request correlations and bounded limitation codes.
 - `agent_inferred_observation_sets` and `agent_inferred_observations`: parser-versioned, append-only classifications derived without raw content. Observation queries preserve the originating set's parser version.
-- `agent_task_analyses`: immutable versioned reports. The task watermark, cohort-snapshot digest, and direct-MCP-invocation snapshot are part of uniqueness, so lifecycle revisions and different evidence populations cannot collide.
+- `agent_session_analyses`: immutable versioned reports. The session watermark, cohort-snapshot digest, and direct-MCP-invocation snapshot are part of uniqueness, so lifecycle revisions and different evidence populations cannot collide.
 - `agent_analysis_recompute_queue`: leased work with attempts, failure state, desired version tuple, and owner-checked terminal transitions.
 
-Request-log cutoff pruning deletes request links and inferred observation sets. A minimal task shell remains while a report or queue row references it, keeping reports queryable through their independent expiry. Reports retain `ownership_scope_key`, `user_id`, and `service_account_id`; owner deletion still cascades through the shell and reports. An hourly loop enforces report expiry and terminal queue retention even when passive analysis is disabled. The gateway defaults these windows to 90 and 7 days through `AGENT_ANALYSIS_REPORT_RETENTION_DAYS` and `AGENT_ANALYSIS_QUEUE_RETENTION_DAYS`.
+Request-log cutoff pruning deletes request links and inferred observation sets. A minimal session shell remains while a report or queue row references it, keeping reports queryable through their independent expiry. Reports retain `ownership_scope_key`, `user_id`, and `service_account_id`; owner deletion still cascades through the shell and reports. An hourly loop enforces report expiry and terminal queue retention even when passive analysis is disabled. The gateway defaults these windows to 90 and 7 days through `AGENT_ANALYSIS_REPORT_RETENTION_DAYS` and `AGENT_ANALYSIS_QUEUE_RETENTION_DAYS`.
 
 Stable IDs are UUIDs derived from canonical bounded inputs and explicit namespaces. Queue IDs include an event-specific deduplication key, observations include their canonical bounded facts, and analyses include the cohort-snapshot digest. A parser or policy change must change the corresponding version input rather than silently reinterpret an existing ID.
 
@@ -60,7 +60,7 @@ Unknown harnesses and known harnesses with stripped or policy-blocked metadata r
 
 ## Analysis Contract
 
-`TaskEfficiencyReport` is explainable by construction:
+`SessionEfficiencyReport` is explainable by construction:
 
 - report, analyzer, score-policy, and pricing-policy versions;
 - maturity and confidence;
@@ -74,11 +74,11 @@ Unknown harnesses and known harnesses with stripped or policy-blocked metadata r
 
 The score is the outcome-weighted geometric combination of outcome, lower-cost cohort rank, and lower-active-time cohort rank. The nominal weights are 0.5, 0.3, and 0.2 respectively; when cost or time is unavailable, the available weights are re-normalized rather than suppressing the whole score. A determinate all-failure outcome returns zero. No cohort means both efficiency ranks and the numeric score are unavailable. Missing evidence must not be represented by a neutral midpoint.
 
-An exact cohort is score-eligible only with at least ten successful tasks for both cost and active-time samples. Smaller exact cohorts leave the score unavailable. Versioned fallback cohorts remain usable at reduced confidence and disclose their fallback level and sample size.
+An exact cohort is score-eligible only with at least six successful sessions for both cost and active-time samples. Smaller exact cohorts leave the score unavailable. Versioned fallback cohorts remain usable at reduced confidence and disclose their fallback level and sample size.
 
 Active time is the union of request intervals with the fixed orchestration-gap allowance. Wall time is retained separately. Do not substitute one for the other in UI or aggregates.
 
-Direct MCP evidence comes from invocation records for the task's API key whose completion timestamp falls within the finalized task window. Stored latency reconstructs each call interval; missing latency produces a zero-duration point interval so the invocation still contributes to the count. The analysis identity includes a deterministic snapshot of the matched invocation IDs, timestamps, and latencies. This is temporal attribution rather than a session identifier join, so overlapping tasks sharing one API key can remain ambiguous.
+Direct MCP evidence comes from invocation records for the session's API key whose completion timestamp falls within the finalized session window. Stored latency reconstructs each call interval; missing latency produces a zero-duration point interval so the invocation still contributes to the count. The analysis identity includes a deterministic snapshot of the matched invocation IDs, timestamps, and latencies. This is temporal attribution rather than a session identifier join, so overlapping sessions sharing one API key can remain ambiguous.
 
 ## Runtime Capability Matrix
 
@@ -103,9 +103,9 @@ mise run admin-contract-check
 
 Use generated aliases from `src/types/live-api.ts`. Do not duplicate response interfaces in the UI. Server adapters use `createGatewayApiClient` and `unwrapGatewayResponse`.
 
-The backend list route remains `/api/v1/admin/observability/agent-tasks`; detail remains `/api/v1/admin/observability/agent-tasks/{task_id}` because reports are keyed by internal task windows. The admin-facing UI is **Agent Sessions** at `/admin/observability/agent-sessions`, and selected detail remains the `task_id` URL search parameter.
+The backend list route is `/api/v1/admin/observability/agent-sessions`; detail is `/api/v1/admin/observability/agent-sessions/{session_id}`, and selected detail uses the `session_id` URL search parameter.
 
-The maintenance command `gateway recompute-agent-analysis` scans retained finalized tasks with missing or stale latest reports and enqueues the desired version tuple. `--task-id` narrows to one UUID and `--limit` is bounded to `1..=1000`. Queue IDs preserve idempotency; the command does not calculate reports inline.
+The maintenance command `gateway recompute-agent-analysis` scans retained finalized sessions with missing or stale latest reports and enqueues the desired version tuple. `--session-id` narrows to one UUID and `--limit` is bounded to `1..=1000`. Queue IDs preserve idempotency; the command does not calculate reports inline.
 
 ## ReUI Contract
 

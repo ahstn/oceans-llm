@@ -548,6 +548,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/observability/agent-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_agent_sessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/observability/agent-sessions/{session_id}": {
         parameters: {
             query?: never;
@@ -556,38 +572,6 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_agent_session_detail"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/observability/agent-tasks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_agent_tasks"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/observability/agent-tasks/{task_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_agent_task_detail"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1541,22 +1525,7 @@ export interface components {
             parser_version: string;
             source_request_id: string;
         };
-        AgentSessionDetailView: {
-            session: components["schemas"]["AgentSessionView"];
-            tasks: components["schemas"]["AgentTaskPageView"];
-        };
-        AgentSessionView: {
-            adapter_namespace: string;
-            adapter_version: string;
-            external_session_id: string;
-            first_seen_at: string;
-            harness_key: string;
-            harness_label: string;
-            last_seen_at: string;
-            session_id: string;
-            source_provenance: string;
-        };
-        AgentTaskAnalysisIdentityView: {
+        AgentSessionAnalysisIdentityView: {
             analysis_id: string;
             analyzed_at: string;
             boundary_policy_version: string;
@@ -1572,24 +1541,24 @@ export interface components {
             observation_set_id: string;
             pricing_policy_version: string;
         };
-        AgentTaskDetailView: {
-            analysis?: null | components["schemas"]["AgentTaskAnalysisIdentityView"];
+        AgentSessionDetailView: {
+            analysis?: null | components["schemas"]["AgentSessionAnalysisIdentityView"];
             coverage?: null | components["schemas"]["AgentObservationCoverageView"];
             observation_history_truncated: boolean;
             observations: components["schemas"]["AgentObservationView"][];
-            report?: null | components["schemas"]["AgentTaskEfficiencyReportView"];
+            report?: null | components["schemas"]["AgentSessionEfficiencyReportView"];
             request_history_truncated: boolean;
-            requests: components["schemas"]["AgentTaskRequestView"][];
-            session?: null | components["schemas"]["AgentSessionView"];
-            task: components["schemas"]["AgentTaskSummaryView"];
+            requests: components["schemas"]["AgentSessionRequestView"][];
+            session: components["schemas"]["AgentSessionSummaryView"];
+            session_source?: null | components["schemas"]["AgentSessionSourceView"];
         };
-        AgentTaskDiagnosticsView: {
+        AgentSessionDiagnosticsView: {
             context: components["schemas"]["AgentContextDiagnosticsView"];
             semantic_verification_available: boolean;
             token_and_cache: components["schemas"]["AgentTokenAndCacheDiagnosticsView"];
             tools_and_changes: components["schemas"]["AgentToolAndChangeDiagnosticsView"];
         };
-        AgentTaskEfficiencyComponentsView: {
+        AgentSessionEfficiencyComponentsView: {
             /** Format: int32 */
             active_time_efficiency_basis_points?: number | null;
             /** Format: int64 */
@@ -1604,7 +1573,7 @@ export interface components {
             cost_efficiency_basis_points?: number | null;
             /** Format: int64 */
             excluded_gap_time_ms: number;
-            outcome: components["schemas"]["AgentTaskOutcomeView"];
+            outcome: components["schemas"]["AgentSessionOutcomeView"];
             /** Format: int64 */
             overlap_savings_ms: number;
             /** Format: int64 */
@@ -1614,13 +1583,13 @@ export interface components {
             /** Format: int64 */
             wall_time_ms: number;
         };
-        AgentTaskEfficiencyReportView: {
+        AgentSessionEfficiencyReportView: {
             analyzer_version: string;
             calibration_approval_id?: string | null;
-            components: components["schemas"]["AgentTaskEfficiencyComponentsView"];
+            components: components["schemas"]["AgentSessionEfficiencyComponentsView"];
             confidence: string;
             coverage: components["schemas"]["AgentTelemetryCoverageView"];
-            diagnostics: components["schemas"]["AgentTaskDiagnosticsView"];
+            diagnostics: components["schemas"]["AgentSessionDiagnosticsView"];
             gateway_outcome: string;
             limitations: string[];
             maturity: string;
@@ -1630,7 +1599,7 @@ export interface components {
             score?: number | null;
             score_policy_version: string;
         };
-        AgentTaskOutcomeView: {
+        AgentSessionOutcomeView: {
             /** Format: int32 */
             determinate_requests: number;
             /** Format: int32 */
@@ -1641,8 +1610,8 @@ export interface components {
             /** Format: int32 */
             successful_requests: number;
         };
-        AgentTaskPageView: {
-            items: components["schemas"]["AgentTaskSummaryView"][];
+        AgentSessionPageView: {
+            items: components["schemas"]["AgentSessionSummaryView"][];
             /** Format: int32 */
             page: number;
             /** Format: int32 */
@@ -1650,7 +1619,7 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
-        AgentTaskRequestView: {
+        AgentSessionRequestView: {
             completed_at?: string | null;
             correlation_confidence: string;
             execution_id?: string | null;
@@ -1664,7 +1633,18 @@ export interface components {
             terminal_success?: boolean | null;
             usage_event_id?: string | null;
         };
-        AgentTaskSummaryView: {
+        AgentSessionSourceView: {
+            adapter_namespace: string;
+            adapter_version: string;
+            external_session_id: string;
+            first_seen_at: string;
+            harness_key: string;
+            harness_label: string;
+            last_seen_at: string;
+            session_source_id: string;
+            source_provenance: string;
+        };
+        AgentSessionSummaryView: {
             /** Format: int64 */
             active_time_ms?: number | null;
             analyzer_version?: string | null;
@@ -1679,7 +1659,6 @@ export interface components {
             efficiency_score?: number | null;
             ended_at?: string | null;
             external_session_id?: string | null;
-            external_session_observed: boolean;
             gateway_outcome?: string | null;
             harness_key?: string | null;
             harness_label?: string | null;
@@ -1700,9 +1679,10 @@ export interface components {
             score_maturity?: string | null;
             score_policy_version?: string | null;
             service_account_id?: string | null;
-            session_id?: string | null;
+            session_id: string;
+            session_source_id?: string | null;
+            session_source_observed: boolean;
             started_at: string;
-            task_id: string;
             team_id?: string | null;
             /** Format: int32 */
             telemetry_coverage_percent?: number | null;
@@ -2094,28 +2074,21 @@ export interface components {
         };
         Envelope_AgentSessionDetailView: {
             data: {
-                session: components["schemas"]["AgentSessionView"];
-                tasks: components["schemas"]["AgentTaskPageView"];
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_AgentTaskDetailView: {
-            data: {
-                analysis?: null | components["schemas"]["AgentTaskAnalysisIdentityView"];
+                analysis?: null | components["schemas"]["AgentSessionAnalysisIdentityView"];
                 coverage?: null | components["schemas"]["AgentObservationCoverageView"];
                 observation_history_truncated: boolean;
                 observations: components["schemas"]["AgentObservationView"][];
-                report?: null | components["schemas"]["AgentTaskEfficiencyReportView"];
+                report?: null | components["schemas"]["AgentSessionEfficiencyReportView"];
                 request_history_truncated: boolean;
-                requests: components["schemas"]["AgentTaskRequestView"][];
-                session?: null | components["schemas"]["AgentSessionView"];
-                task: components["schemas"]["AgentTaskSummaryView"];
+                requests: components["schemas"]["AgentSessionRequestView"][];
+                session: components["schemas"]["AgentSessionSummaryView"];
+                session_source?: null | components["schemas"]["AgentSessionSourceView"];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
-        Envelope_AgentTaskPageView: {
+        Envelope_AgentSessionPageView: {
             data: {
-                items: components["schemas"]["AgentTaskSummaryView"][];
+                items: components["schemas"]["AgentSessionSummaryView"][];
                 /** Format: int32 */
                 page: number;
                 /** Format: int32 */
@@ -4348,56 +4321,7 @@ export interface operations {
             };
         };
     };
-    get_agent_session_detail: {
-        parameters: {
-            query?: {
-                page?: number;
-                page_size?: number;
-            };
-            header?: never;
-            path: {
-                /** @description Observed agent session identifier */
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_AgentSessionDetailView"];
-                };
-            };
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
-                };
-            };
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
-                };
-            };
-        };
-    };
-    list_agent_tasks: {
+    list_agent_sessions: {
         parameters: {
             query?: {
                 page?: number;
@@ -4412,7 +4336,7 @@ export interface operations {
                 gateway_outcome?: string;
                 score_maturity?: string;
                 minimum_coverage_percent?: number;
-                session_id?: string;
+                session_source_id?: string;
                 external_session_id?: string;
                 request_tag_key?: string;
                 request_tag_value?: string;
@@ -4432,7 +4356,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Envelope_AgentTaskPageView"];
+                    "application/json": components["schemas"]["Envelope_AgentSessionPageView"];
                 };
             };
             400: {
@@ -4461,13 +4385,13 @@ export interface operations {
             };
         };
     };
-    get_agent_task_detail: {
+    get_agent_session_detail: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Agent task identifier */
-                task_id: string;
+                /** @description Agent session identifier */
+                session_id: string;
             };
             cookie?: never;
         };
@@ -4478,7 +4402,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Envelope_AgentTaskDetailView"];
+                    "application/json": components["schemas"]["Envelope_AgentSessionDetailView"];
                 };
             };
             401: {

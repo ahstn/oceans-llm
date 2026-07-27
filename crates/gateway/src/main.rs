@@ -546,8 +546,8 @@ fn spawn_agent_analysis_loop(service: Arc<GatewayService<AnyStore, WeightedRoute
         loop {
             interval.tick().await;
             let now = time::OffsetDateTime::now_utc();
-            if let Err(error) = service.finalize_idle_agent_tasks(now).await {
-                tracing::warn!(error = %error, "finalizing idle agent tasks failed");
+            if let Err(error) = service.finalize_idle_agent_sessions(now).await {
+                tracing::warn!(error = %error, "finalizing idle agent sessions failed");
             }
             loop {
                 match service

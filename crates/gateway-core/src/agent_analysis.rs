@@ -1,6 +1,7 @@
 use agent_session_analysis::{
-    AgentSessionId, AgentTaskId, AnalysisId, Confidence, GatewayOutcomeState, InferredObservation,
-    LimitationCode, ObservationSetId, ScoreMaturity, TaskEfficiencyReport, TaskLifecycleState,
+    AgentSessionId, AgentSessionSourceId, AnalysisId, Confidence, GatewayOutcomeState,
+    InferredObservation, LimitationCode, ObservationSetId, ScoreMaturity, SessionEfficiencyReport,
+    SessionLifecycleState,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -11,8 +12,8 @@ use uuid::Uuid;
 use crate::StoreError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentSessionRecord {
-    pub agent_session_id: AgentSessionId,
+pub struct AgentSessionSourceRecord {
+    pub agent_session_source_id: AgentSessionSourceId,
     pub ownership_scope_key: String,
     pub api_key_id: Uuid,
     pub user_id: Option<Uuid>,
@@ -32,9 +33,9 @@ pub struct AgentSessionRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentTaskWindowRecord {
-    pub agent_task_id: AgentTaskId,
-    pub agent_session_id: Option<AgentSessionId>,
+pub struct AgentSessionRecord {
+    pub agent_session_id: AgentSessionId,
+    pub agent_session_source_id: Option<AgentSessionSourceId>,
     pub ownership_scope_key: String,
     pub api_key_id: Uuid,
     pub user_id: Option<Uuid>,
@@ -48,7 +49,7 @@ pub struct AgentTaskWindowRecord {
     pub request_tags: Value,
     pub boundary_group_key: String,
     pub boundary_policy_version: String,
-    pub lifecycle: TaskLifecycleState,
+    pub lifecycle: SessionLifecycleState,
     pub boundary_confidence: Confidence,
     pub started_at: OffsetDateTime,
     pub ended_at: Option<OffsetDateTime>,
@@ -59,8 +60,8 @@ pub struct AgentTaskWindowRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentTaskRequestLinkRecord {
-    pub agent_task_id: AgentTaskId,
+pub struct AgentSessionRequestLinkRecord {
+    pub agent_session_id: AgentSessionId,
     pub request_id: String,
     pub request_log_id: Option<Uuid>,
     pub usage_event_id: Option<Uuid>,
@@ -79,8 +80,8 @@ pub struct AgentTaskRequestLinkRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentRequestLogLinkRecord {
     pub request_log_id: Uuid,
-    pub agent_session_id: Option<AgentSessionId>,
-    pub agent_task_id: AgentTaskId,
+    pub agent_session_source_id: Option<AgentSessionSourceId>,
+    pub agent_session_id: AgentSessionId,
     pub analysis_source: String,
     pub coverage: Value,
 }
@@ -88,7 +89,7 @@ pub struct AgentRequestLogLinkRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentObservationSetRecord {
     pub observation_set_id: ObservationSetId,
-    pub agent_task_id: AgentTaskId,
+    pub agent_session_id: AgentSessionId,
     pub parser_version: String,
     pub source_watermark_at: OffsetDateTime,
     pub coverage: Value,
@@ -97,9 +98,9 @@ pub struct AgentObservationSetRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentTaskAnalysisRecord {
+pub struct AgentSessionAnalysisRecord {
     pub analysis_id: AnalysisId,
-    pub agent_task_id: AgentTaskId,
+    pub agent_session_id: AgentSessionId,
     pub boundary_policy_version: String,
     pub input_watermark_at: OffsetDateTime,
     pub observation_set_id: ObservationSetId,
@@ -110,7 +111,7 @@ pub struct AgentTaskAnalysisRecord {
     pub cohort_sample_size: u64,
     pub cohort_snapshot_digest: String,
     pub analyzed_at: OffsetDateTime,
-    pub report: TaskEfficiencyReport,
+    pub report: SessionEfficiencyReport,
     pub stale: bool,
     pub superseded_by_analysis_id: Option<AnalysisId>,
     pub expires_at: OffsetDateTime,
@@ -120,12 +121,12 @@ pub struct AgentTaskAnalysisRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentTaskTraceRecord {
-    pub task: AgentTaskWindowRecord,
-    pub session: Option<AgentSessionRecord>,
-    pub requests: Vec<AgentTaskRequestLinkRecord>,
+pub struct AgentSessionTraceRecord {
+    pub session: AgentSessionRecord,
+    pub session_source: Option<AgentSessionSourceRecord>,
+    pub requests: Vec<AgentSessionRequestLinkRecord>,
     pub latest_observation_set: Option<AgentObservationSetRecord>,
-    pub latest_analysis: Option<AgentTaskAnalysisRecord>,
+    pub latest_analysis: Option<AgentSessionAnalysisRecord>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,7 +179,7 @@ pub struct AgentAnalysisDesiredVersions {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentAnalysisQueueRecord {
     pub queue_item_id: Uuid,
-    pub agent_task_id: AgentTaskId,
+    pub agent_session_id: AgentSessionId,
     pub reason: String,
     pub desired_versions: AgentAnalysisDesiredVersions,
     pub status: AgentAnalysisQueueStatus,
@@ -194,11 +195,11 @@ pub struct AgentAnalysisQueueRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct AgentTaskListQuery {
+pub struct AgentSessionListQuery {
     pub page: u32,
     pub page_size: u32,
     pub ownership_scope_key: Option<String>,
-    pub agent_session_id: Option<AgentSessionId>,
+    pub agent_session_source_id: Option<AgentSessionSourceId>,
     pub user_id: Option<Uuid>,
     pub team_id: Option<Uuid>,
     pub service_account_id: Option<Uuid>,
@@ -212,7 +213,7 @@ pub struct AgentTaskListQuery {
     pub normalized_session_id: Option<String>,
     pub request_tag_key: Option<String>,
     pub request_tag_value: Option<String>,
-    pub lifecycle: Option<TaskLifecycleState>,
+    pub lifecycle: Option<SessionLifecycleState>,
     pub started_after: Option<OffsetDateTime>,
     pub started_before: Option<OffsetDateTime>,
     pub input_watermark_before: Option<OffsetDateTime>,
@@ -220,62 +221,62 @@ pub struct AgentTaskListQuery {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentTaskListPage {
-    pub items: Vec<AgentTaskTraceRecord>,
+pub struct AgentSessionListPage {
+    pub items: Vec<AgentSessionTraceRecord>,
     pub page: u32,
     pub page_size: u32,
     pub total: u64,
 }
 
-pub const MAX_AGENT_TASK_PAGE_SIZE: u32 = 200;
-pub const MAX_AGENT_TASK_REQUESTS: u64 = 1_000;
+pub const MAX_AGENT_SESSION_PAGE_SIZE: u32 = 200;
+pub const MAX_AGENT_SESSION_REQUESTS: u64 = 1_000;
 
 #[async_trait]
 pub trait AgentSessionAnalysisRepository {
-    async fn upsert_agent_session(
+    async fn upsert_agent_session_source(
         &self,
-        session: &AgentSessionRecord,
-    ) -> Result<AgentSessionRecord, StoreError>;
+        session: &AgentSessionSourceRecord,
+    ) -> Result<AgentSessionSourceRecord, StoreError>;
 
-    async fn load_agent_session(
+    async fn load_agent_session_source(
         &self,
-        agent_session_id: AgentSessionId,
-    ) -> Result<Option<AgentSessionRecord>, StoreError>;
+        agent_session_source_id: AgentSessionSourceId,
+    ) -> Result<Option<AgentSessionSourceRecord>, StoreError>;
 
-    async fn get_open_agent_task(
+    async fn get_open_agent_session(
         &self,
         ownership_scope_key: &str,
-        agent_session_id: Option<AgentSessionId>,
+        agent_session_source_id: Option<AgentSessionSourceId>,
         harness_key: &str,
         boundary_group_key: &str,
-    ) -> Result<Option<AgentTaskWindowRecord>, StoreError>;
+    ) -> Result<Option<AgentSessionRecord>, StoreError>;
 
-    async fn insert_agent_task_if_absent(
+    async fn insert_agent_session_if_absent(
         &self,
-        task: &AgentTaskWindowRecord,
+        session: &AgentSessionRecord,
     ) -> Result<bool, StoreError>;
 
-    async fn update_agent_task_window(
+    async fn update_agent_session_window(
         &self,
-        task: &AgentTaskWindowRecord,
+        session: &AgentSessionRecord,
     ) -> Result<(), StoreError>;
-    async fn finalize_agent_task_if_unchanged(
+    async fn finalize_agent_session_if_unchanged(
         &self,
-        task: &AgentTaskWindowRecord,
+        session: &AgentSessionRecord,
         expected_input_watermark_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
 
-    /// Persists the link with the next task-local ordinal under a database lock.
+    /// Persists the link with the next session-local ordinal under a database lock.
     ///
     /// `link.ordinal` is an output field and is ignored on append.
-    async fn append_agent_task_request(
+    async fn append_agent_session_request(
         &self,
-        link: &AgentTaskRequestLinkRecord,
+        link: &AgentSessionRequestLinkRecord,
     ) -> Result<bool, StoreError>;
 
-    async fn count_agent_task_requests(
+    async fn count_agent_session_requests(
         &self,
-        agent_task_id: AgentTaskId,
+        agent_session_id: AgentSessionId,
     ) -> Result<u64, StoreError>;
 
     async fn append_agent_observation_set(
@@ -285,32 +286,32 @@ pub trait AgentSessionAnalysisRepository {
 
     async fn load_agent_observation_sets(
         &self,
-        agent_task_id: AgentTaskId,
+        agent_session_id: AgentSessionId,
     ) -> Result<Vec<AgentObservationSetRecord>, StoreError>;
 
-    async fn link_request_log_to_agent_task(
+    async fn link_request_log_to_agent_session(
         &self,
         link: &AgentRequestLogLinkRecord,
     ) -> Result<(), StoreError>;
 
-    async fn load_agent_task_trace(
+    async fn load_agent_session_trace(
         &self,
-        agent_task_id: AgentTaskId,
-    ) -> Result<Option<AgentTaskTraceRecord>, StoreError>;
+        agent_session_id: AgentSessionId,
+    ) -> Result<Option<AgentSessionTraceRecord>, StoreError>;
 
-    async fn append_agent_task_analysis(
+    async fn append_agent_session_analysis(
         &self,
-        analysis: &AgentTaskAnalysisRecord,
+        analysis: &AgentSessionAnalysisRecord,
     ) -> Result<bool, StoreError>;
 
-    async fn list_agent_tasks(
+    async fn list_agent_sessions(
         &self,
-        query: &AgentTaskListQuery,
-    ) -> Result<AgentTaskListPage, StoreError>;
+        query: &AgentSessionListQuery,
+    ) -> Result<AgentSessionListPage, StoreError>;
 
-    async fn mark_agent_task_analyses_stale(
+    async fn mark_agent_session_analyses_stale(
         &self,
-        agent_task_id: AgentTaskId,
+        agent_session_id: AgentSessionId,
         superseded_by: Option<AnalysisId>,
     ) -> Result<u64, StoreError>;
 

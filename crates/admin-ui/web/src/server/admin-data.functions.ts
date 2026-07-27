@@ -16,8 +16,8 @@ import {
   disableMcpServer,
   listBudgetAlertHistory,
   reactivateUser,
-  getAgentTaskDetail,
-  listAgentTasks,
+  getAgentSessionDetail,
+  listAgentSessions,
   getRequestLogDetail,
   getHarnessUsage,
   getMcpInvocationDetail,
@@ -74,32 +74,32 @@ import {
 } from '@/server/admin-data.server'
 import { resolveBrowserGatewayOrigin } from '@/server/gateway-client.server'
 
-type AgentTaskFilters = NonNullable<Parameters<typeof listAgentTasks>[0]>
+type AgentSessionFilters = NonNullable<Parameters<typeof listAgentSessions>[0]>
 
-function validateAgentTaskFilters(data: unknown): AgentTaskFilters {
+function validateAgentSessionFilters(data: unknown): AgentSessionFilters {
   if (data === undefined) return {}
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error('Agent task filters must be an object')
+    throw new Error('Agent session filters must be an object')
   }
   if (
     Object.values(data).some(
       (value) => value !== undefined && typeof value !== 'string' && typeof value !== 'number',
     )
   ) {
-    throw new Error('Agent task filter values must be strings or numbers')
+    throw new Error('Agent session filter values must be strings or numbers')
   }
-  return data as AgentTaskFilters
+  return data as AgentSessionFilters
 }
 
-function validateAgentTaskDetailInput(data: unknown): { taskId: string } {
+function validateAgentSessionDetailInput(data: unknown): { sessionId: string } {
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error('Agent task detail input must be an object')
+    throw new Error('Agent session detail input must be an object')
   }
-  const taskId = Reflect.get(data, 'taskId')
-  if (typeof taskId !== 'string' || taskId.trim() === '') {
-    throw new Error('taskId is required')
+  const sessionId = Reflect.get(data, 'sessionId')
+  if (typeof sessionId !== 'string' || sessionId.trim() === '') {
+    throw new Error('sessionId is required')
   }
-  return { taskId }
+  return { sessionId }
 }
 
 export const getOceansVersion = createServerFn({ method: 'GET' }).handler(async () => {
@@ -230,16 +230,16 @@ export const removeBudget = createServerFn({ method: 'POST' }).handler(
   },
 )
 
-export const getAgentTasks = createServerFn({ method: 'POST' })
-  .validator(validateAgentTaskFilters)
+export const getAgentSessions = createServerFn({ method: 'POST' })
+  .validator(validateAgentSessionFilters)
   .handler(async ({ data }) => {
-    return listAgentTasks(data)
+    return listAgentSessions(data)
   })
 
-export const getObservabilityAgentTaskDetail = createServerFn({ method: 'GET' })
-  .validator(validateAgentTaskDetailInput)
+export const getObservabilityAgentSessionDetail = createServerFn({ method: 'GET' })
+  .validator(validateAgentSessionDetailInput)
   .handler(async ({ data }) => {
-    return getAgentTaskDetail(data.taskId)
+    return getAgentSessionDetail(data.sessionId)
   })
 
 export const getRequestLogs = createServerFn({ method: 'POST' }).handler(

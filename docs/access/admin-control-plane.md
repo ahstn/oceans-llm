@@ -32,7 +32,7 @@ These areas are backed by real gateway APIs today:
 - MCP invocation list and detail inspection
 - MCP server registry UI, recommended-server catalog, registry CRUD, soft-disable, tool list, and discovery refresh
 - generated client configuration snippets for supported model harnesses; see [Client Harness Configuration](../configuration/client-harness-configuration.md)
-- runtime-gated agent task list and diagnostic inspection; see [Agent Session Analysis](../operations/agent-session-analysis.md)
+- runtime-gated agent session list and diagnostic inspection; see [Agent Session Analysis](../operations/agent-session-analysis.md)
 
 ## Live But Still Maturing Surfaces
 

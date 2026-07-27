@@ -23,7 +23,7 @@ test('correlates a live agent request and exposes it through the admin session e
     },
     data: {
       model: 'fast',
-      messages: [{ role: 'user', content: 'inspect the task analysis contract' }],
+      messages: [{ role: 'user', content: 'inspect the session analysis contract' }],
       tools: [
         {
           type: 'function',
@@ -39,7 +39,7 @@ test('correlates a live agent request and exposes it through the admin session e
   expect(completionResponse.status()).toBe(200)
 
   const listResponse = await request.get(
-    `${root}/api/v1/admin/observability/agent-tasks?external_session_id=${encodeURIComponent(externalSessionId)}`,
+    `${root}/api/v1/admin/observability/agent-sessions?external_session_id=${encodeURIComponent(externalSessionId)}`,
     { headers: { cookie: adminCookie } },
   )
   expect(listResponse.status()).toBe(200)
@@ -47,7 +47,7 @@ test('correlates a live agent request and exposes it through the admin session e
     data: {
       total: number
       items: Array<{
-        task_id: string
+        session_id: string
         external_session_id: string | null
         harness_key: string | null
         requested_model_key: string
@@ -58,8 +58,8 @@ test('correlates a live agent request and exposes it through the admin session e
     }
   }
   expect(listBody.data.total).toBe(1)
-  const [task] = listBody.data.items
-  expect(task).toMatchObject({
+  const [session] = listBody.data.items
+  expect(session).toMatchObject({
     external_session_id: externalSessionId,
     harness_key: 'opencode',
     requested_model_key: 'fast',
@@ -69,20 +69,20 @@ test('correlates a live agent request and exposes it through the admin session e
   })
 
   const detailResponse = await request.get(
-    `${root}/api/v1/admin/observability/agent-tasks/${task.task_id}`,
+    `${root}/api/v1/admin/observability/agent-sessions/${session.session_id}`,
     { headers: { cookie: adminCookie } },
   )
   expect(detailResponse.status()).toBe(200)
   const detailBody = (await detailResponse.json()) as {
     data: {
-      task: { task_id: string; external_session_id: string | null }
+      session: { session_id: string; external_session_id: string | null }
       requests: Array<{ request_id: string }>
       observations: unknown[]
       report: unknown | null
     }
   }
-  expect(detailBody.data.task).toMatchObject({
-    task_id: task.task_id,
+  expect(detailBody.data.session).toMatchObject({
+    session_id: session.session_id,
     external_session_id: externalSessionId,
   })
   expect(detailBody.data.requests).toHaveLength(1)

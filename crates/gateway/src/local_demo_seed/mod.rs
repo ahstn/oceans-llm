@@ -484,7 +484,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                     fixture.api_key_public_id
                 )
             })?;
-        agent_analysis::seed_demo_agent_task(
+        agent_analysis::seed_demo_agent_session(
             store,
             fixture,
             api_key,
@@ -953,12 +953,12 @@ mod tests {
             .expect("process analysis")
         {}
 
-        let task_id = local_demo_uuid("agent_task", "incident-runbook-coordination");
+        let session_id = local_demo_uuid("agent_session", "incident-runbook-coordination");
         let trace = store
-            .load_agent_task_trace(task_id)
+            .load_agent_session_trace(session_id)
             .await
-            .expect("load task")
-            .expect("incident task");
+            .expect("load session")
+            .expect("incident session");
         let report = &trace.latest_analysis.expect("incident report").report;
         assert_eq!(report.diagnostics.tools_and_changes.observed_tool_calls, 3);
         assert_eq!(report.diagnostics.tools_and_changes.direct_mcp_calls, 2);

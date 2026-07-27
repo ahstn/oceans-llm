@@ -6,15 +6,15 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    AdminApiKeyRepository, AgentSessionAnalysisRepository, AgentSessionRecord, AgentTaskListQuery,
-    AgentTaskTraceRecord, AuthError, BudgetRepository, Confidence, GatewayError,
-    GatewayOutcomeState, IdentityRepository, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE,
+    AdminApiKeyRepository, AgentSessionAnalysisRepository, AgentSessionListQuery,
+    AgentSessionSourceRecord, AgentSessionTraceRecord, AuthError, BudgetRepository, Confidence,
+    GatewayError, GatewayOutcomeState, IdentityRepository, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE,
     MAX_REQUEST_LOG_PAGE_SIZE, McpTokenOverheadRepository, McpToolInvocationDetail,
     McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
     McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection, ProviderRepository,
     RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery,
     RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord, RequestTag, RequestTags,
-    ScoreMaturity, TaskLifecycleState,
+    ScoreMaturity, SessionLifecycleState,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
@@ -30,11 +30,11 @@ use crate::http::{
     admin_auth::{AdminDataScope, require_agent_analysis_scope, require_platform_admin},
     admin_contract::{
         AgentContextDiagnosticsView, AgentObservationCoverageView, AgentObservationFactsView,
-        AgentObservationView, AgentSessionDetailRequestQuery, AgentSessionDetailView,
-        AgentSessionView, AgentTaskAnalysisIdentityView, AgentTaskDetailView,
-        AgentTaskDiagnosticsView, AgentTaskEfficiencyComponentsView, AgentTaskEfficiencyReportView,
-        AgentTaskListRequestQuery, AgentTaskOutcomeView, AgentTaskPageView, AgentTaskRequestView,
-        AgentTaskSummaryView, AgentTelemetryCoverageView, AgentTokenAndCacheDiagnosticsView,
+        AgentObservationView, AgentSessionAnalysisIdentityView, AgentSessionDetailView,
+        AgentSessionDiagnosticsView, AgentSessionEfficiencyComponentsView,
+        AgentSessionEfficiencyReportView, AgentSessionListRequestQuery, AgentSessionOutcomeView,
+        AgentSessionPageView, AgentSessionRequestView, AgentSessionSourceView,
+        AgentSessionSummaryView, AgentTelemetryCoverageView, AgentTokenAndCacheDiagnosticsView,
         AgentToolAndChangeDiagnosticsView, Envelope, HarnessUsageChartHarnessView,
         HarnessUsageLeaderView, HarnessUsageQuery, HarnessUsageSeriesPointView,
         HarnessUsageSeriesValueView, HarnessUsageView, LeaderboardChartUserView,
@@ -274,21 +274,21 @@ pub async fn get_harness_usage(
 
 #[utoipa::path(
     get,
-    path = "/api/v1/admin/observability/agent-tasks",
-    params(AgentTaskListRequestQuery),
+    path = "/api/v1/admin/observability/agent-sessions",
+    params(AgentSessionListRequestQuery),
     responses(
-        (status = 200, body = Envelope<AgentTaskPageView>),
+        (status = 200, body = Envelope<AgentSessionPageView>),
         (status = 400, body = OpenAiErrorEnvelopeView),
         (status = 401, body = OpenAiErrorEnvelopeView),
         (status = 403, body = OpenAiErrorEnvelopeView)
     ),
     security(("session_cookie" = []))
 )]
-pub async fn list_agent_tasks(
+pub async fn list_agent_sessions(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(query): Query<AgentTaskListRequestQuery>,
-) -> Result<Json<Envelope<AgentTaskPageView>>, AppError> {
+    Query(query): Query<AgentSessionListRequestQuery>,
+) -> Result<Json<Envelope<AgentSessionPageView>>, AppError> {
     let scope = require_agent_analysis_scope(&state, &headers).await?;
     let requested_team_id = parse_optional_uuid(query.team_id.as_deref(), "team_id")?;
     let team_id = match scope {
@@ -304,8 +304,8 @@ pub async fn list_agent_tasks(
     };
     let lifecycle = match query.lifecycle.as_deref().map(str::trim) {
         None | Some("") => None,
-        Some("open") => Some(TaskLifecycleState::Open),
-        Some("finalized") => Some(TaskLifecycleState::Finalized),
+        Some("open") => Some(SessionLifecycleState::Open),
+        Some("finalized") => Some(SessionLifecycleState::Finalized),
         Some(value) => {
             return Err(AppError(GatewayError::InvalidRequest(format!(
                 "unsupported lifecycle `{value}`"
@@ -314,10 +314,10 @@ pub async fn list_agent_tasks(
     };
     let page_number = query.page.unwrap_or(DEFAULT_PAGE);
     let page_size = query.page_size.unwrap_or(DEFAULT_PAGE_SIZE);
-    if page_number == 0 || !(1..=gateway_core::MAX_AGENT_TASK_PAGE_SIZE).contains(&page_size) {
+    if page_number == 0 || !(1..=gateway_core::MAX_AGENT_SESSION_PAGE_SIZE).contains(&page_size) {
         return Err(AppError(GatewayError::InvalidRequest(format!(
             "page must be at least 1 and page_size must be between 1 and {}",
-            gateway_core::MAX_AGENT_TASK_PAGE_SIZE
+            gateway_core::MAX_AGENT_SESSION_PAGE_SIZE
         ))));
     }
     let started_after = parse_optional_timestamp(query.started_after.as_deref(), "started_after")?;
@@ -370,11 +370,14 @@ pub async fn list_agent_tasks(
     };
     let page = state
         .store
-        .list_agent_tasks(&AgentTaskListQuery {
+        .list_agent_sessions(&AgentSessionListQuery {
             page: page_number,
             page_size,
             ownership_scope_key: None,
-            agent_session_id: parse_optional_uuid(query.session_id.as_deref(), "session_id")?,
+            agent_session_source_id: parse_optional_uuid(
+                query.session_source_id.as_deref(),
+                "session_source_id",
+            )?,
             user_id: parse_optional_uuid(query.user_id.as_deref(), "user_id")?,
             team_id,
             service_account_id: parse_optional_uuid(
@@ -408,11 +411,13 @@ pub async fn list_agent_tasks(
             },
         })
         .await?;
-    Ok(Json(envelope(AgentTaskPageView {
+    Ok(Json(envelope(AgentSessionPageView {
         items: page
             .items
             .iter()
-            .map(|trace| agent_task_summary(trace, state.agent_analysis.calibrated_score_visible))
+            .map(|trace| {
+                agent_session_summary(trace, state.agent_analysis.calibrated_score_visible)
+            })
             .collect(),
         page: page.page,
         page_size: page.page_size,
@@ -422,51 +427,51 @@ pub async fn list_agent_tasks(
 
 #[utoipa::path(
     get,
-    path = "/api/v1/admin/observability/agent-tasks/{task_id}",
-    params(("task_id" = Uuid, Path, description = "Agent task identifier")),
+    path = "/api/v1/admin/observability/agent-sessions/{session_id}",
+    params(("session_id" = Uuid, Path, description = "Agent session identifier")),
     responses(
-        (status = 200, body = Envelope<AgentTaskDetailView>),
+        (status = 200, body = Envelope<AgentSessionDetailView>),
         (status = 401, body = OpenAiErrorEnvelopeView),
         (status = 403, body = OpenAiErrorEnvelopeView),
         (status = 404, body = OpenAiErrorEnvelopeView)
     ),
     security(("session_cookie" = []))
 )]
-pub async fn get_agent_task_detail(
+pub async fn get_agent_session_detail(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(task_id): Path<Uuid>,
-) -> Result<Json<Envelope<AgentTaskDetailView>>, AppError> {
+    Path(session_id): Path<Uuid>,
+) -> Result<Json<Envelope<AgentSessionDetailView>>, AppError> {
     let scope = require_agent_analysis_scope(&state, &headers).await?;
     let trace = state
         .store
-        .load_agent_task_trace(task_id)
+        .load_agent_session_trace(session_id)
         .await?
         .ok_or_else(|| {
             AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
-                "agent task not found".to_string(),
+                "agent session not found".to_string(),
             )))
         })?;
     authorize_agent_analysis_owner(
         &state,
         scope,
-        trace.task.team_id,
-        trace.task.user_id,
-        trace.task.service_account_id,
+        trace.session.team_id,
+        trace.session.user_id,
+        trace.session.service_account_id,
     )
     .await?;
-    let observation_sets = state.store.load_agent_observation_sets(task_id).await?;
+    let observation_sets = state.store.load_agent_observation_sets(session_id).await?;
     let observation_count = observation_sets
         .iter()
         .map(|set| set.observations.len())
         .sum::<usize>();
     let observation_history_truncated = observation_count
-        > gateway_core::MAX_AGENT_TASK_REQUESTS as usize
-        || observation_sets.len() > gateway_core::MAX_AGENT_TASK_REQUESTS as usize;
+        > gateway_core::MAX_AGENT_SESSION_REQUESTS as usize
+        || observation_sets.len() > gateway_core::MAX_AGENT_SESSION_REQUESTS as usize;
     let observations = observation_sets
         .iter()
         .flat_map(|set| set.observations.iter())
-        .take(gateway_core::MAX_AGENT_TASK_REQUESTS as usize)
+        .take(gateway_core::MAX_AGENT_SESSION_REQUESTS as usize)
         .map(|observation| AgentObservationView {
             observation_id: observation.observation_id.to_string(),
             kind: enum_name(observation.kind),
@@ -499,8 +504,8 @@ pub async fn get_agent_task_detail(
     let requests = trace
         .requests
         .iter()
-        .take(gateway_core::MAX_AGENT_TASK_REQUESTS as usize)
-        .map(|request| AgentTaskRequestView {
+        .take(gateway_core::MAX_AGENT_SESSION_REQUESTS as usize)
+        .map(|request| AgentSessionRequestView {
             request_id: request.request_id.clone(),
             request_log_id: request.request_log_id.map(|value| value.to_string()),
             usage_event_id: request.usage_event_id.map(|value| value.to_string()),
@@ -522,9 +527,9 @@ pub async fn get_agent_task_detail(
     let analysis = trace
         .latest_analysis
         .as_ref()
-        .map(agent_task_analysis_identity);
+        .map(agent_session_analysis_identity);
     let report = trace.latest_analysis.as_ref().map(|analysis| {
-        agent_task_efficiency_report(
+        agent_session_efficiency_report(
             &analysis.report,
             state.agent_analysis.calibrated_score_visible,
         )
@@ -542,86 +547,18 @@ pub async fn get_agent_task_detail(
                 .iter()
                 .any(|set| coverage_flag(&set.coverage, "response_payload_truncated")),
         });
-    let session = trace.session.as_ref().map(agent_session_view);
-    Ok(Json(envelope(AgentTaskDetailView {
-        task: agent_task_summary(&trace, state.agent_analysis.calibrated_score_visible),
-        session,
+    let session_source = trace.session_source.as_ref().map(agent_session_source_view);
+    Ok(Json(envelope(AgentSessionDetailView {
+        session: agent_session_summary(&trace, state.agent_analysis.calibrated_score_visible),
+        session_source,
         requests,
         request_history_truncated: trace.requests.len()
-            > gateway_core::MAX_AGENT_TASK_REQUESTS as usize,
+            > gateway_core::MAX_AGENT_SESSION_REQUESTS as usize,
         observation_history_truncated,
         observations,
         analysis,
         report,
         coverage,
-    })))
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/v1/admin/observability/agent-sessions/{session_id}",
-    params(
-        ("session_id" = Uuid, Path, description = "Observed agent session identifier"),
-        AgentSessionDetailRequestQuery
-    ),
-    responses(
-        (status = 200, body = Envelope<AgentSessionDetailView>),
-        (status = 401, body = OpenAiErrorEnvelopeView),
-        (status = 403, body = OpenAiErrorEnvelopeView),
-        (status = 404, body = OpenAiErrorEnvelopeView)
-    ),
-    security(("session_cookie" = []))
-)]
-pub async fn get_agent_session_detail(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(session_id): Path<Uuid>,
-    Query(query): Query<AgentSessionDetailRequestQuery>,
-) -> Result<Json<Envelope<AgentSessionDetailView>>, AppError> {
-    let scope = require_agent_analysis_scope(&state, &headers).await?;
-    let session = state
-        .store
-        .load_agent_session(session_id)
-        .await?
-        .ok_or_else(|| {
-            AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
-                "agent session not found".to_string(),
-            )))
-        })?;
-    authorize_agent_analysis_owner(
-        &state,
-        scope,
-        session.team_id,
-        session.user_id,
-        session.service_account_id,
-    )
-    .await?;
-    let tasks = state
-        .store
-        .list_agent_tasks(&AgentTaskListQuery {
-            page: query.page.unwrap_or(DEFAULT_PAGE).max(1),
-            page_size: query
-                .page_size
-                .unwrap_or(DEFAULT_PAGE_SIZE)
-                .clamp(1, gateway_core::MAX_AGENT_TASK_PAGE_SIZE),
-            agent_session_id: Some(session_id),
-            ..Default::default()
-        })
-        .await?;
-    Ok(Json(envelope(AgentSessionDetailView {
-        session: agent_session_view(&session),
-        tasks: AgentTaskPageView {
-            items: tasks
-                .items
-                .iter()
-                .map(|trace| {
-                    agent_task_summary(trace, state.agent_analysis.calibrated_score_visible)
-                })
-                .collect(),
-            page: tasks.page,
-            page_size: tasks.page_size,
-            total: tasks.total,
-        },
     })))
 }
 
@@ -660,10 +597,10 @@ async fn authorize_agent_analysis_owner(
     Ok(())
 }
 
-fn agent_task_analysis_identity(
-    analysis: &gateway_core::AgentTaskAnalysisRecord,
-) -> AgentTaskAnalysisIdentityView {
-    AgentTaskAnalysisIdentityView {
+fn agent_session_analysis_identity(
+    analysis: &gateway_core::AgentSessionAnalysisRecord,
+) -> AgentSessionAnalysisIdentityView {
+    AgentSessionAnalysisIdentityView {
         analysis_id: analysis.analysis_id.to_string(),
         input_watermark_at: format_timestamp(analysis.input_watermark_at),
         observation_set_id: analysis.observation_set_id.to_string(),
@@ -679,10 +616,10 @@ fn agent_task_analysis_identity(
     }
 }
 
-fn agent_task_efficiency_report(
-    report: &gateway_core::TaskEfficiencyReport,
+fn agent_session_efficiency_report(
+    report: &gateway_core::SessionEfficiencyReport,
     calibrated_score_visible: bool,
-) -> AgentTaskEfficiencyReportView {
+) -> AgentSessionEfficiencyReportView {
     let components = &report.components;
     let diagnostics = &report.diagnostics;
     let score_visible = calibrated_score_visible
@@ -691,7 +628,7 @@ fn agent_task_efficiency_report(
             .calibration_approval_id
             .as_deref()
             .is_some_and(|value| !value.is_empty());
-    AgentTaskEfficiencyReportView {
+    AgentSessionEfficiencyReportView {
         report_schema_version: report.report_schema_version.clone(),
         analyzer_version: report.analyzer_version.clone(),
         score_policy_version: report.score_policy_version.clone(),
@@ -709,8 +646,8 @@ fn agent_task_efficiency_report(
             cohort_percent: report.coverage.cohort_percent,
             overall_percent: report.coverage.overall_percent,
         },
-        components: AgentTaskEfficiencyComponentsView {
-            outcome: AgentTaskOutcomeView {
+        components: AgentSessionEfficiencyComponentsView {
+            outcome: AgentSessionOutcomeView {
                 state: enum_name(components.outcome.state),
                 factor_basis_points: components.outcome.factor_basis_points,
                 successful_requests: components.outcome.successful_requests,
@@ -730,7 +667,7 @@ fn agent_task_efficiency_report(
             cohort_fallback_level: components.cohort_fallback_level,
             cohort_sample_size: components.cohort_sample_size,
         },
-        diagnostics: AgentTaskDiagnosticsView {
+        diagnostics: AgentSessionDiagnosticsView {
             token_and_cache: AgentTokenAndCacheDiagnosticsView {
                 fresh_input_tokens: diagnostics.token_and_cache.fresh_input_tokens,
                 cache_read_tokens: diagnostics.token_and_cache.cache_read_tokens,
@@ -795,9 +732,9 @@ fn coverage_flag(coverage: &Value, field: &str) -> bool {
         .and_then(Value::as_bool)
         .unwrap_or(false)
 }
-fn agent_session_view(session: &AgentSessionRecord) -> AgentSessionView {
-    AgentSessionView {
-        session_id: session.agent_session_id.to_string(),
+fn agent_session_source_view(session: &AgentSessionSourceRecord) -> AgentSessionSourceView {
+    AgentSessionSourceView {
+        session_source_id: session.agent_session_source_id.to_string(),
         external_session_id: session.normalized_session_id.clone(),
         adapter_namespace: session.adapter_namespace.clone(),
         adapter_version: session.adapter_version.clone(),
@@ -809,10 +746,10 @@ fn agent_session_view(session: &AgentSessionRecord) -> AgentSessionView {
     }
 }
 
-fn agent_task_summary(
-    trace: &AgentTaskTraceRecord,
+fn agent_session_summary(
+    trace: &AgentSessionTraceRecord,
     calibrated_score_visible: bool,
-) -> AgentTaskSummaryView {
+) -> AgentSessionSummaryView {
     let analysis = trace.latest_analysis.as_ref();
     let report = analysis.map(|analysis| &analysis.report);
     let score_visible = report.is_some_and(|report| {
@@ -823,30 +760,36 @@ fn agent_task_summary(
                 .as_deref()
                 .is_some_and(|value| !value.is_empty())
     });
-    AgentTaskSummaryView {
-        task_id: trace.task.agent_task_id.to_string(),
-        session_id: trace.task.agent_session_id.map(|value| value.to_string()),
-        external_session_id: trace
+    AgentSessionSummaryView {
+        session_id: trace.session.agent_session_id.to_string(),
+        session_source_id: trace
             .session
+            .agent_session_source_id
+            .map(|value| value.to_string()),
+        external_session_id: trace
+            .session_source
             .as_ref()
-            .map(|session| session.normalized_session_id.clone()),
-        ownership_scope_key: trace.task.ownership_scope_key.clone(),
-        user_id: trace.task.user_id.map(|value| value.to_string()),
-        team_id: trace.task.team_id.map(|value| value.to_string()),
-        service_account_id: trace.task.service_account_id.map(|value| value.to_string()),
-        harness_key: Some(trace.task.harness_key.clone()),
-        harness_label: trace.session.as_ref().map_or_else(
-            || Some(trace.task.harness_key.clone()),
-            |value| Some(value.harness_label.clone()),
+            .map(|source| source.normalized_session_id.clone()),
+        ownership_scope_key: trace.session.ownership_scope_key.clone(),
+        user_id: trace.session.user_id.map(|value| value.to_string()),
+        team_id: trace.session.team_id.map(|value| value.to_string()),
+        service_account_id: trace
+            .session
+            .service_account_id
+            .map(|value| value.to_string()),
+        harness_key: Some(trace.session.harness_key.clone()),
+        harness_label: trace.session_source.as_ref().map_or_else(
+            || Some(trace.session.harness_key.clone()),
+            |source| Some(source.harness_label.clone()),
         ),
-        requested_model_key: trace.task.requested_model_key.clone(),
-        operation: trace.task.operation.clone(),
-        caller_class: trace.task.caller_class.clone(),
-        external_session_observed: trace.task.agent_session_id.is_some(),
-        lifecycle: enum_name(trace.task.lifecycle),
-        boundary_confidence: enum_name(trace.task.boundary_confidence),
-        started_at: format_timestamp(trace.task.started_at),
-        ended_at: trace.task.ended_at.map(format_timestamp),
+        requested_model_key: trace.session.requested_model_key.clone(),
+        operation: trace.session.operation.clone(),
+        caller_class: trace.session.caller_class.clone(),
+        session_source_observed: trace.session.agent_session_source_id.is_some(),
+        lifecycle: enum_name(trace.session.lifecycle),
+        boundary_confidence: enum_name(trace.session.boundary_confidence),
+        started_at: format_timestamp(trace.session.started_at),
+        ended_at: trace.session.ended_at.map(format_timestamp),
         request_count: u64::try_from(trace.requests.len()).unwrap_or(u64::MAX),
         tool_call_count: report
             .map(|report| report.diagnostics.tools_and_changes.observed_tool_calls),

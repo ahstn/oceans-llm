@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use gateway_core::{
-    AgentAnalysisQueueRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
-    AgentSessionRecord, AgentTaskAnalysisRecord, AgentTaskListPage, AgentTaskListQuery,
-    AgentTaskRequestLinkRecord, AgentTaskTraceRecord, AgentTaskWindowRecord, StoreError,
+    AgentAnalysisQueueRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
+    AgentSessionAnalysisRepository, AgentSessionListPage, AgentSessionListQuery,
+    AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
+    AgentSessionTraceRecord, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -11,100 +12,100 @@ use crate::store::AnyStore;
 
 #[async_trait]
 impl AgentSessionAnalysisRepository for AnyStore {
-    async fn upsert_agent_session(
+    async fn upsert_agent_session_source(
         &self,
-        session: &AgentSessionRecord,
-    ) -> Result<AgentSessionRecord, StoreError> {
+        session: &AgentSessionSourceRecord,
+    ) -> Result<AgentSessionSourceRecord, StoreError> {
         match self {
-            Self::Libsql(store) => store.upsert_agent_session(session).await,
-            Self::Postgres(store) => store.upsert_agent_session(session).await,
+            Self::Libsql(store) => store.upsert_agent_session_source(session).await,
+            Self::Postgres(store) => store.upsert_agent_session_source(session).await,
         }
     }
 
-    async fn load_agent_session(
+    async fn load_agent_session_source(
         &self,
         session_id: Uuid,
-    ) -> Result<Option<AgentSessionRecord>, StoreError> {
+    ) -> Result<Option<AgentSessionSourceRecord>, StoreError> {
         match self {
-            Self::Libsql(store) => store.load_agent_session(session_id).await,
-            Self::Postgres(store) => store.load_agent_session(session_id).await,
+            Self::Libsql(store) => store.load_agent_session_source(session_id).await,
+            Self::Postgres(store) => store.load_agent_session_source(session_id).await,
         }
     }
 
-    async fn get_open_agent_task(
+    async fn get_open_agent_session(
         &self,
         scope: &str,
         session_id: Option<Uuid>,
         harness_key: &str,
         boundary_group_key: &str,
-    ) -> Result<Option<AgentTaskWindowRecord>, StoreError> {
+    ) -> Result<Option<AgentSessionRecord>, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
-                    .get_open_agent_task(scope, session_id, harness_key, boundary_group_key)
+                    .get_open_agent_session(scope, session_id, harness_key, boundary_group_key)
                     .await
             }
             Self::Postgres(store) => {
                 store
-                    .get_open_agent_task(scope, session_id, harness_key, boundary_group_key)
+                    .get_open_agent_session(scope, session_id, harness_key, boundary_group_key)
                     .await
             }
         }
     }
 
-    async fn insert_agent_task_if_absent(
+    async fn insert_agent_session_if_absent(
         &self,
-        task: &AgentTaskWindowRecord,
+        session: &AgentSessionRecord,
     ) -> Result<bool, StoreError> {
         match self {
-            Self::Libsql(store) => store.insert_agent_task_if_absent(task).await,
-            Self::Postgres(store) => store.insert_agent_task_if_absent(task).await,
+            Self::Libsql(store) => store.insert_agent_session_if_absent(session).await,
+            Self::Postgres(store) => store.insert_agent_session_if_absent(session).await,
         }
     }
 
-    async fn update_agent_task_window(
+    async fn update_agent_session_window(
         &self,
-        task: &AgentTaskWindowRecord,
+        session: &AgentSessionRecord,
     ) -> Result<(), StoreError> {
         match self {
-            Self::Libsql(store) => store.update_agent_task_window(task).await,
-            Self::Postgres(store) => store.update_agent_task_window(task).await,
+            Self::Libsql(store) => store.update_agent_session_window(session).await,
+            Self::Postgres(store) => store.update_agent_session_window(session).await,
         }
     }
 
-    async fn finalize_agent_task_if_unchanged(
+    async fn finalize_agent_session_if_unchanged(
         &self,
-        task: &AgentTaskWindowRecord,
+        session: &AgentSessionRecord,
         expected_input_watermark_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
-                    .finalize_agent_task_if_unchanged(task, expected_input_watermark_at)
+                    .finalize_agent_session_if_unchanged(session, expected_input_watermark_at)
                     .await
             }
             Self::Postgres(store) => {
                 store
-                    .finalize_agent_task_if_unchanged(task, expected_input_watermark_at)
+                    .finalize_agent_session_if_unchanged(session, expected_input_watermark_at)
                     .await
             }
         }
     }
 
-    async fn append_agent_task_request(
+    async fn append_agent_session_request(
         &self,
-        link: &AgentTaskRequestLinkRecord,
+        link: &AgentSessionRequestLinkRecord,
     ) -> Result<bool, StoreError> {
         match self {
-            Self::Libsql(store) => store.append_agent_task_request(link).await,
-            Self::Postgres(store) => store.append_agent_task_request(link).await,
+            Self::Libsql(store) => store.append_agent_session_request(link).await,
+            Self::Postgres(store) => store.append_agent_session_request(link).await,
         }
     }
 
-    async fn count_agent_task_requests(&self, task_id: Uuid) -> Result<u64, StoreError> {
+    async fn count_agent_session_requests(&self, session_id: Uuid) -> Result<u64, StoreError> {
         match self {
-            Self::Libsql(store) => store.count_agent_task_requests(task_id).await,
-            Self::Postgres(store) => store.count_agent_task_requests(task_id).await,
+            Self::Libsql(store) => store.count_agent_session_requests(session_id).await,
+            Self::Postgres(store) => store.count_agent_session_requests(session_id).await,
         }
     }
 
@@ -120,68 +121,68 @@ impl AgentSessionAnalysisRepository for AnyStore {
 
     async fn load_agent_observation_sets(
         &self,
-        task_id: Uuid,
+        session_id: Uuid,
     ) -> Result<Vec<gateway_core::AgentObservationSetRecord>, StoreError> {
         match self {
-            Self::Libsql(store) => store.load_agent_observation_sets(task_id).await,
-            Self::Postgres(store) => store.load_agent_observation_sets(task_id).await,
+            Self::Libsql(store) => store.load_agent_observation_sets(session_id).await,
+            Self::Postgres(store) => store.load_agent_observation_sets(session_id).await,
         }
     }
 
-    async fn link_request_log_to_agent_task(
+    async fn link_request_log_to_agent_session(
         &self,
         link: &AgentRequestLogLinkRecord,
     ) -> Result<(), StoreError> {
         match self {
-            Self::Libsql(store) => store.link_request_log_to_agent_task(link).await,
-            Self::Postgres(store) => store.link_request_log_to_agent_task(link).await,
+            Self::Libsql(store) => store.link_request_log_to_agent_session(link).await,
+            Self::Postgres(store) => store.link_request_log_to_agent_session(link).await,
         }
     }
 
-    async fn load_agent_task_trace(
+    async fn load_agent_session_trace(
         &self,
-        task_id: Uuid,
-    ) -> Result<Option<AgentTaskTraceRecord>, StoreError> {
+        session_id: Uuid,
+    ) -> Result<Option<AgentSessionTraceRecord>, StoreError> {
         match self {
-            Self::Libsql(store) => store.load_agent_task_trace(task_id).await,
-            Self::Postgres(store) => store.load_agent_task_trace(task_id).await,
+            Self::Libsql(store) => store.load_agent_session_trace(session_id).await,
+            Self::Postgres(store) => store.load_agent_session_trace(session_id).await,
         }
     }
 
-    async fn append_agent_task_analysis(
+    async fn append_agent_session_analysis(
         &self,
-        analysis: &AgentTaskAnalysisRecord,
+        analysis: &AgentSessionAnalysisRecord,
     ) -> Result<bool, StoreError> {
         match self {
-            Self::Libsql(store) => store.append_agent_task_analysis(analysis).await,
-            Self::Postgres(store) => store.append_agent_task_analysis(analysis).await,
+            Self::Libsql(store) => store.append_agent_session_analysis(analysis).await,
+            Self::Postgres(store) => store.append_agent_session_analysis(analysis).await,
         }
     }
 
-    async fn list_agent_tasks(
+    async fn list_agent_sessions(
         &self,
-        query: &AgentTaskListQuery,
-    ) -> Result<AgentTaskListPage, StoreError> {
+        query: &AgentSessionListQuery,
+    ) -> Result<AgentSessionListPage, StoreError> {
         match self {
-            Self::Libsql(store) => store.list_agent_tasks(query).await,
-            Self::Postgres(store) => store.list_agent_tasks(query).await,
+            Self::Libsql(store) => store.list_agent_sessions(query).await,
+            Self::Postgres(store) => store.list_agent_sessions(query).await,
         }
     }
 
-    async fn mark_agent_task_analyses_stale(
+    async fn mark_agent_session_analyses_stale(
         &self,
-        task_id: Uuid,
+        session_id: Uuid,
         superseded_by: Option<Uuid>,
     ) -> Result<u64, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
-                    .mark_agent_task_analyses_stale(task_id, superseded_by)
+                    .mark_agent_session_analyses_stale(session_id, superseded_by)
                     .await
             }
             Self::Postgres(store) => {
                 store
-                    .mark_agent_task_analyses_stale(task_id, superseded_by)
+                    .mark_agent_session_analyses_stale(session_id, superseded_by)
                     .await
             }
         }

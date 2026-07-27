@@ -39,7 +39,7 @@ pub(crate) mod tests {
 
     use gateway_core::domain::ModelAllowlistPolicy;
     use gateway_core::{
-        AgentSessionAnalysisRepository, AgentTaskRequestLinkRecord, AgentTaskWindowRecord,
+        AgentSessionAnalysisRepository, AgentSessionRecord, AgentSessionRequestLinkRecord,
         ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
         BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
         BudgetAlertHistoryQuery, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence,
@@ -64,8 +64,8 @@ pub(crate) mod tests {
         SeedApiKey, SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
         SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
         SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
-        SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError, StoreHealth,
-        TaskLifecycleState, UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord,
+        SeedUserModelBudgetDefault, ServiceAccountStatus, SessionLifecycleState, StoreError,
+        StoreHealth, UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord,
         UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord,
         UpsertReviewAgentPullRequestRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
@@ -7827,9 +7827,9 @@ pub(crate) mod tests {
         assert_eq!(resolved_model_key, "fast-v2");
 
         let now = OffsetDateTime::now_utc();
-        let task = AgentTaskWindowRecord {
-            agent_task_id: Uuid::new_v4(),
-            agent_session_id: None,
+        let task = AgentSessionRecord {
+            agent_session_id: Uuid::new_v4(),
+            agent_session_source_id: None,
             ownership_scope_key: format!("user:{}", member.user_id),
             api_key_id: key.id,
             user_id: Some(member.user_id),
@@ -7842,9 +7842,9 @@ pub(crate) mod tests {
             request_tags: serde_json::json!({"environment": "test"}),
             boundary_group_key: "sha256:postgres-conflict".to_string(),
             harness_key: "codex".to_string(),
-            boundary_policy_version: agent_session_analysis::TASK_BOUNDARY_POLICY_VERSION
+            boundary_policy_version: agent_session_analysis::SESSION_BOUNDARY_POLICY_VERSION
                 .to_string(),
-            lifecycle: TaskLifecycleState::Open,
+            lifecycle: SessionLifecycleState::Open,
             boundary_confidence: Confidence::High,
             started_at: now,
             ended_at: None,
@@ -7855,12 +7855,12 @@ pub(crate) mod tests {
         };
         assert!(
             store
-                .insert_agent_task_if_absent(&task)
+                .insert_agent_session_if_absent(&task)
                 .await
                 .expect("insert agent task")
         );
-        let request_link = AgentTaskRequestLinkRecord {
-            agent_task_id: task.agent_task_id,
+        let request_link = AgentSessionRequestLinkRecord {
+            agent_session_id: task.agent_session_id,
             request_id: "request-conflict".to_string(),
             request_log_id: None,
             usage_event_id: None,
@@ -7876,23 +7876,23 @@ pub(crate) mod tests {
         };
         assert!(
             store
-                .append_agent_task_request(&request_link)
+                .append_agent_session_request(&request_link)
                 .await
                 .expect("insert agent task request")
         );
         assert!(
             !store
-                .append_agent_task_request(&request_link)
+                .append_agent_session_request(&request_link)
                 .await
                 .expect("repeat identical agent task request")
         );
-        let conflicting_request_link = AgentTaskRequestLinkRecord {
+        let conflicting_request_link = AgentSessionRequestLinkRecord {
             terminal_success: Some(false),
             ..request_link
         };
         assert!(matches!(
             store
-                .append_agent_task_request(&conflicting_request_link)
+                .append_agent_session_request(&conflicting_request_link)
                 .await,
             Err(StoreError::Conflict(_))
         ));

@@ -2,17 +2,19 @@ use std::collections::BTreeMap;
 
 use agent_session_analysis::{
     ActivityInterval, AnalysisPolicy, CohortReference, OBSERVATION_PARSER_VERSION,
-    TASK_BOUNDARY_POLICY_VERSION, TaskRequestFact, TaskTrace, TaskUsageFact, TraceEvidence,
+    SESSION_BOUNDARY_POLICY_VERSION, SessionRequestFact, SessionTrace, SessionUsageFact,
+    TraceEvidence,
 };
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,
-    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
-    AgentSessionRecord, AgentTaskAnalysisRecord, AgentTaskListQuery, AgentTaskRequestLinkRecord,
-    AgentTaskTraceRecord, AgentTaskWindowRecord, AuthenticatedApiKey, BoundedObservationFacts,
-    BudgetRepository, Confidence, EvidenceQuality, GatewayError, GatewayOutcomeState,
-    IdentityRepository, InferredObservation, InferredObservationKind, LimitationCode,
-    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationQuery, McpToolInvocationRepository,
-    RequestTags, TaskLifecycleState, UsageLedgerRecord,
+    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
+    AgentSessionAnalysisRepository, AgentSessionListQuery, AgentSessionRecord,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
+    AuthenticatedApiKey, BoundedObservationFacts, BudgetRepository, Confidence, EvidenceQuality,
+    GatewayError, GatewayOutcomeState, IdentityRepository, InferredObservation,
+    InferredObservationKind, LimitationCode, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE,
+    McpToolInvocationQuery, McpToolInvocationRepository, RequestTags, SessionLifecycleState,
+    UsageLedgerRecord,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -23,10 +25,10 @@ use crate::redaction::REDACTED_VALUE;
 use crate::{NORMALIZED_PRICING_POLICY_VERSION, budget_scopes::usage_ownership_scope_key};
 
 pub const COHORT_VERSION: &str = "successful-boundary-group-v2";
-pub const TASK_IDLE_GAP: Duration = Duration::minutes(30);
+pub const SESSION_IDLE_GAP: Duration = Duration::minutes(30);
 pub const REPORT_RETENTION: Duration = Duration::days(90);
-const SESSION_ID_NAMESPACE: Uuid = Uuid::from_u128(0xc3fc5f3b_56a6_4d1f_99fe_f8ba6d1cc9e1);
-const TASK_ID_NAMESPACE: Uuid = Uuid::from_u128(0x1674a48a_0679_4983_848a_9f6fb626e40d);
+const SESSION_SOURCE_ID_NAMESPACE: Uuid = Uuid::from_u128(0xc3fc5f3b_56a6_4d1f_99fe_f8ba6d1cc9e1);
+const SESSION_ID_NAMESPACE: Uuid = Uuid::from_u128(0x1674a48a_0679_4983_848a_9f6fb626e40d);
 const OBSERVATION_SET_ID_NAMESPACE: Uuid = Uuid::from_u128(0x373f2ed6_0734_4af4_bfb3_ea4ad2b890a4);
 const OBSERVATION_ID_NAMESPACE: Uuid = Uuid::from_u128(0xbdfc8775_f822_425d_8d0f_9a553961fc58);
 const ANALYSIS_ID_NAMESPACE: Uuid = Uuid::from_u128(0x6e390d51_3f14_4cee_9b85_c0b238fe99a2);
@@ -241,13 +243,13 @@ where
         input.auth.owner_team_id
     };
     let normalized_session_id = input.metadata.external_session_id.clone();
-    let session = if input.metadata.external_session_id.is_some() {
+    let session_source = if input.metadata.external_session_id.is_some() {
         let now = input.completed_at;
         Some(
             store
-                .upsert_agent_session(&AgentSessionRecord {
-                    agent_session_id: stable_uuid(
-                        SESSION_ID_NAMESPACE,
+                .upsert_agent_session_source(&AgentSessionSourceRecord {
+                    agent_session_source_id: stable_uuid(
+                        SESSION_SOURCE_ID_NAMESPACE,
                         &json!({
                             "scope": ownership_scope_key,
                             "adapter": input.harness_key,
@@ -283,116 +285,118 @@ where
     } else {
         None
     };
-    let session_id = session.as_ref().map(|record| record.agent_session_id);
-    let mut open_task = store
-        .get_open_agent_task(
+    let session_source_id = session_source
+        .as_ref()
+        .map(|record| record.agent_session_source_id);
+    let mut open_session = store
+        .get_open_agent_session(
             &ownership_scope_key,
-            session_id,
+            session_source_id,
             &input.harness_key,
             &input.boundary_group_key,
         )
         .await?;
-    if let Some(task) = open_task.as_ref()
-        && input.occurred_at - task.input_watermark_at >= TASK_IDLE_GAP
+    if let Some(session) = open_session.as_ref()
+        && input.occurred_at - session.input_watermark_at >= SESSION_IDLE_GAP
     {
-        let expected_input_watermark_at = task.input_watermark_at;
-        let mut finalized_task = task.clone();
-        finalized_task.lifecycle = TaskLifecycleState::Finalized;
-        finalized_task.ended_at = Some(expected_input_watermark_at);
-        finalized_task.input_watermark_at = input.completed_at;
-        finalized_task.finalized_reason = Some("idle_gap".to_string());
-        finalized_task.updated_at = input.completed_at;
+        let expected_input_watermark_at = session.input_watermark_at;
+        let mut finalized_session = session.clone();
+        finalized_session.lifecycle = SessionLifecycleState::Finalized;
+        finalized_session.ended_at = Some(expected_input_watermark_at);
+        finalized_session.input_watermark_at = input.completed_at;
+        finalized_session.finalized_reason = Some("idle_gap".to_string());
+        finalized_session.updated_at = input.completed_at;
         if store
-            .finalize_agent_task_if_unchanged(&finalized_task, expected_input_watermark_at)
+            .finalize_agent_session_if_unchanged(&finalized_session, expected_input_watermark_at)
             .await?
         {
             store
-                .mark_agent_task_analyses_stale(finalized_task.agent_task_id, None)
+                .mark_agent_session_analyses_stale(finalized_session.agent_session_id, None)
                 .await?;
             enqueue_analysis(
                 store,
-                finalized_task.agent_task_id,
-                "task_finalized",
+                finalized_session.agent_session_id,
+                "session_finalized",
                 &expected_input_watermark_at
                     .unix_timestamp_nanos()
                     .to_string(),
                 input.completed_at,
             )
             .await?;
-            open_task = None;
+            open_session = None;
         } else {
-            open_task = store
-                .get_open_agent_task(
+            open_session = store
+                .get_open_agent_session(
                     &ownership_scope_key,
-                    session_id,
+                    session_source_id,
                     &input.harness_key,
                     &input.boundary_group_key,
                 )
                 .await?;
         }
     }
-    while let Some(existing_task) = open_task.as_ref() {
+    while let Some(existing_session) = open_session.as_ref() {
         if store
-            .count_agent_task_requests(existing_task.agent_task_id)
+            .count_agent_session_requests(existing_session.agent_session_id)
             .await?
-            < gateway_core::MAX_AGENT_TASK_REQUESTS
+            < gateway_core::MAX_AGENT_SESSION_REQUESTS
         {
             break;
         }
-        let expected_watermark = existing_task.input_watermark_at;
-        let mut finalized = existing_task.clone();
-        finalized.lifecycle = TaskLifecycleState::Finalized;
+        let expected_watermark = existing_session.input_watermark_at;
+        let mut finalized = existing_session.clone();
+        finalized.lifecycle = SessionLifecycleState::Finalized;
         finalized.ended_at = Some(expected_watermark);
         finalized.finalized_reason = Some("request_limit".to_string());
         finalized.updated_at = input.completed_at;
         if store
-            .finalize_agent_task_if_unchanged(&finalized, expected_watermark)
+            .finalize_agent_session_if_unchanged(&finalized, expected_watermark)
             .await?
         {
             store
-                .mark_agent_task_analyses_stale(finalized.agent_task_id, None)
+                .mark_agent_session_analyses_stale(finalized.agent_session_id, None)
                 .await?;
             enqueue_analysis(
                 store,
-                finalized.agent_task_id,
-                "task_finalized",
+                finalized.agent_session_id,
+                "session_finalized",
                 &expected_watermark.unix_timestamp_nanos().to_string(),
                 input.completed_at,
             )
             .await?;
-            open_task = None;
+            open_session = None;
         } else {
-            open_task = store
-                .get_open_agent_task(
+            open_session = store
+                .get_open_agent_session(
                     &ownership_scope_key,
-                    session_id,
+                    session_source_id,
                     &input.harness_key,
                     &input.boundary_group_key,
                 )
                 .await?;
         }
     }
-    let mut task = if let Some(task) = open_task {
-        task
+    let mut session = if let Some(session) = open_session {
+        session
     } else {
-        let confidence = if session_id.is_some() {
+        let confidence = if session_source_id.is_some() {
             Confidence::High
         } else {
             Confidence::Medium
         };
-        let task = AgentTaskWindowRecord {
-            agent_task_id: stable_uuid(
-                TASK_ID_NAMESPACE,
+        let session = AgentSessionRecord {
+            agent_session_id: stable_uuid(
+                SESSION_ID_NAMESPACE,
                 &json!({
                     "scope": ownership_scope_key,
-                    "session": session_id,
+                    "session": session_source_id,
                     "harness": input.harness_key,
                     "boundary": input.boundary_group_key,
                     "first_request": input.request_id,
                 })
                 .to_string(),
             ),
-            agent_session_id: session_id,
+            agent_session_source_id: session_source_id,
             ownership_scope_key: ownership_scope_key.clone(),
             api_key_id: input.auth.id,
             user_id: input.auth.owner_user_id,
@@ -405,8 +409,8 @@ where
             caller_class: caller_class(&input.auth).to_string(),
             request_tags: input.request_tags.clone(),
             boundary_group_key: input.boundary_group_key.clone(),
-            boundary_policy_version: TASK_BOUNDARY_POLICY_VERSION.to_string(),
-            lifecycle: TaskLifecycleState::Open,
+            boundary_policy_version: SESSION_BOUNDARY_POLICY_VERSION.to_string(),
+            lifecycle: SessionLifecycleState::Open,
             boundary_confidence: confidence,
             started_at: input.occurred_at,
             ended_at: None,
@@ -415,18 +419,20 @@ where
             created_at: input.completed_at,
             updated_at: input.completed_at,
         };
-        if store.insert_agent_task_if_absent(&task).await? {
-            task
+        if store.insert_agent_session_if_absent(&session).await? {
+            session
         } else {
             store
-                .get_open_agent_task(
+                .get_open_agent_session(
                     &ownership_scope_key,
-                    session_id,
+                    session_source_id,
                     &input.harness_key,
                     &input.boundary_group_key,
                 )
                 .await?
-                .ok_or_else(|| GatewayError::Internal("open agent task disappeared".to_string()))?
+                .ok_or_else(|| {
+                    GatewayError::Internal("open agent session disappeared".to_string())
+                })?
         }
     };
     let usage_event_id = store
@@ -439,7 +445,7 @@ where
         input.terminal_success
     };
     let mut limitations = Vec::new();
-    if session_id.is_none() {
+    if session_source_id.is_none() {
         limitations.push(LimitationCode::SessionUnobserved);
     }
     if input.metadata.session_limitation.is_some() {
@@ -459,8 +465,8 @@ where
             hash_lineage_candidate(&ownership_scope_key, &input.harness_key, candidate)
         });
     let request_inserted = store
-        .append_agent_task_request(&AgentTaskRequestLinkRecord {
-            agent_task_id: task.agent_task_id,
+        .append_agent_session_request(&AgentSessionRequestLinkRecord {
+            agent_session_id: session.agent_session_id,
             request_id: input.request_id.clone(),
             request_log_id: input.request_log_id,
             usage_event_id,
@@ -468,7 +474,7 @@ where
             execution_id,
             parent_execution_id,
             normalized_session_id,
-            correlation_confidence: task.boundary_confidence,
+            correlation_confidence: session.boundary_confidence,
             limitation_codes: limitations,
             occurred_at: input.occurred_at,
             completed_at: Some(input.completed_at),
@@ -476,12 +482,12 @@ where
         })
         .await?;
     if !request_inserted {
-        return Ok(task.agent_task_id);
+        return Ok(session.agent_session_id);
     }
-    if input.completed_at > task.input_watermark_at {
-        task.input_watermark_at = input.completed_at;
-        task.updated_at = input.completed_at;
-        store.update_agent_task_window(&task).await?;
+    if input.completed_at > session.input_watermark_at {
+        session.input_watermark_at = input.completed_at;
+        session.updated_at = input.completed_at;
+        store.update_agent_session_window(&session).await?;
     }
 
     let session_correlation = if input.metadata.external_session_id.is_some() {
@@ -500,10 +506,10 @@ where
     });
     if let Some(request_log_id) = input.request_log_id {
         store
-            .link_request_log_to_agent_task(&AgentRequestLogLinkRecord {
+            .link_request_log_to_agent_session(&AgentRequestLogLinkRecord {
                 request_log_id,
-                agent_session_id: session_id,
-                agent_task_id: task.agent_task_id,
+                agent_session_source_id: session_source_id,
+                agent_session_id: session.agent_session_id,
                 analysis_source: "passive".to_string(),
                 coverage: coverage.clone(),
             })
@@ -515,7 +521,7 @@ where
         observation.observation_id = stable_uuid(
             OBSERVATION_ID_NAMESPACE,
             &json!({
-                "task": task.agent_task_id,
+                "session": session.agent_session_id,
                 "request": observation.source_request_id,
                 "parser": OBSERVATION_PARSER_VERSION,
                 "index": index,
@@ -529,14 +535,14 @@ where
         observation_set_id: stable_uuid(
             OBSERVATION_SET_ID_NAMESPACE,
             &json!({
-                "task": task.agent_task_id,
+                "session": session.agent_session_id,
                 "request": input.request_id,
                 "parser": OBSERVATION_PARSER_VERSION,
                 "watermark": input.completed_at.unix_timestamp_nanos(),
             })
             .to_string(),
         ),
-        agent_task_id: task.agent_task_id,
+        agent_session_id: session.agent_session_id,
         parser_version: OBSERVATION_PARSER_VERSION.to_string(),
         source_watermark_at: input.completed_at,
         coverage,
@@ -545,22 +551,22 @@ where
     };
     store.append_agent_observation_set(&observation_set).await?;
     store
-        .mark_agent_task_analyses_stale(task.agent_task_id, None)
+        .mark_agent_session_analyses_stale(session.agent_session_id, None)
         .await?;
     enqueue_analysis(
         store,
-        task.agent_task_id,
+        session.agent_session_id,
         "new_input",
         &input.request_id,
         input.completed_at,
     )
     .await?;
-    Ok(task.agent_task_id)
+    Ok(session.agent_session_id)
 }
 
 pub async fn enqueue_analysis<S>(
     store: &S,
-    agent_task_id: Uuid,
+    agent_session_id: Uuid,
     reason: &str,
     dedupe_key: &str,
     now: OffsetDateTime,
@@ -574,14 +580,14 @@ where
             queue_item_id: stable_uuid(
                 QUEUE_ID_NAMESPACE,
                 &json!({
-                    "task": agent_task_id,
+                    "session": agent_session_id,
                     "reason": reason,
                     "versions": desired_versions,
                     "dedupe_key": dedupe_key,
                 })
                 .to_string(),
             ),
-            agent_task_id,
+            agent_session_id,
             reason: reason.to_string(),
             desired_versions,
             status: AgentAnalysisQueueStatus::Pending,
@@ -599,54 +605,54 @@ where
         .map_err(Into::into)
 }
 
-pub async fn finalize_idle_tasks<S>(store: &S, now: OffsetDateTime) -> Result<u64, GatewayError>
+pub async fn finalize_idle_sessions<S>(store: &S, now: OffsetDateTime) -> Result<u64, GatewayError>
 where
     S: AgentSessionAnalysisRepository + Sync,
 {
-    let cutoff = now - TASK_IDLE_GAP;
+    let cutoff = now - SESSION_IDLE_GAP;
     let mut finalized = 0_u64;
     loop {
         let page = store
-            .list_agent_tasks(&AgentTaskListQuery {
+            .list_agent_sessions(&AgentSessionListQuery {
                 page: 1,
-                page_size: gateway_core::MAX_AGENT_TASK_PAGE_SIZE,
-                lifecycle: Some(TaskLifecycleState::Open),
+                page_size: gateway_core::MAX_AGENT_SESSION_PAGE_SIZE,
+                lifecycle: Some(SessionLifecycleState::Open),
                 started_before: Some(cutoff),
                 input_watermark_before: Some(cutoff),
                 ..Default::default()
             })
             .await?;
-        let candidates: Vec<_> = page.items.into_iter().map(|trace| trace.task).collect();
+        let candidates: Vec<_> = page.items.into_iter().map(|trace| trace.session).collect();
         if candidates.is_empty() {
             break;
         }
-        for mut task in candidates {
-            let last_activity_at = task.input_watermark_at;
-            task.lifecycle = TaskLifecycleState::Finalized;
-            task.ended_at = Some(last_activity_at);
-            task.input_watermark_at = now;
-            task.finalized_reason = Some("idle_gap".to_string());
-            task.updated_at = now;
+        for mut session in candidates {
+            let last_activity_at = session.input_watermark_at;
+            session.lifecycle = SessionLifecycleState::Finalized;
+            session.ended_at = Some(last_activity_at);
+            session.input_watermark_at = now;
+            session.finalized_reason = Some("idle_gap".to_string());
+            session.updated_at = now;
             if !store
-                .finalize_agent_task_if_unchanged(&task, last_activity_at)
+                .finalize_agent_session_if_unchanged(&session, last_activity_at)
                 .await?
             {
                 continue;
             }
             store
-                .mark_agent_task_analyses_stale(task.agent_task_id, None)
+                .mark_agent_session_analyses_stale(session.agent_session_id, None)
                 .await?;
             enqueue_analysis(
                 store,
-                task.agent_task_id,
-                "task_finalized",
+                session.agent_session_id,
+                "session_finalized",
                 &last_activity_at.unix_timestamp_nanos().to_string(),
                 now,
             )
             .await?;
             finalized = finalized.saturating_add(1);
         }
-        if page.total <= u64::from(gateway_core::MAX_AGENT_TASK_PAGE_SIZE) {
+        if page.total <= u64::from(gateway_core::MAX_AGENT_SESSION_PAGE_SIZE) {
             break;
         }
     }
@@ -670,7 +676,7 @@ where
     };
     let report = generate_report(
         store,
-        queue.agent_task_id,
+        queue.agent_session_id,
         &queue.desired_versions,
         now,
         report_retention,
@@ -730,7 +736,7 @@ where
 
 async fn generate_report<S>(
     store: &S,
-    agent_task_id: Uuid,
+    agent_session_id: Uuid,
     versions: &AgentAnalysisDesiredVersions,
     now: OffsetDateTime,
     report_retention: Duration,
@@ -740,30 +746,30 @@ where
 {
     ensure_supported_versions(versions)?;
     let trace = store
-        .load_agent_task_trace(agent_task_id)
+        .load_agent_session_trace(agent_session_id)
         .await?
-        .ok_or_else(|| GatewayError::Internal("agent task disappeared".to_string()))?;
-    if trace.task.boundary_policy_version != versions.boundary_policy_version {
+        .ok_or_else(|| GatewayError::Internal("agent session disappeared".to_string()))?;
+    if trace.session.boundary_policy_version != versions.boundary_policy_version {
         return Err(GatewayError::Internal(format!(
-            "agent task boundary policy `{}` does not match queued version `{}`",
-            trace.task.boundary_policy_version, versions.boundary_policy_version
+            "agent session boundary policy `{}` does not match queued version `{}`",
+            trace.session.boundary_policy_version, versions.boundary_policy_version
         )));
     }
-    if trace.requests.len() > gateway_core::MAX_AGENT_TASK_REQUESTS as usize {
+    if trace.requests.len() > gateway_core::MAX_AGENT_SESSION_REQUESTS as usize {
         return Err(GatewayError::Internal(format!(
-            "agent task `{agent_task_id}` exceeds the bounded request limit"
+            "agent session `{agent_session_id}` exceeds the bounded request limit"
         )));
     }
 
-    let observation_sets = store.load_agent_observation_sets(agent_task_id).await?;
+    let observation_sets = store.load_agent_observation_sets(agent_session_id).await?;
     if observation_sets.is_empty() {
         return Err(GatewayError::Internal(
-            "agent task has no observation set".to_string(),
+            "agent session has no observation set".to_string(),
         ));
     }
-    if observation_sets.len() > gateway_core::MAX_AGENT_TASK_REQUESTS as usize {
+    if observation_sets.len() > gateway_core::MAX_AGENT_SESSION_REQUESTS as usize {
         return Err(GatewayError::Internal(format!(
-            "agent task `{agent_task_id}` exceeds the bounded observation-set limit"
+            "agent session `{agent_session_id}` exceeds the bounded observation-set limit"
         )));
     }
     if observation_sets
@@ -771,7 +777,7 @@ where
         .any(|set| set.parser_version != versions.observation_parser_version)
     {
         return Err(GatewayError::Internal(
-            "agent task contains observations from an unsupported parser version".to_string(),
+            "agent session contains observations from an unsupported parser version".to_string(),
         ));
     }
     let observation_set = observation_sets
@@ -794,7 +800,7 @@ where
         let usage = store
             .get_usage_ledger_by_request_and_scope(
                 &link.request_id,
-                &trace.task.ownership_scope_key,
+                &trace.session.ownership_scope_key,
             )
             .await?;
         if let Some(interval) = link
@@ -803,29 +809,29 @@ where
         {
             intervals.push(interval);
         }
-        requests.push(TaskRequestFact {
+        requests.push(SessionRequestFact {
             request_id: link.request_id.clone(),
             occurred_at: link.occurred_at,
             completed_at: link.completed_at,
             terminal_success: link.terminal_success,
-            usage: usage.as_ref().map(task_usage_fact),
+            usage: usage.as_ref().map(session_usage_fact),
         });
     }
 
     let DirectMcpEvidence {
         intervals: direct_mcp_intervals,
         snapshot_digest: direct_mcp_snapshot_digest,
-    } = load_direct_mcp_evidence(store, &trace.task).await?;
+    } = load_direct_mcp_evidence(store, &trace.session).await?;
     let cohort = load_successful_harness_cohort(store, &trace, versions).await?;
-    let report = agent_session_analysis::analyze_task(
-        &TaskTrace {
+    let report = agent_session_analysis::analyze_session(
+        &SessionTrace {
             requests,
             activity_intervals: intervals,
             observations,
-            lifecycle: trace.task.lifecycle,
-            boundary_confidence: trace.task.boundary_confidence,
+            lifecycle: trace.session.lifecycle,
+            boundary_confidence: trace.session.boundary_confidence,
             evidence: TraceEvidence {
-                session_observed: trace.task.agent_session_id.is_some(),
+                session_observed: trace.session.agent_session_source_id.is_some(),
                 request_metadata_count,
                 response_payload_count,
                 truncated_payload_count,
@@ -844,12 +850,12 @@ where
         cohort.as_ref().map(|value| &value.reference),
     )
     .map_err(|error| GatewayError::Internal(error.to_string()))?;
-    let analysis = AgentTaskAnalysisRecord {
+    let analysis = AgentSessionAnalysisRecord {
         analysis_id: stable_uuid(
             ANALYSIS_ID_NAMESPACE,
             &json!({
-                "task": agent_task_id,
-                "watermark": trace.task.input_watermark_at.unix_timestamp_nanos(),
+                "session": agent_session_id,
+                "watermark": trace.session.input_watermark_at.unix_timestamp_nanos(),
                 "observation_set": observation_set.observation_set_id,
                 "versions": versions,
                 "cohort_snapshot": cohort.as_ref().map(|value| &value.snapshot_digest),
@@ -857,9 +863,9 @@ where
             })
             .to_string(),
         ),
-        agent_task_id,
+        agent_session_id,
         boundary_policy_version: versions.boundary_policy_version.clone(),
-        input_watermark_at: trace.task.input_watermark_at,
+        input_watermark_at: trace.session.input_watermark_at,
         observation_set_id: observation_set.observation_set_id,
         observation_parser_version: versions.observation_parser_version.clone(),
         pricing_policy_version: versions.pricing_policy_version.clone(),
@@ -882,13 +888,13 @@ where
         stale: false,
         superseded_by_analysis_id: None,
         expires_at: now + report_retention,
-        ownership_scope_key: trace.task.ownership_scope_key.clone(),
-        user_id: trace.task.user_id,
-        service_account_id: trace.task.service_account_id,
+        ownership_scope_key: trace.session.ownership_scope_key.clone(),
+        user_id: trace.session.user_id,
+        service_account_id: trace.session.service_account_id,
     };
-    if store.append_agent_task_analysis(&analysis).await? {
+    if store.append_agent_session_analysis(&analysis).await? {
         store
-            .mark_agent_task_analyses_stale(agent_task_id, Some(analysis.analysis_id))
+            .mark_agent_session_analyses_stale(agent_session_id, Some(analysis.analysis_id))
             .await?;
     }
     Ok(())
@@ -901,7 +907,7 @@ struct DirectMcpEvidence {
 
 async fn load_direct_mcp_evidence<S>(
     store: &S,
-    task: &AgentTaskWindowRecord,
+    session: &AgentSessionRecord,
 ) -> Result<DirectMcpEvidence, GatewayError>
 where
     S: McpToolInvocationRepository + Sync,
@@ -915,9 +921,9 @@ where
             .list_mcp_tool_invocations(&McpToolInvocationQuery {
                 page,
                 page_size,
-                api_key_id: Some(task.api_key_id),
-                occurred_at_start: Some(task.started_at),
-                occurred_at_end: Some(task.ended_at.unwrap_or(task.input_watermark_at)),
+                api_key_id: Some(session.api_key_id),
+                occurred_at_start: Some(session.started_at),
+                occurred_at_end: Some(session.ended_at.unwrap_or(session.input_watermark_at)),
                 ..McpToolInvocationQuery::default()
             })
             .await?;
@@ -967,9 +973,9 @@ fn observation_coverage_count(
         .try_into()
         .unwrap_or(u32::MAX)
 }
-fn task_usage_fact(record: &UsageLedgerRecord) -> TaskUsageFact {
+fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
     let accounting = record.normalized_usage.as_ref();
-    TaskUsageFact {
+    SessionUsageFact {
         fresh_input_tokens: accounting.and_then(|value| value.fresh_input_tokens),
         cache_read_tokens: accounting.and_then(|value| value.cache_read_tokens),
         cache_creation_tokens: accounting.and_then(|value| value.cache_creation_tokens),
@@ -1015,7 +1021,7 @@ struct LoadedCohort {
 
 async fn load_successful_harness_cohort<S>(
     store: &S,
-    current: &AgentTaskTraceRecord,
+    current: &AgentSessionTraceRecord,
     versions: &AgentAnalysisDesiredVersions,
 ) -> Result<Option<LoadedCohort>, GatewayError>
 where
@@ -1025,19 +1031,19 @@ where
     let mut page_number = 1;
     loop {
         let page = store
-            .list_agent_tasks(&AgentTaskListQuery {
-                harness_key: Some(current.task.harness_key.clone()),
-                lifecycle: Some(TaskLifecycleState::Finalized),
-                ownership_scope_key: Some(current.task.ownership_scope_key.clone()),
-                input_watermark_before: Some(current.task.input_watermark_at),
+            .list_agent_sessions(&AgentSessionListQuery {
+                harness_key: Some(current.session.harness_key.clone()),
+                lifecycle: Some(SessionLifecycleState::Finalized),
+                ownership_scope_key: Some(current.session.ownership_scope_key.clone()),
+                input_watermark_before: Some(current.session.input_watermark_at),
                 page: page_number,
-                page_size: gateway_core::MAX_AGENT_TASK_PAGE_SIZE,
+                page_size: gateway_core::MAX_AGENT_SESSION_PAGE_SIZE,
                 ..Default::default()
             })
             .await?;
         let item_count = page.items.len();
         for candidate in page.items {
-            if candidate.task.agent_task_id == current.task.agent_task_id {
+            if candidate.session.agent_session_id == current.session.agent_session_id {
                 continue;
             }
             let Some(analysis) = candidate.latest_analysis else {
@@ -1061,19 +1067,19 @@ where
             };
             let sample = (analysis.analysis_id, cost, active_time);
             samples[3].push(sample);
-            if candidate.task.requested_model_key == current.task.requested_model_key {
+            if candidate.session.requested_model_key == current.session.requested_model_key {
                 samples[2].push(sample);
-                if candidate.task.operation == current.task.operation
-                    && candidate.task.caller_class == current.task.caller_class
+                if candidate.session.operation == current.session.operation
+                    && candidate.session.caller_class == current.session.caller_class
                 {
                     samples[1].push(sample);
-                    if candidate.task.boundary_group_key == current.task.boundary_group_key {
+                    if candidate.session.boundary_group_key == current.session.boundary_group_key {
                         samples[0].push(sample);
                     }
                 }
             }
         }
-        if item_count < gateway_core::MAX_AGENT_TASK_PAGE_SIZE as usize {
+        if item_count < gateway_core::MAX_AGENT_SESSION_PAGE_SIZE as usize {
             break;
         }
         page_number = page_number.saturating_add(1);
@@ -1151,7 +1157,7 @@ pub fn desired_versions() -> AgentAnalysisDesiredVersions {
     };
     AgentAnalysisDesiredVersions {
         report_schema_version: agent_session_analysis::REPORT_SCHEMA_VERSION.to_string(),
-        boundary_policy_version: TASK_BOUNDARY_POLICY_VERSION.to_string(),
+        boundary_policy_version: SESSION_BOUNDARY_POLICY_VERSION.to_string(),
         observation_parser_version: OBSERVATION_PARSER_VERSION.to_string(),
         analyzer_version: agent_session_analysis::ANALYZER_VERSION.to_string(),
         score_policy_version: agent_session_analysis::SCORE_POLICY_VERSION.to_string(),
@@ -1305,7 +1311,7 @@ fn caller_class(auth: &AuthenticatedApiKey) -> &'static str {
     }
 }
 
-pub(crate) fn task_boundary_group_key(tags: &RequestTags) -> String {
+pub(crate) fn session_boundary_group_key(tags: &RequestTags) -> String {
     let mut bespoke = tags
         .bespoke
         .iter()
@@ -1741,7 +1747,7 @@ mod tests {
     }
 
     #[test]
-    fn task_boundary_group_is_order_independent() {
+    fn session_boundary_group_is_order_independent() {
         let first = RequestTags {
             service: Some("api".to_string()),
             bespoke: vec![
@@ -1760,16 +1766,16 @@ mod tests {
         reordered.bespoke.reverse();
 
         assert_eq!(
-            task_boundary_group_key(&first),
-            task_boundary_group_key(&reordered)
+            session_boundary_group_key(&first),
+            session_boundary_group_key(&reordered)
         );
         let different_tags = RequestTags {
             service: Some("different".to_string()),
             ..first.clone()
         };
         assert_ne!(
-            task_boundary_group_key(&first),
-            task_boundary_group_key(&different_tags)
+            session_boundary_group_key(&first),
+            session_boundary_group_key(&different_tags)
         );
     }
     #[test]

@@ -1,6 +1,6 @@
 use gateway_core::{
-    AgentObservationSetRecord, AgentSessionRecord, AgentTaskAnalysisRecord,
-    AgentTaskRequestLinkRecord, AgentTaskWindowRecord, StoreError,
+    AgentObservationSetRecord, AgentSessionAnalysisRecord, AgentSessionRecord,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, StoreError,
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -42,11 +42,11 @@ fn same_optional_timestamp(left: Option<OffsetDateTime>, right: Option<OffsetDat
     left.map(OffsetDateTime::unix_timestamp) == right.map(OffsetDateTime::unix_timestamp)
 }
 
-pub(crate) fn agent_session_identity_matches(
-    stored: &AgentSessionRecord,
-    candidate: &AgentSessionRecord,
+pub(crate) fn agent_session_source_identity_matches(
+    stored: &AgentSessionSourceRecord,
+    candidate: &AgentSessionSourceRecord,
 ) -> bool {
-    stored.agent_session_id == candidate.agent_session_id
+    stored.agent_session_source_id == candidate.agent_session_source_id
         && stored.ownership_scope_key == candidate.ownership_scope_key
         && stored.api_key_id == candidate.api_key_id
         && stored.user_id == candidate.user_id
@@ -61,12 +61,12 @@ pub(crate) fn agent_session_identity_matches(
         && stored.harness_label == candidate.harness_label
 }
 
-pub(crate) fn agent_task_identity_matches(
-    stored: &AgentTaskWindowRecord,
-    candidate: &AgentTaskWindowRecord,
+pub(crate) fn agent_session_identity_matches(
+    stored: &AgentSessionRecord,
+    candidate: &AgentSessionRecord,
 ) -> bool {
-    stored.agent_task_id == candidate.agent_task_id
-        && stored.agent_session_id == candidate.agent_session_id
+    stored.agent_session_id == candidate.agent_session_id
+        && stored.agent_session_source_id == candidate.agent_session_source_id
         && stored.ownership_scope_key == candidate.ownership_scope_key
         && stored.api_key_id == candidate.api_key_id
         && stored.user_id == candidate.user_id
@@ -89,7 +89,7 @@ pub(crate) fn agent_observation_set_matches(
     candidate: &AgentObservationSetRecord,
 ) -> bool {
     stored.observation_set_id == candidate.observation_set_id
-        && stored.agent_task_id == candidate.agent_task_id
+        && stored.agent_session_id == candidate.agent_session_id
         && stored.parser_version == candidate.parser_version
         && same_timestamp(stored.source_watermark_at, candidate.source_watermark_at)
         && stored.coverage == candidate.coverage
@@ -111,11 +111,11 @@ pub(crate) fn agent_observation_set_matches(
             })
 }
 
-pub(crate) fn agent_task_analysis_matches(
-    stored: &AgentTaskAnalysisRecord,
-    candidate: &AgentTaskAnalysisRecord,
+pub(crate) fn agent_session_analysis_matches(
+    stored: &AgentSessionAnalysisRecord,
+    candidate: &AgentSessionAnalysisRecord,
 ) -> bool {
-    stored.agent_task_id == candidate.agent_task_id
+    stored.agent_session_id == candidate.agent_session_id
         && stored.boundary_policy_version == candidate.boundary_policy_version
         && same_timestamp(stored.input_watermark_at, candidate.input_watermark_at)
         && stored.observation_set_id == candidate.observation_set_id
@@ -131,34 +131,34 @@ pub(crate) fn agent_task_analysis_matches(
         && stored.service_account_id == candidate.service_account_id
 }
 
-pub(crate) fn agent_task_request_matches(
-    stored: &AgentTaskRequestLinkRecord,
-    candidate: &AgentTaskRequestLinkRecord,
+pub(crate) fn agent_session_request_matches(
+    stored: &AgentSessionRequestLinkRecord,
+    candidate: &AgentSessionRequestLinkRecord,
 ) -> bool {
-    let AgentTaskRequestLinkRecord {
-        agent_task_id: stored_task_id,
+    let AgentSessionRequestLinkRecord {
+        agent_session_id: stored_session_id,
         request_id: stored_request_id,
         request_log_id: stored_request_log_id,
         usage_event_id: stored_usage_event_id,
         ordinal: _,
         execution_id: stored_execution_id,
         parent_execution_id: stored_parent_execution_id,
-        normalized_session_id: stored_session_id,
+        normalized_session_id: stored_normalized_session_id,
         correlation_confidence: stored_confidence,
         limitation_codes: stored_limitations,
         occurred_at: stored_occurred_at,
         completed_at: stored_completed_at,
         terminal_success: stored_terminal_success,
     } = stored;
-    let AgentTaskRequestLinkRecord {
-        agent_task_id: candidate_task_id,
+    let AgentSessionRequestLinkRecord {
+        agent_session_id: candidate_session_id,
         request_id: candidate_request_id,
         request_log_id: candidate_request_log_id,
         usage_event_id: candidate_usage_event_id,
         ordinal: _,
         execution_id: candidate_execution_id,
         parent_execution_id: candidate_parent_execution_id,
-        normalized_session_id: candidate_session_id,
+        normalized_session_id: candidate_normalized_session_id,
         correlation_confidence: candidate_confidence,
         limitation_codes: candidate_limitations,
         occurred_at: candidate_occurred_at,
@@ -166,13 +166,13 @@ pub(crate) fn agent_task_request_matches(
         terminal_success: candidate_terminal_success,
     } = candidate;
 
-    stored_task_id == candidate_task_id
+    stored_session_id == candidate_session_id
         && stored_request_id == candidate_request_id
         && stored_request_log_id == candidate_request_log_id
         && stored_usage_event_id == candidate_usage_event_id
         && stored_execution_id == candidate_execution_id
         && stored_parent_execution_id == candidate_parent_execution_id
-        && stored_session_id == candidate_session_id
+        && stored_normalized_session_id == candidate_normalized_session_id
         && stored_confidence == candidate_confidence
         && stored_limitations == candidate_limitations
         && same_timestamp(*stored_occurred_at, *candidate_occurred_at)

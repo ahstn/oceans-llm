@@ -24,45 +24,31 @@ pub(super) struct DemoAgentSessionRequest {
     pub observation_kind: InferredObservationKind,
 }
 
-const GREENHOUSE_SESSION: DemoAgentSessionFixture = DemoAgentSessionFixture {
-    key: "greenhouse-irrigation-reconciliation",
-    normalized_session_id: "demo-greenhouse-irrigation-2026-07",
-    tool_description: "Inspect the fictional greenhouse operations dataset.",
-    request_count: 5,
+const JIRA_COORDINATION_SESSION: DemoAgentSessionFixture = DemoAgentSessionFixture {
+    key: "jira-release-coordination",
+    normalized_session_id: "demo-jira-release-coordination-2026-07",
+    tool_description: "Coordinate a fictional release through a partially used Jira MCP toolset.",
+    request_count: 10,
     #[cfg(test)]
-    expected_file_tool_calls: 0,
+    expected_file_tool_calls: 2,
     #[cfg(test)]
-    expected_mcp_calls: 0,
+    expected_mcp_calls: 2,
 };
 
 const ROUTE_MIGRATION_SESSION: DemoAgentSessionFixture = DemoAgentSessionFixture {
     key: "repository-route-migration",
     normalized_session_id: "demo-repository-route-migration-2026-07",
     tool_description: "Inspect or update the fictional repository migration workspace.",
-    request_count: 9,
+    request_count: 10,
     #[cfg(test)]
-    expected_file_tool_calls: 7,
+    expected_file_tool_calls: 8,
     #[cfg(test)]
     expected_mcp_calls: 0,
 };
 
-const INCIDENT_RUNBOOK_SESSION: DemoAgentSessionFixture = DemoAgentSessionFixture {
-    key: "incident-runbook-coordination",
-    normalized_session_id: "demo-incident-runbook-coordination-2026-07",
-    tool_description: "Coordinate a fictional incident using direct MCP runbook tools.",
-    request_count: 3,
-    #[cfg(test)]
-    expected_file_tool_calls: 0,
-    #[cfg(test)]
-    expected_mcp_calls: 2,
-};
-
 #[cfg(test)]
-pub(super) const DEMO_AGENT_SESSIONS: &[DemoAgentSessionFixture] = &[
-    GREENHOUSE_SESSION,
-    ROUTE_MIGRATION_SESSION,
-    INCIDENT_RUNBOOK_SESSION,
-];
+pub(super) const DEMO_AGENT_SESSIONS: &[DemoAgentSessionFixture] =
+    &[JIRA_COORDINATION_SESSION, ROUTE_MIGRATION_SESSION];
 
 pub(super) const ADDITIONAL_SESSION_REQUESTS: &[LocalDemoRequestFixture] = &[
     LocalDemoRequestFixture {
@@ -261,7 +247,7 @@ pub(super) const ADDITIONAL_SESSION_REQUESTS: &[LocalDemoRequestFixture] = &[
         bespoke_key: "workflow",
         bespoke_value: "route-migration",
         prompt: "Read the generated fictional route diff and check for orphaned paths.",
-        completion: "The generated tree contains only the session route and no orphaned task page path.",
+        completion: "The generated tree contains only the canonical session route with no orphaned paths.",
         error_code: None,
         payload_profile: super::DemoPayloadProfile::Standard,
     },
@@ -294,8 +280,8 @@ pub(super) const ADDITIONAL_SESSION_REQUESTS: &[LocalDemoRequestFixture] = &[
         request_id: "demo-agent-mcp-001",
         api_key_public_id: "locdemogina1",
         days_ago: 0,
-        hours_ago: 2,
-        minutes_ago: 18,
+        hours_ago: 0,
+        minutes_ago: 4,
         model_key: "claude-sonnet",
         resolved_model_key: "claude-sonnet",
         provider_key: "vertex-claude",
@@ -305,13 +291,13 @@ pub(super) const ADDITIONAL_SESSION_REQUESTS: &[LocalDemoRequestFixture] = &[
         cost_scaled: 2_480,
         status_code: 200,
         latency_ms: 920,
-        service: "reliability",
-        component: "incident-response",
+        service: "release-engineering",
+        component: "jira-coordination",
         env: "local",
         bespoke_key: "workflow",
-        bespoke_value: "incident-runbook",
-        prompt: "Open the fictional payment latency incident and load the current response runbook.",
-        completion: "The incident is acknowledged and the runbook identifies the first three diagnostic checks.",
+        bespoke_value: "jira-release",
+        prompt: "Assign the fictional release issue to the designated owner using Jira.",
+        completion: "The Jira issue is assigned to the release owner.",
         error_code: None,
         payload_profile: super::DemoPayloadProfile::Standard,
     },
@@ -319,8 +305,8 @@ pub(super) const ADDITIONAL_SESSION_REQUESTS: &[LocalDemoRequestFixture] = &[
         request_id: "demo-agent-mcp-002",
         api_key_public_id: "locdemogina1",
         days_ago: 0,
-        hours_ago: 2,
-        minutes_ago: 12,
+        hours_ago: 0,
+        minutes_ago: 3,
         model_key: "claude-sonnet",
         resolved_model_key: "claude-sonnet",
         provider_key: "vertex-claude",
@@ -330,13 +316,13 @@ pub(super) const ADDITIONAL_SESSION_REQUESTS: &[LocalDemoRequestFixture] = &[
         cost_scaled: 3_620,
         status_code: 200,
         latency_ms: 1_080,
-        service: "reliability",
-        component: "incident-response",
+        service: "release-engineering",
+        component: "jira-coordination",
         env: "local",
         bespoke_key: "workflow",
-        bespoke_value: "incident-runbook",
-        prompt: "Attach the latest fictional latency graph and advance the incident runbook.",
-        completion: "The graph is attached and the runbook now points to the degraded regional dependency.",
+        bespoke_value: "jira-release",
+        prompt: "Add the verified release status and remaining blockers as a Jira comment.",
+        completion: "The Jira comment records verification evidence and the two remaining blockers.",
         error_code: None,
         payload_profile: super::DemoPayloadProfile::Standard,
     },
@@ -344,8 +330,8 @@ pub(super) const ADDITIONAL_SESSION_REQUESTS: &[LocalDemoRequestFixture] = &[
         request_id: "demo-agent-mcp-003",
         api_key_public_id: "locdemogina1",
         days_ago: 0,
-        hours_ago: 2,
-        minutes_ago: 6,
+        hours_ago: 0,
+        minutes_ago: 2,
         model_key: "claude-sonnet",
         resolved_model_key: "claude-sonnet",
         provider_key: "vertex-claude",
@@ -355,13 +341,88 @@ pub(super) const ADDITIONAL_SESSION_REQUESTS: &[LocalDemoRequestFixture] = &[
         cost_scaled: 4_460,
         status_code: 200,
         latency_ms: 840,
-        service: "reliability",
-        component: "incident-response",
+        service: "release-engineering",
+        component: "jira-coordination",
         env: "local",
         bespoke_key: "workflow",
-        bespoke_value: "incident-runbook",
-        prompt: "Summarize the fictional mitigation, owner handoff, and verification evidence.",
-        completion: "The mitigation is stable, ownership is transferred, and the verification window is recorded.",
+        bespoke_value: "jira-release",
+        prompt: "Inspect the release blockers after the Jira assignment and comment.",
+        completion: "The blockers are unchanged and no additional Jira mutation is required.",
+        error_code: None,
+        payload_profile: super::DemoPayloadProfile::Streamed,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-agent-files-010",
+        api_key_public_id: "locdemogina1",
+        days_ago: 0,
+        hours_ago: 1,
+        minutes_ago: 2,
+        model_key: "gpt-oss-120b",
+        resolved_model_key: "gpt-oss-120b",
+        provider_key: "bedrock-us-east-1",
+        upstream_model: "gpt-oss-120b",
+        prompt_tokens: Some(5_180),
+        completion_tokens: Some(520),
+        cost_scaled: 8_140,
+        status_code: 200,
+        latency_ms: 1_180,
+        service: "developer-productivity",
+        component: "repo-maintenance",
+        env: "local",
+        bespoke_key: "workflow",
+        bespoke_value: "route-migration",
+        prompt: "Read the final fictional route contract and confirm the session-only API surface.",
+        completion: "The final contract exposes only the canonical session list and detail endpoints.",
+        error_code: None,
+        payload_profile: super::DemoPayloadProfile::Streamed,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-agent-mcp-004",
+        api_key_public_id: "locdemogina1",
+        days_ago: 0,
+        hours_ago: 0,
+        minutes_ago: 1,
+        model_key: "claude-sonnet",
+        resolved_model_key: "claude-sonnet",
+        provider_key: "vertex-claude",
+        upstream_model: "anthropic/claude-sonnet-4-6",
+        prompt_tokens: Some(2_680),
+        completion_tokens: Some(380),
+        cost_scaled: 5_120,
+        status_code: 200,
+        latency_ms: 760,
+        service: "release-engineering",
+        component: "jira-coordination",
+        env: "local",
+        bespoke_key: "workflow",
+        bespoke_value: "jira-release",
+        prompt: "Review the fictional release issue after assignment and identify remaining blockers.",
+        completion: "The issue has an owner, two blockers, and a clear verification checklist.",
+        error_code: None,
+        payload_profile: super::DemoPayloadProfile::Standard,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-agent-mcp-005",
+        api_key_public_id: "locdemogina1",
+        days_ago: 0,
+        hours_ago: 0,
+        minutes_ago: 0,
+        model_key: "claude-sonnet",
+        resolved_model_key: "claude-sonnet",
+        provider_key: "vertex-claude",
+        upstream_model: "anthropic/claude-sonnet-4-6",
+        prompt_tokens: Some(3_040),
+        completion_tokens: Some(420),
+        cost_scaled: 5_780,
+        status_code: 200,
+        latency_ms: 810,
+        service: "release-engineering",
+        component: "jira-coordination",
+        env: "local",
+        bespoke_key: "workflow",
+        bespoke_value: "jira-release",
+        prompt: "Summarize the fictional Jira release handoff without invoking the remaining available tools.",
+        completion: "The handoff records ownership, blockers, and verification while leaving edit, delete, transition, and create tools unused.",
         error_code: None,
         payload_profile: super::DemoPayloadProfile::Streamed,
     },
@@ -372,33 +433,33 @@ pub(super) fn request_metadata(
 ) -> Option<DemoAgentSessionRequest> {
     let (session, step, tool_name, observation_kind) = match fixture.request_id {
         "demo-agent-session-001" => (
-            &GREENHOUSE_SESSION,
+            &JIRA_COORDINATION_SESSION,
             0,
-            "inventory_telemetry_batches",
-            InferredObservationKind::ToolCallClassified,
+            "search_release_issue",
+            InferredObservationKind::FileSearchSuspected,
         ),
         "demo-agent-session-002" => (
-            &GREENHOUSE_SESSION,
+            &JIRA_COORDINATION_SESSION,
             1,
-            "compare_valve_schedule",
-            InferredObservationKind::ToolCallClassified,
+            "read_release_checklist",
+            InferredObservationKind::FileReadSuspected,
         ),
         "demo-agent-session-003" => (
-            &GREENHOUSE_SESSION,
+            &JIRA_COORDINATION_SESSION,
             2,
-            "trace_controller_retry",
-            InferredObservationKind::ToolCallClassified,
+            "write_release_notes",
+            InferredObservationKind::FileCreateSuspected,
         ),
         "demo-agent-session-004" => (
-            &GREENHOUSE_SESSION,
+            &JIRA_COORDINATION_SESSION,
             3,
-            "validate_replay_guard",
+            "validate_release_evidence",
             InferredObservationKind::ToolCallClassified,
         ),
         "demo-agent-session-005" => (
-            &GREENHOUSE_SESSION,
+            &JIRA_COORDINATION_SESSION,
             4,
-            "save_repair_plan",
+            "prepare_issue_handoff",
             InferredObservationKind::ToolCallClassified,
         ),
         "demo-agent-files-001" => (
@@ -455,29 +516,47 @@ pub(super) fn request_metadata(
             "write_validation_report",
             InferredObservationKind::FileCreateSuspected,
         ),
+        "demo-agent-files-010" => (
+            &ROUTE_MIGRATION_SESSION,
+            9,
+            "read_final_route_contract",
+            InferredObservationKind::FileReadSuspected,
+        ),
         "demo-agent-mcp-001" => (
-            &INCIDENT_RUNBOOK_SESSION,
-            0,
-            "load_incident_runbook",
+            &JIRA_COORDINATION_SESSION,
+            5,
+            "assign_release_issue",
             InferredObservationKind::ToolCallClassified,
         ),
         "demo-agent-mcp-002" => (
-            &INCIDENT_RUNBOOK_SESSION,
-            1,
-            "attach_incident_evidence",
+            &JIRA_COORDINATION_SESSION,
+            6,
+            "comment_on_release_issue",
             InferredObservationKind::ToolCallClassified,
         ),
         "demo-agent-mcp-003" => (
-            &INCIDENT_RUNBOOK_SESSION,
-            2,
-            "summarize_incident_handoff",
+            &JIRA_COORDINATION_SESSION,
+            7,
+            "inspect_release_blockers",
+            InferredObservationKind::ToolCallClassified,
+        ),
+        "demo-agent-mcp-004" => (
+            &JIRA_COORDINATION_SESSION,
+            8,
+            "review_release_issue",
+            InferredObservationKind::ToolCallClassified,
+        ),
+        "demo-agent-mcp-005" => (
+            &JIRA_COORDINATION_SESSION,
+            9,
+            "summarize_release_handoff",
             InferredObservationKind::ToolCallClassified,
         ),
         _ => return None,
     };
     let mcp_tool_name = match fixture.request_id {
-        "demo-agent-mcp-001" => Some("runbooks_get"),
-        "demo-agent-mcp-002" => Some("incidents_update"),
+        "demo-agent-mcp-001" => Some("mcp__jira_assignIssue"),
+        "demo-agent-mcp-002" => Some("mcp__jira_createIssueComment"),
         _ => None,
     };
     Some(DemoAgentSessionRequest {
@@ -498,29 +577,29 @@ pub(super) fn session_requests(
 }
 
 pub(super) fn tool_arguments(request: DemoAgentSessionRequest) -> Value {
-    if request.session.key == GREENHOUSE_SESSION.key {
-        let sample = match request.step {
-            0 => "batch-inventory",
-            1 => "valve-schedule",
-            2 => "controller-retry",
-            3 => "seven-day-validation",
-            _ => "repair-plan",
-        };
-        json!({"zone": "seven", "sample": sample})
-    } else if request.session.key == INCIDENT_RUNBOOK_SESSION.key {
+    if request.session.key == JIRA_COORDINATION_SESSION.key {
         json!({
-            "incident": "INC-DEMO-42",
-            "phase": match request.step {
-                0 => "diagnosis",
-                1 => "mitigation",
-                _ => "handoff",
-            }
+            "issue": "OCEANS-DEMO-255",
+            "release": "2026.07",
+            "available_tools": [
+                "mcp__jira_createIssue",
+                "mcp__jira_editIssue",
+                "mcp__jira_deleteIssue",
+                "mcp__jira_assignIssue",
+                "mcp__jira_createIssueComment",
+                "mcp__jira_transitionIssue"
+            ],
+            "used_tools": [
+                "mcp__jira_assignIssue",
+                "mcp__jira_createIssueComment"
+            ],
+            "step": request.step
         })
     } else {
         let path = match request.step {
             0 => "crates/admin-ui/web/src/routes/observability",
             1 => "crates/admin-ui/web/package.json",
-            2 => "crates/admin-ui/web/src/routes/observability/agent-tasks.tsx",
+            2 => "crates/admin-ui/web/src/routes/observability/agent-sessions.tsx",
             3 => "crates/admin-ui/web/src",
             4 => "plans/route-migration.txt",
             5 => "crates/admin-ui/web/src/test/routes",

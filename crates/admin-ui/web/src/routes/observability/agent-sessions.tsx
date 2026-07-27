@@ -27,16 +27,16 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { requireAdminSession } from '@/routes/-admin-guard'
-import { getAgentTasks, getObservabilityAgentTaskDetail } from '@/server/admin-data.functions'
+import { getAgentSessions, getObservabilityAgentSessionDetail } from '@/server/admin-data.functions'
 import type {
   AgentObservationView,
-  AgentTaskDetailView,
-  AgentTaskFiltersInput,
-  AgentTaskRequestView,
-  AgentTaskSummaryView,
+  AgentSessionDetailView,
+  AgentSessionFiltersInput,
+  AgentSessionRequestView,
+  AgentSessionSummaryView,
 } from '@/types/api'
 
-type AgentTaskRouteSearch = AgentTaskFiltersInput & { task_id?: string }
+type AgentSessionRouteSearch = AgentSessionFiltersInput & { session_id?: string }
 
 const timestampFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -62,13 +62,13 @@ export const Route = createFileRoute('/observability/agent-sessions')({
   loaderDeps: ({ search }) => search,
   beforeLoad: ({ location }) => requireAdminSession(location),
   loader: ({ deps }) => {
-    const { task_id: _taskId, ...filters } = deps
-    return getAgentTasks({ data: filters })
+    const { session_id: _sessionId, ...filters } = deps
+    return getAgentSessions({ data: filters })
   },
   component: AgentSessionsPage,
 })
 
-const taskFilterFields = [
+const sessionFilterFields = [
   'lifecycle',
   'gateway_outcome',
   'score_maturity',
@@ -81,11 +81,11 @@ const taskFilterFields = [
   'user_id',
   'team_id',
   'service_account_id',
-  'session_id',
+  'session_source_id',
   'external_session_id',
   'request_tag_key',
   'request_tag_value',
-] as const satisfies readonly (keyof AgentTaskFiltersInput)[]
+] as const satisfies readonly (keyof AgentSessionFiltersInput)[]
 
 const filterFields: FilterFieldConfig<string>[] = [
   {
@@ -145,7 +145,7 @@ const filterFields: FilterFieldConfig<string>[] = [
     type: 'text',
     allowCustomValues: true,
   },
-  { key: 'session_id', label: 'Session ID', type: 'text', allowCustomValues: true },
+  { key: 'session_source_id', label: 'Session source ID', type: 'text', allowCustomValues: true },
   {
     key: 'external_session_id',
     label: 'External session ID',
@@ -162,18 +162,18 @@ const filterFields: FilterFieldConfig<string>[] = [
 ]
 
 export function AgentSessionsPage() {
-  const { data: taskPage } = Route.useLoaderData()
+  const { data: sessionPage } = Route.useLoaderData()
   const { session } = Route.useRouteContext()
   const search = Route.useSearch()
   const router = useRouter()
   const [isListPending, startListTransition] = useTransition()
-  const selectedTaskId = search.task_id ?? null
-  const [selectedDetail, setSelectedDetail] = useState<AgentTaskDetailView | null>(null)
+  const selectedSessionId = search.session_id ?? null
+  const [selectedDetail, setSelectedDetail] = useState<AgentSessionDetailView | null>(null)
   const [detailPending, setDetailPending] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [detailRetry, setDetailRetry] = useState(0)
   const filterNavigationTimer = useRef<number | undefined>(undefined)
-  const filterSearchKey = taskFilterFields.map((field) => search[field] ?? '').join('\u0000')
+  const filterSearchKey = sessionFilterFields.map((field) => search[field] ?? '').join('\u0000')
   const [filterDraft, setFilterDraft] = useState(() => ({
     searchKey: filterSearchKey,
     filters: filtersFromSearch(search),
@@ -181,7 +181,7 @@ export function AgentSessionsPage() {
   const showScore = session.capabilities.calibrated_score_visible
 
   useEffect(() => {
-    if (!selectedTaskId) {
+    if (!selectedSessionId) {
       setSelectedDetail(null)
       setDetailPending(false)
       setDetailError(null)
@@ -191,13 +191,13 @@ export function AgentSessionsPage() {
     setSelectedDetail(null)
     setDetailPending(true)
     setDetailError(null)
-    void getObservabilityAgentTaskDetail({ data: { taskId: selectedTaskId } })
+    void getObservabilityAgentSessionDetail({ data: { sessionId: selectedSessionId } })
       .then((response) => {
         if (!cancelled) setSelectedDetail(response.data)
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setDetailError(error instanceof Error ? error.message : 'Failed to load agent task')
+          setDetailError(error instanceof Error ? error.message : 'Failed to load agent session')
         }
       })
       .finally(() => {
@@ -206,7 +206,7 @@ export function AgentSessionsPage() {
     return () => {
       cancelled = true
     }
-  }, [selectedTaskId, detailRetry])
+  }, [selectedSessionId, detailRetry])
 
   useEffect(
     () => () => {
@@ -217,7 +217,7 @@ export function AgentSessionsPage() {
     [],
   )
 
-  const columns = useMemo<ColumnDef<AgentTaskSummaryView>[]>(
+  const columns = useMemo<ColumnDef<AgentSessionSummaryView>[]>(
     () => [
       {
         accessorKey: 'started_at',
@@ -315,17 +315,17 @@ export function AgentSessionsPage() {
     pageSize: search.page_size ?? 50,
   }
   const table = useReactTable({
-    data: taskPage.items,
+    data: sessionPage.items,
     columns,
-    getRowId: (row) => row.task_id,
+    getRowId: (row) => row.session_id,
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
-    rowCount: taskPage.total,
+    rowCount: sessionPage.total,
     state: { pagination },
     onPaginationChange: (updater) => updatePagination(updater, pagination),
   })
 
-  function navigate(next: AgentTaskRouteSearch) {
+  function navigate(next: AgentSessionRouteSearch) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/agent-sessions',
@@ -342,13 +342,13 @@ export function AgentSessionsPage() {
   function updateFilters(filters: Filter<string>[]) {
     setFilterDraft({ searchKey: filterSearchKey, filters })
     const next = { ...search, page: 1 }
-    for (const field of taskFilterFields) {
+    for (const field of sessionFilterFields) {
       delete next[field]
     }
     for (const filter of filters) {
       const value = filter.values[0]?.trim()
       if (value) {
-        next[filter.field as keyof AgentTaskFiltersInput] = value as never
+        next[filter.field as keyof AgentSessionFiltersInput] = value as never
       }
     }
     if (filterNavigationTimer.current !== undefined) {
@@ -357,13 +357,13 @@ export function AgentSessionsPage() {
     filterNavigationTimer.current = window.setTimeout(() => navigate(next), 250)
   }
 
-  function openDetail(task: AgentTaskSummaryView) {
-    navigate({ ...search, task_id: task.task_id })
+  function openDetail(session: AgentSessionSummaryView) {
+    navigate({ ...search, session_id: session.session_id })
   }
 
   const activeFilters =
     filterDraft.searchKey === filterSearchKey ? filterDraft.filters : filtersFromSearch(search)
-  const hasUnavailableCallMetrics = taskPage.items.some(
+  const hasUnavailableCallMetrics = sessionPage.items.some(
     (item) =>
       item.report_schema_version != null &&
       (item.tool_call_count == null || item.mcp_call_count == null),
@@ -378,7 +378,7 @@ export function AgentSessionsPage() {
             <h1 className="text-2xl font-semibold tracking-tight">Agent sessions</h1>
           </div>
           <Badge variant="outline" className="tabular-nums">
-            {taskPage.total.toLocaleString()} {taskPage.total === 1 ? 'session' : 'sessions'}
+            {sessionPage.total.toLocaleString()} {sessionPage.total === 1 ? 'session' : 'sessions'}
           </Badge>
         </div>
         <p className="text-muted-foreground max-w-3xl text-sm">
@@ -442,7 +442,7 @@ export function AgentSessionsPage() {
           <div className={isListPending ? 'opacity-60 transition-opacity' : undefined}>
             <DataGrid
               table={table}
-              recordCount={taskPage.total}
+              recordCount={sessionPage.total}
               isLoading={isListPending}
               loadingMode="skeleton"
               emptyMessage="No agent sessions match these filters."
@@ -472,23 +472,23 @@ export function AgentSessionsPage() {
       </Card>
 
       <Sheet
-        open={selectedTaskId !== null}
+        open={selectedSessionId !== null}
         onOpenChange={(open) => {
           if (!open) {
-            navigate({ ...search, task_id: undefined })
+            navigate({ ...search, session_id: undefined })
           }
         }}
       >
         <SheetContent className="w-full overflow-y-auto sm:max-w-3xl">
           <SheetHeader>
             <SheetTitle>Agent session diagnostics</SheetTitle>
-            <SheetDescription className="font-mono text-xs">{selectedTaskId}</SheetDescription>
+            <SheetDescription className="font-mono text-xs">{selectedSessionId}</SheetDescription>
           </SheetHeader>
           <div className="space-y-6 px-4 pb-6">
             {detailPending ? <DetailSkeleton /> : null}
             {detailError ? (
               <Alert variant="destructive">
-                <AlertTitle>Task detail unavailable</AlertTitle>
+                <AlertTitle>Session detail unavailable</AlertTitle>
                 <AlertDescription className="flex items-center justify-between gap-3">
                   <span>{detailError}</span>
                   <Button
@@ -502,8 +502,8 @@ export function AgentSessionsPage() {
               </Alert>
             ) : null}
             {selectedDetail ? (
-              <TaskDetail
-                key={selectedDetail.task.task_id}
+              <SessionDetail
+                key={selectedDetail.session.session_id}
                 detail={selectedDetail}
                 showScore={showScore}
               />
@@ -515,7 +515,13 @@ export function AgentSessionsPage() {
   )
 }
 
-function TaskDetail({ detail, showScore }: { detail: AgentTaskDetailView; showScore: boolean }) {
+function SessionDetail({
+  detail,
+  showScore,
+}: {
+  detail: AgentSessionDetailView
+  showScore: boolean
+}) {
   const report = detail.report
   const components = report?.components
   const outcome = components?.outcome
@@ -531,24 +537,26 @@ function TaskDetail({ detail, showScore }: { detail: AgentTaskDetailView; showSc
           value={showScore ? formatNullable(report?.score) : 'Withheld in shadow'}
         />
         <Metric label="Outcome" value={formatNullable(report?.gateway_outcome)} />
-        <Metric label="Normalized cost" value={formatCost(detail.task.normalized_cost_usd)} />
-        <Metric label="Active time" value={formatDuration(detail.task.active_time_ms)} />
+        <Metric label="Normalized cost" value={formatCost(detail.session.normalized_cost_usd)} />
+        <Metric label="Active time" value={formatDuration(detail.session.active_time_ms)} />
       </section>
 
       {!showScore ? (
         <Alert>
           <AlertTitle>Shadow diagnostics</AlertTitle>
           <AlertDescription>
-            The headline score is withheld while task boundaries, outcomes, cohorts, and coverage
+            The headline score is withheld while session boundaries, outcomes, cohorts, and coverage
             are being calibrated.
           </AlertDescription>
         </Alert>
       ) : null}
 
-      {detail.task.limitations.length > 0 ? (
+      {detail.session.limitations.length > 0 ? (
         <Alert>
           <AlertTitle>Provisional evidence</AlertTitle>
-          <AlertDescription>{detail.task.limitations.map(humanize).join(' · ')}</AlertDescription>
+          <AlertDescription>
+            {detail.session.limitations.map(humanize).join(' · ')}
+          </AlertDescription>
         </Alert>
       ) : null}
 
@@ -562,15 +570,15 @@ function TaskDetail({ detail, showScore }: { detail: AgentTaskDetailView; showSc
         </Alert>
       ) : null}
 
-      <DiagnosticSection title="Task identity">
-        <DiagnosticRow label="Model" value={detail.task.requested_model_key} />
-        <DiagnosticRow label="Operation" value={detail.task.operation} />
-        <DiagnosticRow label="Caller class" value={humanize(detail.task.caller_class)} />
-        <DiagnosticRow label="Harness" value={detail.task.harness_label ?? 'Unknown'} />
-        <DiagnosticRow label="Session ID" value={detail.task.session_id ?? 'Not observed'} />
+      <DiagnosticSection title="Session identity">
+        <DiagnosticRow label="Model" value={detail.session.requested_model_key} />
+        <DiagnosticRow label="Operation" value={detail.session.operation} />
+        <DiagnosticRow label="Caller class" value={humanize(detail.session.caller_class)} />
+        <DiagnosticRow label="Harness" value={detail.session.harness_label ?? 'Unknown'} />
+        <DiagnosticRow label="Session ID" value={detail.session.session_id} />
         <DiagnosticRow
           label="External session ID"
-          value={detail.task.external_session_id ?? 'Not observed'}
+          value={detail.session.external_session_id ?? 'Not observed'}
         />
       </DiagnosticSection>
 
@@ -607,8 +615,8 @@ function TaskDetail({ detail, showScore }: { detail: AgentTaskDetailView; showSc
       </DiagnosticSection>
 
       <DiagnosticSection title="Confidence and cohort">
-        <DiagnosticRow label="Confidence" value={detail.task.score_confidence ?? 'Unknown'} />
-        <DiagnosticRow label="Maturity" value={detail.task.score_maturity ?? 'Unknown'} />
+        <DiagnosticRow label="Confidence" value={detail.session.score_confidence ?? 'Unknown'} />
+        <DiagnosticRow label="Maturity" value={detail.session.score_maturity ?? 'Unknown'} />
         <DiagnosticRow
           label="Cohort"
           value={formatNullable(components?.cohort_version, 'No calibrated cohort')}
@@ -827,7 +835,7 @@ function RequestHistory({
   requests,
   historyTruncated,
 }: {
-  requests: AgentTaskRequestView[]
+  requests: AgentSessionRequestView[]
   historyTruncated: boolean
 }) {
   const [visibleCount, setVisibleCount] = useState(25)
@@ -904,7 +912,7 @@ function ObservationHistory({
   )
 }
 
-function RequestFact({ request }: { request: AgentTaskRequestView }) {
+function RequestFact({ request }: { request: AgentSessionRequestView }) {
   return (
     <div className="rounded-lg border p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1005,8 +1013,8 @@ function StateBadge({ value }: { value: string }) {
   return <Badge variant={variant}>{humanize(value)}</Badge>
 }
 
-function filtersFromSearch(search: AgentTaskFiltersInput): Filter<string>[] {
-  return taskFilterFields.flatMap((field) => {
+function filtersFromSearch(search: AgentSessionFiltersInput): Filter<string>[] {
+  return sessionFilterFields.flatMap((field) => {
     const value = search[field]
     return value === null || value === undefined || value === ''
       ? []
@@ -1014,8 +1022,8 @@ function filtersFromSearch(search: AgentTaskFiltersInput): Filter<string>[] {
   })
 }
 
-function normalizeSearch(search: Record<string, unknown>): AgentTaskRouteSearch {
-  const result: AgentTaskRouteSearch = {
+function normalizeSearch(search: Record<string, unknown>): AgentSessionRouteSearch {
+  const result: AgentSessionRouteSearch = {
     page: positiveInteger(search.page, 1),
     page_size: positiveInteger(search.page_size, 50, 100),
   }
@@ -1030,14 +1038,14 @@ function normalizeSearch(search: Record<string, unknown>): AgentTaskRouteSearch 
     'gateway_outcome',
     'score_maturity',
     'score_confidence',
-    'session_id',
+    'session_source_id',
     'external_session_id',
     'request_tag_key',
     'request_tag_value',
     'lifecycle',
     'started_after',
     'started_before',
-    'task_id',
+    'session_id',
   ] as const) {
     const value = search[field]
     if (typeof value === 'string' && value.trim()) {
@@ -1062,9 +1070,9 @@ function integerInRange(value: unknown, minimum: number, maximum: number) {
   return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : undefined
 }
 
-function hasActiveSearch(search: AgentTaskFiltersInput) {
+function hasActiveSearch(search: AgentSessionFiltersInput) {
   return Boolean(
-    taskFilterFields.some((field) => search[field] !== null && search[field] !== undefined) ||
+    sessionFilterFields.some((field) => search[field] !== null && search[field] !== undefined) ||
     search.started_after ||
     search.started_before,
   )

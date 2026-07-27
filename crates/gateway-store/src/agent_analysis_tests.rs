@@ -1,10 +1,10 @@
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,
-    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
-    AgentSessionRecord, AgentTaskAnalysisRecord, AgentTaskListQuery, AgentTaskRequestLinkRecord,
-    AgentTaskWindowRecord, AuthMode, BoundedObservationFacts, Confidence, EvidenceQuality,
-    GlobalRole, InferredObservation, InferredObservationKind, LimitationCode, ScoreMaturity,
-    StoreError, TaskLifecycleState, UserStatus,
+    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
+    AgentSessionAnalysisRepository, AgentSessionListQuery, AgentSessionRecord,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AuthMode, BoundedObservationFacts,
+    Confidence, EvidenceQuality, GlobalRole, InferredObservation, InferredObservationKind,
+    LimitationCode, ScoreMaturity, SessionLifecycleState, StoreError, UserStatus,
 };
 use serial_test::serial;
 use tempfile::tempdir;
@@ -68,8 +68,8 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("request log");
 
     let scope = format!("user:{}", user.user_id);
-    let session = AgentSessionRecord {
-        agent_session_id: Uuid::new_v4(),
+    let session_source = AgentSessionSourceRecord {
+        agent_session_source_id: Uuid::new_v4(),
         ownership_scope_key: scope.clone(),
         api_key_id,
         user_id: Some(user.user_id),
@@ -87,23 +87,29 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         created_at: now,
         updated_at: now,
     };
-    let stored_session = store.upsert_agent_session(&session).await.expect("session");
-    assert_eq!(stored_session.agent_session_id, session.agent_session_id);
+    let stored_session = store
+        .upsert_agent_session_source(&session_source)
+        .await
+        .expect("session");
+    assert_eq!(
+        stored_session.agent_session_source_id,
+        session_source.agent_session_source_id
+    );
     assert_eq!(
         store
-            .load_agent_session(session.agent_session_id)
+            .load_agent_session_source(session_source.agent_session_source_id)
             .await
             .expect("load session"),
         Some(stored_session)
     );
 
     let later_session = store
-        .upsert_agent_session(&AgentSessionRecord {
+        .upsert_agent_session_source(&AgentSessionSourceRecord {
             first_seen_at: now + Duration::seconds(10),
             last_seen_at: now + Duration::seconds(10),
             created_at: now + Duration::seconds(10),
             updated_at: now + Duration::seconds(10),
-            ..session.clone()
+            ..session_source.clone()
         })
         .await
         .expect("later session observation");
@@ -112,11 +118,11 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         now.unix_timestamp()
     );
     let out_of_order_session = store
-        .upsert_agent_session(&AgentSessionRecord {
+        .upsert_agent_session_source(&AgentSessionSourceRecord {
             first_seen_at: now - Duration::seconds(5),
             last_seen_at: now - Duration::seconds(5),
             updated_at: now - Duration::seconds(5),
-            ..session.clone()
+            ..session_source.clone()
         })
         .await
         .expect("out-of-order session observation");
@@ -131,26 +137,26 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     assert_eq!(out_of_order_session.updated_at, later_session.updated_at);
     assert!(matches!(
         store
-            .upsert_agent_session(&AgentSessionRecord {
+            .upsert_agent_session_source(&AgentSessionSourceRecord {
                 adapter_version: "v2".to_string(),
                 source_provenance: "different_source".to_string(),
                 updated_at: now + Duration::seconds(20),
-                ..session.clone()
+                ..session_source.clone()
             })
             .await,
         Err(StoreError::Conflict(_))
     ));
     let unchanged_session = store
-        .load_agent_session(session.agent_session_id)
+        .load_agent_session_source(session_source.agent_session_source_id)
         .await
         .expect("load unchanged session")
         .expect("unchanged session");
     assert_eq!(unchanged_session.adapter_version, "v1");
     assert_eq!(unchanged_session.source_provenance, "session_id_header");
 
-    let task = AgentTaskWindowRecord {
-        agent_task_id: Uuid::new_v4(),
-        agent_session_id: Some(session.agent_session_id),
+    let session = AgentSessionRecord {
+        agent_session_id: Uuid::new_v4(),
+        agent_session_source_id: Some(session_source.agent_session_source_id),
         ownership_scope_key: scope.clone(),
         api_key_id,
         user_id: Some(user.user_id),
@@ -166,8 +172,9 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         }),
         boundary_group_key: "sha256:boundary".to_string(),
         harness_key: "codex".to_string(),
-        boundary_policy_version: agent_session_analysis::TASK_BOUNDARY_POLICY_VERSION.to_string(),
-        lifecycle: TaskLifecycleState::Finalized,
+        boundary_policy_version: agent_session_analysis::SESSION_BOUNDARY_POLICY_VERSION
+            .to_string(),
+        lifecycle: SessionLifecycleState::Finalized,
         boundary_confidence: Confidence::High,
         started_at: now,
         ended_at: Some(now + Duration::seconds(1)),
@@ -178,28 +185,28 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     };
     assert!(
         store
-            .insert_agent_task_if_absent(&task)
+            .insert_agent_session_if_absent(&session)
             .await
-            .expect("task")
+            .expect("session")
     );
     assert!(
         !store
-            .insert_agent_task_if_absent(&task)
+            .insert_agent_session_if_absent(&session)
             .await
-            .expect("exact task replay")
+            .expect("exact session replay")
     );
     assert!(matches!(
         store
-            .insert_agent_task_if_absent(&AgentTaskWindowRecord {
+            .insert_agent_session_if_absent(&AgentSessionRecord {
                 requested_model_key: "different-model".to_string(),
-                ..task.clone()
+                ..session.clone()
             })
             .await,
         Err(StoreError::Conflict(_))
     ));
 
-    let request_link = AgentTaskRequestLinkRecord {
-        agent_task_id: task.agent_task_id,
+    let request_link = AgentSessionRequestLinkRecord {
+        agent_session_id: session.agent_session_id,
         request_id: "request-1".to_string(),
         request_log_id: Some(request_log_id),
         usage_event_id: None,
@@ -215,31 +222,31 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     };
     assert!(
         store
-            .append_agent_task_request(&request_link)
+            .append_agent_session_request(&request_link)
             .await
             .expect("request link")
     );
     assert!(
         !store
-            .append_agent_task_request(&request_link)
+            .append_agent_session_request(&request_link)
             .await
             .expect("idempotent request link")
     );
-    let conflicting_request_link = AgentTaskRequestLinkRecord {
+    let conflicting_request_link = AgentSessionRequestLinkRecord {
         terminal_success: Some(false),
         ..request_link.clone()
     };
     assert!(matches!(
         store
-            .append_agent_task_request(&conflicting_request_link)
+            .append_agent_session_request(&conflicting_request_link)
             .await,
         Err(StoreError::Conflict(_))
     ));
     store
-        .link_request_log_to_agent_task(&AgentRequestLogLinkRecord {
+        .link_request_log_to_agent_session(&AgentRequestLogLinkRecord {
             request_log_id,
-            agent_session_id: Some(session.agent_session_id),
-            agent_task_id: task.agent_task_id,
+            agent_session_source_id: Some(session_source.agent_session_source_id),
+            agent_session_id: session.agent_session_id,
             analysis_source: "passive".to_string(),
             coverage: serde_json::json!({"request_metadata": true}),
         })
@@ -248,7 +255,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     let mut linked_rows = store
         .connection()
         .query(
-            "SELECT agent_session_id, agent_task_id, agent_analysis_source, agent_analysis_coverage_json FROM request_logs WHERE request_log_id = ?1",
+            "SELECT agent_session_source_id, agent_session_id, agent_analysis_source, agent_analysis_coverage_json FROM request_logs WHERE request_log_id = ?1",
             [request_log_id.to_string()],
         )
         .await
@@ -260,11 +267,11 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("linked request log");
     assert_eq!(
         linked.get::<String>(0).expect("linked session"),
-        session.agent_session_id.to_string()
+        session_source.agent_session_source_id.to_string()
     );
     assert_eq!(
-        linked.get::<String>(1).expect("linked task"),
-        task.agent_task_id.to_string()
+        linked.get::<String>(1).expect("linked session"),
+        session.agent_session_id.to_string()
     );
     assert_eq!(linked.get::<String>(2).expect("analysis source"), "passive");
     assert_eq!(
@@ -273,7 +280,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     );
     let observation_set = AgentObservationSetRecord {
         observation_set_id: Uuid::new_v4(),
-        agent_task_id: task.agent_task_id,
+        agent_session_id: session.agent_session_id,
         parser_version: "passive-observations-v1".to_string(),
         source_watermark_at: now,
         coverage: serde_json::json!({"payload": true}),
@@ -317,7 +324,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     let second_observation_set = AgentObservationSetRecord {
         observation_set_id: Uuid::new_v4(),
         parser_version: "passive-observations-v1".to_string(),
-        source_watermark_at: task.input_watermark_at,
+        source_watermark_at: session.input_watermark_at,
         observations: vec![InferredObservation {
             observation_id: Uuid::new_v4(),
             kind: InferredObservationKind::FileReadSuspected,
@@ -359,24 +366,24 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
             .expect("third observations")
     );
 
-    let report = agent_session_analysis::analyze_task(
-        &agent_session_analysis::TaskTrace {
+    let report = agent_session_analysis::analyze_session(
+        &agent_session_analysis::SessionTrace {
             requests: vec![],
             activity_intervals: vec![],
             observations: vec![],
-            lifecycle: task.lifecycle,
-            boundary_confidence: task.boundary_confidence,
+            lifecycle: session.lifecycle,
+            boundary_confidence: session.boundary_confidence,
             evidence: agent_session_analysis::TraceEvidence::default(),
         },
         &agent_session_analysis::AnalysisPolicy::default(),
         None,
     )
     .expect("analysis report");
-    let analysis = AgentTaskAnalysisRecord {
+    let analysis = AgentSessionAnalysisRecord {
         analysis_id: Uuid::new_v4(),
-        agent_task_id: task.agent_task_id,
-        boundary_policy_version: task.boundary_policy_version.clone(),
-        input_watermark_at: task.input_watermark_at,
+        agent_session_id: session.agent_session_id,
+        boundary_policy_version: session.boundary_policy_version.clone(),
+        input_watermark_at: session.input_watermark_at,
         observation_set_id: third_observation_set.observation_set_id,
         observation_parser_version: third_observation_set.parser_version.clone(),
         pricing_policy_version: "cache-aware-v1".to_string(),
@@ -395,13 +402,13 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     };
     assert!(
         store
-            .append_agent_task_analysis(&analysis)
+            .append_agent_session_analysis(&analysis)
             .await
             .expect("analysis")
     );
     assert!(
         !store
-            .append_agent_task_analysis(&AgentTaskAnalysisRecord {
+            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
                 analysis_id: Uuid::new_v4(),
                 ..analysis.clone()
             })
@@ -410,7 +417,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     );
     assert!(
         !store
-            .append_agent_task_analysis(&AgentTaskAnalysisRecord {
+            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
                 analyzed_at: analysis.analyzed_at + Duration::seconds(1),
                 expires_at: analysis.expires_at + Duration::seconds(1),
                 ..analysis.clone()
@@ -418,16 +425,16 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
             .await
             .expect("retry analysis")
     );
-    let mut advanced_task = task.clone();
-    advanced_task.input_watermark_at += Duration::seconds(1);
-    advanced_task.updated_at += Duration::seconds(1);
+    let mut advanced_session = session.clone();
+    advanced_session.input_watermark_at += Duration::seconds(1);
+    advanced_session.updated_at += Duration::seconds(1);
     store
-        .update_agent_task_window(&advanced_task)
+        .update_agent_session_window(&advanced_session)
         .await
-        .expect("advance task watermark");
+        .expect("advance session watermark");
     assert!(
         !store
-            .append_agent_task_analysis(&AgentTaskAnalysisRecord {
+            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
                 analysis_id: Uuid::new_v4(),
                 cohort_version: "late-worker-v1".to_string(),
                 ..analysis.clone()
@@ -437,58 +444,58 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     );
     assert!(
         store
-            .append_agent_task_analysis(&AgentTaskAnalysisRecord {
+            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
                 analysis_id: Uuid::new_v4(),
-                input_watermark_at: advanced_task.input_watermark_at,
+                input_watermark_at: advanced_session.input_watermark_at,
                 analyzed_at: now + Duration::seconds(1),
                 ..analysis.clone()
             })
             .await
             .expect("finalized watermark analysis")
     );
-    let foreign_task = AgentTaskWindowRecord {
-        agent_task_id: Uuid::new_v4(),
+    let foreign_session = AgentSessionRecord {
+        agent_session_id: Uuid::new_v4(),
         boundary_group_key: "sha256:foreign-boundary".to_string(),
-        ..advanced_task.clone()
+        ..advanced_session.clone()
     };
     assert!(
         store
-            .insert_agent_task_if_absent(&foreign_task)
+            .insert_agent_session_if_absent(&foreign_session)
             .await
-            .expect("foreign task")
+            .expect("foreign session")
     );
     assert!(
         !store
-            .append_agent_task_analysis(&AgentTaskAnalysisRecord {
+            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
                 analysis_id: Uuid::new_v4(),
-                agent_task_id: foreign_task.agent_task_id,
-                input_watermark_at: foreign_task.input_watermark_at,
+                agent_session_id: foreign_session.agent_session_id,
+                input_watermark_at: foreign_session.input_watermark_at,
                 cohort_version: "foreign-observation-v1".to_string(),
                 ..analysis.clone()
             })
             .await
             .expect("reject foreign observation set"),
-        "analysis must not reference another task's observation set"
+        "analysis must not reference another session's observation set"
     );
     store
         .connection()
         .execute(
-            "DELETE FROM agent_task_windows WHERE agent_task_id = ?1",
-            [foreign_task.agent_task_id.to_string()],
+            "DELETE FROM agent_sessions WHERE agent_session_id = ?1",
+            [foreign_session.agent_session_id.to_string()],
         )
         .await
-        .expect("delete foreign task fixture");
+        .expect("delete foreign session fixture");
 
     let observation_sets = store
-        .load_agent_observation_sets(task.agent_task_id)
+        .load_agent_observation_sets(session.agent_session_id)
         .await
         .expect("all observation sets");
     assert_eq!(observation_sets.len(), 3);
     let trace = store
-        .load_agent_task_trace(task.agent_task_id)
+        .load_agent_session_trace(session.agent_session_id)
         .await
         .expect("trace")
-        .expect("task trace");
+        .expect("session trace");
     assert_eq!(trace.requests.len(), 1);
     assert_eq!(trace.requests[0].terminal_success, Some(true));
     let observations = trace
@@ -516,32 +523,35 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
             .any(|observation| observation.source_request_id == "request-2")
     );
     let page = store
-        .list_agent_tasks(&AgentTaskListQuery {
+        .list_agent_sessions(&AgentSessionListQuery {
             ownership_scope_key: Some(scope),
             ..Default::default()
         })
         .await
-        .expect("task page");
+        .expect("session page");
     assert_eq!(page.total, 1);
-    assert_eq!(page.items[0].task.agent_task_id, task.agent_task_id);
+    assert_eq!(
+        page.items[0].session.agent_session_id,
+        session.agent_session_id
+    );
     let session_page = store
-        .list_agent_tasks(&AgentTaskListQuery {
-            agent_session_id: Some(session.agent_session_id),
+        .list_agent_sessions(&AgentSessionListQuery {
+            agent_session_source_id: Some(session_source.agent_session_source_id),
             ..Default::default()
         })
         .await
         .expect("session page");
     assert_eq!(session_page.total, 1);
     let missing_session_page = store
-        .list_agent_tasks(&AgentTaskListQuery {
-            agent_session_id: Some(Uuid::new_v4()),
+        .list_agent_sessions(&AgentSessionListQuery {
+            agent_session_source_id: Some(Uuid::new_v4()),
             ..Default::default()
         })
         .await
         .expect("missing session page");
     assert_eq!(missing_session_page.total, 0);
     let harness_page = store
-        .list_agent_tasks(&AgentTaskListQuery {
+        .list_agent_sessions(&AgentSessionListQuery {
             harness_key: Some("codex".to_string()),
             ..Default::default()
         })
@@ -549,7 +559,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("harness page");
     assert_eq!(harness_page.total, 1);
     let empty_harness_page = store
-        .list_agent_tasks(&AgentTaskListQuery {
+        .list_agent_sessions(&AgentSessionListQuery {
             harness_key: Some("opencode".to_string()),
             ..Default::default()
         })
@@ -557,7 +567,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("empty harness page");
     assert_eq!(empty_harness_page.total, 0);
     let confidence_page = store
-        .list_agent_tasks(&AgentTaskListQuery {
+        .list_agent_sessions(&AgentSessionListQuery {
             score_confidence: Some(Confidence::Low),
             ..Default::default()
         })
@@ -565,7 +575,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("confidence page");
     assert_eq!(confidence_page.total, 1);
     let empty_confidence_page = store
-        .list_agent_tasks(&AgentTaskListQuery {
+        .list_agent_sessions(&AgentSessionListQuery {
             score_confidence: Some(Confidence::High),
             ..Default::default()
         })
@@ -573,23 +583,23 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("empty confidence page");
     assert_eq!(empty_confidence_page.total, 0);
     let dimension_page = store
-        .list_agent_tasks(&AgentTaskListQuery {
-            requested_model_key: Some(task.requested_model_key.clone()),
-            operation: Some(task.operation.clone()),
-            caller_class: Some(task.caller_class.clone()),
+        .list_agent_sessions(&AgentSessionListQuery {
+            requested_model_key: Some(session.requested_model_key.clone()),
+            operation: Some(session.operation.clone()),
+            caller_class: Some(session.caller_class.clone()),
             gateway_outcome: Some(analysis.report.gateway_outcome),
             score_maturity: Some(analysis.report.maturity),
             minimum_coverage_percent: Some(analysis.report.coverage.overall_percent),
-            normalized_session_id: Some(session.normalized_session_id.clone()),
+            normalized_session_id: Some(session_source.normalized_session_id.clone()),
             request_tag_key: Some("environment".to_string()),
             request_tag_value: Some("test".to_string()),
             ..Default::default()
         })
         .await
-        .expect("task dimension filters");
+        .expect("session dimension filters");
     assert_eq!(dimension_page.total, 1);
     let key_only_tag_page = store
-        .list_agent_tasks(&AgentTaskListQuery {
+        .list_agent_sessions(&AgentSessionListQuery {
             request_tag_key: Some("environment".to_string()),
             ..Default::default()
         })
@@ -597,7 +607,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("key-only request tag filter");
     assert_eq!(key_only_tag_page.total, 1);
     let bespoke_tag_page = store
-        .list_agent_tasks(&AgentTaskListQuery {
+        .list_agent_sessions(&AgentSessionListQuery {
             request_tag_key: Some("customer_tier".to_string()),
             request_tag_value: Some("enterprise".to_string()),
             ..Default::default()
@@ -606,7 +616,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("bespoke request tag filter");
     assert_eq!(bespoke_tag_page.total, 1);
     let missing_tag_page = store
-        .list_agent_tasks(&AgentTaskListQuery {
+        .list_agent_sessions(&AgentSessionListQuery {
             request_tag_key: Some("environment".to_string()),
             request_tag_value: Some("production".to_string()),
             ..Default::default()
@@ -617,11 +627,11 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
 
     let queue = AgentAnalysisQueueRecord {
         queue_item_id: Uuid::new_v4(),
-        agent_task_id: task.agent_task_id,
+        agent_session_id: session.agent_session_id,
         reason: "new_input".to_string(),
         desired_versions: AgentAnalysisDesiredVersions {
             report_schema_version: agent_session_analysis::REPORT_SCHEMA_VERSION.to_string(),
-            boundary_policy_version: agent_session_analysis::TASK_BOUNDARY_POLICY_VERSION
+            boundary_policy_version: agent_session_analysis::SESSION_BOUNDARY_POLICY_VERSION
                 .to_string(),
             observation_parser_version: agent_session_analysis::OBSERVATION_PARSER_VERSION
                 .to_string(),
@@ -693,17 +703,17 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("purge analysis facts");
     assert!(purged >= 2);
     let retained_trace = store
-        .load_agent_task_trace(task.agent_task_id)
+        .load_agent_session_trace(session.agent_session_id)
         .await
         .expect("trace after fact retention")
-        .expect("retained task and report");
+        .expect("retained session and report");
     assert!(retained_trace.requests.is_empty());
     assert!(retained_trace.latest_observation_set.is_some());
     assert!(retained_trace.latest_analysis.is_some());
     let mut retained_report_rows = store
         .connection()
         .query(
-            "SELECT COUNT(*) FROM agent_task_analyses WHERE analysis_id = ?1",
+            "SELECT COUNT(*) FROM agent_session_analyses WHERE analysis_id = ?1",
             [analysis.analysis_id.to_string()],
         )
         .await
@@ -731,7 +741,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("delete user");
     assert!(
         store
-            .load_agent_task_trace(task.agent_task_id)
+            .load_agent_session_trace(session.agent_session_id)
             .await
             .expect("trace after deletion")
             .is_none()
@@ -739,7 +749,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     let mut deleted_report_rows = store
         .connection()
         .query(
-            "SELECT COUNT(*) FROM agent_task_analyses WHERE analysis_id = ?1",
+            "SELECT COUNT(*) FROM agent_session_analyses WHERE analysis_id = ?1",
             [analysis.analysis_id.to_string()],
         )
         .await
@@ -754,7 +764,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
 
 #[tokio::test]
 #[serial]
-async fn postgres_agent_task_dimensions_round_trip_and_filter() {
+async fn postgres_agent_session_dimensions_round_trip_and_filter() {
     let Some(test_db) = create_postgres_test_database().await else {
         eprintln!("skipping postgres agent analysis test because TEST_POSTGRES_URL is not set");
         return;
@@ -795,8 +805,8 @@ async fn postgres_agent_task_dimensions_round_trip_and_filter() {
     .expect("api key");
 
     let ownership_scope_key = format!("user:{}", user.user_id);
-    let session = AgentSessionRecord {
-        agent_session_id: Uuid::new_v4(),
+    let session_source = AgentSessionSourceRecord {
+        agent_session_source_id: Uuid::new_v4(),
         ownership_scope_key: ownership_scope_key.clone(),
         api_key_id,
         user_id: Some(user.user_id),
@@ -814,11 +824,14 @@ async fn postgres_agent_task_dimensions_round_trip_and_filter() {
         created_at: now,
         updated_at: now,
     };
-    store.upsert_agent_session(&session).await.expect("session");
+    store
+        .upsert_agent_session_source(&session_source)
+        .await
+        .expect("session");
 
-    let task = AgentTaskWindowRecord {
-        agent_task_id: Uuid::new_v4(),
-        agent_session_id: Some(session.agent_session_id),
+    let session = AgentSessionRecord {
+        agent_session_id: Uuid::new_v4(),
+        agent_session_source_id: Some(session_source.agent_session_source_id),
         ownership_scope_key,
         api_key_id,
         user_id: Some(user.user_id),
@@ -831,8 +844,9 @@ async fn postgres_agent_task_dimensions_round_trip_and_filter() {
         request_tags: serde_json::json!({"environment": "postgres"}),
         boundary_group_key: "sha256:postgres-boundary".to_string(),
         harness_key: "codex".to_string(),
-        boundary_policy_version: agent_session_analysis::TASK_BOUNDARY_POLICY_VERSION.to_string(),
-        lifecycle: TaskLifecycleState::Finalized,
+        boundary_policy_version: agent_session_analysis::SESSION_BOUNDARY_POLICY_VERSION
+            .to_string(),
+        lifecycle: SessionLifecycleState::Finalized,
         boundary_confidence: Confidence::High,
         started_at: now,
         ended_at: Some(now + Duration::seconds(1)),
@@ -843,40 +857,40 @@ async fn postgres_agent_task_dimensions_round_trip_and_filter() {
     };
     assert!(
         store
-            .insert_agent_task_if_absent(&task)
+            .insert_agent_session_if_absent(&session)
             .await
-            .expect("insert task")
+            .expect("insert session")
     );
     assert!(
         !store
-            .insert_agent_task_if_absent(&task)
+            .insert_agent_session_if_absent(&session)
             .await
             .expect("idempotent replay")
     );
     assert!(matches!(
         store
-            .insert_agent_task_if_absent(&AgentTaskWindowRecord {
+            .insert_agent_session_if_absent(&AgentSessionRecord {
                 operation: "responses".to_string(),
-                ..task.clone()
+                ..session.clone()
             })
             .await,
         Err(StoreError::Conflict(_))
     ));
 
     let page = store
-        .list_agent_tasks(&AgentTaskListQuery {
+        .list_agent_sessions(&AgentSessionListQuery {
             requested_model_key: Some("claude-opus-4-1".to_string()),
             operation: Some("chat".to_string()),
             caller_class: Some("user".to_string()),
             normalized_session_id: Some("postgres-session".to_string()),
             request_tag_key: Some("environment".to_string()),
             request_tag_value: Some("postgres".to_string()),
-            ..AgentTaskListQuery::default()
+            ..AgentSessionListQuery::default()
         })
         .await
-        .expect("list tasks");
+        .expect("list sessions");
     assert_eq!(page.total, 1);
-    assert_eq!(page.items[0].task, task);
+    assert_eq!(page.items[0].session, session);
 
     store.pool().close().await;
     drop_postgres_test_database(&test_db).await;

@@ -1220,7 +1220,7 @@ pub struct RequestLogPayloadView {
 
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
-pub struct AgentTaskListRequestQuery {
+pub struct AgentSessionListRequestQuery {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
     pub user_id: Option<String>,
@@ -1233,7 +1233,7 @@ pub struct AgentTaskListRequestQuery {
     pub gateway_outcome: Option<String>,
     pub score_maturity: Option<String>,
     pub minimum_coverage_percent: Option<u8>,
-    pub session_id: Option<String>,
+    pub session_source_id: Option<String>,
     pub external_session_id: Option<String>,
     pub request_tag_key: Option<String>,
     pub request_tag_value: Option<String>,
@@ -1243,16 +1243,9 @@ pub struct AgentTaskListRequestQuery {
     pub score_confidence: Option<String>,
 }
 
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub struct AgentSessionDetailRequestQuery {
-    pub page: Option<u32>,
-    pub page_size: Option<u32>,
-}
-
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AgentSessionView {
-    pub session_id: String,
+pub struct AgentSessionSourceView {
+    pub session_source_id: String,
     pub external_session_id: String,
     pub adapter_namespace: String,
     pub adapter_version: String,
@@ -1264,9 +1257,9 @@ pub struct AgentSessionView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AgentTaskSummaryView {
-    pub task_id: String,
-    pub session_id: Option<String>,
+pub struct AgentSessionSummaryView {
+    pub session_id: String,
+    pub session_source_id: Option<String>,
     pub external_session_id: Option<String>,
     pub ownership_scope_key: String,
     pub user_id: Option<String>,
@@ -1277,7 +1270,7 @@ pub struct AgentTaskSummaryView {
     pub requested_model_key: String,
     pub operation: String,
     pub caller_class: String,
-    pub external_session_observed: bool,
+    pub session_source_observed: bool,
     pub lifecycle: String,
     pub boundary_confidence: String,
     pub started_at: String,
@@ -1305,21 +1298,15 @@ pub struct AgentTaskSummaryView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AgentTaskPageView {
-    pub items: Vec<AgentTaskSummaryView>,
+pub struct AgentSessionPageView {
+    pub items: Vec<AgentSessionSummaryView>,
     pub page: u32,
     pub page_size: u32,
     pub total: u64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AgentSessionDetailView {
-    pub session: AgentSessionView,
-    pub tasks: AgentTaskPageView,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct AgentTaskRequestView {
+pub struct AgentSessionRequestView {
     pub request_id: String,
     pub request_log_id: Option<String>,
     pub usage_event_id: Option<String>,
@@ -1369,7 +1356,7 @@ pub struct AgentObservationCoverageView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AgentTaskOutcomeView {
+pub struct AgentSessionOutcomeView {
     pub state: String,
     pub factor_basis_points: u16,
     pub successful_requests: u32,
@@ -1378,8 +1365,8 @@ pub struct AgentTaskOutcomeView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AgentTaskEfficiencyComponentsView {
-    pub outcome: AgentTaskOutcomeView,
+pub struct AgentSessionEfficiencyComponentsView {
+    pub outcome: AgentSessionOutcomeView,
     pub cost_efficiency_basis_points: Option<u16>,
     pub active_time_efficiency_basis_points: Option<u16>,
     pub actual_cost_10000: Option<i64>,
@@ -1452,7 +1439,7 @@ pub struct AgentToolAndChangeDiagnosticsView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AgentTaskDiagnosticsView {
+pub struct AgentSessionDiagnosticsView {
     pub token_and_cache: AgentTokenAndCacheDiagnosticsView,
     pub context: AgentContextDiagnosticsView,
     pub tools_and_changes: AgentToolAndChangeDiagnosticsView,
@@ -1460,7 +1447,7 @@ pub struct AgentTaskDiagnosticsView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AgentTaskEfficiencyReportView {
+pub struct AgentSessionEfficiencyReportView {
     pub report_schema_version: String,
     pub analyzer_version: String,
     pub score_policy_version: String,
@@ -1471,13 +1458,13 @@ pub struct AgentTaskEfficiencyReportView {
     pub gateway_outcome: String,
     pub score: Option<u8>,
     pub coverage: AgentTelemetryCoverageView,
-    pub components: AgentTaskEfficiencyComponentsView,
-    pub diagnostics: AgentTaskDiagnosticsView,
+    pub components: AgentSessionEfficiencyComponentsView,
+    pub diagnostics: AgentSessionDiagnosticsView,
     pub limitations: Vec<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AgentTaskAnalysisIdentityView {
+pub struct AgentSessionAnalysisIdentityView {
     pub analysis_id: String,
     pub input_watermark_at: String,
     pub observation_set_id: String,
@@ -1493,15 +1480,15 @@ pub struct AgentTaskAnalysisIdentityView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AgentTaskDetailView {
-    pub task: AgentTaskSummaryView,
-    pub session: Option<AgentSessionView>,
-    pub requests: Vec<AgentTaskRequestView>,
+pub struct AgentSessionDetailView {
+    pub session: AgentSessionSummaryView,
+    pub session_source: Option<AgentSessionSourceView>,
+    pub requests: Vec<AgentSessionRequestView>,
     pub observations: Vec<AgentObservationView>,
     pub request_history_truncated: bool,
     pub observation_history_truncated: bool,
-    pub analysis: Option<AgentTaskAnalysisIdentityView>,
-    pub report: Option<AgentTaskEfficiencyReportView>,
+    pub analysis: Option<AgentSessionAnalysisIdentityView>,
+    pub report: Option<AgentSessionEfficiencyReportView>,
     pub coverage: Option<AgentObservationCoverageView>,
 }
 
@@ -1567,8 +1554,7 @@ pub struct AgentTaskDetailView {
         crate::http::spend::deactivate_budget,
         crate::http::observability::get_usage_leaderboard,
         crate::http::observability::get_harness_usage,
-        crate::http::observability::list_agent_tasks,
-        crate::http::observability::get_agent_task_detail,
+        crate::http::observability::list_agent_sessions,
         crate::http::observability::get_agent_session_detail,
         crate::http::observability::list_request_logs,
         crate::http::observability::get_request_log_detail,

@@ -1,8 +1,8 @@
 import type {
   AddTeamMembersInput,
-  AgentTaskDetailView,
-  AgentTaskFiltersInput,
-  AgentTaskPageView,
+  AgentSessionDetailView,
+  AgentSessionFiltersInput,
+  AgentSessionPageView,
   ApiEnvelope,
   ApiKeysPayload,
   AuthSessionView,
@@ -296,24 +296,24 @@ export async function deactivateBudget(
   )
 }
 
-export async function listAgentTasks(
-  filters: AgentTaskFiltersInput = {},
-): Promise<ApiEnvelope<AgentTaskPageView>> {
+export async function listAgentSessions(
+  filters: AgentSessionFiltersInput = {},
+): Promise<ApiEnvelope<AgentSessionPageView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
-    await client.GET('/api/v1/admin/observability/agent-tasks', {
+    await client.GET('/api/v1/admin/observability/agent-sessions', {
       params: { query: filters },
     }),
   )
 }
 
-export async function getAgentTaskDetail(
-  taskId: string,
-): Promise<ApiEnvelope<AgentTaskDetailView>> {
+export async function getAgentSessionDetail(
+  sessionId: string,
+): Promise<ApiEnvelope<AgentSessionDetailView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
-    await client.GET('/api/v1/admin/observability/agent-tasks/{task_id}', {
-      params: { path: { task_id: taskId } },
+    await client.GET('/api/v1/admin/observability/agent-sessions/{session_id}', {
+      params: { path: { session_id: sessionId } },
     }),
   )
 }

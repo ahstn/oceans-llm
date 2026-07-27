@@ -1,4 +1,4 @@
-# Passive, Versioned Agent Task Analysis
+# Passive, Versioned Agent Session Analysis
 
 - Status: Accepted
 - Date: 2026-07-21
@@ -6,14 +6,14 @@
 
 ## Decision
 
-Oceans derives operational agent task diagnostics passively from authenticated gateway request facts. Correlation, inferred observations, reports, and recomputation state are persisted in dedicated append-oriented tables. The scoring formula lives in a dependency-light Rust crate. Numeric presentation is separated from collection by runtime capabilities: passive collection may run while only platform admins can inspect shadow diagnostics, and team access requires an explicitly calibrated rollout.
+Oceans derives operational agent session diagnostics passively from authenticated gateway request facts. Correlation, inferred observations, reports, and recomputation state are persisted in dedicated append-oriented tables. The scoring formula lives in a dependency-light Rust crate. Numeric presentation is separated from collection by runtime capabilities: passive collection may run while only platform admins can inspect shadow diagnostics, and team access requires an explicitly calibrated rollout.
 
 ## Implementation
 
-- Authenticated ownership scope and bounded harness metadata produce deterministic, owner-scoped session and task candidates.
-- Requests without sufficient session evidence form sessionless task windows; the gateway does not invent a session identity.
+- Authenticated ownership scope and bounded harness metadata produce deterministic, owner-scoped session-source and session candidates.
+- Requests without sufficient source evidence form source-less session windows; the gateway does not invent an external session identity.
 - Raw prompts, responses, file paths/content, tool arguments/outputs, arbitrary headers, hosts, and IP addresses are excluded from default analysis facts.
-- Task-request ordinals are assigned atomically by the repository.
+- Session-request ordinals are assigned atomically by the repository.
 - Idle finalization appends a versioned recomputation job. The leased worker appends an immutable analysis and marks the previous current analysis stale.
 - `agent-session-analysis` owns deterministic outcome, active-time, cohort-rank, confidence, and score calculations without gateway/store/provider dependencies.
 - LibSQL and PostgreSQL implement one repository contract and paired V41 schemas.
@@ -23,7 +23,7 @@ Oceans derives operational agent task diagnostics passively from authenticated g
 
 ## Why
 
-Request-scoped observability cannot explain the operational cost and time of a multi-request agent task. Provider or harness conversation IDs are also not reliable user identity and cannot safely be joined globally. Dedicated task facts provide a bounded, auditable unit while preserving request-level lineage.
+Request-scoped observability cannot explain the operational cost and time of a multi-request agent session. Provider or harness conversation IDs are also not reliable user identity and cannot safely be joined globally. Dedicated session facts provide a bounded, auditable unit while preserving request-level lineage.
 
 Append-only, versioned reports avoid silently changing historical interpretation when parser, boundary, cohort, pricing, or score policies change. A pure analysis crate makes the formula reproducible and testable independently of storage and runtime behavior. Runtime gates prevent an experimental score from being presented as authoritative before calibration evidence exists.
 
@@ -34,13 +34,13 @@ Append-only, versioned reports avoid silently changing historical interpretation
 - Immutable versions and recomputation queues consume more storage than overwriting one report.
 - Shadow collection produces data that is not immediately visible to team admins.
 - Aggregate monitoring is delayed until grouping, sensitivity, cohort, and pricing reviews are complete.
-- Missing provider usage or cache rates remains unavailable rather than being imputed, so some tasks cannot receive a score.
+- Missing provider usage or cache rates remains unavailable rather than being imputed, so some sessions cannot receive a score.
 
 ## Rejected Alternatives
 
-### Reuse request logs as the task model
+### Reuse request logs as the session model
 
-Rejected because request logs lack a canonical multi-request task boundary and immutable analysis-version history.
+Rejected because request logs lack a canonical multi-request session boundary and immutable analysis-version history.
 
 ### Treat external session values as identity
 
@@ -61,7 +61,7 @@ Rejected because no deployment has yet supplied the shadow calibration evidence 
 ## Follow-up
 
 - Review shadow grouping samples without retaining raw content.
-- Run score-weight sensitivity analysis and validate fallback behavior at minimum cohort size 10.
+- Run score-weight sensitivity analysis and validate fallback behavior at minimum cohort size 6.
 - Review normalized-versus-legacy provider cost discrepancies and approve a dated authoritative pricing cutover.
 - Enable calibrated and team-admin capabilities only after those reviews are recorded.
 - Add the separately gated aggregate endpoint and accessible admin monitoring only after list/detail calibration.

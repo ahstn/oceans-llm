@@ -10,16 +10,17 @@ pub mod traits;
 
 pub use agent_analysis::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,
-    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
-    AgentSessionRecord, AgentTaskAnalysisRecord, AgentTaskListPage, AgentTaskListQuery,
-    AgentTaskRequestLinkRecord, AgentTaskTraceRecord, AgentTaskWindowRecord,
-    MAX_AGENT_TASK_PAGE_SIZE, MAX_AGENT_TASK_REQUESTS,
+    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
+    AgentSessionAnalysisRepository, AgentSessionListPage, AgentSessionListQuery,
+    AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
+    AgentSessionTraceRecord, MAX_AGENT_SESSION_PAGE_SIZE, MAX_AGENT_SESSION_REQUESTS,
 };
 pub use agent_session_analysis::{
-    ActivityInterval, AgentSessionId, AgentTaskId, AnalysisId, BoundedObservationFacts,
+    ActivityInterval, AgentSessionId, AgentSessionSourceId, AnalysisId, BoundedObservationFacts,
     CohortReference, Confidence, EvidenceQuality, GatewayOutcomeState, InferredObservation,
     InferredObservationKind, LimitationCode, ObservationSetId, ScoreMaturity,
-    TaskEfficiencyComponents, TaskEfficiencyReport, TaskLifecycleState, TaskRequestFact,
+    SessionEfficiencyComponents, SessionEfficiencyReport, SessionLifecycleState,
+    SessionRequestFact,
 };
 pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
