@@ -99,6 +99,9 @@ describe('AgentHarnessesPage', () => {
     expect(scope.getAllByText('Opencode').length).toBeGreaterThan(0)
     expect(scope.getAllByText('Claude Code').length).toBeGreaterThan(0)
     expect(scope.getByText('opencode')).toBeInTheDocument()
+    expect(
+      scope.getByTestId('harness-usage-table').querySelectorAll('[data-agent-harness-icon]'),
+    ).toHaveLength(2)
   })
 
   it('refetches harness data when the date range changes', async () => {

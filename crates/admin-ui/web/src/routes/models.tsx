@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 
 import { BrandIcon } from '@/components/icons/brand-icon'
 import { AppIcon } from '@/components/icons/app-icon'
+import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -1018,7 +1019,7 @@ function ClientConfigDialog({
               >
                 {clientConfigurations.map((config) => (
                   <ToggleGroupItem key={config.key} value={config.key} aria-label={config.label}>
-                    {config.label}
+                    <AgentHarnessLabel harnessKey={config.key}>{config.label}</AgentHarnessLabel>
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>

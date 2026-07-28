@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { toast } from 'sonner'
 
+import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   ChartContainer,
@@ -55,7 +56,11 @@ export function AgentHarnessesPage() {
 
   const chartConfig = chartSeries.reduce<ChartConfig>((config, harness) => {
     config[harness.key] = {
-      label: harness.agent_harness_label,
+      label: (
+        <AgentHarnessLabel harnessKey={harness.agent_harness_key} iconSize={14}>
+          {harness.agent_harness_label}
+        </AgentHarnessLabel>
+      ),
       color: harness.color,
     }
     return config
@@ -231,7 +236,11 @@ export function AgentHarnessesPage() {
                       <TableCell className="font-medium text-[var(--color-text-soft)]">
                         {index + 1}
                       </TableCell>
-                      <TableCell className="font-medium">{leader.agent_harness_label}</TableCell>
+                      <TableCell className="font-medium">
+                        <AgentHarnessLabel harnessKey={leader.agent_harness_key}>
+                          {leader.agent_harness_label}
+                        </AgentHarnessLabel>
+                      </TableCell>
                       <TableCell className="text-right">
                         {NUMBER_FORMATTER.format(leader.total_requests)}
                       </TableCell>
