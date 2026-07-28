@@ -518,7 +518,9 @@ describe('ModelsPage', () => {
     expect(getModelClientConfigsMock).toHaveBeenCalledWith({
       data: { model_keys: ['claude-sonnet'] },
     })
-    expect(await screen.findByRole('dialog', { name: 'Client config' })).toBeInTheDocument()
+    const clientConfigDialog = await screen.findByRole('dialog', { name: 'Client config' })
+    expect(clientConfigDialog).toBeInTheDocument()
+    expect(clientConfigDialog.querySelectorAll('[data-agent-harness-icon]')).toHaveLength(4)
     expect(screen.getByText('~/.config/opencode/opencode.json')).toBeInTheDocument()
     expect(screen.getByText('Base URL')).toBeInTheDocument()
     expect(screen.getByText(/Base URL can change depending on API format/)).toBeInTheDocument()
