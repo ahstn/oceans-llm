@@ -1,9 +1,9 @@
 import type { CSSProperties, HTMLAttributes, ReactNode } from 'react'
 
-import claudeCodeIcon from '@lobehub/icons-static-svg/icons/claudecode.svg'
-import codexIcon from '@lobehub/icons-static-svg/icons/codex.svg'
-import openCodeIcon from '@lobehub/icons-static-svg/icons/opencode.svg'
-import piIcon from '@lobehub/icons-static-svg/icons/pi.svg'
+import claudeCodeIcon from '@lobehub/icons-static-svg/icons/claudecode.svg?url'
+import codexIcon from '@lobehub/icons-static-svg/icons/codex.svg?url'
+import openCodeIcon from '@lobehub/icons-static-svg/icons/opencode.svg?url'
+import piIcon from '@lobehub/icons-static-svg/icons/pi.svg?url'
 
 import { cn } from '@/lib/utils'
 
@@ -33,8 +33,14 @@ export function AgentHarnessIcon({
   }
 
   const maskStyle: CSSProperties = {
-    WebkitMask: `url(${source}) center / contain no-repeat`,
-    mask: `url(${source}) center / contain no-repeat`,
+    WebkitMaskImage: `url("${source}")`,
+    WebkitMaskPosition: 'center',
+    WebkitMaskRepeat: 'no-repeat',
+    WebkitMaskSize: 'contain',
+    maskImage: `url("${source}")`,
+    maskPosition: 'center',
+    maskRepeat: 'no-repeat',
+    maskSize: 'contain',
     backgroundColor: 'currentColor',
     height: size,
     width: size,

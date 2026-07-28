@@ -259,6 +259,7 @@ describe('AgentSessionsPage', () => {
     expect(screen.getByRole('heading', { name: 'Agent sessions' })).toBeInTheDocument()
     expect(screen.getByText('1 session')).toBeInTheDocument()
     expect(screen.getByText('Opencode')).toBeInTheDocument()
+    expect(document.querySelector('[data-agent-harness-icon="opencode"]')).toBeInTheDocument()
     expect(screen.getByText('Shadow')).toBeInTheDocument()
     expect(screen.queryByText('82')).not.toBeInTheDocument()
     const sessionRow = screen.getByRole('row', { name: /Opencode/ })

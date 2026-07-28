@@ -8,6 +8,7 @@ import {
   type Updater,
 } from '@tanstack/react-table'
 
+import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import { DataGrid } from '@/components/reui/data-grid/data-grid'
 import { DataGridPagination } from '@/components/reui/data-grid/data-grid-pagination'
 import { DataGridTable } from '@/components/reui/data-grid/data-grid-table'
@@ -228,7 +229,14 @@ export function AgentSessionsPage() {
       {
         accessorKey: 'harness_label',
         header: 'Harness',
-        cell: ({ row }) => row.original.harness_label ?? row.original.harness_key ?? 'Unknown',
+        cell: ({ row }) => {
+          const harnessLabel = row.original.harness_label ?? row.original.harness_key ?? 'Unknown'
+          return (
+            <AgentHarnessLabel harnessKey={row.original.harness_key ?? harnessLabel}>
+              {harnessLabel}
+            </AgentHarnessLabel>
+          )
+        },
         size: 150,
       },
       {
