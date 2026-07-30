@@ -1,18 +1,20 @@
-# Agent Task Analysis and Efficiency
+# Agent Session Analysis and Efficiency
 
-`See also`: [Agent Session Analysis](../operations/agent-session-analysis.md), [Agent Session Analysis Architecture](../contributing/reference/agent-session-analysis.md), [Passive, Versioned Agent Task Analysis](../adr/2026-07-21-passive-agent-task-analysis.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Tool Access](../mcp/mcp-tool-access.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Data Relationships](../contributing/reference/data-relationships.md)
+`See also`: [Agent Session Analysis](../operations/agent-session-analysis.md), [Agent Session Analysis Architecture](../contributing/reference/agent-session-analysis.md), [Passive, Versioned Agent Session Analysis](../adr/2026-07-21-passive-agent-session-analysis.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Tool Access](../mcp/mcp-tool-access.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Admin Control Plane](../access/admin-control-plane.md), [Data Relationships](../contributing/reference/data-relationships.md)
 
 - Date: 2026-07-20
-- Status: Implemented
+- Status: Implemented after session-model consolidation
 - Tracking issue: [#255: Add outcome-aware agent session efficiency analytics](https://github.com/ahstn/oceans-llm/issues/255)
-- Primary product resource: `Agent task`
-- Headline: `Task Efficiency Score`
+- Primary product resource: `Agent session`
+- Headline: `Session Efficiency Score`
 - Pure Rust crate: `crates/agent-session-analysis`
 - Initial evidence source: passively observed gateway requests only
 
+> This plan preserves the original design vocabulary. During implementation, the proposed agent task and agent session resources were consolidated into one canonical agent session resource. References below to Agent tasks, `task_id`, and `agent_task_*` tables describe the earlier proposal, not the current contract. Use the linked operations guide, architecture reference, and ADR for the implemented names and interfaces.
+
 ## Summary
 
-Add a passive, privacy-bounded analysis subsystem that groups proxied model requests into inferred agent task windows, correlates them with request, usage, pricing, MCP, and payload-derived observations, and calculates a versioned experimental `Task Efficiency Score` from gateway-observed outcome, cost, and active time.
+Add a passive, privacy-bounded analysis subsystem that groups related proxied model requests into agent sessions, correlates them with request, usage, pricing, MCP, and permitted response observations, and calculates a versioned experimental `Session Efficiency Score` from request outcome, cost, and active time.
 
 The first release does not require users to configure their harnesses, emit custom events, upload transcripts, or run an offline importer. Oceans uses facts already available while proxying requests:
 
@@ -1003,7 +1005,7 @@ Update canonical owners:
 
 Implemented as:
 
-- [ADR: Passive Agent Task Analysis](../adr/2026-07-21-passive-agent-task-analysis.md);
+- [ADR: Passive Agent Session Analysis](../adr/2026-07-21-passive-agent-session-analysis.md);
 - [Agent Session Analysis Reference](../contributing/reference/agent-session-analysis.md), which owns metrics, provider normalization, passive correlation, privacy, retention, and score-version policy.
 
 Update:

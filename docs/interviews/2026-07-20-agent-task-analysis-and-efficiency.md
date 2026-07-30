@@ -1,6 +1,6 @@
 # Agent Task Analysis and Efficiency Interview
 
-`See also`: [Agent Task Analysis and Efficiency](../plans/2026-07-20-agent-session-analysis-and-efficiency.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Request Logs](../operations/observability/request-logs.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
+`See also`: [Agent Session Analysis and Efficiency](../plans/2026-07-20-agent-session-analysis-and-efficiency.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Request Logs](../operations/observability/request-logs.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
 
 - Date: 2026-07-20
 - Tracking issue: [#255: Add outcome-aware agent session efficiency analytics](https://github.com/ahstn/oceans-llm/issues/255)
@@ -531,7 +531,7 @@ The implementation publishes [Agent Session Analysis](../operations/agent-sessio
 
 The implementation publishes:
 
-- [ADR: Passive Agent Task Analysis](../adr/2026-07-21-passive-agent-task-analysis.md) for identity, inference, score, persistence, privacy, and authorization;
+- [ADR: Passive Agent Session Analysis](../adr/2026-07-21-passive-agent-session-analysis.md) for identity, inference, score, persistence, privacy, and authorization;
 - [Agent Session Analysis Reference](../contributing/reference/agent-session-analysis.md) for metrics, provider normalization, passive correlation, privacy, retention, and version policy.
 
 Update existing request-log, harness, MCP, pricing, budget, data-relationship, admin-contract, E2E, and admin-control-plane pages without duplicating canonical policy.

@@ -6,7 +6,7 @@
 
 ## Decision
 
-Oceans derives operational agent session diagnostics passively from authenticated gateway request facts. Correlation, inferred observations, reports, and recomputation state are persisted in dedicated append-oriented tables. The scoring formula lives in a dependency-light Rust crate. Numeric presentation is separated from collection by runtime capabilities: passive collection may run while only platform admins can inspect shadow diagnostics, and team access requires an explicitly calibrated rollout.
+Oceans derives operational agent session data from authenticated gateway request facts. Correlation, detected activity, reports, and recomputation state are persisted in dedicated append-oriented tables. The scoring formula lives in a dependency-light Rust crate. Runtime settings separate data collection from presentation: the system can collect data while only platform admins review calibration data, and team access requires an approved calibration.
 
 ## Implementation
 
@@ -19,7 +19,7 @@ Oceans derives operational agent session diagnostics passively from authenticate
 - LibSQL and PostgreSQL implement one repository contract and paired V41 schemas.
 - Admin list/detail APIs apply one server-side platform/team scope. The authenticated session projects the runtime capability matrix used by UI guards and navigation.
 - The admin route reuses ReUI Data Grid and Filters with URL-backed server pagination, filtering, and detail selection.
-- Cache-aware normalized usage and cost are retained alongside legacy cost with a versioned pricing policy. Legacy cost remains authoritative during the shadow phase.
+- Cache-aware normalized usage and cost are retained with legacy cost and a versioned pricing policy. Legacy cost remains authoritative during pricing calibration.
 
 ## Why
 
@@ -32,7 +32,7 @@ Append-only, versioned reports avoid silently changing historical interpretation
 - Passive boundaries are operational estimates. Confidence, coverage, and limitations must travel with every score.
 - Duplicate schema and SQL work is required for LibSQL and PostgreSQL.
 - Immutable versions and recomputation queues consume more storage than overwriting one report.
-- Shadow collection produces data that is not immediately visible to team admins.
+- Calibration data is not available to team admins until the calibrated feature is enabled.
 - Aggregate monitoring is delayed until grouping, sensitivity, cohort, and pricing reviews are complete.
 - Missing provider usage or cache rates remains unavailable rather than being imputed, so some sessions cannot receive a score.
 
@@ -56,11 +56,11 @@ Rejected because backend-specific formulas and client-side calculations would dr
 
 ### Enable the numeric score and aggregates immediately
 
-Rejected because no deployment has yet supplied the shadow calibration evidence required to establish grouping error, stable ordering, cohort sufficiency, and pricing agreement.
+Rejected because no deployment has supplied the calibration data required to establish grouping error, stable ordering, comparison-group sufficiency, and pricing agreement.
 
 ## Follow-up
 
-- Review shadow grouping samples without retaining raw content.
+- Review session-grouping samples without retaining raw content.
 - Run score-weight sensitivity analysis and validate fallback behavior at minimum cohort size 6.
 - Review normalized-versus-legacy provider cost discrepancies and approve a dated authoritative pricing cutover.
 - Enable calibrated and team-admin capabilities only after those reviews are recorded.

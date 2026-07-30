@@ -253,14 +253,14 @@ describe('AgentSessionsPage', () => {
     })
   })
 
-  it('renders dense shadow diagnostics without exposing the experimental score', () => {
+  it('shows calibration data without showing the session score', () => {
     render(<AgentSessionsPage />)
 
     expect(screen.getByRole('heading', { name: 'Agent sessions' })).toBeInTheDocument()
     expect(screen.getByText('1 session')).toBeInTheDocument()
     expect(screen.getByText('Opencode')).toBeInTheDocument()
     expect(document.querySelector('[data-agent-harness-icon="opencode"]')).toBeInTheDocument()
-    expect(screen.getByText('Shadow')).toBeInTheDocument()
+    expect(screen.getByText('Score not shown')).toBeInTheDocument()
     expect(screen.queryByText('82')).not.toBeInTheDocument()
     const sessionRow = screen.getByRole('row', { name: /Opencode/ })
     expect(sessionRow).toHaveTextContent('8')
@@ -279,7 +279,7 @@ describe('AgentSessionsPage', () => {
 
     render(<AgentSessionsPage />)
 
-    expect(screen.getByText('Session call metrics unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Tool-call data is not available')).toBeInTheDocument()
     expect(screen.getByText('mise run gateway-reset-local-demo')).toBeInTheDocument()
   })
 
@@ -315,17 +315,20 @@ describe('AgentSessionsPage', () => {
 
     await waitFor(() => {
       expect(getAgentSessionDetailMock).toHaveBeenCalledWith({ data: { sessionId: 'session_1' } })
-      expect(screen.getByText('Withheld in shadow')).toBeInTheDocument()
+      expect(screen.getByText('Score not shown')).toBeInTheDocument()
     })
     expect(screen.getByText('Requests (1)')).toBeInTheDocument()
-    expect(screen.getByText('Succeeded')).toBeInTheDocument()
-    expect(screen.getByText('Inferred observations (1)')).toBeInTheDocument()
-    expect(screen.getByText('Token and cache diagnostics')).toBeInTheDocument()
+    expect(screen.getAllByText('Succeeded')).toHaveLength(2)
+    expect(screen.getByText('Detected activity (1)')).toBeInTheDocument()
+    expect(screen.getByText('Token and cache use')).toBeInTheDocument()
     expect(screen.getByText('Tools and changes')).toBeInTheDocument()
-    expect(screen.getByText('Context diagnostics')).toBeInTheDocument()
+    expect(screen.getByText('Prompt context')).toBeInTheDocument()
     expect(screen.getAllByText('93%').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('1,200')).toHaveLength(2)
     expect(screen.getByText('Tool Invoked')).toBeInTheDocument()
+    expect(screen.getByText('Direct evidence')).toBeInTheDocument()
+    expect(screen.getByText('High correlation confidence')).toBeInTheDocument()
+    expect(screen.getByText('Comparison snapshot')).toBeInTheDocument()
   })
 
   it('warns when retained request or observation history exceeds the detail cap', async () => {
@@ -340,9 +343,9 @@ describe('AgentSessionsPage', () => {
 
     render(<AgentSessionsPage />)
 
-    expect(await screen.findByText('Request history truncated')).toBeInTheDocument()
-    expect(screen.getByText('Observation history truncated')).toBeInTheDocument()
+    expect(await screen.findByText('Some request history is not shown')).toBeInTheDocument()
+    expect(screen.getByText('Some detected activity is not shown')).toBeInTheDocument()
     expect(screen.getByText('Requests (1+)')).toBeInTheDocument()
-    expect(screen.getByText('Inferred observations (1+)')).toBeInTheDocument()
+    expect(screen.getByText('Detected activity (1+)')).toBeInTheDocument()
   })
 })

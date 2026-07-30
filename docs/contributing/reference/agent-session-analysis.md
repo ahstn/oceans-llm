@@ -85,9 +85,9 @@ Direct MCP evidence comes from invocation records for the session's API key whos
 `AgentAnalysisRuntimeCapabilities` is loaded once at gateway startup. The authenticated session projects effective per-user capabilities:
 
 - platform admins remain admins whether or not analysis presentation is enabled;
-- platform analysis access requires shadow diagnostics or calibrated score visibility;
-- shadow visibility is platform-only;
-- team Owner/Admin access requires both calibrated-score and team-admin flags;
+- platform analysis access requires calibration data access or calibrated score visibility;
+- calibration data access is platform-only;
+- team Owner/Admin access requires both calibrated-score and team-admin settings;
 - ordinary members and inactive users have no analysis access.
 
 `require_agent_analysis_scope` is the server-side authority. UI route checks and sidebar filtering are convenience and must mirror, never replace, that check.
@@ -137,8 +137,8 @@ Before handoff, run the repository-required lint command:
 mise run lint
 ```
 
-Browser QA must cover the platform shadow state, calibrated score state, denied team state, calibrated team state, deep-linked detail, back/forward, keyboard row activation, filters, empty/error/loading states, and a mobile-width sheet. Do not use raw prompts, source content, tool payloads, credentials, or production identifiers in fixtures.
+Browser QA must cover platform calibration mode, calibrated score mode, denied team access, calibrated team access, deep-linked detail, back/forward navigation, keyboard row activation, filters, empty/error/loading states, and a mobile-width sheet. Do not use raw prompts, source content, tool payloads, credentials, or production identifiers in fixtures.
 
 ## Deliberate Gate
 
-Aggregate monitoring remains future work. It requires shadow grouping review, score sensitivity analysis, minimum-cohort validation, and a dated pricing cutover before an aggregate contract or runtime capability is introduced.
+Aggregate monitoring remains future work. It requires session-grouping review, score-sensitivity analysis, minimum comparison-group validation, and a dated pricing cutover before an aggregate contract or runtime capability is introduced.

@@ -91,7 +91,7 @@ const sessionFilterFields = [
 const filterFields: FilterFieldConfig<string>[] = [
   {
     key: 'lifecycle',
-    label: 'Lifecycle',
+    label: 'Session state',
     type: 'select',
     options: [
       { value: 'open', label: 'Open' },
@@ -260,14 +260,14 @@ export function AgentSessionsPage() {
       },
       {
         accessorKey: 'efficiency_score',
-        header: 'Efficiency',
+        header: 'Score',
         cell: ({ row }) => (
           <div>
             <p className="font-medium tabular-nums">
-              {showScore ? (row.original.efficiency_score ?? '—') : 'Shadow'}
+              {showScore ? (row.original.efficiency_score ?? '—') : 'Score not shown'}
             </p>
             <p className="text-muted-foreground text-xs">
-              {humanize(row.original.score_confidence)} Confidence
+              {humanize(row.original.score_confidence)} confidence
             </p>
           </div>
         ),
@@ -310,7 +310,10 @@ export function AgentSessionsPage() {
           row.original.limitations.length === 0 ? (
             <span className="text-muted-foreground">Complete</span>
           ) : (
-            <Badge variant="outline">{row.original.limitations.length} limitations</Badge>
+            <Badge variant="outline">
+              {row.original.limitations.length}{' '}
+              {row.original.limitations.length === 1 ? 'data limit' : 'data limits'}
+            </Badge>
           ),
         size: 140,
       },
@@ -390,8 +393,8 @@ export function AgentSessionsPage() {
           </Badge>
         </div>
         <p className="text-muted-foreground max-w-3xl text-sm">
-          Outcome-aware session efficiency from passively correlated model requests. Scores remain
-          experimental until calibrated cohorts are available.
+          Review the outcome, cost, active time, and data quality for each agent session. The system
+          does not show scores until calibration is complete.
         </p>
       </header>
 
@@ -399,7 +402,7 @@ export function AgentSessionsPage() {
         <CardHeader className="gap-1 border-b">
           <CardTitle className="text-base">Session explorer</CardTitle>
           <CardDescription>
-            Filter by session ownership, harness, confidence, lifecycle, or start date.
+            Filter sessions by owner, harness, score confidence, state, or start date.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 pt-5">
@@ -438,10 +441,10 @@ export function AgentSessionsPage() {
 
           {hasUnavailableCallMetrics ? (
             <Alert>
-              <AlertTitle>Session call metrics unavailable</AlertTitle>
+              <AlertTitle>Tool-call data is not available</AlertTitle>
               <AlertDescription>
-                The API omitted tool or MCP counts for analyzed sessions. Restart the gateway after
-                updating it; for local demo data, run{' '}
+                The API did not return tool-call or MCP-call counts for some analyzed sessions.
+                Restart the gateway after you update it. For local demo data, run{' '}
                 <code className="font-mono">mise run gateway-reset-local-demo</code>.
               </AlertDescription>
             </Alert>
@@ -489,14 +492,14 @@ export function AgentSessionsPage() {
       >
         <SheetContent className="w-full overflow-y-auto sm:max-w-3xl">
           <SheetHeader>
-            <SheetTitle>Agent session diagnostics</SheetTitle>
+            <SheetTitle>Agent session details</SheetTitle>
             <SheetDescription className="font-mono text-xs">{selectedSessionId}</SheetDescription>
           </SheetHeader>
           <div className="space-y-6 px-4 pb-6">
             {detailPending ? <DetailSkeleton /> : null}
             {detailError ? (
               <Alert variant="destructive">
-                <AlertTitle>Session detail unavailable</AlertTitle>
+                <AlertTitle>Session details are not available</AlertTitle>
                 <AlertDescription className="flex items-center justify-between gap-3">
                   <span>{detailError}</span>
                   <Button
@@ -541,46 +544,46 @@ function SessionDetail({
     <>
       <section className="grid grid-cols-2 gap-3">
         <Metric
-          label="Efficiency"
-          value={showScore ? formatNullable(report?.score) : 'Withheld in shadow'}
+          label="Session score"
+          value={showScore ? formatNullable(report?.score) : 'Score not shown'}
         />
-        <Metric label="Outcome" value={formatNullable(report?.gateway_outcome)} />
+        <Metric label="Outcome" value={humanize(report?.gateway_outcome)} />
         <Metric label="Normalized cost" value={formatCost(detail.session.normalized_cost_usd)} />
         <Metric label="Active time" value={formatDuration(detail.session.active_time_ms)} />
       </section>
 
       {!showScore ? (
         <Alert>
-          <AlertTitle>Shadow diagnostics</AlertTitle>
+          <AlertTitle>Calibration data</AlertTitle>
           <AlertDescription>
-            The headline score is withheld while session boundaries, outcomes, cohorts, and coverage
-            are being calibrated.
+            The system does not show the session score during calibration. You can review session
+            boundaries, outcomes, comparison groups, and data coverage.
           </AlertDescription>
         </Alert>
       ) : null}
 
       {detail.session.limitations.length > 0 ? (
         <Alert>
-          <AlertTitle>Provisional evidence</AlertTitle>
+          <AlertTitle>Data limits</AlertTitle>
           <AlertDescription>
-            {detail.session.limitations.map(humanize).join(' · ')}
+            {detail.session.limitations.map(formatLimitation).join(' · ')}
           </AlertDescription>
         </Alert>
       ) : null}
 
       {detail.request_history_truncated || detail.observation_history_truncated ? (
         <Alert>
-          <AlertTitle>History capped</AlertTitle>
+          <AlertTitle>Some history is not shown</AlertTitle>
           <AlertDescription>
-            This response shows at most 1,000 requests and observations. Use request logs for the
-            complete retained history.
+            This view shows a maximum of 1,000 requests and 1,000 detected activities. Open request
+            logs to review retained request history.
           </AlertDescription>
         </Alert>
       ) : null}
 
       <DiagnosticSection title="Session identity">
         <DiagnosticRow label="Model" value={detail.session.requested_model_key} />
-        <DiagnosticRow label="Operation" value={detail.session.operation} />
+        <DiagnosticRow label="Operation" value={humanize(detail.session.operation)} />
         <DiagnosticRow label="Caller class" value={humanize(detail.session.caller_class)} />
         <DiagnosticRow label="Harness" value={detail.session.harness_label ?? 'Unknown'} />
         <DiagnosticRow label="Session ID" value={detail.session.session_id} />
@@ -604,37 +607,37 @@ function SessionDetail({
           value={formatBasisPoints(components?.active_time_efficiency_basis_points)}
         />
         <DiagnosticRow
-          label="Excluded gap time"
+          label="Excluded long gaps"
           value={formatDuration(components?.excluded_gap_time_ms)}
         />
         <DiagnosticRow
-          label="Summed work time"
+          label="Total request and MCP time"
           value={formatDuration(components?.summed_work_time_ms)}
         />
-        <DiagnosticRow label="Wall time" value={formatDuration(components?.wall_time_ms)} />
+        <DiagnosticRow label="Elapsed time" value={formatDuration(components?.wall_time_ms)} />
         <DiagnosticRow
-          label="Parallel overlap saved"
+          label="Overlapping work time"
           value={formatDuration(components?.overlap_savings_ms)}
         />
         <DiagnosticRow
-          label="Unknown wait time"
+          label="Unclassified wait time"
           value={formatDuration(components?.unknown_wait_time_ms)}
         />
       </DiagnosticSection>
 
-      <DiagnosticSection title="Confidence and cohort">
-        <DiagnosticRow label="Confidence" value={detail.session.score_confidence ?? 'Unknown'} />
-        <DiagnosticRow label="Maturity" value={detail.session.score_maturity ?? 'Unknown'} />
+      <DiagnosticSection title="Score confidence and comparison data">
+        <DiagnosticRow label="Confidence" value={humanize(detail.session.score_confidence)} />
+        <DiagnosticRow label="Score status" value={humanize(detail.session.score_maturity)} />
         <DiagnosticRow
-          label="Cohort"
-          value={formatNullable(components?.cohort_version, 'No calibrated cohort')}
+          label="Comparison group"
+          value={formatNullable(components?.cohort_version, 'No comparison group')}
         />
         <DiagnosticRow
-          label="Fallback level"
+          label="Comparison fallback level"
           value={formatNullable(components?.cohort_fallback_level)}
         />
         <DiagnosticRow
-          label="Cohort sample"
+          label="Sessions in comparison"
           value={formatNullable(components?.cohort_sample_size)}
         />
         <DiagnosticRow
@@ -658,26 +661,26 @@ function SessionDetail({
           value={formatPercent(telemetryCoverage?.payload_percent)}
         />
         <DiagnosticRow
-          label="Cohort coverage"
+          label="Comparison coverage"
           value={formatPercent(telemetryCoverage?.cohort_percent)}
         />
         <DiagnosticRow
-          label="Raw evidence"
+          label="Source data"
           value={
             coverage
               ? [
-                  coverage.request_metadata ? 'request metadata' : null,
-                  coverage.response_payload ? 'response payload' : null,
-                  coverage.response_payload_truncated ? 'payload truncated' : null,
+                  coverage.request_metadata ? 'Request metadata' : null,
+                  coverage.response_payload ? 'Response payload' : null,
+                  coverage.response_payload_truncated ? 'Response payload is incomplete' : null,
                 ]
                   .filter(Boolean)
-                  .join(' · ') || 'Metadata unavailable'
-              : 'Unavailable'
+                  .join(' · ') || 'Source data is not available'
+              : 'Source data is not available'
           }
         />
       </DiagnosticSection>
 
-      <DiagnosticSection title="Token and cache diagnostics">
+      <DiagnosticSection title="Token and cache use">
         <DiagnosticRow
           label="Fresh input tokens"
           value={formatTokenCount(diagnostics?.token_and_cache.fresh_input_tokens)}
@@ -703,12 +706,14 @@ function SessionDetail({
           value={formatBasisPoints(diagnostics?.token_and_cache.cache_savings_basis_points)}
         />
         <DiagnosticRow
-          label="Uncached-input baseline"
+          label="Cost without cache reads"
           value={formatScaledCost(diagnostics?.token_and_cache.uncached_input_cost_10000)}
         />
         <DiagnosticRow
-          label="Pricing policies"
-          value={diagnostics?.token_and_cache.pricing_policy_versions.join(' · ') || 'Unavailable'}
+          label="Pricing policy versions"
+          value={
+            diagnostics?.token_and_cache.pricing_policy_versions.join(' · ') || 'Not available'
+          }
         />
       </DiagnosticSection>
 
@@ -717,8 +722,8 @@ function SessionDetail({
           label="Tool calls"
           value={
             diagnostics
-              ? `${diagnostics.tools_and_changes.classified_tool_calls} classified / ${diagnostics.tools_and_changes.observed_tool_calls} observed`
-              : 'Unavailable'
+              ? `${diagnostics.tools_and_changes.classified_tool_calls} identified of ${diagnostics.tools_and_changes.observed_tool_calls} observed`
+              : 'Not available'
           }
         />
         <DiagnosticRow
@@ -726,15 +731,15 @@ function SessionDetail({
           value={formatTokenCount(diagnostics?.tools_and_changes.direct_mcp_calls)}
         />
         <DiagnosticRow
-          label="Supplied tool definitions"
+          label="Available tools"
           value={formatTokenCount(diagnostics?.tools_and_changes.supplied_tool_definitions)}
         />
         <DiagnosticRow
-          label="Supplied schema bytes"
+          label="Tool schema size"
           value={formatBytes(diagnostics?.tools_and_changes.supplied_tool_schema_bytes)}
         />
         <DiagnosticRow
-          label="Opaque files"
+          label="Distinct file identifiers"
           value={formatNullable(diagnostics?.tools_and_changes.unique_opaque_files)}
         />
         <DiagnosticRow
@@ -742,65 +747,65 @@ function SessionDetail({
           value={
             diagnostics
               ? `${diagnostics.tools_and_changes.file_reads_suspected} read · ${diagnostics.tools_and_changes.file_searches_suspected} search · ${diagnostics.tools_and_changes.file_edits_suspected} edit · ${diagnostics.tools_and_changes.file_creates_suspected} create · ${diagnostics.tools_and_changes.file_overwrites_suspected} overwrite`
-              : 'Unavailable'
+              : 'Not available'
           }
         />
         <DiagnosticRow
-          label="Suspected rework"
+          label="Possible rework periods"
           value={formatNullable(diagnostics?.tools_and_changes.rework_spans_suspected)}
         />
         <DiagnosticRow
-          label="Verification results"
+          label="Verification events"
           value={formatNullable(diagnostics?.tools_and_changes.verification_results_classified)}
         />
       </DiagnosticSection>
 
-      <DiagnosticSection title="Context diagnostics">
+      <DiagnosticSection title="Prompt context">
         <DiagnosticRow
-          label="Initial prompt"
+          label="Initial prompt tokens"
           value={formatTokenCount(diagnostics?.context.initial_prompt_tokens)}
         />
         <DiagnosticRow
-          label="Median prompt"
+          label="Median prompt tokens"
           value={formatTokenCount(diagnostics?.context.median_prompt_tokens)}
         />
         <DiagnosticRow
-          label="P90 prompt"
+          label="P90 prompt tokens"
           value={formatTokenCount(diagnostics?.context.p90_prompt_tokens)}
         />
         <DiagnosticRow
-          label="Maximum prompt"
+          label="Maximum prompt tokens"
           value={formatTokenCount(diagnostics?.context.maximum_prompt_tokens)}
         />
         <DiagnosticRow
-          label="Growth per turn"
+          label="Prompt token growth per turn"
           value={formatTokenCount(diagnostics?.context.prompt_growth_per_turn)}
         />
         <DiagnosticRow
-          label="Growth per active minute"
+          label="Prompt token growth per active minute"
           value={formatTokenCount(diagnostics?.context.prompt_growth_per_active_minute)}
         />
         <DiagnosticRow
-          label="Suspected compactions"
+          label="Possible context compactions"
           value={formatNullable(diagnostics?.context.suspected_compactions)}
         />
         <DiagnosticRow
-          label="Suspected context resets"
+          label="Possible context resets"
           value={formatNullable(diagnostics?.context.suspected_context_resets)}
         />
         <DiagnosticRow
-          label="Semantic verification"
+          label="Answer verification"
           value={
             diagnostics
               ? diagnostics.semantic_verification_available
                 ? 'Available'
-                : 'Unavailable'
-              : 'Unavailable'
+                : 'Not available'
+              : 'Not available'
           }
         />
       </DiagnosticSection>
 
-      <DiagnosticSection title="Versioned formula">
+      <DiagnosticSection title="Analysis versions">
         <DiagnosticRow label="Report schema" value={report?.report_schema_version ?? '—'} />
         <DiagnosticRow label="Analyzer" value={report?.analyzer_version ?? '—'} />
         <DiagnosticRow label="Score policy" value={report?.score_policy_version ?? '—'} />
@@ -817,12 +822,12 @@ function SessionDetail({
           value={detail.analysis?.pricing_policy_version ?? '—'}
         />
         <DiagnosticRow
-          label="Cohort snapshot"
+          label="Comparison snapshot"
           value={detail.analysis?.cohort_snapshot_digest ?? '—'}
         />
         <DiagnosticRow label="Analysis ID" value={detail.analysis?.analysis_id ?? '—'} />
         <DiagnosticRow
-          label="Input watermark"
+          label="Latest input time"
           value={detail.analysis ? formatTimestamp(detail.analysis.input_watermark_at) : '—'}
         />
       </DiagnosticSection>
@@ -852,10 +857,10 @@ function RequestHistory({
     <DiagnosticSection title={`Requests (${requests.length}${historyTruncated ? '+' : ''})`}>
       {historyTruncated ? (
         <Alert>
-          <AlertTitle>Request history truncated</AlertTitle>
+          <AlertTitle>Some request history is not shown</AlertTitle>
           <AlertDescription>
-            This view contains the first 1,000 retained requests. Use request logs for the remaining
-            history.
+            This view shows the first 1,000 retained requests. Open request logs to review later
+            requests.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -888,13 +893,13 @@ function ObservationHistory({
   const visible = observations.slice(0, visibleCount)
   return (
     <DiagnosticSection
-      title={`Inferred observations (${observations.length}${historyTruncated ? '+' : ''})`}
+      title={`Detected activity (${observations.length}${historyTruncated ? '+' : ''})`}
     >
       {historyTruncated ? (
         <Alert>
-          <AlertTitle>Observation history truncated</AlertTitle>
+          <AlertTitle>Some detected activity is not shown</AlertTitle>
           <AlertDescription>
-            This view contains the first 1,000 retained observations.
+            This view shows the first 1,000 retained activity records.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -909,12 +914,12 @@ function ObservationHistory({
               size="sm"
               onClick={() => setVisibleCount((count) => Math.min(count + 25, observations.length))}
             >
-              Show 25 more observations
+              Show 25 more activities
             </Button>
           ) : null}
         </div>
       ) : (
-        <p className="text-muted-foreground text-sm">No inferred observations.</p>
+        <p className="text-muted-foreground text-sm">No activity detected.</p>
       )}
     </DiagnosticSection>
   )
@@ -931,7 +936,9 @@ function RequestFact({ request }: { request: AgentSessionRequestView }) {
         >
           {request.request_id}
         </Link>
-        <Badge variant="outline">{request.correlation_confidence}</Badge>
+        <Badge variant="outline">
+          {humanize(request.correlation_confidence)} correlation confidence
+        </Badge>
         <StateBadge
           value={
             request.terminal_success === true
@@ -958,15 +965,15 @@ function ObservationFact({ observation }: { observation: AgentObservationView })
   return (
     <div className="rounded-lg border p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium">{humanize(observation.kind)}</span>
-        <Badge variant="outline">{humanize(observation.evidence)}</Badge>
+        <span className="font-medium">{formatObservationKind(observation.kind)}</span>
+        <Badge variant="outline">{formatEvidence(observation.evidence)}</Badge>
       </div>
       <p className="text-muted-foreground mt-2 text-xs">
         Source request {observation.source_request_id}
       </p>
       {observation.limitations.length > 0 ? (
         <p className="text-muted-foreground mt-1 text-xs">
-          {observation.limitations.map(humanize).join(' · ')}
+          {observation.limitations.map(formatLimitation).join(' · ')}
         </p>
       ) : null}
     </div>
@@ -1103,11 +1110,11 @@ function formatDuration(value?: number | null) {
 }
 
 function formatBasisPoints(value?: number | null) {
-  return value === null || value === undefined ? 'Unavailable' : `${(value / 100).toFixed(1)}%`
+  return value === null || value === undefined ? 'Not available' : `${(value / 100).toFixed(1)}%`
 }
 
 function formatPercent(value?: number | null) {
-  return value === null || value === undefined ? 'Unavailable' : `${value}%`
+  return value === null || value === undefined ? 'Not available' : `${value}%`
 }
 
 function formatCount(value?: number | null) {
@@ -1115,21 +1122,66 @@ function formatCount(value?: number | null) {
 }
 
 function formatTokenCount(value?: number | null) {
-  return value === null || value === undefined ? 'Unavailable' : value.toLocaleString()
+  return value === null || value === undefined ? 'Not available' : value.toLocaleString()
 }
 
 function formatBytes(value?: number | null) {
-  if (value === null || value === undefined) return 'Unavailable'
+  if (value === null || value === undefined) return 'Not available'
   if (value < 1_024) return `${value} B`
   return `${(value / 1_024).toFixed(1)} KiB`
 }
 
 function formatScaledCost(value?: number | null) {
-  return value === null || value === undefined ? 'Unavailable' : formatCost(value / 10_000)
+  return value === null || value === undefined ? 'Not available' : formatCost(value / 10_000)
 }
 
 function formatNullable(value: unknown, fallback = '—') {
   return value === null || value === undefined ? fallback : String(value)
+}
+
+const limitationLabels: Record<string, string> = {
+  cohort_fallback: 'The score uses a broader comparison group',
+  late_data_excluded: 'Late data is not included',
+  payload_truncated: 'Response data is incomplete',
+  payload_unavailable: 'Response data is not available',
+  pricing_unavailable: 'Pricing data is not available',
+  request_incomplete: 'A request did not complete',
+  semantic_verification_unavailable: 'Answer verification is not available',
+  session_unobserved: 'An external session ID was not observed',
+  tool_inventory_potential_only: 'The available tool list is estimated',
+  usage_unavailable: 'Usage data is not available',
+}
+
+const observationKindLabels: Record<string, string> = {
+  compaction_suspected: 'Possible context compaction',
+  context_reset_suspected: 'Possible context reset',
+  file_create_suspected: 'Possible file creation',
+  file_edit_suspected: 'Possible file edit',
+  file_overwrite_suspected: 'Possible file overwrite',
+  file_read_suspected: 'Possible file read',
+  file_search_suspected: 'Possible file search',
+  rework_suspected: 'Possible rework',
+  tool_call_classified: 'Tool call detected',
+  verification_result_classified: 'Verification event detected',
+}
+
+const evidenceLabels: Record<string, string> = {
+  direct: 'Direct evidence',
+  inferred_high: 'High-confidence inference',
+  inferred_low: 'Low-confidence inference',
+  unavailable: 'Evidence is not available',
+}
+
+function formatLimitation(value: string) {
+  return limitationLabels[value] ?? humanize(value)
+}
+
+function formatObservationKind(value: string) {
+  return observationKindLabels[value] ?? humanize(value)
+}
+
+function formatEvidence(value: string) {
+  return evidenceLabels[value] ?? humanize(value)
 }
 
 function humanize(value?: string | null) {

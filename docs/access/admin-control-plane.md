@@ -143,7 +143,7 @@ Admins can:
 - see normalized harness and bounded raw `User-Agent` detail for request logs
 - inspect request-linked MCP invocations by request id, server, tool, API key, user, team, status, and time range
 - compare leaderboard users with average tool exposure and invocation counts
-- inspect passively correlated agent sessions, operational outcome evidence, cost/time components, confidence, coverage, cohort, limitations, and formula versions when the runtime capability permits it
+- inspect grouped agent sessions, request outcomes, cost and time components, score confidence, data coverage, comparison groups, data limits, and formula versions when the runtime setting permits it
 - manage MCP servers from `/admin/mcp/servers`
 - inspect MCP discovery status as the current server health signal
 - refresh MCP discovery and see bounded failure feedback
@@ -152,7 +152,7 @@ Admins can:
 
 Request-log payload policy is read-only in the admin UI. Admins configure it through `gateway.yaml`; see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
-Agent session diagnostics are shadow-only by default and require an explicit gateway runtime capability. Shadow access is limited to platform admins and withholds the headline score. Team Owner/Admin access requires both calibrated-score and team-admin capabilities; ordinary members remain denied.
+Agent session calibration data is disabled by default and requires an explicit gateway runtime setting. Only platform admins can access calibration data, and the system does not show the session score during calibration. Team Owners and Admins need both calibrated-score and team-admin access. Team members cannot access this page.
 
 Current limits:
 
