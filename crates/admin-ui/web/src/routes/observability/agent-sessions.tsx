@@ -27,6 +27,14 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getAgentSessions, getObservabilityAgentSessionDetail } from '@/server/admin-data.functions'
 import type {
@@ -381,7 +389,7 @@ export function AgentSessionsPage() {
   )
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6 p-4 sm:p-6 lg:p-8">
+    <main className="flex min-w-0 flex-1 flex-col gap-6">
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -490,7 +498,7 @@ export function AgentSessionsPage() {
           }
         }}
       >
-        <SheetContent className="w-full overflow-y-auto sm:max-w-3xl">
+        <SheetContent className="w-full overflow-y-auto sm:max-w-3xl lg:max-w-none lg:min-w-[50vw]">
           <SheetHeader>
             <SheetTitle>Agent session details</SheetTitle>
             <SheetDescription className="font-mono text-xs">{selectedSessionId}</SheetDescription>
@@ -580,6 +588,14 @@ function SessionDetail({
           </AlertDescription>
         </Alert>
       ) : null}
+      <RequestHistory
+        requests={detail.requests}
+        historyTruncated={detail.request_history_truncated}
+      />
+      <ObservationHistory
+        observations={detail.observations}
+        historyTruncated={detail.observation_history_truncated}
+      />
 
       <DiagnosticSection title="Session identity">
         <DiagnosticRow label="Model" value={detail.session.requested_model_key} />
@@ -669,12 +685,12 @@ function SessionDetail({
           value={
             coverage
               ? [
-                  coverage.request_metadata ? 'Request metadata' : null,
-                  coverage.response_payload ? 'Response payload' : null,
-                  coverage.response_payload_truncated ? 'Response payload is incomplete' : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ') || 'Source data is not available'
+                coverage.request_metadata ? 'Request metadata' : null,
+                coverage.response_payload ? 'Response payload' : null,
+                coverage.response_payload_truncated ? 'Response payload is incomplete' : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || 'Source data is not available'
               : 'Source data is not available'
           }
         />
@@ -831,15 +847,6 @@ function SessionDetail({
           value={detail.analysis ? formatTimestamp(detail.analysis.input_watermark_at) : '—'}
         />
       </DiagnosticSection>
-
-      <RequestHistory
-        requests={detail.requests}
-        historyTruncated={detail.request_history_truncated}
-      />
-      <ObservationHistory
-        observations={detail.observations}
-        historyTruncated={detail.observation_history_truncated}
-      />
     </>
   )
 }
@@ -853,6 +860,7 @@ function RequestHistory({
 }) {
   const [visibleCount, setVisibleCount] = useState(25)
   const visible = requests.slice(0, visibleCount)
+
   return (
     <DiagnosticSection title={`Requests (${requests.length}${historyTruncated ? '+' : ''})`}>
       {historyTruncated ? (
@@ -864,20 +872,69 @@ function RequestHistory({
           </AlertDescription>
         </Alert>
       ) : null}
-      <div className="space-y-3">
-        {visible.map((request) => (
-          <RequestFact key={request.request_id} request={request} />
-        ))}
-        {visibleCount < requests.length ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setVisibleCount((count) => Math.min(count + 25, requests.length))}
-          >
-            Show 25 more requests
-          </Button>
-        ) : null}
-      </div>
+      {requests.length > 0 ? (
+        <div className="space-y-3">
+          <div className="overflow-hidden rounded-md border">
+            <Table>
+              <TableHeader className="bg-muted/40">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-16 text-right">Index</TableHead>
+                  <TableHead>Request time</TableHead>
+                  <TableHead>Request ID</TableHead>
+                  <TableHead className="w-28">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visible.map((request) => (
+                  <TableRow
+                    key={request.request_id}
+                    className="focus-within:bg-muted/50 focus-within:ring-ring relative focus-within:ring-2 focus-within:ring-inset"
+                  >
+                    <TableCell className="text-muted-foreground text-right tabular-nums">
+                      {request.ordinal + 1}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground tabular-nums">
+                      {formatTimestamp(request.occurred_at)}
+                    </TableCell>
+                    <TableCell className="whitespace-normal">
+                      <Link
+                        to="/observability/request-logs"
+                        search={{ request_id: request.request_id }}
+                        aria-label={`Open request ${request.request_id} in request logs`}
+                        className="font-mono text-xs underline underline-offset-4 after:absolute after:inset-0 focus-visible:outline-none"
+                      >
+                        {request.request_id}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <StateBadge
+                        value={
+                          request.terminal_success === true
+                            ? 'succeeded'
+                            : request.terminal_success === false
+                              ? 'failed'
+                              : 'unknown'
+                        }
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {visibleCount < requests.length ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setVisibleCount((count) => Math.min(count + 25, requests.length))}
+            >
+              Show 25 more requests
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-sm">No requests recorded.</p>
+      )}
     </DiagnosticSection>
   )
 }
@@ -891,6 +948,7 @@ function ObservationHistory({
 }) {
   const [visibleCount, setVisibleCount] = useState(25)
   const visible = observations.slice(0, visibleCount)
+
   return (
     <DiagnosticSection
       title={`Detected activity (${observations.length}${historyTruncated ? '+' : ''})`}
@@ -905,9 +963,32 @@ function ObservationHistory({
       ) : null}
       {observations.length > 0 ? (
         <div className="space-y-3">
-          {visible.map((observation) => (
-            <ObservationFact key={observation.observation_id} observation={observation} />
-          ))}
+          <div className="overflow-hidden rounded-md border">
+            <Table>
+              <TableHeader className="bg-muted/40">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Request time</TableHead>
+                  <TableHead>Request ID</TableHead>
+                  <TableHead className="w-48">Confidence</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visible.map((observation) => (
+                  <TableRow key={observation.observation_id}>
+                    <TableCell className="text-muted-foreground tabular-nums">
+                      {formatTimestamp(observation.occurred_at)}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {observation.source_request_id}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{formatEvidence(observation.evidence)}</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
           {visibleCount < observations.length ? (
             <Button
               variant="outline"
@@ -922,61 +1003,6 @@ function ObservationHistory({
         <p className="text-muted-foreground text-sm">No activity detected.</p>
       )}
     </DiagnosticSection>
-  )
-}
-
-function RequestFact({ request }: { request: AgentSessionRequestView }) {
-  return (
-    <div className="rounded-lg border p-3 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link
-          to="/observability/request-logs"
-          search={{ request_id: request.request_id }}
-          className="font-mono text-xs underline underline-offset-4"
-        >
-          {request.request_id}
-        </Link>
-        <Badge variant="outline">
-          {humanize(request.correlation_confidence)} correlation confidence
-        </Badge>
-        <StateBadge
-          value={
-            request.terminal_success === true
-              ? 'succeeded'
-              : request.terminal_success === false
-                ? 'failed'
-                : 'unknown'
-          }
-        />
-      </div>
-      <p className="text-muted-foreground mt-2">
-        Request {request.ordinal + 1} · {formatTimestamp(request.occurred_at)}
-      </p>
-      {request.limitation_codes.length > 0 ? (
-        <p className="text-muted-foreground mt-1 text-xs">
-          {request.limitation_codes.map(humanize).join(' · ')}
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
-function ObservationFact({ observation }: { observation: AgentObservationView }) {
-  return (
-    <div className="rounded-lg border p-3 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium">{formatObservationKind(observation.kind)}</span>
-        <Badge variant="outline">{formatEvidence(observation.evidence)}</Badge>
-      </div>
-      <p className="text-muted-foreground mt-2 text-xs">
-        Source request {observation.source_request_id}
-      </p>
-      {observation.limitations.length > 0 ? (
-        <p className="text-muted-foreground mt-1 text-xs">
-          {observation.limitations.map(formatLimitation).join(' · ')}
-        </p>
-      ) : null}
-    </div>
   )
 }
 
@@ -1152,19 +1178,6 @@ const limitationLabels: Record<string, string> = {
   usage_unavailable: 'Usage data is not available',
 }
 
-const observationKindLabels: Record<string, string> = {
-  compaction_suspected: 'Possible context compaction',
-  context_reset_suspected: 'Possible context reset',
-  file_create_suspected: 'Possible file creation',
-  file_edit_suspected: 'Possible file edit',
-  file_overwrite_suspected: 'Possible file overwrite',
-  file_read_suspected: 'Possible file read',
-  file_search_suspected: 'Possible file search',
-  rework_suspected: 'Possible rework',
-  tool_call_classified: 'Tool call detected',
-  verification_result_classified: 'Verification event detected',
-}
-
 const evidenceLabels: Record<string, string> = {
   direct: 'Direct evidence',
   inferred_high: 'High-confidence inference',
@@ -1174,10 +1187,6 @@ const evidenceLabels: Record<string, string> = {
 
 function formatLimitation(value: string) {
   return limitationLabels[value] ?? humanize(value)
-}
-
-function formatObservationKind(value: string) {
-  return observationKindLabels[value] ?? humanize(value)
 }
 
 function formatEvidence(value: string) {

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AgentSessionsPage } from '@/routes/observability/agent-sessions'
@@ -17,7 +17,20 @@ const { getAgentSessionDetailMock, navigateMock, routeMock } = vi.hoisted(() => 
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
-  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
+  Link: ({
+    children,
+    to,
+    search,
+    ...props
+  }: {
+    children: ReactNode
+    to: string
+    search?: { request_id?: string }
+  } & Omit<ComponentProps<'a'>, 'href'>) => (
+    <a href={`${to}${search?.request_id ? `?request_id=${search.request_id}` : ''}`} {...props}>
+      {children}
+    </a>
+  ),
   useRouter: () => ({ navigate: navigateMock }),
 }))
 
@@ -99,7 +112,7 @@ const detail: AgentSessionDetailView = {
       evidence: 'direct',
       occurred_at: '2026-07-21T10:00:10Z',
       facts: { attributes: {}, tool_name: 'read' },
-      limitations: [],
+      limitations: ['semantic_verification_unavailable'],
     },
   ],
   request_history_truncated: false,
@@ -318,16 +331,33 @@ describe('AgentSessionsPage', () => {
       expect(screen.getByText('Score not shown')).toBeInTheDocument()
     })
     expect(screen.getByText('Requests (1)')).toBeInTheDocument()
+    expect(screen.getAllByRole('columnheader', { name: 'Request time' })).toHaveLength(2)
+    expect(screen.getByRole('columnheader', { name: 'Index' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Open request req_1 in request logs' }),
+    ).toHaveAttribute('href', '/observability/request-logs?request_id=req_1')
     expect(screen.getAllByText('Succeeded')).toHaveLength(2)
     expect(screen.getByText('Detected activity (1)')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Confidence' })).toBeInTheDocument()
+    const sessionIdentityHeading = screen.getByRole('heading', { name: 'Session identity' })
+    expect(
+      screen
+        .getByRole('heading', { name: 'Requests (1)' })
+        .compareDocumentPosition(sessionIdentityHeading),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(
+      screen
+        .getByRole('heading', { name: 'Detected activity (1)' })
+        .compareDocumentPosition(sessionIdentityHeading),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(screen.getByText('Token and cache use')).toBeInTheDocument()
     expect(screen.getByText('Tools and changes')).toBeInTheDocument()
     expect(screen.getByText('Prompt context')).toBeInTheDocument()
     expect(screen.getAllByText('93%').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('1,200')).toHaveLength(2)
-    expect(screen.getByText('Tool Invoked')).toBeInTheDocument()
     expect(screen.getByText('Direct evidence')).toBeInTheDocument()
-    expect(screen.getByText('High correlation confidence')).toBeInTheDocument()
+    expect(screen.queryByText('Answer verification is not available')).not.toBeInTheDocument()
     expect(screen.getByText('Comparison snapshot')).toBeInTheDocument()
   })
 
