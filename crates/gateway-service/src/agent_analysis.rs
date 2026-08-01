@@ -10,15 +10,18 @@ use gateway_core::{
     AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
     AgentSessionAnalysisRepository, AgentSessionListQuery, AgentSessionRecord,
     AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
-    AuthenticatedApiKey, BoundedObservationFacts, BudgetRepository, Confidence, EvidenceQuality,
-    GatewayError, GatewayOutcomeState, IdentityRepository, InferredObservation,
-    InferredObservationKind, LimitationCode, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE,
-    McpToolInvocationQuery, McpToolInvocationRepository, RequestTags, SessionLifecycleState,
-    UsageLedgerRecord,
+    AuthenticatedApiKey, BoundedObservationFacts, BoundedToolDefinitionFact, BudgetRepository,
+    Confidence, EvidenceQuality, GatewayError, GatewayOutcomeState, IdentityRepository,
+    InferredObservation, InferredObservationKind, LimitationCode,
+    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationQuery, McpToolInvocationRepository,
+    RequestTags, SessionLifecycleState, UsageLedgerRecord,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use time::{Duration, OffsetDateTime};
+
+const MAX_SUPPLIED_TOOL_FACTS: usize = 256;
+const MAX_TOOL_NAME_CHARS: usize = 128;
 use uuid::Uuid;
 
 use crate::redaction::REDACTED_VALUE;
@@ -117,6 +120,7 @@ pub(crate) struct PassiveRequestMetadata {
     pub prompt_bytes: Option<u64>,
     pub supplied_tool_count: Option<u32>,
     pub tool_schema_bytes: Option<u64>,
+    pub supplied_tools: Vec<BoundedToolDefinitionFact>,
     pub adapter_version: String,
 }
 
@@ -147,6 +151,8 @@ pub(crate) fn extract_request_metadata(
     let tool_schema_bytes = supplied_tools
         .and_then(|values| serde_json::to_vec(values).ok())
         .and_then(|bytes| u64::try_from(bytes.len()).ok());
+    let supplied_tools =
+        supplied_tools.map_or_else(Vec::new, |tools| bounded_supplied_tools(tools.as_slice()));
 
     PassiveRequestMetadata {
         external_session_id: session.value,
@@ -158,6 +164,7 @@ pub(crate) fn extract_request_metadata(
         prompt_bytes,
         supplied_tool_count,
         tool_schema_bytes,
+        supplied_tools,
         adapter_version: adapter.map_or_else(
             || "unsupported-v1".to_string(),
             |value| value.version.to_string(),
@@ -1186,6 +1193,7 @@ fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredOb
                 prompt_bytes: input.metadata.prompt_bytes,
                 supplied_tool_count: input.metadata.supplied_tool_count,
                 tool_schema_bytes: input.metadata.tool_schema_bytes,
+                supplied_tools: input.metadata.supplied_tools.clone(),
                 ..Default::default()
             },
             limitations: vec![LimitationCode::ToolInventoryPotentialOnly],
@@ -1687,6 +1695,33 @@ fn prompt_bytes(body: &Value) -> Option<u64> {
         .and_then(|bytes| u64::try_from(bytes.len()).ok())
 }
 
+fn bounded_supplied_tools(tools: &[Value]) -> Vec<BoundedToolDefinitionFact> {
+    tools
+        .iter()
+        .take(MAX_SUPPLIED_TOOL_FACTS)
+        .filter_map(|tool| {
+            let name = tool
+                .pointer("/function/name")
+                .or_else(|| tool.get("name"))
+                .and_then(Value::as_str)?
+                .chars()
+                .take(MAX_TOOL_NAME_CHARS)
+                .collect::<String>();
+            if name.is_empty() {
+                return None;
+            }
+            let token_estimate = serde_json::to_vec(tool)
+                .ok()
+                .and_then(|bytes| u64::try_from(bytes.len()).ok())?
+                .div_ceil(4);
+            Some(BoundedToolDefinitionFact {
+                name,
+                token_estimate,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1714,6 +1749,9 @@ mod tests {
         assert_eq!(metadata.execution_id, None);
         assert_eq!(metadata.message_count, Some(1));
         assert_eq!(metadata.supplied_tool_count, Some(1));
+        assert_eq!(metadata.supplied_tools.len(), 1);
+        assert_eq!(metadata.supplied_tools[0].name, "read");
+        assert!(metadata.supplied_tools[0].token_estimate > 0);
 
         let unavailable = extract_request_metadata(
             &request,
@@ -1727,6 +1765,33 @@ mod tests {
         );
         assert_eq!(unavailable.message_count, None);
         assert_eq!(unavailable.supplied_tool_count, None);
+        assert!(unavailable.supplied_tools.is_empty());
+    }
+    #[test]
+    fn metadata_accepts_direct_and_nested_tool_name_shapes() {
+        let request = json!({
+            "tools": [
+                {"name": "search", "input_schema": {"type": "object"}},
+                {"type": "function", "function": {"name": "edit", "parameters": {}}}
+            ]
+        });
+
+        let metadata = extract_request_metadata(&request, &BTreeMap::new(), true, "opencode");
+
+        assert_eq!(
+            metadata
+                .supplied_tools
+                .iter()
+                .map(|tool| tool.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["search", "edit"]
+        );
+        assert!(
+            metadata
+                .supplied_tools
+                .iter()
+                .all(|tool| tool.token_estimate > 0)
+        );
     }
 
     #[test]
@@ -2341,6 +2406,7 @@ mod tests {
                 prompt_bytes: None,
                 supplied_tool_count: None,
                 tool_schema_bytes: None,
+                supplied_tools: Vec::new(),
                 adapter_version: "unsupported-v1".to_string(),
             },
             response_body: None,

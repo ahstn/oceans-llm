@@ -17,8 +17,8 @@ pub use agent_analysis::{
 };
 pub use agent_session_analysis::{
     ActivityInterval, AgentSessionId, AgentSessionSourceId, AnalysisId, BoundedObservationFacts,
-    CohortReference, Confidence, EvidenceQuality, GatewayOutcomeState, InferredObservation,
-    InferredObservationKind, LimitationCode, ObservationSetId, ScoreMaturity,
+    BoundedToolDefinitionFact, CohortReference, Confidence, EvidenceQuality, GatewayOutcomeState,
+    InferredObservation, InferredObservationKind, LimitationCode, ObservationSetId, ScoreMaturity,
     SessionEfficiencyComponents, SessionEfficiencyReport, SessionLifecycleState,
     SessionRequestFact,
 };

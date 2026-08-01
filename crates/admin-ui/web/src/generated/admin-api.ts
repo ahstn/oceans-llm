@@ -1508,6 +1508,7 @@ export interface components {
             result_bytes?: number | null;
             /** Format: int32 */
             supplied_tool_count?: number | null;
+            supplied_tools: components["schemas"]["AgentSuppliedToolFactView"][];
             tool_name?: string | null;
             /** Format: int64 */
             tool_schema_bytes?: number | null;
@@ -1691,6 +1692,11 @@ export interface components {
             user_id?: string | null;
             /** Format: int64 */
             wall_time_ms?: number | null;
+        };
+        AgentSuppliedToolFactView: {
+            name: string;
+            /** Format: int64 */
+            token_estimate: number;
         };
         AgentTelemetryCoverageView: {
             /** Format: int32 */

@@ -2,9 +2,10 @@ use anyhow::Context;
 use gateway_core::{
     AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
     AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord, ApiKeyRecord,
-    BoundedObservationFacts, Confidence, EvidenceQuality, InferredObservation,
-    InferredObservationKind, LimitationCode, McpToolInvocationRecord, McpToolInvocationRepository,
-    McpToolInvocationStatus, McpToolPolicyResult, RequestTags, SessionLifecycleState,
+    BoundedObservationFacts, BoundedToolDefinitionFact, Confidence, EvidenceQuality,
+    InferredObservation, InferredObservationKind, LimitationCode, McpToolInvocationRecord,
+    McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult, RequestTags,
+    SessionLifecycleState,
 };
 use gateway_service::{desired_versions, enqueue_agent_analysis};
 use gateway_store::AnyStore;
@@ -362,6 +363,28 @@ fn request_coverage(
     })
 }
 
+fn demo_supplied_tools(
+    session: &'static agent_session_fixtures::DemoAgentSessionFixture,
+) -> Vec<BoundedToolDefinitionFact> {
+    let mut names = session_fixtures(session)
+        .filter_map(agent_session_fixtures::request_metadata)
+        .map(|request| request.tool_name)
+        .collect::<std::collections::BTreeSet<_>>();
+    names.extend(match session.key {
+        "jira-release-coordination" => {
+            ["archive_release", "create_release", "delete_release_issue"].as_slice()
+        }
+        _ => ["delete_file", "publish_changes", "rewrite_history"].as_slice(),
+    });
+    names
+        .into_iter()
+        .map(|name| BoundedToolDefinitionFact {
+            name: name.to_string(),
+            token_estimate: u64::try_from(name.len()).map_or(64, |length| 64 + length * 3),
+        })
+        .collect()
+}
+
 fn demo_observations(
     fixture: &LocalDemoRequestFixture,
     occurred_at: OffsetDateTime,
@@ -373,6 +396,9 @@ fn demo_observations(
     };
     let session_request = agent_session_fixtures::request_metadata(fixture);
     let tool_name = session_request.map(|request| request.tool_name.to_string());
+    let supplied_tools = session_request
+        .map(|request| demo_supplied_tools(request.session))
+        .unwrap_or_default();
     let kind = session_request
         .map(|request| request.observation_kind)
         .unwrap_or(InferredObservationKind::ToolCallClassified);
@@ -389,6 +415,7 @@ fn demo_observations(
             supplied_tool_count: u32::try_from(supplied_tool_count).ok(),
             tool_schema_bytes: tool_name.as_ref().map(|_| 420),
             tool_schema_token_estimate: tool_name.as_ref().map(|_| 105),
+            supplied_tools,
             tool_name,
             ..BoundedObservationFacts::default()
         },
@@ -447,6 +474,37 @@ mod tests {
             }
             assert_eq!(file_tool_calls, session.expected_file_tool_calls);
         }
+    }
+
+    #[test]
+    fn demo_observations_include_called_and_uncalled_tool_definitions() {
+        let session = agent_session_fixtures::DEMO_AGENT_SESSIONS
+            .first()
+            .expect("demo session exists");
+        let fixture = session_fixtures(session)
+            .next()
+            .expect("demo session request exists");
+        let parser_version = desired_versions().observation_parser_version;
+        let observation = demo_observations(fixture, OffsetDateTime::UNIX_EPOCH, &parser_version)
+            .into_iter()
+            .next()
+            .expect("demo observation exists");
+
+        assert!(observation.facts.supplied_tools.len() > session.request_count);
+        assert!(
+            observation
+                .facts
+                .supplied_tools
+                .iter()
+                .any(|tool| Some(tool.name.as_str()) == observation.facts.tool_name.as_deref())
+        );
+        assert!(
+            observation
+                .facts
+                .supplied_tools
+                .iter()
+                .all(|tool| tool.token_estimate > 0)
+        );
     }
 
     #[test]

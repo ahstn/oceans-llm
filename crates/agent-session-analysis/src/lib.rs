@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 pub const REPORT_SCHEMA_VERSION: &str = "agent-session-report-v4";
 pub const SESSION_BOUNDARY_POLICY_VERSION: &str = "passive-gap-v2";
-pub const OBSERVATION_PARSER_VERSION: &str = "passive-observations-v1";
+pub const OBSERVATION_PARSER_VERSION: &str = "passive-observations-v2";
 pub const ANALYZER_VERSION: &str = "session-efficiency-v3";
 pub const SCORE_POLICY_VERSION: &str = "outcome-cost-time-v1";
 pub const DEFAULT_ORCHESTRATION_GAP: Duration = Duration::minutes(2);
@@ -91,6 +91,12 @@ pub enum LimitationCode {
     LateDataExcluded,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoundedToolDefinitionFact {
+    pub name: String,
+    pub token_estimate: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct BoundedObservationFacts {
     pub message_count: Option<u32>,
@@ -98,6 +104,8 @@ pub struct BoundedObservationFacts {
     pub supplied_tool_count: Option<u32>,
     pub tool_schema_bytes: Option<u64>,
     pub tool_schema_token_estimate: Option<u64>,
+    #[serde(default)]
+    pub supplied_tools: Vec<BoundedToolDefinitionFact>,
     pub tool_name: Option<String>,
     pub tool_schema_hash: Option<String>,
     pub opaque_file_id: Option<String>,

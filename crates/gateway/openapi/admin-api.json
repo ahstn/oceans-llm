@@ -5590,6 +5590,7 @@
       "AgentObservationFactsView": {
         "type": "object",
         "required": [
+          "supplied_tools",
           "attributes"
         ],
         "properties": {
@@ -5643,6 +5644,12 @@
             ],
             "format": "int32",
             "minimum": 0
+          },
+          "supplied_tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSuppliedToolFactView"
+            }
           },
           "tool_name": {
             "type": [
@@ -6424,6 +6431,23 @@
               "integer",
               "null"
             ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentSuppliedToolFactView": {
+        "type": "object",
+        "required": [
+          "name",
+          "token_estimate"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "token_estimate": {
+            "type": "integer",
             "format": "int64",
             "minimum": 0
           }

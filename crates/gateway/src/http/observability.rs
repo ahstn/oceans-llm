@@ -34,15 +34,15 @@ use crate::http::{
         AgentSessionDiagnosticsView, AgentSessionEfficiencyComponentsView,
         AgentSessionEfficiencyReportView, AgentSessionListRequestQuery, AgentSessionOutcomeView,
         AgentSessionPageView, AgentSessionRequestView, AgentSessionSourceView,
-        AgentSessionSummaryView, AgentTelemetryCoverageView, AgentTokenAndCacheDiagnosticsView,
-        AgentToolAndChangeDiagnosticsView, Envelope, HarnessUsageChartHarnessView,
-        HarnessUsageLeaderView, HarnessUsageQuery, HarnessUsageSeriesPointView,
-        HarnessUsageSeriesValueView, HarnessUsageView, LeaderboardChartUserView,
-        LeaderboardLeaderView, LeaderboardQuery, LeaderboardSeriesPointView,
-        LeaderboardSeriesValueView, LeaderboardView, McpToolInvocationDetailView,
-        McpToolInvocationListQuery, McpToolInvocationPageView, McpToolInvocationPayloadView,
-        McpToolInvocationSummaryView, OpenAiErrorEnvelopeView, RequestAttemptView,
-        RequestLogDetailView, RequestLogListQuery, RequestLogPageView,
+        AgentSessionSummaryView, AgentSuppliedToolFactView, AgentTelemetryCoverageView,
+        AgentTokenAndCacheDiagnosticsView, AgentToolAndChangeDiagnosticsView, Envelope,
+        HarnessUsageChartHarnessView, HarnessUsageLeaderView, HarnessUsageQuery,
+        HarnessUsageSeriesPointView, HarnessUsageSeriesValueView, HarnessUsageView,
+        LeaderboardChartUserView, LeaderboardLeaderView, LeaderboardQuery,
+        LeaderboardSeriesPointView, LeaderboardSeriesValueView, LeaderboardView,
+        McpToolInvocationDetailView, McpToolInvocationListQuery, McpToolInvocationPageView,
+        McpToolInvocationPayloadView, McpToolInvocationSummaryView, OpenAiErrorEnvelopeView,
+        RequestAttemptView, RequestLogDetailView, RequestLogListQuery, RequestLogPageView,
         RequestLogPayloadCaptureModeView, RequestLogPayloadPolicyView, RequestLogPayloadView,
         RequestLogSummaryView, RequestMcpTokenOverheadView, RequestTagView, RequestTagsView,
         RequestToolCardinalityAveragesView, RequestToolCardinalityView, envelope, format_timestamp,
@@ -485,6 +485,15 @@ pub async fn get_agent_session_detail(
                 supplied_tool_count: observation.facts.supplied_tool_count,
                 tool_schema_bytes: observation.facts.tool_schema_bytes,
                 tool_schema_token_estimate: observation.facts.tool_schema_token_estimate,
+                supplied_tools: observation
+                    .facts
+                    .supplied_tools
+                    .iter()
+                    .map(|tool| AgentSuppliedToolFactView {
+                        name: tool.name.clone(),
+                        token_estimate: tool.token_estimate,
+                    })
+                    .collect(),
                 tool_name: observation.facts.tool_name.clone(),
                 tool_schema_hash: observation.facts.tool_schema_hash.clone(),
                 opaque_file_id: observation.facts.opaque_file_id.clone(),

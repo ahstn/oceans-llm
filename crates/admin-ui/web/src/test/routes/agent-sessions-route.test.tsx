@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ComponentProps, ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -108,10 +108,24 @@ const detail: AgentSessionDetailView = {
       observation_id: 'observation_1',
       kind: 'tool_invoked',
       source_request_id: 'req_1',
-      parser_version: 'passive-observations-v1',
+      parser_version: 'passive-observations-v2',
       evidence: 'direct',
       occurred_at: '2026-07-21T10:00:10Z',
-      facts: { attributes: {}, tool_name: 'read' },
+      facts: {
+        attributes: {},
+        tool_name: 'read',
+        tool_schema_token_estimate: 120,
+        supplied_tools: [
+          { name: 'read', token_estimate: 120 },
+          { name: 'search', token_estimate: 110 },
+          { name: 'edit', token_estimate: 90 },
+          { name: 'create', token_estimate: 80 },
+          { name: 'browser', token_estimate: 70 },
+          { name: 'task', token_estimate: 60 },
+          { name: 'bash', token_estimate: 50 },
+          { name: 'write', token_estimate: 40 },
+        ],
+      },
       limitations: ['semantic_verification_unavailable'],
     },
   ],
@@ -122,7 +136,7 @@ const detail: AgentSessionDetailView = {
     input_watermark_at: '2026-07-21T10:00:42Z',
     observation_set_id: 'observation_set_1',
     boundary_policy_version: 'passive-gap-v1',
-    observation_parser_version: 'passive-observations-v1',
+    observation_parser_version: 'passive-observations-v2',
     pricing_policy_version: 'cache-aware-v1',
     cohort_version: 'successful-boundary-group-v2',
     cohort_fallback_level: 0,
@@ -135,7 +149,7 @@ const detail: AgentSessionDetailView = {
     report_schema_version: 'agent-session-report-v3',
     analyzer_version: 'session-efficiency-v2',
     score_policy_version: 'outcome-cost-time-v1',
-    observation_parser_version: 'passive-observations-v1',
+    observation_parser_version: 'passive-observations-v2',
     calibration_approval_id: 'calibration_1',
     maturity: 'experimental',
     confidence: 'high',
@@ -262,7 +276,10 @@ describe('AgentSessionsPage', () => {
 
     await waitFor(() => {
       expect(getAgentSessionDetailMock).toHaveBeenCalledTimes(2)
-      expect(screen.getByText('Requests (1)')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Event stream/ })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      )
     })
   })
 
@@ -330,35 +347,53 @@ describe('AgentSessionsPage', () => {
       expect(getAgentSessionDetailMock).toHaveBeenCalledWith({ data: { sessionId: 'session_1' } })
       expect(screen.getByText('Score not shown')).toBeInTheDocument()
     })
-    expect(screen.getByText('Requests (1)')).toBeInTheDocument()
-    expect(screen.getAllByRole('columnheader', { name: 'Request time' })).toHaveLength(2)
-    expect(screen.getByRole('columnheader', { name: 'Index' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
-    expect(
-      screen.getByRole('link', { name: 'Open request req_1 in request logs' }),
-    ).toHaveAttribute('href', '/observability/request-logs?request_id=req_1')
-    expect(screen.getAllByText('Succeeded')).toHaveLength(2)
-    expect(screen.getByText('Detected activity (1)')).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Confidence' })).toBeInTheDocument()
-    const sessionIdentityHeading = screen.getByRole('heading', { name: 'Session identity' })
-    expect(
-      screen
-        .getByRole('heading', { name: 'Requests (1)' })
-        .compareDocumentPosition(sessionIdentityHeading),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(
-      screen
-        .getByRole('heading', { name: 'Detected activity (1)' })
-        .compareDocumentPosition(sessionIdentityHeading),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(screen.getByText('Token and cache use')).toBeInTheDocument()
-    expect(screen.getByText('Tools and changes')).toBeInTheDocument()
-    expect(screen.getByText('Prompt context')).toBeInTheDocument()
+    const sessionSummary = screen.getByRole('region', { name: 'Session summary' })
+    expect(within(sessionSummary).getByText('Session score')).toBeInTheDocument()
+    expect(within(sessionSummary).getByText('Normalised cost')).toBeInTheDocument()
+    expect(within(sessionSummary).getByText('Total time')).toBeInTheDocument()
+    expect(within(sessionSummary).getByText('1.0 min')).toBeInTheDocument()
+    expect(within(sessionSummary).queryByText('Outcome')).not.toBeInTheDocument()
+    expect(within(sessionSummary).queryByText('Active time')).not.toBeInTheDocument()
+    const eventStreamTrigger = screen.getByRole('button', { name: /Event stream/ })
+    expect(eventStreamTrigger).toHaveAttribute('aria-expanded', 'true')
+    expect(eventStreamTrigger).toHaveTextContent('1 request')
+    expect(screen.getByRole('heading', { name: 'Request 1' })).toBeInTheDocument()
+    const requestLink = screen.getByRole('link', {
+      name: 'Open request req_1 in request logs',
+    })
+    expect(requestLink).toHaveAttribute('href', '/observability/request-logs?request_id=req_1')
+    expect(within(requestLink).getByText('Succeeded')).toBeInTheDocument()
+    expect(within(requestLink).getByText('High confidence')).toBeInTheDocument()
+    expect(within(requestLink).getByText('42.0 s')).toBeInTheDocument()
+    expect(within(requestLink).getByText('1 activity')).toBeInTheDocument()
+
+    const toolExposureTrigger = screen.getByRole('button', { name: /Tool exposure/ })
+    expect(toolExposureTrigger).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toolExposureTrigger)
+    expect(screen.getByRole('heading', { name: 'Used at least once' })).toBeInTheDocument()
+    const neverCalledPanel = screen
+      .getByRole('heading', { name: 'Never called' })
+      .closest('section')
+    expect(neverCalledPanel).not.toBeNull()
+    expect(within(neverCalledPanel!).getAllByRole('listitem')[0]).toHaveTextContent('search')
+    expect(within(neverCalledPanel!).queryByText('write')).not.toBeInTheDocument()
+    fireEvent.click(within(neverCalledPanel!).getByRole('button', { name: 'Show all 7' }))
+    expect(within(neverCalledPanel!).getByText('write')).toBeInTheDocument()
+
+    const identityTrigger = screen.getByRole('button', { name: 'Session identity' })
+    expect(identityTrigger).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('External session ID')).not.toBeInTheDocument()
+    fireEvent.click(identityTrigger)
+    expect(screen.getByText('External session ID')).toBeInTheDocument()
+
+    const comparisonTrigger = screen.getByRole('button', {
+      name: 'Score confidence and comparison data',
+    })
+    expect(comparisonTrigger).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Comparison snapshot')).not.toBeInTheDocument()
+    fireEvent.click(comparisonTrigger)
+    expect(screen.getByText('Comparison group')).toBeInTheDocument()
     expect(screen.getAllByText('93%').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('1,200')).toHaveLength(2)
-    expect(screen.getByText('Direct evidence')).toBeInTheDocument()
-    expect(screen.queryByText('Answer verification is not available')).not.toBeInTheDocument()
-    expect(screen.getByText('Comparison snapshot')).toBeInTheDocument()
   })
 
   it('warns when retained request or observation history exceeds the detail cap', async () => {
@@ -373,9 +408,7 @@ describe('AgentSessionsPage', () => {
 
     render(<AgentSessionsPage />)
 
-    expect(await screen.findByText('Some request history is not shown')).toBeInTheDocument()
-    expect(screen.getByText('Some detected activity is not shown')).toBeInTheDocument()
-    expect(screen.getByText('Requests (1+)')).toBeInTheDocument()
-    expect(screen.getByText('Detected activity (1+)')).toBeInTheDocument()
+    expect(await screen.findByText('Some history is not shown')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Event stream/ })).toHaveTextContent('1+ request')
   })
 })

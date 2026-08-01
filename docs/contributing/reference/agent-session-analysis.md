@@ -43,6 +43,11 @@ The session link's ordinal is repository-assigned. Callers must not calculate `M
 - `agent_sessions`: open/finalized session boundary, stable boundary-group key, watermarks, confidence, and ownership dimensions.
 - `agent_session_requests`: ordered request correlations and bounded limitation codes.
 - `agent_inferred_observation_sets` and `agent_inferred_observations`: parser-versioned, append-only classifications derived without raw content. Observation queries preserve the originating set's parser version.
+  Parser version `passive-observations-v2` may also retain up to 256 supplied tool names and
+  per-definition token estimates from payload-policy-permitted request metadata. It never retains
+  tool descriptions, schemas, arguments, or results. The admin session view compares those bounded
+  definitions with detected tool-call names to distinguish tools used at least once from tools
+  that were supplied but never called.
 - `agent_session_analyses`: immutable versioned reports. The session watermark, cohort-snapshot digest, and direct-MCP-invocation snapshot are part of uniqueness, so lifecycle revisions and different evidence populations cannot collide.
 - `agent_analysis_recompute_queue`: leased work with attempts, failure state, desired version tuple, and owner-checked terminal transitions.
 

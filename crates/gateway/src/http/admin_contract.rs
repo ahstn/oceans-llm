@@ -1321,12 +1321,19 @@ pub struct AgentSessionRequestView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSuppliedToolFactView {
+    pub name: String,
+    pub token_estimate: u64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AgentObservationFactsView {
     pub message_count: Option<u32>,
     pub prompt_bytes: Option<u64>,
     pub supplied_tool_count: Option<u32>,
     pub tool_schema_bytes: Option<u64>,
     pub tool_schema_token_estimate: Option<u64>,
+    pub supplied_tools: Vec<AgentSuppliedToolFactView>,
     pub tool_name: Option<String>,
     pub tool_schema_hash: Option<String>,
     pub opaque_file_id: Option<String>,
