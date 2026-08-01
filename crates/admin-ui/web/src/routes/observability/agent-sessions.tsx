@@ -555,8 +555,8 @@ function SessionDetail({
 
   return (
     <>
-      <div className="space-y-4 px-4 pb-4">
-        <section aria-label="Session summary" className="grid grid-cols-3 divide-x border">
+      <div>
+        <section aria-label="Session summary" className="grid grid-cols-3 divide-x border-x px-2">
           <Metric
             label="Session score"
             value={showScore ? formatNullable(report?.score) : 'Score not shown'}
@@ -690,12 +690,12 @@ function SessionDetail({
             value={
               coverage
                 ? [
-                    coverage.request_metadata ? 'Request metadata' : null,
-                    coverage.response_payload ? 'Response payload' : null,
-                    coverage.response_payload_truncated ? 'Response payload is incomplete' : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ') || 'Source data is not available'
+                  coverage.request_metadata ? 'Request metadata' : null,
+                  coverage.response_payload ? 'Response payload' : null,
+                  coverage.response_payload_truncated ? 'Response payload is incomplete' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || 'Source data is not available'
                 : 'Source data is not available'
             }
           />
