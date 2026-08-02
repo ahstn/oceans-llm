@@ -383,8 +383,21 @@ pub struct AuthSessionUserView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct AuthSessionCapabilitiesView {
+    pub platform_admin: bool,
+    pub agent_analysis: bool,
+    pub passive_analysis_enabled: bool,
+    pub shadow_diagnostics_visible: bool,
+    pub calibrated_score_visible: bool,
+    pub team_admin_analytics_enabled: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AuthSessionView {
     pub user: AuthSessionUserView,
+    pub team_id: Option<String>,
+    pub team_role: Option<String>,
+    pub capabilities: AuthSessionCapabilitiesView,
     pub must_change_password: bool,
 }
 
@@ -1205,6 +1218,449 @@ pub struct RequestLogPayloadView {
     pub response_json: Value,
 }
 
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct AgentSessionListRequestQuery {
+    pub page: Option<u32>,
+    pub page_size: Option<u32>,
+    pub user_id: Option<String>,
+    pub team_id: Option<String>,
+    pub service_account_id: Option<String>,
+    pub harness_key: Option<String>,
+    pub requested_model_key: Option<String>,
+    pub operation: Option<String>,
+    pub caller_class: Option<String>,
+    pub gateway_outcome: Option<String>,
+    pub score_maturity: Option<String>,
+    pub minimum_coverage_percent: Option<u8>,
+    pub session_source_id: Option<String>,
+    pub external_session_id: Option<String>,
+    pub request_tag_key: Option<String>,
+    pub request_tag_value: Option<String>,
+    pub lifecycle: Option<String>,
+    pub started_after: Option<String>,
+    pub started_before: Option<String>,
+    pub score_confidence: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSessionSourceView {
+    pub session_source_id: String,
+    pub external_session_id: String,
+    pub adapter_namespace: String,
+    pub adapter_version: String,
+    pub source_provenance: String,
+    pub harness_key: String,
+    pub harness_label: String,
+    pub first_seen_at: String,
+    pub last_seen_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSessionSummaryView {
+    pub session_id: String,
+    pub session_source_id: Option<String>,
+    pub external_session_id: Option<String>,
+    pub ownership_scope_key: String,
+    pub user_id: Option<String>,
+    pub team_id: Option<String>,
+    pub service_account_id: Option<String>,
+    pub harness_key: Option<String>,
+    pub harness_label: Option<String>,
+    pub requested_model_key: String,
+    pub operation: String,
+    pub caller_class: String,
+    pub session_source_observed: bool,
+    pub lifecycle: String,
+    pub boundary_confidence: String,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub request_count: u64,
+    pub tool_call_count: Option<u32>,
+    pub mcp_call_count: Option<u32>,
+    pub efficiency_score: Option<u8>,
+    pub score_confidence: Option<String>,
+    pub score_maturity: Option<String>,
+    pub gateway_outcome: Option<String>,
+    pub telemetry_coverage_percent: Option<u8>,
+    pub cohort_version: Option<String>,
+    pub cohort_fallback_level: Option<u8>,
+    pub cohort_sample_size: Option<usize>,
+    pub calibration_approval_id: Option<String>,
+    pub normalized_cost_usd: Option<f64>,
+    pub active_time_ms: Option<u64>,
+    pub wall_time_ms: Option<u64>,
+    pub report_schema_version: Option<String>,
+    pub analyzer_version: Option<String>,
+    pub score_policy_version: Option<String>,
+    pub pricing_policy_version: Option<String>,
+    pub limitations: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSessionPageView {
+    pub items: Vec<AgentSessionSummaryView>,
+    pub page: u32,
+    pub page_size: u32,
+    pub total: u64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSessionRequestView {
+    pub request_id: String,
+    pub request_log_id: Option<String>,
+    pub usage_event_id: Option<String>,
+    pub ordinal: i64,
+    pub execution_id: Option<String>,
+    pub parent_execution_id: Option<String>,
+    pub correlation_confidence: String,
+    pub limitation_codes: Vec<String>,
+    pub occurred_at: String,
+    pub completed_at: Option<String>,
+    pub terminal_success: Option<bool>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSuppliedToolFactView {
+    pub name: String,
+    pub server_key: Option<String>,
+    pub token_estimate: u64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSuppliedSkillFactView {
+    pub name: String,
+    pub description_token_estimate: Option<u64>,
+    pub body_token_estimate: Option<u64>,
+    pub resource_token_estimate: Option<u64>,
+    pub used: bool,
+    pub abandoned: Option<bool>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentFileInteractionFactView {
+    pub opaque_file_id: String,
+    pub operation: String,
+    pub tool_name: Option<String>,
+    pub succeeded: Option<bool>,
+    pub error_signature: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentObservationFactsView {
+    pub message_count: Option<u32>,
+    pub prompt_bytes: Option<u64>,
+    pub supplied_tool_count: Option<u32>,
+    pub tool_schema_bytes: Option<u64>,
+    pub tool_schema_token_estimate: Option<u64>,
+    pub supplied_tools: Vec<AgentSuppliedToolFactView>,
+    pub supplied_skills: Vec<AgentSuppliedSkillFactView>,
+    pub file_interactions: Vec<AgentFileInteractionFactView>,
+    pub reasoning_config_hash: Option<String>,
+    pub cache_requested: Option<bool>,
+    pub finish_reason: Option<String>,
+    pub incomplete_reason: Option<String>,
+    pub tool_name: Option<String>,
+    pub tool_schema_hash: Option<String>,
+    pub opaque_file_id: Option<String>,
+    pub file_kind: Option<String>,
+    pub result_bytes: Option<u64>,
+    pub error_signature: Option<String>,
+    pub attributes: Value,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentObservationView {
+    pub observation_id: String,
+    pub kind: String,
+    pub source_request_id: String,
+    pub parser_version: String,
+    pub evidence: String,
+    pub occurred_at: String,
+    pub facts: AgentObservationFactsView,
+    pub limitations: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentObservationCoverageView {
+    pub request_metadata: bool,
+    pub response_payload: bool,
+    pub response_payload_truncated: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSessionOutcomeView {
+    pub state: String,
+    pub factor_basis_points: u16,
+    pub successful_requests: u32,
+    pub determinate_requests: u32,
+    pub incomplete_requests: u32,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSessionEfficiencyComponentsView {
+    pub outcome: AgentSessionOutcomeView,
+    pub cost_efficiency_basis_points: Option<u16>,
+    pub active_time_efficiency_basis_points: Option<u16>,
+    pub actual_cost_10000: Option<i64>,
+    pub active_time_ms: i64,
+    pub wall_time_ms: i64,
+    pub summed_work_time_ms: i64,
+    pub excluded_gap_time_ms: i64,
+    pub overlap_savings_ms: i64,
+    pub unknown_wait_time_ms: Option<i64>,
+    pub cohort_version: Option<String>,
+    pub cohort_fallback_level: Option<u8>,
+    pub cohort_sample_size: usize,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentTelemetryCoverageView {
+    pub outcome_percent: u8,
+    pub cost_percent: u8,
+    pub timing_percent: u8,
+    pub payload_percent: u8,
+    pub cohort_percent: u8,
+    pub overall_percent: u8,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentTokenAndCacheDiagnosticsView {
+    pub fresh_input_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_creation_tokens: Option<i64>,
+    pub total_input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub reasoning_tokens: Option<i64>,
+    pub visible_output_tokens: Option<i64>,
+    pub cache_creation_5m_tokens: Option<i64>,
+    pub cache_creation_30m_tokens: Option<i64>,
+    pub cache_creation_1h_tokens: Option<i64>,
+    pub provider_total_tokens: Option<i64>,
+    pub legacy_cost_10000: Option<i64>,
+    pub normalized_cost_10000: Option<i64>,
+    pub cache_read_cost_10000: Option<i64>,
+    pub cache_creation_cost_10000: Option<i64>,
+    pub uncached_input_cost_10000: Option<i64>,
+    pub cache_savings_10000: Option<i64>,
+    pub cache_savings_basis_points: Option<i32>,
+    pub cache_read_write_ratio_basis_points: Option<i32>,
+    pub cache_write_amplification_basis_points: Option<i32>,
+    pub silent_cache_threshold_miss_requests: Option<u32>,
+    pub cache_key_switches: u32,
+    pub reasoning_config_switches: Option<u32>,
+    pub pricing_policy_versions: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentContextDiagnosticsView {
+    pub initial_prompt_tokens: Option<i64>,
+    pub median_prompt_tokens: Option<i64>,
+    pub p90_prompt_tokens: Option<i64>,
+    pub maximum_prompt_tokens: Option<i64>,
+    pub input_boundary_tokens: i64,
+    pub reserved_output_tokens: i64,
+    pub peak_input_utilization_basis_points: Option<i32>,
+    pub requests_over_input_boundary: u32,
+    pub repeated_requests_over_input_boundary: u32,
+    pub score_penalty_points: u8,
+    pub prompt_growth_per_turn: Option<i64>,
+    pub prompt_growth_per_active_minute: Option<i64>,
+    pub suspected_compactions: u32,
+    pub suspected_context_resets: u32,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentToolServerDiagnosticsView {
+    pub server_key: String,
+    pub exposed_tool_definitions: u32,
+    pub invoked_tool_definitions: u32,
+    pub invocation_count: u32,
+    pub failed_count: u32,
+    pub schema_token_estimate_per_request: u64,
+    pub estimated_uncached_schema_cost_10000: Option<i64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentToolAndChangeDiagnosticsView {
+    pub supplied_tool_definitions: Option<u64>,
+    pub supplied_tool_schema_bytes: Option<u64>,
+    pub observed_tool_calls: u32,
+    pub classified_tool_calls: u32,
+    pub file_reads_suspected: u32,
+    pub file_searches_suspected: u32,
+    pub file_creates_suspected: u32,
+    pub file_edits_suspected: u32,
+    pub file_overwrites_suspected: u32,
+    pub unique_opaque_files: u32,
+    pub verification_results_classified: u32,
+    pub rework_spans_suspected: u32,
+    pub direct_mcp_calls: u32,
+    pub direct_mcp_duration_ms: Option<i64>,
+    pub tool_servers: Vec<AgentToolServerDiagnosticsView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentRequestAttemptView {
+    pub request_id: String,
+    pub attempt_number: i64,
+    pub produced_final_response: bool,
+    pub retryable: bool,
+    pub status: String,
+    pub status_code: Option<i64>,
+    pub error_code: Option<String>,
+    pub latency_ms: Option<i64>,
+    pub provider_key: String,
+    pub upstream_model: String,
+    pub occurred_at_unix_ms: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentToolReliabilityItemView {
+    pub server_key: Option<String>,
+    pub tool_key: String,
+    pub invocation_count: u32,
+    pub failed_count: u32,
+    pub truncated_result_count: u32,
+    pub latency_ms: i64,
+    pub post_error_input_tokens: Option<i64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentReliabilityDiagnosticsView {
+    pub attempt_coverage_percent: u8,
+    pub total_attempts: u32,
+    pub wasted_attempts: u32,
+    pub wasted_attempt_latency_ms: i64,
+    pub wasted_attempt_cost_10000: Option<i64>,
+    pub tool_invocations: u32,
+    pub failed_tool_invocations: u32,
+    pub truncated_tool_results: u32,
+    pub attempts: Vec<AgentRequestAttemptView>,
+    pub tools: Vec<AgentToolReliabilityItemView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSkillDiagnosticItemView {
+    pub name: String,
+    pub available_request_count: u32,
+    pub used_request_count: u32,
+    pub abandoned_request_count: u32,
+    pub description_token_estimate: Option<u64>,
+    pub loaded_body_tokens: Option<u64>,
+    pub loaded_resource_tokens: Option<u64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSkillDiagnosticsView {
+    pub instrumented_request_count: u32,
+    pub available_skill_count: Option<u32>,
+    pub used_skill_count: Option<u32>,
+    pub unused_skill_count: Option<u32>,
+    pub description_tokens_per_request: Option<u64>,
+    pub loaded_body_tokens: Option<u64>,
+    pub loaded_resource_tokens: Option<u64>,
+    pub items: Vec<AgentSkillDiagnosticItemView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentOutcomeDiagnosticsView {
+    pub file_signal_coverage_percent: u8,
+    pub cost_per_file_touched_10000: Option<i64>,
+    pub cost_per_successful_session_10000: Option<i64>,
+    pub rework_ratio_basis_points: Option<i32>,
+    pub verification_rate_basis_points: Option<i32>,
+    pub zero_outcome: Option<bool>,
+    pub repeated_file_interactions_suspected: Option<u32>,
+    pub files_with_repeated_interactions_suspected: Option<u32>,
+    pub failed_file_interactions: Option<u32>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentFinishReasonItemView {
+    pub reason: String,
+    pub count: u32,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentFinishReasonDiagnosticsView {
+    pub instrumented_request_count: u32,
+    pub length_limited_requests: u32,
+    pub items: Vec<AgentFinishReasonItemView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentAnalysisMetricPolicyView {
+    pub token_metrics: bool,
+    pub cache_metrics: bool,
+    pub context_metrics: bool,
+    pub tool_metrics: bool,
+    pub skill_metrics: bool,
+    pub reliability_metrics: bool,
+    pub outcome_metrics: bool,
+    pub finish_reason_metrics: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSessionDiagnosticsView {
+    pub token_and_cache: AgentTokenAndCacheDiagnosticsView,
+    pub context: AgentContextDiagnosticsView,
+    pub tools_and_changes: AgentToolAndChangeDiagnosticsView,
+    pub skills: AgentSkillDiagnosticsView,
+    pub reliability: AgentReliabilityDiagnosticsView,
+    pub outcome: AgentOutcomeDiagnosticsView,
+    pub finish_reasons: AgentFinishReasonDiagnosticsView,
+    pub enabled_metrics: AgentAnalysisMetricPolicyView,
+    pub semantic_verification_available: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSessionEfficiencyReportView {
+    pub report_schema_version: String,
+    pub analyzer_version: String,
+    pub score_policy_version: String,
+    pub observation_parser_version: String,
+    pub calibration_approval_id: Option<String>,
+    pub configuration_version: String,
+    pub maturity: String,
+    pub confidence: String,
+    pub gateway_outcome: String,
+    pub score: Option<u8>,
+    pub coverage: AgentTelemetryCoverageView,
+    pub components: AgentSessionEfficiencyComponentsView,
+    pub diagnostics: AgentSessionDiagnosticsView,
+    pub limitations: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSessionAnalysisIdentityView {
+    pub analysis_id: String,
+    pub input_watermark_at: String,
+    pub observation_set_id: String,
+    pub boundary_policy_version: String,
+    pub observation_parser_version: String,
+    pub pricing_policy_version: String,
+    pub cohort_version: String,
+    pub cohort_fallback_level: u8,
+    pub cohort_sample_size: u64,
+    pub cohort_snapshot_digest: String,
+    pub analyzed_at: String,
+    pub expires_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSessionDetailView {
+    pub session: AgentSessionSummaryView,
+    pub session_source: Option<AgentSessionSourceView>,
+    pub requests: Vec<AgentSessionRequestView>,
+    pub observations: Vec<AgentObservationView>,
+    pub request_history_truncated: bool,
+    pub observation_history_truncated: bool,
+    pub analysis: Option<AgentSessionAnalysisIdentityView>,
+    pub report: Option<AgentSessionEfficiencyReportView>,
+    pub coverage: Option<AgentObservationCoverageView>,
+}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -1267,6 +1723,8 @@ pub struct RequestLogPayloadView {
         crate::http::spend::deactivate_budget,
         crate::http::observability::get_usage_leaderboard,
         crate::http::observability::get_harness_usage,
+        crate::http::observability::list_agent_sessions,
+        crate::http::observability::get_agent_session_detail,
         crate::http::observability::list_request_logs,
         crate::http::observability::get_request_log_detail,
         crate::http::observability::list_mcp_tool_invocations,
@@ -1381,6 +1839,7 @@ mod tests {
         assert!(paths.contains_key("/api/v1/admin/spend/report"));
         assert!(paths.contains_key("/api/v1/admin/observability/leaderboard"));
         assert!(paths.contains_key("/api/v1/admin/observability/request-logs/{request_log_id}"));
+        assert!(paths.contains_key("/api/v1/admin/observability/agent-sessions/{session_id}"));
         assert!(paths.contains_key("/api/v1/admin/observability/mcp-invocations"));
         assert!(
             paths.contains_key(

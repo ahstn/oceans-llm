@@ -1,17 +1,20 @@
+use agent_session_analysis::AnalysisPolicy;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 
 use gateway_core::{
-    AuthenticatedApiKey, BudgetAlertRepository, BudgetRecord, BudgetRepository,
-    ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
-    McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
-    McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
-    PricingResolution, PricingUnpricedReason, ProviderRepository, RequestLogDetail, RequestLogPage,
-    RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-    RequestLogRetentionWindow, RequestTags, ResolvedModelPricing, ResponsesRequest, RouteError,
-    RoutePlanner, RoutePricingOverride, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
+    AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AuthenticatedApiKey,
+    BudgetAlertRepository, BudgetRecord, BudgetRepository, ChatCompletionsRequest, GatewayError,
+    GatewayModel, IdentityRepository, McpToolInvocationDetail, McpToolInvocationPage,
+    McpToolInvocationQuery, McpToolInvocationRepository, ModelRepository, ModelRoute, Money4,
+    NormalizedUsageAccounting, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
+    ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery,
+    RequestLogRecord, RequestLogRepository, RequestLogRetentionWindow, RequestTags,
+    ResolvedModelPricing, ResponsesRequest, RouteError, RoutePlanner, RoutePricingOverride,
+    StoreHealth, UsageCostAuthority, UsageLedgerRecord, UsagePricingStatus,
 };
 use serde_json::{Value, json};
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use tracing::warn;
 use uuid::Uuid;
 
@@ -19,20 +22,37 @@ use crate::{
     Authenticator, LoggedRequest, ModelAccess, ModelResolver, PricingCatalog, RequestLogContext,
     RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
     ResolvedProviderConnection, StreamLogResultInput, StreamResponseCollector,
+    agent_analysis::{
+        PassiveRequestRecord, REPORT_RETENTION, desired_versions_for_policy,
+        finalize_idle_sessions, process_next_analysis, record_prepared_passive_request,
+        session_boundary_group_key,
+    },
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::BudgetGuard,
     budget_scopes::usage_ownership_scope_key,
     effective_route_metadata::{EffectiveRouteMetadata, resolve_effective_route_metadata},
     mcp_invocation_logging::{McpInvocationLogInput, McpInvocationLogging},
+    usage_normalization::{NormalizedTokenUsage, normalize_token_usage_best_effort},
 };
 
+pub const NORMALIZED_PRICING_POLICY_VERSION: &str = "cache-aware-v1-2026-07-21";
+const AGENT_ANALYSIS_MAX_IN_FLIGHT_INGESTIONS: usize = 64;
+const AGENT_ANALYSIS_QUEUE_RETENTION: Duration = Duration::days(7);
+
 #[derive(Debug, Clone)]
-pub struct RecordedChatUsage {
+pub struct RecordedUsage {
     pub pricing_status: UsagePricingStatus,
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
     pub cost_usd: Option<f64>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum UsageCostPolicy {
+    #[default]
+    ShadowLegacy,
+    Normalized,
 }
 
 #[derive(Debug)]
@@ -56,6 +76,13 @@ pub struct GatewayService<S, P> {
     request_logging: RequestLogging<S>,
     mcp_invocation_logging: McpInvocationLogging<S>,
     planner: Arc<P>,
+    usage_cost_policy: UsageCostPolicy,
+    agent_analysis_enabled: bool,
+    agent_analysis_ingestion_limit: Arc<Semaphore>,
+    agent_analysis_report_retention: Duration,
+    agent_analysis_queue_retention: Duration,
+    agent_analysis_policy: AnalysisPolicy,
+    agent_analysis_desired_versions: AgentAnalysisDesiredVersions,
 }
 
 impl<S, P> GatewayService<S, P>
@@ -114,6 +141,8 @@ where
             crate::McpInvocationPayloadPolicy::from_request_log_policy(payload_policy),
         );
 
+        let agent_analysis_policy = AnalysisPolicy::default();
+        let agent_analysis_desired_versions = desired_versions_for_policy(&agent_analysis_policy);
         Self {
             store,
             authenticator,
@@ -125,7 +154,46 @@ where
             request_logging,
             mcp_invocation_logging,
             planner,
+            usage_cost_policy: UsageCostPolicy::default(),
+            agent_analysis_enabled: false,
+            agent_analysis_ingestion_limit: Arc::new(Semaphore::new(
+                AGENT_ANALYSIS_MAX_IN_FLIGHT_INGESTIONS,
+            )),
+            agent_analysis_report_retention: REPORT_RETENTION,
+            agent_analysis_queue_retention: AGENT_ANALYSIS_QUEUE_RETENTION,
+            agent_analysis_policy,
+            agent_analysis_desired_versions,
         }
+    }
+
+    #[must_use]
+    pub fn with_usage_cost_policy(mut self, usage_cost_policy: UsageCostPolicy) -> Self {
+        self.usage_cost_policy = usage_cost_policy;
+        self
+    }
+
+    #[must_use]
+    pub fn with_agent_analysis_enabled(mut self, enabled: bool) -> Self {
+        self.agent_analysis_enabled = enabled;
+        self
+    }
+
+    #[must_use]
+    pub fn with_agent_analysis_retention(
+        mut self,
+        report_retention: Duration,
+        queue_retention: Duration,
+    ) -> Self {
+        self.agent_analysis_report_retention = report_retention;
+        self.agent_analysis_queue_retention = queue_retention;
+        self
+    }
+
+    #[must_use]
+    pub fn with_agent_analysis_policy(mut self, policy: AnalysisPolicy) -> Self {
+        self.agent_analysis_desired_versions = desired_versions_for_policy(&policy);
+        self.agent_analysis_policy = policy;
+        self
     }
 
     pub async fn check_readiness(&self) -> Result<(), GatewayError> {
@@ -293,8 +361,12 @@ where
         invoked_tool_count: i64,
         response_body: &Value,
         attempts: Vec<gateway_core::RequestAttemptRecord>,
-    ) -> Result<LoggedRequest, GatewayError> {
-        self.request_logging
+    ) -> Result<LoggedRequest, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        let logged = self
+            .request_logging
             .log_non_stream_success(
                 auth,
                 context,
@@ -305,7 +377,19 @@ where
                 response_body,
                 attempts,
             )
-            .await
+            .await?;
+        if logged.wrote {
+            self.record_passive_request(
+                auth,
+                context,
+                Some(logged.request_log_id),
+                Some(response_body),
+                Some(true),
+                logged.response_payload_truncated,
+            )
+            .await;
+        }
+        Ok(logged)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -318,8 +402,12 @@ where
         latency_ms: i64,
         gateway_error: &GatewayError,
         attempts: Vec<gateway_core::RequestAttemptRecord>,
-    ) -> Result<LoggedRequest, GatewayError> {
-        self.request_logging
+    ) -> Result<LoggedRequest, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        let logged = self
+            .request_logging
             .log_non_stream_failure(
                 auth,
                 context,
@@ -329,7 +417,19 @@ where
                 gateway_error,
                 attempts,
             )
-            .await
+            .await?;
+        if logged.wrote {
+            self.record_passive_request(
+                auth,
+                context,
+                Some(logged.request_log_id),
+                None,
+                Some(false),
+                logged.response_payload_truncated,
+            )
+            .await;
+        }
+        Ok(logged)
     }
 
     pub async fn log_stream_result(
@@ -337,10 +437,162 @@ where
         auth: &AuthenticatedApiKey,
         context: &RequestLogContext,
         stream_result: StreamLogResultInput,
-    ) -> Result<LoggedRequest, GatewayError> {
-        self.request_logging
+    ) -> Result<LoggedRequest, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        let terminal_success = if stream_result.failure.is_none() {
+            Some(true)
+        } else if stream_result.collector.usage().is_some() {
+            None
+        } else {
+            Some(false)
+        };
+        let response_body = stream_result.collector.analysis_payload();
+        let logged = self
+            .request_logging
             .log_stream_result(auth, context, stream_result)
+            .await?;
+        if logged.wrote {
+            self.record_passive_request(
+                auth,
+                context,
+                Some(logged.request_log_id),
+                response_body.as_ref(),
+                terminal_success,
+                logged.response_payload_truncated,
+            )
+            .await;
+        }
+        Ok(logged)
+    }
+
+    async fn record_passive_request(
+        &self,
+        auth: &AuthenticatedApiKey,
+        context: &RequestLogContext,
+        request_log_id: Option<Uuid>,
+        response_body: Option<&Value>,
+        terminal_success: Option<bool>,
+        response_payload_truncated: bool,
+    ) where
+        S: AgentSessionAnalysisRepository,
+    {
+        if !self.agent_analysis_enabled {
+            return;
+        }
+        let Ok(permit) = Arc::clone(&self.agent_analysis_ingestion_limit).try_acquire_owned()
+        else {
+            warn!(
+                request_id = context.request_id,
+                "passive agent request correlation skipped because the ingestion limit is full"
+            );
+            return;
+        };
+        let store = Arc::clone(&self.store);
+        let auth = auth.clone();
+        let request_id = context.request_id.clone();
+        let resolved_model_key = context.resolved_model_key.clone();
+        let request_tags = context.request_tags.clone();
+        let request_tags_value = match serde_json::to_value(&request_tags) {
+            Ok(value) => value,
+            Err(error) => {
+                warn!(
+                    request_id = context.request_id,
+                    error = %error,
+                    "passive agent request correlation skipped because request tags were invalid"
+                );
+                return;
+            }
+        };
+        let operation = context.operation;
+        let harness_key = context.agent_harness_key.clone();
+        let harness_label = context.agent_harness_label.clone();
+        let metadata = context.analysis_metadata.clone();
+        let analysis_payload_permitted = context.analysis_payload_permitted;
+        let occurred_at = context.started_at;
+        let payload_truncated = response_payload_truncated;
+        let response_body = response_body.cloned();
+        let desired_versions = self.agent_analysis_desired_versions.clone();
+        tokio::spawn(async move {
+            let completed_at = OffsetDateTime::now_utc();
+            let boundary_group_key = session_boundary_group_key(&request_tags);
+            let input = PassiveRequestRecord {
+                auth: &auth,
+                request_id: &request_id,
+                request_log_id,
+                harness_key: &harness_key,
+                harness_label: &harness_label,
+                metadata: &metadata,
+                response_body: analysis_payload_permitted
+                    .then_some(response_body.as_ref())
+                    .flatten(),
+                occurred_at,
+                completed_at,
+                terminal_success,
+                payload_truncated,
+                requested_model_key: &resolved_model_key,
+                operation,
+                request_tags: request_tags_value,
+                boundary_group_key: &boundary_group_key,
+            }
+            .prepare();
+            if let Err(error) =
+                record_prepared_passive_request(store.as_ref(), input, &desired_versions).await
+            {
+                warn!(
+                    request_id,
+                    error = %error,
+                    "passive agent request correlation failed"
+                );
+            }
+            drop(permit);
+        });
+    }
+    pub async fn finalize_idle_agent_sessions(
+        &self,
+        now: OffsetDateTime,
+    ) -> Result<u64, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        finalize_idle_sessions(
+            self.store.as_ref(),
+            now,
+            &self.agent_analysis_desired_versions,
+        )
+        .await
+    }
+
+    pub async fn process_next_agent_analysis(
+        &self,
+        lease_owner: &str,
+        now: OffsetDateTime,
+    ) -> Result<bool, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        process_next_analysis(
+            self.store.as_ref(),
+            lease_owner,
+            now,
+            self.agent_analysis_report_retention,
+            &self.agent_analysis_policy,
+        )
+        .await
+    }
+
+    pub async fn purge_expired_agent_analysis(
+        &self,
+        now: OffsetDateTime,
+    ) -> Result<u64, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        self.store
+            .purge_expired_agent_analysis(now, now - self.agent_analysis_queue_retention)
             .await
+            .map_err(Into::into)
     }
 
     pub async fn log_request_if_enabled(
@@ -402,10 +654,20 @@ where
         &self,
         retention_window: RequestLogRetentionWindow,
         dry_run: bool,
-    ) -> Result<RequestLogPurgeResult, GatewayError> {
-        self.request_logging
+    ) -> Result<RequestLogPurgeResult, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        let result = self
+            .request_logging
             .purge_request_logs(retention_window, dry_run)
-            .await
+            .await?;
+        if !dry_run {
+            self.store
+                .purge_agent_analysis_before(result.cutoff)
+                .await?;
+        }
+        Ok(result)
     }
 
     pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {
@@ -565,7 +827,7 @@ where
             .await
     }
 
-    pub async fn record_chat_usage(
+    pub async fn record_usage(
         &self,
         auth: &AuthenticatedApiKey,
         model: &GatewayModel,
@@ -573,11 +835,21 @@ where
         request_id: &str,
         provider_usage: Option<Value>,
         occurred_at: OffsetDateTime,
-    ) -> Result<RecordedChatUsage, GatewayError> {
+    ) -> Result<RecordedUsage, GatewayError> {
         let ownership_scope_key = usage_ownership_scope_key(auth)?;
-        let usage_summary = usage_summary_from_value(provider_usage.as_ref())?;
+        let normalization = normalize_token_usage_best_effort(provider_usage.as_ref());
+        if let Some(error) = normalization.error.as_ref() {
+            warn!(
+                request_id,
+                provider_key = %route.provider_key,
+                error = %error,
+                "provider usage normalization failed; preserving raw usage"
+            );
+        }
+        let normalized_usage = &normalization.usage;
+        let normalized_accounting =
+            normalized_accounting(normalized_usage, normalization.error.as_ref());
         let provider_usage = provider_usage.unwrap_or_else(|| json!({}));
-
         let mut record = UsageLedgerRecord {
             usage_event_id: Uuid::new_v4(),
             request_id: request_id.to_string(),
@@ -591,10 +863,11 @@ where
             model_route_id: Some(route.id),
             provider_key: route.provider_key.clone(),
             upstream_model: route.upstream_model.clone(),
-            prompt_tokens: usage_summary.prompt_tokens,
-            completion_tokens: usage_summary.completion_tokens,
-            total_tokens: usage_summary.total_tokens,
+            prompt_tokens: normalized_usage.legacy_prompt_tokens(),
+            completion_tokens: normalized_usage.legacy_completion_tokens(),
+            total_tokens: normalized_usage.legacy_total_tokens(),
             provider_usage,
+            normalized_usage: Some(normalized_accounting),
             pricing_status: UsagePricingStatus::UsageMissing,
             unpriced_reason: None,
             pricing_row_id: None,
@@ -612,20 +885,22 @@ where
             occurred_at,
         };
 
-        if usage_summary.has_usage() {
+        if normalized_usage.has_usage() {
             match self.resolve_route_pricing(route, occurred_at).await? {
-                PricingResolution::Exact { pricing } => apply_exact_pricing(&mut record, &pricing)?,
+                PricingResolution::Exact { pricing } => {
+                    apply_exact_pricing(&mut record, &pricing, self.usage_cost_policy)?
+                }
                 PricingResolution::ConfiguredOverride { pricing } => {
-                    apply_configured_pricing(&mut record, &pricing)?
+                    apply_configured_pricing(&mut record, &pricing, self.usage_cost_policy)?
                 }
                 PricingResolution::Unpriced { reason } => {
-                    record.pricing_status = UsagePricingStatus::Unpriced;
-                    record.unpriced_reason = Some(unpriced_reason_string(&reason));
+                    let reason = unpriced_reason_string(&reason);
+                    mark_usage_unpriced(&mut record, &reason, self.usage_cost_policy);
                     warn!(
                         request_id = %request_id,
                         provider_key = %route.provider_key,
                         model_key = %model.model_key,
-                        reason = %record.unpriced_reason.as_deref().unwrap_or("unknown"),
+                        reason = %reason,
                         "usage ledger recorded without matching pricing"
                     );
                 }
@@ -651,7 +926,7 @@ where
             );
         }
 
-        Ok(RecordedChatUsage {
+        Ok(RecordedUsage {
             pricing_status: record.pricing_status,
             prompt_tokens: record.prompt_tokens,
             completion_tokens: record.completion_tokens,
@@ -659,52 +934,6 @@ where
             cost_usd: money_to_f64(record.computed_cost_usd),
         })
     }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct UsageSummary {
-    prompt_tokens: Option<i64>,
-    completion_tokens: Option<i64>,
-    total_tokens: Option<i64>,
-}
-
-impl UsageSummary {
-    fn has_usage(self) -> bool {
-        self.prompt_tokens.is_some()
-            || self.completion_tokens.is_some()
-            || self.total_tokens.is_some()
-    }
-}
-
-fn usage_summary_from_value(value: Option<&Value>) -> Result<UsageSummary, GatewayError> {
-    let Some(usage) = value.and_then(Value::as_object) else {
-        return Ok(UsageSummary::default());
-    };
-
-    let prompt_tokens = usage
-        .get("prompt_tokens")
-        .or_else(|| usage.get("input_tokens"))
-        .and_then(Value::as_i64);
-    let completion_tokens = usage
-        .get("completion_tokens")
-        .or_else(|| usage.get("output_tokens"))
-        .and_then(Value::as_i64);
-    let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
-        some @ Some(_) => some,
-        None => match (prompt_tokens, completion_tokens) {
-            (Some(prompt), Some(completion)) => prompt
-                .checked_add(completion)
-                .ok_or_else(|| GatewayError::Internal("token total overflow".to_string()))
-                .map(Some)?,
-            _ => None,
-        },
-    };
-
-    Ok(UsageSummary {
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
-    })
 }
 
 fn money_to_f64(value: Money4) -> Option<f64> {
@@ -715,9 +944,110 @@ fn money_to_f64(value: Money4) -> Option<f64> {
     }
 }
 
+fn normalized_accounting(
+    usage: &NormalizedTokenUsage,
+    normalization_error: Option<&crate::UsageNormalizationError>,
+) -> NormalizedUsageAccounting {
+    NormalizedUsageAccounting {
+        fresh_input_tokens: usage.fresh_input_tokens,
+        cache_read_tokens: usage.cache_read_tokens,
+        cache_creation_tokens: usage.cache_creation_tokens,
+        cache_creation_5m_tokens: usage.cache_creation_5m_tokens,
+        cache_creation_30m_tokens: usage.cache_creation_30m_tokens,
+        cache_creation_1h_tokens: usage.cache_creation_1h_tokens,
+        output_tokens: usage.output_tokens,
+        reasoning_tokens: usage.reasoning_tokens,
+        provider_total_tokens: usage.provider_total_tokens,
+        output_includes_reasoning: usage.semantics.output_includes_reasoning,
+        finish_reason: usage.finish_reason.clone(),
+        incomplete_reason: usage.incomplete_reason.clone(),
+        semantics_version: usage.semantics.version.clone(),
+        semantics: json!({
+            "token_usage": &usage.semantics,
+            "coverage": &usage.coverage,
+        }),
+        normalization_error: normalization_error.map(ToString::to_string),
+        fresh_input_cost_usd: None,
+        cache_read_cost_usd: None,
+        cache_creation_cost_usd: None,
+        output_cost_usd: None,
+        reasoning_cost_usd: None,
+        uncached_input_cost_usd: None,
+        legacy_cost_usd: Money4::ZERO,
+        normalized_cost_usd: None,
+        normalized_pricing_status: if usage.has_usage() {
+            UsagePricingStatus::Unpriced
+        } else {
+            UsagePricingStatus::UsageMissing
+        },
+        normalized_unpriced_reason: None,
+        pricing_policy_version: NORMALIZED_PRICING_POLICY_VERSION.to_string(),
+        authoritative_cost: UsageCostAuthority::Legacy,
+        discrepancy_usd: None,
+        discrepancy_reason: None,
+    }
+}
+
+fn mark_usage_unpriced(
+    record: &mut UsageLedgerRecord,
+    reason: &str,
+    usage_cost_policy: UsageCostPolicy,
+) {
+    record.pricing_status = UsagePricingStatus::Unpriced;
+    record.unpriced_reason = Some(reason.to_string());
+    if let Some(accounting) = record.normalized_usage.as_mut() {
+        accounting.normalized_pricing_status = UsagePricingStatus::Unpriced;
+        accounting.normalized_unpriced_reason = Some(reason.to_string());
+        accounting.authoritative_cost = fallback_authority(usage_cost_policy);
+    }
+}
+
+const fn fallback_authority(usage_cost_policy: UsageCostPolicy) -> UsageCostAuthority {
+    match usage_cost_policy {
+        UsageCostPolicy::ShadowLegacy => UsageCostAuthority::Legacy,
+        UsageCostPolicy::Normalized => UsageCostAuthority::LegacyFallback,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct NormalizedBucketCost {
+    cost: Option<Money4>,
+    error: Option<String>,
+}
+
+fn normalized_bucket_cost(
+    tokens: Option<i64>,
+    rate: Option<Money4>,
+    missing_rate_error: &str,
+) -> Result<NormalizedBucketCost, GatewayError> {
+    let Some(tokens) = tokens else {
+        return Ok(NormalizedBucketCost {
+            cost: None,
+            error: None,
+        });
+    };
+    if tokens == 0 {
+        return Ok(NormalizedBucketCost {
+            cost: Some(Money4::ZERO),
+            error: None,
+        });
+    }
+    let Some(rate) = rate else {
+        return Ok(NormalizedBucketCost {
+            cost: None,
+            error: Some(missing_rate_error.to_string()),
+        });
+    };
+    Ok(NormalizedBucketCost {
+        cost: Some(scaled_cost_for_tokens(tokens, rate)?),
+        error: None,
+    })
+}
+
 fn apply_exact_pricing(
     record: &mut UsageLedgerRecord,
     pricing: &ResolvedModelPricing,
+    usage_cost_policy: UsageCostPolicy,
 ) -> Result<(), GatewayError> {
     record.pricing_row_id = Some(pricing.model_pricing_id);
     record.pricing_provider_id = Some(pricing.pricing_provider_id.clone());
@@ -735,12 +1065,16 @@ fn apply_exact_pricing(
         record,
         pricing.input_cost_per_million_tokens,
         pricing.output_cost_per_million_tokens,
+        pricing.cache_read_cost_per_million_tokens,
+        pricing.cache_write_cost_per_million_tokens,
+        usage_cost_policy,
     )
 }
 
 fn apply_configured_pricing(
     record: &mut UsageLedgerRecord,
     pricing: &RoutePricingOverride,
+    usage_cost_policy: UsageCostPolicy,
 ) -> Result<(), GatewayError> {
     record.pricing_source = Some("configured_override".to_string());
     record.input_cost_per_million_tokens = Some(pricing.input_cost_per_million_tokens);
@@ -752,32 +1086,157 @@ fn apply_configured_pricing(
         record,
         Some(pricing.input_cost_per_million_tokens),
         Some(pricing.output_cost_per_million_tokens),
+        pricing.cache_read_cost_per_million_tokens,
+        pricing.cache_write_cost_per_million_tokens,
+        usage_cost_policy,
     )
+}
+
+fn populate_uncached_input_cost(
+    accounting: &mut NormalizedUsageAccounting,
+    input_rate: Option<Money4>,
+) -> Result<(), GatewayError> {
+    let buckets_non_overlapping =
+        accounting.semantics["token_usage"]["input_buckets_non_overlapping"].as_bool()
+            == Some(true);
+    let (cost, limitation) = if !buckets_non_overlapping {
+        (None, Some("input_bucket_overlap_unknown"))
+    } else if let (Some(fresh), Some(cache_read), Some(cache_creation)) = (
+        accounting.fresh_input_tokens,
+        accounting.cache_read_tokens,
+        accounting.cache_creation_tokens,
+    ) {
+        if let Some(rate) = input_rate {
+            let tokens = fresh
+                .checked_add(cache_read)
+                .and_then(|tokens| tokens.checked_add(cache_creation))
+                .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?;
+            (Some(scaled_cost_for_tokens(tokens, rate)?), None)
+        } else {
+            (None, Some("input_rate_unavailable"))
+        }
+    } else {
+        (None, Some("input_bucket_unavailable"))
+    };
+
+    accounting.uncached_input_cost_usd = cost;
+    accounting.semantics["uncached_input_cost"] = json!({
+        "method": "fresh_plus_cache_read_plus_cache_creation_at_normal_input_rate",
+        "available": cost.is_some(),
+        "limitation": limitation,
+    });
+    Ok(())
 }
 
 fn apply_token_rates(
     record: &mut UsageLedgerRecord,
     input_rate: Option<Money4>,
     output_rate: Option<Money4>,
+    cache_read_rate: Option<Money4>,
+    cache_write_rate: Option<Money4>,
+    usage_cost_policy: UsageCostPolicy,
 ) -> Result<(), GatewayError> {
+    if let Some(accounting) = record.normalized_usage.as_mut() {
+        populate_uncached_input_cost(accounting, input_rate)?;
+    }
     if record.prompt_tokens.unwrap_or_default() > 0 && input_rate.is_none() {
-        record.pricing_status = UsagePricingStatus::Unpriced;
-        record.unpriced_reason = Some("missing_input_rate".to_string());
+        mark_usage_unpriced(record, "missing_input_rate", usage_cost_policy);
         return Ok(());
     }
     if record.completion_tokens.unwrap_or_default() > 0 && output_rate.is_none() {
-        record.pricing_status = UsagePricingStatus::Unpriced;
-        record.unpriced_reason = Some("missing_output_rate".to_string());
+        mark_usage_unpriced(record, "missing_output_rate", usage_cost_policy);
         return Ok(());
     }
 
-    record.pricing_status = UsagePricingStatus::Priced;
-    record.computed_cost_usd = compute_usage_cost(
+    let legacy_cost = compute_usage_cost(
         record.prompt_tokens,
         input_rate,
         record.completion_tokens,
         output_rate,
     )?;
+    let Some(accounting) = record.normalized_usage.as_mut() else {
+        record.pricing_status = UsagePricingStatus::Priced;
+        record.computed_cost_usd = legacy_cost;
+        return Ok(());
+    };
+    accounting.legacy_cost_usd = legacy_cost;
+
+    if accounting.normalization_error.is_some() {
+        accounting.normalized_pricing_status = UsagePricingStatus::Unpriced;
+        accounting.normalized_unpriced_reason = Some("usage_normalization_failed".to_string());
+        accounting.authoritative_cost = fallback_authority(usage_cost_policy);
+        record.pricing_status = UsagePricingStatus::Priced;
+        record.computed_cost_usd = legacy_cost;
+        return Ok(());
+    }
+
+    let component_costs = [
+        normalized_bucket_cost(
+            accounting.fresh_input_tokens,
+            input_rate,
+            "missing_input_rate",
+        )?,
+        normalized_bucket_cost(
+            accounting.cache_read_tokens,
+            cache_read_rate,
+            "missing_cache_read_rate",
+        )?,
+        normalized_bucket_cost(
+            accounting.cache_creation_tokens,
+            cache_write_rate,
+            "missing_cache_write_rate",
+        )?,
+        normalized_bucket_cost(accounting.output_tokens, output_rate, "missing_output_rate")?,
+        normalized_bucket_cost(
+            accounting.reasoning_tokens,
+            output_rate,
+            "missing_reasoning_rate",
+        )?,
+    ];
+    if let Some(reason) = component_costs
+        .iter()
+        .find_map(|component| component.error.as_deref())
+    {
+        accounting.normalized_pricing_status = UsagePricingStatus::Unpriced;
+        accounting.normalized_unpriced_reason = Some(reason.to_string());
+        accounting.authoritative_cost = fallback_authority(usage_cost_policy);
+        record.pricing_status = UsagePricingStatus::Priced;
+        record.computed_cost_usd = legacy_cost;
+        return Ok(());
+    }
+
+    accounting.fresh_input_cost_usd = component_costs[0].cost;
+    accounting.cache_read_cost_usd = component_costs[1].cost;
+    accounting.cache_creation_cost_usd = component_costs[2].cost;
+    accounting.output_cost_usd = component_costs[3].cost;
+    accounting.reasoning_cost_usd = component_costs[4].cost;
+    let output_includes_reasoning =
+        accounting.semantics["token_usage"]["output_includes_reasoning"]
+            .as_bool()
+            .unwrap_or(true);
+    let normalized_cost = component_costs
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != 4 || !output_includes_reasoning)
+        .filter_map(|(_, component)| component.cost)
+        .try_fold(Money4::ZERO, |total, cost| total.checked_add(cost))
+        .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?;
+    accounting.normalized_cost_usd = Some(normalized_cost);
+    accounting.normalized_pricing_status = UsagePricingStatus::Priced;
+    accounting.normalized_unpriced_reason = None;
+    accounting.authoritative_cost = match usage_cost_policy {
+        UsageCostPolicy::ShadowLegacy => UsageCostAuthority::Legacy,
+        UsageCostPolicy::Normalized => UsageCostAuthority::Normalized,
+    };
+    accounting.discrepancy_usd = normalized_cost.checked_sub(legacy_cost);
+    accounting.discrepancy_reason =
+        (normalized_cost != legacy_cost).then(|| "cache_aware_bucket_pricing".to_string());
+
+    record.pricing_status = UsagePricingStatus::Priced;
+    record.computed_cost_usd = match usage_cost_policy {
+        UsageCostPolicy::ShadowLegacy => legacy_cost,
+        UsageCostPolicy::Normalized => normalized_cost,
+    };
     Ok(())
 }
 
@@ -860,11 +1319,11 @@ mod tests {
         RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
         UsageLedgerRecord, UsagePricingStatus, UserRecord,
     };
-    use serde_json::{Map, json};
+    use serde_json::{Map, Value, json};
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::GatewayService;
+    use super::{GatewayService, UsageCostPolicy};
 
     #[derive(Clone, Default)]
     struct UsageAccountingRepo {
@@ -1609,7 +2068,7 @@ mod tests {
         let route = vertex_embedding_route(model_id);
 
         let recorded = service
-            .record_chat_usage(
+            .record_usage(
                 &auth,
                 &model,
                 &route,
@@ -1686,7 +2145,7 @@ mod tests {
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
 
         let recorded = service
-            .record_chat_usage(
+            .record_usage(
                 &auth,
                 &model,
                 &route,
@@ -1694,7 +2153,8 @@ mod tests {
                 Some(json!({
                     "prompt_tokens": 1_000_000,
                     "completion_tokens": 500_000,
-                    "total_tokens": 1_500_000
+                    "total_tokens": 1_500_000,
+                    "prompt_tokens_details": {"cached_tokens": 100_000}
                 })),
                 occurred_at,
             )
@@ -1728,6 +2188,21 @@ mod tests {
             );
             assert_eq!(event.cache_write_cost_per_million_tokens, None);
             assert_eq!(event.computed_cost_usd, Money4::from_scaled(20_000));
+            let accounting = event
+                .normalized_usage
+                .as_ref()
+                .expect("normalized accounting");
+            assert_eq!(accounting.fresh_input_tokens, Some(900_000));
+            assert_eq!(accounting.cache_read_tokens, Some(100_000));
+            assert_eq!(
+                accounting.normalized_cost_usd,
+                Some(Money4::from_scaled(19_100))
+            );
+            assert_eq!(
+                accounting.authoritative_cost,
+                gateway_core::UsageCostAuthority::Legacy
+            );
+            assert_eq!(accounting.discrepancy_usd, Some(Money4::from_scaled(-900)));
         }
 
         let error = service
@@ -1749,6 +2224,212 @@ mod tests {
             } if projected_cost_usd == Money4::from_scaled(20_000)
                 && limit_usd == Money4::from_scaled(20_000)
         ));
+
+        let normalized_repo = Arc::new(UsageAccountingRepo {
+            provider: repo.provider.clone(),
+            ..Default::default()
+        });
+        let normalized_service =
+            GatewayService::new(normalized_repo.clone(), Arc::new(PassThroughPlanner))
+                .with_usage_cost_policy(UsageCostPolicy::Normalized);
+        let normalized_recorded = normalized_service
+            .record_usage(
+                &auth,
+                &model,
+                &route,
+                "req_normalized_pricing",
+                Some(json!({
+                    "prompt_tokens": 1_000_000,
+                    "completion_tokens": 500_000,
+                    "total_tokens": 1_500_000,
+                    "prompt_tokens_details": {"cached_tokens": 100_000}
+                })),
+                occurred_at,
+            )
+            .await
+            .expect("normalized usage should be recorded");
+        assert_eq!(normalized_recorded.cost_usd, Some(1.91));
+        let events = normalized_repo.events.lock().expect("events lock");
+        let normalized_event = events.last().expect("normalized usage event");
+        assert_eq!(
+            normalized_event.computed_cost_usd,
+            Money4::from_scaled(19_100)
+        );
+        assert_eq!(
+            normalized_event
+                .normalized_usage
+                .as_ref()
+                .expect("normalized accounting")
+                .authoritative_cost,
+            gateway_core::UsageCostAuthority::Normalized
+        );
+    }
+
+    #[tokio::test]
+    async fn normalized_pricing_populates_bucket_reasoning_and_uncached_input_costs() {
+        let auth = auth();
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
+            cache_write_cost_per_million_tokens: Some(Money4::from_scaled(15_000)),
+        });
+        let repo = Arc::new(UsageAccountingRepo::default());
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+
+        service
+            .record_usage(
+                &auth,
+                &model,
+                &route,
+                "req_bucket_costs",
+                Some(json!({
+                    "prompt_tokens": 1_000_000,
+                    "completion_tokens": 500_000,
+                    "total_tokens": 1_500_000,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 100_000,
+                        "cache_write_tokens": 50_000
+                    },
+                    "completion_tokens_details": {"reasoning_tokens": 100_000}
+                })),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("usage should be priced");
+
+        service
+            .record_usage(
+                &auth,
+                &model,
+                &route,
+                "req_unavailable_cache_buckets",
+                Some(json!({
+                    "prompt_tokens": 10,
+                    "completion_tokens": 5,
+                    "total_tokens": 15
+                })),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("usage with unavailable cache buckets should be recorded");
+
+        let events = repo.events.lock().expect("events lock");
+        let accounting = events[0]
+            .normalized_usage
+            .as_ref()
+            .expect("normalized accounting");
+        assert_eq!(
+            accounting.fresh_input_cost_usd,
+            Some(Money4::from_scaled(8_500))
+        );
+        assert_eq!(
+            accounting.cache_read_cost_usd,
+            Some(Money4::from_scaled(100))
+        );
+        assert_eq!(
+            accounting.cache_creation_cost_usd,
+            Some(Money4::from_scaled(750))
+        );
+        assert_eq!(
+            accounting.output_cost_usd,
+            Some(Money4::from_scaled(10_000))
+        );
+        assert_eq!(
+            accounting.reasoning_cost_usd,
+            Some(Money4::from_scaled(2_000))
+        );
+        assert_eq!(
+            accounting.normalized_cost_usd,
+            Some(Money4::from_scaled(19_350))
+        );
+        assert_eq!(
+            accounting.uncached_input_cost_usd,
+            Some(Money4::from_scaled(10_000))
+        );
+        assert_eq!(
+            accounting.semantics["uncached_input_cost"]["limitation"],
+            Value::Null
+        );
+
+        let unavailable = events[1]
+            .normalized_usage
+            .as_ref()
+            .expect("normalized accounting");
+        assert_eq!(unavailable.cache_read_cost_usd, None);
+        assert_eq!(unavailable.cache_creation_cost_usd, None);
+        assert_eq!(unavailable.uncached_input_cost_usd, None);
+        assert_eq!(
+            unavailable.semantics["uncached_input_cost"]["limitation"],
+            "input_bucket_unavailable"
+        );
+    }
+
+    #[tokio::test]
+    async fn request_log_and_usage_ledger_share_normalization_policy() {
+        let auth = auth();
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let route = vertex_embedding_route(model_id);
+        let repo = Arc::new(UsageAccountingRepo::default());
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+        let fixtures = [
+            json!({
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "total_tokens": 120,
+                "prompt_tokens_details": {
+                    "cached_tokens": 40,
+                    "cache_write_tokens": "malformed"
+                }
+            }),
+            json!({"prompt_tokens": -1, "completion_tokens": 3}),
+            json!({"prompt_tokens": i64::MAX, "completion_tokens": 1}),
+            json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 99}),
+            json!({}),
+        ];
+
+        for (index, fixture) in fixtures.iter().enumerate() {
+            service
+                .record_usage(
+                    &auth,
+                    &model,
+                    &route,
+                    &format!("req_parity_{index}"),
+                    Some(fixture.clone()),
+                    OffsetDateTime::now_utc(),
+                )
+                .await
+                .expect("fixture should be recorded");
+        }
+
+        let events = repo.events.lock().expect("events lock");
+        for (event, fixture) in events.iter().zip(fixtures.iter()) {
+            let request_summary = crate::request_logging::usage_summary_from_value(Some(fixture));
+            let outcome = crate::normalize_token_usage_best_effort(Some(fixture));
+            assert_eq!(event.prompt_tokens, request_summary.prompt_tokens);
+            assert_eq!(event.completion_tokens, request_summary.completion_tokens);
+            assert_eq!(event.total_tokens, request_summary.total_tokens);
+            let accounting = event
+                .normalized_usage
+                .as_ref()
+                .expect("normalized accounting");
+            assert_eq!(
+                accounting.normalization_error,
+                outcome.error.as_ref().map(ToString::to_string)
+            );
+            assert_eq!(
+                accounting.semantics["token_usage"],
+                serde_json::to_value(&outcome.usage.semantics).expect("serialize semantics")
+            );
+            assert_eq!(
+                accounting.semantics["coverage"],
+                serde_json::to_value(&outcome.usage.coverage).expect("serialize coverage")
+            );
+        }
     }
 
     #[tokio::test]

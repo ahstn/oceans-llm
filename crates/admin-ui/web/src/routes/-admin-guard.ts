@@ -2,7 +2,13 @@ import { createIsomorphicFn } from '@tanstack/react-start'
 import { redirect } from '@tanstack/react-router'
 
 import { getAuthSession } from '@/server/admin-data.functions'
-import { buildRedirectTarget, isPlatformAdminSession } from '@/routes/-auth-routing'
+import {
+  buildRedirectTarget,
+  canAccessAdminPath,
+  defaultSignedInPath,
+  isAdminSession,
+  normalizeAdminPath,
+} from '@/routes/-auth-routing'
 
 const loadAuthSession = createIsomorphicFn()
   .server(async () => {
@@ -16,7 +22,7 @@ export async function requireAdminSession(location: {
   search: Record<string, unknown>
 }) {
   const { data: session } = await loadAuthSession()
-  const adminSession = isPlatformAdminSession(session) ? session : null
+  const adminSession = isAdminSession(session) ? session : null
 
   if (!adminSession) {
     throw redirect({
@@ -27,6 +33,11 @@ export async function requireAdminSession(location: {
 
   if (adminSession.must_change_password) {
     throw redirect({ to: '/change-password' })
+  }
+
+  const currentPath = normalizeAdminPath(location.pathname)
+  if (!canAccessAdminPath(adminSession, currentPath)) {
+    throw redirect({ to: defaultSignedInPath(adminSession) })
   }
 
   return { session: adminSession }

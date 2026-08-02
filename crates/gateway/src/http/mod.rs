@@ -182,6 +182,14 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             get(get_harness_usage),
         )
         .route(
+            "/api/v1/admin/observability/agent-sessions",
+            get(list_agent_sessions),
+        )
+        .route(
+            "/api/v1/admin/observability/agent-sessions/{session_id}",
+            get(get_agent_session_detail),
+        )
+        .route(
             "/api/v1/admin/observability/request-logs",
             get(list_request_logs),
         )

@@ -52,6 +52,8 @@ pub struct GatewayConfig {
     #[serde(default)]
     pub request_logging: RequestLoggingConfig,
     #[serde(default)]
+    pub agent_analysis: AgentAnalysisConfig,
+    #[serde(default)]
     pub providers: Vec<ProviderConfig>,
     #[serde(default)]
     pub models: Vec<ModelConfig>,
@@ -85,6 +87,7 @@ impl GatewayConfig {
         let _ = self.database.connection_options()?;
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
+        self.agent_analysis.validate()?;
         self.auth.oidc.validate(&self.teams)?;
         self.auth.oauth.validate(&self.teams)?;
 
@@ -1735,6 +1738,160 @@ impl RequestLoggingConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentAnalysisConfig {
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub shadow_diagnostics_enabled: bool,
+    #[serde(default)]
+    pub calibrated_score_enabled: bool,
+    #[serde(default)]
+    pub calibration_approval_id: Option<String>,
+    #[serde(default)]
+    pub team_admin_enabled: bool,
+    #[serde(default = "default_agent_analysis_report_retention_days")]
+    pub report_retention_days: u64,
+    #[serde(default = "default_agent_analysis_queue_retention_days")]
+    pub queue_retention_days: u64,
+    #[serde(default = "default_agent_context_input_boundary_tokens")]
+    pub context_input_boundary_tokens: i64,
+    #[serde(default = "default_agent_context_reserved_output_tokens")]
+    pub context_reserved_output_tokens: i64,
+    #[serde(default = "default_agent_context_penalty_points")]
+    pub context_penalty_points_per_repeated_excess: u8,
+    #[serde(default)]
+    pub metrics: AgentAnalysisMetricsConfig,
+    #[serde(default)]
+    pub cache_profiles: Vec<AgentAnalysisCacheProfileConfig>,
+}
+
+impl Default for AgentAnalysisConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            shadow_diagnostics_enabled: false,
+            calibrated_score_enabled: false,
+            calibration_approval_id: None,
+            team_admin_enabled: false,
+            report_retention_days: default_agent_analysis_report_retention_days(),
+            queue_retention_days: default_agent_analysis_queue_retention_days(),
+            context_input_boundary_tokens: default_agent_context_input_boundary_tokens(),
+            context_reserved_output_tokens: default_agent_context_reserved_output_tokens(),
+            context_penalty_points_per_repeated_excess: default_agent_context_penalty_points(),
+            metrics: AgentAnalysisMetricsConfig::default(),
+            cache_profiles: Vec::new(),
+        }
+    }
+}
+
+impl AgentAnalysisConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        const MAX_RETENTION_DAYS: u64 = 36_500;
+        if self
+            .calibration_approval_id
+            .as_ref()
+            .is_some_and(|value| value.len() > 256 || value.trim() != value)
+        {
+            bail!("agent_analysis.calibration_approval_id must be trimmed and at most 256 bytes");
+        }
+        if self.report_retention_days > MAX_RETENTION_DAYS
+            || self.queue_retention_days > MAX_RETENTION_DAYS
+        {
+            bail!("agent analysis retention must not exceed 36500 days");
+        }
+        if self.context_input_boundary_tokens <= 0 {
+            bail!("agent_analysis.context_input_boundary_tokens must be > 0");
+        }
+        if self.context_reserved_output_tokens < 0 {
+            bail!("agent_analysis.context_reserved_output_tokens must be >= 0");
+        }
+        for profile in &self.cache_profiles {
+            profile.validate()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentAnalysisMetricsConfig {
+    #[serde(default = "default_enabled")]
+    pub tokens: bool,
+    #[serde(default = "default_enabled")]
+    pub cache: bool,
+    #[serde(default = "default_enabled")]
+    pub context: bool,
+    #[serde(default = "default_enabled")]
+    pub tools: bool,
+    #[serde(default = "default_enabled")]
+    pub skills: bool,
+    #[serde(default = "default_enabled")]
+    pub reliability: bool,
+    #[serde(default = "default_enabled")]
+    pub outcomes: bool,
+    #[serde(default = "default_enabled")]
+    pub finish_reasons: bool,
+}
+
+impl Default for AgentAnalysisMetricsConfig {
+    fn default() -> Self {
+        Self {
+            tokens: true,
+            cache: true,
+            context: true,
+            tools: true,
+            skills: true,
+            reliability: true,
+            outcomes: true,
+            finish_reasons: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentAnalysisCacheProfileConfig {
+    #[serde(default)]
+    pub provider_key_contains: Option<String>,
+    #[serde(default)]
+    pub upstream_model_contains: Option<String>,
+    pub minimum_cacheable_tokens: i64,
+    #[serde(default)]
+    pub default_ttl: AgentAnalysisCacheTtlConfig,
+}
+
+impl AgentAnalysisCacheProfileConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self
+            .provider_key_contains
+            .as_deref()
+            .is_none_or(str::is_empty)
+            && self
+                .upstream_model_contains
+                .as_deref()
+                .is_none_or(str::is_empty)
+        {
+            bail!("agent analysis cache profiles require a provider or model match");
+        }
+        if self.minimum_cacheable_tokens <= 0 {
+            bail!("agent analysis cache profile token minimums must be > 0");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentAnalysisCacheTtlConfig {
+    #[default]
+    FiveMinutes,
+    ThirtyMinutes,
+    OneHour,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct RequestLogPurgeConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -2972,6 +3129,26 @@ const fn default_route_weight() -> f64 {
     1.0
 }
 
+const fn default_agent_analysis_report_retention_days() -> u64 {
+    90
+}
+
+const fn default_agent_analysis_queue_retention_days() -> u64 {
+    7
+}
+
+const fn default_agent_context_input_boundary_tokens() -> i64 {
+    220_000
+}
+
+const fn default_agent_context_reserved_output_tokens() -> i64 {
+    128_000
+}
+
+const fn default_agent_context_penalty_points() -> u8 {
+    2
+}
+
 const fn default_enabled() -> bool {
     true
 }
@@ -3103,7 +3280,7 @@ mod tests {
     use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
 
-    use super::{AwsBedrockRouteCompatibilityConfig, GatewayConfig};
+    use super::{AgentAnalysisCacheTtlConfig, AwsBedrockRouteCompatibilityConfig, GatewayConfig};
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
@@ -5799,6 +5976,75 @@ users:
             error_text
                 .contains("user email `ops-admin@example.com` is reserved for bootstrap admin"),
             "unexpected error: {error_text}"
+        );
+    }
+    #[test]
+    fn parses_agent_analysis_policy_and_cache_profiles() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+agent_analysis:
+  enabled: true
+  report_retention_days: 120
+  queue_retention_days: 14
+  context_input_boundary_tokens: 180000
+  context_reserved_output_tokens: 64000
+  context_penalty_points_per_repeated_excess: 3
+  metrics:
+    tokens: true
+    cache: true
+    context: false
+    tools: true
+    skills: false
+    reliability: true
+    outcomes: true
+    finish_reasons: false
+  cache_profiles:
+    - provider_key_contains: anthropic
+      upstream_model_contains: opus
+      minimum_cacheable_tokens: 4096
+      default_ttl: one_hour
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let analysis = config.agent_analysis;
+        assert_eq!(analysis.report_retention_days, 120);
+        assert_eq!(analysis.queue_retention_days, 14);
+        assert_eq!(analysis.context_input_boundary_tokens, 180_000);
+        assert_eq!(analysis.context_reserved_output_tokens, 64_000);
+        assert_eq!(analysis.context_penalty_points_per_repeated_excess, 3);
+        assert!(!analysis.metrics.context);
+        assert!(!analysis.metrics.skills);
+        assert!(!analysis.metrics.finish_reasons);
+        assert_eq!(analysis.cache_profiles.len(), 1);
+        assert_eq!(analysis.cache_profiles[0].minimum_cacheable_tokens, 4_096);
+        assert!(matches!(
+            analysis.cache_profiles[0].default_ttl,
+            AgentAnalysisCacheTtlConfig::OneHour
+        ));
+    }
+
+    #[test]
+    fn rejects_agent_analysis_cache_profile_without_a_match() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+agent_analysis:
+  cache_profiles:
+    - minimum_cacheable_tokens: 1024
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}")
+                .contains("agent analysis cache profiles require a provider or model match"),
+            "unexpected error: {error:#}"
         );
     }
 }

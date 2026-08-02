@@ -638,29 +638,38 @@ pub(super) fn map_stop_reason(reason: &str) -> &'static str {
 
 pub(super) fn map_usage(value: &Value) -> Option<Value> {
     let usage = value.get("usage")?.as_object()?;
-    let prompt = usage
+    let input = usage
         .get("inputTokens")
-        .or_else(|| usage.get("input_tokens"))
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    let completion = usage
+        .or_else(|| usage.get("input_tokens"));
+    let output = usage
         .get("outputTokens")
-        .or_else(|| usage.get("output_tokens"))
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
+        .or_else(|| usage.get("output_tokens"));
     let total = usage
         .get("totalTokens")
         .or_else(|| usage.get("total_tokens"))
-        .and_then(Value::as_i64)
-        .unwrap_or(prompt + completion);
+        .cloned()
+        .or_else(|| {
+            input
+                .and_then(Value::as_i64)
+                .zip(output.and_then(Value::as_i64))
+                .and_then(|(input, output)| input.checked_add(output))
+                .map(|total| Value::Number(total.into()))
+        });
 
     let mut mapped = Map::new();
-    mapped.insert("prompt_tokens".to_string(), Value::Number(prompt.into()));
+    if let Some(input) = input {
+        mapped.insert("prompt_tokens".to_string(), input.clone());
+    }
+    if let Some(output) = output {
+        mapped.insert("completion_tokens".to_string(), output.clone());
+    }
+    if let Some(total) = total {
+        mapped.insert("total_tokens".to_string(), total);
+    }
     mapped.insert(
-        "completion_tokens".to_string(),
-        Value::Number(completion.into()),
+        "usage_source".to_string(),
+        Value::String("bedrock".to_string()),
     );
-    mapped.insert("total_tokens".to_string(), Value::Number(total.into()));
     mapped.insert("provider_usage".to_string(), Value::Object(usage.clone()));
     Some(Value::Object(mapped))
 }

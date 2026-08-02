@@ -1,5 +1,6 @@
 pub mod admin_api_keys;
 pub mod admin_models;
+mod agent_analysis;
 pub mod authenticator;
 pub mod budget_alerts;
 pub mod budget_guard;
@@ -23,6 +24,7 @@ pub mod review_agent;
 pub mod route_planner;
 pub mod secret_storage;
 pub mod service;
+pub mod usage_normalization;
 
 pub use admin_api_keys::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
@@ -30,6 +32,13 @@ pub use admin_api_keys::{
     RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput,
 };
 pub use admin_models::{AdminModelStatus, AdminModelSummary, AdminModelsService};
+pub use agent_analysis::{
+    desired_versions, desired_versions_for_policy, enqueue_analysis as enqueue_agent_analysis,
+    enqueue_analysis_with_versions as enqueue_agent_analysis_with_versions,
+};
+pub use agent_session_analysis::{
+    AnalysisMetricPolicy, AnalysisPolicy, CacheProfileRule, CacheTtl, default_cache_profiles,
+};
 pub use authenticator::{Authenticator, verify_gateway_key_secret};
 pub use budget_alerts::{
     BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,
@@ -97,4 +106,11 @@ pub use secret_storage::{
     GATEWAY_API_KEY_SECRET_KEY_ENV, GATEWAY_API_KEY_SECRET_KEY_ID, decrypt_gateway_api_key_secret,
     encrypt_gateway_api_key_secret,
 };
-pub use service::{GatewayService, RecordedChatUsage};
+pub use service::{
+    GatewayService, NORMALIZED_PRICING_POLICY_VERSION, RecordedUsage, UsageCostPolicy,
+};
+pub use usage_normalization::{
+    NormalizedTokenUsage, TOKEN_USAGE_SEMANTICS_VERSION, TokenFieldAvailability,
+    TokenUsageSemantics, UsageCoverage, UsageNormalizationError, UsageNormalizationOutcome,
+    normalize_token_usage, normalize_token_usage_best_effort,
+};

@@ -1953,7 +1953,11 @@ fn google_embedding_usage_from_outputs(
     Ok(total_tokens.map(|total_tokens| {
         json!({
             "prompt_tokens": total_tokens,
-            "total_tokens": total_tokens
+            "total_tokens": total_tokens,
+            "usage_source": "vertex_google_embeddings",
+            "provider_usage": {
+                "input_token_count_provenance": "provider_reported_aggregate"
+            }
         })
     }))
 }
@@ -2181,28 +2185,49 @@ fn vertex_reasoning_metadata(source: &str, blocks: Vec<Value>) -> Value {
 
 fn map_google_usage(value: &Value) -> Option<Value> {
     let usage = value.get("usageMetadata")?.as_object()?;
-    Some(json!({
-        "prompt_tokens": usage.get("promptTokenCount").and_then(Value::as_i64).unwrap_or(0),
-        "completion_tokens": usage.get("candidatesTokenCount").and_then(Value::as_i64).unwrap_or(0),
-        "total_tokens": usage.get("totalTokenCount").and_then(Value::as_i64).unwrap_or(0)
-    }))
+    let mut mapped = Map::new();
+    for (source, target) in [
+        ("promptTokenCount", "prompt_tokens"),
+        ("candidatesTokenCount", "completion_tokens"),
+        ("totalTokenCount", "total_tokens"),
+    ] {
+        if let Some(value) = usage.get(source) {
+            mapped.insert(target.to_string(), value.clone());
+        }
+    }
+    mapped.insert(
+        "usage_source".to_string(),
+        Value::String("vertex_google".to_string()),
+    );
+    mapped.insert("provider_usage".to_string(), Value::Object(usage.clone()));
+    Some(Value::Object(mapped))
 }
 
 fn map_anthropic_usage(value: &Value) -> Option<Value> {
     let usage = value.get("usage")?.as_object()?;
-    let prompt = usage
-        .get("input_tokens")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    let completion = usage
-        .get("output_tokens")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    Some(json!({
-        "prompt_tokens": prompt,
-        "completion_tokens": completion,
-        "total_tokens": prompt + completion
-    }))
+    let mut mapped = Map::new();
+    if let Some(input) = usage.get("input_tokens") {
+        mapped.insert("prompt_tokens".to_string(), input.clone());
+    }
+    if let Some(output) = usage.get("output_tokens") {
+        mapped.insert("completion_tokens".to_string(), output.clone());
+    }
+    if let Some(total) = usage.get("total_tokens").cloned().or_else(|| {
+        usage
+            .get("input_tokens")
+            .and_then(Value::as_i64)
+            .zip(usage.get("output_tokens").and_then(Value::as_i64))
+            .and_then(|(input, output)| input.checked_add(output))
+            .map(|total| Value::Number(total.into()))
+    }) {
+        mapped.insert("total_tokens".to_string(), total);
+    }
+    mapped.insert(
+        "usage_source".to_string(),
+        Value::String("vertex_anthropic".to_string()),
+    );
+    mapped.insert("provider_usage".to_string(), Value::Object(usage.clone()));
+    Some(Value::Object(mapped))
 }
 
 fn map_anthropic_stream_usage(value: &Value) -> Option<Value> {
@@ -2215,26 +2240,28 @@ fn map_anthropic_stream_usage(value: &Value) -> Option<Value> {
         })?
         .as_object()?;
     let mut mapped = Map::new();
-    if let Some(prompt) = usage.get("input_tokens").and_then(Value::as_i64) {
-        mapped.insert("prompt_tokens".to_string(), json!(prompt));
+    if let Some(prompt) = usage.get("input_tokens") {
+        mapped.insert("prompt_tokens".to_string(), prompt.clone());
     }
-    if let Some(completion) = usage.get("output_tokens").and_then(Value::as_i64) {
-        mapped.insert("completion_tokens".to_string(), json!(completion));
+    if let Some(completion) = usage.get("output_tokens") {
+        mapped.insert("completion_tokens".to_string(), completion.clone());
     }
-    if let Some(total) = usage.get("total_tokens").and_then(Value::as_i64) {
-        mapped.insert("total_tokens".to_string(), json!(total));
-    } else if let (Some(prompt), Some(completion)) = (
-        mapped.get("prompt_tokens").and_then(Value::as_i64),
-        mapped.get("completion_tokens").and_then(Value::as_i64),
-    ) {
-        mapped.insert("total_tokens".to_string(), json!(prompt + completion));
+    if let Some(total) = usage.get("total_tokens").cloned().or_else(|| {
+        usage
+            .get("input_tokens")
+            .and_then(Value::as_i64)
+            .zip(usage.get("output_tokens").and_then(Value::as_i64))
+            .and_then(|(input, output)| input.checked_add(output))
+            .map(|total| Value::Number(total.into()))
+    }) {
+        mapped.insert("total_tokens".to_string(), total);
     }
-
-    if mapped.is_empty() {
-        None
-    } else {
-        Some(Value::Object(mapped))
-    }
+    mapped.insert(
+        "usage_source".to_string(),
+        Value::String("vertex_anthropic".to_string()),
+    );
+    mapped.insert("provider_usage".to_string(), Value::Object(usage.clone()));
+    Some(Value::Object(mapped))
 }
 
 fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Value) -> Value {
@@ -2246,20 +2273,44 @@ fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Value) -> Value
 fn openai_usage_with_known_fields(usage: Value, latest: Option<&Value>) -> Value {
     let prompt_tokens = merged_usage_counter(&usage, latest, "prompt_tokens");
     let completion_tokens = merged_usage_counter(&usage, latest, "completion_tokens");
-    let total_tokens = match (prompt_tokens, completion_tokens) {
-        (Some(prompt), Some(completion)) => prompt.saturating_add(completion),
-        _ => merged_usage_counter(&usage, latest, "total_tokens").unwrap_or(0),
-    };
+    let total_tokens = prompt_tokens
+        .zip(completion_tokens)
+        .and_then(|(prompt, completion)| prompt.checked_add(completion))
+        .or_else(|| merged_usage_counter(&usage, latest, "total_tokens"));
 
-    let mut object = usage.as_object().cloned().unwrap_or_default();
+    let mut object = latest
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(incoming) = usage.as_object() {
+        merge_usage_maps(&mut object, incoming);
+    }
     if let Some(prompt_tokens) = prompt_tokens {
         object.insert("prompt_tokens".to_string(), json!(prompt_tokens));
     }
     if let Some(completion_tokens) = completion_tokens {
         object.insert("completion_tokens".to_string(), json!(completion_tokens));
     }
-    object.insert("total_tokens".to_string(), json!(total_tokens));
+    if let Some(total_tokens) = total_tokens {
+        object.insert("total_tokens".to_string(), json!(total_tokens));
+    }
     Value::Object(object)
+}
+
+fn merge_usage_maps(current: &mut Map<String, Value>, incoming: &Map<String, Value>) {
+    for (key, incoming_value) in incoming {
+        match (
+            current.get_mut(key).and_then(Value::as_object_mut),
+            incoming_value.as_object(),
+        ) {
+            (Some(current_nested), Some(incoming_nested)) => {
+                merge_usage_maps(current_nested, incoming_nested);
+            }
+            _ => {
+                current.insert(key.clone(), incoming_value.clone());
+            }
+        }
+    }
 }
 
 fn merged_usage_counter(usage: &Value, latest: Option<&Value>, field: &str) -> Option<i64> {
@@ -2918,7 +2969,7 @@ mod tests {
 
     use super::{
         JsonObjectParser, SseEventParser, VertexAuthConfig, VertexProvider, VertexProviderConfig,
-        map_anthropic_request, map_google_embedding_request, map_google_request,
+        map_anthropic_request, map_google_embedding_request, map_google_request, map_google_usage,
         normalize_anthropic_response, normalize_google_response, parse_upstream_model,
     };
     use gateway_core::ProviderError;
@@ -3918,7 +3969,14 @@ mod tests {
         assert_eq!(response["data"][0]["embedding"], json!([0.25, 0.5]));
         assert_eq!(
             response["usage"],
-            json!({"prompt_tokens": 3, "total_tokens": 3})
+            json!({
+                "prompt_tokens": 3,
+                "total_tokens": 3,
+                "usage_source": "vertex_google_embeddings",
+                "provider_usage": {
+                    "input_token_count_provenance": "provider_reported_aggregate"
+                }
+            })
         );
 
         let request_payload = captured.lock().await.clone().expect("captured request");
@@ -3988,7 +4046,14 @@ mod tests {
         assert_eq!(response["data"][1]["embedding"], json!([2.0, 2.5]));
         assert_eq!(
             response["usage"],
-            json!({"prompt_tokens": 7, "total_tokens": 7})
+            json!({
+                "prompt_tokens": 7,
+                "total_tokens": 7,
+                "usage_source": "vertex_google_embeddings",
+                "provider_usage": {
+                    "input_token_count_provenance": "provider_reported_aggregate"
+                }
+            })
         );
 
         let request_payloads = captured.lock().await.clone();
@@ -4063,7 +4128,14 @@ mod tests {
         assert_eq!(response["data"][1]["embedding"], json!([2.0, 2.5]));
         assert_eq!(
             response["usage"],
-            json!({"prompt_tokens": 7, "total_tokens": 7})
+            json!({
+                "prompt_tokens": 7,
+                "total_tokens": 7,
+                "usage_source": "vertex_google_embeddings",
+                "provider_usage": {
+                    "input_token_count_provenance": "provider_reported_aggregate"
+                }
+            })
         );
 
         let request_payloads = captured.lock().await.clone();
@@ -4186,7 +4258,14 @@ mod tests {
             } => {
                 assert_eq!(
                     provider_usage,
-                    Some(json!({"prompt_tokens": 4, "total_tokens": 4}))
+                    Some(json!({
+                        "prompt_tokens": 4,
+                        "total_tokens": 4,
+                        "usage_source": "vertex_google_embeddings",
+                        "provider_usage": {
+                            "input_token_count_provenance": "provider_reported_aggregate"
+                        }
+                    }))
                 );
                 match *source {
                     ProviderError::UpstreamHttp { status, body } => {
@@ -4212,12 +4291,47 @@ mod tests {
             "candidates":[
                 {"index":0, "content":{"parts":[{"text":"hello"}]}, "finishReason":"STOP"}
             ],
-            "usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":3,"totalTokenCount":13}
+            "usageMetadata":{
+                "promptTokenCount":10,
+                "cachedContentTokenCount":4,
+                "candidatesTokenCount":3,
+                "thoughtsTokenCount":2,
+                "totalTokenCount":15
+            }
         });
         let normalized = normalize_google_response(&response, &context("google/gemini-2.0-flash"));
         assert_eq!(normalized["object"], "chat.completion");
         assert_eq!(normalized["choices"][0]["message"]["content"], "hello");
-        assert_eq!(normalized["usage"]["total_tokens"], 13);
+        assert_eq!(normalized["usage"]["total_tokens"], 15);
+        assert_eq!(normalized["usage"]["usage_source"], "vertex_google");
+        assert_eq!(
+            normalized["usage"]["provider_usage"]["cachedContentTokenCount"],
+            4
+        );
+        assert_eq!(
+            normalized["usage"]["provider_usage"]["thoughtsTokenCount"],
+            2
+        );
+    }
+
+    #[test]
+    fn google_usage_preserves_malformed_optional_fields_for_normalization() {
+        let response = json!({
+            "usageMetadata": {
+                "promptTokenCount": 10,
+                "candidatesTokenCount": 3,
+                "cachedContentTokenCount": "unknown"
+            }
+        });
+        let normalized = map_google_usage(&response).expect("usage metadata");
+
+        assert_eq!(normalized["prompt_tokens"], 10);
+        assert_eq!(normalized["completion_tokens"], 3);
+        assert!(normalized.get("total_tokens").is_none());
+        assert_eq!(
+            normalized["provider_usage"]["cachedContentTokenCount"],
+            "unknown"
+        );
     }
 
     #[test]
@@ -4226,13 +4340,27 @@ mod tests {
             "id":"msg_123",
             "content":[{"type":"text","text":"hello"}],
             "stop_reason":"end_turn",
-            "usage":{"input_tokens":5,"output_tokens":7}
+            "usage":{
+                "input_tokens":5,
+                "output_tokens":7,
+                "cache_read_input_tokens":3,
+                "cache_creation_input_tokens":2
+            }
         });
         let normalized =
             normalize_anthropic_response(&response, &context("anthropic/claude-sonnet-4-6"));
         assert_eq!(normalized["choices"][0]["message"]["content"], "hello");
         assert_eq!(normalized["usage"]["prompt_tokens"], 5);
         assert_eq!(normalized["usage"]["completion_tokens"], 7);
+        assert_eq!(normalized["usage"]["usage_source"], "vertex_anthropic");
+        assert_eq!(
+            normalized["usage"]["provider_usage"]["cache_read_input_tokens"],
+            3
+        );
+        assert_eq!(
+            normalized["usage"]["provider_usage"]["cache_creation_input_tokens"],
+            2
+        );
     }
 
     #[test]
@@ -4550,7 +4678,7 @@ data: {"type":"vertex_event"}
     async fn anthropic_stream_preserves_usage_events() {
         let upstream = stream::iter(vec![Ok(Bytes::from(concat!(
             "event: message_start\n",
-            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":0}}}\n\n",
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":0,\"cache_read_input_tokens\":4,\"cache_creation_input_tokens\":3}}}\n\n",
             "event: content_block_delta\n",
             "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n",
             "event: message_delta\n",
@@ -4579,6 +4707,9 @@ data: {"type":"vertex_event"}
                 && event["usage"]["prompt_tokens"] == json!(9)
                 && event["usage"]["completion_tokens"] == json!(2)
                 && event["usage"]["total_tokens"] == json!(11)
+                && event["usage"]["usage_source"] == json!("vertex_anthropic")
+                && event["usage"]["provider_usage"]["cache_read_input_tokens"] == json!(4)
+                && event["usage"]["provider_usage"]["cache_creation_input_tokens"] == json!(3)
         }));
     }
 

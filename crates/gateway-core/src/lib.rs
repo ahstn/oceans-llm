@@ -1,3 +1,4 @@
+pub mod agent_analysis;
 pub mod auth;
 pub mod budgets;
 pub mod domain;
@@ -7,6 +8,24 @@ pub mod protocol;
 pub mod streaming;
 pub mod traits;
 
+pub use agent_analysis::{
+    AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,
+    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
+    AgentSessionAnalysisRepository, AgentSessionListPage, AgentSessionListQuery,
+    AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
+    AgentSessionTraceRecord, MAX_AGENT_ANALYSIS_DISTINCT_ITEMS, MAX_AGENT_SESSION_NESTED_FACTS,
+    MAX_AGENT_SESSION_PAGE_SIZE, MAX_AGENT_SESSION_REQUESTS,
+};
+pub use agent_session_analysis::{
+    ActivityInterval, AgentSessionId, AgentSessionSourceId, AnalysisId, AnalysisMetricPolicy,
+    BoundedFileInteractionFact, BoundedObservationFacts, BoundedSkillFact,
+    BoundedToolDefinitionFact, CacheProfileRule, CacheTtl, CohortReference, Confidence,
+    EvidenceQuality, FinishReasonDiagnostics, GatewayOutcomeState, InferredObservation,
+    InferredObservationKind, LimitationCode, ObservationSetId, OutcomeDiagnostics,
+    ReliabilityDiagnostics, RequestAttemptFact, ScoreMaturity, SessionEfficiencyComponents,
+    SessionEfficiencyReport, SessionLifecycleState, SessionRequestFact, SkillDiagnostics,
+    ToolInvocationFact, ToolServerDiagnostics,
+};
 pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
 };
@@ -24,21 +43,21 @@ pub use domain::{
     ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
     FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GlobalRole,
     HarnessUsageBucketRecord, HarnessUsageLeaderRecord, IdentityUserRecord, MAX_ENTITY_TAGS,
-    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, MAX_TAG_KEY_LEN, MAX_TAG_VALUE_LEN, ManagedApiKeySource,
-    McpAccessResolution, McpAggregateSessionRecord, McpCatalogAccessResolution,
-    McpCatalogToolRecord, McpGrantSubject, McpTokenEstimateConfidence, McpTokenEstimateSource,
-    McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
-    McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-    McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
+    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, MAX_REQUEST_LOG_PAGE_SIZE, MAX_TAG_KEY_LEN,
+    MAX_TAG_VALUE_LEN, ManagedApiKeySource, McpAccessResolution, McpAggregateSessionRecord,
+    McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject, McpTokenEstimateConfidence,
+    McpTokenEstimateSource, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
+    McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
+    McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
     McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus, McpToolsetToolRecord,
     McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamSecretStorageKind, MembershipRole,
     ModelAccessMode, ModelAllowlistPolicy, ModelPricingProvenanceUpdate, ModelPricingRecord,
     ModelPricingSyncChanges, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
     NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
-    NewReviewAgentRunRecord, OauthJitMembership, OauthJitPolicy, OauthLoginStateRecord,
-    OauthProviderRecord, OidcJitMembership, OidcJitPolicy, OidcLoginStateRecord,
-    OidcProviderRecord, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
+    NewReviewAgentRunRecord, NormalizedUsageAccounting, OauthJitMembership, OauthJitPolicy,
+    OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,
+    OidcLoginStateRecord, OidcProviderRecord, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
     OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
     OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
     OpenRouterProviderRouting, OpenRouterRouteCompatibility, PasswordInvitationRecord,
@@ -60,9 +79,10 @@ pub use domain::{
     UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
     UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
     UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
-    UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
-    UserRecord, UserSessionRecord, UserStatus, VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc,
+    UsageCostAuthority, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
+    UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc,
     is_supported_vertex_text_embedding_model_id, is_supported_vertex_text_embedding_upstream_model,
     validate_entity_tags, validate_tag_key, validate_tag_value,
     vertex_route_capabilities_for_upstream_model, vertex_text_embedding_capabilities,

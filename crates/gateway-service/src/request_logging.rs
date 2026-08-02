@@ -9,11 +9,14 @@ use gateway_core::{
     SseEventParser,
 };
 
+use crate::usage_normalization::{NormalizedTokenUsage, normalize_token_usage_best_effort};
 use crate::{REQUEST_LOG_MODEL_ICON_KEY, REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata};
 use serde_json::{Map, Value, json};
 use std::collections::HashSet;
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+use crate::agent_analysis::{PassiveRequestMetadata, extract_request_metadata};
 
 use crate::redaction::{
     RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, redact_header_value,
@@ -34,7 +37,10 @@ pub struct RequestLogContext {
     payload_policy: RequestLogPayloadPolicy,
     pub tool_cardinality: RequestToolCardinality,
     request_json: Option<Value>,
-    request_payload_truncated: bool,
+    pub(crate) request_payload_truncated: bool,
+    pub(crate) started_at: OffsetDateTime,
+    pub(crate) analysis_metadata: PassiveRequestMetadata,
+    pub(crate) analysis_payload_permitted: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +91,7 @@ pub struct StreamResponseCollector {
 pub struct LoggedRequest {
     pub request_log_id: Uuid,
     pub wrote: bool,
+    pub response_payload_truncated: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -167,6 +174,16 @@ impl UsageSummary {
     }
 }
 
+impl From<&NormalizedTokenUsage> for UsageSummary {
+    fn from(usage: &NormalizedTokenUsage) -> Self {
+        Self {
+            prompt_tokens: usage.legacy_prompt_tokens(),
+            completion_tokens: usage.legacy_completion_tokens(),
+            total_tokens: usage.legacy_total_tokens(),
+        }
+    }
+}
+
 impl StreamResponseCollector {
     pub fn observe_chunk(&mut self, chunk: &[u8]) {
         if self.finished {
@@ -197,7 +214,7 @@ impl StreamResponseCollector {
                 .and_then(usage_value_from_stream_event)
                 .filter(|usage| !usage.is_null())
             {
-                self.usage = Some(usage.clone());
+                merge_usage_observation(&mut self.usage, usage);
             }
             if let Some(failure) = parsed.as_ref().and_then(stream_failure_from_value) {
                 self.failure = Some(failure);
@@ -239,6 +256,11 @@ impl StreamResponseCollector {
     #[must_use]
     pub fn failure(&self) -> Option<&StreamFailureSummary> {
         self.failure.as_ref()
+    }
+
+    #[must_use]
+    pub fn analysis_payload(&self) -> Option<Value> {
+        (!self.events.is_empty()).then(|| json!({ "events": self.events }))
     }
 
     #[must_use]
@@ -297,12 +319,47 @@ fn stream_failure_from_value(value: &Value) -> Option<StreamFailureSummary> {
     })
 }
 
+fn merge_usage_observation(current: &mut Option<Value>, incoming: &Value) {
+    let Some(current_object) = current.as_mut().and_then(Value::as_object_mut) else {
+        *current = Some(incoming.clone());
+        return;
+    };
+    let Some(incoming_object) = incoming.as_object() else {
+        *current = Some(incoming.clone());
+        return;
+    };
+    merge_usage_objects(current_object, incoming_object);
+}
+
+fn merge_usage_objects(current: &mut Map<String, Value>, incoming: &Map<String, Value>) {
+    for (key, incoming_value) in incoming {
+        match (
+            current.get_mut(key).and_then(Value::as_object_mut),
+            incoming_value.as_object(),
+        ) {
+            (Some(current_nested), Some(incoming_nested)) => {
+                merge_usage_objects(current_nested, incoming_nested);
+            }
+            _ => {
+                current.insert(key.clone(), incoming_value.clone());
+            }
+        }
+    }
+}
+
 fn usage_value_from_stream_event(value: &Value) -> Option<&Value> {
-    let usage = value.get("usage").or_else(|| {
-        value
-            .get("response")
-            .and_then(|response| response.get("usage"))
-    })?;
+    let usage = value
+        .get("usage")
+        .or_else(|| {
+            value
+                .get("response")
+                .and_then(|response| response.get("usage"))
+        })
+        .or_else(|| {
+            value
+                .get("message")
+                .and_then(|message| message.get("usage"))
+        })?;
     if is_synthetic_anthropic_zero_usage(value, usage) {
         return None;
     }
@@ -600,33 +657,55 @@ where
     where
         T: serde::Serialize,
     {
-        let request_body = serde_json::to_value(input.request).unwrap_or_else(|_| json!({}));
-        let exposed_tool_count = shallow_tool_count_from_request_body(&request_body);
-        let (request_json, request_payload_truncated) = if self
-            .payload_policy
-            .should_capture_payloads()
-        {
-            let sanitized_headers = input
-                .request_headers
-                .iter()
-                .map(|(key, value)| (key.clone(), Value::String(redact_header_value(key, value))))
-                .collect::<Map<_, _>>();
-            let redacted = redact_json_value_with_policy(
-                &json!({
-                    "headers": sanitized_headers,
-                    "body": request_body,
-                }),
-                &self.payload_policy,
-            );
-            let redacted = truncate_large_payload_fields(&redacted);
-            let (request_json, truncated) =
-                truncate_payload(redacted, self.payload_policy.request_max_bytes);
-            (Some(request_json), truncated)
-        } else {
-            (None, false)
-        };
         let user_agent_raw = normalized_user_agent(request_user_agent(input.request_headers));
         let harness = classify_agent_harness(user_agent_raw.as_deref());
+        let request_body = serde_json::to_value(input.request).unwrap_or_else(|_| json!({}));
+        let analysis_payload_permitted = self.payload_policy.should_capture_payloads();
+        let exposed_tool_count = shallow_tool_count_from_request_body(&request_body);
+        let (analysis_metadata, request_json, request_payload_truncated) =
+            if analysis_payload_permitted {
+                let sanitized_headers = input
+                    .request_headers
+                    .iter()
+                    .map(|(key, value)| {
+                        (key.clone(), Value::String(redact_header_value(key, value)))
+                    })
+                    .collect::<Map<_, _>>();
+                let redacted = redact_json_value_with_policy(
+                    &json!({
+                        "headers": sanitized_headers,
+                        "body": request_body,
+                    }),
+                    &self.payload_policy,
+                );
+                let redacted = truncate_large_payload_fields(&redacted);
+                let analysis_headers = redacted
+                    .get("headers")
+                    .and_then(Value::as_object)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|(key, value)| {
+                        value.as_str().map(|value| (key.clone(), value.to_string()))
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                let analysis_body = redacted.get("body").unwrap_or(&Value::Null);
+                let analysis_metadata =
+                    extract_request_metadata(analysis_body, &analysis_headers, true, harness.key);
+                let (request_json, truncated) =
+                    truncate_payload(redacted, self.payload_policy.request_max_bytes);
+                (analysis_metadata, Some(request_json), truncated)
+            } else {
+                (
+                    extract_request_metadata(
+                        &Value::Null,
+                        input.request_headers,
+                        false,
+                        harness.key,
+                    ),
+                    None,
+                    false,
+                )
+            };
 
         RequestLogContext {
             request_log_id: Uuid::new_v4(),
@@ -647,6 +726,9 @@ where
             },
             request_json,
             request_payload_truncated,
+            started_at: OffsetDateTime::now_utc(),
+            analysis_metadata,
+            analysis_payload_permitted,
         }
     }
 
@@ -865,6 +947,7 @@ where
             return Ok(LoggedRequest {
                 request_log_id: context.request_log_id,
                 wrote: false,
+                response_payload_truncated: false,
             });
         }
 
@@ -923,6 +1006,7 @@ where
         Ok(LoggedRequest {
             request_log_id: context.request_log_id,
             wrote: true,
+            response_payload_truncated: has_payload && response_payload_truncated,
         })
     }
 }
@@ -957,8 +1041,20 @@ pub fn classify_agent_harness(user_agent: Option<&str>) -> AgentHarness {
     let Some(user_agent) = user_agent.map(str::trim).filter(|value| !value.is_empty()) else {
         return AgentHarness::UNKNOWN;
     };
-
     let lower = user_agent.to_ascii_lowercase();
+
+    if lower.starts_with("codex_cli_rs/") || lower.starts_with("codex/") {
+        return AgentHarness {
+            key: "codex",
+            label: "Codex",
+        };
+    }
+    if lower.starts_with("oh-my-pi/") || lower.starts_with("omp/") {
+        return AgentHarness {
+            key: "oh_my_pi",
+            label: "Oh My Pi",
+        };
+    }
     if lower.contains("agent/opencode") {
         return AgentHarness {
             key: "opencode",
@@ -1043,33 +1139,9 @@ pub fn classify_agent_harness(user_agent: Option<&str>) -> AgentHarness {
     AgentHarness::UNKNOWN
 }
 
-#[must_use]
 pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
-    let Some(usage) = value.and_then(Value::as_object) else {
-        return UsageSummary::default();
-    };
-
-    let prompt_tokens = usage
-        .get("prompt_tokens")
-        .or_else(|| usage.get("input_tokens"))
-        .and_then(Value::as_i64);
-    let completion_tokens = usage
-        .get("completion_tokens")
-        .or_else(|| usage.get("output_tokens"))
-        .and_then(Value::as_i64);
-    let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
-        some @ Some(_) => some,
-        None => match (prompt_tokens, completion_tokens) {
-            (Some(prompt), Some(completion)) => prompt.checked_add(completion),
-            _ => None,
-        },
-    };
-
-    UsageSummary {
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
-    }
+    let outcome = normalize_token_usage_best_effort(value);
+    UsageSummary::from(&outcome.usage)
 }
 
 fn request_log_metadata(
@@ -1274,7 +1346,7 @@ mod tests {
         AgentHarness, RequestLogging, StreamFailureSummary, StreamLogResultInput,
         StreamResponseCollector, classify_agent_harness, invoked_tool_count_from_response_body,
         normalized_user_agent, request_user_agent, shallow_tool_count_from_request_body,
-        truncate_attempt_error_detail,
+        truncate_attempt_error_detail, usage_summary_from_value,
     };
 
     #[derive(Clone, Default)]
@@ -2379,7 +2451,6 @@ data: {"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}
                 .as_bytes(),
         );
         collector.finish();
-
         assert_eq!(
             collector.usage(),
             Some(&json!({
@@ -2388,6 +2459,87 @@ data: {"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}
                 "total_tokens": 9
             }))
         );
+    }
+
+    #[test]
+    fn collector_merges_anthropic_usage_observed_before_stream_failure() {
+        let mut collector = StreamResponseCollector::default();
+        collector.observe_chunk(
+            br#"event: message_start
+data: {"type":"message_start","message":{"usage":{"input_tokens":30,"cache_read_input_tokens":20,"cache_creation_input_tokens":10}}}
+
+event: message_delta
+data: {"type":"message_delta","delta":{},"usage":{"output_tokens":7}}
+
+event: error
+data: {"type":"error","error":{"code":"upstream_failed"}}
+
+"#,
+        );
+        collector.finish();
+
+        assert_eq!(
+            collector.usage(),
+            Some(&json!({
+                "input_tokens": 30,
+                "cache_read_input_tokens": 20,
+                "cache_creation_input_tokens": 10,
+                "output_tokens": 7
+            }))
+        );
+        assert_eq!(
+            collector.failure(),
+            Some(&StreamFailureSummary {
+                status_code: 502,
+                error_code: "upstream_failed".to_string(),
+            })
+        );
+        let outcome = crate::normalize_token_usage_best_effort(collector.usage());
+        assert_eq!(outcome.usage.fresh_input_tokens, Some(30));
+        assert_eq!(outcome.usage.cache_read_tokens, Some(20));
+        assert_eq!(outcome.usage.cache_creation_tokens, Some(10));
+        assert_eq!(outcome.usage.output_tokens, Some(7));
+        assert_eq!(outcome.usage.provider_total_tokens, Some(67));
+    }
+
+    #[test]
+    fn request_summary_uses_typed_normalizer_for_totals_and_limitations() {
+        let fixtures = [
+            json!({
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "total_tokens": 120,
+                "prompt_tokens_details": {
+                    "cached_tokens": 40,
+                    "cache_write_tokens": "malformed"
+                }
+            }),
+            json!({"prompt_tokens": -1, "completion_tokens": 3}),
+            json!({"prompt_tokens": i64::MAX, "completion_tokens": 1}),
+            json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 99}),
+            json!({}),
+        ];
+
+        for fixture in fixtures {
+            let outcome = crate::normalize_token_usage_best_effort(Some(&fixture));
+            let summary = usage_summary_from_value(Some(&fixture));
+            assert_eq!(
+                (
+                    summary.prompt_tokens,
+                    summary.completion_tokens,
+                    summary.total_tokens,
+                ),
+                (
+                    outcome.usage.legacy_prompt_tokens(),
+                    outcome.usage.legacy_completion_tokens(),
+                    outcome.usage.legacy_total_tokens(),
+                )
+            );
+            assert_eq!(
+                outcome.error.is_some(),
+                crate::normalize_token_usage(Some(&fixture)).is_err()
+            );
+        }
     }
 
     #[test]
@@ -2525,6 +2677,25 @@ data: {"type":"message_stop"}
             })),
             2
         );
+    }
+
+    #[test]
+    fn classifies_supported_session_analysis_harnesses() {
+        for (user_agent, expected_key) in [
+            ("codex_cli_rs/0.106.0", "codex"),
+            ("Codex/0.106.0", "codex"),
+            ("claude-code/2.1.0", "claude_code"),
+            ("opencode/1.2.3", "opencode"),
+            ("pi/0.45.0", "pi"),
+            ("oh-my-pi/0.45.0", "oh_my_pi"),
+            ("OMP/0.45.0", "oh_my_pi"),
+        ] {
+            assert_eq!(
+                classify_agent_harness(Some(user_agent)).key,
+                expected_key,
+                "{user_agent}"
+            );
+        }
     }
 
     #[test]

@@ -5,16 +5,23 @@ use anyhow::Context;
 use clap::Parser;
 use gateway::{
     cli::{Cli, Command, MigrateAction, ServeArgs},
-    config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
+    config::{
+        AgentAnalysisCacheTtlConfig, AgentAnalysisConfig, BootstrapAdminConfig,
+        BudgetAlertEmailConfig, GatewayConfig,
+    },
     email::build_budget_alert_sender,
-    http::{build_router, state::AppState},
+    http::{
+        build_router,
+        state::{AgentAnalysisRuntimeCapabilities, AppState},
+    },
     observability,
 };
-use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
+use gateway_core::{ProviderRegistry, ScoreMaturity, SeedHumanBudgetDefaults};
 use gateway_providers::{BedrockProvider, OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
+    AnalysisMetricPolicy, AnalysisPolicy, CacheProfileRule, CacheTtl,
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
-    WeightedRoutePlanner, hash_gateway_key_secret,
+    UsageCostPolicy, WeightedRoutePlanner, default_cache_profiles, hash_gateway_key_secret,
 };
 use gateway_store::{
     AnyStore, GatewayStore, MigrationStatus, check_migrations_with_options,
@@ -22,6 +29,7 @@ use gateway_store::{
 };
 use tokio::net::TcpListener;
 
+mod agent_analysis_recompute;
 mod local_demo_seed;
 mod request_log_purge;
 
@@ -38,6 +46,9 @@ async fn main() -> anyhow::Result<()> {
         Command::Serve(args) => run_serve(&config, observability.metrics.clone(), args).await,
         Command::Migrate(args) => run_migrate(&config, args.action()?).await,
         Command::PurgeRequestLogs(args) => request_log_purge::run_command(&config, args).await,
+        Command::RecomputeAgentAnalysis(args) => {
+            agent_analysis_recompute::run_command(&config, args).await
+        }
         Command::BootstrapAdmin => run_bootstrap_admin_command(&config).await,
         Command::SeedConfig => run_seed_config_command(&config).await,
         Command::SeedLocalDemo => run_seed_local_demo_command(&config).await,
@@ -177,7 +188,17 @@ async fn run_serve_with_store(
         .context("failed to ensure bootstrap admin access")?;
     }
 
-    let service = build_gateway_service(config, store)?;
+    let usage_cost_policy = load_usage_cost_policy()?;
+    let agent_analysis = load_agent_analysis_settings(&config.agent_analysis)?;
+    let service = build_gateway_service(
+        config,
+        store,
+        usage_cost_policy,
+        agent_analysis.capabilities.passive_analysis_enabled,
+        agent_analysis.report_retention,
+        agent_analysis.queue_retention,
+        agent_analysis.policy.clone(),
+    )?;
     service
         .refresh_pricing_catalog_if_stale()
         .await
@@ -188,6 +209,10 @@ async fn run_serve_with_store(
         .context("invalid route context-window override")?;
     spawn_pricing_catalog_refresh_loop(service.clone());
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
+    if agent_analysis.capabilities.passive_analysis_enabled {
+        spawn_agent_analysis_loop(service.clone());
+    }
+    spawn_agent_analysis_retention_loop(service.clone());
     request_log_purge::spawn_loop(service.clone(), &config.request_logging.purge);
     let providers = build_provider_registry(config)?;
     McpCredentialService::<AnyStore>::validate_runtime_configuration()
@@ -226,6 +251,7 @@ async fn run_serve_with_store(
                     .context("failed resolving client config gateway base URL")?,
             ),
             budget_defaults: human_budget_defaults,
+            agent_analysis: agent_analysis.capabilities,
         },
         load_admin_ui_config(),
     );
@@ -432,6 +458,139 @@ fn load_client_config_gateway_base_url() -> anyhow::Result<Option<String>> {
     Ok(Some(trimmed.trim_end_matches('/').to_string()))
 }
 
+pub(crate) struct LoadedAgentAnalysis {
+    pub(crate) capabilities: AgentAnalysisRuntimeCapabilities,
+    pub(crate) policy: AnalysisPolicy,
+    pub(crate) report_retention: time::Duration,
+    pub(crate) queue_retention: time::Duration,
+}
+
+pub(crate) fn load_agent_analysis_settings(
+    config: &AgentAnalysisConfig,
+) -> anyhow::Result<LoadedAgentAnalysis> {
+    let calibrated_score_visible = environment_flag(
+        "AGENT_ANALYSIS_CALIBRATED_SCORE_ENABLED",
+        config.calibrated_score_enabled,
+    )?;
+    let team_admin_analytics_enabled = environment_flag(
+        "AGENT_ANALYSIS_TEAM_ADMIN_ENABLED",
+        config.team_admin_enabled,
+    )?;
+    let calibration_approval_id = env::var("AGENT_ANALYSIS_CALIBRATION_APPROVAL_ID")
+        .ok()
+        .or_else(|| config.calibration_approval_id.clone())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if calibrated_score_visible && calibration_approval_id.is_none() {
+        anyhow::bail!(
+            "calibrated agent analysis requires agent_analysis.calibration_approval_id or AGENT_ANALYSIS_CALIBRATION_APPROVAL_ID"
+        );
+    }
+    if calibration_approval_id
+        .as_ref()
+        .is_some_and(|value| value.len() > 256)
+    {
+        anyhow::bail!("agent analysis calibration approval ID must not exceed 256 bytes");
+    }
+    if team_admin_analytics_enabled && !calibrated_score_visible {
+        anyhow::bail!("team agent analytics require calibrated score visibility");
+    }
+    let mut cache_profiles = config
+        .cache_profiles
+        .iter()
+        .map(|profile| CacheProfileRule {
+            provider_key_contains: profile.provider_key_contains.clone(),
+            upstream_model_contains: profile.upstream_model_contains.clone(),
+            minimum_cacheable_tokens: profile.minimum_cacheable_tokens,
+            default_ttl: match profile.default_ttl {
+                AgentAnalysisCacheTtlConfig::FiveMinutes => CacheTtl::FiveMinutes,
+                AgentAnalysisCacheTtlConfig::ThirtyMinutes => CacheTtl::ThirtyMinutes,
+                AgentAnalysisCacheTtlConfig::OneHour => CacheTtl::OneHour,
+                AgentAnalysisCacheTtlConfig::Unknown => CacheTtl::Unknown,
+            },
+        })
+        .collect::<Vec<_>>();
+    cache_profiles.extend(default_cache_profiles());
+    let policy = AnalysisPolicy {
+        maturity: if calibrated_score_visible {
+            ScoreMaturity::Calibrated
+        } else {
+            ScoreMaturity::Experimental
+        },
+        calibration_approval_id,
+        metrics: AnalysisMetricPolicy {
+            token_metrics: config.metrics.tokens,
+            cache_metrics: config.metrics.cache,
+            context_metrics: config.metrics.context,
+            tool_metrics: config.metrics.tools,
+            skill_metrics: config.metrics.skills,
+            reliability_metrics: config.metrics.reliability,
+            outcome_metrics: config.metrics.outcomes,
+            finish_reason_metrics: config.metrics.finish_reasons,
+        },
+        context_input_boundary_tokens: config.context_input_boundary_tokens,
+        context_reserved_output_tokens: config.context_reserved_output_tokens,
+        context_penalty_points_per_repeated_excess: config
+            .context_penalty_points_per_repeated_excess,
+        cache_profiles,
+        ..AnalysisPolicy::default()
+    };
+    Ok(LoadedAgentAnalysis {
+        capabilities: AgentAnalysisRuntimeCapabilities {
+            passive_analysis_enabled: environment_flag("AGENT_ANALYSIS_ENABLED", config.enabled)?,
+            shadow_diagnostics_visible: environment_flag(
+                "AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED",
+                config.shadow_diagnostics_enabled,
+            )?,
+            calibrated_score_visible,
+            team_admin_analytics_enabled,
+        },
+        policy,
+        report_retention: env_days(
+            "AGENT_ANALYSIS_REPORT_RETENTION_DAYS",
+            config.report_retention_days,
+        ),
+        queue_retention: env_days(
+            "AGENT_ANALYSIS_QUEUE_RETENTION_DAYS",
+            config.queue_retention_days,
+        ),
+    })
+}
+
+fn load_usage_cost_policy() -> anyhow::Result<UsageCostPolicy> {
+    let value =
+        env::var("GATEWAY_USAGE_COST_POLICY").unwrap_or_else(|_| "shadow_legacy".to_string());
+    match value.as_str() {
+        "shadow_legacy" => Ok(UsageCostPolicy::ShadowLegacy),
+        "normalized" => {
+            let approval = env::var("GATEWAY_NORMALIZED_COST_CUTOVER_APPROVAL")
+                .context(
+                    "GATEWAY_USAGE_COST_POLICY=normalized requires GATEWAY_NORMALIZED_COST_CUTOVER_APPROVAL",
+                )?;
+            if approval.trim().is_empty() || approval.len() != approval.trim().len() {
+                anyhow::bail!(
+                    "GATEWAY_NORMALIZED_COST_CUTOVER_APPROVAL must be a non-empty, trimmed approval identity"
+                );
+            }
+            Ok(UsageCostPolicy::Normalized)
+        }
+        _ => anyhow::bail!("GATEWAY_USAGE_COST_POLICY must be `shadow_legacy` or `normalized`"),
+    }
+}
+
+fn environment_flag(name: &str, default: bool) -> anyhow::Result<bool> {
+    let value = match env::var(name) {
+        Ok(value) => value,
+        Err(env::VarError::NotPresent) => return Ok(default),
+        Err(env::VarError::NotUnicode(_)) => anyhow::bail!("{name} must be valid UTF-8"),
+    };
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        _ => anyhow::bail!("{name} must be a boolean"),
+    }
+}
+
 fn spawn_pricing_catalog_refresh_loop(
     service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
 ) {
@@ -448,6 +607,48 @@ fn spawn_pricing_catalog_refresh_loop(
     });
 }
 
+fn spawn_agent_analysis_loop(service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>) {
+    let lease_owner = format!("gateway-{}", std::process::id());
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            let now = time::OffsetDateTime::now_utc();
+            if let Err(error) = service.finalize_idle_agent_sessions(now).await {
+                tracing::warn!(error = %error, "finalizing idle agent sessions failed");
+            }
+            loop {
+                match service
+                    .process_next_agent_analysis(&lease_owner, time::OffsetDateTime::now_utc())
+                    .await
+                {
+                    Ok(true) => {}
+                    Ok(false) => break,
+                    Err(error) => {
+                        tracing::warn!(error = %error, "background agent analysis failed");
+                        break;
+                    }
+                }
+            }
+        }
+    });
+}
+fn spawn_agent_analysis_retention_loop(
+    service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
+) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60 * 60));
+        loop {
+            interval.tick().await;
+            if let Err(error) = service
+                .purge_expired_agent_analysis(time::OffsetDateTime::now_utc())
+                .await
+            {
+                tracing::warn!(error = %error, "agent analysis retention purge failed");
+            }
+        }
+    });
+}
 fn spawn_budget_alert_delivery_loop(
     service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
     config: &BudgetAlertEmailConfig,
@@ -474,6 +675,11 @@ fn spawn_budget_alert_delivery_loop(
 fn build_gateway_service(
     config: &GatewayConfig,
     store: Arc<AnyStore>,
+    usage_cost_policy: UsageCostPolicy,
+    agent_analysis_enabled: bool,
+    analysis_report_retention: time::Duration,
+    analysis_queue_retention: time::Duration,
+    analysis_policy: AnalysisPolicy,
 ) -> anyhow::Result<Arc<GatewayService<AnyStore, WeightedRoutePlanner>>> {
     let planner = Arc::new(WeightedRoutePlanner::default());
     let budget_alert_sender = build_budget_alert_sender(&config.budget_alerts.email)
@@ -487,7 +693,11 @@ fn build_gateway_service(
             planner,
             budget_alert_sender,
             payload_policy,
-        ),
+        )
+        .with_usage_cost_policy(usage_cost_policy)
+        .with_agent_analysis_enabled(agent_analysis_enabled)
+        .with_agent_analysis_retention(analysis_report_retention, analysis_queue_retention)
+        .with_agent_analysis_policy(analysis_policy),
     ))
 }
 
@@ -500,6 +710,12 @@ fn env_u64(key: &str, default: u64) -> u64 {
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(default)
+}
+
+fn env_days(key: &str, default: u64) -> time::Duration {
+    const MAX_RETENTION_DAYS: u64 = 36_500;
+    let days = env_u64(key, default).min(MAX_RETENTION_DAYS);
+    time::Duration::days(i64::try_from(days).expect("retention limit fits i64"))
 }
 
 fn load_identity_token_secret() -> String {

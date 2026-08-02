@@ -134,25 +134,27 @@ Routes can opt into that request shape with `compatibility.openai_compat.support
 
 This compatibility option applies to Chat Completions streams. Responses streams use the Responses event model and read usage from completed response events.
 
-## Stored But Not Charged Yet
+## Normalized Cache Accounting Shadow
 
-The catalog and provider responses can contain more billing signals than Oceans charges today.
+The durable usage row keeps both the current authoritative legacy charge and versioned normalized accounting. The normalized form separates provider usage into fresh input, cache reads, cache creation, output, reasoning, and provider-reported total tokens when those fields are available.
 
 | Catalog, override, or provider signal | Current accounting status |
 | --- | --- |
-| prompt/input tokens | charged from the effective input rate |
-| completion/output tokens | charged from the effective output rate |
+| prompt/input tokens | legacy charge remains authoritative during shadow; normalized accounting isolates fresh input when provider semantics permit it |
+| completion/output tokens | charged from the effective output rate in both policies |
 | total tokens | stored for reporting and validation context |
-| cache read/write rates | stored on spend events and propagated to generated client metadata |
-| cache read/write token counts | stored in raw provider usage when available, but not charged yet |
-| reasoning tokens or traces | not charged separately yet |
-| image, audio, and file modality counters | not charged yet |
+| cache read/write rates | used to calculate shadow cache-read and cache-creation components when matching token buckets exist |
+| cache read/write token counts | normalized from provider-specific fields with explicit semantics and coverage |
+| reasoning tokens or traces | normalized count can be retained; not charged separately |
+| image, audio, and file modality counters | not charged |
 
-The current cost calculation remains limited to normalized prompt/input tokens and completion/output tokens. Cache rates are durable metadata for auditability and clients, not additional ledger arithmetic until Oceans defines a canonical normalized cache-token contract.
+The normalized pricing policy version is `cache-aware-v1-2026-07-21`. Each component uses fixed-point, half-up Money4 arithmetic. A required bucket with no matching rate makes normalized pricing unavailable; the gateway records the reason and retains the legacy charge. Normalization failures also fall back explicitly rather than treating a missing bucket as zero.
 
-AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Bedrock Claude thinking and Converse reasoning blocks are preserved as provider metadata on Chat Completions messages or stream deltas, but they are not priced as separate ledger dimensions.
+The runtime remains on `ShadowLegacy`: budgets, spend reports, and the top-level `computed_cost_usd` use the legacy prompt-plus-output charge. The normalized component costs, total, authority, discrepancy, policy version, provider semantics, coverage, and failure reason are persisted for agent-session diagnostics and pricing review. A switch to `Normalized` requires a dated calibration and cost-cutover decision; this page will be updated when that happens.
 
-Cache token accounting, hidden thinking costs, and reasoning-specific counters remain future accounting work tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
+AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. OpenAI Chat Completions and Responses usage normalize their respective cached-input details. Provider families that omit or contradict bucket semantics remain visibly partial.
+
+Hidden thinking costs, reasoning-specific pricing, and non-text modality pricing remain future accounting work tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
 
 ## Budgets And Reporting
 
