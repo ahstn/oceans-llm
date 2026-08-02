@@ -194,6 +194,17 @@ export function AgentSessionDiagnostics({
           }
         />
         <DiagnosticRow
+          label="Cache read cost"
+          value={formatScaledCost(diagnostics?.token_and_cache.cache_read_cost_10000, formatCost)}
+        />
+        <DiagnosticRow
+          label="Cache write cost"
+          value={formatScaledCost(
+            diagnostics?.token_and_cache.cache_creation_cost_10000,
+            formatCost,
+          )}
+        />
+        <DiagnosticRow
           label="Output tokens"
           value={formatTokenCount(diagnostics?.token_and_cache.output_tokens)}
         />
@@ -262,7 +273,7 @@ export function AgentSessionDiagnostics({
             <DiagnosticRow
               key={server.server_key}
               label={`Tool server · ${server.server_key}`}
-              value={`${server.invoked_tool_definitions} of ${server.exposed_tool_definitions} tools invoked · ${server.failed_count} failed · ${formatTokenCount(server.schema_token_estimate_per_request)} schema tokens per request`}
+              value={`${server.invoked_tool_definitions} of ${server.exposed_tool_definitions} tools invoked · ${server.failed_count} failed · ${formatTokenCount(server.schema_token_estimate_per_request)} schema tokens per request · ${formatScaledCost(server.estimated_uncached_schema_cost_10000, formatCost)} without cache`}
             />
           ))
         }
@@ -337,10 +348,6 @@ export function AgentSessionDiagnostics({
               ? `${diagnostics.reliability.wasted_attempts} of ${diagnostics.reliability.total_attempts} attempts · ${formatDuration(diagnostics.reliability.wasted_attempt_latency_ms)}`
               : 'Not measured'
           }
-        />
-        <DiagnosticRow
-          label="Fallback attempts"
-          value={formatNullable(diagnostics?.reliability.fallback_attempts)}
         />
         <DiagnosticRow
           label="Tool reliability"
@@ -423,6 +430,13 @@ export function AgentSessionDiagnostics({
               ? 'Not measured'
               : `${diagnostics?.outcome.repeated_file_interactions_suspected ?? 0} repeated interactions across ${diagnostics?.outcome.files_with_repeated_interactions_suspected ?? 0} files`
           }
+        />
+        <DiagnosticRow
+          label="Failed file operations"
+          value={formatNullable(
+            diagnostics?.outcome.failed_file_interactions,
+            'Not measured',
+          )}
         />
         <DiagnosticRow
           label="Zero detected outcome"

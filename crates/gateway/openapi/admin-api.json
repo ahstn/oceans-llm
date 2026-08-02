@@ -5988,7 +5988,6 @@
           "attempt_coverage_percent",
           "total_attempts",
           "wasted_attempts",
-          "fallback_attempts",
           "wasted_attempt_latency_ms",
           "tool_invocations",
           "failed_tool_invocations",
@@ -6009,11 +6008,6 @@
             }
           },
           "failed_tool_invocations": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "fallback_attempts": {
             "type": "integer",
             "format": "int32",
             "minimum": 0
@@ -7115,6 +7109,13 @@
             ],
             "format": "int64"
           },
+          "cache_creation_cost_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "cache_creation_tokens": {
             "type": [
               "integer",
@@ -7126,6 +7127,13 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "cache_read_cost_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "cache_read_tokens": {
             "type": [

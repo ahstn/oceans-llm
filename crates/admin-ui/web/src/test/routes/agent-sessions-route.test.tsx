@@ -223,6 +223,8 @@ const detail: AgentSessionDetailView = {
         provider_total_tokens: 2_620,
         normalized_cost_10000: 123,
         legacy_cost_10000: 130,
+        cache_read_cost_10000: 8,
+        cache_creation_cost_10000: 20,
         uncached_input_cost_10000: 160,
         cache_savings_10000: 37,
         cache_savings_basis_points: 2_313,
@@ -300,7 +302,6 @@ const detail: AgentSessionDetailView = {
         attempt_coverage_percent: 100,
         total_attempts: 2,
         wasted_attempts: 1,
-        fallback_attempts: 1,
         wasted_attempt_latency_ms: 500,
         wasted_attempt_cost_10000: null,
         tool_invocations: 2,
@@ -547,6 +548,14 @@ describe('AgentSessionsPage', () => {
     fireEvent.click(comparisonTrigger)
     expect(screen.getByText('Comparison group')).toBeInTheDocument()
 
+    fireEvent.click(screen.getByRole('button', { name: 'Token and cache use' }))
+    expect(screen.getByText('Cache read cost')).toBeInTheDocument()
+    expect(screen.getByText('Cache write cost')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tools and changes' }))
+    expect(screen.getByText('Tool server · github')).toBeInTheDocument()
+    expect(screen.getByText(/schema tokens per request.*without cache/)).toBeInTheDocument()
+
     fireEvent.click(screen.getByRole('button', { name: 'Reliability and retries' }))
     expect(screen.getByText('Wasted attempts')).toBeInTheDocument()
     expect(screen.getByText('1 of 2 attempts · 500 ms')).toBeInTheDocument()
@@ -556,8 +565,9 @@ describe('AgentSessionsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Outcome evidence' }))
     expect(screen.getByText('Rework ratio')).toBeInTheDocument()
-    expect(screen.getByText('25.0%')).toBeInTheDocument()
+    expect(screen.getAllByText('25.0%').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('93%').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('Failed file operations')).toBeInTheDocument()
   })
 
   it('shows unknown and disabled states instead of false zero metrics', async () => {

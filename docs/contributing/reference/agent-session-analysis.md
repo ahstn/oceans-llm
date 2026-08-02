@@ -77,7 +77,7 @@ Unknown harnesses and known harnesses with stripped or policy-blocked metadata r
 - a configuration-version hash and the metric groups used to create the report;
 - provider-correct total input, visible output, cache-lifetime, write-amplification, threshold-miss, and cache-key diagnostics;
 - context boundary, peak utilization, growth, compaction, reset, and score-penalty diagnostics;
-- per-server tool exposure/cost, skill loading, attempt waste, fallback routing, tool failures, finish reasons, and coverage-aware outcome signals.
+- per-server tool exposure/cost, skill loading, attempt waste, tool failures, finish reasons, and coverage-aware outcome signals.
 
 The score is the outcome-weighted geometric combination of outcome, lower-cost cohort rank, and lower-active-time cohort rank. The nominal weights are 0.5, 0.3, and 0.2 respectively; when cost or time is unavailable, the available weights are re-normalized rather than suppressing the whole score. A determinate all-failure outcome returns zero. No cohort means both efficiency ranks and the numeric score are unavailable. Missing evidence must not be represented by a neutral midpoint.
 
@@ -87,7 +87,7 @@ Active time is the union of request intervals with the fixed orchestration-gap a
 
 Direct MCP evidence comes from invocation records for the session's API key whose completion timestamp falls within the finalized session window. Stored latency reconstructs each call interval; missing latency produces a zero-duration point interval so the invocation still contributes to the count. The analysis identity includes a deterministic snapshot of the matched invocation IDs, timestamps, and latencies. This is temporal attribution rather than a session identifier join, so overlapping sessions sharing one API key can remain ambiguous.
 
-Request attempts are grouped by request and remain in attempt order. An attempt is wasted when it did not produce the final response. A fallback is a provider or upstream-model change between adjacent attempts. Attempt latency is exact where recorded. Per-attempt usage is not available, so the report leaves wasted-attempt cost unknown instead of allocating the final request cost.
+Request attempts are grouped by request and remain in attempt order. An attempt is wasted when it did not produce the final response. Attempt latency is exact where recorded. Per-attempt usage is not available, so the report leaves wasted-attempt cost unknown instead of allocating the final request cost.
 
 File outcome metrics use opaque identifiers. Rework counts repeated writes after the first write to one file. Verification rate divides verification events by writes. Both values remain absent until file-signal coverage is complete. Tool failures and result truncation come from direct tool invocation records; post-error token use is the next measured request input after a failed call.
 

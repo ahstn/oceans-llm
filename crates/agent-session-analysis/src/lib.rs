@@ -358,6 +358,10 @@ pub struct TokenAndCacheDiagnostics {
     pub provider_total_tokens: Option<i64>,
     pub legacy_cost_10000: Option<i64>,
     pub normalized_cost_10000: Option<i64>,
+    #[serde(default)]
+    pub cache_read_cost_10000: Option<i64>,
+    #[serde(default)]
+    pub cache_creation_cost_10000: Option<i64>,
     pub uncached_input_cost_10000: Option<i64>,
     pub cache_savings_10000: Option<i64>,
     pub cache_savings_basis_points: Option<i32>,
@@ -1081,6 +1085,10 @@ pub fn analyze_session(
         provider_total_tokens: sum_usage(&trace.requests, |usage| usage.provider_total_tokens),
         legacy_cost_10000: sum_usage(&trace.requests, |usage| usage.legacy_cost_10000),
         normalized_cost_10000: normalized_cost,
+        cache_read_cost_10000: sum_usage(&trace.requests, |usage| usage.cache_read_cost_10000),
+        cache_creation_cost_10000: sum_usage(&trace.requests, |usage| {
+            usage.cache_creation_cost_10000
+        }),
         uncached_input_cost_10000: uncached_input_cost,
         cache_savings_10000: cache_savings,
         cache_savings_basis_points: cache_savings
@@ -1115,6 +1123,8 @@ pub fn analyze_session(
         token_and_cache.cache_creation_5m_tokens = None;
         token_and_cache.cache_creation_30m_tokens = None;
         token_and_cache.cache_creation_1h_tokens = None;
+        token_and_cache.cache_read_cost_10000 = None;
+        token_and_cache.cache_creation_cost_10000 = None;
         token_and_cache.uncached_input_cost_10000 = None;
         token_and_cache.cache_savings_10000 = None;
         token_and_cache.cache_savings_basis_points = None;
@@ -1684,7 +1694,6 @@ mod tests {
             Some(6)
         );
         assert_eq!(report.diagnostics.reliability.wasted_attempts, 1);
-        assert_eq!(report.diagnostics.reliability.fallback_attempts, 1);
         assert_eq!(report.diagnostics.reliability.failed_tool_invocations, 1);
         assert_eq!(
             report.diagnostics.outcome.rework_ratio_basis_points,
@@ -1806,14 +1815,38 @@ mod tests {
         session_trace.observations = vec![
             observation("a", vec![("search", 100), ("read", 50)]),
             observation("b", vec![("search", 120)]),
+            InferredObservation {
+                observation_id: Uuid::new_v4(),
+                kind: InferredObservationKind::ToolCallClassified,
+                source_request_id: "b".to_string(),
+                parser_version: "test".to_string(),
+                evidence: EvidenceQuality::Direct,
+                occurred_at: OffsetDateTime::UNIX_EPOCH + Duration::seconds(2),
+                facts: BoundedObservationFacts {
+                    tool_name: Some("search".to_string()),
+                    ..BoundedObservationFacts::default()
+                },
+                limitations: Vec::new(),
+            },
         ];
 
         let report =
             analyze_session(&session_trace, &AnalysisPolicy::default(), None).expect("report");
         let github = &report.diagnostics.tools_and_changes.tool_servers[0];
         assert_eq!(github.exposed_tool_definitions, 2);
+        assert_eq!(github.invoked_tool_definitions, 1);
+        assert_eq!(github.invocation_count, 1);
         assert_eq!(github.schema_token_estimate_per_request, 135);
         assert_eq!(github.estimated_uncached_schema_cost_10000, Some(270));
+        let search = report
+            .diagnostics
+            .reliability
+            .tools
+            .iter()
+            .find(|tool| tool.tool_key == "search")
+            .expect("generic tool reliability");
+        assert_eq!(search.server_key.as_deref(), Some("github"));
+        assert_eq!(search.invocation_count, 1);
     }
 
     #[test]

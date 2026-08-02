@@ -1599,8 +1599,6 @@ export interface components {
             /** Format: int32 */
             failed_tool_invocations: number;
             /** Format: int32 */
-            fallback_attempts: number;
-            /** Format: int32 */
             tool_invocations: number;
             tools: components["schemas"]["AgentToolReliabilityItemView"][];
             /** Format: int32 */
@@ -1875,9 +1873,13 @@ export interface components {
             /** Format: int64 */
             cache_creation_5m_tokens?: number | null;
             /** Format: int64 */
+            cache_creation_cost_10000?: number | null;
+            /** Format: int64 */
             cache_creation_tokens?: number | null;
             /** Format: int32 */
             cache_key_switches: number;
+            /** Format: int64 */
+            cache_read_cost_10000?: number | null;
             /** Format: int64 */
             cache_read_tokens?: number | null;
             /** Format: int32 */

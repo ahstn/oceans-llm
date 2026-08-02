@@ -101,24 +101,24 @@ The detail sheet lists request events first. A request can show route attempts a
 - **Cache read to write ratio** compares reads with all input.
 - **Cache write amplification** compares cache creation with cache reads. A high value can mean many writes with little reuse.
 - **Cache lifetime buckets** split five-minute, 30-minute, and one-hour writes. Provider/model profiles set the minimum cacheable prefix and default lifetime. They do not invent token counts.
+- **Cache read and write cost** uses the active price for each model request. Lifetime buckets explain which cache policy produced the writes.
 - **Threshold misses** count requests that asked for caching but stayed below the provider minimum. The request must also show no cache activity.
 
-Provider rules differ. Anthropic supports explicit five-minute and one-hour cache lifetimes. It also sets model-specific minimum prefixes. OpenAI applies automatic prefix caching above its minimum. It reports cached input tokens. Amazon Bedrock reports cache reads and writes as extra input buckets. Check the current [Anthropic prompt-caching guide](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), [OpenAI prompt-caching guide](https://platform.openai.com/docs/guides/prompt-caching), and [Amazon Bedrock prompt-caching guide](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html) before changing a cache profile.
+Provider rules differ. Anthropic supports explicit five-minute and one-hour cache lifetimes. It also sets model-specific minimum prefixes. OpenAI applies automatic prefix caching above its minimum and uses a 30-minute default lifetime. Amazon Bedrock reports cache reads and writes as extra input buckets. Token prices increase the cost of large, uncached prompts. Check the current [Anthropic prompt-caching guide](https://platform.claude.com/docs/en/build-with-claude/prompt-caching), [OpenAI prompt-caching guide](https://platform.openai.com/docs/guides/prompt-caching), [Amazon Bedrock prompt-caching guide](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html), [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing), and [OpenAI pricing](https://platform.openai.com/docs/pricing) before you change a cache profile.
 
 ### Context health
 
-The report shows peak input use against the set input boundary. It also shows growth per turn and active minute. Other values cover possible compactions and repeat requests above the boundary. A warning is not a claim about answer quality. Long context can reduce retrieval and reasoning quality even when a model accepts the request. See [Chroma's Context Rot evaluation](https://github.com/chroma-core/context-rot).
+The default boundary is 220,000 input tokens with 128,000 tokens reserved for output. It is an operating limit, not the model's advertised context limit. Keep a lower boundary when a model accepts more context because long prompts cost more and can reduce answer quality. The report shows peak input use against this boundary. It also shows growth per turn and active minute. Other values cover possible compactions and repeat requests above the boundary. Each repeated excess can reduce the session score by the configured penalty. A warning is not a claim about answer quality. This risk is described in [Chroma's Context Rot evaluation](https://github.com/chroma-core/context-rot), the [NoLiMa long-context study](https://aclanthology.org/2025.findings-emnlp.1264/), and [Lost in the Middle](https://aclanthology.org/2024.tacl-1.9/).
 
 ### Reliability and tools
 
 - **Wasted attempts** did not produce the final response. The report includes their measured latency. Cost stays unknown until providers supply usage for each attempt.
-- **Fallback attempts** count provider or model changes between attempts for one request.
-- **Tool reliability** groups failures, truncation, latency, and input tokens used after a failure.
-- **Tool servers** compare exposed and invoked tools for each server. They also estimate uncached schema cost from the active price policy. Exposed but unused tools can still consume input tokens.
+- **Tool reliability** groups failures, truncation, latency, and input tokens used after a failure. It includes direct MCP records and classified calls from other tool systems.
+- **Tool servers** combine catalogue size, actual use, failures, schema tokens, and uncached schema cost. This keeps tool exposure and cache cost in one finding. Large catalogues can increase spend and reduce tool-selection accuracy. [RAG-MCP](https://arxiv.org/abs/2505.03275) reports a large accuracy difference between a full tool pool and retrieval. Anthropic also recommends small, clear tool sets in its [context engineering guidance](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents).
 
 ### Skills and outcomes
 
-Skill data splits always-loaded description tokens from selected bodies and resources. It can show a selected skill that was later abandoned. The report stores only bounded names, token estimates, and state flags. It does not store skill files.
+Skill data splits always-loaded description tokens from selected bodies and resources. It can show a selected skill that was later abandoned. This matches progressive disclosure: metadata is always available, while bodies and resources load only when needed. The report stores only bounded names, token estimates, and state flags. It does not store skill files. See the [Agent Skills specification](https://agentskills.io/specification) for the portable skill format.
 
 Outcome evidence uses opaque file IDs. It shows cost per file, repeat edits, checks after writes, and failed file operations. It can also show a session with no detected write or check. These are operating signals. They do not prove that a change was correct.
 

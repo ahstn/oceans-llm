@@ -124,7 +124,6 @@ pub struct ReliabilityDiagnostics {
     pub attempt_coverage_percent: u8,
     pub total_attempts: u32,
     pub wasted_attempts: u32,
-    pub fallback_attempts: u32,
     pub wasted_attempt_latency_ms: i64,
     pub wasted_attempt_cost_10000: Option<i64>,
     pub tool_invocations: u32,
@@ -504,6 +503,31 @@ pub(crate) fn skill_diagnostics(observations: &[InferredObservation]) -> SkillDi
     }
 }
 
+fn supplied_tool_servers(
+    observations: &[InferredObservation],
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut servers_by_tool = BTreeMap::<String, BTreeSet<String>>::new();
+    for observation in observations {
+        for tool in &observation.facts.supplied_tools {
+            if let Some(server) = &tool.server_key {
+                servers_by_tool
+                    .entry(tool.name.clone())
+                    .or_default()
+                    .insert(server.clone());
+            }
+        }
+    }
+    servers_by_tool
+}
+
+fn unique_tool_server(
+    servers_by_tool: &BTreeMap<String, BTreeSet<String>>,
+    tool_name: &str,
+) -> Option<String> {
+    let servers = servers_by_tool.get(tool_name)?;
+    (servers.len() == 1).then(|| servers.first().expect("one server is present").clone())
+}
+
 #[must_use]
 pub(crate) fn reliability_diagnostics(
     requests: &[SessionRequestFact],
@@ -522,20 +546,12 @@ pub(crate) fn reliability_diagnostics(
         .iter()
         .filter(|attempt| !attempt.produced_final_response)
         .collect::<Vec<_>>();
-    let fallback_attempts = requests.iter().fold(0_u32, |total, request| {
-        total.saturating_add(
-            request
-                .attempts
-                .windows(2)
-                .filter(|pair| {
-                    pair[0].provider_key != pair[1].provider_key
-                        || pair[0].upstream_model != pair[1].upstream_model
-                })
-                .count()
-                .try_into()
-                .unwrap_or(u32::MAX),
-        )
-    });
+    let servers_by_tool = supplied_tool_servers(observations);
+    let direct_calls = evidence
+        .tool_invocations
+        .iter()
+        .map(|invocation| (invocation.request_id.as_str(), invocation.tool_key.as_str()))
+        .collect::<BTreeSet<_>>();
     let mut tools = BTreeMap::<(Option<String>, String), ToolReliabilityItem>::new();
     for invocation in &evidence.tool_invocations {
         let key = (invocation.server_key.clone(), invocation.tool_key.clone());
@@ -563,6 +579,25 @@ pub(crate) fn reliability_diagnostics(
         }
     }
     for observation in observations {
+        let Some(tool_name) = observation.facts.tool_name.as_ref() else {
+            continue;
+        };
+        if direct_calls.contains(&(observation.source_request_id.as_str(), tool_name.as_str())) {
+            continue;
+        }
+        let server_key = unique_tool_server(&servers_by_tool, tool_name);
+        let key = (server_key.clone(), tool_name.clone());
+        if !tools.contains_key(&key) && tools.len() >= MAX_DIAGNOSTIC_ITEMS {
+            continue;
+        }
+        let item = tools.entry(key).or_insert_with(|| ToolReliabilityItem {
+            server_key,
+            tool_key: tool_name.clone(),
+            ..ToolReliabilityItem::default()
+        });
+        item.invocation_count = item.invocation_count.saturating_add(1);
+    }
+    for observation in observations {
         for file in &observation.facts.file_interactions {
             let Some(tool_name) = file.tool_name.as_ref() else {
                 continue;
@@ -587,7 +622,6 @@ pub(crate) fn reliability_diagnostics(
         attempt_coverage_percent: percent(requests_with_attempts, requests.len()),
         total_attempts: attempts.len().try_into().unwrap_or(u32::MAX),
         wasted_attempts: wasted_attempts.len().try_into().unwrap_or(u32::MAX),
-        fallback_attempts,
         wasted_attempt_latency_ms: wasted_attempts.iter().fold(0_i64, |total, attempt| {
             total.saturating_add(attempt.latency_ms.unwrap_or_default().max(0))
         }),
@@ -623,6 +657,11 @@ pub(crate) fn tool_server_diagnostics(
         schema_tokens_by_request: BTreeMap<String, BTreeMap<String, u64>>,
     }
 
+    let servers_by_tool = supplied_tool_servers(observations);
+    let direct_calls = invocations
+        .iter()
+        .map(|invocation| (invocation.request_id.as_str(), invocation.tool_key.as_str()))
+        .collect::<BTreeSet<_>>();
     let mut servers = BTreeMap::<String, ServerAccumulator>::new();
     for observation in observations {
         for tool in &observation.facts.supplied_tools {
@@ -656,6 +695,23 @@ pub(crate) fn tool_server_diagnostics(
         if invocation.status != "succeeded" {
             accumulator.failed_count = accumulator.failed_count.saturating_add(1);
         }
+    }
+    for observation in observations {
+        let Some(tool_name) = observation.facts.tool_name.as_ref() else {
+            continue;
+        };
+        if direct_calls.contains(&(observation.source_request_id.as_str(), tool_name.as_str())) {
+            continue;
+        }
+        let Some(server) = unique_tool_server(&servers_by_tool, tool_name) else {
+            continue;
+        };
+        if !servers.contains_key(&server) && servers.len() >= MAX_DIAGNOSTIC_ITEMS {
+            continue;
+        }
+        let accumulator = servers.entry(server).or_default();
+        accumulator.invoked.insert(tool_name.clone());
+        accumulator.invocation_count = accumulator.invocation_count.saturating_add(1);
     }
     let rate = aggregate_fresh_input_rate(requests);
     servers
