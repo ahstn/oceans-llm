@@ -12,6 +12,12 @@ import {
 
 import { AppIcon } from '@/components/icons/app-icon'
 import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
+import {
+  AgentSessionDiagnostics,
+  DiagnosticSection,
+  getAgentSessionToolMetricAvailability,
+  type MetricAvailability,
+} from '@/components/observability/agent-session-diagnostics'
 import { DataGrid } from '@/components/reui/data-grid/data-grid'
 import { DataGridPagination } from '@/components/reui/data-grid/data-grid-pagination'
 import { DataGridTable } from '@/components/reui/data-grid/data-grid-table'
@@ -31,7 +37,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Sheet,
   SheetContent,
@@ -51,6 +56,8 @@ import type {
 } from '@/types/api'
 
 type AgentSessionRouteSearch = AgentSessionFiltersInput & { session_id?: string }
+type AgentRequestAttempt =
+  NonNullable<AgentSessionDetailView['report']>['diagnostics']['reliability']['attempts'][number]
 
 const timestampFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -548,11 +555,7 @@ function SessionDetail({
 }) {
   const report = detail.report
   const components = report?.components
-  const outcome = components?.outcome
-  const coverage = detail.coverage
-  const telemetryCoverage = report?.coverage
   const diagnostics = report?.diagnostics
-
   return (
     <>
       <div>
@@ -599,259 +602,19 @@ function SessionDetail({
           requests={detail.requests}
           observations={detail.observations}
           historyTruncated={detail.request_history_truncated}
+          attempts={diagnostics?.reliability.attempts ?? []}
         />
-        <ToolExposure observations={detail.observations} />
-
-        <DiagnosticSection title="Session identity">
-          <DiagnosticRow label="Model" value={detail.session.requested_model_key} />
-          <DiagnosticRow label="Operation" value={humanize(detail.session.operation)} />
-          <DiagnosticRow label="Caller class" value={humanize(detail.session.caller_class)} />
-          <DiagnosticRow label="Harness" value={detail.session.harness_label ?? 'Unknown'} />
-          <DiagnosticRow label="Session ID" value={detail.session.session_id} />
-          <DiagnosticRow
-            label="External session ID"
-            value={detail.session.external_session_id ?? 'Not observed'}
-          />
-        </DiagnosticSection>
-
-        <DiagnosticSection title="Score components">
-          <DiagnosticRow
-            label="Outcome factor"
-            value={formatBasisPoints(outcome?.factor_basis_points)}
-          />
-          <DiagnosticRow
-            label="Cost efficiency"
-            value={formatBasisPoints(components?.cost_efficiency_basis_points)}
-          />
-          <DiagnosticRow
-            label="Active-time efficiency"
-            value={formatBasisPoints(components?.active_time_efficiency_basis_points)}
-          />
-          <DiagnosticRow
-            label="Excluded long gaps"
-            value={formatDuration(components?.excluded_gap_time_ms)}
-          />
-          <DiagnosticRow
-            label="Total request and MCP time"
-            value={formatDuration(components?.summed_work_time_ms)}
-          />
-          <DiagnosticRow label="Elapsed time" value={formatDuration(components?.wall_time_ms)} />
-          <DiagnosticRow
-            label="Overlapping work time"
-            value={formatDuration(components?.overlap_savings_ms)}
-          />
-          <DiagnosticRow
-            label="Unclassified wait time"
-            value={formatDuration(components?.unknown_wait_time_ms)}
-          />
-        </DiagnosticSection>
-
-        <DiagnosticSection title="Score confidence and comparison data">
-          <DiagnosticRow label="Confidence" value={humanize(detail.session.score_confidence)} />
-          <DiagnosticRow label="Score status" value={humanize(detail.session.score_maturity)} />
-          <DiagnosticRow
-            label="Comparison group"
-            value={formatNullable(components?.cohort_version, 'No comparison group')}
-          />
-          <DiagnosticRow
-            label="Comparison fallback level"
-            value={formatNullable(components?.cohort_fallback_level)}
-          />
-          <DiagnosticRow
-            label="Sessions in comparison"
-            value={formatNullable(components?.cohort_sample_size)}
-          />
-          <DiagnosticRow
-            label="Overall telemetry coverage"
-            value={formatPercent(telemetryCoverage?.overall_percent)}
-          />
-          <DiagnosticRow
-            label="Outcome coverage"
-            value={formatPercent(telemetryCoverage?.outcome_percent)}
-          />
-          <DiagnosticRow
-            label="Cost coverage"
-            value={formatPercent(telemetryCoverage?.cost_percent)}
-          />
-          <DiagnosticRow
-            label="Timing coverage"
-            value={formatPercent(telemetryCoverage?.timing_percent)}
-          />
-          <DiagnosticRow
-            label="Payload coverage"
-            value={formatPercent(telemetryCoverage?.payload_percent)}
-          />
-          <DiagnosticRow
-            label="Comparison coverage"
-            value={formatPercent(telemetryCoverage?.cohort_percent)}
-          />
-          <DiagnosticRow
-            label="Source data"
-            value={
-              coverage
-                ? [
-                  coverage.request_metadata ? 'Request metadata' : null,
-                  coverage.response_payload ? 'Response payload' : null,
-                  coverage.response_payload_truncated ? 'Response payload is incomplete' : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ') || 'Source data is not available'
-                : 'Source data is not available'
-            }
-          />
-        </DiagnosticSection>
-
-        <DiagnosticSection title="Token and cache use">
-          <DiagnosticRow
-            label="Fresh input tokens"
-            value={formatTokenCount(diagnostics?.token_and_cache.fresh_input_tokens)}
-          />
-          <DiagnosticRow
-            label="Cache read tokens"
-            value={formatTokenCount(diagnostics?.token_and_cache.cache_read_tokens)}
-          />
-          <DiagnosticRow
-            label="Cache creation tokens"
-            value={formatTokenCount(diagnostics?.token_and_cache.cache_creation_tokens)}
-          />
-          <DiagnosticRow
-            label="Output tokens"
-            value={formatTokenCount(diagnostics?.token_and_cache.output_tokens)}
-          />
-          <DiagnosticRow
-            label="Reasoning tokens"
-            value={formatTokenCount(diagnostics?.token_and_cache.reasoning_tokens)}
-          />
-          <DiagnosticRow
-            label="Cache savings"
-            value={formatBasisPoints(diagnostics?.token_and_cache.cache_savings_basis_points)}
-          />
-          <DiagnosticRow
-            label="Cost without cache reads"
-            value={formatScaledCost(diagnostics?.token_and_cache.uncached_input_cost_10000)}
-          />
-          <DiagnosticRow
-            label="Pricing policy versions"
-            value={
-              diagnostics?.token_and_cache.pricing_policy_versions.join(' · ') || 'Not available'
-            }
-          />
-        </DiagnosticSection>
-
-        <DiagnosticSection title="Tools and changes">
-          <DiagnosticRow
-            label="Tool calls"
-            value={
-              diagnostics
-                ? `${diagnostics.tools_and_changes.classified_tool_calls} identified of ${diagnostics.tools_and_changes.observed_tool_calls} observed`
-                : 'Not available'
-            }
-          />
-          <DiagnosticRow
-            label="Direct MCP calls"
-            value={formatTokenCount(diagnostics?.tools_and_changes.direct_mcp_calls)}
-          />
-          <DiagnosticRow
-            label="Available tools"
-            value={formatTokenCount(diagnostics?.tools_and_changes.supplied_tool_definitions)}
-          />
-          <DiagnosticRow
-            label="Tool schema size"
-            value={formatBytes(diagnostics?.tools_and_changes.supplied_tool_schema_bytes)}
-          />
-          <DiagnosticRow
-            label="Distinct file identifiers"
-            value={formatNullable(diagnostics?.tools_and_changes.unique_opaque_files)}
-          />
-          <DiagnosticRow
-            label="File activity"
-            value={
-              diagnostics
-                ? `${diagnostics.tools_and_changes.file_reads_suspected} read · ${diagnostics.tools_and_changes.file_searches_suspected} search · ${diagnostics.tools_and_changes.file_edits_suspected} edit · ${diagnostics.tools_and_changes.file_creates_suspected} create · ${diagnostics.tools_and_changes.file_overwrites_suspected} overwrite`
-                : 'Not available'
-            }
-          />
-          <DiagnosticRow
-            label="Possible rework periods"
-            value={formatNullable(diagnostics?.tools_and_changes.rework_spans_suspected)}
-          />
-          <DiagnosticRow
-            label="Verification events"
-            value={formatNullable(diagnostics?.tools_and_changes.verification_results_classified)}
-          />
-        </DiagnosticSection>
-
-        <DiagnosticSection title="Prompt context">
-          <DiagnosticRow
-            label="Initial prompt tokens"
-            value={formatTokenCount(diagnostics?.context.initial_prompt_tokens)}
-          />
-          <DiagnosticRow
-            label="Median prompt tokens"
-            value={formatTokenCount(diagnostics?.context.median_prompt_tokens)}
-          />
-          <DiagnosticRow
-            label="P90 prompt tokens"
-            value={formatTokenCount(diagnostics?.context.p90_prompt_tokens)}
-          />
-          <DiagnosticRow
-            label="Maximum prompt tokens"
-            value={formatTokenCount(diagnostics?.context.maximum_prompt_tokens)}
-          />
-          <DiagnosticRow
-            label="Prompt token growth per turn"
-            value={formatTokenCount(diagnostics?.context.prompt_growth_per_turn)}
-          />
-          <DiagnosticRow
-            label="Prompt token growth per active minute"
-            value={formatTokenCount(diagnostics?.context.prompt_growth_per_active_minute)}
-          />
-          <DiagnosticRow
-            label="Possible context compactions"
-            value={formatNullable(diagnostics?.context.suspected_compactions)}
-          />
-          <DiagnosticRow
-            label="Possible context resets"
-            value={formatNullable(diagnostics?.context.suspected_context_resets)}
-          />
-          <DiagnosticRow
-            label="Answer verification"
-            value={
-              diagnostics
-                ? diagnostics.semantic_verification_available
-                  ? 'Available'
-                  : 'Not available'
-                : 'Not available'
-            }
-          />
-        </DiagnosticSection>
-
-        <DiagnosticSection title="Analysis versions">
-          <DiagnosticRow label="Report schema" value={report?.report_schema_version ?? '—'} />
-          <DiagnosticRow label="Analyzer" value={report?.analyzer_version ?? '—'} />
-          <DiagnosticRow label="Score policy" value={report?.score_policy_version ?? '—'} />
-          <DiagnosticRow
-            label="Boundary policy"
-            value={detail.analysis?.boundary_policy_version ?? '—'}
-          />
-          <DiagnosticRow
-            label="Observation parser"
-            value={detail.analysis?.observation_parser_version ?? '—'}
-          />
-          <DiagnosticRow
-            label="Pricing policy"
-            value={detail.analysis?.pricing_policy_version ?? '—'}
-          />
-          <DiagnosticRow
-            label="Comparison snapshot"
-            value={detail.analysis?.cohort_snapshot_digest ?? '—'}
-          />
-          <DiagnosticRow label="Analysis ID" value={detail.analysis?.analysis_id ?? '—'} />
-          <DiagnosticRow
-            label="Latest input time"
-            value={detail.analysis ? formatTimestamp(detail.analysis.input_watermark_at) : '—'}
-          />
-        </DiagnosticSection>
+        <ToolExposure
+          observations={detail.observations}
+          availability={getAgentSessionToolMetricAvailability(detail)}
+        />
+        <AgentSessionDiagnostics
+          detail={detail}
+          formatCost={formatCost}
+          formatDuration={formatDuration}
+          formatTimestamp={formatTimestamp}
+          humanize={humanize}
+        />
       </div>
     </>
   )
@@ -868,10 +631,12 @@ interface ToolExposureItem {
 function SessionEventStream({
   requests,
   observations,
+  attempts,
   historyTruncated,
 }: {
   requests: AgentSessionRequestView[]
   observations: AgentObservationView[]
+  attempts: AgentRequestAttempt[]
   historyTruncated: boolean
 }) {
   const [visibleCount, setVisibleCount] = useState(25)
@@ -885,6 +650,15 @@ function SessionEventStream({
     }
     return grouped
   }, [observations])
+  const attemptsByRequest = useMemo(() => {
+    const grouped = new Map<string, AgentRequestAttempt[]>()
+    for (const attempt of attempts) {
+      const requestAttempts = grouped.get(attempt.request_id) ?? []
+      requestAttempts.push(attempt)
+      grouped.set(attempt.request_id, requestAttempts)
+    }
+    return grouped
+  }, [attempts])
 
   return (
     <DiagnosticSection
@@ -897,6 +671,7 @@ function SessionEventStream({
           <Timeline defaultValue={visible.length}>
             {visible.map((request, index) => {
               const requestObservations = observationsByRequest.get(request.request_id) ?? []
+              const requestAttempts = attemptsByRequest.get(request.request_id) ?? []
               return (
                 <TimelineItem key={request.request_id} step={index + 1}>
                   <TimelineIndicator
@@ -956,6 +731,26 @@ function SessionEventStream({
                         {requestObservations.length}{' '}
                         {requestObservations.length === 1 ? 'activity' : 'activities'}
                       </Badge>
+                      <Badge variant="outline">
+                        {requestAttempts.length > 0
+                          ? `${requestAttempts.length} ${requestAttempts.length === 1 ? 'attempt' : 'attempts'}`
+                          : 'Attempts not measured'}
+                      </Badge>
+                      {requestAttempts.length > 0 ? (
+                        <span className="text-muted-foreground basis-full text-xs">
+                          {requestAttempts
+                            .map(
+                              (attempt) =>
+                                `${attempt.provider_key}/${attempt.upstream_model}: ${humanize(attempt.status)}`,
+                            )
+                            .join(' → ')}
+                        </span>
+                      ) : null}
+                      {requestObservations.length > 0 ? (
+                        <span className="text-muted-foreground basis-full text-xs">
+                          {requestObservations.map(formatObservationSummary).join(' · ')}
+                        </span>
+                      ) : null}
                     </TimelineContent>
                   </Link>
                 </TimelineItem>
@@ -979,7 +774,13 @@ function SessionEventStream({
   )
 }
 
-function ToolExposure({ observations }: { observations: AgentObservationView[] }) {
+function ToolExposure({
+  observations,
+  availability,
+}: {
+  observations: AgentObservationView[]
+  availability: MetricAvailability
+}) {
   const tools = useMemo(() => summarizeToolExposure(observations), [observations])
   const used = tools.filter((tool) => tool.callCount > 0)
   const neverCalled = tools.filter((tool) => tool.callCount === 0)
@@ -987,7 +788,8 @@ function ToolExposure({ observations }: { observations: AgentObservationView[] }
   return (
     <DiagnosticSection
       title="Tool exposure"
-      summary={`${used.length} used · ${neverCalled.length} never called`}
+      summary={availability === 'measured' ? `${used.length} used · ${neverCalled.length} never called` : undefined}
+      availability={availability}
     >
       <div className="grid gap-3 xl:grid-cols-2">
         <ToolExposurePanel
@@ -1108,6 +910,23 @@ function summarizeToolExposure(observations: AgentObservationView[]): ToolExposu
   )
 }
 
+function formatObservationSummary(observation: AgentObservationView) {
+  const file = observation.facts.file_interactions[0]
+  if (file) {
+    return `${humanize(file.operation)} ${file.opaque_file_id}${file.succeeded === false ? ' failed' : ''}`
+  }
+  const skill = observation.facts.supplied_skills.find((item) => item.used)
+  if (skill) return `Used skill ${skill.name}`
+  if (observation.facts.finish_reason) {
+    return `Finished: ${humanize(observation.facts.finish_reason)}`
+  }
+  if (observation.facts.incomplete_reason) {
+    return `Incomplete: ${humanize(observation.facts.incomplete_reason)}`
+  }
+  if (observation.facts.tool_name) return `Called ${observation.facts.tool_name}`
+  return humanize(observation.kind)
+}
+
 function formatRequestDuration(request: AgentSessionRequestView) {
   if (!request.completed_at) return 'In progress'
   return formatDuration(
@@ -1117,52 +936,6 @@ function formatRequestDuration(request: AgentSessionRequestView) {
 
 function formatRequestCountSummary(count: number, truncated: boolean) {
   return `${count}${truncated ? '+' : ''} ${count === 1 ? 'request' : 'requests'}`
-}
-
-function DiagnosticSection({
-  title,
-  summary,
-  defaultOpen = false,
-  children,
-}: {
-  title: string
-  summary?: string
-  defaultOpen?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <Collapsible defaultOpen={defaultOpen} className="overflow-hidden border-x">
-      <h3>
-        <CollapsibleTrigger className="group hover:bg-muted/40 focus-visible:ring-ring flex w-full items-center gap-3 px-4 py-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset">
-          <span className="font-medium">{title}</span>
-          {summary ? (
-            <Badge variant="outline" className="tabular-nums">
-              {summary}
-            </Badge>
-          ) : null}
-          <AppIcon
-            icon={ArrowRight01Icon}
-            size={14}
-            stroke={1.5}
-            className="text-muted-foreground ml-auto transition-transform group-data-[state=open]:rotate-90"
-            aria-hidden
-          />
-        </CollapsibleTrigger>
-      </h3>
-      <CollapsibleContent>
-        <div className="space-y-3 border-t px-4 py-4">{children}</div>
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
-function DiagnosticRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-4 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium">{value}</span>
-    </div>
-  )
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -1275,30 +1048,8 @@ function formatDuration(value?: number | null) {
   return `${(value / 60_000).toFixed(1)} min`
 }
 
-function formatBasisPoints(value?: number | null) {
-  return value === null || value === undefined ? 'Not available' : `${(value / 100).toFixed(1)}%`
-}
-
-function formatPercent(value?: number | null) {
-  return value === null || value === undefined ? 'Not available' : `${value}%`
-}
-
 function formatCount(value?: number | null) {
   return value === null || value === undefined ? '—' : value.toLocaleString()
-}
-
-function formatTokenCount(value?: number | null) {
-  return value === null || value === undefined ? 'Not available' : value.toLocaleString()
-}
-
-function formatBytes(value?: number | null) {
-  if (value === null || value === undefined) return 'Not available'
-  if (value < 1_024) return `${value} B`
-  return `${(value / 1_024).toFixed(1)} KiB`
-}
-
-function formatScaledCost(value?: number | null) {
-  return value === null || value === undefined ? 'Not available' : formatCost(value / 10_000)
 }
 
 function formatNullable(value: unknown, fallback = '—') {

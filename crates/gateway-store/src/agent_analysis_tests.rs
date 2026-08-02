@@ -382,6 +382,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     let analysis = AgentSessionAnalysisRecord {
         analysis_id: Uuid::new_v4(),
         agent_session_id: session.agent_session_id,
+        configuration_version: report.configuration_version.clone(),
         boundary_policy_version: session.boundary_policy_version.clone(),
         input_watermark_at: session.input_watermark_at,
         observation_set_id: third_observation_set.observation_set_id,
@@ -424,6 +425,20 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
             })
             .await
             .expect("retry analysis")
+    );
+    let mut reconfigured_report = analysis.report.clone();
+    reconfigured_report.configuration_version = "config-v2".to_string();
+    assert!(
+        store
+            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
+                analysis_id: Uuid::new_v4(),
+                configuration_version: reconfigured_report.configuration_version.clone(),
+                report: reconfigured_report,
+                stale: true,
+                ..analysis.clone()
+            })
+            .await
+            .expect("reconfigured analysis")
     );
     let mut advanced_session = session.clone();
     advanced_session.input_watermark_at += Duration::seconds(1);
@@ -630,6 +645,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         agent_session_id: session.agent_session_id,
         reason: "new_input".to_string(),
         desired_versions: AgentAnalysisDesiredVersions {
+            configuration_version: "config-v1".to_string(),
             report_schema_version: agent_session_analysis::REPORT_SCHEMA_VERSION.to_string(),
             boundary_policy_version: agent_session_analysis::SESSION_BOUNDARY_POLICY_VERSION
                 .to_string(),

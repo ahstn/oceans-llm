@@ -141,6 +141,7 @@ fn decode_analysis(row: &PgRow) -> Result<AgentSessionAnalysisRecord, StoreError
     Ok(AgentSessionAnalysisRecord {
         analysis_id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
         agent_session_id: parse_uuid(&row.try_get::<String, _>(1).map_err(to_query_error)?)?,
+        configuration_version: row.try_get(22).map_err(to_query_error)?,
         boundary_policy_version: row.try_get(3).map_err(to_query_error)?,
         input_watermark_at: unix_to_datetime(row.try_get(4).map_err(to_query_error)?)?,
         observation_set_id: parse_uuid(&row.try_get::<String, _>(5).map_err(to_query_error)?)?,
@@ -197,7 +198,7 @@ fn decode_queue(row: &PgRow) -> Result<AgentAnalysisQueueRecord, StoreError> {
 const SESSION_SOURCE_COLUMNS: &str = "agent_session_source_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, normalized_session_hash, adapter_namespace, adapter_version, source_provenance, harness_key, harness_label, first_seen_at, last_seen_at, created_at, updated_at";
 const SESSION_COLUMNS: &str = "agent_session_id, agent_session_source_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, requested_model_key, operation, caller_class, request_tags_json, harness_key, boundary_group_key, boundary_policy_version, lifecycle, boundary_confidence, started_at, ended_at, input_watermark_at, finalized_reason, created_at, updated_at";
 const REQUEST_COLUMNS: &str = "agent_session_id, request_id, request_log_id, usage_event_id, ordinal, execution_id, parent_execution_id, normalized_session_id, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success";
-const ANALYSIS_COLUMNS: &str = "analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, report_json, analyzed_at, superseded_by_analysis_id, stale, expires_at, ownership_scope_key, user_id, service_account_id";
+const ANALYSIS_COLUMNS: &str = "analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, report_json, analyzed_at, superseded_by_analysis_id, stale, expires_at, ownership_scope_key, user_id, service_account_id, configuration_version";
 const QUEUE_COLUMNS: &str = "queue_item_id, agent_session_id, reason, desired_versions_json, status, lease_owner, lease_expires_at, attempts, max_attempts, last_error, available_at, created_at, updated_at, completed_at";
 
 impl PostgresStore {
@@ -515,6 +516,34 @@ impl AgentSessionAnalysisRepository for PostgresStore {
         let count = row.try_get::<i64, _>(0).map_err(to_query_error)?;
         u64::try_from(count).map_err(|error| StoreError::Serialization(error.to_string()))
     }
+    async fn list_agent_session_request_attempts(
+        &self,
+        agent_session_id: Uuid,
+        limit: u32,
+    ) -> Result<Vec<RequestAttemptRecord>, StoreError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT a.request_attempt_id, a.request_log_id, a.request_id, a.attempt_number,
+                   a.route_id, a.provider_key, a.upstream_model, a.status, a.status_code,
+                   a.error_code, a.error_detail, a.error_detail_truncated, a.retryable,
+                   a.terminal, a.produced_final_response, a.stream, a.started_at,
+                   a.completed_at, a.latency_ms, a.metadata_json
+            FROM request_log_attempts a
+            JOIN agent_session_requests r ON r.request_log_id = a.request_log_id
+            WHERE r.agent_session_id = $1
+            ORDER BY r.ordinal, a.attempt_number
+            LIMIT $2
+            "#,
+        )
+        .bind(agent_session_id.to_string())
+        .bind(i64::from(limit))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.iter()
+            .map(super::request_logs::decode_request_attempt_row)
+            .collect()
+    }
 
     async fn append_agent_observation_set(
         &self,
@@ -665,13 +694,13 @@ impl AgentSessionAnalysisRepository for PostgresStore {
         &self,
         analysis: &AgentSessionAnalysisRecord,
     ) -> Result<bool, StoreError> {
-        let result = sqlx::query("INSERT INTO agent_session_analyses (analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, analyzed_at, report_json, stale, superseded_by_analysis_id, expires_at, ownership_scope_key, user_id, service_account_id) SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22 WHERE EXISTS (SELECT 1 FROM agent_sessions WHERE agent_session_id = $2 AND input_watermark_at = $5) AND EXISTS (SELECT 1 FROM agent_inferred_observation_sets WHERE observation_set_id = $6 AND agent_session_id = $2) ON CONFLICT DO NOTHING")
-            .bind(analysis.analysis_id.to_string()).bind(analysis.agent_session_id.to_string()).bind(&analysis.report.report_schema_version).bind(&analysis.boundary_policy_version).bind(analysis.input_watermark_at.unix_timestamp()).bind(analysis.observation_set_id.to_string()).bind(&analysis.observation_parser_version).bind(&analysis.report.analyzer_version).bind(&analysis.report.score_policy_version).bind(&analysis.pricing_policy_version).bind(&analysis.cohort_version).bind(i32::from(analysis.cohort_fallback_level)).bind(i64::try_from(analysis.cohort_sample_size).map_err(|error| StoreError::Serialization(error.to_string()))?).bind(&analysis.cohort_snapshot_digest).bind(analysis.analyzed_at.unix_timestamp()).bind(crate::shared::serialize_json(&analysis.report)?).bind(i32::from(analysis.stale)).bind(analysis.superseded_by_analysis_id.map(|value| value.to_string())).bind(analysis.expires_at.unix_timestamp()).bind(&analysis.ownership_scope_key).bind(analysis.user_id.map(|value| value.to_string())).bind(analysis.service_account_id.map(|value| value.to_string())).execute(&self.pool).await.map_err(to_query_error)?;
+        let result = sqlx::query("INSERT INTO agent_session_analyses (analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, analyzed_at, report_json, stale, superseded_by_analysis_id, expires_at, ownership_scope_key, user_id, service_account_id, configuration_version) SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23 WHERE EXISTS (SELECT 1 FROM agent_sessions WHERE agent_session_id = $2 AND input_watermark_at = $5) AND EXISTS (SELECT 1 FROM agent_inferred_observation_sets WHERE observation_set_id = $6 AND agent_session_id = $2) ON CONFLICT DO NOTHING")
+            .bind(analysis.analysis_id.to_string()).bind(analysis.agent_session_id.to_string()).bind(&analysis.report.report_schema_version).bind(&analysis.boundary_policy_version).bind(analysis.input_watermark_at.unix_timestamp()).bind(analysis.observation_set_id.to_string()).bind(&analysis.observation_parser_version).bind(&analysis.report.analyzer_version).bind(&analysis.report.score_policy_version).bind(&analysis.pricing_policy_version).bind(&analysis.cohort_version).bind(i32::from(analysis.cohort_fallback_level)).bind(i64::try_from(analysis.cohort_sample_size).map_err(|error| StoreError::Serialization(error.to_string()))?).bind(&analysis.cohort_snapshot_digest).bind(analysis.analyzed_at.unix_timestamp()).bind(crate::shared::serialize_json(&analysis.report)?).bind(i32::from(analysis.stale)).bind(analysis.superseded_by_analysis_id.map(|value| value.to_string())).bind(analysis.expires_at.unix_timestamp()).bind(&analysis.ownership_scope_key).bind(analysis.user_id.map(|value| value.to_string())).bind(analysis.service_account_id.map(|value| value.to_string())).bind(&analysis.configuration_version).execute(&self.pool).await.map_err(to_query_error)?;
         if result.rows_affected() > 0 {
             return Ok(true);
         }
         let sql = format!(
-            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = $1 AND report_schema_version = $2 AND boundary_policy_version = $3 AND input_watermark_at = $4 AND observation_set_id = $5 AND observation_parser_version = $6 AND analyzer_version = $7 AND score_policy_version = $8 AND pricing_policy_version = $9 AND cohort_version = $10 AND cohort_fallback_level = $11 AND cohort_sample_size = $12 AND cohort_snapshot_digest = $13"
+            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = $1 AND report_schema_version = $2 AND boundary_policy_version = $3 AND input_watermark_at = $4 AND observation_set_id = $5 AND observation_parser_version = $6 AND analyzer_version = $7 AND score_policy_version = $8 AND pricing_policy_version = $9 AND cohort_version = $10 AND cohort_fallback_level = $11 AND cohort_sample_size = $12 AND cohort_snapshot_digest = $13 AND configuration_version = $14"
         );
         let existing = sqlx::query(&sql)
             .bind(analysis.agent_session_id.to_string())
@@ -690,6 +719,7 @@ impl AgentSessionAnalysisRepository for PostgresStore {
                     .map_err(|error| StoreError::Serialization(error.to_string()))?,
             )
             .bind(&analysis.cohort_snapshot_digest)
+            .bind(&analysis.configuration_version)
             .fetch_optional(&self.pool)
             .await
             .map_err(to_query_error)?

@@ -2,10 +2,10 @@ use anyhow::Context;
 use gateway_core::{
     AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
     AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord, ApiKeyRecord,
-    BoundedObservationFacts, BoundedToolDefinitionFact, Confidence, EvidenceQuality,
-    InferredObservation, InferredObservationKind, LimitationCode, McpToolInvocationRecord,
-    McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult, RequestTags,
-    SessionLifecycleState,
+    BoundedFileInteractionFact, BoundedObservationFacts, BoundedSkillFact,
+    BoundedToolDefinitionFact, Confidence, EvidenceQuality, InferredObservation,
+    InferredObservationKind, LimitationCode, McpToolInvocationRecord, McpToolInvocationRepository,
+    McpToolInvocationStatus, McpToolPolicyResult, RequestTags, SessionLifecycleState,
 };
 use gateway_service::{desired_versions, enqueue_agent_analysis};
 use gateway_store::AnyStore;
@@ -226,7 +226,7 @@ async fn seed_demo_mcp_invocation(
             &McpToolInvocationRecord {
                 mcp_tool_invocation_id: local_demo_uuid("mcp_tool_invocation", fixture.request_id),
                 request_log_id: Some(demo_request_log_uuid(fixture.request_id)),
-                request_id: format!("demo-mcp-{}", request.step + 1),
+                request_id: fixture.request_id.to_string(),
                 api_key_id: Some(api_key.id),
                 user_id: api_key.owner_user_id,
                 team_id: api_key.owner_team_id,
@@ -380,6 +380,7 @@ fn demo_supplied_tools(
         .into_iter()
         .map(|name| BoundedToolDefinitionFact {
             name: name.to_string(),
+            server_key: (session.key == "jira-release-coordination").then(|| "jira".to_string()),
             token_estimate: u64::try_from(name.len()).map_or(64, |length| 64 + length * 3),
         })
         .collect()
@@ -402,6 +403,53 @@ fn demo_observations(
     let kind = session_request
         .map(|request| request.observation_kind)
         .unwrap_or(InferredObservationKind::ToolCallClassified);
+    let supplied_skills = session_request.map_or_else(Vec::new, |request| {
+        let selected = if request.session.key == "jira-release-coordination" {
+            "release-coordination"
+        } else {
+            "repository-maintenance"
+        };
+        [
+            "release-coordination",
+            "repository-maintenance",
+            "verification",
+        ]
+        .into_iter()
+        .map(|name| BoundedSkillFact {
+            name: name.to_string(),
+            description_token_estimate: Some(72),
+            body_token_estimate: (name == selected).then_some(1_800),
+            resource_token_estimate: (name == selected).then_some(240),
+            used: name == selected,
+            abandoned: Some(false),
+        })
+        .collect()
+    });
+    let file_interactions = session_request
+        .and_then(|request| {
+            let operation = match request.observation_kind {
+                InferredObservationKind::FileReadSuspected => "read",
+                InferredObservationKind::FileSearchSuspected => "search",
+                InferredObservationKind::FileCreateSuspected => "create",
+                InferredObservationKind::FileEditSuspected => "edit",
+                InferredObservationKind::FileOverwriteSuspected => "overwrite",
+                InferredObservationKind::VerificationResultClassified => "verify",
+                _ => return None,
+            };
+            Some(BoundedFileInteractionFact {
+                opaque_file_id: format!(
+                    "{}-file-{}",
+                    request.session.key,
+                    request.step.saturating_sub(1) / 2
+                ),
+                operation: operation.to_string(),
+                tool_name: Some(request.tool_name.to_string()),
+                succeeded: Some(fixture.error_code.is_none()),
+                error_signature: fixture.error_code.map(str::to_string),
+            })
+        })
+        .into_iter()
+        .collect();
     vec![InferredObservation {
         observation_id: local_demo_uuid("agent_observation", fixture.request_id),
         kind,
@@ -416,6 +464,11 @@ fn demo_observations(
             tool_schema_bytes: tool_name.as_ref().map(|_| 420),
             tool_schema_token_estimate: tool_name.as_ref().map(|_| 105),
             supplied_tools,
+            supplied_skills,
+            file_interactions,
+            reasoning_config_hash: Some("local-demo-reasoning-standard".to_string()),
+            cache_requested: Some(true),
+            finish_reason: Some("stop".to_string()),
             tool_name,
             ..BoundedObservationFacts::default()
         },

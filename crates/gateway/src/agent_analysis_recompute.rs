@@ -4,7 +4,7 @@ use gateway_core::{
     AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AgentSessionListQuery,
     AgentSessionTraceRecord, SessionLifecycleState,
 };
-use gateway_service::{desired_versions, enqueue_agent_analysis};
+use gateway_service::{desired_versions_for_policy, enqueue_agent_analysis_with_versions};
 use gateway_store::AnyStore;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -20,6 +20,8 @@ pub async fn run_command(
     let store = AnyStore::connect(&database_options)
         .await
         .context("failed to initialize gateway store")?;
+    let analysis_settings = crate::load_agent_analysis_settings(&config.agent_analysis)?;
+    let desired = desired_versions_for_policy(&analysis_settings.policy);
 
     let sessions = if let Some(session_id) = args.session_id {
         let session_id = Uuid::parse_str(&session_id).context("--session-id must be a UUID")?;
@@ -32,7 +34,7 @@ pub async fn run_command(
         };
         vec![trace.session]
     } else {
-        let desired = desired_versions();
+        let desired = desired.clone();
         let mut sessions = Vec::with_capacity(args.limit as usize);
         let mut page = 1;
         let page_size = gateway_core::MAX_AGENT_SESSION_PAGE_SIZE;
@@ -72,12 +74,13 @@ pub async fn run_command(
             session.agent_session_id,
             session.input_watermark_at.unix_timestamp_nanos()
         );
-        if enqueue_agent_analysis(
+        if enqueue_agent_analysis_with_versions(
             &store,
             session.agent_session_id,
             "manual_recompute",
             &dedupe_key,
             now,
+            &desired,
         )
         .await
         .context("failed to enqueue agent analysis")?
@@ -110,4 +113,5 @@ fn analysis_is_current(
         && analysis.report.score_policy_version == desired.score_policy_version
         && analysis.report.maturity == desired.score_maturity
         && analysis.report.calibration_approval_id == desired.calibration_approval_id
+        && analysis.report.configuration_version == desired.configuration_version
 }

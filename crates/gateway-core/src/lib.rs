@@ -13,14 +13,18 @@ pub use agent_analysis::{
     AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
     AgentSessionAnalysisRepository, AgentSessionListPage, AgentSessionListQuery,
     AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
-    AgentSessionTraceRecord, MAX_AGENT_SESSION_PAGE_SIZE, MAX_AGENT_SESSION_REQUESTS,
+    AgentSessionTraceRecord, MAX_AGENT_ANALYSIS_DISTINCT_ITEMS, MAX_AGENT_SESSION_NESTED_FACTS,
+    MAX_AGENT_SESSION_PAGE_SIZE, MAX_AGENT_SESSION_REQUESTS,
 };
 pub use agent_session_analysis::{
-    ActivityInterval, AgentSessionId, AgentSessionSourceId, AnalysisId, BoundedObservationFacts,
-    BoundedToolDefinitionFact, CohortReference, Confidence, EvidenceQuality, GatewayOutcomeState,
-    InferredObservation, InferredObservationKind, LimitationCode, ObservationSetId, ScoreMaturity,
-    SessionEfficiencyComponents, SessionEfficiencyReport, SessionLifecycleState,
-    SessionRequestFact,
+    ActivityInterval, AgentSessionId, AgentSessionSourceId, AnalysisId, AnalysisMetricPolicy,
+    BoundedFileInteractionFact, BoundedObservationFacts, BoundedSkillFact,
+    BoundedToolDefinitionFact, CacheProfileRule, CacheTtl, CohortReference, Confidence,
+    EvidenceQuality, FinishReasonDiagnostics, GatewayOutcomeState, InferredObservation,
+    InferredObservationKind, LimitationCode, ObservationSetId, OutcomeDiagnostics,
+    ReliabilityDiagnostics, RequestAttemptFact, ScoreMaturity, SessionEfficiencyComponents,
+    SessionEfficiencyReport, SessionLifecycleState, SessionRequestFact, SkillDiagnostics,
+    ToolInvocationFact, ToolServerDiagnostics,
 };
 pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,

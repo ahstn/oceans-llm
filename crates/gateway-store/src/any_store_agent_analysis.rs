@@ -3,7 +3,7 @@ use gateway_core::{
     AgentAnalysisQueueRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
     AgentSessionAnalysisRepository, AgentSessionListPage, AgentSessionListQuery,
     AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
-    AgentSessionTraceRecord, StoreError,
+    AgentSessionTraceRecord, RequestAttemptRecord, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -106,6 +106,24 @@ impl AgentSessionAnalysisRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.count_agent_session_requests(session_id).await,
             Self::Postgres(store) => store.count_agent_session_requests(session_id).await,
+        }
+    }
+    async fn list_agent_session_request_attempts(
+        &self,
+        session_id: Uuid,
+        limit: u32,
+    ) -> Result<Vec<RequestAttemptRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_agent_session_request_attempts(session_id, limit)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_agent_session_request_attempts(session_id, limit)
+                    .await
+            }
         }
     }
 

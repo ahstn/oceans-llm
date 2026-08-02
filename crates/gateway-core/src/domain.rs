@@ -951,9 +951,21 @@ pub struct NormalizedUsageAccounting {
     pub fresh_input_tokens: Option<i64>,
     pub cache_read_tokens: Option<i64>,
     pub cache_creation_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_creation_5m_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_creation_30m_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_creation_1h_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
     pub reasoning_tokens: Option<i64>,
     pub provider_total_tokens: Option<i64>,
+    #[serde(default)]
+    pub output_includes_reasoning: Option<bool>,
+    #[serde(default)]
+    pub finish_reason: Option<String>,
+    #[serde(default)]
+    pub incomplete_reason: Option<String>,
     pub semantics_version: String,
     pub semantics: Value,
     pub normalization_error: Option<String>,

@@ -1,16 +1,24 @@
 pub mod calibration;
+mod extended;
+
+pub use extended::{
+    AnalysisMetricPolicy, BoundedFileInteractionFact, BoundedSkillFact, CacheProfileRule, CacheTtl,
+    FinishReasonDiagnostics, FinishReasonItem, OutcomeDiagnostics, ReliabilityDiagnostics,
+    RequestAttemptFact, SkillDiagnosticItem, SkillDiagnostics, ToolInvocationFact,
+    ToolReliabilityItem, ToolServerDiagnostics, default_cache_profiles,
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-pub const REPORT_SCHEMA_VERSION: &str = "agent-session-report-v4";
+pub const REPORT_SCHEMA_VERSION: &str = "agent-session-report-v5";
 pub const SESSION_BOUNDARY_POLICY_VERSION: &str = "passive-gap-v2";
-pub const OBSERVATION_PARSER_VERSION: &str = "passive-observations-v2";
-pub const ANALYZER_VERSION: &str = "session-efficiency-v3";
-pub const SCORE_POLICY_VERSION: &str = "outcome-cost-time-v1";
+pub const OBSERVATION_PARSER_VERSION: &str = "passive-observations-v3";
+pub const ANALYZER_VERSION: &str = "session-efficiency-v4";
+pub const SCORE_POLICY_VERSION: &str = "outcome-cost-time-context-v2";
 pub const DEFAULT_ORCHESTRATION_GAP: Duration = Duration::minutes(2);
 pub const MIN_EXACT_COHORT_SIZE: usize = 6;
 
@@ -73,6 +81,8 @@ pub enum InferredObservationKind {
     CompactionSuspected,
     ContextResetSuspected,
     ToolCallClassified,
+    SessionMetadataClassified,
+    ResponseFinishClassified,
     ReworkSuspected,
 }
 
@@ -94,6 +104,8 @@ pub enum LimitationCode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BoundedToolDefinitionFact {
     pub name: String,
+    #[serde(default)]
+    pub server_key: Option<String>,
     pub token_estimate: u64,
 }
 
@@ -106,6 +118,18 @@ pub struct BoundedObservationFacts {
     pub tool_schema_token_estimate: Option<u64>,
     #[serde(default)]
     pub supplied_tools: Vec<BoundedToolDefinitionFact>,
+    #[serde(default)]
+    pub supplied_skills: Vec<BoundedSkillFact>,
+    #[serde(default)]
+    pub file_interactions: Vec<BoundedFileInteractionFact>,
+    #[serde(default)]
+    pub reasoning_config_hash: Option<String>,
+    #[serde(default)]
+    pub cache_requested: Option<bool>,
+    #[serde(default)]
+    pub finish_reason: Option<String>,
+    #[serde(default)]
+    pub incomplete_reason: Option<String>,
     pub tool_name: Option<String>,
     pub tool_schema_hash: Option<String>,
     pub opaque_file_id: Option<String>,
@@ -153,6 +177,14 @@ pub struct SessionUsageFact {
     pub output_tokens: Option<i64>,
     pub reasoning_tokens: Option<i64>,
     pub provider_total_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_creation_5m_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_creation_30m_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_creation_1h_tokens: Option<i64>,
+    #[serde(default)]
+    pub output_includes_reasoning: Option<bool>,
     pub fresh_input_cost_10000: Option<i64>,
     pub cache_read_cost_10000: Option<i64>,
     pub cache_creation_cost_10000: Option<i64>,
@@ -173,6 +205,8 @@ pub struct SessionRequestFact {
     pub completed_at: Option<OffsetDateTime>,
     pub terminal_success: Option<bool>,
     pub usage: Option<SessionUsageFact>,
+    #[serde(default)]
+    pub attempts: Vec<RequestAttemptFact>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -190,6 +224,8 @@ pub struct TraceEvidence {
     pub response_payload_count: u32,
     pub truncated_payload_count: u32,
     pub direct_mcp_intervals: Vec<ActivityInterval>,
+    #[serde(default)]
+    pub tool_invocations: Vec<ToolInvocationFact>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -211,6 +247,18 @@ pub struct AnalysisPolicy {
     pub orchestration_gap: Duration,
     pub maturity: ScoreMaturity,
     pub calibration_approval_id: Option<String>,
+    #[serde(default)]
+    pub configuration_version: String,
+    #[serde(default)]
+    pub metrics: AnalysisMetricPolicy,
+    #[serde(default = "default_context_input_boundary_tokens")]
+    pub context_input_boundary_tokens: i64,
+    #[serde(default = "default_context_reserved_output_tokens")]
+    pub context_reserved_output_tokens: i64,
+    #[serde(default = "default_context_penalty_points")]
+    pub context_penalty_points_per_repeated_excess: u8,
+    #[serde(default = "default_cache_profiles")]
+    pub cache_profiles: Vec<CacheProfileRule>,
 }
 
 impl Default for AnalysisPolicy {
@@ -223,6 +271,12 @@ impl Default for AnalysisPolicy {
             orchestration_gap: DEFAULT_ORCHESTRATION_GAP,
             maturity: ScoreMaturity::Experimental,
             calibration_approval_id: None,
+            configuration_version: String::new(),
+            metrics: AnalysisMetricPolicy::default(),
+            context_input_boundary_tokens: 220_000,
+            context_reserved_output_tokens: 128_000,
+            context_penalty_points_per_repeated_excess: 2,
+            cache_profiles: default_cache_profiles(),
         }
     }
 }
@@ -234,6 +288,7 @@ pub enum AnalysisError {
     DuplicateRequest(String),
     InvalidRequestInterval(String),
     InvalidUsage(String),
+    InvalidPolicy(&'static str),
 }
 
 impl std::fmt::Display for AnalysisError {
@@ -257,6 +312,7 @@ impl std::fmt::Display for AnalysisError {
             Self::InvalidUsage(request_id) => {
                 write!(formatter, "request `{request_id}` contains negative usage")
             }
+            Self::InvalidPolicy(message) => formatter.write_str(message),
         }
     }
 }
@@ -287,8 +343,18 @@ pub struct TokenAndCacheDiagnostics {
     pub fresh_input_tokens: Option<i64>,
     pub cache_read_tokens: Option<i64>,
     pub cache_creation_tokens: Option<i64>,
+    #[serde(default)]
+    pub total_input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
     pub reasoning_tokens: Option<i64>,
+    #[serde(default)]
+    pub visible_output_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_creation_5m_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_creation_30m_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_creation_1h_tokens: Option<i64>,
     pub provider_total_tokens: Option<i64>,
     pub legacy_cost_10000: Option<i64>,
     pub normalized_cost_10000: Option<i64>,
@@ -296,6 +362,14 @@ pub struct TokenAndCacheDiagnostics {
     pub cache_savings_10000: Option<i64>,
     pub cache_savings_basis_points: Option<i32>,
     pub cache_read_write_ratio_basis_points: Option<i32>,
+    #[serde(default)]
+    pub cache_write_amplification_basis_points: Option<i32>,
+    #[serde(default)]
+    pub silent_cache_threshold_miss_requests: Option<u32>,
+    #[serde(default)]
+    pub cache_key_switches: u32,
+    #[serde(default)]
+    pub reasoning_config_switches: Option<u32>,
     pub pricing_policy_versions: Vec<String>,
 }
 
@@ -305,6 +379,18 @@ pub struct ContextDiagnostics {
     pub median_prompt_tokens: Option<i64>,
     pub p90_prompt_tokens: Option<i64>,
     pub maximum_prompt_tokens: Option<i64>,
+    #[serde(default = "default_context_input_boundary_tokens")]
+    pub input_boundary_tokens: i64,
+    #[serde(default = "default_context_reserved_output_tokens")]
+    pub reserved_output_tokens: i64,
+    #[serde(default)]
+    pub peak_input_utilization_basis_points: Option<i32>,
+    #[serde(default)]
+    pub requests_over_input_boundary: u32,
+    #[serde(default)]
+    pub repeated_requests_over_input_boundary: u32,
+    #[serde(default)]
+    pub score_penalty_points: u8,
     pub prompt_growth_per_turn: Option<i64>,
     pub prompt_growth_per_active_minute: Option<i64>,
     pub suspected_compactions: u32,
@@ -323,11 +409,26 @@ pub struct ToolAndChangeDiagnostics {
     pub file_edits_suspected: u32,
     pub file_overwrites_suspected: u32,
     pub unique_opaque_files: u32,
+
     pub verification_results_classified: u32,
     pub rework_spans_suspected: u32,
     #[serde(default)]
     pub direct_mcp_calls: u32,
     pub direct_mcp_duration_ms: Option<i64>,
+    #[serde(default)]
+    pub tool_servers: Vec<ToolServerDiagnostics>,
+}
+
+fn default_context_input_boundary_tokens() -> i64 {
+    220_000
+}
+
+fn default_context_reserved_output_tokens() -> i64 {
+    128_000
+}
+
+fn default_context_penalty_points() -> u8 {
+    2
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -335,6 +436,16 @@ pub struct SessionDiagnostics {
     pub token_and_cache: TokenAndCacheDiagnostics,
     pub context: ContextDiagnostics,
     pub tools_and_changes: ToolAndChangeDiagnostics,
+    #[serde(default)]
+    pub skills: SkillDiagnostics,
+    #[serde(default)]
+    pub reliability: ReliabilityDiagnostics,
+    #[serde(default)]
+    pub outcome: OutcomeDiagnostics,
+    #[serde(default)]
+    pub finish_reasons: FinishReasonDiagnostics,
+    #[serde(default)]
+    pub enabled_metrics: AnalysisMetricPolicy,
     pub semantic_verification_available: bool,
 }
 
@@ -349,6 +460,8 @@ pub struct SessionEfficiencyComponents {
     pub summed_work_time_ms: i64,
     pub excluded_gap_time_ms: i64,
     pub overlap_savings_ms: i64,
+    #[serde(default)]
+    pub context_penalty_points: u8,
     pub unknown_wait_time_ms: Option<i64>,
     pub cohort_version: Option<String>,
     pub cohort_fallback_level: Option<u8>,
@@ -361,6 +474,8 @@ pub struct SessionEfficiencyReport {
     pub analyzer_version: String,
     pub score_policy_version: String,
     pub observation_parser_version: String,
+    #[serde(default)]
+    pub configuration_version: String,
     pub maturity: ScoreMaturity,
     pub calibration_approval_id: Option<String>,
     pub confidence: Confidence,
@@ -517,6 +632,25 @@ fn validate_policy(policy: &AnalysisPolicy) -> Result<(), AnalysisError> {
     {
         return Err(AnalysisError::MissingCalibrationApproval);
     }
+    if policy.context_input_boundary_tokens <= 0 {
+        return Err(AnalysisError::InvalidPolicy(
+            "context input boundary must be positive",
+        ));
+    }
+    if policy.context_reserved_output_tokens < 0 {
+        return Err(AnalysisError::InvalidPolicy(
+            "reserved output tokens must not be negative",
+        ));
+    }
+    if policy
+        .cache_profiles
+        .iter()
+        .any(|profile| profile.minimum_cacheable_tokens <= 0)
+    {
+        return Err(AnalysisError::InvalidPolicy(
+            "cache profile token minimums must be positive",
+        ));
+    }
     Ok(())
 }
 
@@ -617,16 +751,15 @@ fn context_diagnostics(
     requests: &[SessionRequestFact],
     active_time_ms: i64,
     observations: &[InferredObservation],
+    policy: &AnalysisPolicy,
 ) -> ContextDiagnostics {
     let mut prompt_samples = requests
         .iter()
         .filter_map(|request| {
-            let usage = request.usage.as_ref()?;
-            let prompt_tokens = usage
-                .fresh_input_tokens
-                .zip(usage.cache_read_tokens)
-                .and_then(|(fresh, cached)| fresh.checked_add(cached))
-                .or(usage.fresh_input_tokens)?;
+            let prompt_tokens = request
+                .usage
+                .as_ref()
+                .and_then(extended::total_input_tokens)?;
             Some((request.occurred_at, prompt_tokens))
         })
         .collect::<Vec<_>>();
@@ -640,11 +773,32 @@ fn context_diagnostics(
     let prompt_growth = first
         .zip(last)
         .and_then(|(first, last)| last.checked_sub(first));
+    let requests_over_input_boundary = prompt_tokens
+        .iter()
+        .filter(|tokens| **tokens > policy.context_input_boundary_tokens)
+        .count()
+        .try_into()
+        .unwrap_or(u32::MAX);
+    let repeated_requests_over_input_boundary = requests_over_input_boundary.saturating_sub(1);
+    let score_penalty_points = repeated_requests_over_input_boundary
+        .saturating_mul(u32::from(policy.context_penalty_points_per_repeated_excess))
+        .min(100)
+        .try_into()
+        .unwrap_or(100);
     ContextDiagnostics {
         initial_prompt_tokens: first,
         median_prompt_tokens: percentile(&prompt_tokens, 1, 2),
         p90_prompt_tokens: percentile(&prompt_tokens, 9, 10),
         maximum_prompt_tokens: prompt_tokens.iter().max().copied(),
+        input_boundary_tokens: policy.context_input_boundary_tokens,
+        reserved_output_tokens: policy.context_reserved_output_tokens,
+        peak_input_utilization_basis_points: prompt_tokens
+            .iter()
+            .max()
+            .and_then(|maximum| ratio_basis_points(*maximum, policy.context_input_boundary_tokens)),
+        requests_over_input_boundary,
+        repeated_requests_over_input_boundary,
+        score_penalty_points,
         prompt_growth_per_turn: prompt_growth.and_then(|growth| {
             i64::try_from(requests.len().saturating_sub(1))
                 .ok()
@@ -672,6 +826,8 @@ fn context_diagnostics(
 fn tool_and_change_diagnostics(
     observations: &[InferredObservation],
     direct_mcp_intervals: &[ActivityInterval],
+    tool_invocations: &[ToolInvocationFact],
+    requests: &[SessionRequestFact],
 ) -> ToolAndChangeDiagnostics {
     let mut supplied_tool_definitions = None::<u64>;
     let mut supplied_tool_schema_bytes = None::<u64>;
@@ -679,6 +835,7 @@ fn tool_and_change_diagnostics(
     let mut classified_tool_calls = 0_u32;
     let mut opaque_files = BTreeSet::new();
     let mut counts = [0_u32; 8];
+    let mut file_write_counts = BTreeMap::<&str, u32>::new();
     for observation in observations {
         supplied_tool_definitions =
             supplied_tool_definitions.max(observation.facts.supplied_tool_count.map(u64::from));
@@ -693,20 +850,47 @@ fn tool_and_change_diagnostics(
         if let Some(file) = observation.facts.opaque_file_id.as_deref() {
             opaque_files.insert(file);
         }
-        let index = match observation.kind {
-            InferredObservationKind::FileReadSuspected => Some(0),
-            InferredObservationKind::FileSearchSuspected => Some(1),
-            InferredObservationKind::FileCreateSuspected => Some(2),
-            InferredObservationKind::FileEditSuspected => Some(3),
-            InferredObservationKind::FileOverwriteSuspected => Some(4),
-            InferredObservationKind::VerificationResultClassified => Some(5),
-            InferredObservationKind::ReworkSuspected => Some(6),
-            _ => None,
-        };
-        if let Some(index) = index {
-            counts[index] = counts[index].saturating_add(1);
+        for interaction in &observation.facts.file_interactions {
+            opaque_files.insert(interaction.opaque_file_id.as_str());
+            let index = match interaction.operation.as_str() {
+                "read" => Some(0),
+                "search" => Some(1),
+                "create" => Some(2),
+                "edit" => Some(3),
+                "overwrite" => Some(4),
+                "verify" => Some(5),
+                _ => None,
+            };
+            if let Some(index) = index {
+                counts[index] = counts[index].saturating_add(1);
+                if matches!(index, 2..=4) {
+                    file_write_counts
+                        .entry(interaction.opaque_file_id.as_str())
+                        .and_modify(|count| *count = count.saturating_add(1))
+                        .or_insert(1);
+                }
+            }
+        }
+        if observation.facts.file_interactions.is_empty() {
+            let index = match observation.kind {
+                InferredObservationKind::FileReadSuspected => Some(0),
+                InferredObservationKind::FileSearchSuspected => Some(1),
+                InferredObservationKind::FileCreateSuspected => Some(2),
+                InferredObservationKind::FileEditSuspected => Some(3),
+                InferredObservationKind::FileOverwriteSuspected => Some(4),
+                InferredObservationKind::VerificationResultClassified => Some(5),
+                InferredObservationKind::ReworkSuspected => Some(6),
+                _ => None,
+            };
+            if let Some(index) = index {
+                counts[index] = counts[index].saturating_add(1);
+            }
         }
     }
+    let repeated_writes = file_write_counts.values().fold(0_u32, |total, count| {
+        total.saturating_add(count.saturating_sub(1))
+    });
+    counts[6] = counts[6].max(repeated_writes);
     let direct_mcp_calls = direct_mcp_intervals.len().try_into().unwrap_or(u32::MAX);
     let direct_mcp_duration_ms = (!direct_mcp_intervals.is_empty()).then(|| {
         direct_mcp_intervals.iter().fold(0_i64, |total, interval| {
@@ -729,6 +913,7 @@ fn tool_and_change_diagnostics(
         rework_spans_suspected: counts[6],
         direct_mcp_calls,
         direct_mcp_duration_ms,
+        tool_servers: extended::tool_server_diagnostics(observations, tool_invocations, requests),
     }
 }
 
@@ -785,11 +970,21 @@ pub fn analyze_session(
     let active_time_efficiency_basis_points = scoring_cohort.and_then(|cohort| {
         lower_is_better_efficiency_basis_points(active_time_ms, &cohort.successful_active_time_ms)
     });
+    let context = if policy.metrics.context_metrics {
+        context_diagnostics(&trace.requests, active_time_ms, &trace.observations, policy)
+    } else {
+        ContextDiagnostics {
+            input_boundary_tokens: policy.context_input_boundary_tokens,
+            reserved_output_tokens: policy.context_reserved_output_tokens,
+            ..ContextDiagnostics::default()
+        }
+    };
     let score = session_efficiency_score(
         outcome.factor_basis_points,
         cost_efficiency_basis_points,
         active_time_efficiency_basis_points,
-    );
+    )
+    .map(|score| score.saturating_sub(context.score_penalty_points));
 
     let request_count = trace.requests.len();
     let outcome_coverage = coverage_percent(outcome.determinate_requests as usize, request_count);
@@ -860,31 +1055,136 @@ pub fn analyze_session(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let diagnostics = SessionDiagnostics {
-        token_and_cache: TokenAndCacheDiagnostics {
-            fresh_input_tokens: sum_usage(&trace.requests, |usage| usage.fresh_input_tokens),
-            cache_read_tokens: cache_read,
-            cache_creation_tokens: cache_creation,
-            output_tokens: sum_usage(&trace.requests, |usage| usage.output_tokens),
-            reasoning_tokens: sum_usage(&trace.requests, |usage| usage.reasoning_tokens),
-            provider_total_tokens: sum_usage(&trace.requests, |usage| usage.provider_total_tokens),
-            legacy_cost_10000: sum_usage(&trace.requests, |usage| usage.legacy_cost_10000),
-            normalized_cost_10000: normalized_cost,
-            uncached_input_cost_10000: uncached_input_cost,
-            cache_savings_10000: cache_savings,
-            cache_savings_basis_points: cache_savings
-                .zip(uncached_input_cost)
-                .and_then(|(savings, uncached)| ratio_basis_points(savings, uncached)),
-            cache_read_write_ratio_basis_points: cache_read
-                .zip(cache_creation)
-                .and_then(|(read, write)| ratio_basis_points(read, write)),
-            pricing_policy_versions,
-        },
-        context: context_diagnostics(&trace.requests, active_time_ms, &trace.observations),
-        tools_and_changes: tool_and_change_diagnostics(
-            &trace.observations,
-            &trace.evidence.direct_mcp_intervals,
+    let mut token_and_cache = TokenAndCacheDiagnostics {
+        fresh_input_tokens: sum_usage(&trace.requests, |usage| usage.fresh_input_tokens),
+        cache_read_tokens: cache_read,
+        cache_creation_tokens: cache_creation,
+        total_input_tokens: sum_usage(&trace.requests, extended::total_input_tokens),
+        output_tokens: sum_usage(&trace.requests, |usage| usage.output_tokens),
+        reasoning_tokens: sum_usage(&trace.requests, |usage| usage.reasoning_tokens),
+        visible_output_tokens: sum_usage(&trace.requests, extended::visible_output_tokens),
+        cache_creation_5m_tokens: extended::cache_creation_tokens_for_ttl(
+            &trace.requests,
+            &policy.cache_profiles,
+            CacheTtl::FiveMinutes,
         ),
+        cache_creation_30m_tokens: extended::cache_creation_tokens_for_ttl(
+            &trace.requests,
+            &policy.cache_profiles,
+            CacheTtl::ThirtyMinutes,
+        ),
+        cache_creation_1h_tokens: extended::cache_creation_tokens_for_ttl(
+            &trace.requests,
+            &policy.cache_profiles,
+            CacheTtl::OneHour,
+        ),
+        provider_total_tokens: sum_usage(&trace.requests, |usage| usage.provider_total_tokens),
+        legacy_cost_10000: sum_usage(&trace.requests, |usage| usage.legacy_cost_10000),
+        normalized_cost_10000: normalized_cost,
+        uncached_input_cost_10000: uncached_input_cost,
+        cache_savings_10000: cache_savings,
+        cache_savings_basis_points: cache_savings
+            .zip(uncached_input_cost)
+            .and_then(|(savings, uncached)| ratio_basis_points(savings, uncached)),
+        cache_read_write_ratio_basis_points: cache_read
+            .zip(cache_creation)
+            .and_then(|(read, write)| ratio_basis_points(read, write)),
+        cache_write_amplification_basis_points: cache_creation
+            .zip(cache_read)
+            .and_then(|(write, read)| ratio_basis_points(write, read)),
+        silent_cache_threshold_miss_requests: extended::silent_cache_threshold_misses(
+            &trace.requests,
+            &trace.observations,
+            &policy.cache_profiles,
+        ),
+        cache_key_switches: extended::cache_key_switches(&trace.requests),
+        reasoning_config_switches: extended::reasoning_config_switches(&trace.observations),
+        pricing_policy_versions,
+    };
+    if !policy.metrics.token_metrics {
+        token_and_cache.fresh_input_tokens = None;
+        token_and_cache.total_input_tokens = None;
+        token_and_cache.output_tokens = None;
+        token_and_cache.reasoning_tokens = None;
+        token_and_cache.visible_output_tokens = None;
+        token_and_cache.provider_total_tokens = None;
+    }
+    if !policy.metrics.cache_metrics {
+        token_and_cache.cache_read_tokens = None;
+        token_and_cache.cache_creation_tokens = None;
+        token_and_cache.cache_creation_5m_tokens = None;
+        token_and_cache.cache_creation_30m_tokens = None;
+        token_and_cache.cache_creation_1h_tokens = None;
+        token_and_cache.uncached_input_cost_10000 = None;
+        token_and_cache.cache_savings_10000 = None;
+        token_and_cache.cache_savings_basis_points = None;
+        token_and_cache.cache_read_write_ratio_basis_points = None;
+        token_and_cache.cache_write_amplification_basis_points = None;
+        token_and_cache.silent_cache_threshold_miss_requests = None;
+        token_and_cache.cache_key_switches = 0;
+        token_and_cache.reasoning_config_switches = None;
+    }
+    let measured_tools_and_changes =
+        if policy.metrics.tool_metrics || policy.metrics.outcome_metrics {
+            tool_and_change_diagnostics(
+                &trace.observations,
+                &trace.evidence.direct_mcp_intervals,
+                &trace.evidence.tool_invocations,
+                &trace.requests,
+            )
+        } else {
+            ToolAndChangeDiagnostics::default()
+        };
+    let file_writes = measured_tools_and_changes
+        .file_creates_suspected
+        .saturating_add(measured_tools_and_changes.file_edits_suspected)
+        .saturating_add(measured_tools_and_changes.file_overwrites_suspected);
+    let skills = if policy.metrics.skill_metrics {
+        extended::skill_diagnostics(&trace.observations)
+    } else {
+        SkillDiagnostics::default()
+    };
+    let reliability = if policy.metrics.reliability_metrics {
+        extended::reliability_diagnostics(&trace.requests, &trace.evidence, &trace.observations)
+    } else {
+        ReliabilityDiagnostics::default()
+    };
+    let outcome_diagnostics = if policy.metrics.outcome_metrics {
+        extended::outcome_diagnostics(
+            &trace.requests,
+            &trace.observations,
+            &trace.evidence,
+            extended::OutcomeMetricInputs {
+                gateway_outcome: outcome.state,
+                actual_cost_10000,
+                file_writes,
+                unique_files: measured_tools_and_changes.unique_opaque_files,
+                rework: measured_tools_and_changes.rework_spans_suspected,
+                verification: measured_tools_and_changes.verification_results_classified,
+            },
+        )
+    } else {
+        OutcomeDiagnostics::default()
+    };
+    let finish_reasons = if policy.metrics.finish_reason_metrics {
+        extended::finish_reason_diagnostics(&trace.observations)
+    } else {
+        FinishReasonDiagnostics::default()
+    };
+    let tools_and_changes = if policy.metrics.tool_metrics {
+        measured_tools_and_changes
+    } else {
+        ToolAndChangeDiagnostics::default()
+    };
+    let diagnostics = SessionDiagnostics {
+        token_and_cache,
+        context,
+        skills,
+        reliability,
+        outcome: outcome_diagnostics,
+        finish_reasons,
+        tools_and_changes,
+        enabled_metrics: policy.metrics.clone(),
         semantic_verification_available: false,
     };
 
@@ -943,6 +1243,7 @@ pub fn analyze_session(
         analyzer_version: policy.analyzer_version.clone(),
         score_policy_version: policy.score_policy_version.clone(),
         observation_parser_version: policy.observation_parser_version.clone(),
+        configuration_version: policy.configuration_version.clone(),
         maturity: policy.maturity,
         calibration_approval_id: policy.calibration_approval_id.clone(),
         confidence,
@@ -959,6 +1260,7 @@ pub fn analyze_session(
             summed_work_time_ms,
             excluded_gap_time_ms,
             overlap_savings_ms,
+            context_penalty_points: diagnostics.context.score_penalty_points,
             unknown_wait_time_ms: None,
             cohort_version: cohort.map(|cohort| cohort.cohort_version.clone()),
             cohort_fallback_level: cohort.map(|cohort| cohort.fallback_level),
@@ -1000,6 +1302,7 @@ mod tests {
                 pricing_policy_version: Some("test-pricing-v1".to_string()),
                 ..SessionUsageFact::default()
             }),
+            attempts: Vec::new(),
         }
     }
 
@@ -1024,6 +1327,7 @@ mod tests {
                 response_payload_count: 1,
                 truncated_payload_count: 0,
                 direct_mcp_intervals: vec![],
+                tool_invocations: Vec::new(),
             },
         }
     }
@@ -1266,6 +1570,250 @@ mod tests {
         assert_eq!(report.components.summed_work_time_ms, 2_000);
         assert_eq!(report.components.active_time_ms, 11_000);
         assert_eq!(report.components.overlap_savings_ms, 0);
+    }
+
+    #[test]
+    fn report_exposes_extended_cache_context_reliability_and_change_diagnostics() {
+        let mut session_request = request("a", 0, Some(true), Some(100));
+        let usage = session_request.usage.as_mut().expect("usage");
+        usage.cache_read_tokens = Some(50);
+        usage.cache_creation_tokens = Some(10);
+        usage.cache_creation_5m_tokens = Some(4);
+        usage.cache_creation_1h_tokens = Some(6);
+        usage.reasoning_tokens = Some(5);
+        usage.provider_total_tokens = Some(165);
+        usage.output_includes_reasoning = Some(true);
+        session_request.attempts = vec![
+            RequestAttemptFact {
+                request_id: "a".to_string(),
+                attempt_number: 1,
+                produced_final_response: false,
+                retryable: true,
+                status: "provider_error".to_string(),
+                status_code: Some(500),
+                error_code: Some("upstream".to_string()),
+                latency_ms: Some(100),
+                provider_key: "anthropic".to_string(),
+                upstream_model: "claude".to_string(),
+                occurred_at_unix_ms: 0,
+            },
+            RequestAttemptFact {
+                request_id: "a".to_string(),
+                attempt_number: 2,
+                produced_final_response: true,
+                retryable: false,
+                status: "succeeded".to_string(),
+                status_code: Some(200),
+                error_code: None,
+                latency_ms: Some(900),
+                provider_key: "openai".to_string(),
+                upstream_model: "gpt".to_string(),
+                occurred_at_unix_ms: 100,
+            },
+        ];
+        let mut session_trace = trace(vec![session_request]);
+        session_trace.observations = vec![InferredObservation {
+            observation_id: Uuid::nil(),
+            kind: InferredObservationKind::FileEditSuspected,
+            source_request_id: "a".to_string(),
+            parser_version: "test".to_string(),
+            evidence: EvidenceQuality::Direct,
+            occurred_at: OffsetDateTime::UNIX_EPOCH,
+            facts: BoundedObservationFacts {
+                supplied_tools: vec![BoundedToolDefinitionFact {
+                    name: "github.search_code".to_string(),
+                    server_key: Some("github".to_string()),
+                    token_estimate: 120,
+                }],
+                supplied_skills: vec![BoundedSkillFact {
+                    name: "review".to_string(),
+                    description_token_estimate: Some(50),
+                    body_token_estimate: Some(500),
+                    resource_token_estimate: Some(100),
+                    used: true,
+                    abandoned: Some(false),
+                }],
+                file_interactions: vec![
+                    BoundedFileInteractionFact {
+                        opaque_file_id: "file-1".to_string(),
+                        operation: "edit".to_string(),
+                        tool_name: Some("edit".to_string()),
+                        succeeded: Some(true),
+                        error_signature: None,
+                    },
+                    BoundedFileInteractionFact {
+                        opaque_file_id: "file-1".to_string(),
+                        operation: "edit".to_string(),
+                        tool_name: Some("edit".to_string()),
+                        succeeded: Some(true),
+                        error_signature: None,
+                    },
+                    BoundedFileInteractionFact {
+                        opaque_file_id: "file-1".to_string(),
+                        operation: "verify".to_string(),
+                        tool_name: Some("test".to_string()),
+                        succeeded: Some(true),
+                        error_signature: None,
+                    },
+                ],
+                finish_reason: Some("length".to_string()),
+                ..BoundedObservationFacts::default()
+            },
+            limitations: Vec::new(),
+        }];
+        session_trace.evidence.tool_invocations = vec![ToolInvocationFact {
+            request_id: "a".to_string(),
+            server_key: Some("github".to_string()),
+            tool_key: "github.search_code".to_string(),
+            status: "failed".to_string(),
+            error_code: Some("rate_limited".to_string()),
+            latency_ms: Some(200),
+            result_payload_truncated: false,
+            occurred_at_unix_ms: 0,
+        }];
+
+        let report =
+            analyze_session(&session_trace, &AnalysisPolicy::default(), None).expect("report");
+
+        assert_eq!(
+            report.diagnostics.token_and_cache.cache_creation_5m_tokens,
+            Some(4)
+        );
+        assert_eq!(
+            report.diagnostics.token_and_cache.cache_creation_1h_tokens,
+            Some(6)
+        );
+        assert_eq!(report.diagnostics.reliability.wasted_attempts, 1);
+        assert_eq!(report.diagnostics.reliability.fallback_attempts, 1);
+        assert_eq!(report.diagnostics.reliability.failed_tool_invocations, 1);
+        assert_eq!(
+            report.diagnostics.outcome.rework_ratio_basis_points,
+            Some(5_000)
+        );
+        assert_eq!(
+            report.diagnostics.outcome.verification_rate_basis_points,
+            Some(5_000)
+        );
+        assert_eq!(report.diagnostics.skills.used_skill_count, Some(1));
+        assert_eq!(report.diagnostics.finish_reasons.items[0].reason, "length");
+        let mut outcome_only_policy = AnalysisPolicy::default();
+        outcome_only_policy.metrics.tool_metrics = false;
+        let outcome_only = analyze_session(&session_trace, &outcome_only_policy, None)
+            .expect("outcome-only report");
+        assert_eq!(
+            outcome_only.diagnostics.outcome.rework_ratio_basis_points,
+            Some(5_000)
+        );
+        assert_eq!(
+            outcome_only
+                .diagnostics
+                .outcome
+                .verification_rate_basis_points,
+            Some(5_000)
+        );
+        assert_eq!(
+            outcome_only
+                .diagnostics
+                .tools_and_changes
+                .unique_opaque_files,
+            0
+        );
+    }
+
+    #[test]
+    fn cache_profiles_classify_aggregate_writes_and_truncated_payloads_remain_unknown() {
+        let mut cache_request = request("cache", 0, Some(true), Some(100));
+        let usage = cache_request.usage.as_mut().expect("usage");
+        usage.cache_creation_tokens = Some(120);
+        usage.provider_key = Some("openai".to_string());
+        usage.upstream_model = Some("gpt-5".to_string());
+        let cache_policy = AnalysisPolicy {
+            cache_profiles: vec![CacheProfileRule {
+                provider_key_contains: Some("openai".to_string()),
+                upstream_model_contains: Some("gpt".to_string()),
+                minimum_cacheable_tokens: 1,
+                default_ttl: CacheTtl::ThirtyMinutes,
+            }],
+            ..AnalysisPolicy::default()
+        };
+        let cache_report = analyze_session(&trace(vec![cache_request]), &cache_policy, None)
+            .expect("cache report");
+        assert_eq!(
+            cache_report
+                .diagnostics
+                .token_and_cache
+                .cache_creation_30m_tokens,
+            Some(120)
+        );
+        assert_eq!(
+            cache_report
+                .diagnostics
+                .token_and_cache
+                .cache_creation_5m_tokens,
+            Some(0)
+        );
+
+        let mut truncated_trace = trace(vec![request("truncated", 0, Some(true), Some(100))]);
+        truncated_trace.evidence.response_payload_count = 1;
+        truncated_trace.evidence.truncated_payload_count = 1;
+        let truncated_report =
+            analyze_session(&truncated_trace, &AnalysisPolicy::default(), None).expect("report");
+        assert_eq!(
+            truncated_report
+                .diagnostics
+                .outcome
+                .file_signal_coverage_percent,
+            0
+        );
+        assert_eq!(truncated_report.diagnostics.outcome.zero_outcome, None);
+    }
+
+    #[test]
+    fn tool_schema_diagnostics_use_actual_per_request_exposure() {
+        let observation = |request_id: &str, tools: Vec<(&str, u64)>| InferredObservation {
+            observation_id: Uuid::new_v4(),
+            kind: InferredObservationKind::SessionMetadataClassified,
+            source_request_id: request_id.to_string(),
+            parser_version: "test".to_string(),
+            evidence: EvidenceQuality::Direct,
+            occurred_at: OffsetDateTime::UNIX_EPOCH,
+            facts: BoundedObservationFacts {
+                supplied_tools: tools
+                    .into_iter()
+                    .map(|(name, token_estimate)| BoundedToolDefinitionFact {
+                        server_key: Some("github".to_string()),
+                        name: name.to_string(),
+                        token_estimate,
+                    })
+                    .collect(),
+                ..BoundedObservationFacts::default()
+            },
+            limitations: Vec::new(),
+        };
+        let mut first_request = request("a", 0, Some(true), Some(100));
+        first_request
+            .usage
+            .as_mut()
+            .expect("first usage")
+            .fresh_input_cost_10000 = Some(100);
+        let mut second_request = request("b", 2, Some(true), Some(100));
+        second_request
+            .usage
+            .as_mut()
+            .expect("second usage")
+            .fresh_input_cost_10000 = Some(100);
+        let mut session_trace = trace(vec![first_request, second_request]);
+        session_trace.observations = vec![
+            observation("a", vec![("search", 100), ("read", 50)]),
+            observation("b", vec![("search", 120)]),
+        ];
+
+        let report =
+            analyze_session(&session_trace, &AnalysisPolicy::default(), None).expect("report");
+        let github = &report.diagnostics.tools_and_changes.tool_servers[0];
+        assert_eq!(github.exposed_tool_definitions, 2);
+        assert_eq!(github.schema_token_estimate_per_request, 135);
+        assert_eq!(github.estimated_uncached_schema_cost_10000, Some(270));
     }
 
     #[test]

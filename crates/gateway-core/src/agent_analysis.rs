@@ -9,7 +9,7 @@ use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::StoreError;
+use crate::{RequestAttemptRecord, StoreError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSessionSourceRecord {
@@ -101,6 +101,7 @@ pub struct AgentObservationSetRecord {
 pub struct AgentSessionAnalysisRecord {
     pub analysis_id: AnalysisId,
     pub agent_session_id: AgentSessionId,
+    pub configuration_version: String,
     pub boundary_policy_version: String,
     pub input_watermark_at: OffsetDateTime,
     pub observation_set_id: ObservationSetId,
@@ -171,6 +172,8 @@ pub struct AgentAnalysisDesiredVersions {
     pub pricing_policy_version: String,
     pub cohort_version: String,
     #[serde(default)]
+    pub configuration_version: String,
+    #[serde(default)]
     pub score_maturity: ScoreMaturity,
     #[serde(default)]
     pub calibration_approval_id: Option<String>,
@@ -230,6 +233,8 @@ pub struct AgentSessionListPage {
 
 pub const MAX_AGENT_SESSION_PAGE_SIZE: u32 = 200;
 pub const MAX_AGENT_SESSION_REQUESTS: u64 = 1_000;
+pub const MAX_AGENT_SESSION_NESTED_FACTS: usize = 2_048;
+pub const MAX_AGENT_ANALYSIS_DISTINCT_ITEMS: usize = 512;
 
 #[async_trait]
 pub trait AgentSessionAnalysisRepository {
@@ -278,6 +283,11 @@ pub trait AgentSessionAnalysisRepository {
         &self,
         agent_session_id: AgentSessionId,
     ) -> Result<u64, StoreError>;
+    async fn list_agent_session_request_attempts(
+        &self,
+        agent_session_id: AgentSessionId,
+        limit: u32,
+    ) -> Result<Vec<RequestAttemptRecord>, StoreError>;
 
     async fn append_agent_observation_set(
         &self,

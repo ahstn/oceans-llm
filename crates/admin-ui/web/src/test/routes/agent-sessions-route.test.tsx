@@ -116,15 +116,38 @@ const detail: AgentSessionDetailView = {
         tool_name: 'read',
         tool_schema_token_estimate: 120,
         supplied_tools: [
-          { name: 'read', token_estimate: 120 },
-          { name: 'search', token_estimate: 110 },
-          { name: 'edit', token_estimate: 90 },
-          { name: 'create', token_estimate: 80 },
-          { name: 'browser', token_estimate: 70 },
-          { name: 'task', token_estimate: 60 },
-          { name: 'bash', token_estimate: 50 },
-          { name: 'write', token_estimate: 40 },
+          { name: 'read', server_key: null, token_estimate: 120 },
+          { name: 'search', server_key: null, token_estimate: 110 },
+          { name: 'edit', server_key: null, token_estimate: 90 },
+          { name: 'create', server_key: null, token_estimate: 80 },
+          { name: 'browser', server_key: null, token_estimate: 70 },
+          { name: 'task', server_key: null, token_estimate: 60 },
+          { name: 'bash', server_key: null, token_estimate: 50 },
+          { name: 'write', server_key: null, token_estimate: 40 },
         ],
+        supplied_skills: [
+          {
+            name: 'repository-review',
+            description_token_estimate: 50,
+            body_token_estimate: 500,
+            resource_token_estimate: 100,
+            used: true,
+            abandoned: false,
+          },
+        ],
+        file_interactions: [
+          {
+            opaque_file_id: 'file-1',
+            operation: 'edit',
+            tool_name: 'edit',
+            succeeded: true,
+            error_signature: null,
+          },
+        ],
+        reasoning_config_hash: 'sha256:reasoning',
+        cache_requested: true,
+        finish_reason: 'stop',
+        incomplete_reason: null,
       },
       limitations: ['semantic_verification_unavailable'],
     },
@@ -151,6 +174,7 @@ const detail: AgentSessionDetailView = {
     score_policy_version: 'outcome-cost-time-v1',
     observation_parser_version: 'passive-observations-v2',
     calibration_approval_id: 'calibration_1',
+    configuration_version: 'sha256:analysis-config',
     maturity: 'experimental',
     confidence: 'high',
     score: 82,
@@ -189,8 +213,13 @@ const detail: AgentSessionDetailView = {
         fresh_input_tokens: 1_200,
         cache_read_tokens: 800,
         cache_creation_tokens: 200,
+        total_input_tokens: 2_200,
         output_tokens: 300,
         reasoning_tokens: 120,
+        visible_output_tokens: 180,
+        cache_creation_5m_tokens: 80,
+        cache_creation_30m_tokens: 0,
+        cache_creation_1h_tokens: 120,
         provider_total_tokens: 2_620,
         normalized_cost_10000: 123,
         legacy_cost_10000: 130,
@@ -198,6 +227,10 @@ const detail: AgentSessionDetailView = {
         cache_savings_10000: 37,
         cache_savings_basis_points: 2_313,
         cache_read_write_ratio_basis_points: 40_000,
+        cache_write_amplification_basis_points: 2_500,
+        silent_cache_threshold_miss_requests: 0,
+        cache_key_switches: 1,
+        reasoning_config_switches: 0,
         pricing_policy_versions: ['cache-aware-v1'],
       },
       tools_and_changes: {
@@ -215,16 +248,129 @@ const detail: AgentSessionDetailView = {
         unique_opaque_files: 2,
         rework_spans_suspected: 1,
         verification_results_classified: 2,
+        tool_servers: [
+          {
+            server_key: 'github',
+            exposed_tool_definitions: 6,
+            invoked_tool_definitions: 1,
+            invocation_count: 2,
+            failed_count: 1,
+            schema_token_estimate_per_request: 600,
+            estimated_uncached_schema_cost_10000: 12,
+          },
+        ],
       },
       context: {
         initial_prompt_tokens: 1_200,
         median_prompt_tokens: 1_600,
         p90_prompt_tokens: 2_000,
         maximum_prompt_tokens: 2_200,
+        input_boundary_tokens: 220_000,
+        reserved_output_tokens: 128_000,
+        peak_input_utilization_basis_points: 100,
+        requests_over_input_boundary: 0,
+        repeated_requests_over_input_boundary: 0,
+        score_penalty_points: 0,
         prompt_growth_per_turn: 250,
         prompt_growth_per_active_minute: 1_429,
         suspected_compactions: 1,
         suspected_context_resets: 0,
+      },
+      skills: {
+        instrumented_request_count: 1,
+        available_skill_count: 1,
+        used_skill_count: 1,
+        unused_skill_count: 0,
+        description_tokens_per_request: 50,
+        loaded_body_tokens: 500,
+        loaded_resource_tokens: 100,
+        items: [
+          {
+            name: 'repository-review',
+            available_request_count: 1,
+            used_request_count: 1,
+            abandoned_request_count: 0,
+            description_token_estimate: 50,
+            loaded_body_tokens: 500,
+            loaded_resource_tokens: 100,
+          },
+        ],
+      },
+      reliability: {
+        attempt_coverage_percent: 100,
+        total_attempts: 2,
+        wasted_attempts: 1,
+        fallback_attempts: 1,
+        wasted_attempt_latency_ms: 500,
+        wasted_attempt_cost_10000: null,
+        tool_invocations: 2,
+        failed_tool_invocations: 1,
+        truncated_tool_results: 0,
+        attempts: [
+          {
+            request_id: 'req_1',
+            attempt_number: 1,
+            produced_final_response: false,
+            retryable: true,
+            status: 'provider_error',
+            status_code: 500,
+            error_code: 'upstream',
+            latency_ms: 500,
+            provider_key: 'anthropic',
+            upstream_model: 'claude-opus-4-1',
+            occurred_at_unix_ms: 0,
+          },
+          {
+            request_id: 'req_1',
+            attempt_number: 2,
+            produced_final_response: true,
+            retryable: false,
+            status: 'succeeded',
+            status_code: 200,
+            error_code: null,
+            latency_ms: 41_500,
+            provider_key: 'openai',
+            upstream_model: 'gpt-5',
+            occurred_at_unix_ms: 500,
+          },
+        ],
+        tools: [
+          {
+            server_key: 'github',
+            tool_key: 'search_code',
+            invocation_count: 2,
+            failed_count: 1,
+            truncated_result_count: 0,
+            latency_ms: 250,
+            post_error_input_tokens: 1_800,
+          },
+        ],
+      },
+      outcome: {
+        file_signal_coverage_percent: 100,
+        cost_per_file_touched_10000: 123,
+        cost_per_successful_session_10000: 123,
+        rework_ratio_basis_points: 2_500,
+        verification_rate_basis_points: 5_000,
+        zero_outcome: false,
+        repeated_file_interactions_suspected: 1,
+        files_with_repeated_interactions_suspected: 1,
+        failed_file_interactions: 0,
+      },
+      finish_reasons: {
+        instrumented_request_count: 1,
+        length_limited_requests: 0,
+        items: [{ reason: 'stop', count: 1 }],
+      },
+      enabled_metrics: {
+        token_metrics: true,
+        cache_metrics: true,
+        context_metrics: true,
+        tool_metrics: true,
+        skill_metrics: true,
+        reliability_metrics: true,
+        outcome_metrics: true,
+        finish_reason_metrics: true,
       },
       semantic_verification_available: true,
     },
@@ -365,6 +511,13 @@ describe('AgentSessionsPage', () => {
     expect(within(requestLink).getByText('Succeeded')).toBeInTheDocument()
     expect(within(requestLink).getByText('High confidence')).toBeInTheDocument()
     expect(within(requestLink).getByText('42.0 s')).toBeInTheDocument()
+    expect(within(requestLink).getByText('2 attempts')).toBeInTheDocument()
+    expect(
+      within(requestLink).getByText(
+        'anthropic/claude-opus-4-1: Provider Error → openai/gpt-5: Succeeded',
+      ),
+    ).toBeInTheDocument()
+    expect(within(requestLink).getByText('Edit file-1')).toBeInTheDocument()
     expect(within(requestLink).getByText('1 activity')).toBeInTheDocument()
 
     const toolExposureTrigger = screen.getByRole('button', { name: /Tool exposure/ })
@@ -393,7 +546,61 @@ describe('AgentSessionsPage', () => {
     expect(screen.queryByText('Comparison snapshot')).not.toBeInTheDocument()
     fireEvent.click(comparisonTrigger)
     expect(screen.getByText('Comparison group')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reliability and retries' }))
+    expect(screen.getByText('Wasted attempts')).toBeInTheDocument()
+    expect(screen.getByText('1 of 2 attempts · 500 ms')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skills' }))
+    expect(screen.getByText('Skill · repository-review')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Outcome evidence' }))
+    expect(screen.getByText('Rework ratio')).toBeInTheDocument()
+    expect(screen.getByText('25.0%')).toBeInTheDocument()
     expect(screen.getAllByText('93%').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('shows unknown and disabled states instead of false zero metrics', async () => {
+    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, session_id: 'session_1' })
+    const incompleteDetail = structuredClone(detail)
+    const incompleteDiagnostics = incompleteDetail.report!.diagnostics
+    incompleteDiagnostics.token_and_cache.fresh_input_tokens = null
+    incompleteDiagnostics.token_and_cache.cache_read_tokens = null
+    incompleteDiagnostics.token_and_cache.cache_creation_tokens = null
+    incompleteDiagnostics.token_and_cache.output_tokens = null
+    incompleteDiagnostics.reliability.attempt_coverage_percent = 0
+    incompleteDiagnostics.reliability.total_attempts = 0
+    incompleteDiagnostics.reliability.wasted_attempts = 0
+    incompleteDiagnostics.reliability.attempts = []
+    incompleteDiagnostics.reliability.tool_invocations = 0
+    incompleteDiagnostics.reliability.tools = []
+    incompleteDiagnostics.tools_and_changes.observed_tool_calls = 0
+    incompleteDiagnostics.tools_and_changes.tool_servers = []
+    incompleteDetail.observations[0].facts.tool_name = null
+    incompleteDetail.observations[0].facts.supplied_tools = []
+    incompleteDiagnostics.enabled_metrics.skill_metrics = false
+    getAgentSessionDetailMock.mockResolvedValue({ data: incompleteDetail })
+
+    render(<AgentSessionsPage />)
+    expect(await screen.findByText('Agent session details')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Token and cache use' }))
+    expect(
+      screen.getByText('Unknown — the required telemetry was not measured for this session.'),
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reliability and retries' }))
+    expect(
+      screen.getAllByText('Unknown — the required telemetry was not measured for this session.'),
+    ).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tools and changes' }))
+    expect(
+      screen.getAllByText('Unknown — the required telemetry was not measured for this session.'),
+    ).toHaveLength(3)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skills' }))
+    expect(screen.getByText('Disabled by the analysis configuration.')).toBeInTheDocument()
   })
 
   it('warns when retained request or observation history exceeds the detail cap', async () => {

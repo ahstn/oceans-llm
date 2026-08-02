@@ -52,9 +52,14 @@ pub struct NormalizedTokenUsage {
     pub fresh_input_tokens: Option<i64>,
     pub cache_read_tokens: Option<i64>,
     pub cache_creation_tokens: Option<i64>,
+    pub cache_creation_5m_tokens: Option<i64>,
+    pub cache_creation_30m_tokens: Option<i64>,
+    pub cache_creation_1h_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
     pub reasoning_tokens: Option<i64>,
     pub provider_total_tokens: Option<i64>,
+    pub finish_reason: Option<String>,
+    pub incomplete_reason: Option<String>,
     pub semantics: TokenUsageSemantics,
     pub coverage: UsageCoverage,
 }
@@ -234,7 +239,7 @@ pub fn normalize_token_usage(
         family.output_excludes_reasoning(),
     )?;
 
-    Ok(build_normalized_usage(
+    let mut normalized = build_normalized_usage(
         family,
         input,
         fresh_input_tokens,
@@ -242,7 +247,9 @@ pub fn normalize_token_usage(
         reasoning_tokens,
         reported_total_tokens,
         derived_total,
-    ))
+    );
+    populate_extended_usage(&mut normalized, usage, provider_usage, family)?;
+    Ok(normalized)
 }
 
 #[must_use]
@@ -295,7 +302,7 @@ fn recover_partial_usage(value: Option<&Value>) -> NormalizedTokenUsage {
     .ok()
     .flatten();
 
-    build_normalized_usage(
+    let mut normalized = build_normalized_usage(
         family,
         input,
         fresh_input_tokens,
@@ -303,7 +310,9 @@ fn recover_partial_usage(value: Option<&Value>) -> NormalizedTokenUsage {
         reasoning_tokens,
         reported_total_tokens,
         derived_total,
-    )
+    );
+    let _ = populate_extended_usage(&mut normalized, usage, provider_usage, family);
+    normalized
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -321,9 +330,14 @@ fn build_normalized_usage(
         fresh_input_tokens,
         cache_read_tokens: input.cache_read,
         cache_creation_tokens: input.cache_creation,
+        cache_creation_5m_tokens: None,
+        cache_creation_30m_tokens: None,
+        cache_creation_1h_tokens: None,
         output_tokens,
         reasoning_tokens,
         provider_total_tokens,
+        finish_reason: None,
+        incomplete_reason: None,
         semantics: TokenUsageSemantics {
             version: TOKEN_USAGE_SEMANTICS_VERSION.to_string(),
             source_family: family.as_str().to_string(),
@@ -353,9 +367,14 @@ fn empty_usage(family: UsageFamily) -> NormalizedTokenUsage {
         fresh_input_tokens: None,
         cache_read_tokens: None,
         cache_creation_tokens: None,
+        cache_creation_5m_tokens: None,
+        cache_creation_30m_tokens: None,
+        cache_creation_1h_tokens: None,
         output_tokens: None,
         reasoning_tokens: None,
         provider_total_tokens: None,
+        finish_reason: None,
+        incomplete_reason: None,
         semantics: TokenUsageSemantics {
             version: TOKEN_USAGE_SEMANTICS_VERSION.to_string(),
             source_family: family.as_str().to_string(),
@@ -367,6 +386,81 @@ fn empty_usage(family: UsageFamily) -> NormalizedTokenUsage {
         },
         coverage: UsageCoverage::default(),
     }
+}
+
+fn populate_extended_usage(
+    normalized: &mut NormalizedTokenUsage,
+    usage: &Map<String, Value>,
+    provider_usage: Option<&Map<String, Value>>,
+    family: UsageFamily,
+) -> Result<(), UsageNormalizationError> {
+    normalized.cache_creation_5m_tokens = token_at_paths_any(
+        usage,
+        provider_usage,
+        &[
+            &["cache_creation", "ephemeral_5m_input_tokens"],
+            &["cacheDetails", "ephemeral5mInputTokens"],
+        ],
+    )?;
+    normalized.cache_creation_1h_tokens = token_at_paths_any(
+        usage,
+        provider_usage,
+        &[
+            &["cache_creation", "ephemeral_1h_input_tokens"],
+            &["cacheDetails", "ephemeral1hInputTokens"],
+        ],
+    )?;
+    normalized.cache_creation_30m_tokens = matches!(
+        family,
+        UsageFamily::OpenAiChat | UsageFamily::OpenAiResponses
+    )
+    .then_some(normalized.cache_creation_tokens)
+    .flatten();
+    normalized.finish_reason = string_at_paths_any(
+        usage,
+        provider_usage,
+        &[
+            &["finish_reason"],
+            &["stop_reason"],
+            &["finishReason"],
+            &["choices", "0", "finish_reason"],
+        ],
+    );
+    normalized.incomplete_reason = string_at_paths_any(
+        usage,
+        provider_usage,
+        &[
+            &["incomplete_details", "reason"],
+            &["incompleteDetails", "reason"],
+        ],
+    );
+    Ok(())
+}
+
+fn string_at_paths_any(
+    primary: &Map<String, Value>,
+    secondary: Option<&Map<String, Value>>,
+    paths: &[&[&str]],
+) -> Option<String> {
+    paths.iter().find_map(|path| {
+        value_at_path(primary, path)
+            .or_else(|| secondary.and_then(|value| value_at_path(value, path)))
+            .and_then(Value::as_str)
+            .map(|value| value.chars().take(64).collect::<String>())
+            .filter(|value| !value.is_empty())
+    })
+}
+
+fn value_at_path<'a>(root: &'a Map<String, Value>, path: &[&str]) -> Option<&'a Value> {
+    let mut value = root.get(*path.first()?)?;
+    for segment in &path[1..] {
+        value = if let Ok(index) = segment.parse::<usize>() {
+            value.as_array()?.get(index)?
+        } else {
+            value.as_object()?.get(*segment)?
+        };
+    }
+    Some(value)
 }
 
 fn classify_family(
@@ -717,6 +811,8 @@ mod tests {
         assert_eq!(normalized.provider_total_tokens, Some(120));
         assert_eq!(normalized.legacy_prompt_tokens(), Some(100));
         assert!(normalized.semantics.totals_reconcilable_by_addition);
+        assert_eq!(normalized.cache_creation_30m_tokens, Some(10));
+        assert_eq!(normalized.semantics.output_includes_reasoning, Some(true));
     }
 
     #[test]
@@ -726,6 +822,11 @@ mod tests {
             "cache_read_input_tokens": 40,
             "cache_creation_input_tokens": 10,
             "output_tokens": 20
+            ,"cache_creation": {
+                "ephemeral_5m_input_tokens": 7,
+                "ephemeral_1h_input_tokens": 3
+            },
+            "stop_reason": "end_turn"
         });
 
         let normalized = normalize_token_usage(Some(&usage)).expect("normalize Anthropic usage");
@@ -735,6 +836,9 @@ mod tests {
         assert_eq!(normalized.cache_creation_tokens, Some(10));
         assert_eq!(normalized.provider_total_tokens, Some(120));
         assert_eq!(normalized.legacy_prompt_tokens(), Some(100));
+        assert_eq!(normalized.cache_creation_5m_tokens, Some(7));
+        assert_eq!(normalized.cache_creation_1h_tokens, Some(3));
+        assert_eq!(normalized.finish_reason.as_deref(), Some("end_turn"));
     }
 
     #[test]

@@ -5507,9 +5507,53 @@
           }
         }
       },
+      "AgentAnalysisMetricPolicyView": {
+        "type": "object",
+        "required": [
+          "token_metrics",
+          "cache_metrics",
+          "context_metrics",
+          "tool_metrics",
+          "skill_metrics",
+          "reliability_metrics",
+          "outcome_metrics",
+          "finish_reason_metrics"
+        ],
+        "properties": {
+          "cache_metrics": {
+            "type": "boolean"
+          },
+          "context_metrics": {
+            "type": "boolean"
+          },
+          "finish_reason_metrics": {
+            "type": "boolean"
+          },
+          "outcome_metrics": {
+            "type": "boolean"
+          },
+          "reliability_metrics": {
+            "type": "boolean"
+          },
+          "skill_metrics": {
+            "type": "boolean"
+          },
+          "token_metrics": {
+            "type": "boolean"
+          },
+          "tool_metrics": {
+            "type": "boolean"
+          }
+        }
+      },
       "AgentContextDiagnosticsView": {
         "type": "object",
         "required": [
+          "input_boundary_tokens",
+          "reserved_output_tokens",
+          "requests_over_input_boundary",
+          "repeated_requests_over_input_boundary",
+          "score_penalty_points",
           "suspected_compactions",
           "suspected_context_resets"
         ],
@@ -5519,6 +5563,10 @@
               "integer",
               "null"
             ],
+            "format": "int64"
+          },
+          "input_boundary_tokens": {
+            "type": "integer",
             "format": "int64"
           },
           "maximum_prompt_tokens": {
@@ -5542,6 +5590,13 @@
             ],
             "format": "int64"
           },
+          "peak_input_utilization_basis_points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
           "prompt_growth_per_active_minute": {
             "type": [
               "integer",
@@ -5556,6 +5611,25 @@
             ],
             "format": "int64"
           },
+          "repeated_requests_over_input_boundary": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "requests_over_input_boundary": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "reserved_output_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "score_penalty_points": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
           "suspected_compactions": {
             "type": "integer",
             "format": "int32",
@@ -5565,6 +5639,82 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "AgentFileInteractionFactView": {
+        "type": "object",
+        "required": [
+          "opaque_file_id",
+          "operation"
+        ],
+        "properties": {
+          "error_signature": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "opaque_file_id": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "succeeded": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "tool_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AgentFinishReasonDiagnosticsView": {
+        "type": "object",
+        "required": [
+          "instrumented_request_count",
+          "length_limited_requests",
+          "items"
+        ],
+        "properties": {
+          "instrumented_request_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentFinishReasonItemView"
+            }
+          },
+          "length_limited_requests": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentFinishReasonItemView": {
+        "type": "object",
+        "required": [
+          "reason",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
           }
         }
       },
@@ -5591,17 +5741,43 @@
         "type": "object",
         "required": [
           "supplied_tools",
+          "supplied_skills",
+          "file_interactions",
           "attributes"
         ],
         "properties": {
           "attributes": {},
+          "cache_requested": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "error_signature": {
             "type": [
               "string",
               "null"
             ]
           },
+          "file_interactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentFileInteractionFactView"
+            }
+          },
           "file_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finish_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "incomplete_reason": {
             "type": [
               "string",
               "null"
@@ -5629,6 +5805,12 @@
             "format": "int64",
             "minimum": 0
           },
+          "reasoning_config_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "result_bytes": {
             "type": [
               "integer",
@@ -5636,6 +5818,12 @@
             ],
             "format": "int64",
             "minimum": 0
+          },
+          "supplied_skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSuppliedSkillFactView"
+            }
           },
           "supplied_tool_count": {
             "type": [
@@ -5719,6 +5907,213 @@
             "type": "string"
           },
           "source_request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentOutcomeDiagnosticsView": {
+        "type": "object",
+        "required": [
+          "file_signal_coverage_percent"
+        ],
+        "properties": {
+          "cost_per_file_touched_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cost_per_successful_session_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "failed_file_interactions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "file_signal_coverage_percent": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "files_with_repeated_interactions_suspected": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "repeated_file_interactions_suspected": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "rework_ratio_basis_points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "verification_rate_basis_points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "zero_outcome": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "AgentReliabilityDiagnosticsView": {
+        "type": "object",
+        "required": [
+          "attempt_coverage_percent",
+          "total_attempts",
+          "wasted_attempts",
+          "fallback_attempts",
+          "wasted_attempt_latency_ms",
+          "tool_invocations",
+          "failed_tool_invocations",
+          "truncated_tool_results",
+          "attempts",
+          "tools"
+        ],
+        "properties": {
+          "attempt_coverage_percent": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentRequestAttemptView"
+            }
+          },
+          "failed_tool_invocations": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "fallback_attempts": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "tool_invocations": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentToolReliabilityItemView"
+            }
+          },
+          "total_attempts": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "truncated_tool_results": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "wasted_attempt_cost_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "wasted_attempt_latency_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "wasted_attempts": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentRequestAttemptView": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "attempt_number",
+          "produced_final_response",
+          "retryable",
+          "status",
+          "provider_key",
+          "upstream_model",
+          "occurred_at_unix_ms"
+        ],
+        "properties": {
+          "attempt_number": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latency_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "occurred_at_unix_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "produced_final_response": {
+            "type": "boolean"
+          },
+          "provider_key": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "status_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "upstream_model": {
             "type": "string"
           }
         }
@@ -5861,14 +6256,34 @@
           "token_and_cache",
           "context",
           "tools_and_changes",
+          "skills",
+          "reliability",
+          "outcome",
+          "finish_reasons",
+          "enabled_metrics",
           "semantic_verification_available"
         ],
         "properties": {
           "context": {
             "$ref": "#/components/schemas/AgentContextDiagnosticsView"
           },
+          "enabled_metrics": {
+            "$ref": "#/components/schemas/AgentAnalysisMetricPolicyView"
+          },
+          "finish_reasons": {
+            "$ref": "#/components/schemas/AgentFinishReasonDiagnosticsView"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/AgentOutcomeDiagnosticsView"
+          },
+          "reliability": {
+            "$ref": "#/components/schemas/AgentReliabilityDiagnosticsView"
+          },
           "semantic_verification_available": {
             "type": "boolean"
+          },
+          "skills": {
+            "$ref": "#/components/schemas/AgentSkillDiagnosticsView"
           },
           "token_and_cache": {
             "$ref": "#/components/schemas/AgentTokenAndCacheDiagnosticsView"
@@ -5970,6 +6385,7 @@
           "analyzer_version",
           "score_policy_version",
           "observation_parser_version",
+          "configuration_version",
           "maturity",
           "confidence",
           "gateway_outcome",
@@ -5992,6 +6408,9 @@
             "$ref": "#/components/schemas/AgentSessionEfficiencyComponentsView"
           },
           "confidence": {
+            "type": "string"
+          },
+          "configuration_version": {
             "type": "string"
           },
           "coverage": {
@@ -6436,6 +6855,172 @@
           }
         }
       },
+      "AgentSkillDiagnosticItemView": {
+        "type": "object",
+        "required": [
+          "name",
+          "available_request_count",
+          "used_request_count",
+          "abandoned_request_count"
+        ],
+        "properties": {
+          "abandoned_request_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "available_request_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "description_token_estimate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "loaded_body_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "loaded_resource_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "used_request_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentSkillDiagnosticsView": {
+        "type": "object",
+        "required": [
+          "instrumented_request_count",
+          "items"
+        ],
+        "properties": {
+          "available_skill_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "description_tokens_per_request": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "instrumented_request_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSkillDiagnosticItemView"
+            }
+          },
+          "loaded_body_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "loaded_resource_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "unused_skill_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "used_skill_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentSuppliedSkillFactView": {
+        "type": "object",
+        "required": [
+          "name",
+          "used"
+        ],
+        "properties": {
+          "abandoned": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "body_token_estimate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "description_token_estimate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "resource_token_estimate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "used": {
+            "type": "boolean"
+          }
+        }
+      },
       "AgentSuppliedToolFactView": {
         "type": "object",
         "required": [
@@ -6445,6 +7030,12 @@
         "properties": {
           "name": {
             "type": "string"
+          },
+          "server_key": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "token_estimate": {
             "type": "integer",
@@ -6499,15 +7090,42 @@
       "AgentTokenAndCacheDiagnosticsView": {
         "type": "object",
         "required": [
+          "cache_key_switches",
           "pricing_policy_versions"
         ],
         "properties": {
+          "cache_creation_1h_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cache_creation_30m_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cache_creation_5m_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "cache_creation_tokens": {
             "type": [
               "integer",
               "null"
             ],
             "format": "int64"
+          },
+          "cache_key_switches": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           },
           "cache_read_tokens": {
             "type": [
@@ -6531,6 +7149,13 @@
             "format": "int64"
           },
           "cache_savings_basis_points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "cache_write_amplification_basis_points": {
             "type": [
               "integer",
               "null"
@@ -6578,6 +7203,14 @@
             ],
             "format": "int64"
           },
+          "reasoning_config_switches": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
           "reasoning_tokens": {
             "type": [
               "integer",
@@ -6585,7 +7218,29 @@
             ],
             "format": "int64"
           },
+          "silent_cache_threshold_miss_requests": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "total_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "uncached_input_cost_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "visible_output_tokens": {
             "type": [
               "integer",
               "null"
@@ -6607,7 +7262,8 @@
           "unique_opaque_files",
           "verification_results_classified",
           "rework_spans_suspected",
-          "direct_mcp_calls"
+          "direct_mcp_calls",
+          "tool_servers"
         ],
         "properties": {
           "classified_tool_calls": {
@@ -6678,6 +7334,12 @@
             "format": "int64",
             "minimum": 0
           },
+          "tool_servers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentToolServerDiagnosticsView"
+            }
+          },
           "unique_opaque_files": {
             "type": "integer",
             "format": "int32",
@@ -6687,6 +7349,101 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "AgentToolReliabilityItemView": {
+        "type": "object",
+        "required": [
+          "tool_key",
+          "invocation_count",
+          "failed_count",
+          "truncated_result_count",
+          "latency_ms"
+        ],
+        "properties": {
+          "failed_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "invocation_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "post_error_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "server_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tool_key": {
+            "type": "string"
+          },
+          "truncated_result_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentToolServerDiagnosticsView": {
+        "type": "object",
+        "required": [
+          "server_key",
+          "exposed_tool_definitions",
+          "invoked_tool_definitions",
+          "invocation_count",
+          "failed_count",
+          "schema_token_estimate_per_request"
+        ],
+        "properties": {
+          "estimated_uncached_schema_cost_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "exposed_tool_definitions": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "failed_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "invocation_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "invoked_tool_definitions": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "schema_token_estimate_per_request": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "server_key": {
+            "type": "string"
           }
         }
       },

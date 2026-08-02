@@ -1472,23 +1472,64 @@ export interface components {
             teams: components["schemas"]["AdminTeamManagementView"][];
             users: components["schemas"]["AdminTeamAssignableUserView"][];
         };
+        AgentAnalysisMetricPolicyView: {
+            cache_metrics: boolean;
+            context_metrics: boolean;
+            finish_reason_metrics: boolean;
+            outcome_metrics: boolean;
+            reliability_metrics: boolean;
+            skill_metrics: boolean;
+            token_metrics: boolean;
+            tool_metrics: boolean;
+        };
         AgentContextDiagnosticsView: {
             /** Format: int64 */
             initial_prompt_tokens?: number | null;
+            /** Format: int64 */
+            input_boundary_tokens: number;
             /** Format: int64 */
             maximum_prompt_tokens?: number | null;
             /** Format: int64 */
             median_prompt_tokens?: number | null;
             /** Format: int64 */
             p90_prompt_tokens?: number | null;
+            /** Format: int32 */
+            peak_input_utilization_basis_points?: number | null;
             /** Format: int64 */
             prompt_growth_per_active_minute?: number | null;
             /** Format: int64 */
             prompt_growth_per_turn?: number | null;
             /** Format: int32 */
+            repeated_requests_over_input_boundary: number;
+            /** Format: int32 */
+            requests_over_input_boundary: number;
+            /** Format: int64 */
+            reserved_output_tokens: number;
+            /** Format: int32 */
+            score_penalty_points: number;
+            /** Format: int32 */
             suspected_compactions: number;
             /** Format: int32 */
             suspected_context_resets: number;
+        };
+        AgentFileInteractionFactView: {
+            error_signature?: string | null;
+            opaque_file_id: string;
+            operation: string;
+            succeeded?: boolean | null;
+            tool_name?: string | null;
+        };
+        AgentFinishReasonDiagnosticsView: {
+            /** Format: int32 */
+            instrumented_request_count: number;
+            items: components["schemas"]["AgentFinishReasonItemView"][];
+            /** Format: int32 */
+            length_limited_requests: number;
+        };
+        AgentFinishReasonItemView: {
+            /** Format: int32 */
+            count: number;
+            reason: string;
         };
         AgentObservationCoverageView: {
             request_metadata: boolean;
@@ -1497,15 +1538,21 @@ export interface components {
         };
         AgentObservationFactsView: {
             attributes: unknown;
+            cache_requested?: boolean | null;
             error_signature?: string | null;
+            file_interactions: components["schemas"]["AgentFileInteractionFactView"][];
             file_kind?: string | null;
+            finish_reason?: string | null;
+            incomplete_reason?: string | null;
             /** Format: int32 */
             message_count?: number | null;
             opaque_file_id?: string | null;
             /** Format: int64 */
             prompt_bytes?: number | null;
+            reasoning_config_hash?: string | null;
             /** Format: int64 */
             result_bytes?: number | null;
+            supplied_skills: components["schemas"]["AgentSuppliedSkillFactView"][];
             /** Format: int32 */
             supplied_tool_count?: number | null;
             supplied_tools: components["schemas"]["AgentSuppliedToolFactView"][];
@@ -1525,6 +1572,64 @@ export interface components {
             occurred_at: string;
             parser_version: string;
             source_request_id: string;
+        };
+        AgentOutcomeDiagnosticsView: {
+            /** Format: int64 */
+            cost_per_file_touched_10000?: number | null;
+            /** Format: int64 */
+            cost_per_successful_session_10000?: number | null;
+            /** Format: int32 */
+            failed_file_interactions?: number | null;
+            /** Format: int32 */
+            file_signal_coverage_percent: number;
+            /** Format: int32 */
+            files_with_repeated_interactions_suspected?: number | null;
+            /** Format: int32 */
+            repeated_file_interactions_suspected?: number | null;
+            /** Format: int32 */
+            rework_ratio_basis_points?: number | null;
+            /** Format: int32 */
+            verification_rate_basis_points?: number | null;
+            zero_outcome?: boolean | null;
+        };
+        AgentReliabilityDiagnosticsView: {
+            /** Format: int32 */
+            attempt_coverage_percent: number;
+            attempts: components["schemas"]["AgentRequestAttemptView"][];
+            /** Format: int32 */
+            failed_tool_invocations: number;
+            /** Format: int32 */
+            fallback_attempts: number;
+            /** Format: int32 */
+            tool_invocations: number;
+            tools: components["schemas"]["AgentToolReliabilityItemView"][];
+            /** Format: int32 */
+            total_attempts: number;
+            /** Format: int32 */
+            truncated_tool_results: number;
+            /** Format: int64 */
+            wasted_attempt_cost_10000?: number | null;
+            /** Format: int64 */
+            wasted_attempt_latency_ms: number;
+            /** Format: int32 */
+            wasted_attempts: number;
+        };
+        AgentRequestAttemptView: {
+            /** Format: int64 */
+            attempt_number: number;
+            error_code?: string | null;
+            /** Format: int64 */
+            latency_ms?: number | null;
+            /** Format: int64 */
+            occurred_at_unix_ms: number;
+            produced_final_response: boolean;
+            provider_key: string;
+            request_id: string;
+            retryable: boolean;
+            status: string;
+            /** Format: int64 */
+            status_code?: number | null;
+            upstream_model: string;
         };
         AgentSessionAnalysisIdentityView: {
             analysis_id: string;
@@ -1555,7 +1660,12 @@ export interface components {
         };
         AgentSessionDiagnosticsView: {
             context: components["schemas"]["AgentContextDiagnosticsView"];
+            enabled_metrics: components["schemas"]["AgentAnalysisMetricPolicyView"];
+            finish_reasons: components["schemas"]["AgentFinishReasonDiagnosticsView"];
+            outcome: components["schemas"]["AgentOutcomeDiagnosticsView"];
+            reliability: components["schemas"]["AgentReliabilityDiagnosticsView"];
             semantic_verification_available: boolean;
+            skills: components["schemas"]["AgentSkillDiagnosticsView"];
             token_and_cache: components["schemas"]["AgentTokenAndCacheDiagnosticsView"];
             tools_and_changes: components["schemas"]["AgentToolAndChangeDiagnosticsView"];
         };
@@ -1589,6 +1699,7 @@ export interface components {
             calibration_approval_id?: string | null;
             components: components["schemas"]["AgentSessionEfficiencyComponentsView"];
             confidence: string;
+            configuration_version: string;
             coverage: components["schemas"]["AgentTelemetryCoverageView"];
             diagnostics: components["schemas"]["AgentSessionDiagnosticsView"];
             gateway_outcome: string;
@@ -1693,8 +1804,52 @@ export interface components {
             /** Format: int64 */
             wall_time_ms?: number | null;
         };
+        AgentSkillDiagnosticItemView: {
+            /** Format: int32 */
+            abandoned_request_count: number;
+            /** Format: int32 */
+            available_request_count: number;
+            /** Format: int64 */
+            description_token_estimate?: number | null;
+            /** Format: int64 */
+            loaded_body_tokens?: number | null;
+            /** Format: int64 */
+            loaded_resource_tokens?: number | null;
+            name: string;
+            /** Format: int32 */
+            used_request_count: number;
+        };
+        AgentSkillDiagnosticsView: {
+            /** Format: int32 */
+            available_skill_count?: number | null;
+            /** Format: int64 */
+            description_tokens_per_request?: number | null;
+            /** Format: int32 */
+            instrumented_request_count: number;
+            items: components["schemas"]["AgentSkillDiagnosticItemView"][];
+            /** Format: int64 */
+            loaded_body_tokens?: number | null;
+            /** Format: int64 */
+            loaded_resource_tokens?: number | null;
+            /** Format: int32 */
+            unused_skill_count?: number | null;
+            /** Format: int32 */
+            used_skill_count?: number | null;
+        };
+        AgentSuppliedSkillFactView: {
+            abandoned?: boolean | null;
+            /** Format: int64 */
+            body_token_estimate?: number | null;
+            /** Format: int64 */
+            description_token_estimate?: number | null;
+            name: string;
+            /** Format: int64 */
+            resource_token_estimate?: number | null;
+            used: boolean;
+        };
         AgentSuppliedToolFactView: {
             name: string;
+            server_key?: string | null;
             /** Format: int64 */
             token_estimate: number;
         };
@@ -1714,7 +1869,15 @@ export interface components {
         };
         AgentTokenAndCacheDiagnosticsView: {
             /** Format: int64 */
+            cache_creation_1h_tokens?: number | null;
+            /** Format: int64 */
+            cache_creation_30m_tokens?: number | null;
+            /** Format: int64 */
+            cache_creation_5m_tokens?: number | null;
+            /** Format: int64 */
             cache_creation_tokens?: number | null;
+            /** Format: int32 */
+            cache_key_switches: number;
             /** Format: int64 */
             cache_read_tokens?: number | null;
             /** Format: int32 */
@@ -1723,6 +1886,8 @@ export interface components {
             cache_savings_10000?: number | null;
             /** Format: int32 */
             cache_savings_basis_points?: number | null;
+            /** Format: int32 */
+            cache_write_amplification_basis_points?: number | null;
             /** Format: int64 */
             fresh_input_tokens?: number | null;
             /** Format: int64 */
@@ -1734,10 +1899,18 @@ export interface components {
             pricing_policy_versions: string[];
             /** Format: int64 */
             provider_total_tokens?: number | null;
+            /** Format: int32 */
+            reasoning_config_switches?: number | null;
             /** Format: int64 */
             reasoning_tokens?: number | null;
+            /** Format: int32 */
+            silent_cache_threshold_miss_requests?: number | null;
+            /** Format: int64 */
+            total_input_tokens?: number | null;
             /** Format: int64 */
             uncached_input_cost_10000?: number | null;
+            /** Format: int64 */
+            visible_output_tokens?: number | null;
         };
         AgentToolAndChangeDiagnosticsView: {
             /** Format: int32 */
@@ -1764,10 +1937,40 @@ export interface components {
             supplied_tool_definitions?: number | null;
             /** Format: int64 */
             supplied_tool_schema_bytes?: number | null;
+            tool_servers: components["schemas"]["AgentToolServerDiagnosticsView"][];
             /** Format: int32 */
             unique_opaque_files: number;
             /** Format: int32 */
             verification_results_classified: number;
+        };
+        AgentToolReliabilityItemView: {
+            /** Format: int32 */
+            failed_count: number;
+            /** Format: int32 */
+            invocation_count: number;
+            /** Format: int64 */
+            latency_ms: number;
+            /** Format: int64 */
+            post_error_input_tokens?: number | null;
+            server_key?: string | null;
+            tool_key: string;
+            /** Format: int32 */
+            truncated_result_count: number;
+        };
+        AgentToolServerDiagnosticsView: {
+            /** Format: int64 */
+            estimated_uncached_schema_cost_10000?: number | null;
+            /** Format: int32 */
+            exposed_tool_definitions: number;
+            /** Format: int32 */
+            failed_count: number;
+            /** Format: int32 */
+            invocation_count: number;
+            /** Format: int32 */
+            invoked_tool_definitions: number;
+            /** Format: int64 */
+            schema_token_estimate_per_request: number;
+            server_key: string;
         };
         /** @enum {string} */
         ApiKeyModelGrantModeView: "all" | "explicit";

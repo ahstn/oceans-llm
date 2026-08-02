@@ -1,16 +1,17 @@
+use agent_session_analysis::AnalysisPolicy;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
 use gateway_core::{
-    AgentSessionAnalysisRepository, AuthenticatedApiKey, BudgetAlertRepository, BudgetRecord,
-    BudgetRepository, ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
-    McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
-    McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, NormalizedUsageAccounting,
-    PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderRepository,
-    RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, RequestLogRetentionWindow, RequestTags, ResolvedModelPricing,
-    ResponsesRequest, RouteError, RoutePlanner, RoutePricingOverride, StoreHealth,
-    UsageCostAuthority, UsageLedgerRecord, UsagePricingStatus,
+    AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AuthenticatedApiKey,
+    BudgetAlertRepository, BudgetRecord, BudgetRepository, ChatCompletionsRequest, GatewayError,
+    GatewayModel, IdentityRepository, McpToolInvocationDetail, McpToolInvocationPage,
+    McpToolInvocationQuery, McpToolInvocationRepository, ModelRepository, ModelRoute, Money4,
+    NormalizedUsageAccounting, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
+    ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery,
+    RequestLogRecord, RequestLogRepository, RequestLogRetentionWindow, RequestTags,
+    ResolvedModelPricing, ResponsesRequest, RouteError, RoutePlanner, RoutePricingOverride,
+    StoreHealth, UsageCostAuthority, UsageLedgerRecord, UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use time::{Duration, OffsetDateTime};
@@ -22,8 +23,9 @@ use crate::{
     RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
     ResolvedProviderConnection, StreamLogResultInput, StreamResponseCollector,
     agent_analysis::{
-        PassiveRequestRecord, REPORT_RETENTION, finalize_idle_sessions, process_next_analysis,
-        record_prepared_passive_request, session_boundary_group_key,
+        PassiveRequestRecord, REPORT_RETENTION, desired_versions_for_policy,
+        finalize_idle_sessions, process_next_analysis, record_prepared_passive_request,
+        session_boundary_group_key,
     },
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::BudgetGuard,
@@ -79,6 +81,8 @@ pub struct GatewayService<S, P> {
     agent_analysis_ingestion_limit: Arc<Semaphore>,
     agent_analysis_report_retention: Duration,
     agent_analysis_queue_retention: Duration,
+    agent_analysis_policy: AnalysisPolicy,
+    agent_analysis_desired_versions: AgentAnalysisDesiredVersions,
 }
 
 impl<S, P> GatewayService<S, P>
@@ -137,6 +141,8 @@ where
             crate::McpInvocationPayloadPolicy::from_request_log_policy(payload_policy),
         );
 
+        let agent_analysis_policy = AnalysisPolicy::default();
+        let agent_analysis_desired_versions = desired_versions_for_policy(&agent_analysis_policy);
         Self {
             store,
             authenticator,
@@ -155,6 +161,8 @@ where
             )),
             agent_analysis_report_retention: REPORT_RETENTION,
             agent_analysis_queue_retention: AGENT_ANALYSIS_QUEUE_RETENTION,
+            agent_analysis_policy,
+            agent_analysis_desired_versions,
         }
     }
 
@@ -178,6 +186,13 @@ where
     ) -> Self {
         self.agent_analysis_report_retention = report_retention;
         self.agent_analysis_queue_retention = queue_retention;
+        self
+    }
+
+    #[must_use]
+    pub fn with_agent_analysis_policy(mut self, policy: AnalysisPolicy) -> Self {
+        self.agent_analysis_desired_versions = desired_versions_for_policy(&policy);
+        self.agent_analysis_policy = policy;
         self
     }
 
@@ -498,6 +513,7 @@ where
         let occurred_at = context.started_at;
         let payload_truncated = response_payload_truncated;
         let response_body = response_body.cloned();
+        let desired_versions = self.agent_analysis_desired_versions.clone();
         tokio::spawn(async move {
             let completed_at = OffsetDateTime::now_utc();
             let boundary_group_key = session_boundary_group_key(&request_tags);
@@ -521,7 +537,9 @@ where
                 boundary_group_key: &boundary_group_key,
             }
             .prepare();
-            if let Err(error) = record_prepared_passive_request(store.as_ref(), input).await {
+            if let Err(error) =
+                record_prepared_passive_request(store.as_ref(), input, &desired_versions).await
+            {
                 warn!(
                     request_id,
                     error = %error,
@@ -538,7 +556,12 @@ where
     where
         S: AgentSessionAnalysisRepository,
     {
-        finalize_idle_sessions(self.store.as_ref(), now).await
+        finalize_idle_sessions(
+            self.store.as_ref(),
+            now,
+            &self.agent_analysis_desired_versions,
+        )
+        .await
     }
 
     pub async fn process_next_agent_analysis(
@@ -554,6 +577,7 @@ where
             lease_owner,
             now,
             self.agent_analysis_report_retention,
+            &self.agent_analysis_policy,
         )
         .await
     }
@@ -928,9 +952,15 @@ fn normalized_accounting(
         fresh_input_tokens: usage.fresh_input_tokens,
         cache_read_tokens: usage.cache_read_tokens,
         cache_creation_tokens: usage.cache_creation_tokens,
+        cache_creation_5m_tokens: usage.cache_creation_5m_tokens,
+        cache_creation_30m_tokens: usage.cache_creation_30m_tokens,
+        cache_creation_1h_tokens: usage.cache_creation_1h_tokens,
         output_tokens: usage.output_tokens,
         reasoning_tokens: usage.reasoning_tokens,
         provider_total_tokens: usage.provider_total_tokens,
+        output_includes_reasoning: usage.semantics.output_includes_reasoning,
+        finish_reason: usage.finish_reason.clone(),
+        incomplete_reason: usage.incomplete_reason.clone(),
         semantics_version: usage.semantics.version.clone(),
         semantics: json!({
             "token_usage": &usage.semantics,

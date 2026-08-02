@@ -579,9 +579,15 @@ fn demo_normalized_usage(fixture: &LocalDemoRequestFixture) -> Option<Normalized
         fresh_input_tokens: fixture.prompt_tokens,
         cache_read_tokens: Some(0),
         cache_creation_tokens: Some(0),
+        cache_creation_5m_tokens: Some(0),
+        cache_creation_30m_tokens: Some(0),
+        cache_creation_1h_tokens: Some(0),
         output_tokens: fixture.completion_tokens,
         reasoning_tokens: Some(0),
         provider_total_tokens: total_tokens,
+        output_includes_reasoning: Some(true),
+        finish_reason: Some("stop".to_string()),
+        incomplete_reason: None,
         semantics_version: TOKEN_USAGE_SEMANTICS_VERSION.to_string(),
         semantics: json!({"source": "local_demo_seed", "cache_semantics": "explicit_zero"}),
         normalization_error: None,
@@ -912,7 +918,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn seeded_incident_session_reports_direct_mcp_calls() {
+    async fn seeded_jira_session_reports_direct_mcp_calls() {
         let directory = tempfile::tempdir().expect("tempdir");
         let options = StoreConnectionOptions::Libsql {
             path: directory.path().join("gateway.db"),
@@ -953,14 +959,14 @@ mod tests {
             .expect("process analysis")
         {}
 
-        let session_id = local_demo_uuid("agent_session", "incident-runbook-coordination");
+        let session_id = local_demo_uuid("agent_session", "jira-release-coordination");
         let trace = store
             .load_agent_session_trace(session_id)
             .await
             .expect("load session")
-            .expect("incident session");
-        let report = &trace.latest_analysis.expect("incident report").report;
-        assert_eq!(report.diagnostics.tools_and_changes.observed_tool_calls, 3);
+            .expect("Jira session");
+        let report = &trace.latest_analysis.expect("Jira report").report;
+        assert_eq!(report.diagnostics.tools_and_changes.observed_tool_calls, 10);
         assert_eq!(report.diagnostics.tools_and_changes.direct_mcp_calls, 2);
     }
 }

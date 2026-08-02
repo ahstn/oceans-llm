@@ -29,13 +29,17 @@ use uuid::Uuid;
 use crate::http::{
     admin_auth::{AdminDataScope, require_agent_analysis_scope, require_platform_admin},
     admin_contract::{
-        AgentContextDiagnosticsView, AgentObservationCoverageView, AgentObservationFactsView,
-        AgentObservationView, AgentSessionAnalysisIdentityView, AgentSessionDetailView,
-        AgentSessionDiagnosticsView, AgentSessionEfficiencyComponentsView,
+        AgentAnalysisMetricPolicyView, AgentContextDiagnosticsView, AgentFileInteractionFactView,
+        AgentFinishReasonDiagnosticsView, AgentFinishReasonItemView, AgentObservationCoverageView,
+        AgentObservationFactsView, AgentObservationView, AgentOutcomeDiagnosticsView,
+        AgentReliabilityDiagnosticsView, AgentRequestAttemptView, AgentSessionAnalysisIdentityView,
+        AgentSessionDetailView, AgentSessionDiagnosticsView, AgentSessionEfficiencyComponentsView,
         AgentSessionEfficiencyReportView, AgentSessionListRequestQuery, AgentSessionOutcomeView,
         AgentSessionPageView, AgentSessionRequestView, AgentSessionSourceView,
-        AgentSessionSummaryView, AgentSuppliedToolFactView, AgentTelemetryCoverageView,
-        AgentTokenAndCacheDiagnosticsView, AgentToolAndChangeDiagnosticsView, Envelope,
+        AgentSessionSummaryView, AgentSkillDiagnosticItemView, AgentSkillDiagnosticsView,
+        AgentSuppliedSkillFactView, AgentSuppliedToolFactView, AgentTelemetryCoverageView,
+        AgentTokenAndCacheDiagnosticsView, AgentToolAndChangeDiagnosticsView,
+        AgentToolReliabilityItemView, AgentToolServerDiagnosticsView, Envelope,
         HarnessUsageChartHarnessView, HarnessUsageLeaderView, HarnessUsageQuery,
         HarnessUsageSeriesPointView, HarnessUsageSeriesValueView, HarnessUsageView,
         LeaderboardChartUserView, LeaderboardLeaderView, LeaderboardQuery,
@@ -465,49 +469,109 @@ pub async fn get_agent_session_detail(
         .iter()
         .map(|set| set.observations.len())
         .sum::<usize>();
-    let observation_history_truncated = observation_count
+    let mut observation_history_truncated = observation_count
         > gateway_core::MAX_AGENT_SESSION_REQUESTS as usize
         || observation_sets.len() > gateway_core::MAX_AGENT_SESSION_REQUESTS as usize;
+    let mut supplied_tool_budget = gateway_core::MAX_AGENT_SESSION_NESTED_FACTS;
+    let mut supplied_skill_budget = gateway_core::MAX_AGENT_SESSION_NESTED_FACTS;
+    let mut file_interaction_budget = gateway_core::MAX_AGENT_SESSION_NESTED_FACTS;
     let observations = observation_sets
         .iter()
         .flat_map(|set| set.observations.iter())
         .take(gateway_core::MAX_AGENT_SESSION_REQUESTS as usize)
-        .map(|observation| AgentObservationView {
-            observation_id: observation.observation_id.to_string(),
-            kind: enum_name(observation.kind),
-            source_request_id: observation.source_request_id.clone(),
-            parser_version: observation.parser_version.clone(),
-            evidence: enum_name(observation.evidence),
-            occurred_at: format_timestamp(observation.occurred_at),
-            facts: AgentObservationFactsView {
-                message_count: observation.facts.message_count,
-                prompt_bytes: observation.facts.prompt_bytes,
-                supplied_tool_count: observation.facts.supplied_tool_count,
-                tool_schema_bytes: observation.facts.tool_schema_bytes,
-                tool_schema_token_estimate: observation.facts.tool_schema_token_estimate,
-                supplied_tools: observation
-                    .facts
-                    .supplied_tools
+        .map(|observation| {
+            let supplied_tool_count = observation
+                .facts
+                .supplied_tools
+                .len()
+                .min(supplied_tool_budget);
+            let supplied_skill_count = observation
+                .facts
+                .supplied_skills
+                .len()
+                .min(supplied_skill_budget);
+            let file_interaction_count = observation
+                .facts
+                .file_interactions
+                .len()
+                .min(file_interaction_budget);
+            observation_history_truncated |= supplied_tool_count
+                < observation.facts.supplied_tools.len()
+                || supplied_skill_count < observation.facts.supplied_skills.len()
+                || file_interaction_count < observation.facts.file_interactions.len();
+            supplied_tool_budget -= supplied_tool_count;
+            supplied_skill_budget -= supplied_skill_count;
+            file_interaction_budget -= file_interaction_count;
+            AgentObservationView {
+                observation_id: observation.observation_id.to_string(),
+                kind: enum_name(observation.kind),
+                source_request_id: observation.source_request_id.clone(),
+                parser_version: observation.parser_version.clone(),
+                evidence: enum_name(observation.evidence),
+                occurred_at: format_timestamp(observation.occurred_at),
+                facts: AgentObservationFactsView {
+                    message_count: observation.facts.message_count,
+                    prompt_bytes: observation.facts.prompt_bytes,
+                    supplied_tool_count: observation.facts.supplied_tool_count,
+                    tool_schema_bytes: observation.facts.tool_schema_bytes,
+                    tool_schema_token_estimate: observation.facts.tool_schema_token_estimate,
+                    supplied_tools: observation
+                        .facts
+                        .supplied_tools
+                        .iter()
+                        .take(supplied_tool_count)
+                        .map(|tool| AgentSuppliedToolFactView {
+                            name: tool.name.clone(),
+                            server_key: tool.server_key.clone(),
+                            token_estimate: tool.token_estimate,
+                        })
+                        .collect(),
+                    supplied_skills: observation
+                        .facts
+                        .supplied_skills
+                        .iter()
+                        .take(supplied_skill_count)
+                        .map(|skill| AgentSuppliedSkillFactView {
+                            name: skill.name.clone(),
+                            description_token_estimate: skill.description_token_estimate,
+                            body_token_estimate: skill.body_token_estimate,
+                            resource_token_estimate: skill.resource_token_estimate,
+                            used: skill.used,
+                            abandoned: skill.abandoned,
+                        })
+                        .collect(),
+                    file_interactions: observation
+                        .facts
+                        .file_interactions
+                        .iter()
+                        .take(file_interaction_count)
+                        .map(|file| AgentFileInteractionFactView {
+                            opaque_file_id: file.opaque_file_id.clone(),
+                            operation: file.operation.clone(),
+                            tool_name: file.tool_name.clone(),
+                            succeeded: file.succeeded,
+                            error_signature: file.error_signature.clone(),
+                        })
+                        .collect(),
+                    reasoning_config_hash: observation.facts.reasoning_config_hash.clone(),
+                    cache_requested: observation.facts.cache_requested,
+                    finish_reason: observation.facts.finish_reason.clone(),
+                    incomplete_reason: observation.facts.incomplete_reason.clone(),
+                    tool_name: observation.facts.tool_name.clone(),
+                    tool_schema_hash: observation.facts.tool_schema_hash.clone(),
+                    opaque_file_id: observation.facts.opaque_file_id.clone(),
+                    file_kind: observation.facts.file_kind.clone(),
+                    result_bytes: observation.facts.result_bytes,
+                    error_signature: observation.facts.error_signature.clone(),
+                    attributes: Value::Object(observation.facts.attributes.clone()),
+                },
+                limitations: observation
+                    .limitations
                     .iter()
-                    .map(|tool| AgentSuppliedToolFactView {
-                        name: tool.name.clone(),
-                        token_estimate: tool.token_estimate,
-                    })
+                    .copied()
+                    .map(enum_name)
                     .collect(),
-                tool_name: observation.facts.tool_name.clone(),
-                tool_schema_hash: observation.facts.tool_schema_hash.clone(),
-                opaque_file_id: observation.facts.opaque_file_id.clone(),
-                file_kind: observation.facts.file_kind.clone(),
-                result_bytes: observation.facts.result_bytes,
-                error_signature: observation.facts.error_signature.clone(),
-                attributes: Value::Object(observation.facts.attributes.clone()),
-            },
-            limitations: observation
-                .limitations
-                .iter()
-                .copied()
-                .map(enum_name)
-                .collect(),
+            }
         })
         .collect();
     let requests = trace
@@ -643,6 +707,7 @@ fn agent_session_efficiency_report(
         score_policy_version: report.score_policy_version.clone(),
         observation_parser_version: report.observation_parser_version.clone(),
         calibration_approval_id: report.calibration_approval_id.clone(),
+        configuration_version: report.configuration_version.clone(),
         maturity: enum_name(report.maturity),
         confidence: enum_name(report.confidence),
         gateway_outcome: enum_name(report.gateway_outcome),
@@ -681,8 +746,13 @@ fn agent_session_efficiency_report(
                 fresh_input_tokens: diagnostics.token_and_cache.fresh_input_tokens,
                 cache_read_tokens: diagnostics.token_and_cache.cache_read_tokens,
                 cache_creation_tokens: diagnostics.token_and_cache.cache_creation_tokens,
+                total_input_tokens: diagnostics.token_and_cache.total_input_tokens,
                 output_tokens: diagnostics.token_and_cache.output_tokens,
                 reasoning_tokens: diagnostics.token_and_cache.reasoning_tokens,
+                visible_output_tokens: diagnostics.token_and_cache.visible_output_tokens,
+                cache_creation_5m_tokens: diagnostics.token_and_cache.cache_creation_5m_tokens,
+                cache_creation_30m_tokens: diagnostics.token_and_cache.cache_creation_30m_tokens,
+                cache_creation_1h_tokens: diagnostics.token_and_cache.cache_creation_1h_tokens,
                 provider_total_tokens: diagnostics.token_and_cache.provider_total_tokens,
                 legacy_cost_10000: diagnostics.token_and_cache.legacy_cost_10000,
                 normalized_cost_10000: diagnostics.token_and_cache.normalized_cost_10000,
@@ -692,6 +762,14 @@ fn agent_session_efficiency_report(
                 cache_read_write_ratio_basis_points: diagnostics
                     .token_and_cache
                     .cache_read_write_ratio_basis_points,
+                cache_write_amplification_basis_points: diagnostics
+                    .token_and_cache
+                    .cache_write_amplification_basis_points,
+                silent_cache_threshold_miss_requests: diagnostics
+                    .token_and_cache
+                    .silent_cache_threshold_miss_requests,
+                cache_key_switches: diagnostics.token_and_cache.cache_key_switches,
+                reasoning_config_switches: diagnostics.token_and_cache.reasoning_config_switches,
                 pricing_policy_versions: diagnostics
                     .token_and_cache
                     .pricing_policy_versions
@@ -702,6 +780,16 @@ fn agent_session_efficiency_report(
                 median_prompt_tokens: diagnostics.context.median_prompt_tokens,
                 p90_prompt_tokens: diagnostics.context.p90_prompt_tokens,
                 maximum_prompt_tokens: diagnostics.context.maximum_prompt_tokens,
+                input_boundary_tokens: diagnostics.context.input_boundary_tokens,
+                reserved_output_tokens: diagnostics.context.reserved_output_tokens,
+                peak_input_utilization_basis_points: diagnostics
+                    .context
+                    .peak_input_utilization_basis_points,
+                requests_over_input_boundary: diagnostics.context.requests_over_input_boundary,
+                repeated_requests_over_input_boundary: diagnostics
+                    .context
+                    .repeated_requests_over_input_boundary,
+                score_penalty_points: diagnostics.context.score_penalty_points,
                 prompt_growth_per_turn: diagnostics.context.prompt_growth_per_turn,
                 prompt_growth_per_active_minute: diagnostics
                     .context
@@ -728,6 +816,127 @@ fn agent_session_efficiency_report(
                 rework_spans_suspected: diagnostics.tools_and_changes.rework_spans_suspected,
                 direct_mcp_calls: diagnostics.tools_and_changes.direct_mcp_calls,
                 direct_mcp_duration_ms: diagnostics.tools_and_changes.direct_mcp_duration_ms,
+                tool_servers: diagnostics
+                    .tools_and_changes
+                    .tool_servers
+                    .iter()
+                    .map(|server| AgentToolServerDiagnosticsView {
+                        server_key: server.server_key.clone(),
+                        exposed_tool_definitions: server.exposed_tool_definitions,
+                        invoked_tool_definitions: server.invoked_tool_definitions,
+                        invocation_count: server.invocation_count,
+                        failed_count: server.failed_count,
+                        schema_token_estimate_per_request: server.schema_token_estimate_per_request,
+                        estimated_uncached_schema_cost_10000: server
+                            .estimated_uncached_schema_cost_10000,
+                    })
+                    .collect(),
+            },
+            skills: AgentSkillDiagnosticsView {
+                instrumented_request_count: diagnostics.skills.instrumented_request_count,
+                available_skill_count: diagnostics.skills.available_skill_count,
+                used_skill_count: diagnostics.skills.used_skill_count,
+                unused_skill_count: diagnostics.skills.unused_skill_count,
+                description_tokens_per_request: diagnostics.skills.description_tokens_per_request,
+                loaded_body_tokens: diagnostics.skills.loaded_body_tokens,
+                loaded_resource_tokens: diagnostics.skills.loaded_resource_tokens,
+                items: diagnostics
+                    .skills
+                    .items
+                    .iter()
+                    .map(|item| AgentSkillDiagnosticItemView {
+                        name: item.name.clone(),
+                        available_request_count: item.available_request_count,
+                        used_request_count: item.used_request_count,
+                        abandoned_request_count: item.abandoned_request_count,
+                        description_token_estimate: item.description_token_estimate,
+                        loaded_body_tokens: item.loaded_body_tokens,
+                        loaded_resource_tokens: item.loaded_resource_tokens,
+                    })
+                    .collect(),
+            },
+            reliability: AgentReliabilityDiagnosticsView {
+                attempt_coverage_percent: diagnostics.reliability.attempt_coverage_percent,
+                total_attempts: diagnostics.reliability.total_attempts,
+                wasted_attempts: diagnostics.reliability.wasted_attempts,
+                fallback_attempts: diagnostics.reliability.fallback_attempts,
+                wasted_attempt_latency_ms: diagnostics.reliability.wasted_attempt_latency_ms,
+                wasted_attempt_cost_10000: diagnostics.reliability.wasted_attempt_cost_10000,
+                tool_invocations: diagnostics.reliability.tool_invocations,
+                failed_tool_invocations: diagnostics.reliability.failed_tool_invocations,
+                truncated_tool_results: diagnostics.reliability.truncated_tool_results,
+                attempts: diagnostics
+                    .reliability
+                    .attempts
+                    .iter()
+                    .map(|attempt| AgentRequestAttemptView {
+                        request_id: attempt.request_id.clone(),
+                        attempt_number: attempt.attempt_number,
+                        produced_final_response: attempt.produced_final_response,
+                        retryable: attempt.retryable,
+                        status: attempt.status.clone(),
+                        status_code: attempt.status_code,
+                        error_code: attempt.error_code.clone(),
+                        latency_ms: attempt.latency_ms,
+                        provider_key: attempt.provider_key.clone(),
+                        upstream_model: attempt.upstream_model.clone(),
+                        occurred_at_unix_ms: attempt.occurred_at_unix_ms,
+                    })
+                    .collect(),
+                tools: diagnostics
+                    .reliability
+                    .tools
+                    .iter()
+                    .map(|tool| AgentToolReliabilityItemView {
+                        server_key: tool.server_key.clone(),
+                        tool_key: tool.tool_key.clone(),
+                        invocation_count: tool.invocation_count,
+                        failed_count: tool.failed_count,
+                        truncated_result_count: tool.truncated_result_count,
+                        latency_ms: tool.latency_ms,
+                        post_error_input_tokens: tool.post_error_input_tokens,
+                    })
+                    .collect(),
+            },
+            outcome: AgentOutcomeDiagnosticsView {
+                file_signal_coverage_percent: diagnostics.outcome.file_signal_coverage_percent,
+                cost_per_file_touched_10000: diagnostics.outcome.cost_per_file_touched_10000,
+                cost_per_successful_session_10000: diagnostics
+                    .outcome
+                    .cost_per_successful_session_10000,
+                rework_ratio_basis_points: diagnostics.outcome.rework_ratio_basis_points,
+                verification_rate_basis_points: diagnostics.outcome.verification_rate_basis_points,
+                zero_outcome: diagnostics.outcome.zero_outcome,
+                repeated_file_interactions_suspected: diagnostics
+                    .outcome
+                    .repeated_file_interactions_suspected,
+                files_with_repeated_interactions_suspected: diagnostics
+                    .outcome
+                    .files_with_repeated_interactions_suspected,
+                failed_file_interactions: diagnostics.outcome.failed_file_interactions,
+            },
+            finish_reasons: AgentFinishReasonDiagnosticsView {
+                instrumented_request_count: diagnostics.finish_reasons.instrumented_request_count,
+                length_limited_requests: diagnostics.finish_reasons.length_limited_requests,
+                items: diagnostics
+                    .finish_reasons
+                    .items
+                    .iter()
+                    .map(|item| AgentFinishReasonItemView {
+                        reason: item.reason.clone(),
+                        count: item.count,
+                    })
+                    .collect(),
+            },
+            enabled_metrics: AgentAnalysisMetricPolicyView {
+                token_metrics: diagnostics.enabled_metrics.token_metrics,
+                cache_metrics: diagnostics.enabled_metrics.cache_metrics,
+                context_metrics: diagnostics.enabled_metrics.context_metrics,
+                tool_metrics: diagnostics.enabled_metrics.tool_metrics,
+                skill_metrics: diagnostics.enabled_metrics.skill_metrics,
+                reliability_metrics: diagnostics.enabled_metrics.reliability_metrics,
+                outcome_metrics: diagnostics.enabled_metrics.outcome_metrics,
+                finish_reason_metrics: diagnostics.enabled_metrics.finish_reason_metrics,
             },
             semantic_verification_available: diagnostics.semantic_verification_available,
         },

@@ -68,7 +68,9 @@ fn decode_request_log_row(row: &libsql::Row) -> Result<RequestLogRecord, StoreEr
     })
 }
 
-fn decode_request_attempt_row(row: &libsql::Row) -> Result<RequestAttemptRecord, StoreError> {
+pub(crate) fn decode_request_attempt_row(
+    row: &libsql::Row,
+) -> Result<RequestAttemptRecord, StoreError> {
     let request_attempt_id: String = row.get(0).map_err(to_query_error)?;
     let request_log_id: String = row.get(1).map_err(to_query_error)?;
     let route_id: String = row.get(4).map_err(to_query_error)?;

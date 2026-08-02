@@ -68,7 +68,7 @@ fn decode_request_log_row(row: &PgRow) -> Result<RequestLogRecord, StoreError> {
     })
 }
 
-fn decode_request_attempt_row(row: &PgRow) -> Result<RequestAttemptRecord, StoreError> {
+pub(crate) fn decode_request_attempt_row(row: &PgRow) -> Result<RequestAttemptRecord, StoreError> {
     let request_attempt_id: String = row.try_get(0).map_err(to_query_error)?;
     let request_log_id: String = row.try_get(1).map_err(to_query_error)?;
     let route_id: String = row.try_get(4).map_err(to_query_error)?;

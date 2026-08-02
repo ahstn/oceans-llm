@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use agent_session_analysis::{
-    ActivityInterval, AnalysisPolicy, CohortReference, OBSERVATION_PARSER_VERSION,
+    ActivityInterval, AnalysisPolicy, BoundedFileInteractionFact, BoundedSkillFact,
+    CohortReference, OBSERVATION_PARSER_VERSION, RequestAttemptFact,
     SESSION_BOUNDARY_POLICY_VERSION, SessionRequestFact, SessionTrace, SessionUsageFact,
-    TraceEvidence,
+    ToolInvocationFact, TraceEvidence,
 };
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,
@@ -12,9 +13,9 @@ use gateway_core::{
     AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
     AuthenticatedApiKey, BoundedObservationFacts, BoundedToolDefinitionFact, BudgetRepository,
     Confidence, EvidenceQuality, GatewayError, GatewayOutcomeState, IdentityRepository,
-    InferredObservation, InferredObservationKind, LimitationCode,
+    InferredObservation, InferredObservationKind, LimitationCode, MAX_AGENT_SESSION_NESTED_FACTS,
     MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationQuery, McpToolInvocationRepository,
-    RequestTags, SessionLifecycleState, UsageLedgerRecord,
+    RequestLogRepository, RequestTags, SessionLifecycleState, UsageLedgerRecord,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -22,6 +23,9 @@ use time::{Duration, OffsetDateTime};
 
 const MAX_SUPPLIED_TOOL_FACTS: usize = 256;
 const MAX_TOOL_NAME_CHARS: usize = 128;
+const MAX_SKILL_FACTS: usize = 256;
+const MAX_FILE_INTERACTION_FACTS: usize = 256;
+const MAX_RELIABILITY_EVENTS: usize = 2_048;
 use uuid::Uuid;
 
 use crate::redaction::REDACTED_VALUE;
@@ -115,12 +119,17 @@ pub(crate) struct PassiveRequestMetadata {
     pub session_source: Option<String>,
     pub session_limitation: Option<SessionCorrelationLimitation>,
     pub execution_id: Option<String>,
+    pub body_inspected: bool,
     pub parent_execution_id: Option<String>,
     pub message_count: Option<u32>,
     pub prompt_bytes: Option<u64>,
     pub supplied_tool_count: Option<u32>,
     pub tool_schema_bytes: Option<u64>,
     pub supplied_tools: Vec<BoundedToolDefinitionFact>,
+    pub supplied_skills: Vec<BoundedSkillFact>,
+    pub file_interactions: Vec<BoundedFileInteractionFact>,
+    pub reasoning_config_hash: Option<String>,
+    pub cache_requested: Option<bool>,
     pub adapter_version: String,
 }
 
@@ -153,11 +162,23 @@ pub(crate) fn extract_request_metadata(
         .and_then(|bytes| u64::try_from(bytes.len()).ok());
     let supplied_tools =
         supplied_tools.map_or_else(Vec::new, |tools| bounded_supplied_tools(tools.as_slice()));
+    let instrumentation = analysis_instrumentation(body);
+    let supplied_skills = instrumentation
+        .and_then(|value| value.get("skills"))
+        .and_then(Value::as_array)
+        .map_or_else(Vec::new, |values| bounded_skills(values));
+    let file_interactions = instrumentation
+        .and_then(|value| value.get("file_interactions"))
+        .and_then(Value::as_array)
+        .map_or_else(Vec::new, |values| bounded_file_interactions(values));
+    let reasoning_config_hash = reasoning_config_hash(body);
+    let cache_requested = cache_control_requested(body);
 
     PassiveRequestMetadata {
         external_session_id: session.value,
         session_source: session.source,
         session_limitation: session.limitation,
+        body_inspected: inspect_body,
         execution_id,
         parent_execution_id,
         message_count,
@@ -165,6 +186,10 @@ pub(crate) fn extract_request_metadata(
         supplied_tool_count,
         tool_schema_bytes,
         supplied_tools,
+        supplied_skills,
+        file_interactions,
+        reasoning_config_hash,
+        cache_requested,
         adapter_version: adapter.map_or_else(
             || "unsupported-v1".to_string(),
             |value| value.version.to_string(),
@@ -212,6 +237,11 @@ pub(crate) struct PreparedPassiveRequestRecord {
 
 impl PassiveRequestRecord<'_> {
     pub(crate) fn prepare(&self) -> PreparedPassiveRequestRecord {
+        let mut observations = observations_for_response(self);
+        scope_file_identifiers(
+            &mut observations,
+            usage_ownership_scope_key(self.auth).ok().as_deref(),
+        );
         PreparedPassiveRequestRecord {
             auth: self.auth.clone(),
             request_id: self.request_id.to_string(),
@@ -223,7 +253,7 @@ impl PassiveRequestRecord<'_> {
             request_tags: self.request_tags.clone(),
             metadata: self.metadata.clone(),
             response_payload_available: self.response_body.is_some(),
-            observations: observations_for_response(self),
+            observations,
             boundary_group_key: self.boundary_group_key.to_string(),
             occurred_at: self.occurred_at,
             completed_at: self.completed_at,
@@ -232,10 +262,28 @@ impl PassiveRequestRecord<'_> {
         }
     }
 }
+fn scope_file_identifiers(observations: &mut [InferredObservation], ownership_scope: Option<&str>) {
+    for observation in observations {
+        if let Some(ownership_scope) = ownership_scope {
+            for interaction in &mut observation.facts.file_interactions {
+                interaction.opaque_file_id = hash_identifier(
+                    &json!({
+                        "ownership_scope": ownership_scope,
+                        "file_identifier": interaction.opaque_file_id,
+                    })
+                    .to_string(),
+                );
+            }
+        } else {
+            observation.facts.file_interactions.clear();
+        }
+    }
+}
 
 pub(crate) async fn record_prepared_passive_request<S>(
     store: &S,
     input: PreparedPassiveRequestRecord,
+    desired_versions: &AgentAnalysisDesiredVersions,
 ) -> Result<Uuid, GatewayError>
 where
     S: AgentSessionAnalysisRepository + BudgetRepository + IdentityRepository + Sync,
@@ -320,7 +368,7 @@ where
             store
                 .mark_agent_session_analyses_stale(finalized_session.agent_session_id, None)
                 .await?;
-            enqueue_analysis(
+            enqueue_analysis_with_versions(
                 store,
                 finalized_session.agent_session_id,
                 "session_finalized",
@@ -328,6 +376,7 @@ where
                     .unix_timestamp_nanos()
                     .to_string(),
                 input.completed_at,
+                desired_versions,
             )
             .await?;
             open_session = None;
@@ -363,12 +412,13 @@ where
             store
                 .mark_agent_session_analyses_stale(finalized.agent_session_id, None)
                 .await?;
-            enqueue_analysis(
+            enqueue_analysis_with_versions(
                 store,
                 finalized.agent_session_id,
                 "session_finalized",
                 &expected_watermark.unix_timestamp_nanos().to_string(),
                 input.completed_at,
+                desired_versions,
             )
             .await?;
             open_session = None;
@@ -488,6 +538,17 @@ where
             terminal_success,
         })
         .await?;
+    let prior_request_count = store
+        .count_agent_session_requests(session.agent_session_id)
+        .await?;
+    let nested_fact_request_limit =
+        u64::try_from(MAX_AGENT_SESSION_NESTED_FACTS / MAX_SKILL_FACTS).unwrap_or_default();
+    let nested_facts_truncated = prior_request_count >= nested_fact_request_limit
+        && input.observations.iter().any(|observation| {
+            !observation.facts.supplied_tools.is_empty()
+                || !observation.facts.supplied_skills.is_empty()
+                || !observation.facts.file_interactions.is_empty()
+        });
     if !request_inserted {
         return Ok(session.agent_session_id);
     }
@@ -506,10 +567,11 @@ where
             .map_or("unobserved", SessionCorrelationLimitation::as_str)
     };
     let coverage = json!({
-        "request_metadata": true,
+        "request_metadata": input.metadata.body_inspected,
         "session_correlation": session_correlation,
         "response_payload": input.response_payload_available,
         "response_payload_truncated": input.payload_truncated,
+        "nested_facts_truncated": nested_facts_truncated,
     });
     if let Some(request_log_id) = input.request_log_id {
         store
@@ -524,6 +586,21 @@ where
     }
 
     let mut observations = input.observations;
+    if nested_facts_truncated {
+        for observation in &mut observations {
+            observation.facts.supplied_tools.clear();
+            observation.facts.supplied_skills.clear();
+            observation.facts.file_interactions.clear();
+            if !observation
+                .limitations
+                .contains(&LimitationCode::PayloadTruncated)
+            {
+                observation
+                    .limitations
+                    .push(LimitationCode::PayloadTruncated);
+            }
+        }
+    }
     for (index, observation) in observations.iter_mut().enumerate() {
         observation.observation_id = stable_uuid(
             OBSERVATION_ID_NAMESPACE,
@@ -560,12 +637,13 @@ where
     store
         .mark_agent_session_analyses_stale(session.agent_session_id, None)
         .await?;
-    enqueue_analysis(
+    enqueue_analysis_with_versions(
         store,
         session.agent_session_id,
         "new_input",
         &input.request_id,
         input.completed_at,
+        desired_versions,
     )
     .await?;
     Ok(session.agent_session_id)
@@ -582,6 +660,28 @@ where
     S: AgentSessionAnalysisRepository + Sync,
 {
     let desired_versions = desired_versions();
+    enqueue_analysis_with_versions(
+        store,
+        agent_session_id,
+        reason,
+        dedupe_key,
+        now,
+        &desired_versions,
+    )
+    .await
+}
+
+pub async fn enqueue_analysis_with_versions<S>(
+    store: &S,
+    agent_session_id: Uuid,
+    reason: &str,
+    dedupe_key: &str,
+    now: OffsetDateTime,
+    desired_versions: &AgentAnalysisDesiredVersions,
+) -> Result<bool, GatewayError>
+where
+    S: AgentSessionAnalysisRepository + Sync,
+{
     store
         .enqueue_agent_analysis(&AgentAnalysisQueueRecord {
             queue_item_id: stable_uuid(
@@ -596,7 +696,7 @@ where
             ),
             agent_session_id,
             reason: reason.to_string(),
-            desired_versions,
+            desired_versions: desired_versions.clone(),
             status: AgentAnalysisQueueStatus::Pending,
             lease_owner: None,
             lease_expires_at: None,
@@ -612,7 +712,11 @@ where
         .map_err(Into::into)
 }
 
-pub async fn finalize_idle_sessions<S>(store: &S, now: OffsetDateTime) -> Result<u64, GatewayError>
+pub async fn finalize_idle_sessions<S>(
+    store: &S,
+    now: OffsetDateTime,
+    desired_versions: &AgentAnalysisDesiredVersions,
+) -> Result<u64, GatewayError>
 where
     S: AgentSessionAnalysisRepository + Sync,
 {
@@ -649,12 +753,13 @@ where
             store
                 .mark_agent_session_analyses_stale(session.agent_session_id, None)
                 .await?;
-            enqueue_analysis(
+            enqueue_analysis_with_versions(
                 store,
                 session.agent_session_id,
                 "session_finalized",
                 &last_activity_at.unix_timestamp_nanos().to_string(),
                 now,
+                desired_versions,
             )
             .await?;
             finalized = finalized.saturating_add(1);
@@ -671,9 +776,14 @@ pub async fn process_next_analysis<S>(
     lease_owner: &str,
     now: OffsetDateTime,
     report_retention: Duration,
+    policy: &AnalysisPolicy,
 ) -> Result<bool, GatewayError>
 where
-    S: AgentSessionAnalysisRepository + BudgetRepository + McpToolInvocationRepository + Sync,
+    S: AgentSessionAnalysisRepository
+        + BudgetRepository
+        + McpToolInvocationRepository
+        + RequestLogRepository
+        + Sync,
 {
     let Some(queue) = store
         .claim_agent_analysis(lease_owner, now, now + Duration::minutes(1))
@@ -681,12 +791,29 @@ where
     else {
         return Ok(false);
     };
+    let current_versions = desired_versions_for_policy(policy);
+    if queue.desired_versions.configuration_version != current_versions.configuration_version {
+        enqueue_analysis_with_versions(
+            store,
+            queue.agent_session_id,
+            "configuration_changed",
+            &current_versions.configuration_version,
+            now,
+            &current_versions,
+        )
+        .await?;
+        store
+            .complete_agent_analysis(queue.queue_item_id, lease_owner, now)
+            .await?;
+        return Ok(true);
+    }
     let report = generate_report(
         store,
         queue.agent_session_id,
         &queue.desired_versions,
         now,
         report_retention,
+        policy,
     );
     tokio::pin!(report);
     let lease_interval = std::time::Duration::from_secs(20);
@@ -747,9 +874,14 @@ async fn generate_report<S>(
     versions: &AgentAnalysisDesiredVersions,
     now: OffsetDateTime,
     report_retention: Duration,
+    configured_policy: &AnalysisPolicy,
 ) -> Result<(), GatewayError>
 where
-    S: AgentSessionAnalysisRepository + BudgetRepository + McpToolInvocationRepository + Sync,
+    S: AgentSessionAnalysisRepository
+        + BudgetRepository
+        + McpToolInvocationRepository
+        + RequestLogRepository
+        + Sync,
 {
     ensure_supported_versions(versions)?;
     let trace = store
@@ -801,6 +933,32 @@ where
     let truncated_payload_count =
         observation_coverage_count(&observation_sets, "response_payload_truncated", usize::MAX);
 
+    let mut attempts_by_request = BTreeMap::<String, Vec<RequestAttemptFact>>::new();
+    if configured_policy.metrics.reliability_metrics {
+        let attempt_limit = u32::try_from(MAX_RELIABILITY_EVENTS).unwrap_or(u32::MAX);
+        for attempt in store
+            .list_agent_session_request_attempts(agent_session_id, attempt_limit)
+            .await?
+        {
+            attempts_by_request
+                .entry(attempt.request_id.clone())
+                .or_default()
+                .push(RequestAttemptFact {
+                    request_id: attempt.request_id,
+                    attempt_number: attempt.attempt_number,
+                    produced_final_response: attempt.produced_final_response,
+                    retryable: attempt.retryable,
+                    status: attempt.status.as_str().to_string(),
+                    status_code: attempt.status_code,
+                    error_code: attempt.error_code,
+                    latency_ms: attempt.latency_ms,
+                    provider_key: attempt.provider_key,
+                    upstream_model: attempt.upstream_model,
+                    occurred_at_unix_ms: unix_timestamp_millis(attempt.started_at),
+                });
+        }
+    }
+
     let mut requests = Vec::with_capacity(trace.requests.len());
     let mut intervals = Vec::with_capacity(trace.requests.len());
     for link in &trace.requests {
@@ -816,19 +974,24 @@ where
         {
             intervals.push(interval);
         }
+        let attempts = attempts_by_request
+            .remove(&link.request_id)
+            .unwrap_or_default();
         requests.push(SessionRequestFact {
             request_id: link.request_id.clone(),
             occurred_at: link.occurred_at,
             completed_at: link.completed_at,
             terminal_success: link.terminal_success,
             usage: usage.as_ref().map(session_usage_fact),
+            attempts,
         });
     }
 
     let DirectMcpEvidence {
         intervals: direct_mcp_intervals,
+        invocations: direct_tool_invocations,
         snapshot_digest: direct_mcp_snapshot_digest,
-    } = load_direct_mcp_evidence(store, &trace.session).await?;
+    } = load_direct_mcp_evidence(store, &trace.session, &trace.requests).await?;
     let cohort = load_successful_harness_cohort(store, &trace, versions).await?;
     let report = agent_session_analysis::analyze_session(
         &SessionTrace {
@@ -843,6 +1006,7 @@ where
                 response_payload_count,
                 truncated_payload_count,
                 direct_mcp_intervals,
+                tool_invocations: direct_tool_invocations,
             },
         },
         &AnalysisPolicy {
@@ -850,9 +1014,16 @@ where
             analyzer_version: versions.analyzer_version.clone(),
             score_policy_version: versions.score_policy_version.clone(),
             observation_parser_version: versions.observation_parser_version.clone(),
-            orchestration_gap: agent_session_analysis::DEFAULT_ORCHESTRATION_GAP,
+            configuration_version: versions.configuration_version.clone(),
+            orchestration_gap: configured_policy.orchestration_gap,
             maturity: versions.score_maturity,
             calibration_approval_id: versions.calibration_approval_id.clone(),
+            metrics: configured_policy.metrics.clone(),
+            context_input_boundary_tokens: configured_policy.context_input_boundary_tokens,
+            context_reserved_output_tokens: configured_policy.context_reserved_output_tokens,
+            context_penalty_points_per_repeated_excess: configured_policy
+                .context_penalty_points_per_repeated_excess,
+            cache_profiles: configured_policy.cache_profiles.clone(),
         },
         cohort.as_ref().map(|value| &value.reference),
     )
@@ -871,6 +1042,7 @@ where
             .to_string(),
         ),
         agent_session_id,
+        configuration_version: versions.configuration_version.clone(),
         boundary_policy_version: versions.boundary_policy_version.clone(),
         input_watermark_at: trace.session.input_watermark_at,
         observation_set_id: observation_set.observation_set_id,
@@ -909,12 +1081,14 @@ where
 
 struct DirectMcpEvidence {
     intervals: Vec<ActivityInterval>,
+    invocations: Vec<ToolInvocationFact>,
     snapshot_digest: String,
 }
 
 async fn load_direct_mcp_evidence<S>(
     store: &S,
     session: &AgentSessionRecord,
+    session_requests: &[AgentSessionRequestLinkRecord],
 ) -> Result<DirectMcpEvidence, GatewayError>
 where
     S: McpToolInvocationRepository + Sync,
@@ -923,6 +1097,11 @@ where
     let mut page = 1;
     let mut intervals = Vec::new();
     let mut snapshot = Vec::new();
+    let request_ids = session_requests
+        .iter()
+        .map(|request| request.request_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut invocations = Vec::new();
     loop {
         let result = store
             .list_mcp_tool_invocations(&McpToolInvocationQuery {
@@ -935,6 +1114,9 @@ where
             })
             .await?;
         for invocation in &result.items {
+            if !request_ids.contains(invocation.request_id.as_str()) {
+                continue;
+            }
             let latency_ms = invocation.latency_ms.unwrap_or_default().max(0);
             let started_at = invocation.occurred_at - Duration::milliseconds(latency_ms);
             if let Some(interval) = ActivityInterval::new(started_at, invocation.occurred_at) {
@@ -945,6 +1127,18 @@ where
                 invocation.occurred_at.unix_timestamp_nanos(),
                 invocation.latency_ms,
             ));
+            if invocations.len() < MAX_RELIABILITY_EVENTS {
+                invocations.push(ToolInvocationFact {
+                    request_id: invocation.request_id.clone(),
+                    server_key: Some(invocation.server_display_key.clone()),
+                    tool_key: invocation.tool_display_key.clone(),
+                    status: invocation.status.as_str().to_string(),
+                    error_code: invocation.error_code.clone(),
+                    latency_ms: invocation.latency_ms,
+                    result_payload_truncated: invocation.result_payload_truncated,
+                    occurred_at_unix_ms: unix_timestamp_millis(invocation.occurred_at),
+                });
+            }
         }
         if u64::from(page) * u64::from(page_size) >= result.total || result.items.is_empty() {
             break;
@@ -955,6 +1149,7 @@ where
     }
     snapshot.sort_unstable();
     Ok(DirectMcpEvidence {
+        invocations,
         intervals,
         snapshot_digest: hash_identifier(
             &serde_json::to_string(&snapshot)
@@ -989,6 +1184,10 @@ fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
         output_tokens: accounting.and_then(|value| value.output_tokens),
         reasoning_tokens: accounting.and_then(|value| value.reasoning_tokens),
         provider_total_tokens: accounting.and_then(|value| value.provider_total_tokens),
+        cache_creation_5m_tokens: accounting.and_then(|value| value.cache_creation_5m_tokens),
+        cache_creation_30m_tokens: accounting.and_then(|value| value.cache_creation_30m_tokens),
+        cache_creation_1h_tokens: accounting.and_then(|value| value.cache_creation_1h_tokens),
+        output_includes_reasoning: accounting.and_then(|value| value.output_includes_reasoning),
         fresh_input_cost_10000: accounting
             .and_then(|value| value.fresh_input_cost_usd)
             .map(|value| value.as_scaled_i64()),
@@ -1062,6 +1261,7 @@ where
                 || analysis.report.analyzer_version != versions.analyzer_version
                 || analysis.report.score_policy_version != versions.score_policy_version
                 || analysis.pricing_policy_version != versions.pricing_policy_version
+                || analysis.report.configuration_version != versions.configuration_version
                 || analysis.report.gateway_outcome != GatewayOutcomeState::Succeeded
             {
                 continue;
@@ -1117,14 +1317,25 @@ where
         snapshot_digest,
     }))
 }
+fn unix_timestamp_millis(value: OffsetDateTime) -> i64 {
+    i64::try_from(value.unix_timestamp_nanos().div_euclid(1_000_000)).unwrap_or_else(|_| {
+        if value < OffsetDateTime::UNIX_EPOCH {
+            i64::MIN
+        } else {
+            i64::MAX
+        }
+    })
+}
 
 fn ensure_supported_versions(requested: &AgentAnalysisDesiredVersions) -> Result<(), GatewayError> {
     let mut supported_base = desired_versions();
     supported_base.score_maturity = agent_session_analysis::ScoreMaturity::Experimental;
     supported_base.calibration_approval_id = None;
+    supported_base.configuration_version.clear();
     let mut requested_base = requested.clone();
     requested_base.score_maturity = agent_session_analysis::ScoreMaturity::Experimental;
     requested_base.calibration_approval_id = None;
+    requested_base.configuration_version.clear();
     if requested_base != supported_base {
         return Err(GatewayError::Internal(format!(
             "unsupported agent analysis version tuple: requested {requested:?}, supported {supported_base:?}"
@@ -1157,10 +1368,22 @@ pub fn desired_versions() -> AgentAnalysisDesiredVersions {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| calibrated_score_enabled && !value.is_empty());
-    let score_maturity = if calibration_approval_id.is_some() {
-        agent_session_analysis::ScoreMaturity::Calibrated
+    let mut policy = AnalysisPolicy::default();
+    if let Some(approval) = calibration_approval_id {
+        policy.maturity = agent_session_analysis::ScoreMaturity::Calibrated;
+        policy.calibration_approval_id = Some(approval);
+    }
+    desired_versions_for_policy(&policy)
+}
+
+#[must_use]
+pub fn desired_versions_for_policy(policy: &AnalysisPolicy) -> AgentAnalysisDesiredVersions {
+    let configuration_version = if policy.configuration_version.is_empty() {
+        hash_identifier(
+            &serde_json::to_string(policy).expect("analysis policy serialization is infallible"),
+        )
     } else {
-        agent_session_analysis::ScoreMaturity::Experimental
+        policy.configuration_version.clone()
     };
     AgentAnalysisDesiredVersions {
         report_schema_version: agent_session_analysis::REPORT_SCHEMA_VERSION.to_string(),
@@ -1170,8 +1393,9 @@ pub fn desired_versions() -> AgentAnalysisDesiredVersions {
         score_policy_version: agent_session_analysis::SCORE_POLICY_VERSION.to_string(),
         pricing_policy_version: NORMALIZED_PRICING_POLICY_VERSION.to_string(),
         cohort_version: COHORT_VERSION.to_string(),
-        score_maturity,
-        calibration_approval_id,
+        configuration_version,
+        score_maturity: policy.maturity,
+        calibration_approval_id: policy.calibration_approval_id.clone(),
     }
 }
 
@@ -1180,10 +1404,14 @@ fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredOb
     if input.metadata.message_count.is_some()
         || input.metadata.prompt_bytes.is_some()
         || input.metadata.supplied_tool_count.is_some()
+        || !input.metadata.supplied_skills.is_empty()
+        || !input.metadata.file_interactions.is_empty()
+        || input.metadata.reasoning_config_hash.is_some()
+        || input.metadata.cache_requested.is_some()
     {
         observations.push(InferredObservation {
             observation_id: Uuid::nil(),
-            kind: InferredObservationKind::ToolCallClassified,
+            kind: InferredObservationKind::SessionMetadataClassified,
             source_request_id: input.request_id.to_string(),
             parser_version: OBSERVATION_PARSER_VERSION.to_string(),
             evidence: EvidenceQuality::Direct,
@@ -1194,12 +1422,33 @@ fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredOb
                 supplied_tool_count: input.metadata.supplied_tool_count,
                 tool_schema_bytes: input.metadata.tool_schema_bytes,
                 supplied_tools: input.metadata.supplied_tools.clone(),
+                supplied_skills: input.metadata.supplied_skills.clone(),
+                file_interactions: input.metadata.file_interactions.clone(),
+                reasoning_config_hash: input.metadata.reasoning_config_hash.clone(),
+                cache_requested: input.metadata.cache_requested,
                 ..Default::default()
             },
             limitations: vec![LimitationCode::ToolInventoryPotentialOnly],
         });
     }
     if let Some(response) = input.response_body {
+        let (finish_reason, incomplete_reason) = response_finish_reasons(response);
+        if finish_reason.is_some() || incomplete_reason.is_some() {
+            observations.push(InferredObservation {
+                observation_id: Uuid::nil(),
+                kind: InferredObservationKind::ResponseFinishClassified,
+                source_request_id: input.request_id.to_string(),
+                parser_version: OBSERVATION_PARSER_VERSION.to_string(),
+                evidence: EvidenceQuality::Direct,
+                occurred_at: input.completed_at,
+                facts: BoundedObservationFacts {
+                    finish_reason,
+                    incomplete_reason,
+                    ..Default::default()
+                },
+                limitations: Vec::new(),
+            });
+        }
         let mut calls = Vec::new();
         let scan_truncated = collect_tool_calls(response, &mut calls);
         let first_observation = observations.len();
@@ -1208,13 +1457,48 @@ fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredOb
                 .into_iter()
                 .map(|call| classify_tool_call(input, call)),
         );
-        if scan_truncated && let Some(observation) = observations.get_mut(first_observation) {
-            observation
-                .limitations
-                .push(LimitationCode::PayloadTruncated);
+        if scan_truncated {
+            if let Some(observation) = observations.get_mut(first_observation) {
+                observation
+                    .limitations
+                    .push(LimitationCode::PayloadTruncated);
+            } else {
+                observations.push(InferredObservation {
+                    observation_id: Uuid::nil(),
+                    kind: InferredObservationKind::ToolCallClassified,
+                    source_request_id: input.request_id.to_string(),
+                    parser_version: OBSERVATION_PARSER_VERSION.to_string(),
+                    evidence: EvidenceQuality::Unavailable,
+                    occurred_at: input.completed_at,
+                    facts: BoundedObservationFacts::default(),
+                    limitations: vec![LimitationCode::PayloadTruncated],
+                });
+            }
         }
     }
     observations
+}
+
+fn response_finish_reasons(response: &Value) -> (Option<String>, Option<String>) {
+    let finish_reason = [
+        "/choices/0/finish_reason",
+        "/stop_reason",
+        "/candidates/0/finishReason",
+        "/response/choices/0/finish_reason",
+        "/response/stop_reason",
+    ]
+    .into_iter()
+    .find_map(|path| response.pointer(path).and_then(Value::as_str))
+    .map(|value| value.chars().take(64).collect());
+    let incomplete_reason = [
+        "/incomplete_details/reason",
+        "/response/incomplete_details/reason",
+        "/incompleteDetails/reason",
+    ]
+    .into_iter()
+    .find_map(|path| response.pointer(path).and_then(Value::as_str))
+    .map(|value| value.chars().take(64).collect());
+    (finish_reason, incomplete_reason)
 }
 
 struct ToolCall<'a> {
@@ -1715,11 +1999,143 @@ fn bounded_supplied_tools(tools: &[Value]) -> Vec<BoundedToolDefinitionFact> {
                 .and_then(|bytes| u64::try_from(bytes.len()).ok())?
                 .div_ceil(4);
             Some(BoundedToolDefinitionFact {
+                server_key: tool_server_key(&name),
                 name,
                 token_estimate,
             })
         })
         .collect()
+}
+
+fn analysis_instrumentation(body: &Value) -> Option<&serde_json::Map<String, Value>> {
+    body.pointer("/metadata/agent_analysis")
+        .or_else(|| body.pointer("/metadata/oceans_agent_analysis"))
+        .and_then(Value::as_object)
+}
+
+fn bounded_skills(values: &[Value]) -> Vec<BoundedSkillFact> {
+    values
+        .iter()
+        .take(MAX_SKILL_FACTS)
+        .filter_map(|value| {
+            let value = value.as_object()?;
+            let name = value
+                .get("name")?
+                .as_str()?
+                .chars()
+                .take(MAX_TOOL_NAME_CHARS)
+                .collect::<String>();
+            (!name.is_empty()).then(|| BoundedSkillFact {
+                name,
+                description_token_estimate: bounded_u64(value.get("description_tokens")),
+                body_token_estimate: bounded_u64(value.get("body_tokens")),
+                resource_token_estimate: bounded_u64(value.get("resource_tokens")),
+                used: value.get("used").and_then(Value::as_bool).unwrap_or(false),
+                abandoned: value.get("abandoned").and_then(Value::as_bool),
+            })
+        })
+        .collect()
+}
+
+fn bounded_file_interactions(values: &[Value]) -> Vec<BoundedFileInteractionFact> {
+    values
+        .iter()
+        .take(MAX_FILE_INTERACTION_FACTS)
+        .filter_map(|value| {
+            let value = value.as_object()?;
+            let opaque_file_id = value
+                .get("opaque_file_id")?
+                .as_str()?
+                .chars()
+                .take(MAX_TOOL_NAME_CHARS)
+                .collect::<String>();
+            let operation = value
+                .get("operation")?
+                .as_str()?
+                .to_ascii_lowercase()
+                .chars()
+                .take(32)
+                .collect::<String>();
+            if opaque_file_id.is_empty()
+                || !matches!(
+                    operation.as_str(),
+                    "read" | "search" | "create" | "edit" | "overwrite" | "verify"
+                )
+            {
+                return None;
+            }
+            Some(BoundedFileInteractionFact {
+                opaque_file_id,
+                operation,
+                tool_name: value
+                    .get("tool_name")
+                    .and_then(Value::as_str)
+                    .map(|name| name.chars().take(MAX_TOOL_NAME_CHARS).collect()),
+                succeeded: value.get("succeeded").and_then(Value::as_bool),
+                error_signature: value
+                    .get("error_code")
+                    .and_then(Value::as_str)
+                    .map(|code| code.chars().take(MAX_TOOL_NAME_CHARS).collect()),
+            })
+        })
+        .collect()
+}
+
+fn bounded_u64(value: Option<&Value>) -> Option<u64> {
+    value
+        .and_then(Value::as_u64)
+        .filter(|value| *value <= 10_000_000)
+}
+
+fn reasoning_config_hash(body: &Value) -> Option<String> {
+    let value = body
+        .get("reasoning")
+        .or_else(|| body.get("reasoning_effort"))
+        .or_else(|| body.get("thinking"))?;
+    serde_json::to_string(value)
+        .ok()
+        .map(|value| hash_identifier(&value))
+}
+
+fn cache_control_requested(body: &Value) -> Option<bool> {
+    let mut remaining = 2_048;
+    let requested = body.get("cache_control").is_some()
+        || body.get("prompt_cache_options").is_some()
+        || contains_cache_control(body, 0, &mut remaining);
+    requested.then_some(true)
+}
+
+fn contains_cache_control(value: &Value, depth: usize, remaining: &mut usize) -> bool {
+    if depth > 16 || *remaining == 0 {
+        return false;
+    }
+    *remaining -= 1;
+    match value {
+        Value::Object(values) => values.iter().any(|(key, value)| {
+            matches!(
+                key.as_str(),
+                "cache_control" | "cachePoint" | "prompt_cache_breakpoint"
+            ) || contains_cache_control(value, depth + 1, remaining)
+        }),
+        Value::Array(values) => values
+            .iter()
+            .any(|value| contains_cache_control(value, depth + 1, remaining)),
+        _ => false,
+    }
+}
+
+fn tool_server_key(name: &str) -> Option<String> {
+    if let Some(value) = name.strip_prefix("mcp__") {
+        return value
+            .split_once("__")
+            .map(|(server, _)| server.to_string())
+            .filter(|value| !value.is_empty());
+    }
+    ['.', '/']
+        .into_iter()
+        .find_map(|delimiter| name.split_once(delimiter).map(|(server, _)| server))
+        .map(str::to_string)
+        .filter(|value| !value.is_empty())
 }
 
 #[cfg(test)]
@@ -1795,6 +2211,69 @@ mod tests {
     }
 
     #[test]
+    fn metadata_captures_bounded_skill_file_cache_and_reasoning_facts() {
+        let request = json!({
+            "reasoning": {"effort": "high"},
+            "cache_control": {"type": "ephemeral"},
+            "metadata": {
+                "agent_analysis": {
+                    "skills": [
+                        {
+                            "name": "review",
+                            "description_tokens": 64,
+                            "body_tokens": 1200,
+                            "resource_tokens": 80,
+                            "used": true,
+                            "abandoned": false
+                        }
+                    ],
+                    "file_interactions": [
+                        {
+                            "opaque_file_id": "file-1",
+                            "operation": "edit",
+                            "tool_name": "edit",
+                            "succeeded": false,
+                            "error_code": "conflict"
+                        }
+                    ]
+                }
+            }
+        });
+
+        let metadata = extract_request_metadata(&request, &BTreeMap::new(), true, "opencode");
+
+        assert_eq!(metadata.supplied_skills.len(), 1);
+        assert_eq!(metadata.supplied_skills[0].name, "review");
+        assert_eq!(metadata.supplied_skills[0].body_token_estimate, Some(1200));
+        assert_eq!(metadata.file_interactions.len(), 1);
+        assert_eq!(metadata.file_interactions[0].opaque_file_id, "file-1");
+        assert_eq!(
+            metadata.file_interactions[0].error_signature.as_deref(),
+            Some("conflict")
+        );
+        assert!(metadata.reasoning_config_hash.is_some());
+        assert_eq!(metadata.cache_requested, Some(true));
+    }
+
+    #[test]
+    fn response_finish_reason_supports_openai_anthropic_and_incomplete_shapes() {
+        assert_eq!(
+            response_finish_reasons(&json!({"choices": [{"finish_reason": "length"}]})),
+            (Some("length".to_string()), None)
+        );
+        assert_eq!(
+            response_finish_reasons(&json!({"stop_reason": "end_turn"})),
+            (Some("end_turn".to_string()), None)
+        );
+        assert_eq!(
+            response_finish_reasons(
+                &json!({"response": {"incomplete_details": {"reason": "max_output_tokens"}}})
+            ),
+            (None, Some("max_output_tokens".to_string()))
+        );
+    }
+
+    #[test]
     fn lineage_candidates_are_hashed_before_persistence() {
         let execution = hash_lineage_candidate("user:a", "codex", "raw-thread");
         let parent = hash_lineage_candidate("user:a", "codex", "raw-thread");
@@ -1808,6 +2287,40 @@ mod tests {
         assert_ne!(
             execution,
             hash_lineage_candidate("user:a", "claude_code", "raw-thread")
+        );
+    }
+    #[test]
+    fn file_identifiers_are_owner_scoped_before_persistence() {
+        let observation = || InferredObservation {
+            observation_id: Uuid::nil(),
+            kind: InferredObservationKind::SessionMetadataClassified,
+            source_request_id: "request".to_string(),
+            parser_version: OBSERVATION_PARSER_VERSION.to_string(),
+            evidence: EvidenceQuality::Direct,
+            occurred_at: OffsetDateTime::UNIX_EPOCH,
+            facts: BoundedObservationFacts {
+                file_interactions: vec![BoundedFileInteractionFact {
+                    opaque_file_id: "/Users/alice/private/source.rs".to_string(),
+                    operation: "read".to_string(),
+                    tool_name: None,
+                    succeeded: None,
+                    error_signature: None,
+                }],
+                ..BoundedObservationFacts::default()
+            },
+            limitations: Vec::new(),
+        };
+        let mut first = vec![observation()];
+        scope_file_identifiers(&mut first, Some("user:a"));
+        let first_id = &first[0].facts.file_interactions[0].opaque_file_id;
+        assert!(first_id.starts_with("sha256:"));
+        assert!(!first_id.contains("/Users/alice"));
+
+        let mut second = vec![observation()];
+        scope_file_identifiers(&mut second, Some("user:b"));
+        assert_ne!(
+            first_id,
+            &second[0].facts.file_interactions[0].opaque_file_id
         );
     }
 
@@ -2402,11 +2915,16 @@ mod tests {
                 session_limitation: None,
                 execution_id: None,
                 parent_execution_id: None,
+                body_inspected: false,
                 message_count: None,
                 prompt_bytes: None,
                 supplied_tool_count: None,
                 tool_schema_bytes: None,
                 supplied_tools: Vec::new(),
+                supplied_skills: Vec::new(),
+                file_interactions: Vec::new(),
+                reasoning_config_hash: None,
+                cache_requested: None,
                 adapter_version: "unsupported-v1".to_string(),
             },
             response_body: None,

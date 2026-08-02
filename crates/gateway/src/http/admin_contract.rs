@@ -1323,7 +1323,27 @@ pub struct AgentSessionRequestView {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AgentSuppliedToolFactView {
     pub name: String,
+    pub server_key: Option<String>,
     pub token_estimate: u64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSuppliedSkillFactView {
+    pub name: String,
+    pub description_token_estimate: Option<u64>,
+    pub body_token_estimate: Option<u64>,
+    pub resource_token_estimate: Option<u64>,
+    pub used: bool,
+    pub abandoned: Option<bool>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentFileInteractionFactView {
+    pub opaque_file_id: String,
+    pub operation: String,
+    pub tool_name: Option<String>,
+    pub succeeded: Option<bool>,
+    pub error_signature: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1334,6 +1354,12 @@ pub struct AgentObservationFactsView {
     pub tool_schema_bytes: Option<u64>,
     pub tool_schema_token_estimate: Option<u64>,
     pub supplied_tools: Vec<AgentSuppliedToolFactView>,
+    pub supplied_skills: Vec<AgentSuppliedSkillFactView>,
+    pub file_interactions: Vec<AgentFileInteractionFactView>,
+    pub reasoning_config_hash: Option<String>,
+    pub cache_requested: Option<bool>,
+    pub finish_reason: Option<String>,
+    pub incomplete_reason: Option<String>,
     pub tool_name: Option<String>,
     pub tool_schema_hash: Option<String>,
     pub opaque_file_id: Option<String>,
@@ -1403,8 +1429,13 @@ pub struct AgentTokenAndCacheDiagnosticsView {
     pub fresh_input_tokens: Option<i64>,
     pub cache_read_tokens: Option<i64>,
     pub cache_creation_tokens: Option<i64>,
+    pub total_input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
     pub reasoning_tokens: Option<i64>,
+    pub visible_output_tokens: Option<i64>,
+    pub cache_creation_5m_tokens: Option<i64>,
+    pub cache_creation_30m_tokens: Option<i64>,
+    pub cache_creation_1h_tokens: Option<i64>,
     pub provider_total_tokens: Option<i64>,
     pub legacy_cost_10000: Option<i64>,
     pub normalized_cost_10000: Option<i64>,
@@ -1412,6 +1443,10 @@ pub struct AgentTokenAndCacheDiagnosticsView {
     pub cache_savings_10000: Option<i64>,
     pub cache_savings_basis_points: Option<i32>,
     pub cache_read_write_ratio_basis_points: Option<i32>,
+    pub cache_write_amplification_basis_points: Option<i32>,
+    pub silent_cache_threshold_miss_requests: Option<u32>,
+    pub cache_key_switches: u32,
+    pub reasoning_config_switches: Option<u32>,
     pub pricing_policy_versions: Vec<String>,
 }
 
@@ -1421,10 +1456,27 @@ pub struct AgentContextDiagnosticsView {
     pub median_prompt_tokens: Option<i64>,
     pub p90_prompt_tokens: Option<i64>,
     pub maximum_prompt_tokens: Option<i64>,
+    pub input_boundary_tokens: i64,
+    pub reserved_output_tokens: i64,
+    pub peak_input_utilization_basis_points: Option<i32>,
+    pub requests_over_input_boundary: u32,
+    pub repeated_requests_over_input_boundary: u32,
+    pub score_penalty_points: u8,
     pub prompt_growth_per_turn: Option<i64>,
     pub prompt_growth_per_active_minute: Option<i64>,
     pub suspected_compactions: u32,
     pub suspected_context_resets: u32,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentToolServerDiagnosticsView {
+    pub server_key: String,
+    pub exposed_tool_definitions: u32,
+    pub invoked_tool_definitions: u32,
+    pub invocation_count: u32,
+    pub failed_count: u32,
+    pub schema_token_estimate_per_request: u64,
+    pub estimated_uncached_schema_cost_10000: Option<i64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1443,6 +1495,109 @@ pub struct AgentToolAndChangeDiagnosticsView {
     pub rework_spans_suspected: u32,
     pub direct_mcp_calls: u32,
     pub direct_mcp_duration_ms: Option<i64>,
+    pub tool_servers: Vec<AgentToolServerDiagnosticsView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentRequestAttemptView {
+    pub request_id: String,
+    pub attempt_number: i64,
+    pub produced_final_response: bool,
+    pub retryable: bool,
+    pub status: String,
+    pub status_code: Option<i64>,
+    pub error_code: Option<String>,
+    pub latency_ms: Option<i64>,
+    pub provider_key: String,
+    pub upstream_model: String,
+    pub occurred_at_unix_ms: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentToolReliabilityItemView {
+    pub server_key: Option<String>,
+    pub tool_key: String,
+    pub invocation_count: u32,
+    pub failed_count: u32,
+    pub truncated_result_count: u32,
+    pub latency_ms: i64,
+    pub post_error_input_tokens: Option<i64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentReliabilityDiagnosticsView {
+    pub attempt_coverage_percent: u8,
+    pub total_attempts: u32,
+    pub wasted_attempts: u32,
+    pub fallback_attempts: u32,
+    pub wasted_attempt_latency_ms: i64,
+    pub wasted_attempt_cost_10000: Option<i64>,
+    pub tool_invocations: u32,
+    pub failed_tool_invocations: u32,
+    pub truncated_tool_results: u32,
+    pub attempts: Vec<AgentRequestAttemptView>,
+    pub tools: Vec<AgentToolReliabilityItemView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSkillDiagnosticItemView {
+    pub name: String,
+    pub available_request_count: u32,
+    pub used_request_count: u32,
+    pub abandoned_request_count: u32,
+    pub description_token_estimate: Option<u64>,
+    pub loaded_body_tokens: Option<u64>,
+    pub loaded_resource_tokens: Option<u64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentSkillDiagnosticsView {
+    pub instrumented_request_count: u32,
+    pub available_skill_count: Option<u32>,
+    pub used_skill_count: Option<u32>,
+    pub unused_skill_count: Option<u32>,
+    pub description_tokens_per_request: Option<u64>,
+    pub loaded_body_tokens: Option<u64>,
+    pub loaded_resource_tokens: Option<u64>,
+    pub items: Vec<AgentSkillDiagnosticItemView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentOutcomeDiagnosticsView {
+    pub file_signal_coverage_percent: u8,
+    pub cost_per_file_touched_10000: Option<i64>,
+    pub cost_per_successful_session_10000: Option<i64>,
+    pub rework_ratio_basis_points: Option<i32>,
+    pub verification_rate_basis_points: Option<i32>,
+    pub zero_outcome: Option<bool>,
+    pub repeated_file_interactions_suspected: Option<u32>,
+    pub files_with_repeated_interactions_suspected: Option<u32>,
+    pub failed_file_interactions: Option<u32>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentFinishReasonItemView {
+    pub reason: String,
+    pub count: u32,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentFinishReasonDiagnosticsView {
+    pub instrumented_request_count: u32,
+    pub length_limited_requests: u32,
+    pub items: Vec<AgentFinishReasonItemView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentAnalysisMetricPolicyView {
+    pub token_metrics: bool,
+    pub cache_metrics: bool,
+    pub context_metrics: bool,
+    pub tool_metrics: bool,
+    pub skill_metrics: bool,
+    pub reliability_metrics: bool,
+    pub outcome_metrics: bool,
+    pub finish_reason_metrics: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1450,6 +1605,11 @@ pub struct AgentSessionDiagnosticsView {
     pub token_and_cache: AgentTokenAndCacheDiagnosticsView,
     pub context: AgentContextDiagnosticsView,
     pub tools_and_changes: AgentToolAndChangeDiagnosticsView,
+    pub skills: AgentSkillDiagnosticsView,
+    pub reliability: AgentReliabilityDiagnosticsView,
+    pub outcome: AgentOutcomeDiagnosticsView,
+    pub finish_reasons: AgentFinishReasonDiagnosticsView,
+    pub enabled_metrics: AgentAnalysisMetricPolicyView,
     pub semantic_verification_available: bool,
 }
 
@@ -1460,6 +1620,7 @@ pub struct AgentSessionEfficiencyReportView {
     pub score_policy_version: String,
     pub observation_parser_version: String,
     pub calibration_approval_id: Option<String>,
+    pub configuration_version: String,
     pub maturity: String,
     pub confidence: String,
     pub gateway_outcome: String,
