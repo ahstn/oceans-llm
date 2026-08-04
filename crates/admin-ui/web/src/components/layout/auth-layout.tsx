@@ -14,9 +14,12 @@ interface AuthLayoutProps {
 export function AuthLayout({ title, description, children, cardClassName }: AuthLayoutProps) {
   return (
     <main className="bg-background text-foreground min-h-screen px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
-      <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-7xl items-stretch gap-10 sm:min-h-[calc(100vh-3rem)] lg:grid-cols-[minmax(22rem,0.9fr)_minmax(28rem,1.1fr)] lg:gap-12 xl:grid-cols-[minmax(30rem,0.95fr)_minmax(32rem,1.05fr)] xl:gap-20">
+      <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-7xl items-stretch gap-10 sm:min-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-4rem)] lg:grid-cols-[minmax(22rem,0.9fr)_minmax(28rem,1.1fr)] lg:gap-12 xl:grid-cols-[minmax(30rem,0.95fr)_minmax(32rem,1.05fr)] xl:gap-20">
         <section className="relative hidden min-h-[40rem] overflow-hidden rounded-xl border lg:flex">
-          <img src={authHeroWave} alt="" className="absolute inset-0 size-full object-cover" />
+          <picture className="absolute inset-0">
+            <source media="(min-width: 64rem)" srcSet={authHeroWave} />
+            <img alt="" className="size-full object-cover" />
+          </picture>
           <div className="relative flex size-full flex-col justify-between p-10 xl:p-12">
             <div className="flex items-center gap-4">
               <img src={oceansLogo} alt="" className="size-14 rounded-xl" />

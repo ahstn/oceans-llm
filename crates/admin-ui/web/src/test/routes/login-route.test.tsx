@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const routeMock = {
@@ -51,14 +51,25 @@ describe('LoginPage', () => {
   it('uses user-facing sign-in copy and provider actions', async () => {
     const { LoginPage } = await import('@/routes/login')
 
-    render(<LoginPage />)
+    const { container } = render(<LoginPage />)
 
     expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
     expect(
       screen.getByText('Use your Oceans credentials or a supported SSO provider.'),
     ).toBeInTheDocument()
     expect(screen.queryByText('Admin access')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Show password' })).toBeInTheDocument()
+    const passwordInput = screen.getByLabelText('Password')
+    expect(passwordInput).toHaveAttribute('type', 'password')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show password' }))
+
+    expect(passwordInput).toHaveAttribute('type', 'text')
+    expect(screen.getByRole('button', { name: 'Hide password' })).toBeInTheDocument()
+    const heroSource = container.querySelector('picture source')
+    const heroImage = container.querySelector('picture img')
+    expect(heroSource).toHaveAttribute('media', '(min-width: 64rem)')
+    expect(heroSource).toHaveAttribute('srcset')
+    expect(heroImage).not.toHaveAttribute('src')
     expect(screen.getByRole('link', { name: 'Google' })).toHaveAttribute(
       'href',
       'https://gateway.example/api/v1/auth/oidc/start?provider_key=google&redirect_to=%2Fadmin',
