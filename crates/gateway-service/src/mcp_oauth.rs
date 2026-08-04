@@ -1,14 +1,15 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
     time::Duration as StdDuration,
 };
 
 use gateway_core::{
     ExternalMcpServerRecord, GatewayError, McpUpstreamCredentialBindingRecord,
-    McpUpstreamCredentialRepository, ProviderError, UpsertMcpUpstreamCredentialBindingRecord,
+    McpUpstreamCredentialRepository, ProviderError, RefreshMcpOauthCredentialBindingRecord,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Map;
 use time::{Duration, OffsetDateTime};
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
@@ -18,7 +19,7 @@ use crate::mcp_upstream_auth::mcp_oauth_server_config;
 
 const REFRESH_EARLY_SECONDS: i64 = 300;
 const REFRESH_LEASE_SECONDS: i64 = 90;
-const REFRESH_LEASE_WAIT_SECONDS: u64 = 30;
+const REFRESH_LEASE_WAIT_SECONDS: u64 = 65;
 
 #[derive(Debug, Clone)]
 pub struct McpOauthProvider {
@@ -51,7 +52,7 @@ pub struct McpOauthRuntime {
     public_base_url: Option<String>,
     providers: BTreeMap<String, McpOauthProvider>,
     client: reqwest::Client,
-    refresh_locks: Arc<Mutex<HashMap<Uuid, Arc<AsyncMutex<()>>>>>,
+    refresh_locks: Arc<Mutex<HashMap<Uuid, Weak<AsyncMutex<()>>>>>,
 }
 
 impl McpOauthRuntime {
@@ -74,6 +75,17 @@ impl McpOauthRuntime {
     #[must_use]
     pub fn is_configured(&self) -> bool {
         self.public_base_url.is_some() && !self.providers.is_empty()
+    }
+
+    #[must_use]
+    pub fn connection_unavailable_reason(&self, provider_key: &str) -> Option<&'static str> {
+        if self.public_base_url.is_none() {
+            Some("public_base_url_not_configured")
+        } else if !self.providers.contains_key(provider_key) {
+            Some("provider_not_configured")
+        } else {
+            None
+        }
     }
 
     pub fn provider(&self, key: &str) -> Result<&McpOauthProvider, GatewayError> {
@@ -130,12 +142,23 @@ impl McpOauthRuntime {
             let mut locks = self.refresh_locks.lock().map_err(|_| {
                 GatewayError::Internal("MCP OAuth refresh lock was poisoned".to_string())
             })?;
-            locks
-                .entry(binding.credential_binding_id)
-                .or_insert_with(|| Arc::new(AsyncMutex::new(())))
-                .clone()
+            locks.retain(|_, lock| lock.strong_count() > 0);
+            if let Some(lock) = locks
+                .get(&binding.credential_binding_id)
+                .and_then(Weak::upgrade)
+            {
+                lock
+            } else {
+                let lock = Arc::new(AsyncMutex::new(()));
+                locks.insert(binding.credential_binding_id, Arc::downgrade(&lock));
+                lock
+            }
         };
-        let _guard = lock.lock().await;
+        let _guard = match lock.try_lock() {
+            Ok(guard) => guard,
+            Err(_) if has_unexpired_access_token(&binding) => return Ok(binding),
+            Err(_) => lock.lock().await,
+        };
         let (current, lease_token) = match acquire_refresh_lease(repo, &binding, server).await? {
             RefreshLease::Current(current) => return Ok(current),
             RefreshLease::Acquired {
@@ -196,14 +219,21 @@ impl McpOauthRuntime {
                 .ok()
                 .and_then(|parsed| parsed.error);
             if error_code.as_deref() == Some("invalid_grant") {
-                repo.revoke_mcp_upstream_credential_binding(
-                    current.credential_binding_id,
-                    OffsetDateTime::now_utc(),
-                )
-                .await?;
-                return Err(GatewayError::McpCredentialRequired {
-                    server_key: server.server_key.clone(),
-                });
+                let expected_ciphertext = current
+                    .secret_ciphertext
+                    .as_deref()
+                    .ok_or_else(|| credential_required(server))?;
+                if repo
+                    .revoke_mcp_oauth_credential_if_unchanged(
+                        current.credential_binding_id,
+                        expected_ciphertext,
+                        OffsetDateTime::now_utc(),
+                    )
+                    .await?
+                {
+                    return Err(credential_required(server));
+                }
+                return current_binding_after_refresh_race(repo, &current, server).await;
             }
             return Err(oauth_endpoint_error(status));
         }
@@ -215,7 +245,7 @@ impl McpOauthRuntime {
             Some(bundle.refresh_token),
         )
         .await?;
-        persist_refreshed_binding(repo, current, grant).await
+        persist_refreshed_binding(repo, current, grant, server).await
     }
 }
 
@@ -284,6 +314,9 @@ where
                 lease_token,
             });
         }
+        if has_unexpired_access_token(&current) {
+            return Ok(RefreshLease::Current(current));
+        }
         if tokio::time::Instant::now() >= deadline {
             return Err(ProviderError::Timeout.into());
         }
@@ -298,10 +331,17 @@ pub fn needs_refresh(binding: &McpUpstreamCredentialBindingRecord) -> bool {
     })
 }
 
+fn has_unexpired_access_token(binding: &McpUpstreamCredentialBindingRecord) -> bool {
+    binding
+        .expires_at
+        .is_some_and(|expires_at| expires_at > OffsetDateTime::now_utc())
+}
+
 async fn persist_refreshed_binding<R>(
     repo: &R,
     current: McpUpstreamCredentialBindingRecord,
     grant: McpOauthTokenGrant,
+    server: &ExternalMcpServerRecord,
 ) -> Result<McpUpstreamCredentialBindingRecord, GatewayError>
 where
     R: McpUpstreamCredentialRepository + ?Sized,
@@ -309,27 +349,56 @@ where
     let secret = serde_json::to_string(&grant.bundle)
         .map_err(|error| GatewayError::Internal(error.to_string()))?;
     let encrypted = encrypt_secret(&secret)?;
-    Ok(repo
-        .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
-            credential_binding_id: Some(current.credential_binding_id),
-            mcp_server_id: current.mcp_server_id,
-            owner_scope_kind: current.owner_scope_kind,
-            owner_scope_key: current.owner_scope_key,
-            owner_user_id: current.owner_user_id,
-            owner_team_id: current.owner_team_id,
-            owner_service_account_id: current.owner_service_account_id,
-            material_kind: current.material_kind,
-            header_name: current.header_name,
-            storage_kind: current.storage_kind,
-            secret_ciphertext: Some(encrypted.ciphertext),
-            secret_nonce: Some(encrypted.nonce),
-            secret_key_id: Some(encrypted.key_id.to_string()),
-            secret_ref: None,
-            expires_at: Some(grant.expires_at),
-            metadata: current.metadata,
+    let expected_secret_ciphertext = current
+        .secret_ciphertext
+        .clone()
+        .ok_or_else(|| credential_required(server))?;
+    let refreshed = repo
+        .compare_and_swap_mcp_oauth_credential_refresh(&RefreshMcpOauthCredentialBindingRecord {
+            credential_binding_id: current.credential_binding_id,
+            expected_secret_ciphertext,
+            secret_ciphertext: encrypted.ciphertext,
+            secret_nonce: encrypted.nonce,
+            secret_key_id: encrypted.key_id.to_string(),
+            expires_at: grant.expires_at,
+            metadata: oauth_bundle_metadata(&grant.bundle),
             updated_at: OffsetDateTime::now_utc(),
         })
-        .await?)
+        .await?;
+    match refreshed {
+        Some(binding) => Ok(binding),
+        None => current_binding_after_refresh_race(repo, &current, server).await,
+    }
+}
+
+async fn current_binding_after_refresh_race<R>(
+    repo: &R,
+    current: &McpUpstreamCredentialBindingRecord,
+    server: &ExternalMcpServerRecord,
+) -> Result<McpUpstreamCredentialBindingRecord, GatewayError>
+where
+    R: McpUpstreamCredentialRepository + ?Sized,
+{
+    repo.get_active_mcp_upstream_credential_binding(current.mcp_server_id, &current.owner_scope_key)
+        .await?
+        .ok_or_else(|| credential_required(server))
+}
+
+#[must_use]
+pub(crate) fn oauth_bundle_metadata(
+    bundle: &McpOauthTokenBundle,
+) -> Map<String, serde_json::Value> {
+    Map::from_iter([
+        (
+            "oauth_provider_key".to_string(),
+            serde_json::json!(bundle.provider_key),
+        ),
+        ("resource".to_string(), serde_json::json!(bundle.resource)),
+        (
+            "granted_scopes".to_string(),
+            serde_json::json!(bundle.granted_scopes),
+        ),
+    ])
 }
 
 #[derive(Debug, Deserialize)]

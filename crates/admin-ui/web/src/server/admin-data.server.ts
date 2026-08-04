@@ -553,24 +553,27 @@ export async function previewMcpEffectiveAccess(
 }
 
 export async function listMcpOauthConnections(): Promise<McpOauthConnectionView[]> {
-  return fetchGatewayJson<McpOauthConnectionView[]>('/api/v1/mcp/oauth/connections')
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/mcp/oauth/connections'))
 }
 
 export async function startMcpOauthConnection(serverId: string): Promise<McpOauthStartResponse> {
-  return fetchGatewayJson<McpOauthStartResponse>(
-    `/api/v1/mcp/servers/${encodeURIComponent(serverId)}/oauth/start`,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ redirect_to: '/admin/account/connections' }),
-    },
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/mcp/servers/{server_id}/oauth/start', {
+      params: { path: { server_id: serverId } },
+      body: { redirect_to: '/admin/account/connections' },
+    }),
   )
 }
 
 export async function revokeMcpOauthConnection(serverId: string): Promise<void> {
-  await fetchGatewayJson(`/api/v1/mcp/servers/${encodeURIComponent(serverId)}/oauth/connection`, {
-    method: 'DELETE',
-  })
+  const client = createGatewayApiClient()
+  unwrapGatewayResponse(
+    await client.DELETE('/api/v1/mcp/servers/{server_id}/oauth/connection', {
+      params: { path: { server_id: serverId } },
+    }),
+  )
 }
 
 export async function listReviewAgentRepositories(

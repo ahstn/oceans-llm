@@ -51,18 +51,18 @@ mod tests {
         OidcLoginStateRecord, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
-        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        RequestTag, RequestTags, RequestToolCardinality, ReviewAgentProvider,
-        ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryStatus,
-        ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, RoutePricingOverride,
-        SeedApiKey, SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
-        SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
-        SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
-        SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError, StoreHealth,
-        UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
-        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
-        UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        PricingProvenance, ProviderCapabilities, RefreshMcpOauthCredentialBindingRecord,
+        RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord, RequestLogQuery,
+        RequestLogRecord, RequestLogRepository, RequestTag, RequestTags, RequestToolCardinality,
+        ReviewAgentProvider, ReviewAgentPullRequestState, ReviewAgentRepository,
+        ReviewAgentRepositoryStatus, ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility,
+        RoutePricingOverride, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
+        SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
+        SeedOauthProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+        SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError,
+        StoreHealth, UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord,
+        UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord,
+        UpsertReviewAgentPullRequestRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -1750,6 +1750,147 @@ mod tests {
         assert_eq!(
             replacement.material_kind,
             McpUpstreamCredentialMaterialKind::StaticHeader
+        );
+
+        let oauth_user = store
+            .create_identity_user(
+                "MCP OAuth Refresh User",
+                "mcp-oauth-refresh-user@example.com",
+                "mcp-oauth-refresh-user@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("create OAuth refresh user");
+        let oauth_scope_key = format!("mcp_credential:v1:user:{}", oauth_user.user_id);
+        let oauth_binding = store
+            .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id: server.mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: oauth_scope_key.clone(),
+                owner_user_id: Some(oauth_user.user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind: McpUpstreamCredentialMaterialKind::OauthTokens,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("oauth-cipher-v1".to_string()),
+                secret_nonce: Some("oauth-nonce-v1".to_string()),
+                secret_key_id: Some("oauth-key".to_string()),
+                secret_ref: None,
+                expires_at: Some(now + Duration::hours(1)),
+                metadata: Map::from_iter([("grant".to_string(), json!("v1"))]),
+                updated_at: now + Duration::minutes(20),
+            })
+            .await
+            .expect("create OAuth credential");
+        let refreshed = store
+            .compare_and_swap_mcp_oauth_credential_refresh(
+                &RefreshMcpOauthCredentialBindingRecord {
+                    credential_binding_id: oauth_binding.credential_binding_id,
+                    expected_secret_ciphertext: "oauth-cipher-v1".to_string(),
+                    secret_ciphertext: "oauth-cipher-v2".to_string(),
+                    secret_nonce: "oauth-nonce-v2".to_string(),
+                    secret_key_id: "oauth-key".to_string(),
+                    expires_at: now + Duration::hours(2),
+                    metadata: Map::from_iter([("grant".to_string(), json!("v2"))]),
+                    updated_at: now + Duration::minutes(21),
+                },
+            )
+            .await
+            .expect("refresh OAuth credential")
+            .expect("unchanged OAuth binding");
+        assert_eq!(
+            refreshed.secret_ciphertext.as_deref(),
+            Some("oauth-cipher-v2")
+        );
+        assert_eq!(refreshed.metadata.get("grant"), Some(&json!("v2")));
+
+        let reconnected = store
+            .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: Some(oauth_binding.credential_binding_id),
+                mcp_server_id: server.mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: oauth_scope_key.clone(),
+                owner_user_id: Some(oauth_user.user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind: McpUpstreamCredentialMaterialKind::OauthTokens,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("oauth-cipher-v3".to_string()),
+                secret_nonce: Some("oauth-nonce-v3".to_string()),
+                secret_key_id: Some("oauth-key".to_string()),
+                secret_ref: None,
+                expires_at: Some(now + Duration::hours(3)),
+                metadata: Map::from_iter([("grant".to_string(), json!("v3"))]),
+                updated_at: now + Duration::minutes(22),
+            })
+            .await
+            .expect("reconnect OAuth credential");
+        assert!(
+            !store
+                .revoke_mcp_oauth_credential_if_unchanged(
+                    reconnected.credential_binding_id,
+                    "oauth-cipher-v2",
+                    now + Duration::minutes(23),
+                )
+                .await
+                .expect("reject stale OAuth revocation")
+        );
+        assert!(
+            store
+                .compare_and_swap_mcp_oauth_credential_refresh(
+                    &RefreshMcpOauthCredentialBindingRecord {
+                        credential_binding_id: reconnected.credential_binding_id,
+                        expected_secret_ciphertext: "oauth-cipher-v2".to_string(),
+                        secret_ciphertext: "stale-refresh".to_string(),
+                        secret_nonce: "stale-nonce".to_string(),
+                        secret_key_id: "oauth-key".to_string(),
+                        expires_at: now + Duration::hours(4),
+                        metadata: Map::new(),
+                        updated_at: now + Duration::minutes(24),
+                    },
+                )
+                .await
+                .expect("reject stale OAuth refresh")
+                .is_none()
+        );
+        let current = store
+            .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &oauth_scope_key)
+            .await
+            .expect("load reconnected OAuth credential")
+            .expect("active OAuth credential");
+        assert_eq!(
+            current.secret_ciphertext.as_deref(),
+            Some("oauth-cipher-v3")
+        );
+        store
+            .revoke_mcp_upstream_credential_binding(
+                current.credential_binding_id,
+                now + Duration::minutes(25),
+            )
+            .await
+            .expect("disconnect OAuth credential");
+        assert!(
+            store
+                .compare_and_swap_mcp_oauth_credential_refresh(
+                    &RefreshMcpOauthCredentialBindingRecord {
+                        credential_binding_id: current.credential_binding_id,
+                        expected_secret_ciphertext: "oauth-cipher-v3".to_string(),
+                        secret_ciphertext: "reactivated".to_string(),
+                        secret_nonce: "reactivated-nonce".to_string(),
+                        secret_key_id: "oauth-key".to_string(),
+                        expires_at: now + Duration::hours(4),
+                        metadata: Map::new(),
+                        updated_at: now + Duration::minutes(26),
+                    },
+                )
+                .await
+                .expect("reject refresh after disconnect")
+                .is_none()
         );
     }
 

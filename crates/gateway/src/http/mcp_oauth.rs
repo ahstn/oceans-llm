@@ -15,31 +15,47 @@ use openidconnect::{CsrfToken, PkceCodeChallenge};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::{Duration, OffsetDateTime};
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::http::{error::AppError, identity::resolve_session_user, state::AppState};
+use crate::http::{
+    admin_contract::{OpenAiErrorEnvelopeView, format_timestamp},
+    error::AppError,
+    identity::resolve_session_user,
+    state::AppState,
+};
 
 const MCP_OAUTH_STATE_TTL_MINUTES: i64 = 10;
 const DEFAULT_CONNECTION_REDIRECT: &str = "/admin/account/connections";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct McpOauthStartRequest {
     pub redirect_to: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct McpOauthStartResponse {
     pub authorization_url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct McpOauthCallbackQuery {
     pub code: Option<String>,
     pub state: Option<String>,
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum McpOauthConnectionStatus {
+    Connected,
+    Expired,
+    Disconnected,
+    Unavailable,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct McpOauthConnectionView {
     pub server_id: Uuid,
     pub server_key: String,
@@ -47,10 +63,25 @@ pub struct McpOauthConnectionView {
     pub provider_key: String,
     pub required_scopes: Vec<String>,
     pub granted_scopes: Vec<String>,
-    pub status: &'static str,
-    pub expires_at: Option<OffsetDateTime>,
+    pub status: McpOauthConnectionStatus,
+    pub expires_at: Option<String>,
+    pub availability_error: Option<String>,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpOauthRevokeResponse {
+    pub revoked: bool,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/mcp/oauth/connections",
+    responses(
+        (status = 200, body = [McpOauthConnectionView]),
+        (status = 401, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
 pub async fn list_mcp_oauth_connections(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -77,17 +108,21 @@ pub async fn list_mcp_oauth_connections(
             .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &owner_scope_key)
             .await?;
         let expires_at = binding.as_ref().and_then(|binding| binding.expires_at);
+        let availability_error = state
+            .mcp_oauth_runtime
+            .connection_unavailable_reason(&config.provider_key);
         let status = match binding.as_ref() {
-            None => "disconnected",
+            None if availability_error.is_some() => McpOauthConnectionStatus::Unavailable,
+            None => McpOauthConnectionStatus::Disconnected,
             Some(binding)
                 if binding.material_kind != McpUpstreamCredentialMaterialKind::OauthTokens =>
             {
-                "disconnected"
+                McpOauthConnectionStatus::Disconnected
             }
             Some(_) if expires_at.is_some_and(|expiry| expiry <= OffsetDateTime::now_utc()) => {
-                "expired"
+                McpOauthConnectionStatus::Expired
             }
-            Some(_) => "connected",
+            Some(_) => McpOauthConnectionStatus::Connected,
         };
         let granted_scopes = binding
             .as_ref()
@@ -109,12 +144,26 @@ pub async fn list_mcp_oauth_connections(
             required_scopes: config.scopes,
             granted_scopes,
             status,
-            expires_at,
+            expires_at: expires_at.map(format_timestamp),
+            availability_error: availability_error.map(ToOwned::to_owned),
         });
     }
     Ok(Json(items))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/mcp/servers/{server_id}/oauth/start",
+    request_body = McpOauthStartRequest,
+    params(("server_id" = String, Path, description = "External MCP server identifier")),
+    responses(
+        (status = 200, body = McpOauthStartResponse),
+        (status = 400, body = OpenAiErrorEnvelopeView),
+        (status = 401, body = OpenAiErrorEnvelopeView),
+        (status = 404, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
 pub async fn start_mcp_oauth_connection(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -167,11 +216,26 @@ pub async fn start_mcp_oauth_connection(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/mcp/oauth/{provider_key}/callback",
+    params(
+        ("provider_key" = String, Path, description = "OAuth provider key"),
+        McpOauthCallbackQuery
+    ),
+    responses(
+        (status = 307, description = "Redirect to the connection page"),
+        (status = 401, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
 pub async fn mcp_oauth_callback(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(provider_key): Path<String>,
     Query(query): Query<McpOauthCallbackQuery>,
 ) -> Result<Response, AppError> {
+    let user = require_session_user(&state, &headers).await?;
     let Some(state_token) = query.state.as_deref() else {
         return Ok(connection_error_redirect("state_invalid"));
     };
@@ -187,6 +251,9 @@ pub async fn mcp_oauth_callback(
         return Ok(connection_error_redirect("state_expired"));
     }
     if transaction.provider_key != provider_key {
+        return Ok(connection_error_redirect("state_invalid"));
+    }
+    if !callback_session_matches(Some(user.user_id), transaction.user_id) {
         return Ok(connection_error_redirect("state_invalid"));
     }
     if query.error.is_some() {
@@ -223,11 +290,23 @@ pub async fn mcp_oauth_callback(
     )
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/v1/mcp/servers/{server_id}/oauth/connection",
+    params(("server_id" = String, Path, description = "External MCP server identifier")),
+    responses(
+        (status = 200, body = McpOauthRevokeResponse),
+        (status = 400, body = OpenAiErrorEnvelopeView),
+        (status = 401, body = OpenAiErrorEnvelopeView),
+        (status = 404, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
 pub async fn revoke_mcp_oauth_connection(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(server_id): Path<Uuid>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<McpOauthRevokeResponse>, AppError> {
     let user = require_session_user(&state, &headers).await?;
     let _ = load_oauth_server(&state, server_id).await?;
     let owner_scope_key = credential_owner_scope_key(
@@ -245,7 +324,7 @@ pub async fn revoke_mcp_oauth_connection(
             .revoke_binding(binding.credential_binding_id)
             .await?;
     }
-    Ok(Json(serde_json::json!({ "revoked": true })))
+    Ok(Json(McpOauthRevokeResponse { revoked: true }))
 }
 
 async fn require_session_user(
@@ -301,6 +380,10 @@ fn token_hash(token: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes()))
 }
 
+fn callback_session_matches(session_user_id: Option<Uuid>, transaction_user_id: Uuid) -> bool {
+    session_user_id == Some(transaction_user_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,5 +410,13 @@ mod tests {
         assert_ne!(hash, "secret-state");
         assert_eq!(hash, token_hash("secret-state"));
         assert_ne!(hash, token_hash("other-state"));
+    }
+
+    #[test]
+    fn oauth_callback_requires_the_initiating_browser_session() {
+        let initiator = Uuid::new_v4();
+        assert!(callback_session_matches(Some(initiator), initiator));
+        assert!(!callback_session_matches(Some(Uuid::new_v4()), initiator));
+        assert!(!callback_session_matches(None, initiator));
     }
 }

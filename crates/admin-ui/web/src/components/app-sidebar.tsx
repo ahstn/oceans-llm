@@ -2,7 +2,11 @@ import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
 import { Link } from '@tanstack/react-router'
 
 import { AppIcon } from '@/components/icons/app-icon'
-import { adminNavSections, matchesAdminPath } from '@/components/layout/admin-nav'
+import {
+  adminNavSections,
+  matchesAdminPath,
+  regularUserNavSections,
+} from '@/components/layout/admin-nav'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import {
   DropdownMenu,
@@ -44,15 +48,7 @@ export function AppSidebar({
   onSignOut,
   isPlatformAdmin,
 }: AppSidebarProps) {
-  const visibleSections = isPlatformAdmin
-    ? adminNavSections
-    : [
-        {
-          label: 'Account',
-          icon: adminNavSections[0].icon,
-          items: adminNavSections[0].items.filter((item) => item.to === '/account/connections'),
-        },
-      ]
+  const visibleSections = isPlatformAdmin ? adminNavSections : regularUserNavSections
   return (
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="gap-3 p-3 pb-2">

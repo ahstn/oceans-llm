@@ -138,7 +138,15 @@
       "provider_key": "google",
       "resource": "https://drivemcp.googleapis.com/mcp/v1",
       "scopes": ["https://www.googleapis.com/auth/drive.readonly"],
-      "discovery_auth": "none"
+      "discovery_auth": "none",
+      "discovery_tool_allowlist": [
+        "download_file_content",
+        "get_file_metadata",
+        "get_file_permissions",
+        "list_recent_files",
+        "read_file_content",
+        "search_files"
+      ]
     },
     "documentation_url": "https://developers.google.com/workspace/drive/api/guides/configure-mcp-server",
     "tags": ["productivity", "storage", "google-workspace"]
@@ -156,7 +164,8 @@
       "provider_key": "google",
       "resource": "https://docsmcp.googleapis.com/mcp/v1",
       "scopes": ["https://www.googleapis.com/auth/documents.readonly"],
-      "discovery_auth": "none"
+      "discovery_auth": "none",
+      "discovery_tool_allowlist": ["read_doc"]
     },
     "documentation_url": "https://developers.google.com/workspace/docs/api/guides/configure-mcp-server",
     "tags": ["productivity", "documents", "google-workspace"]

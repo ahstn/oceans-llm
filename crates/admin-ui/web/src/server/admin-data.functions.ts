@@ -225,17 +225,30 @@ export const getMcpOauthConnections = createServerFn({ method: 'GET' }).handler(
   return listMcpOauthConnections()
 })
 
-export const connectMcpOauthServer = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { serverId: string } }) => {
-    return startMcpOauthConnection(data.serverId)
-  },
-)
+function validateMcpOauthServerInput(input: unknown): { serverId: string } {
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    'serverId' in input &&
+    typeof input.serverId === 'string' &&
+    input.serverId.length > 0
+  ) {
+    return { serverId: input.serverId }
+  }
+  throw new Error('A valid MCP server ID is required')
+}
 
-export const disconnectMcpOauthServer = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { serverId: string } }) => {
+export const connectMcpOauthServer = createServerFn({ method: 'POST' })
+  .validator(validateMcpOauthServerInput)
+  .handler(async ({ data }) => {
+    return startMcpOauthConnection(data.serverId)
+  })
+
+export const disconnectMcpOauthServer = createServerFn({ method: 'POST' })
+  .validator(validateMcpOauthServerInput)
+  .handler(async ({ data }) => {
     return revokeMcpOauthConnection(data.serverId)
-  },
-)
+  })
 
 export const getObservabilityMcpInvocationDetail = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data: { invocationId: string } }) => {

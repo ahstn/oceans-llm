@@ -1289,7 +1289,11 @@ pub struct RequestLogPayloadView {
         crate::http::mcp_registry::list_mcp_credential_bindings,
         crate::http::mcp_registry::upsert_mcp_credential_binding,
         crate::http::mcp_registry::revoke_mcp_credential_binding,
-        crate::http::mcp_registry::preview_mcp_effective_access
+        crate::http::mcp_registry::preview_mcp_effective_access,
+        crate::http::mcp_oauth::list_mcp_oauth_connections,
+        crate::http::mcp_oauth::start_mcp_oauth_connection,
+        crate::http::mcp_oauth::revoke_mcp_oauth_connection,
+        crate::http::mcp_oauth::mcp_oauth_callback
     ),
     components(schemas(ObservabilityRangeQueryValue)),
     modifiers(&AdminApiSecurity)
@@ -1403,6 +1407,10 @@ mod tests {
             paths.contains_key("/api/v1/admin/mcp/credential-bindings/{credential_binding_id}")
         );
         assert!(paths.contains_key("/api/v1/admin/mcp/effective-access"));
+        assert!(paths.contains_key("/api/v1/mcp/oauth/connections"));
+        assert!(paths.contains_key("/api/v1/mcp/servers/{server_id}/oauth/start"));
+        assert!(paths.contains_key("/api/v1/mcp/servers/{server_id}/oauth/connection"));
+        assert!(paths.contains_key("/api/v1/mcp/oauth/{provider_key}/callback"));
         assert!(paths.contains_key("/api/v1/auth/session"));
         assert!(paths.contains_key("/api/v1/auth/logout"));
 

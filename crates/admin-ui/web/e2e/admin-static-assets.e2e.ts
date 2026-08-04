@@ -76,5 +76,5 @@ test('unauthenticated protected admin routes still require login', async ({ page
   await page.goto('/admin/api-keys')
 
   await expect(page).toHaveURL(/\/admin\/login\?redirect=%2Fapi-keys$/)
-  await expect(page.getByText('Admin sign in')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
 })

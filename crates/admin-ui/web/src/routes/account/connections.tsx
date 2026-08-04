@@ -98,6 +98,7 @@ export function ConnectionsPage() {
           {connections.map((connection) => {
             const pending = isPending && pendingServerId === connection.server_id
             const connected = connection.status === 'connected'
+            const canConnect = !connection.availability_error
             return (
               <Card key={connection.server_id}>
                 <CardHeader>
@@ -124,8 +125,19 @@ export function ConnectionsPage() {
                   </div>
                   {connection.expires_at ? (
                     <p className="text-muted-foreground text-xs">
-                      Access token expires {new Date(connection.expires_at).toLocaleString()};
-                      Oceans refreshes it before use.
+                      Access token expires{' '}
+                      {new Date(connection.expires_at).toLocaleString('en-US', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                        timeZone: 'UTC',
+                      })}{' '}
+                      UTC; Oceans refreshes it before use.
+                    </p>
+                  ) : null}
+                  {connection.availability_error ? (
+                    <p className="text-destructive text-xs">
+                      OAuth is not configured for this server. Ask a platform admin to complete the
+                      gateway OAuth configuration.
                     </p>
                   ) : null}
                   <div className="flex justify-end gap-2">
@@ -138,12 +150,8 @@ export function ConnectionsPage() {
                         {pending ? 'Disconnecting…' : 'Disconnect'}
                       </Button>
                     ) : (
-                      <Button disabled={pending} onClick={() => connect(connection)}>
-                        {pending
-                          ? 'Opening Google…'
-                          : connection.status === 'expired'
-                            ? 'Reconnect'
-                            : 'Connect'}
+                      <Button disabled={pending || !canConnect} onClick={() => connect(connection)}>
+                        {connectionActionLabel(connection.status, pending)}
                       </Button>
                     )}
                   </div>
@@ -159,6 +167,11 @@ export function ConnectionsPage() {
 
 function formatStatus(status: McpOauthConnectionView['status']) {
   return status.charAt(0).toUpperCase() + status.slice(1)
+}
+
+function connectionActionLabel(status: McpOauthConnectionView['status'], pending: boolean) {
+  if (pending) return 'Opening Google…'
+  return status === 'expired' ? 'Reconnect' : 'Connect'
 }
 
 function connectionErrorMessage(code: string) {

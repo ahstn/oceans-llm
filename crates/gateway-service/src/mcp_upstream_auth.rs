@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, net::IpAddr};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    net::IpAddr,
+};
 
 use gateway_core::{ExternalMcpAuthMode, ExternalMcpServerRecord, GatewayError};
 use serde_json::{Map, Value};
@@ -11,6 +14,7 @@ pub struct McpOauthServerConfig {
     pub provider_key: String,
     pub resource: String,
     pub scopes: Vec<String>,
+    pub discovery_tool_allowlist: Option<BTreeSet<String>>,
 }
 
 pub fn validate_mcp_auth_config(
@@ -43,6 +47,7 @@ pub fn validate_mcp_auth_config(
                     "resource",
                     "scopes",
                     "discovery_auth",
+                    "discovery_tool_allowlist",
                 ],
             )?;
             if let Some(discovery_auth) = auth_config.get("discovery_auth")
@@ -98,11 +103,47 @@ pub fn mcp_oauth_server_config(
             "auth_config.scopes cannot be empty".to_string(),
         ));
     }
+    let discovery_tool_allowlist = auth_config
+        .get("discovery_tool_allowlist")
+        .map(parse_discovery_tool_allowlist)
+        .transpose()?;
     Ok(McpOauthServerConfig {
         provider_key: provider_key.to_string(),
         resource: resource.to_string(),
         scopes,
+        discovery_tool_allowlist,
     })
+}
+
+fn parse_discovery_tool_allowlist(value: &Value) -> Result<BTreeSet<String>, GatewayError> {
+    let items = value.as_array().ok_or_else(|| {
+        GatewayError::InvalidRequest(
+            "auth_config.discovery_tool_allowlist must be an array".to_string(),
+        )
+    })?;
+    let mut allowlist = BTreeSet::new();
+    for value in items {
+        let tool = value
+            .as_str()
+            .filter(|tool| !tool.trim().is_empty() && tool.trim() == *tool)
+            .ok_or_else(|| {
+                GatewayError::InvalidRequest(
+                    "auth_config.discovery_tool_allowlist must contain non-empty tool names"
+                        .to_string(),
+                )
+            })?;
+        if !allowlist.insert(tool.to_string()) {
+            return Err(GatewayError::InvalidRequest(
+                "auth_config.discovery_tool_allowlist must not contain duplicates".to_string(),
+            ));
+        }
+    }
+    if allowlist.is_empty() {
+        return Err(GatewayError::InvalidRequest(
+            "auth_config.discovery_tool_allowlist cannot be empty".to_string(),
+        ));
+    }
+    Ok(allowlist)
 }
 
 #[must_use]
@@ -408,6 +449,10 @@ mod tests {
                 json!(["https://www.googleapis.com/auth/drive.readonly"]),
             ),
             ("discovery_auth".to_string(), json!("none")),
+            (
+                "discovery_tool_allowlist".to_string(),
+                json!(["get_file_metadata", "search_files"]),
+            ),
         ]);
         let server = server_record(ExternalMcpAuthMode::OauthObo, config.clone());
 
@@ -420,6 +465,10 @@ mod tests {
                 provider_key: "google".to_string(),
                 resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
                 scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+                discovery_tool_allowlist: Some(BTreeSet::from([
+                    "get_file_metadata".to_string(),
+                    "search_files".to_string(),
+                ])),
             }
         );
     }

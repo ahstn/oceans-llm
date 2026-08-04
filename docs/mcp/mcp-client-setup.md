@@ -49,7 +49,7 @@ Ask an admin to confirm:
 - any required upstream credential binding exists for the user, team, or service
   account that owns the API key
 
-For Google Drive or Google Docs, the user who owns the Oceans API key must also connect the matching server under `/admin/account/connections`. This browser consent is separate from Google sign-in to Oceans. A client harness does not perform Google OAuth.
+For Google Drive or Google Docs, the user who owns the Oceans API key must also connect the matching server under `/admin/account/connections`. This browser consent is separate from Google sign-in to Oceans. A client harness does not perform Google OAuth. The recommended Google entries request read-only scopes and keep only the matching read tools active during discovery. Write tools require a separate scope and tool-policy decision.
 
 If any of those steps are missing, the client may connect successfully but see no
 matching tools, or receive `credential_required` when it tries to execute one.

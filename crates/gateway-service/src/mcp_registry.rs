@@ -21,8 +21,8 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::mcp_upstream_auth::{
-    gateway_mcp_upstream_headers, normalize_mcp_server_key, supports_public_discovery,
-    validate_gateway_managed_server_url, validate_mcp_auth_config,
+    gateway_mcp_upstream_headers, mcp_oauth_server_config, normalize_mcp_server_key,
+    supports_public_discovery, validate_gateway_managed_server_url, validate_mcp_auth_config,
 };
 
 const DEFAULT_DISCOVERY_TIMEOUT_MS: i64 = 30_000;
@@ -272,11 +272,7 @@ where
         }
 
         let started_at = OffsetDateTime::now_utc();
-        let headers = match if server.auth_mode == ExternalMcpAuthMode::OauthObo {
-            Ok(None)
-        } else {
-            gateway_mcp_upstream_headers(&server)
-        } {
+        let headers = match gateway_mcp_upstream_headers(&server) {
             Ok(headers) => headers,
             Err(error) => {
                 return self
@@ -293,8 +289,17 @@ where
         match self.client.list_tools(&server, headers.as_ref()).await {
             Ok(tools) => {
                 let finished_at = OffsetDateTime::now_utc();
+                let discovered_tool_count = tools.len() as i64;
+                let discovery_tool_allowlist = mcp_oauth_server_config(&server.auth_config)
+                    .ok()
+                    .and_then(|config| config.discovery_tool_allowlist);
                 let upserts = tools
                     .iter()
+                    .filter(|tool| {
+                        discovery_tool_allowlist
+                            .as_ref()
+                            .is_none_or(|allowlist| allowlist.contains(&tool.name))
+                    })
                     .map(|tool| UpsertExternalMcpToolRecord {
                         mcp_server_id: server.mcp_server_id,
                         upstream_name: tool.name.clone(),
@@ -311,11 +316,14 @@ where
                     status: ExternalMcpDiscoveryStatus::Success,
                     started_at,
                     finished_at,
-                    discovered_tool_count: upserts.len() as i64,
+                    discovered_tool_count,
                     active_tool_count: upserts.len() as i64,
                     schema_set_hash: Some(schema_set_hash),
                     error_summary: None,
-                    details: Map::new(),
+                    details: Map::from_iter([(
+                        "scope_compatible_tool_count".to_string(),
+                        json!(upserts.len()),
+                    )]),
                 };
                 let stored_tools = self
                     .repo
@@ -629,6 +637,30 @@ mod tests {
                 .expect("Google Workspace scopes");
             assert_eq!(scopes.len(), 1);
             assert_eq!(scopes[0].as_str(), Some(required_scope));
+            let allowlist = entry
+                .auth_config
+                .get("discovery_tool_allowlist")
+                .and_then(Value::as_array)
+                .expect("scope-compatible discovery tool allowlist");
+            let tool_names = allowlist
+                .iter()
+                .map(|value| value.as_str().expect("tool name"))
+                .collect::<Vec<_>>();
+            if key == "google_drive" {
+                assert_eq!(
+                    tool_names,
+                    vec![
+                        "download_file_content",
+                        "get_file_metadata",
+                        "get_file_permissions",
+                        "list_recent_files",
+                        "read_file_content",
+                        "search_files",
+                    ]
+                );
+            } else {
+                assert_eq!(tool_names, vec!["read_doc"]);
+            }
         }
         let notion = entries
             .iter()

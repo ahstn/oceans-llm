@@ -1726,6 +1726,18 @@ pub struct UpsertMcpUpstreamCredentialBindingRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefreshMcpOauthCredentialBindingRecord {
+    pub credential_binding_id: Uuid,
+    pub expected_secret_ciphertext: String,
+    pub secret_ciphertext: String,
+    pub secret_nonce: String,
+    pub secret_key_id: String,
+    pub expires_at: OffsetDateTime,
+    pub metadata: Map<String, Value>,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpsertExternalMcpToolRecord {
     pub mcp_server_id: Uuid,
     pub upstream_name: String,
