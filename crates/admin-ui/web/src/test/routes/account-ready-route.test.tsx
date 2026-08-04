@@ -19,6 +19,7 @@ describe('AccountReadyPage', () => {
 
     render(<AccountReadyPage />)
 
+    expect(screen.getByText('SSO onboarding complete')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open control plane' })).toHaveAttribute(
       'href',
       '/admin',

@@ -10,6 +10,7 @@ export const Route = createFileRoute('/account-ready')({
 
 export function AccountReadyPage() {
   const search = Route.useSearch() as { mode?: string; email?: string }
+  const isSsoOnboarding = search.mode === 'oidc' || search.mode === 'oauth'
 
   return (
     <AuthLayout
@@ -21,17 +22,15 @@ export function AccountReadyPage() {
     >
       <Alert>
         <AlertTitle>
-          {search.mode === 'oidc' ? 'SSO onboarding complete' : 'Onboarding complete'}
+          {isSsoOnboarding ? 'SSO onboarding complete' : 'Onboarding complete'}
         </AlertTitle>
         <AlertDescription>
           You can close this page and return to the gateway control-plane workflow.
         </AlertDescription>
       </Alert>
-      <div className="flex justify-end">
-        <Button asChild>
-          <a href="/admin">Open control plane</a>
-        </Button>
-      </div>
+      <Button asChild className="w-full" size="lg">
+        <a href="/admin">Open control plane</a>
+      </Button>
     </AuthLayout>
   )
 }
