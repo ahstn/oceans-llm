@@ -28,6 +28,7 @@ import {
   getGatewayVersion,
   listRequestLogs,
   listMcpInvocations,
+  listMcpOauthConnections,
   listMcpServers,
   listMcpServerTools,
   listMcpCredentialBindings,
@@ -56,6 +57,7 @@ import {
   refreshModelPricingCatalog,
   refreshMcpServerDiscovery,
   revokeMcpCredentialBinding,
+  revokeMcpOauthConnection,
   replaceMcpToolsetTools,
   resendPasswordInvite,
   resetUserOnboarding,
@@ -68,6 +70,7 @@ import {
   updateUser,
   upsertMcpCredentialBinding,
   upsertMcpGrant,
+  startMcpOauthConnection,
   createMcpToolset,
   disableMcpToolset,
   revokeMcpGrant,
@@ -219,6 +222,35 @@ export const getMcpInvocations = createServerFn({ method: 'POST' }).handler(
     return listMcpInvocations(data)
   },
 )
+
+export const getMcpOauthConnections = createServerFn({ method: 'GET' }).handler(async () => {
+  return listMcpOauthConnections()
+})
+
+function validateMcpOauthServerInput(input: unknown): { serverId: string } {
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    'serverId' in input &&
+    typeof input.serverId === 'string' &&
+    input.serverId.length > 0
+  ) {
+    return { serverId: input.serverId }
+  }
+  throw new Error('A valid MCP server ID is required')
+}
+
+export const connectMcpOauthServer = createServerFn({ method: 'POST' })
+  .validator(validateMcpOauthServerInput)
+  .handler(async ({ data }) => {
+    return startMcpOauthConnection(data.serverId)
+  })
+
+export const disconnectMcpOauthServer = createServerFn({ method: 'POST' })
+  .validator(validateMcpOauthServerInput)
+  .handler(async ({ data }) => {
+    return revokeMcpOauthConnection(data.serverId)
+  })
 
 export const getObservabilityMcpInvocationDetail = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data: { invocationId: string } }) => {

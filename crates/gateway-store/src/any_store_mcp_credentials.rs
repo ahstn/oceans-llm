@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use gateway_core::{
     McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
-    McpUpstreamCredentialRepository, StoreError, UpsertMcpUpstreamCredentialBindingRecord,
+    McpUpstreamCredentialRepository, RefreshMcpOauthCredentialBindingRecord, StoreError,
+    UpsertMcpUpstreamCredentialBindingRecord,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -34,6 +35,52 @@ impl McpUpstreamCredentialRepository for AnyStore {
             Self::Postgres(store) => {
                 store
                     .get_active_mcp_upstream_credential_binding(mcp_server_id, owner_scope_key)
+                    .await
+            }
+        }
+    }
+
+    async fn compare_and_swap_mcp_oauth_credential_refresh(
+        &self,
+        input: &RefreshMcpOauthCredentialBindingRecord,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .compare_and_swap_mcp_oauth_credential_refresh(input)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .compare_and_swap_mcp_oauth_credential_refresh(input)
+                    .await
+            }
+        }
+    }
+
+    async fn revoke_mcp_oauth_credential_if_unchanged(
+        &self,
+        credential_binding_id: Uuid,
+        expected_secret_ciphertext: &str,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .revoke_mcp_oauth_credential_if_unchanged(
+                        credential_binding_id,
+                        expected_secret_ciphertext,
+                        revoked_at,
+                    )
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .revoke_mcp_oauth_credential_if_unchanged(
+                        credential_binding_id,
+                        expected_secret_ciphertext,
+                        revoked_at,
+                    )
                     .await
             }
         }
@@ -109,6 +156,56 @@ impl McpUpstreamCredentialRepository for AnyStore {
                         credential_binding_id,
                         last_used_at,
                     )
+                    .await
+            }
+        }
+    }
+
+    async fn try_acquire_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+        now: OffsetDateTime,
+        expires_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .try_acquire_mcp_oauth_refresh_lease(
+                        credential_binding_id,
+                        lease_token,
+                        now,
+                        expires_at,
+                    )
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .try_acquire_mcp_oauth_refresh_lease(
+                        credential_binding_id,
+                        lease_token,
+                        now,
+                        expires_at,
+                    )
+                    .await
+            }
+        }
+    }
+
+    async fn release_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+    ) -> Result<bool, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .release_mcp_oauth_refresh_lease(credential_binding_id, lease_token)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .release_mcp_oauth_refresh_lease(credential_binding_id, lease_token)
                     .await
             }
         }

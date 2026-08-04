@@ -71,6 +71,10 @@ For production-like installs, provide:
 - provider credentials referenced by `gateway.config.providers`
 - any bootstrap-admin password used by an opt-in bootstrap Job
 - `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` when `gateway.config.service_accounts[*].keys` declares managed service-account keys
+- `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` when users store upstream MCP credentials or `gateway.config.mcp.oauth.providers` is configured
+- the MCP OAuth client id and secret referenced by `gateway.config.mcp.oauth.providers`
+
+The MCP credential encryption key must decode to 32 bytes. Generate a separate random key and store it in the deployment secret manager. The chart loads the selected existing Secret or External Secret through `envFrom`, so `gateway.extraEnv` is not needed for these values.
 
 The chart does not install External Secrets Operator and does not create a store.
 

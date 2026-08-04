@@ -465,6 +465,31 @@ pub(super) fn decode_oauth_login_state_record(
     })
 }
 
+pub(super) fn decode_mcp_oauth_state_record(
+    row: &libsql::Row,
+) -> Result<McpOauthStateRecord, StoreError> {
+    let user_id: String = row.get(1).map_err(to_query_error)?;
+    let mcp_server_id: String = row.get(2).map_err(to_query_error)?;
+    let scopes_json: String = row.get(7).map_err(to_query_error)?;
+    let expires_at: i64 = row.get(8).map_err(to_query_error)?;
+    let consumed_at: Option<i64> = row.get(9).map_err(to_query_error)?;
+    let created_at: i64 = row.get(10).map_err(to_query_error)?;
+    Ok(McpOauthStateRecord {
+        state_hash: row.get(0).map_err(to_query_error)?,
+        user_id: parse_uuid(&user_id)?,
+        mcp_server_id: parse_uuid(&mcp_server_id)?,
+        provider_key: row.get(3).map_err(to_query_error)?,
+        pkce_verifier: row.get(4).map_err(to_query_error)?,
+        redirect_to: row.get(5).map_err(to_query_error)?,
+        resource: row.get(6).map_err(to_query_error)?,
+        scopes: serde_json::from_str(&scopes_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        expires_at: unix_to_datetime(expires_at)?,
+        consumed_at: consumed_at.map(unix_to_datetime).transpose()?,
+        created_at: unix_to_datetime(created_at)?,
+    })
+}
+
 pub(super) fn decode_password_invitation_record(
     row: &libsql::Row,
 ) -> Result<PasswordInvitationRecord, StoreError> {

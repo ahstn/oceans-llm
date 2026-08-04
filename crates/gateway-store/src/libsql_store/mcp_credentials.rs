@@ -189,6 +189,70 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
             .transpose()
     }
 
+    async fn compare_and_swap_mcp_oauth_credential_refresh(
+        &self,
+        input: &RefreshMcpOauthCredentialBindingRecord,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let metadata_json = serialize_json(&input.metadata)?;
+        let changed = self
+            .connection
+            .execute(
+                r#"
+                UPDATE mcp_upstream_credential_bindings
+                SET secret_ciphertext = ?1, secret_nonce = ?2, secret_key_id = ?3,
+                    expires_at = ?4, metadata_json = ?5, updated_at = ?6
+                WHERE credential_binding_id = ?7
+                  AND revoked_at IS NULL
+                  AND secret_ciphertext = ?8
+                "#,
+                libsql::params![
+                    input.secret_ciphertext.as_str(),
+                    input.secret_nonce.as_str(),
+                    input.secret_key_id.as_str(),
+                    input.expires_at.unix_timestamp(),
+                    metadata_json.as_str(),
+                    input.updated_at.unix_timestamp(),
+                    input.credential_binding_id.to_string(),
+                    input.expected_secret_ciphertext.as_str(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if changed == 0 {
+            return Ok(None);
+        }
+        load_credential(&self.connection, input.credential_binding_id)
+            .await
+            .map(Some)
+    }
+
+    async fn revoke_mcp_oauth_credential_if_unchanged(
+        &self,
+        credential_binding_id: Uuid,
+        expected_secret_ciphertext: &str,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
+            .execute(
+                r#"
+                UPDATE mcp_upstream_credential_bindings
+                SET revoked_at = ?1, updated_at = ?1
+                WHERE credential_binding_id = ?2
+                  AND revoked_at IS NULL
+                  AND secret_ciphertext = ?3
+                "#,
+                libsql::params![
+                    revoked_at.unix_timestamp(),
+                    credential_binding_id.to_string(),
+                    expected_secret_ciphertext,
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(changed > 0)
+    }
+
     async fn list_mcp_upstream_credential_bindings(
         &self,
         mcp_server_id: Option<Uuid>,
@@ -267,6 +331,53 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
                     last_used_at.unix_timestamp(),
                     credential_binding_id.to_string()
                 ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(changed > 0)
+    }
+
+    async fn try_acquire_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+        now: OffsetDateTime,
+        expires_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
+            .execute(
+                r#"
+                INSERT INTO mcp_oauth_refresh_leases (
+                    credential_binding_id, lease_token, expires_at
+                ) VALUES (?1, ?2, ?3)
+                ON CONFLICT(credential_binding_id) DO UPDATE SET
+                    lease_token = excluded.lease_token,
+                    expires_at = excluded.expires_at
+                WHERE mcp_oauth_refresh_leases.expires_at <= ?4
+                "#,
+                libsql::params![
+                    credential_binding_id.to_string(),
+                    lease_token.to_string(),
+                    expires_at.unix_timestamp(),
+                    now.unix_timestamp(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(changed > 0)
+    }
+
+    async fn release_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
+            .execute(
+                "DELETE FROM mcp_oauth_refresh_leases WHERE credential_binding_id = ?1 AND lease_token = ?2",
+                libsql::params![credential_binding_id.to_string(), lease_token.to_string()],
             )
             .await
             .map_err(to_write_error)?;

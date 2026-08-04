@@ -146,6 +146,8 @@ export type McpEffectiveAccessQuery = NonNullable<
   operations['preview_mcp_effective_access']['parameters']['query']
 >
 export type McpGrantsQuery = NonNullable<operations['list_mcp_grants']['parameters']['query']>
+export type McpOauthConnectionView = components['schemas']['McpOauthConnectionView']
+export type McpOauthStartResponse = components['schemas']['McpOauthStartResponse']
 
 export type TeamAdminView = components['schemas']['AdminTeamAdminView']
 export type TeamMemberView = components['schemas']['AdminTeamMemberView']

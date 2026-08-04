@@ -6,6 +6,7 @@ export const DEFAULT_USER_PATH = '/observability/usage-costs'
 const USER_ACCESSIBLE_PATHS = [
   '/api-keys',
   '/models',
+  '/account/connections',
   '/identity/teams',
   '/identity/users',
   DEFAULT_USER_PATH,

@@ -682,6 +682,21 @@ pub struct OauthLoginStateRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpOauthStateRecord {
+    pub state_hash: String,
+    pub user_id: Uuid,
+    pub mcp_server_id: Uuid,
+    pub provider_key: String,
+    pub pkce_verifier: String,
+    pub redirect_to: String,
+    pub resource: String,
+    pub scopes: Vec<String>,
+    pub expires_at: OffsetDateTime,
+    pub consumed_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserOidcAuthRecord {
     pub user_id: Uuid,
     pub oidc_provider_id: String,
@@ -1706,6 +1721,18 @@ pub struct UpsertMcpUpstreamCredentialBindingRecord {
     pub secret_key_id: Option<String>,
     pub secret_ref: Option<String>,
     pub expires_at: Option<OffsetDateTime>,
+    pub metadata: Map<String, Value>,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefreshMcpOauthCredentialBindingRecord {
+    pub credential_binding_id: Uuid,
+    pub expected_secret_ciphertext: String,
+    pub secret_ciphertext: String,
+    pub secret_nonce: String,
+    pub secret_key_id: String,
+    pub expires_at: OffsetDateTime,
     pub metadata: Map<String, Value>,
     pub updated_at: OffsetDateTime,
 }

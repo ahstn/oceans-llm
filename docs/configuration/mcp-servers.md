@@ -101,9 +101,61 @@ Supported stored auth modes are:
 - `gateway_static_header`: the gateway adds one configured upstream header.
 - `gateway_bearer_token`: the gateway adds an upstream `Authorization: Bearer ...` header.
 - `user_passthrough`: resolve a caller-owned user/service-account/team credential binding at execution time.
-- `oauth_obo`: resolve an OAuth-shaped bearer credential binding at execution time.
+- `oauth_obo`: resolve and refresh a user-owned OAuth credential at execution time.
 
-Discovery still uses `none`, `gateway_static_header`, or `gateway_bearer_token`. `user_passthrough` and `oauth_obo` are execution-time modes; they require an active upstream credential binding when a client calls a tool.
+Discovery normally uses `none`, `gateway_static_header`, or `gateway_bearer_token`. An `oauth_obo` server can set `auth_config.discovery_auth` to `none` when its upstream permits public `initialize` and `tools/list` requests. Execution still requires a user OAuth connection.
+
+## Google Workspace OAuth
+
+Google Drive and Google Docs are separate upstream MCP servers. Oceans can expose both through one aggregate `/mcp` endpoint. The client harness authenticates to Oceans with an Oceans API key. It does not receive a Google token, Google client secret, or Google callback URI.
+
+Use Google's [Drive MCP guide](https://developers.google.com/workspace/drive/api/guides/configure-mcp-server) and [Workspace MCP guide](https://developers.google.com/workspace/guides/configure-mcp-servers) when you configure the Google Cloud project and consent screen.
+
+Complete these Google Cloud steps before you enable the Oceans connection page:
+
+1. Join the Google Workspace Developer Preview when Google requires it for the selected account or project.
+2. Enable the Drive API, Docs API, Drive MCP API, and Docs MCP API in the same Cloud project.
+3. Configure the OAuth consent screen, audience, test users, and the two read-only scopes used below.
+4. Create a **Web application** OAuth client and register the exact Oceans callback URI.
+5. Publish or verify the consent application as required for the audience and restricted scopes.
+
+Configure one Google confidential OAuth client in gateway configuration:
+
+```yaml
+mcp:
+  oauth:
+    public_base_url: https://gateway.example.com
+    providers:
+      - key: google
+        provider_type: google
+        client_id: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_ID
+        client_secret: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_SECRET
+```
+
+Register this exact callback URI in the Google OAuth client:
+
+```text
+https://gateway.example.com/api/v1/mcp/oauth/google/callback
+```
+
+The recommended Drive and Docs catalog entries set the provider key, OAuth resource, read-only scope, and public discovery mode. Drive requests `drive.readonly`. Docs requests only `documents.readonly` for `read_doc`. A harness can use the separate Drive tools to find a document, then pass its ID to Docs.
+
+After an admin imports both entries and completes discovery, each user opens `/admin/account/connections` and grants access separately for Drive and Docs. Oceans uses authorization code flow with PKCE and the OAuth `resource` parameter. It stores the access and refresh tokens in the existing encrypted user credential binding. It refreshes the access token five minutes before expiry and requires a new connection after Google revokes the grant.
+
+The harness must use an Oceans API key owned by that user to resolve the user's Google bindings. Service-account keys do not borrow user credentials. They require a separately managed service-account or team binding.
+
+Disconnecting a server revokes its Oceans binding at once, but it does not call Google's token revocation endpoint. Google revocation removes the grant for the whole Cloud project and can invalidate both Drive and Docs tokens that use the same OAuth project. A user who wants to remove all project access can revoke the application from Google Account settings. Oceans then reports `credential_required` for each affected server.
+
+Use read-only tools for the first toolset:
+
+- Drive: `download_file_content`, `get_file_metadata`, `get_file_permissions`, `list_recent_files`, `read_file_content`, and `search_files`
+- Docs: `read_doc`
+
+Do not add Drive `copy_file` or `create_file`, or Docs `update_doc`, to a read-only toolset. OAuth scopes remain the main permission boundary, but a narrow toolset gives callers a clear contract.
+
+Google classifies `drive.readonly` as a restricted scope. An external production application can require Google verification and a security assessment. Confirm the current Google requirements before production rollout.
+
+Workspace content is untrusted model input. Keep the write tools disabled for the first toolset, review tool grants, and apply the prompt-injection controls in Google's [Workspace MCP security guidance](https://developers.google.com/workspace/guides/configure-mcp-security).
 
 ## Gateway-Managed Upstream Credentials
 
@@ -132,14 +184,16 @@ Inbound Oceans credentials are always stripped before forwarding upstream. The g
 
 ## Principal-Bound Upstream Credentials
 
-For `user_passthrough` and `oauth_obo`, configure MCP credential bindings in the admin control plane. Bindings are separate from server registry records and grants:
+For `user_passthrough`, admins can configure MCP credential bindings in the control plane. For a configured `oauth_obo` server, users should create and revoke their own binding from **Workspace connections**. Bindings are separate from server registry records and grants:
 
 - owner scopes are `user`, `team`, or `service_account`
 - material kinds are `static_header`, `bearer_token`, or `oauth_tokens`
 - storage is either an encrypted blob or a `secret_ref`
 - raw secrets are accepted only on submission and are never returned by admin APIs
 
-Encrypted bindings require `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` to be set to a base64-encoded 32-byte key in the gateway process. Credential `secret_ref` values must use `env/OCEANS_MCP_CREDENTIAL_*`.
+Encrypted bindings require `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` to be set to a base64-encoded 32-byte key in the gateway process. Use a separate key from other gateway encryption keys. Credential `secret_ref` values must use `env/OCEANS_MCP_CREDENTIAL_*`.
+
+The gateway does not start with a configured MCP OAuth provider unless this encryption key is present and valid.
 
 Runtime resolution order:
 

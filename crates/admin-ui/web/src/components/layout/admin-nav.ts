@@ -24,6 +24,12 @@ export interface AdminNavSection {
   items: AdminNavItem[]
 }
 
+export const connectionsNavItem: AdminNavItem = {
+  label: 'Connections',
+  to: '/account/connections',
+  icon: McpServerIcon,
+}
+
 export const adminNavSections: AdminNavSection[] = [
   {
     label: 'Control Plane',
@@ -31,6 +37,7 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       { label: 'API Keys', to: '/api-keys', icon: SearchIcon },
       { label: 'Models', to: '/models', icon: HomeIcon },
+      connectionsNavItem,
       { label: 'MCP', to: '/mcp', icon: McpServerIcon, adminOnly: true },
       {
         label: 'Review Agent',

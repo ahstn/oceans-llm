@@ -191,6 +191,7 @@ impl StreamableHttpClient {
         })?;
         let client = Client::builder()
             .timeout(timeout)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|error| McpClientError::Transport(error.to_string()))?;
         Ok(Self {

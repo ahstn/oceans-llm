@@ -9,6 +9,7 @@ pub mod identity;
 pub mod identity_lifecycle;
 pub mod identity_views;
 pub mod mcp_gateway;
+pub mod mcp_oauth;
 pub mod mcp_registry;
 pub mod models;
 pub mod observability;
@@ -29,8 +30,8 @@ use tower_http::{
 };
 
 use self::{
-    api_keys::*, handlers::*, identity::*, mcp_gateway::*, mcp_registry::*, models::*,
-    observability::*, review_agent::*, spend::*, state::AppState,
+    api_keys::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*, mcp_registry::*,
+    models::*, observability::*, review_agent::*, spend::*, state::AppState,
 };
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
@@ -263,6 +264,22 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/mcp/effective-access",
             get(preview_mcp_effective_access),
+        )
+        .route(
+            "/api/v1/mcp/oauth/connections",
+            get(list_mcp_oauth_connections),
+        )
+        .route(
+            "/api/v1/mcp/servers/{server_id}/oauth/start",
+            post(start_mcp_oauth_connection),
+        )
+        .route(
+            "/api/v1/mcp/servers/{server_id}/oauth/connection",
+            delete(revoke_mcp_oauth_connection),
+        )
+        .route(
+            "/api/v1/mcp/oauth/{provider_key}/callback",
+            get(mcp_oauth_callback),
         )
         .route("/api/v1/auth/session", get(get_auth_session))
         .route("/api/v1/auth/login/password", post(login_with_password))

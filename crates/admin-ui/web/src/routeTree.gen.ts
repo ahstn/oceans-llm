@@ -29,6 +29,7 @@ import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as IdentityUsersRouteImport } from './routes/identity/users'
 import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
 import { Route as IdentityServiceAccountsRouteImport } from './routes/identity/service-accounts'
+import { Route as AccountConnectionsRouteImport } from './routes/account/connections'
 
 const SpendControlsRoute = SpendControlsRouteImport.update({
   id: '/spend-controls',
@@ -134,6 +135,11 @@ const IdentityServiceAccountsRoute = IdentityServiceAccountsRouteImport.update({
   path: '/identity/service-accounts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountConnectionsRoute = AccountConnectionsRouteImport.update({
+  id: '/account/connections',
+  path: '/account/connections',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/models': typeof ModelsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
+  '/account/connections': typeof AccountConnectionsRoute
   '/identity/service-accounts': typeof IdentityServiceAccountsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
@@ -166,6 +173,7 @@ export interface FileRoutesByTo {
   '/models': typeof ModelsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
+  '/account/connections': typeof AccountConnectionsRoute
   '/identity/service-accounts': typeof IdentityServiceAccountsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
@@ -189,6 +197,7 @@ export interface FileRoutesById {
   '/models': typeof ModelsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
+  '/account/connections': typeof AccountConnectionsRoute
   '/identity/service-accounts': typeof IdentityServiceAccountsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
@@ -213,6 +222,7 @@ export interface FileRouteTypes {
     | '/models'
     | '/review-agent'
     | '/spend-controls'
+    | '/account/connections'
     | '/identity/service-accounts'
     | '/identity/teams'
     | '/identity/users'
@@ -235,6 +245,7 @@ export interface FileRouteTypes {
     | '/models'
     | '/review-agent'
     | '/spend-controls'
+    | '/account/connections'
     | '/identity/service-accounts'
     | '/identity/teams'
     | '/identity/users'
@@ -257,6 +268,7 @@ export interface FileRouteTypes {
     | '/models'
     | '/review-agent'
     | '/spend-controls'
+    | '/account/connections'
     | '/identity/service-accounts'
     | '/identity/teams'
     | '/identity/users'
@@ -280,6 +292,7 @@ export interface RootRouteChildren {
   ModelsRoute: typeof ModelsRoute
   ReviewAgentRoute: typeof ReviewAgentRoute
   SpendControlsRoute: typeof SpendControlsRoute
+  AccountConnectionsRoute: typeof AccountConnectionsRoute
   IdentityServiceAccountsRoute: typeof IdentityServiceAccountsRoute
   IdentityTeamsRoute: typeof IdentityTeamsRoute
   IdentityUsersRoute: typeof IdentityUsersRoute
@@ -436,6 +449,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IdentityServiceAccountsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account/connections': {
+      id: '/account/connections'
+      path: '/account/connections'
+      fullPath: '/account/connections'
+      preLoaderRoute: typeof AccountConnectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -448,6 +468,7 @@ const rootRouteChildren: RootRouteChildren = {
   ModelsRoute: ModelsRoute,
   ReviewAgentRoute: ReviewAgentRoute,
   SpendControlsRoute: SpendControlsRoute,
+  AccountConnectionsRoute: AccountConnectionsRoute,
   IdentityServiceAccountsRoute: IdentityServiceAccountsRoute,
   IdentityTeamsRoute: IdentityTeamsRoute,
   IdentityUsersRoute: IdentityUsersRoute,

@@ -32,13 +32,14 @@ use gateway_core::{
     FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GlobalRole,
     IdentityRepository, IdentityUserRecord, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpAccessRepository,
     McpAccessResolution, McpAggregateSessionRecord, McpAggregateSessionRepository,
-    McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject, McpRegistryRepository,
-    McpTokenEstimateConfidence, McpTokenEstimateSource, McpTokenOverheadRepository,
-    McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
-    McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-    McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
-    McpToolPolicyResult, McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus,
-    McpToolsetToolRecord, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
+    McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject, McpOauthStateRecord,
+    McpRegistryRepository, McpTokenEstimateConfidence, McpTokenEstimateSource,
+    McpTokenOverheadRepository, McpToolGrantRecord, McpToolGrantSubjectKind,
+    McpToolGrantTargetKind, McpToolInvocationDetail, McpToolInvocationPage,
+    McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+    McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult,
+    McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus, McpToolsetToolRecord,
+    McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
     McpUpstreamSecretStorageKind, MembershipRole, ModelAccessMode, ModelPricingRecord,
     ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, NewApiKeyRecord,
@@ -47,21 +48,21 @@ use gateway_core::{
     OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,
     OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
     PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-    ProviderConnection, ProviderRepository, RequestAttemptRecord, RequestAttemptRepository,
-    RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord,
-    RequestTag, ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentPullRequestState,
-    ReviewAgentRepository, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
-    ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
-    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountRecord, ServiceAccountStatus,
-    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
-    StoreHealth, TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
-    UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
-    UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-    UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
-    UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
-    UserRecord, UserSessionRecord, UserStatus,
+    ProviderConnection, ProviderRepository, RefreshMcpOauthCredentialBindingRecord,
+    RequestAttemptRecord, RequestAttemptRepository, RequestAttemptStatus, RequestLogDetail,
+    RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
+    RequestLogRepository, RequestMcpTokenOverheadRecord, RequestTag, ReviewAgentProvider,
+    ReviewAgentPullRequestRecord, ReviewAgentPullRequestState, ReviewAgentRepository,
+    ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus, ReviewAgentRunRecord,
+    ReviewAgentRunStatus, ReviewAgentSettings, SYSTEM_BOOTSTRAP_ADMIN_USER_ID,
+    ServiceAccountRecord, ServiceAccountStatus, SpendDailyAggregateRecord,
+    SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError, StoreHealth,
+    TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
+    UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+    UpsertMcpToolGrantRecord, UpsertMcpUpstreamCredentialBindingRecord,
+    UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
+    UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use sqlx::{
     PgPool, Row,
@@ -287,6 +288,21 @@ impl GatewayStore for PostgresStore {
         consumed_at: OffsetDateTime,
     ) -> Result<Option<gateway_core::OauthLoginStateRecord>, StoreError> {
         Self::consume_oauth_login_state(self, state_hash, consumed_at).await
+    }
+
+    async fn create_mcp_oauth_state(
+        &self,
+        state: &gateway_core::McpOauthStateRecord,
+    ) -> Result<(), StoreError> {
+        Self::create_mcp_oauth_state(self, state).await
+    }
+
+    async fn consume_mcp_oauth_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<gateway_core::McpOauthStateRecord>, StoreError> {
+        Self::consume_mcp_oauth_state(self, state_hash, consumed_at).await
     }
 
     async fn get_user_by_email_normalized(
