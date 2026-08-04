@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { AuthLayout } from '@/components/layout/auth-layout'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 
 export const Route = createFileRoute('/account-ready')({
@@ -9,8 +8,7 @@ export const Route = createFileRoute('/account-ready')({
 })
 
 export function AccountReadyPage() {
-  const search = Route.useSearch() as { mode?: string; email?: string }
-  const isSsoOnboarding = search.mode === 'oidc' || search.mode === 'oauth'
+  const search = Route.useSearch() as { email?: string }
 
   return (
     <AuthLayout
@@ -20,14 +18,9 @@ export function AccountReadyPage() {
       }
       cardClassName="max-w-2xl"
     >
-      <Alert>
-        <AlertTitle>
-          {isSsoOnboarding ? 'SSO onboarding complete' : 'Onboarding complete'}
-        </AlertTitle>
-        <AlertDescription>
-          You can close this page and return to the gateway control-plane workflow.
-        </AlertDescription>
-      </Alert>
+      <p className="text-muted-foreground max-w-lg text-base text-pretty">
+        Click below to return to the Gateway UI, if you aren&apos;t redirected.
+      </p>
       <Button asChild className="w-full" size="lg">
         <a href="/admin">Open control plane</a>
       </Button>

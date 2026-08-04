@@ -11,7 +11,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 describe('AccountReadyPage', () => {
   beforeEach(() => {
-    routeMock.useSearch.mockReturnValue({ mode: 'oauth' })
+    routeMock.useSearch.mockReturnValue({})
   })
 
   it('links back to the control plane after onboarding', async () => {
@@ -19,7 +19,11 @@ describe('AccountReadyPage', () => {
 
     render(<AccountReadyPage />)
 
-    expect(screen.getByText('SSO onboarding complete')).toBeInTheDocument()
+    expect(
+      screen.getByText("Click below to return to the Gateway UI, if you aren't redirected."),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('SSO onboarding complete')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open control plane' })).toHaveAttribute(
       'href',
       '/admin',
