@@ -113,4 +113,54 @@ impl McpUpstreamCredentialRepository for AnyStore {
             }
         }
     }
+
+    async fn try_acquire_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+        now: OffsetDateTime,
+        expires_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .try_acquire_mcp_oauth_refresh_lease(
+                        credential_binding_id,
+                        lease_token,
+                        now,
+                        expires_at,
+                    )
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .try_acquire_mcp_oauth_refresh_lease(
+                        credential_binding_id,
+                        lease_token,
+                        now,
+                        expires_at,
+                    )
+                    .await
+            }
+        }
+    }
+
+    async fn release_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+    ) -> Result<bool, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .release_mcp_oauth_refresh_lease(credential_binding_id, lease_token)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .release_mcp_oauth_refresh_lease(credential_binding_id, lease_token)
+                    .await
+            }
+        }
+    }
 }

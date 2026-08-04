@@ -2183,10 +2183,12 @@ export interface components {
         McpCredentialBindingView: {
             created_at: string;
             expires_at?: string | null;
+            granted_scopes: string[];
             header_name?: string | null;
             id: string;
             last_used_at?: string | null;
             material_kind: string;
+            oauth_provider_key?: string | null;
             owner_scope_key: string;
             owner_scope_kind: string;
             owner_service_account_id?: string | null;

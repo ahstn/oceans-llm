@@ -1,6 +1,7 @@
 import type { AuthSessionView } from '@/types/api'
 
 export const DEFAULT_SIGNED_IN_PATH = '/api-keys'
+export const DEFAULT_USER_PATH = '/account/connections'
 
 export function normalizeAdminPath(pathname: string) {
   return pathname.replace(/^\/admin(?=\/|$)/, '') || '/'
@@ -33,6 +34,14 @@ export function isPlatformAdminSession(session: AuthSessionView | null | undefin
   return session?.user.global_role === 'platform_admin'
 }
 
+export function isSelfServicePath(currentPath: string) {
+  return currentPath === DEFAULT_USER_PATH || currentPath.startsWith(`${DEFAULT_USER_PATH}/`)
+}
+
+export function defaultPathForSession(session: AuthSessionView) {
+  return isPlatformAdminSession(session) ? DEFAULT_SIGNED_IN_PATH : DEFAULT_USER_PATH
+}
+
 export function signedInAdminHref(redirect?: string) {
   return `/admin${redirect ?? DEFAULT_SIGNED_IN_PATH}`
 }
@@ -44,5 +53,5 @@ export function postLoginAdminHref(session: AuthSessionView, redirect?: string) 
       : '/admin/change-password'
   }
 
-  return signedInAdminHref(redirect)
+  return signedInAdminHref(redirect ?? defaultPathForSession(session))
 }

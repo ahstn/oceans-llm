@@ -682,6 +682,21 @@ pub struct OauthLoginStateRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpOauthStateRecord {
+    pub state_hash: String,
+    pub user_id: Uuid,
+    pub mcp_server_id: Uuid,
+    pub provider_key: String,
+    pub pkce_verifier: String,
+    pub redirect_to: String,
+    pub resource: String,
+    pub scopes: Vec<String>,
+    pub expires_at: OffsetDateTime,
+    pub consumed_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserOidcAuthRecord {
     pub user_id: Uuid,
     pub oidc_provider_id: String,

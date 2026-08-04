@@ -838,6 +838,20 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         credential_binding_id: Uuid,
         last_used_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
+
+    async fn try_acquire_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+        now: OffsetDateTime,
+        expires_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+
+    async fn release_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+    ) -> Result<bool, StoreError>;
 }
 
 #[async_trait]

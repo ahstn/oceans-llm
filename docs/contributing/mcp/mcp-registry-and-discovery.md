@@ -6,10 +6,7 @@ The external MCP registry is the control-plane record of MCP servers that Oceans
 
 This page is maintainer and admin documentation for registry diagnostics. User-facing server setup lives in [MCP Servers](../../configuration/mcp-servers.md), and client setup lives in [MCP Client Setup](../../mcp/mcp-client-setup.md).
 
-Tool grants and toolsets are now part of the MCP access layer. Aggregate
-`call_tool` execution and principal-bound upstream credential bindings are part
-of the current gateway path. OAuth browser setup, token refresh UX, stdio MCP
-servers, and Code Mode remain out of scope.
+Tool grants and toolsets are part of the MCP access layer. Aggregate `call_tool` execution, principal-bound upstream credential bindings, and Google upstream OAuth are part of the current gateway path. Stdio MCP servers and Code Mode remain out of scope.
 
 ## Admin API
 
@@ -121,6 +118,8 @@ User-added MCP servers are stored in:
 - `mcp_toolset_tools`: stable tool membership for each bundle
 - `mcp_tool_grants`: active and revoked grants from API keys, users, teams, and service accounts to tools or toolsets
 - `mcp_upstream_credential_bindings`: principal-bound upstream credentials for execution-time auth
+- `mcp_oauth_states`: one-use upstream OAuth state and PKCE transactions
+- `mcp_oauth_refresh_leases`: short refresh leases shared by gateway replicas
 - `mcp_tool_token_estimates`: cached context-token estimates for MCP tool definitions
 - `request_mcp_token_overheads`: request-level MCP context-overhead summaries, separate from spend accounting
 
@@ -178,11 +177,15 @@ Stored auth modes are declarations:
 - `user_passthrough`
 - `oauth_obo`
 
-Discovery can use only `none` or gateway-managed secret references. Gateway-managed credentials require an HTTPS `server_url` and use `auth_config.secret_ref` with the `env/OCEANS_MCP_DISCOVERY_*` form. `gateway_static_header` also requires `auth_config.header_name`.
+Discovery can use `none` or gateway-managed secret references. Gateway-managed credentials require an HTTPS `server_url` and use `auth_config.secret_ref` with the `env/OCEANS_MCP_DISCOVERY_*` form. `gateway_static_header` also requires `auth_config.header_name`. An `oauth_obo` server can use public discovery only when its stored `auth_config.discovery_auth` is `none`. This sends no principal token during discovery.
 
 Execution for `user_passthrough` and `oauth_obo` resolves `mcp_upstream_credential_bindings` after the tool grant check. User API keys may use a user binding and then a team binding. Service-account API keys may use a service-account binding and then the owning-team binding. Service accounts never borrow user credentials.
 
-Encrypted credential blobs require `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY`, a base64-encoded 32-byte key. Credential `secret_ref` entries must use `env/OCEANS_MCP_CREDENTIAL_*`. OAuth browser setup and token refresh are intentionally not implemented in this slice; `oauth_tokens` stores bearer-shaped material with optional expiry.
+Encrypted credential blobs require `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY`, a base64-encoded 32-byte key. Credential `secret_ref` entries must use `env/OCEANS_MCP_CREDENTIAL_*`.
+
+Configured `oauth_obo` connections use a versioned JSON token bundle inside the existing encrypted secret fields. The bundle holds the access token, refresh token, provider key, resource, token type, and granted scopes. The normal `expires_at` column remains the indexed expiry source. Legacy `oauth_tokens` rows that contain only an access token remain usable until expiry, but they cannot refresh.
+
+MCP OAuth transactions are one-use rows in `mcp_oauth_states`. They bind a state hash and PKCE verifier to the session user, server, provider, resource, scopes, and return path. Callback handling consumes the row before token exchange. Refreshes use a local lock plus a short database lease for each binding. The lease coordinates gateway replicas. The refresh path reloads the binding after it gets the lease, preserves a rotated refresh token, and revokes the binding when the provider returns `invalid_grant`.
 
 Never store raw tokens in:
 

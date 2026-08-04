@@ -190,8 +190,10 @@ async fn run_serve_with_store(
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     request_log_purge::spawn_loop(service.clone(), &config.request_logging.purge);
     let providers = build_provider_registry(config)?;
-    McpCredentialService::<AnyStore>::validate_runtime_configuration()
-        .context("invalid MCP credential runtime configuration")?;
+    McpCredentialService::<AnyStore>::validate_runtime_configuration(
+        !config.mcp.oauth.providers.is_empty(),
+    )
+    .context("invalid MCP credential runtime configuration")?;
 
     let bind_address: SocketAddr = config
         .server
@@ -206,6 +208,13 @@ async fn run_serve_with_store(
             providers,
             metrics,
             mcp_http_client: reqwest::Client::new(),
+            mcp_oauth_runtime: Arc::new(
+                config
+                    .mcp
+                    .oauth
+                    .runtime()
+                    .context("failed resolving MCP OAuth configuration")?,
+            ),
             identity_token_secret: Arc::new(load_identity_token_secret()),
             oidc_public_base_url: Arc::new(
                 config

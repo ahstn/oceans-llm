@@ -49,6 +49,8 @@ Ask an admin to confirm:
 - any required upstream credential binding exists for the user, team, or service
   account that owns the API key
 
+For Google Drive or Google Docs, the user who owns the Oceans API key must also connect the matching server under `/admin/account/connections`. This browser consent is separate from Google sign-in to Oceans. A client harness does not perform Google OAuth.
+
 If any of those steps are missing, the client may connect successfully but see no
 matching tools, or receive `credential_required` when it tries to execute one.
 
@@ -153,4 +155,4 @@ disablement, active-tool filtering, and upstream credential separation.
 
 Oceans API keys are never forwarded upstream. For servers that need caller-specific credentials, platform admins create MCP credential bindings for a user, team, or service account. User-owned keys use a user binding first and then an allowed team binding. Service-account keys use a service-account binding first and then the owning-team binding. A service account never borrows a user's credential.
 
-Missing upstream credentials return a structured `credential_required` tool error from aggregate `call_tool`, or a normal gateway error from direct `/mcp/{server_key}` proxying. Expired bindings return `credential_expired`.
+Missing upstream credentials return a structured `credential_required` tool error from aggregate `call_tool`, or a normal gateway error from direct `/mcp/{server_key}` proxying. Oceans refreshes configured OAuth bundles before expiry. A revoked or non-refreshable grant returns `credential_required`. Direct proxy responses do not forward the upstream server's `WWW-Authenticate` challenge because the client must reconnect through Oceans.

@@ -43,7 +43,7 @@ describe('AppShell', () => {
               id: 'user_1',
               name: 'Admin User',
               email: 'admin@example.com',
-              global_role: 'owner',
+              global_role: 'platform_admin',
             },
           }}
         >
@@ -82,7 +82,7 @@ describe('AppShell', () => {
               id: 'user_1',
               name: 'Admin User',
               email: 'admin@example.com',
-              global_role: 'owner',
+              global_role: 'platform_admin',
             },
           }}
         >
@@ -93,6 +93,32 @@ describe('AppShell', () => {
 
     expect(screen.getByText('Oceans')).toBeVisible()
     expect(screen.queryByText(/^Oceans v/)).not.toBeInTheDocument()
+  })
+
+  it('limits a regular user to the connection page', () => {
+    render(
+      <TooltipProvider>
+        <AppShell
+          oceansVersion="0.17.0"
+          session={{
+            must_change_password: false,
+            user: {
+              id: 'user_2',
+              name: 'Workspace User',
+              email: 'user@example.com',
+              global_role: 'user',
+            },
+          }}
+        >
+          content
+        </AppShell>
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByText('Account')).toBeVisible()
+    expect(screen.getByText('Connections')).toBeVisible()
+    expect(screen.queryByText('Models')).not.toBeInTheDocument()
+    expect(screen.queryByText('Identity')).not.toBeInTheDocument()
   })
 
   it('signs out from the account menu', async () => {

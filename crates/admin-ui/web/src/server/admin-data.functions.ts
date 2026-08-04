@@ -28,6 +28,7 @@ import {
   getGatewayVersion,
   listRequestLogs,
   listMcpInvocations,
+  listMcpOauthConnections,
   listMcpServers,
   listMcpServerTools,
   listMcpCredentialBindings,
@@ -54,6 +55,7 @@ import {
   refreshModelPricingCatalog,
   refreshMcpServerDiscovery,
   revokeMcpCredentialBinding,
+  revokeMcpOauthConnection,
   replaceMcpToolsetTools,
   resendPasswordInvite,
   resetUserOnboarding,
@@ -66,6 +68,7 @@ import {
   updateUser,
   upsertMcpCredentialBinding,
   upsertMcpGrant,
+  startMcpOauthConnection,
   createMcpToolset,
   disableMcpToolset,
   revokeMcpGrant,
@@ -215,6 +218,22 @@ export const getObservabilityRequestLogDetail = createServerFn({ method: 'GET' }
 export const getMcpInvocations = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data?: Parameters<typeof listMcpInvocations>[0] }) => {
     return listMcpInvocations(data)
+  },
+)
+
+export const getMcpOauthConnections = createServerFn({ method: 'GET' }).handler(async () => {
+  return listMcpOauthConnections()
+})
+
+export const connectMcpOauthServer = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { serverId: string } }) => {
+    return startMcpOauthConnection(data.serverId)
+  },
+)
+
+export const disconnectMcpOauthServer = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { serverId: string } }) => {
+    return revokeMcpOauthConnection(data.serverId)
   },
 )
 

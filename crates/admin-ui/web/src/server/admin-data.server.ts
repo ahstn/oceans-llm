@@ -28,6 +28,8 @@ import type {
   McpInvocationDetailView,
   McpInvocationFiltersInput,
   McpInvocationPageView,
+  McpOauthConnectionView,
+  McpOauthStartResponse,
   McpDiscoveryRefreshPayload,
   McpCredentialBindingPayload,
   McpCredentialBindingsPayload,
@@ -548,6 +550,27 @@ export async function previewMcpEffectiveAccess(
       params: { query: params },
     }),
   )
+}
+
+export async function listMcpOauthConnections(): Promise<McpOauthConnectionView[]> {
+  return fetchGatewayJson<McpOauthConnectionView[]>('/api/v1/mcp/oauth/connections')
+}
+
+export async function startMcpOauthConnection(serverId: string): Promise<McpOauthStartResponse> {
+  return fetchGatewayJson<McpOauthStartResponse>(
+    `/api/v1/mcp/servers/${encodeURIComponent(serverId)}/oauth/start`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ redirect_to: '/admin/account/connections' }),
+    },
+  )
+}
+
+export async function revokeMcpOauthConnection(serverId: string): Promise<void> {
+  await fetchGatewayJson(`/api/v1/mcp/servers/${encodeURIComponent(serverId)}/oauth/connection`, {
+    method: 'DELETE',
+  })
 }
 
 export async function listReviewAgentRepositories(

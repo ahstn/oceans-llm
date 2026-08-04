@@ -6,6 +6,13 @@ use url::Url;
 
 const DISCOVERY_SECRET_ENV_PREFIX: &str = "OCEANS_MCP_DISCOVERY_";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpOauthServerConfig {
+    pub provider_key: String,
+    pub resource: String,
+    pub scopes: Vec<String>,
+}
+
 pub fn validate_mcp_auth_config(
     auth_mode: ExternalMcpAuthMode,
     auth_config: &Map<String, Value>,
@@ -27,9 +34,86 @@ pub fn validate_mcp_auth_config(
             ensure_allowed_auth_fields(auth_config, &["header", "token_type"])
         }
         ExternalMcpAuthMode::OauthObo => {
-            ensure_allowed_auth_fields(auth_config, &["token_exchange", "token_type"])
+            ensure_allowed_auth_fields(
+                auth_config,
+                &[
+                    "token_exchange",
+                    "token_type",
+                    "provider_key",
+                    "resource",
+                    "scopes",
+                    "discovery_auth",
+                ],
+            )?;
+            if let Some(discovery_auth) = auth_config.get("discovery_auth")
+                && discovery_auth.as_str() != Some("none")
+            {
+                return Err(GatewayError::InvalidRequest(
+                    "auth_config.discovery_auth must be `none` when set".to_string(),
+                ));
+            }
+            if auth_config.contains_key("provider_key")
+                || auth_config.contains_key("resource")
+                || auth_config.contains_key("scopes")
+            {
+                let _ = mcp_oauth_server_config(auth_config)?;
+            }
+            Ok(())
         }
     }
+}
+
+pub fn mcp_oauth_server_config(
+    auth_config: &Map<String, Value>,
+) -> Result<McpOauthServerConfig, GatewayError> {
+    let provider_key = required_string(auth_config, "provider_key")?;
+    let resource = required_string(auth_config, "resource")?;
+    let parsed_resource = Url::parse(resource).map_err(|error| {
+        GatewayError::InvalidRequest(format!("auth_config.resource is invalid: {error}"))
+    })?;
+    if parsed_resource.scheme() != "https" || parsed_resource.host().is_none() {
+        return Err(GatewayError::InvalidRequest(
+            "auth_config.resource must be an https URL with a host".to_string(),
+        ));
+    }
+    let scopes = auth_config
+        .get("scopes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| GatewayError::InvalidRequest("auth_config.scopes is required".to_string()))?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|scope| !scope.trim().is_empty() && !scope.chars().any(char::is_whitespace))
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    GatewayError::InvalidRequest(
+                        "auth_config.scopes must contain non-empty scope strings".to_string(),
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if scopes.is_empty() {
+        return Err(GatewayError::InvalidRequest(
+            "auth_config.scopes cannot be empty".to_string(),
+        ));
+    }
+    Ok(McpOauthServerConfig {
+        provider_key: provider_key.to_string(),
+        resource: resource.to_string(),
+        scopes,
+    })
+}
+
+#[must_use]
+pub fn supports_public_discovery(server: &ExternalMcpServerRecord) -> bool {
+    server.auth_mode.supports_gateway_discovery()
+        || (server.auth_mode == ExternalMcpAuthMode::OauthObo
+            && server
+                .auth_config
+                .get("discovery_auth")
+                .and_then(Value::as_str)
+                == Some("none"))
 }
 
 pub fn validate_gateway_managed_server_url(
@@ -309,6 +393,52 @@ mod tests {
 
         let error = gateway_mcp_upstream_headers(&server).expect_err("http must fail");
         assert_eq!(error.error_code(), "invalid_request");
+    }
+
+    #[test]
+    fn oauth_obo_accepts_complete_google_config_with_public_discovery() {
+        let config = Map::from_iter([
+            ("provider_key".to_string(), json!("google")),
+            (
+                "resource".to_string(),
+                json!("https://drivemcp.googleapis.com/mcp/v1"),
+            ),
+            (
+                "scopes".to_string(),
+                json!(["https://www.googleapis.com/auth/drive.readonly"]),
+            ),
+            ("discovery_auth".to_string(), json!("none")),
+        ]);
+        let server = server_record(ExternalMcpAuthMode::OauthObo, config.clone());
+
+        validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &config)
+            .expect("valid OAuth config");
+        assert!(supports_public_discovery(&server));
+        assert_eq!(
+            mcp_oauth_server_config(&config).expect("parsed config"),
+            McpOauthServerConfig {
+                provider_key: "google".to_string(),
+                resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
+                scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn oauth_obo_rejects_incomplete_or_credentialed_discovery_config() {
+        let missing_scopes = Map::from_iter([
+            ("provider_key".to_string(), json!("google")),
+            (
+                "resource".to_string(),
+                json!("https://drivemcp.googleapis.com/mcp/v1"),
+            ),
+        ]);
+        assert!(validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &missing_scopes).is_err());
+
+        let invalid_discovery = Map::from_iter([("discovery_auth".to_string(), json!("user"))]);
+        assert!(
+            validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &invalid_discovery).is_err()
+        );
     }
 
     fn server_record(

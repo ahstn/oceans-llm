@@ -8296,7 +8296,8 @@
           "material_kind",
           "storage_kind",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "granted_scopes"
         ],
         "properties": {
           "created_at": {
@@ -8307,6 +8308,12 @@
               "string",
               "null"
             ]
+          },
+          "granted_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "header_name": {
             "type": [
@@ -8325,6 +8332,12 @@
           },
           "material_kind": {
             "type": "string"
+          },
+          "oauth_provider_key": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "owner_scope_key": {
             "type": "string"

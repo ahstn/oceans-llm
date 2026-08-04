@@ -4,7 +4,7 @@ use axum::{
     body::{Body, Bytes},
     http::{
         HeaderMap, HeaderName, HeaderValue, Method, Response, StatusCode,
-        header::{ACCEPT, CACHE_CONTROL, CONTENT_TYPE, WWW_AUTHENTICATE},
+        header::{ACCEPT, CACHE_CONTROL, CONTENT_TYPE},
     },
 };
 use futures_util::TryStreamExt;
@@ -247,7 +247,6 @@ fn response_from_parts(
         CACHE_CONTROL.as_str(),
         MCP_PROTOCOL_VERSION,
         MCP_SESSION_ID,
-        WWW_AUTHENTICATE.as_str(),
     ] {
         copy_response_header(name, upstream_headers, response_headers)?;
     }

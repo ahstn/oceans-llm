@@ -33,6 +33,7 @@ interface AppSidebarProps {
   oceansVersion: string | null
   signOutPending: boolean
   onSignOut: () => void
+  isPlatformAdmin: boolean
 }
 
 export function AppSidebar({
@@ -41,7 +42,17 @@ export function AppSidebar({
   oceansVersion,
   signOutPending,
   onSignOut,
+  isPlatformAdmin,
 }: AppSidebarProps) {
+  const visibleSections = isPlatformAdmin
+    ? adminNavSections
+    : [
+        {
+          label: 'Account',
+          icon: adminNavSections[0].icon,
+          items: adminNavSections[0].items.filter((item) => item.to === '/account/connections'),
+        },
+      ]
   return (
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="gap-3 p-3 pb-2">
@@ -71,7 +82,7 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent className="px-2 py-3">
-        {adminNavSections.map((section) => (
+        {visibleSections.map((section) => (
           <SidebarGroup key={section.label} className="px-0 py-1">
             <SidebarGroupLabel className="px-2 text-xs font-medium">
               {section.label}

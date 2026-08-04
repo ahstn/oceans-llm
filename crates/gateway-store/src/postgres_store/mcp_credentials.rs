@@ -243,4 +243,48 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         .map_err(to_write_error)?;
         Ok(result.rows_affected() > 0)
     }
+
+    async fn try_acquire_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+        now: OffsetDateTime,
+        expires_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO mcp_oauth_refresh_leases (
+                credential_binding_id, lease_token, expires_at
+            ) VALUES ($1, $2, $3)
+            ON CONFLICT(credential_binding_id) DO UPDATE SET
+                lease_token = excluded.lease_token,
+                expires_at = excluded.expires_at
+            WHERE mcp_oauth_refresh_leases.expires_at <= $4
+            "#,
+        )
+        .bind(credential_binding_id.to_string())
+        .bind(lease_token.to_string())
+        .bind(expires_at.unix_timestamp())
+        .bind(now.unix_timestamp())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn release_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            "DELETE FROM mcp_oauth_refresh_leases WHERE credential_binding_id = $1 AND lease_token = $2",
+        )
+        .bind(credential_binding_id.to_string())
+        .bind(lease_token.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(result.rows_affected() > 0)
+    }
 }

@@ -41,7 +41,7 @@ mod tests {
         BudgetModelSelector, BudgetRepository, BudgetScope, BudgetSettings, BudgetSource,
         BudgetSourceKind, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
         ExternalMcpDiscoveryStatus, ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole,
-        IdentityRepository, ManagedApiKeySource, McpRegistryRepository,
+        IdentityRepository, ManagedApiKeySource, McpOauthStateRecord, McpRegistryRepository,
         McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
         McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult,
         McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
@@ -1505,6 +1505,37 @@ mod tests {
             .await
             .expect("create credential owner user");
         let user_id = user.user_id;
+        let oauth_state = McpOauthStateRecord {
+            state_hash: "mcp-oauth-state-hash".to_string(),
+            user_id,
+            mcp_server_id: server.mcp_server_id,
+            provider_key: "google".to_string(),
+            pkce_verifier: "pkce-verifier".to_string(),
+            redirect_to: "/admin/account/connections".to_string(),
+            resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
+            scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+            expires_at: now + Duration::minutes(10),
+            consumed_at: None,
+            created_at: now,
+        };
+        store
+            .create_mcp_oauth_state(&oauth_state)
+            .await
+            .expect("create MCP OAuth state");
+        let consumed_state = store
+            .consume_mcp_oauth_state(&oauth_state.state_hash, now + Duration::seconds(1))
+            .await
+            .expect("consume MCP OAuth state")
+            .expect("MCP OAuth state exists");
+        assert_eq!(consumed_state.user_id, user_id);
+        assert_eq!(consumed_state.scopes, oauth_state.scopes);
+        assert!(
+            store
+                .consume_mcp_oauth_state(&oauth_state.state_hash, now + Duration::seconds(2),)
+                .await
+                .expect("reject reused MCP OAuth state")
+                .is_none()
+        );
         let scope_key = format!("mcp_credential:v1:user:{user_id}");
         let binding = store
             .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
@@ -1597,6 +1628,54 @@ mod tests {
         assert_eq!(
             touched.last_used_at.map(|value| value.unix_timestamp()),
             Some(last_used_at.unix_timestamp())
+        );
+
+        let first_lease = Uuid::new_v4();
+        let second_lease = Uuid::new_v4();
+        assert!(
+            store
+                .try_acquire_mcp_oauth_refresh_lease(
+                    binding.credential_binding_id,
+                    first_lease,
+                    now,
+                    now + Duration::minutes(1),
+                )
+                .await
+                .expect("acquire first refresh lease")
+        );
+        assert!(
+            !store
+                .try_acquire_mcp_oauth_refresh_lease(
+                    binding.credential_binding_id,
+                    second_lease,
+                    now + Duration::seconds(1),
+                    now + Duration::minutes(2),
+                )
+                .await
+                .expect("reject concurrent refresh lease")
+        );
+        assert!(
+            store
+                .try_acquire_mcp_oauth_refresh_lease(
+                    binding.credential_binding_id,
+                    second_lease,
+                    now + Duration::minutes(1),
+                    now + Duration::minutes(2),
+                )
+                .await
+                .expect("replace expired refresh lease")
+        );
+        assert!(
+            !store
+                .release_mcp_oauth_refresh_lease(binding.credential_binding_id, first_lease)
+                .await
+                .expect("reject stale refresh lease release")
+        );
+        assert!(
+            store
+                .release_mcp_oauth_refresh_lease(binding.credential_binding_id, second_lease)
+                .await
+                .expect("release refresh lease")
         );
 
         assert!(

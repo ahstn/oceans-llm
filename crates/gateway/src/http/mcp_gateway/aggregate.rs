@@ -475,7 +475,8 @@ async fn call_catalog_tool(
         );
     }
 
-    let gateway = McpGatewayService::new(state.store.clone());
+    let gateway = McpGatewayService::new(state.store.clone())
+        .with_oauth_runtime(state.mcp_oauth_runtime.clone());
     let upstream = match gateway
         .prepare_upstream_for_auth(auth, record.server.clone())
         .await

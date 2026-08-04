@@ -619,6 +619,71 @@ impl PostgresStore {
             .transpose()
     }
 
+    pub async fn create_mcp_oauth_state(
+        &self,
+        state: &McpOauthStateRecord,
+    ) -> Result<(), StoreError> {
+        let scopes_json = crate::shared::serialize_json(&state.scopes)?;
+        sqlx::query("DELETE FROM mcp_oauth_states WHERE expires_at <= $1")
+            .bind(state.created_at.unix_timestamp())
+            .execute(&self.pool)
+            .await
+            .map_err(to_write_error)?;
+        sqlx::query(
+            r#"
+            INSERT INTO mcp_oauth_states (
+                state_hash, user_id, mcp_server_id, provider_key, pkce_verifier,
+                redirect_to, resource, scopes_json, expires_at, consumed_at, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
+            "#,
+        )
+        .bind(&state.state_hash)
+        .bind(state.user_id.to_string())
+        .bind(state.mcp_server_id.to_string())
+        .bind(&state.provider_key)
+        .bind(&state.pkce_verifier)
+        .bind(&state.redirect_to)
+        .bind(&state.resource)
+        .bind(scopes_json)
+        .bind(state.expires_at.unix_timestamp())
+        .bind(state.consumed_at.map(|value| value.unix_timestamp()))
+        .bind(state.created_at.unix_timestamp())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn consume_mcp_oauth_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<McpOauthStateRecord>, StoreError> {
+        let updated = sqlx::query(
+            "UPDATE mcp_oauth_states SET consumed_at = $1 WHERE state_hash = $2 AND consumed_at IS NULL",
+        )
+        .bind(consumed_at.unix_timestamp())
+        .bind(state_hash)
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        if updated.rows_affected() == 0 {
+            return Ok(None);
+        }
+        let row = sqlx::query(
+            r#"
+            SELECT state_hash, user_id, mcp_server_id, provider_key, pkce_verifier,
+                   redirect_to, resource, scopes_json, expires_at, consumed_at, created_at
+            FROM mcp_oauth_states WHERE state_hash = $1 LIMIT 1
+            "#,
+        )
+        .bind(state_hash)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        row.as_ref().map(decode_mcp_oauth_state_record).transpose()
+    }
+
     pub async fn get_user_by_email_normalized(
         &self,
         email_normalized: &str,

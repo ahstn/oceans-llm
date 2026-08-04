@@ -21,8 +21,8 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::mcp_upstream_auth::{
-    gateway_mcp_upstream_headers, normalize_mcp_server_key, validate_gateway_managed_server_url,
-    validate_mcp_auth_config,
+    gateway_mcp_upstream_headers, normalize_mcp_server_key, supports_public_discovery,
+    validate_gateway_managed_server_url, validate_mcp_auth_config,
 };
 
 const DEFAULT_DISCOVERY_TIMEOUT_MS: i64 = 30_000;
@@ -256,7 +256,7 @@ where
                 )
                 .await;
         }
-        if !server.auth_mode.supports_gateway_discovery() {
+        if !supports_public_discovery(&server) {
             let auth_mode = server.auth_mode.as_str().to_string();
             return self
                 .record_discovery_failure(
@@ -272,7 +272,11 @@ where
         }
 
         let started_at = OffsetDateTime::now_utc();
-        let headers = match gateway_mcp_upstream_headers(&server) {
+        let headers = match if server.auth_mode == ExternalMcpAuthMode::OauthObo {
+            Ok(None)
+        } else {
+            gateway_mcp_upstream_headers(&server)
+        } {
             Ok(headers) => headers,
             Err(error) => {
                 return self
@@ -584,6 +588,53 @@ mod tests {
     fn recommended_catalog_loads() {
         let entries = load_recommended_catalog().expect("catalog");
         assert!(entries.iter().any(|entry| entry.catalog_key == "github"));
+        for (key, resource, required_scope) in [
+            (
+                "google_drive",
+                "https://drivemcp.googleapis.com/mcp/v1",
+                "https://www.googleapis.com/auth/drive.readonly",
+            ),
+            (
+                "google_docs",
+                "https://docsmcp.googleapis.com/mcp/v1",
+                "https://www.googleapis.com/auth/documents.readonly",
+            ),
+        ] {
+            let entry = entries
+                .iter()
+                .find(|entry| entry.catalog_key == key)
+                .expect("Google Workspace catalog entry");
+            assert_eq!(
+                entry
+                    .auth_config
+                    .get("provider_key")
+                    .and_then(Value::as_str),
+                Some("google")
+            );
+            assert_eq!(
+                entry.auth_config.get("resource").and_then(Value::as_str),
+                Some(resource)
+            );
+            assert_eq!(
+                entry
+                    .auth_config
+                    .get("discovery_auth")
+                    .and_then(Value::as_str),
+                Some("none")
+            );
+            let scopes = entry
+                .auth_config
+                .get("scopes")
+                .and_then(Value::as_array)
+                .expect("Google Workspace scopes");
+            assert_eq!(scopes.len(), 1);
+            assert_eq!(scopes[0].as_str(), Some(required_scope));
+        }
+        let notion = entries
+            .iter()
+            .find(|entry| entry.catalog_key == "notion")
+            .expect("Notion catalog entry");
+        assert!(!notion.auth_config.contains_key("provider_key"));
     }
 
     #[test]

@@ -20,6 +20,7 @@ import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { logoutAdminSession } from '@/server/admin-data.functions'
 import type { AuthSessionView } from '@/types/api'
+import { isPlatformAdminSession } from '@/routes/-auth-routing'
 
 interface AppShellProps {
   children: ReactNode
@@ -53,6 +54,7 @@ export function AppShell({ children, session, oceansVersion }: AppShellProps) {
         oceansVersion={oceansVersion}
         signOutPending={isSigningOut}
         onSignOut={handleSignOut}
+        isPlatformAdmin={isPlatformAdminSession(session)}
       />
 
       <SidebarInset>
