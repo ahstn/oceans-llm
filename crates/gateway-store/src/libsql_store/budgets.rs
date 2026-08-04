@@ -389,7 +389,9 @@ impl BudgetRepository for LibsqlStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<SpendDailyAggregateRecord>, StoreError> {
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
         let query = match owner_kind {
             Some(ApiKeyOwnerKind::User) => {
                 r#"
@@ -407,6 +409,7 @@ impl BudgetRepository for LibsqlStore {
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
                   AND user_id IS NOT NULL
+                  AND (?3 IS NULL OR user_id = ?3)
                 GROUP BY day_start
                 ORDER BY day_start ASC
                 "#
@@ -427,6 +430,7 @@ impl BudgetRepository for LibsqlStore {
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
                   AND service_account_id IS NOT NULL
+                  AND (?3 IS NULL OR user_id = ?3)
                 GROUP BY day_start
                 ORDER BY day_start ASC
                 "#
@@ -446,6 +450,7 @@ impl BudgetRepository for LibsqlStore {
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
+                  AND (?3 IS NULL OR user_id = ?3)
                 GROUP BY day_start
                 ORDER BY day_start ASC
                 "#
@@ -456,7 +461,11 @@ impl BudgetRepository for LibsqlStore {
             .connection
             .query(
                 query,
-                libsql::params![window_start.unix_timestamp(), window_end.unix_timestamp()],
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    owner_user_filter,
+                ],
             )
             .await
             .map_err(to_query_error)?;
@@ -484,7 +493,9 @@ impl BudgetRepository for LibsqlStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<SpendOwnerAggregateRecord>, StoreError> {
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
         let query = match owner_kind {
             Some(ApiKeyOwnerKind::User) => {
                 r#"
@@ -505,6 +516,7 @@ impl BudgetRepository for LibsqlStore {
                 WHERE u.occurred_at >= ?1
                   AND u.occurred_at < ?2
                   AND u.user_id IS NOT NULL
+                  AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY u.user_id, users.name
                 ORDER BY priced_cost_10000 DESC, owner_name ASC
                 "#
@@ -528,6 +540,7 @@ impl BudgetRepository for LibsqlStore {
                 WHERE u.occurred_at >= ?1
                   AND u.occurred_at < ?2
                   AND u.service_account_id IS NOT NULL
+                  AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY u.service_account_id, service_accounts.service_account_name
                 ORDER BY priced_cost_10000 DESC, owner_name ASC
                 "#
@@ -552,6 +565,7 @@ impl BudgetRepository for LibsqlStore {
                     WHERE u.occurred_at >= ?1
                       AND u.occurred_at < ?2
                       AND u.user_id IS NOT NULL
+                      AND (?3 IS NULL OR u.user_id = ?3)
                     GROUP BY u.user_id, users.name
                     UNION ALL
                     SELECT
@@ -571,6 +585,7 @@ impl BudgetRepository for LibsqlStore {
                     WHERE u.occurred_at >= ?1
                       AND u.occurred_at < ?2
                       AND u.service_account_id IS NOT NULL
+                      AND (?3 IS NULL OR u.user_id = ?3)
                     GROUP BY u.service_account_id, service_accounts.service_account_name
                 )
                 ORDER BY priced_cost_10000 DESC, owner_name ASC
@@ -582,7 +597,11 @@ impl BudgetRepository for LibsqlStore {
             .connection
             .query(
                 query,
-                libsql::params![window_start.unix_timestamp(), window_end.unix_timestamp()],
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    owner_user_filter,
+                ],
             )
             .await
             .map_err(to_query_error)?;
@@ -615,7 +634,9 @@ impl BudgetRepository for LibsqlStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<SpendModelAggregateRecord>, StoreError> {
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
         let query = match owner_kind {
             Some(ApiKeyOwnerKind::User) => {
                 r#"
@@ -634,6 +655,7 @@ impl BudgetRepository for LibsqlStore {
                 WHERE u.occurred_at >= ?1
                   AND u.occurred_at < ?2
                   AND u.user_id IS NOT NULL
+                  AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY model_key
                 ORDER BY priced_cost_10000 DESC, model_key ASC
                 "#
@@ -655,6 +677,7 @@ impl BudgetRepository for LibsqlStore {
                 WHERE u.occurred_at >= ?1
                   AND u.occurred_at < ?2
                   AND u.service_account_id IS NOT NULL
+                  AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY model_key
                 ORDER BY priced_cost_10000 DESC, model_key ASC
                 "#
@@ -675,6 +698,7 @@ impl BudgetRepository for LibsqlStore {
                 LEFT JOIN gateway_models g ON g.id = u.model_id
                 WHERE u.occurred_at >= ?1
                   AND u.occurred_at < ?2
+                  AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY model_key
                 ORDER BY priced_cost_10000 DESC, model_key ASC
                 "#
@@ -685,7 +709,11 @@ impl BudgetRepository for LibsqlStore {
             .connection
             .query(
                 query,
-                libsql::params![window_start.unix_timestamp(), window_end.unix_timestamp()],
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    owner_user_filter,
+                ],
             )
             .await
             .map_err(to_query_error)?;

@@ -18,7 +18,7 @@ vi.mock('@/server/admin-data.functions', () => ({
 
 describe('login SSO errors', () => {
   it('explains GitHub unverified primary email failures', async () => {
-    const { ssoErrorMessage } = await import('@/routes/login')
+    const { ssoErrorMessage } = await import('@/routes/-login-messages')
 
     expect(ssoErrorMessage('github_unverified_email')).toContain(
       'https://github.com/settings/emails',

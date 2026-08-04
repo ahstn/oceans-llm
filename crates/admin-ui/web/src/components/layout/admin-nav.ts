@@ -15,6 +15,7 @@ export interface AdminNavItem {
   label: string
   to: string
   icon: unknown
+  adminOnly?: boolean
 }
 
 export interface AdminNavSection {
@@ -30,8 +31,13 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       { label: 'API Keys', to: '/api-keys', icon: SearchIcon },
       { label: 'Models', to: '/models', icon: HomeIcon },
-      { label: 'MCP', to: '/mcp', icon: McpServerIcon },
-      { label: 'Review Agent', to: '/review-agent', icon: GitPullRequestIcon },
+      { label: 'MCP', to: '/mcp', icon: McpServerIcon, adminOnly: true },
+      {
+        label: 'Review Agent',
+        to: '/review-agent',
+        icon: GitPullRequestIcon,
+        adminOnly: true,
+      },
     ],
   },
   {
@@ -47,11 +53,13 @@ export const adminNavSections: AdminNavSection[] = [
         label: 'Spend Controls',
         to: '/spend-controls',
         icon: Notification03Icon,
+        adminOnly: true,
       },
       {
         label: 'Leaderboard',
         to: '/observability/leaderboard',
         icon: WaterfallUp02Icon,
+        adminOnly: true,
       },
     ],
   },
@@ -63,6 +71,7 @@ export const adminNavSections: AdminNavSection[] = [
         label: 'Agent Harnesses',
         to: '/observability/agent-harnesses',
         icon: RoboticIcon,
+        adminOnly: true,
       },
       {
         label: 'Request Logs',
@@ -82,7 +91,12 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       { label: 'Teams', to: '/identity/teams', icon: UserGroupIcon },
       { label: 'Users', to: '/identity/users', icon: UserIcon },
-      { label: 'Service Accounts', to: '/identity/service-accounts', icon: RoboticIcon },
+      {
+        label: 'Service Accounts',
+        to: '/identity/service-accounts',
+        icon: RoboticIcon,
+        adminOnly: true,
+      },
     ],
   },
 ]
@@ -91,14 +105,33 @@ export function normalizeAdminPath(pathname: string) {
   return pathname.replace(/^\/admin(?=\/|$)/, '') || '/'
 }
 
-export function getActiveNavSection(currentPath: string) {
-  return adminNavSections.find((section) =>
+export function getAdminNavSections(globalRole: string) {
+  if (globalRole === 'platform_admin') {
+    return adminNavSections
+  }
+
+  return adminNavSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => !item.adminOnly),
+    }))
+    .filter((section) => section.items.length > 0)
+}
+
+export function getActiveNavSection(
+  currentPath: string,
+  sections: AdminNavSection[] = adminNavSections,
+) {
+  return sections.find((section) =>
     section.items.some((item) => matchesAdminPath(currentPath, item.to)),
   )
 }
 
-export function getActiveNavItem(currentPath: string) {
-  return adminNavSections
+export function getActiveNavItem(
+  currentPath: string,
+  sections: AdminNavSection[] = adminNavSections,
+) {
+  return sections
     .flatMap((section) => section.items)
     .find((item) => matchesAdminPath(currentPath, item.to))
 }

@@ -1012,6 +1012,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/identity/directory/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_identity_directory_teams"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/identity/directory/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_identity_directory_users"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/spend/focus.csv": {
         parameters: {
             query?: never;
@@ -1825,6 +1857,18 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_IdentityDirectoryTeamsPayload: {
+            data: {
+                teams: components["schemas"]["IdentityDirectoryTeamView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_IdentityDirectoryUsersPayload: {
+            data: {
+                users: components["schemas"]["IdentityDirectoryUserView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_InvitationView: {
             data: {
                 email?: string | null;
@@ -2131,6 +2175,29 @@ export interface components {
         };
         IdentityActionStatus: {
             status: string;
+        };
+        IdentityDirectoryTeamView: {
+            id: string;
+            member_count: number;
+            members: components["schemas"]["AdminTeamMemberView"][];
+            name: string;
+            status: string;
+        };
+        IdentityDirectoryTeamsPayload: {
+            teams: components["schemas"]["IdentityDirectoryTeamView"][];
+        };
+        IdentityDirectoryUserView: {
+            email: string;
+            global_role: string;
+            id: string;
+            name: string;
+            status: string;
+            team_id?: string | null;
+            team_name?: string | null;
+            team_role?: string | null;
+        };
+        IdentityDirectoryUsersPayload: {
+            users: components["schemas"]["IdentityDirectoryUserView"][];
         };
         InvitationView: {
             email?: string | null;
@@ -4713,6 +4780,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_Option_AuthSessionView"];
+                };
+            };
+        };
+    };
+    list_identity_directory_teams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_IdentityDirectoryTeamsPayload"];
+                };
+            };
+        };
+    };
+    list_identity_directory_users: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_IdentityDirectoryUsersPayload"];
                 };
             };
         };

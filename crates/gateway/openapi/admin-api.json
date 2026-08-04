@@ -3450,6 +3450,56 @@
         }
       }
     },
+    "/api/v1/identity/directory/teams": {
+      "get": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "list_identity_directory_teams",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_IdentityDirectoryTeamsPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/identity/directory/users": {
+      "get": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "list_identity_directory_users",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_IdentityDirectoryUsersPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/me/spend/focus.csv": {
       "get": {
         "tags": [
@@ -6828,6 +6878,58 @@
           }
         }
       },
+      "Envelope_IdentityDirectoryTeamsPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "teams"
+            ],
+            "properties": {
+              "teams": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/IdentityDirectoryTeamView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_IdentityDirectoryUsersPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "users"
+            ],
+            "properties": {
+              "users": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/IdentityDirectoryUserView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_InvitationView": {
         "type": "object",
         "required": [
@@ -8096,6 +8198,110 @@
         "properties": {
           "status": {
             "type": "string"
+          }
+        }
+      },
+      "IdentityDirectoryTeamView": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "member_count",
+          "members"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "member_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminTeamMemberView"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "IdentityDirectoryTeamsPayload": {
+        "type": "object",
+        "required": [
+          "teams"
+        ],
+        "properties": {
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IdentityDirectoryTeamView"
+            }
+          }
+        }
+      },
+      "IdentityDirectoryUserView": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email",
+          "global_role",
+          "status"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "global_role": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "team_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "team_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "team_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "IdentityDirectoryUsersPayload": {
+        "type": "object",
+        "required": [
+          "users"
+        ],
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IdentityDirectoryUserView"
+            }
           }
         }
       },

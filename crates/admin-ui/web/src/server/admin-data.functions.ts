@@ -35,7 +35,9 @@ import {
   listMcpToolsets,
   listSpendBudgets,
   listTeams,
+  listTeamDirectory,
   listUsers,
+  listUserDirectory,
   listReviewAgentRepositories,
   listReviewAgentRuns,
   listServiceAccounts,
@@ -428,6 +430,14 @@ export const transferIdentityTeamMember = createServerFn({ method: 'POST' }).han
 
 export const getUsers = createServerFn({ method: 'GET' }).handler(async () => {
   return listUsers()
+})
+
+export const getUserDirectory = createServerFn({ method: 'GET' }).handler(async () => {
+  return listUserDirectory()
+})
+
+export const getTeamDirectory = createServerFn({ method: 'GET' }).handler(async () => {
+  return listTeamDirectory()
 })
 
 export const getOidcProviders = createServerFn({ method: 'GET' }).handler(async () => {

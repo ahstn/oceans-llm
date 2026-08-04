@@ -17,6 +17,8 @@ import type {
   DeactivateBudgetResultView,
   DeactivateBudgetInput,
   IdentityActionResult,
+  IdentityDirectoryTeamsPayload,
+  IdentityDirectoryUsersPayload,
   IdentityTeamsPayload,
   IdentityUsersPayload,
   InvitationStateView,
@@ -643,6 +645,11 @@ export async function listTeams(): Promise<ApiEnvelope<IdentityTeamsPayload>> {
   return unwrapGatewayResponse(await client.GET('/api/v1/admin/identity/teams'))
 }
 
+export async function listTeamDirectory(): Promise<ApiEnvelope<IdentityDirectoryTeamsPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/identity/directory/teams'))
+}
+
 export async function createTeam(input: CreateTeamInput): Promise<ApiEnvelope<TeamManagementView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(await client.POST('/api/v1/admin/identity/teams', { body: input }))
@@ -735,6 +742,11 @@ export async function logoutCurrentSession(): Promise<ApiEnvelope<LogoutResult>>
 export async function listUsers(): Promise<ApiEnvelope<IdentityUsersPayload>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(await client.GET('/api/v1/admin/identity/users'))
+}
+
+export async function listUserDirectory(): Promise<ApiEnvelope<IdentityDirectoryUsersPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/identity/directory/users'))
 }
 
 export async function createUser(input: CreateUserInput): Promise<ApiEnvelope<CreateUserResult>> {
