@@ -2,7 +2,7 @@
 
 `See also`: [Identity and Access](identity-and-access.md), [Google OAuth 2.0 / OIDC SSO Setup for Admins](google-oauth-admin-setup.md), [GitHub OAuth SSO Setup for Admins](github-oauth-admin-setup.md), [Testing Authentication Locally](../contributing/development/authentication-testing.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Control Plane](admin-control-plane.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Authentik Local SSO Test IdP](../adr/2026-05-15-authentik-local-sso-test-idp.md), [ADR: Local SSO Compose Fixture and Browser Origin](../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
 
-Oceans LLM supports OIDC and OAuth SSO for browser access. The browser ends each flow with the same `ogw_session` HttpOnly cookie used by password login. Platform admins enter the full control plane, while regular users enter an owner-scoped self-service UI for their API keys, the model catalog, and their usage diagnostics.
+Oceans LLM supports OIDC and OAuth SSO for browser access. The browser ends each flow with the same `ogw_session` HttpOnly cookie used by password login. Platform admins enter the full control plane, while regular users enter a self-service UI for their API keys, the model catalog, the read-only identity directory, and their owner-scoped usage diagnostics.
 
 ## Runtime Contract
 

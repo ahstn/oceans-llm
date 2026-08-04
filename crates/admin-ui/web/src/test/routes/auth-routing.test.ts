@@ -36,6 +36,8 @@ describe('signed-in route selection', () => {
   it('allows regular users to return to self-service routes', () => {
     expect(canAccessSignedInPath(userSession, '/api-keys')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/models?page=2')).toBe(true)
+    expect(canAccessSignedInPath(userSession, '/identity/teams')).toBe(true)
+    expect(canAccessSignedInPath(userSession, '/identity/users?user_id=user_2')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/observability/request-logs?status=failed')).toBe(
       true,
     )
@@ -45,8 +47,8 @@ describe('signed-in route selection', () => {
   })
 
   it('replaces a regular user redirect to an admin-only route', () => {
-    expect(canAccessSignedInPath(userSession, '/identity/users')).toBe(false)
-    expect(postLoginAdminHref(userSession, '/identity/users')).toBe(
+    expect(canAccessSignedInPath(userSession, '/identity/service-accounts')).toBe(false)
+    expect(postLoginAdminHref(userSession, '/identity/service-accounts')).toBe(
       '/admin/observability/usage-costs',
     )
   })

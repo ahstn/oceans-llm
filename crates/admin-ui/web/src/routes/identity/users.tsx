@@ -37,7 +37,8 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui
 import { Input } from '@/components/ui/input'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
-import { requireAdminSession } from '@/routes/-admin-guard'
+import { requireAuthenticatedSession } from '@/routes/-admin-guard'
+import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import {
   Select,
   SelectContent,
@@ -77,6 +78,7 @@ import {
   EntityTagsField,
   sanitizeEntityTags,
 } from '@/routes/identity/-entity-tags'
+import { ReadOnlyUsersDirectory } from '@/routes/identity/-read-only-directory'
 import type {
   CreateUserInput,
   CreateUserResult,
@@ -86,7 +88,7 @@ import type {
 } from '@/types/api'
 
 export const Route = createFileRoute('/identity/users')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   validateSearch: (search: Record<string, unknown>) => normalizeUserSearch(search),
   loader: () => getUsers(),
   component: UsersPage,
@@ -125,6 +127,8 @@ type UserDetailsSection = (typeof userDetailsSections)[number]['id']
 
 export function UsersPage() {
   const router = useRouter()
+  const { session } = Route.useRouteContext()
+  const isPlatformAdmin = isPlatformAdminSession(session)
   const {
     data: { users, teams, oidc_providers: oidcProviders, oauth_providers: oauthProviders },
   } = Route.useLoaderData() as { data: IdentityUsersPayload }
@@ -167,6 +171,10 @@ export function UsersPage() {
   useEffect(() => {
     setOnboardingResult(null)
   }, [selectedUserId])
+
+  if (!isPlatformAdmin) {
+    return <ReadOnlyUsersDirectory users={users} />
+  }
 
   function resetDialog() {
     setForm(initialForm)

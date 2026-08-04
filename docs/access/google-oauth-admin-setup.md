@@ -168,7 +168,7 @@ Check the Oceans user policy:
 
 Google uses the generic OIDC callback while GitHub uses its provider-specific OAuth callback. Both callbacks create the same Oceans browser session and then apply the same role-based UI redirect.
 
-Confirm `/api/v1/auth/session` returns the signed-in user. A `user` account should go to `/admin/observability/usage-costs` and can open API Keys, Models, Usage Costs, Request Logs, and MCP Invocations. API key mutation and other platform-admin controls remain unavailable. If the session endpoint returns no user, inspect gateway logs for the OIDC callback error and confirm the public base URL and cookie origin match the browser origin.
+Confirm `/api/v1/auth/session` returns the signed-in user. A `user` account should go to `/admin/observability/usage-costs` and can open API Keys, Models, Teams, Users, Usage Costs, Request Logs, and MCP Invocations. Teams and Users are read-only for this role. API key mutation and other platform-admin controls remain unavailable. If the session endpoint returns no user, inspect gateway logs for the OIDC callback error and confirm the public base URL and cookie origin match the browser origin.
 
 ### A user outside the organization can authorize the app
 

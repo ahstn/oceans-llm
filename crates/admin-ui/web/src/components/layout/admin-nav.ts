@@ -89,8 +89,8 @@ export const adminNavSections: AdminNavSection[] = [
     label: 'Identity',
     icon: UserIcon,
     items: [
-      { label: 'Teams', to: '/identity/teams', icon: UserGroupIcon, adminOnly: true },
-      { label: 'Users', to: '/identity/users', icon: UserIcon, adminOnly: true },
+      { label: 'Teams', to: '/identity/teams', icon: UserGroupIcon },
+      { label: 'Users', to: '/identity/users', icon: UserIcon },
       {
         label: 'Service Accounts',
         to: '/identity/service-accounts',

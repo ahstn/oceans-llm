@@ -19,9 +19,11 @@ pub(crate) async fn build_admin_identity_user_view(
     origin: &str,
     now: OffsetDateTime,
     user: IdentityUserRecord,
+    include_onboarding: bool,
 ) -> Result<AdminIdentityUserView, AppError> {
-    let onboarding = match user.user.auth_mode {
-        AuthMode::Password if user.user.status == UserStatus::Invited => {
+    let onboarding = match (include_onboarding, user.user.auth_mode) {
+        (false, _) => None,
+        (true, AuthMode::Password) if user.user.status == UserStatus::Invited => {
             let active_invitation = store
                 .find_active_password_invitation_for_user(user.user.user_id, now)
                 .await?;
@@ -35,14 +37,14 @@ pub(crate) async fn build_admin_identity_user_view(
                 can_resend: true,
             })
         }
-        AuthMode::Oidc => user.oidc_provider_key.as_deref().map(|provider_key| {
+        (true, AuthMode::Oidc) => user.oidc_provider_key.as_deref().map(|provider_key| {
             AdminOnboardingActionView::OidcSignIn {
                 sign_in_url: oidc_sign_in_url(origin, provider_key, &user.user.email),
                 provider_key: provider_key.to_string(),
                 provider_label: provider_key.to_string(),
             }
         }),
-        AuthMode::Oauth => user.oauth_provider_key.as_deref().map(|provider_key| {
+        (true, AuthMode::Oauth) => user.oauth_provider_key.as_deref().map(|provider_key| {
             AdminOnboardingActionView::OauthSignIn {
                 sign_in_url: oauth_sign_in_url(origin, provider_key, &user.user.email),
                 provider_key: provider_key.to_string(),

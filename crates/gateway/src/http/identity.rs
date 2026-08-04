@@ -2,8 +2,9 @@ use std::collections::{BTreeSet, HashMap};
 
 use axum::{
     Json,
-    extract::{Path, Query, State},
-    http::{HeaderMap, HeaderValue, header::SET_COOKIE},
+    extract::{Path, Query, Request, State},
+    http::{HeaderMap, HeaderValue, Method, header::SET_COOKIE},
+    middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
 use gateway_core::{
@@ -64,6 +65,51 @@ const SESSION_TTL_SECONDS: i64 = SESSION_TTL_DAYS * 24 * 60 * 60;
 const OIDC_STATE_TTL_MINUTES: i64 = 10;
 const OAUTH_STATE_TTL_MINUTES: i64 = 10;
 
+pub(crate) async fn enforce_identity_mutation_admin(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    if is_identity_mutation(request.method(), request.uri().path()) {
+        require_platform_admin(&state, request.headers()).await?;
+    }
+
+    Ok(next.run(request).await)
+}
+
+fn is_identity_mutation(method: &Method, path: &str) -> bool {
+    is_mutating_method(method)
+        && [
+            "/api/v1/admin/identity/users",
+            "/api/v1/admin/identity/teams",
+        ]
+        .iter()
+        .any(|root| {
+            path.strip_prefix(root)
+                .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with('/'))
+        })
+}
+
+fn is_mutating_method(method: &Method) -> bool {
+    method == Method::POST
+        || method == Method::PUT
+        || method == Method::PATCH
+        || method == Method::DELETE
+}
+
+async fn require_active_identity_viewer(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<UserRecord, AppError> {
+    let actor = require_authenticated_session(state, headers).await?;
+    if actor.status != UserStatus::Active {
+        return Err(AppError(GatewayError::Auth(
+            AuthError::InsufficientPrivileges,
+        )));
+    }
+    Ok(actor)
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/admin/identity/users",
@@ -74,7 +120,8 @@ pub async fn list_identity_users(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<AdminIdentityPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_active_identity_viewer(&state, &headers).await?;
+    let include_admin_details = actor.global_role == GlobalRole::PlatformAdmin;
 
     let origin = request_origin(&headers);
     let users = state.store.list_identity_users().await?;
@@ -92,6 +139,7 @@ pub async fn list_identity_users(
                 &origin,
                 now,
                 user,
+                include_admin_details,
             )
             .await?,
         );
@@ -106,22 +154,30 @@ pub async fn list_identity_users(
                 name: team.team_name,
             })
             .collect(),
-        oidc_providers: providers
-            .into_iter()
-            .map(|provider| AdminOidcProviderView {
-                id: provider.oidc_provider_id,
-                key: provider.provider_key.clone(),
-                label: provider.provider_key,
-            })
-            .collect(),
-        oauth_providers: oauth_providers
-            .into_iter()
-            .map(|provider| AdminOauthProviderView {
-                id: provider.oauth_provider_id,
-                key: provider.provider_key.clone(),
-                label: provider.provider_key,
-            })
-            .collect(),
+        oidc_providers: if include_admin_details {
+            providers
+                .into_iter()
+                .map(|provider| AdminOidcProviderView {
+                    id: provider.oidc_provider_id,
+                    key: provider.provider_key.clone(),
+                    label: provider.provider_key,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
+        oauth_providers: if include_admin_details {
+            oauth_providers
+                .into_iter()
+                .map(|provider| AdminOauthProviderView {
+                    id: provider.oauth_provider_id,
+                    key: provider.provider_key.clone(),
+                    label: provider.provider_key,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
     })))
 }
 
@@ -135,7 +191,8 @@ pub async fn list_identity_teams(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<AdminTeamsPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_active_identity_viewer(&state, &headers).await?;
+    let include_admin_details = actor.global_role == GlobalRole::PlatformAdmin;
 
     let teams = state.store.list_teams().await?;
     let users = state.store.list_identity_users().await?;
@@ -144,23 +201,35 @@ pub async fn list_identity_teams(
 
     Ok(Json(envelope(AdminTeamsPayload {
         teams: build_admin_team_views(&teams, &users),
-        users: build_assignable_user_views(&users),
-        oidc_providers: providers
-            .into_iter()
-            .map(|provider| AdminOidcProviderView {
-                id: provider.oidc_provider_id,
-                key: provider.provider_key.clone(),
-                label: provider.provider_key,
-            })
-            .collect(),
-        oauth_providers: oauth_providers
-            .into_iter()
-            .map(|provider| AdminOauthProviderView {
-                id: provider.oauth_provider_id,
-                key: provider.provider_key.clone(),
-                label: provider.provider_key,
-            })
-            .collect(),
+        users: if include_admin_details {
+            build_assignable_user_views(&users)
+        } else {
+            Vec::new()
+        },
+        oidc_providers: if include_admin_details {
+            providers
+                .into_iter()
+                .map(|provider| AdminOidcProviderView {
+                    id: provider.oidc_provider_id,
+                    key: provider.provider_key.clone(),
+                    label: provider.provider_key,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
+        oauth_providers: if include_admin_details {
+            oauth_providers
+                .into_iter()
+                .map(|provider| AdminOauthProviderView {
+                    id: provider.oauth_provider_id,
+                    key: provider.provider_key.clone(),
+                    label: provider.provider_key,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
     })))
 }
 
@@ -2732,6 +2801,7 @@ async fn build_onboarding_response(
                 origin,
                 now,
                 reload_identity_user(&state.store, user.user.user_id).await?,
+                true,
             )
             .await?;
             Ok(CreateUserResponse::PasswordInvite {
@@ -2753,6 +2823,7 @@ async fn build_onboarding_response(
                 origin,
                 now,
                 user.clone(),
+                true,
             )
             .await?;
             Ok(CreateUserResponse::OidcSignIn {
@@ -2774,6 +2845,7 @@ async fn build_onboarding_response(
                 origin,
                 now,
                 user.clone(),
+                true,
             )
             .await?;
             let oauth_origin = state
@@ -3161,13 +3233,64 @@ pub async fn list_public_oauth_providers(
 
 #[cfg(test)]
 mod tests {
+    use axum::http::Method;
     use gateway_core::{GatewayError, MembershipRole};
     use uuid::Uuid;
 
     use super::{
         GithubEmailLookupError, GithubEmailResponse, github_email_domain_allowed,
-        parse_update_requested_membership, select_github_primary_email,
+        is_identity_mutation, parse_update_requested_membership, select_github_primary_email,
     };
+
+    #[test]
+    fn identity_mutation_guard_covers_all_user_and_team_write_paths() {
+        let guarded = [
+            (Method::POST, "/api/v1/admin/identity/users"),
+            (Method::PATCH, "/api/v1/admin/identity/users/user-1"),
+            (
+                Method::POST,
+                "/api/v1/admin/identity/users/user-1/deactivate",
+            ),
+            (Method::POST, "/api/v1/admin/identity/teams"),
+            (Method::PATCH, "/api/v1/admin/identity/teams/team-1"),
+            (
+                Method::DELETE,
+                "/api/v1/admin/identity/teams/team-1/members/user-1",
+            ),
+        ];
+
+        for (method, path) in guarded {
+            assert!(is_identity_mutation(&method, path), "{method} {path}");
+        }
+    }
+
+    #[test]
+    fn identity_mutation_guard_does_not_block_reads_or_other_domains() {
+        assert!(!is_identity_mutation(
+            &Method::GET,
+            "/api/v1/admin/identity/users"
+        ));
+        assert!(!is_identity_mutation(
+            &Method::GET,
+            "/api/v1/admin/identity/teams/team-1"
+        ));
+        assert!(!is_identity_mutation(
+            &Method::OPTIONS,
+            "/api/v1/admin/identity/users"
+        ));
+        assert!(!is_identity_mutation(
+            &Method::HEAD,
+            "/api/v1/admin/identity/teams"
+        ));
+        assert!(!is_identity_mutation(
+            &Method::POST,
+            "/api/v1/admin/identity/service-accounts"
+        ));
+        assert!(!is_identity_mutation(
+            &Method::POST,
+            "/api/v1/auth/password/change"
+        ));
+    }
 
     #[test]
     fn github_email_domain_policy_allows_empty_policy() {

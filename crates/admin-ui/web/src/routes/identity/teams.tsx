@@ -37,7 +37,8 @@ import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { Input } from '@/components/ui/input'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { requireAdminSession } from '@/routes/-admin-guard'
+import { requireAuthenticatedSession } from '@/routes/-admin-guard'
+import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import {
   Select,
   SelectContent,
@@ -68,6 +69,7 @@ import {
   EntityTagsField,
   sanitizeEntityTags,
 } from '@/routes/identity/-entity-tags'
+import { ReadOnlyTeamsDirectory } from '@/routes/identity/-read-only-directory'
 import type {
   CreateTeamInput,
   CreateUserInput,
@@ -79,7 +81,7 @@ import type {
 } from '@/types/api'
 
 export const Route = createFileRoute('/identity/teams')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: () => getTeams(),
   component: TeamsPage,
 })
@@ -113,6 +115,8 @@ type TeamMemberDialogState =
 
 export function TeamsPage() {
   const router = useRouter()
+  const { session } = Route.useRouteContext()
+  const isPlatformAdmin = isPlatformAdminSession(session)
   const {
     data: { teams, users, oidc_providers: oidcProviders, oauth_providers: oauthProviders },
   } = Route.useLoaderData() as { data: IdentityTeamsPayload }
@@ -182,6 +186,10 @@ export function TeamsPage() {
       })),
     [membersTeam, users],
   )
+
+  if (!isPlatformAdmin) {
+    return <ReadOnlyTeamsDirectory teams={teams} />
+  }
 
   async function refreshTeams() {
     await router.invalidate()
