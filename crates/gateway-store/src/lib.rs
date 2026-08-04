@@ -1528,12 +1528,38 @@ mod tests {
             .expect("consume MCP OAuth state")
             .expect("MCP OAuth state exists");
         assert_eq!(consumed_state.user_id, user_id);
+        assert_eq!(consumed_state.pkce_verifier, oauth_state.pkce_verifier);
+        assert_eq!(consumed_state.resource, oauth_state.resource);
         assert_eq!(consumed_state.scopes, oauth_state.scopes);
         assert!(
             store
                 .consume_mcp_oauth_state(&oauth_state.state_hash, now + Duration::seconds(2),)
                 .await
                 .expect("reject reused MCP OAuth state")
+                .is_none()
+        );
+        let expired_state = McpOauthStateRecord {
+            state_hash: "mcp-oauth-state-hash-expired".to_string(),
+            user_id,
+            mcp_server_id: server.mcp_server_id,
+            provider_key: "google".to_string(),
+            pkce_verifier: "expired-pkce-verifier".to_string(),
+            redirect_to: "/admin/account/connections".to_string(),
+            resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
+            scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+            expires_at: now - Duration::minutes(1),
+            consumed_at: None,
+            created_at: now,
+        };
+        store
+            .create_mcp_oauth_state(&expired_state)
+            .await
+            .expect("create expired MCP OAuth state");
+        assert!(
+            store
+                .consume_mcp_oauth_state(&expired_state.state_hash, now)
+                .await
+                .expect("reject expired MCP OAuth state")
                 .is_none()
         );
         let scope_key = format!("mcp_credential:v1:user:{user_id}");
@@ -1806,6 +1832,16 @@ mod tests {
             refreshed.secret_ciphertext.as_deref(),
             Some("oauth-cipher-v2")
         );
+        assert_eq!(refreshed.secret_nonce.as_deref(), Some("oauth-nonce-v2"));
+        assert_eq!(refreshed.secret_key_id.as_deref(), Some("oauth-key"));
+        assert_eq!(
+            refreshed.expires_at.map(OffsetDateTime::unix_timestamp),
+            Some((now + Duration::hours(2)).unix_timestamp())
+        );
+        assert_eq!(
+            refreshed.updated_at.unix_timestamp(),
+            (now + Duration::minutes(21)).unix_timestamp()
+        );
         assert_eq!(refreshed.metadata.get("grant"), Some(&json!("v2")));
 
         let reconnected = store
@@ -1867,13 +1903,34 @@ mod tests {
             current.secret_ciphertext.as_deref(),
             Some("oauth-cipher-v3")
         );
-        store
-            .revoke_mcp_upstream_credential_binding(
-                current.credential_binding_id,
-                now + Duration::minutes(25),
-            )
-            .await
-            .expect("disconnect OAuth credential");
+        assert_eq!(current.secret_nonce.as_deref(), Some("oauth-nonce-v3"));
+        assert_eq!(current.secret_key_id.as_deref(), Some("oauth-key"));
+        assert_eq!(
+            current.expires_at.map(OffsetDateTime::unix_timestamp),
+            Some((now + Duration::hours(3)).unix_timestamp())
+        );
+        assert_eq!(
+            current.updated_at.unix_timestamp(),
+            (now + Duration::minutes(22)).unix_timestamp()
+        );
+        assert_eq!(current.metadata.get("grant"), Some(&json!("v3")));
+        assert!(
+            store
+                .revoke_mcp_oauth_credential_if_unchanged(
+                    current.credential_binding_id,
+                    "oauth-cipher-v3",
+                    now + Duration::minutes(25),
+                )
+                .await
+                .expect("disconnect unchanged OAuth credential")
+        );
+        assert!(
+            store
+                .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &oauth_scope_key,)
+                .await
+                .expect("load disconnected OAuth credential")
+                .is_none()
+        );
         assert!(
             store
                 .compare_and_swap_mcp_oauth_credential_refresh(

@@ -753,7 +753,7 @@ impl LibsqlStore {
         let updated = self
             .connection
             .execute(
-                "UPDATE mcp_oauth_states SET consumed_at = ?1 WHERE state_hash = ?2 AND consumed_at IS NULL",
+                "UPDATE mcp_oauth_states SET consumed_at = ?1 WHERE state_hash = ?2 AND consumed_at IS NULL AND expires_at > ?1",
                 libsql::params![consumed_at.unix_timestamp(), state_hash],
             )
             .await

@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use crate::mcp_upstream_auth::{
     gateway_mcp_upstream_headers, mcp_oauth_server_config, normalize_mcp_server_key,
-    supports_public_discovery, validate_gateway_managed_server_url, validate_mcp_auth_config,
+    supports_public_discovery, validate_mcp_auth_config, validate_mcp_server_auth_destination,
 };
 
 const DEFAULT_DISCOVERY_TIMEOUT_MS: i64 = 30_000;
@@ -169,7 +169,11 @@ where
         let transport = parse_transport(&resolved.transport)?;
         let auth_mode = parse_auth_mode(&resolved.auth_mode)?;
         validate_mcp_auth_config(auth_mode, &resolved.auth_config)?;
-        validate_gateway_managed_server_url(&resolved.server_url, auth_mode)?;
+        validate_mcp_server_auth_destination(
+            &resolved.server_url,
+            auth_mode,
+            &resolved.auth_config,
+        )?;
         let timeout_ms = validate_timeout_ms(resolved.timeout_ms)?;
         let now = OffsetDateTime::now_utc();
 
@@ -198,7 +202,7 @@ where
         validate_server_url(&input.server_url)?;
         let auth_mode = parse_auth_mode(&input.auth_mode)?;
         validate_mcp_auth_config(auth_mode, &input.auth_config)?;
-        validate_gateway_managed_server_url(&input.server_url, auth_mode)?;
+        validate_mcp_server_auth_destination(&input.server_url, auth_mode, &input.auth_config)?;
         let timeout_ms = validate_timeout_ms(input.timeout_ms)?;
 
         self.repo

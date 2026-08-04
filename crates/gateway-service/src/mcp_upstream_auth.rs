@@ -176,6 +176,30 @@ pub fn validate_gateway_managed_server_url(
     Ok(())
 }
 
+pub fn validate_mcp_server_auth_destination(
+    server_url: &str,
+    auth_mode: ExternalMcpAuthMode,
+    auth_config: &Map<String, Value>,
+) -> Result<(), GatewayError> {
+    validate_gateway_managed_server_url(server_url, auth_mode)?;
+    if auth_mode != ExternalMcpAuthMode::OauthObo || !auth_config.contains_key("resource") {
+        return Ok(());
+    }
+
+    let server_url = Url::parse(server_url)
+        .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
+    let resource = mcp_oauth_server_config(auth_config)?;
+    let resource_url = Url::parse(&resource.resource).map_err(|error| {
+        GatewayError::InvalidRequest(format!("auth_config.resource is invalid: {error}"))
+    })?;
+    if server_url.origin() != resource_url.origin() {
+        return Err(GatewayError::InvalidRequest(
+            "OAuth server_url must use the same origin as auth_config.resource".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn is_loopback_http_url(url: &Url) -> bool {
     if url.scheme() != "http" {
         return false;
@@ -191,7 +215,11 @@ fn is_loopback_http_url(url: &Url) -> bool {
 pub fn gateway_mcp_upstream_headers(
     server: &ExternalMcpServerRecord,
 ) -> Result<Option<BTreeMap<String, String>>, GatewayError> {
-    validate_gateway_managed_server_url(&server.server_url, server.auth_mode)?;
+    validate_mcp_server_auth_destination(
+        &server.server_url,
+        server.auth_mode,
+        &server.auth_config,
+    )?;
     match server.auth_mode {
         ExternalMcpAuthMode::None => Ok(None),
         ExternalMcpAuthMode::GatewayStaticHeader => {
@@ -455,10 +483,17 @@ mod tests {
                 json!(["get_file_metadata", "search_files"]),
             ),
         ]);
-        let server = server_record(ExternalMcpAuthMode::OauthObo, config.clone());
+        let mut server = server_record(ExternalMcpAuthMode::OauthObo, config.clone());
+        server.server_url = "https://drivemcp.googleapis.com/mcp/v1".to_string();
 
         validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &config)
             .expect("valid OAuth config");
+        validate_mcp_server_auth_destination(
+            &server.server_url,
+            server.auth_mode,
+            &server.auth_config,
+        )
+        .expect("matching OAuth resource origin");
         assert!(supports_public_discovery(&server));
         assert_eq!(
             mcp_oauth_server_config(&config).expect("parsed config"),
@@ -472,6 +507,24 @@ mod tests {
                 ])),
             }
         );
+
+        let mut off_resource_server = server.clone();
+        off_resource_server.server_url = "https://attacker.example/mcp".to_string();
+        assert!(
+            validate_mcp_server_auth_destination(
+                &off_resource_server.server_url,
+                off_resource_server.auth_mode,
+                &off_resource_server.auth_config,
+            )
+            .is_err()
+        );
+        off_resource_server.server_url = "https://drivemcp.googleapis.com/another-path".to_string();
+        validate_mcp_server_auth_destination(
+            &off_resource_server.server_url,
+            off_resource_server.auth_mode,
+            &off_resource_server.auth_config,
+        )
+        .expect("same-origin OAuth destination");
 
         let mut insecure_server = server;
         insecure_server.server_url = "http://example.test/mcp".to_string();

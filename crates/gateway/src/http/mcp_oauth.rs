@@ -103,28 +103,48 @@ pub async fn list_mcp_oauth_connections(
         .map(|binding| (binding.mcp_server_id, binding))
         .collect();
     let mut items = Vec::new();
-    for server in state.store.list_external_mcp_servers(false).await? {
-        if server.status != ExternalMcpServerStatus::Active
-            || server.auth_mode != ExternalMcpAuthMode::OauthObo
+    for server in state.store.list_external_mcp_servers(true).await? {
+        let binding = bindings.get(&server.mcp_server_id);
+        let oauth_binding = binding.filter(|binding| {
+            binding.material_kind == McpUpstreamCredentialMaterialKind::OauthTokens
+        });
+        let config = if server.status == ExternalMcpServerStatus::Active
+            && server.auth_mode == ExternalMcpAuthMode::OauthObo
         {
+            mcp_oauth_server_config(&server.auth_config).ok()
+        } else {
+            None
+        };
+        if config.is_none() && oauth_binding.is_none() {
             continue;
         }
-        let Ok(config) = mcp_oauth_server_config(&server.auth_config) else {
-            continue;
-        };
-        let binding = bindings.get(&server.mcp_server_id);
-        let expires_at = binding.as_ref().and_then(|binding| binding.expires_at);
-        let availability_error = state
-            .mcp_oauth_runtime
-            .connection_unavailable_reason(&config.provider_key);
-        let status = match binding.as_ref() {
+        let provider_key = config
+            .as_ref()
+            .map(|config| config.provider_key.clone())
+            .or_else(|| {
+                oauth_binding
+                    .and_then(|binding| binding.metadata.get("oauth_provider_key"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(ToOwned::to_owned)
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+        let availability_error = config.as_ref().map_or_else(
+            || {
+                oauth_binding
+                    .map(|_| "This MCP server no longer accepts new OAuth connections".to_string())
+            },
+            |config| {
+                state
+                    .mcp_oauth_runtime
+                    .connection_unavailable_reason(&config.provider_key)
+                    .map(ToOwned::to_owned)
+            },
+        );
+        let expires_at = oauth_binding.and_then(|binding| binding.expires_at);
+        let status = match oauth_binding {
             None if availability_error.is_some() => McpOauthConnectionStatus::Unavailable,
             None => McpOauthConnectionStatus::Disconnected,
-            Some(binding)
-                if binding.material_kind != McpUpstreamCredentialMaterialKind::OauthTokens =>
-            {
-                McpOauthConnectionStatus::Disconnected
-            }
+            Some(_) if config.is_none() => McpOauthConnectionStatus::Connected,
             Some(binding) if has_refreshable_oauth_metadata(&binding.metadata) => {
                 McpOauthConnectionStatus::Connected
             }
@@ -133,8 +153,7 @@ pub async fn list_mcp_oauth_connections(
             }
             Some(_) => McpOauthConnectionStatus::Connected,
         };
-        let granted_scopes = binding
-            .as_ref()
+        let granted_scopes = oauth_binding
             .and_then(|binding| binding.metadata.get("granted_scopes"))
             .and_then(serde_json::Value::as_array)
             .map(|items| {
@@ -149,12 +168,12 @@ pub async fn list_mcp_oauth_connections(
             server_id: server.mcp_server_id,
             server_key: server.server_key,
             display_name: server.display_name,
-            provider_key: config.provider_key,
-            required_scopes: config.scopes,
+            provider_key,
+            required_scopes: config.map(|config| config.scopes).unwrap_or_default(),
             granted_scopes,
             status,
             expires_at: expires_at.map(format_timestamp),
-            availability_error: availability_error.map(ToOwned::to_owned),
+            availability_error,
         });
     }
     Ok(([(CACHE_CONTROL, "no-store")], Json(items)).into_response())
@@ -309,7 +328,6 @@ pub async fn revoke_mcp_oauth_connection(
     Path(server_id): Path<Uuid>,
 ) -> Result<Json<McpOauthRevokeResponse>, AppError> {
     let user = require_session_user(&state, &headers).await?;
-    let _ = load_oauth_server(&state, server_id).await?;
     let owner_scope_key = credential_owner_scope_key(
         gateway_core::McpUpstreamCredentialOwnerScopeKind::User,
         Some(user.user_id),

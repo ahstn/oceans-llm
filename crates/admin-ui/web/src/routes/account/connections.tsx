@@ -136,10 +136,7 @@ export function ConnectionsPage() {
                     </p>
                   ) : null}
                   {connection.availability_error ? (
-                    <p className="text-destructive text-xs">
-                      OAuth is not configured for this server. Ask a platform admin to complete the
-                      gateway OAuth configuration.
-                    </p>
+                    <p className="text-destructive text-xs">{connection.availability_error}</p>
                   ) : null}
                   <div className="flex justify-end gap-2">
                     {connected ? (

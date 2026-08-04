@@ -201,7 +201,7 @@ impl McpOauthRuntime {
             })?;
         validate_oauth_bundle_for_server(&bundle, server)?;
         let provider = self.provider(&bundle.provider_key)?;
-        let response = self
+        let response = match self
             .client
             .post(&provider.token_url)
             .form(&[
@@ -213,7 +213,14 @@ impl McpOauthRuntime {
             ])
             .send()
             .await
-            .map_err(oauth_transport_error)?;
+        {
+            Ok(response) => response,
+            Err(error) if has_unexpired_access_token(&current) => {
+                tracing::warn!(error = %error, "using unexpired access token after OAuth refresh transport failure");
+                return Ok(current);
+            }
+            Err(error) => return Err(oauth_transport_error(error)),
+        };
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
@@ -236,6 +243,13 @@ impl McpOauthRuntime {
                     return Err(credential_required(server));
                 }
                 return current_binding_after_refresh_race(repo, &current, server).await;
+            }
+            if is_transient_oauth_status(status) && has_unexpired_access_token(&current) {
+                tracing::warn!(
+                    status = status.as_u16(),
+                    "using unexpired access token after transient OAuth refresh failure"
+                );
+                return Ok(current);
             }
             return Err(oauth_endpoint_error(status));
         }
@@ -487,7 +501,7 @@ fn oauth_transport_error(error: reqwest::Error) -> GatewayError {
 }
 
 fn oauth_endpoint_error(status: reqwest::StatusCode) -> GatewayError {
-    if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+    if is_transient_oauth_status(status) {
         ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: "OAuth token endpoint failed".to_string(),
@@ -496,6 +510,10 @@ fn oauth_endpoint_error(status: reqwest::StatusCode) -> GatewayError {
     } else {
         ProviderError::Transport("OAuth token endpoint rejected the request".to_string()).into()
     }
+}
+
+fn is_transient_oauth_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
 
 #[cfg(test)]
@@ -524,6 +542,20 @@ mod tests {
         let error = oauth_endpoint_error(reqwest::StatusCode::BAD_REQUEST);
         assert_eq!(error.error_code(), "upstream_transport");
         assert!(!error.to_string().contains("invalid_grant"));
+    }
+
+    #[test]
+    fn transient_oauth_statuses_are_limited_to_rate_limits_and_server_errors() {
+        assert!(is_transient_oauth_status(
+            reqwest::StatusCode::TOO_MANY_REQUESTS
+        ));
+        assert!(is_transient_oauth_status(
+            reqwest::StatusCode::SERVICE_UNAVAILABLE
+        ));
+        assert!(!is_transient_oauth_status(reqwest::StatusCode::BAD_REQUEST));
+        assert!(!is_transient_oauth_status(
+            reqwest::StatusCode::UNAUTHORIZED
+        ));
     }
 
     #[test]

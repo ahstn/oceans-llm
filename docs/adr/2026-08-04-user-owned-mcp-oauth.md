@@ -30,9 +30,9 @@ The first provider type is Google. Drive and Docs use separate resources and con
 
 Legacy OAuth rows that store only a bearer token remain usable until expiry. They cannot refresh and should be replaced through the connection flow.
 
-OAuth state rows expire after ten minutes. Each new authorization attempt removes expired rows before it stores the next state, so abandoned PKCE verifiers do not grow without a retention bound.
+OAuth state rows cannot be consumed after ten minutes. An abandoned row can remain after that time. Each new authorization attempt removes expired rows before it stores the next state, so repeated attempts do not cause unbounded growth.
 
-## Follow Ups
+## Follow-ups
 
 - Run a deployed Google Drive and Google Docs canary that covers consent, callback session binding, refresh, reconnect, disconnect, read-tool discovery, read calls, and audit attribution.
 - Extract MCP OAuth configuration from `config.rs` when another provider type or a wider provider policy makes the current cohesive block harder to maintain.

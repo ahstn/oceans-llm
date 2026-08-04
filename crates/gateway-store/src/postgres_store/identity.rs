@@ -660,7 +660,7 @@ impl PostgresStore {
         consumed_at: OffsetDateTime,
     ) -> Result<Option<McpOauthStateRecord>, StoreError> {
         let updated = sqlx::query(
-            "UPDATE mcp_oauth_states SET consumed_at = $1 WHERE state_hash = $2 AND consumed_at IS NULL",
+            "UPDATE mcp_oauth_states SET consumed_at = $1 WHERE state_hash = $2 AND consumed_at IS NULL AND expires_at > $1",
         )
         .bind(consumed_at.unix_timestamp())
         .bind(state_hash)
