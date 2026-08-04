@@ -242,14 +242,10 @@ fn response_from_parts(
     let response_headers = builder.headers_mut().ok_or_else(|| {
         GatewayError::Internal("failed constructing MCP upstream response".to_string())
     })?;
-    for name in [
-        CONTENT_TYPE.as_str(),
-        CACHE_CONTROL.as_str(),
-        MCP_PROTOCOL_VERSION,
-        MCP_SESSION_ID,
-    ] {
+    for name in [CONTENT_TYPE.as_str(), MCP_PROTOCOL_VERSION, MCP_SESSION_ID] {
         copy_response_header(name, upstream_headers, response_headers)?;
     }
+    response_headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     builder
         .body(body)
         .map_err(|error| GatewayError::Internal(format!("failed building MCP response: {error}")))
@@ -360,5 +356,25 @@ mod tests {
         assert!(text.contains("\"name\":\"allowed\""));
         assert!(!text.contains("\"name\":\"blocked\""));
         assert!(text.ends_with("\n\n"));
+    }
+
+    #[test]
+    fn mcp_proxy_responses_override_upstream_cache_policy() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=3600"),
+        );
+
+        let response =
+            response_from_parts(StatusCode::OK, &headers, Body::empty()).expect("proxy response");
+
+        assert_eq!(
+            response
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-store")
+        );
     }
 }

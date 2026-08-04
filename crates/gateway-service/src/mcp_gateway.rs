@@ -8,7 +8,9 @@ use gateway_core::{
 
 use crate::McpOauthRuntime;
 use crate::mcp_credentials::McpCredentialService;
-use crate::mcp_upstream_auth::{gateway_mcp_upstream_headers, normalize_mcp_server_key};
+use crate::mcp_upstream_auth::{
+    gateway_mcp_upstream_headers, normalize_mcp_server_key, validate_gateway_managed_server_url,
+};
 
 #[derive(Debug, Clone)]
 pub struct McpGatewayUpstream {
@@ -75,6 +77,7 @@ where
         auth: &AuthenticatedApiKey,
         server: ExternalMcpServerRecord,
     ) -> Result<McpGatewayUpstream, GatewayError> {
+        validate_gateway_managed_server_url(&server.server_url, server.auth_mode)?;
         let headers = match server.auth_mode {
             ExternalMcpAuthMode::None
             | ExternalMcpAuthMode::GatewayStaticHeader

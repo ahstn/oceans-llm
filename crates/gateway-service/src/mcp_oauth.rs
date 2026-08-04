@@ -66,6 +66,7 @@ impl McpOauthRuntime {
                 .collect(),
             client: reqwest::Client::builder()
                 .timeout(StdDuration::from_secs(60))
+                .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("default MCP OAuth HTTP client configuration must be valid"),
             refresh_locks: Arc::new(Mutex::new(HashMap::new())),
@@ -166,13 +167,14 @@ impl McpOauthRuntime {
                 lease_token,
             } => (binding, lease_token),
         };
+        let leased_binding_id = current.credential_binding_id;
         let result = self.refresh_binding_with_lease(repo, current, server).await;
         if let Err(error) = repo
-            .release_mcp_oauth_refresh_lease(binding.credential_binding_id, lease_token)
+            .release_mcp_oauth_refresh_lease(leased_binding_id, lease_token)
             .await
         {
             tracing::warn!(
-                credential_binding_id = %binding.credential_binding_id,
+                credential_binding_id = %leased_binding_id,
                 error = %error,
                 "failed to release MCP OAuth refresh lease"
             );
@@ -389,6 +391,10 @@ pub(crate) fn oauth_bundle_metadata(
     bundle: &McpOauthTokenBundle,
 ) -> Map<String, serde_json::Value> {
     Map::from_iter([
+        (
+            "oauth_bundle_version".to_string(),
+            serde_json::json!(bundle.version),
+        ),
         (
             "oauth_provider_key".to_string(),
             serde_json::json!(bundle.provider_key),

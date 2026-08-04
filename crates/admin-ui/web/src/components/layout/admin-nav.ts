@@ -106,14 +106,20 @@ export function normalizeAdminPath(pathname: string) {
   return pathname.replace(/^\/admin(?=\/|$)/, '') || '/'
 }
 
-export function getActiveNavSection(currentPath: string) {
-  return adminNavSections.find((section) =>
+export function getActiveNavSection(
+  currentPath: string,
+  sections: AdminNavSection[] = adminNavSections,
+) {
+  return sections.find((section) =>
     section.items.some((item) => matchesAdminPath(currentPath, item.to)),
   )
 }
 
-export function getActiveNavItem(currentPath: string) {
-  return adminNavSections
+export function getActiveNavItem(
+  currentPath: string,
+  sections: AdminNavSection[] = adminNavSections,
+) {
+  return sections
     .flatMap((section) => section.items)
     .find((item) => matchesAdminPath(currentPath, item.to))
 }

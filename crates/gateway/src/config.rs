@@ -1364,13 +1364,15 @@ impl McpOauthConfig {
             {
                 bail!("MCP OAuth provider `{key}` client_secret cannot be empty");
             }
-            validate_https_url(
+            validate_google_oauth_endpoint(
                 &provider.authorization_url,
                 &format!("MCP OAuth provider `{key}` authorization_url"),
+                &default_google_authorization_url(),
             )?;
-            validate_https_url(
+            validate_google_oauth_endpoint(
                 &provider.token_url,
                 &format!("MCP OAuth provider `{key}` token_url"),
+                &default_google_token_url(),
             )?;
         }
         Ok(())
@@ -1380,12 +1382,8 @@ impl McpOauthConfig {
         let Some(value) = self.public_base_url.as_deref() else {
             return Ok(None);
         };
-        let value = resolve_path_reference(value)?
-            .trim()
-            .trim_end_matches('/')
-            .to_string();
-        validate_https_url(&value, "mcp.oauth.public_base_url")?;
-        Ok(Some(value))
+        let value = resolve_path_reference(value)?;
+        normalize_https_origin(value.trim(), "mcp.oauth.public_base_url").map(Some)
     }
 
     pub fn runtime(&self) -> anyhow::Result<McpOauthRuntime> {
@@ -1417,6 +1415,30 @@ fn validate_https_url(value: &str, field: &str) -> anyhow::Result<()> {
     let parsed = url::Url::parse(value).with_context(|| format!("{field} is invalid"))?;
     if parsed.scheme() != "https" || parsed.host().is_none() {
         bail!("{field} must be an https URL with a host");
+    }
+    Ok(())
+}
+
+fn normalize_https_origin(value: &str, field: &str) -> anyhow::Result<String> {
+    let parsed = url::Url::parse(value).with_context(|| format!("{field} is invalid"))?;
+    if parsed.scheme() != "https" || parsed.host().is_none() {
+        bail!("{field} must be an https URL with a host");
+    }
+    if !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        bail!("{field} must be an origin without user information, path, query, or fragment");
+    }
+    Ok(parsed.origin().ascii_serialization())
+}
+
+fn validate_google_oauth_endpoint(value: &str, field: &str, expected: &str) -> anyhow::Result<()> {
+    validate_https_url(value, field)?;
+    if value != expected {
+        bail!("{field} must be `{expected}` for the Google OAuth provider");
     }
     Ok(())
 }
@@ -3237,7 +3259,10 @@ mod tests {
     use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
 
-    use super::{AwsBedrockRouteCompatibilityConfig, GatewayConfig};
+    use super::{
+        AwsBedrockRouteCompatibilityConfig, GatewayConfig, McpOauthConfig, McpOauthProviderConfig,
+        default_google_authorization_url, default_google_token_url,
+    };
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
@@ -5967,5 +5992,70 @@ mcp:
                 .token_url,
             "https://oauth2.googleapis.com/token"
         );
+    }
+
+    #[test]
+    fn mcp_oauth_public_base_url_must_be_an_https_origin() {
+        let config = McpOauthConfig {
+            public_base_url: Some("https://gateway.example.com:8443/".to_string()),
+            providers: Vec::new(),
+        };
+        assert_eq!(
+            config
+                .resolved_public_base_url()
+                .expect("valid public origin")
+                .as_deref(),
+            Some("https://gateway.example.com:8443")
+        );
+
+        for invalid in [
+            "https://user@gateway.example.com",
+            "https://gateway.example.com/path",
+            "https://gateway.example.com?tenant=x",
+            "https://gateway.example.com#fragment",
+        ] {
+            let config = McpOauthConfig {
+                public_base_url: Some(invalid.to_string()),
+                providers: Vec::new(),
+            };
+            assert!(
+                config.resolved_public_base_url().is_err(),
+                "accepted {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn google_mcp_oauth_endpoints_are_pinned() {
+        let provider = McpOauthProviderConfig {
+            key: "google".to_string(),
+            provider_type: "google".to_string(),
+            client_id: "literal.google-client-id".to_string(),
+            client_secret: "literal.google-client-secret".to_string(),
+            authorization_url: default_google_authorization_url(),
+            token_url: default_google_token_url(),
+        };
+        let config = McpOauthConfig {
+            public_base_url: Some("https://gateway.example.com".to_string()),
+            providers: vec![provider.clone()],
+        };
+        config.validate().expect("official Google endpoints");
+
+        for invalid in [
+            "https://oauth2.googleapis.com.evil.example/token",
+            "https://user@oauth2.googleapis.com/token",
+            "https://oauth2.googleapis.com:8443/token",
+            "https://oauth2.googleapis.com/other",
+            "https://oauth2.googleapis.com/token?tenant=x",
+            "https://oauth2.googleapis.com/token#fragment",
+        ] {
+            let mut provider = provider.clone();
+            provider.token_url = invalid.to_string();
+            let config = McpOauthConfig {
+                public_base_url: Some("https://gateway.example.com".to_string()),
+                providers: vec![provider],
+            };
+            assert!(config.validate().is_err(), "accepted {invalid}");
+        }
     }
 }

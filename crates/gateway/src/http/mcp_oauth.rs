@@ -1,13 +1,16 @@
+use std::collections::HashMap;
+
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::HeaderMap,
+    http::{HeaderMap, header::CACHE_CONTROL},
     response::{IntoResponse, Redirect, Response},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use gateway_core::{
     AuthError, ExternalMcpAuthMode, ExternalMcpServerStatus, GatewayError, McpOauthStateRecord,
-    McpRegistryRepository, McpUpstreamCredentialMaterialKind, McpUpstreamCredentialRepository,
+    McpRegistryRepository, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
+    McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
 };
 use gateway_service::{McpCredentialService, credential_owner_scope_key, mcp_oauth_server_config};
 use gateway_store::GatewayStore;
@@ -85,14 +88,20 @@ pub struct McpOauthRevokeResponse {
 pub async fn list_mcp_oauth_connections(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<Vec<McpOauthConnectionView>>, AppError> {
+) -> Result<Response, AppError> {
     let user = require_session_user(&state, &headers).await?;
-    let owner_scope_key = credential_owner_scope_key(
-        gateway_core::McpUpstreamCredentialOwnerScopeKind::User,
-        Some(user.user_id),
-        None,
-        None,
-    )?;
+    let bindings: HashMap<Uuid, McpUpstreamCredentialBindingRecord> = state
+        .store
+        .list_mcp_upstream_credential_bindings(
+            None,
+            Some(McpUpstreamCredentialOwnerScopeKind::User),
+            Some(user.user_id),
+            false,
+        )
+        .await?
+        .into_iter()
+        .map(|binding| (binding.mcp_server_id, binding))
+        .collect();
     let mut items = Vec::new();
     for server in state.store.list_external_mcp_servers(false).await? {
         if server.status != ExternalMcpServerStatus::Active
@@ -103,10 +112,7 @@ pub async fn list_mcp_oauth_connections(
         let Ok(config) = mcp_oauth_server_config(&server.auth_config) else {
             continue;
         };
-        let binding = state
-            .store
-            .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &owner_scope_key)
-            .await?;
+        let binding = bindings.get(&server.mcp_server_id);
         let expires_at = binding.as_ref().and_then(|binding| binding.expires_at);
         let availability_error = state
             .mcp_oauth_runtime
@@ -118,6 +124,9 @@ pub async fn list_mcp_oauth_connections(
                 if binding.material_kind != McpUpstreamCredentialMaterialKind::OauthTokens =>
             {
                 McpOauthConnectionStatus::Disconnected
+            }
+            Some(binding) if has_refreshable_oauth_metadata(&binding.metadata) => {
+                McpOauthConnectionStatus::Connected
             }
             Some(_) if expires_at.is_some_and(|expiry| expiry <= OffsetDateTime::now_utc()) => {
                 McpOauthConnectionStatus::Expired
@@ -148,7 +157,7 @@ pub async fn list_mcp_oauth_connections(
             availability_error: availability_error.map(ToOwned::to_owned),
         });
     }
-    Ok(Json(items))
+    Ok(([(CACHE_CONTROL, "no-store")], Json(items)).into_response())
 }
 
 #[utoipa::path(
@@ -247,14 +256,9 @@ pub async fn mcp_oauth_callback(
     else {
         return Ok(connection_error_redirect("state_invalid"));
     };
-    if transaction.expires_at <= now {
-        return Ok(connection_error_redirect("state_expired"));
-    }
-    if transaction.provider_key != provider_key {
-        return Ok(connection_error_redirect("state_invalid"));
-    }
-    if !callback_session_matches(Some(user.user_id), transaction.user_id) {
-        return Ok(connection_error_redirect("state_invalid"));
+    if let Some(error) = callback_transaction_error(&transaction, &provider_key, user.user_id, now)
+    {
+        return Ok(connection_error_redirect(error));
     }
     if query.error.is_some() {
         return Ok(connection_error_redirect("access_denied"));
@@ -284,10 +288,7 @@ pub async fn mcp_oauth_callback(
     McpCredentialService::new(state.store.clone())
         .upsert_oauth_user_binding(transaction.mcp_server_id, transaction.user_id, grant)
         .await?;
-    Ok(
-        Redirect::temporary(&format!("{}?oauth=connected", transaction.redirect_to))
-            .into_response(),
-    )
+    Ok(connection_success_redirect(&transaction.redirect_to))
 }
 
 #[utoipa::path(
@@ -363,12 +364,21 @@ async fn load_oauth_server(
 fn normalize_connection_redirect(value: Option<&str>) -> String {
     value
         .filter(|value| {
-            value.starts_with("/admin/account/connections")
-                && !value.starts_with("//")
-                && !value.contains('\\')
+            if !value.starts_with('/') || value.starts_with("//") || value.contains('\\') {
+                return false;
+            }
+            let Ok(url) = url::Url::parse(&format!("https://oceans.invalid{value}")) else {
+                return false;
+            };
+            url.path() == DEFAULT_CONNECTION_REDIRECT && url.fragment().is_none()
         })
         .unwrap_or(DEFAULT_CONNECTION_REDIRECT)
         .to_string()
+}
+
+fn connection_success_redirect(redirect_to: &str) -> Response {
+    let separator = if redirect_to.contains('?') { '&' } else { '?' };
+    Redirect::temporary(&format!("{redirect_to}{separator}oauth=connected")).into_response()
 }
 
 fn connection_error_redirect(code: &str) -> Response {
@@ -382,6 +392,38 @@ fn token_hash(token: &str) -> String {
 
 fn callback_session_matches(session_user_id: Option<Uuid>, transaction_user_id: Uuid) -> bool {
     session_user_id == Some(transaction_user_id)
+}
+
+fn callback_transaction_error(
+    transaction: &McpOauthStateRecord,
+    provider_key: &str,
+    session_user_id: Uuid,
+    now: OffsetDateTime,
+) -> Option<&'static str> {
+    if transaction.expires_at <= now {
+        Some("state_expired")
+    } else if transaction.provider_key != provider_key
+        || !callback_session_matches(Some(session_user_id), transaction.user_id)
+    {
+        Some("state_invalid")
+    } else {
+        None
+    }
+}
+
+fn has_refreshable_oauth_metadata(metadata: &serde_json::Map<String, serde_json::Value>) -> bool {
+    metadata
+        .get("oauth_bundle_version")
+        .and_then(serde_json::Value::as_u64)
+        == Some(1)
+        && metadata
+            .get("oauth_provider_key")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|provider| !provider.is_empty())
+        && metadata
+            .get("resource")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|resource| !resource.is_empty())
 }
 
 #[cfg(test)]
@@ -402,6 +444,30 @@ mod tests {
             normalize_connection_redirect(Some("//attacker.example")),
             DEFAULT_CONNECTION_REDIRECT
         );
+        assert_eq!(
+            normalize_connection_redirect(Some("/admin/account/connections-extra")),
+            DEFAULT_CONNECTION_REDIRECT
+        );
+        assert_eq!(
+            normalize_connection_redirect(Some("/admin/account/connections/child")),
+            DEFAULT_CONNECTION_REDIRECT
+        );
+        assert_eq!(
+            normalize_connection_redirect(Some("/admin/account/connections#fragment")),
+            DEFAULT_CONNECTION_REDIRECT
+        );
+    }
+
+    #[test]
+    fn connection_success_redirect_preserves_existing_query() {
+        let response = connection_success_redirect("/admin/account/connections?from=drive");
+        assert_eq!(
+            response
+                .headers()
+                .get("location")
+                .and_then(|value| value.to_str().ok()),
+            Some("/admin/account/connections?from=drive&oauth=connected")
+        );
     }
 
     #[test]
@@ -418,5 +484,48 @@ mod tests {
         assert!(callback_session_matches(Some(initiator), initiator));
         assert!(!callback_session_matches(Some(Uuid::new_v4()), initiator));
         assert!(!callback_session_matches(None, initiator));
+    }
+
+    #[test]
+    fn oauth_callback_rejects_expired_state_before_exchange() {
+        let now = OffsetDateTime::now_utc();
+        let user_id = Uuid::new_v4();
+        let transaction = McpOauthStateRecord {
+            state_hash: "state-hash".to_string(),
+            user_id,
+            mcp_server_id: Uuid::new_v4(),
+            provider_key: "google".to_string(),
+            pkce_verifier: "verifier".to_string(),
+            redirect_to: DEFAULT_CONNECTION_REDIRECT.to_string(),
+            resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
+            scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+            expires_at: now - Duration::seconds(1),
+            consumed_at: Some(now),
+            created_at: now - Duration::minutes(MCP_OAUTH_STATE_TTL_MINUTES),
+        };
+
+        assert_eq!(
+            callback_transaction_error(&transaction, "google", user_id, now),
+            Some("state_expired")
+        );
+    }
+
+    #[test]
+    fn refreshable_oauth_metadata_keeps_expired_access_tokens_connected() {
+        let metadata = serde_json::Map::from_iter([
+            ("oauth_bundle_version".to_string(), serde_json::json!(1)),
+            (
+                "oauth_provider_key".to_string(),
+                serde_json::json!("google"),
+            ),
+            (
+                "resource".to_string(),
+                serde_json::json!("https://drivemcp.googleapis.com/mcp/v1"),
+            ),
+        ]);
+        assert!(has_refreshable_oauth_metadata(&metadata));
+
+        let legacy_metadata = serde_json::Map::new();
+        assert!(!has_refreshable_oauth_metadata(&legacy_metadata));
     }
 }

@@ -161,15 +161,16 @@ pub fn validate_gateway_managed_server_url(
     value: &str,
     auth_mode: ExternalMcpAuthMode,
 ) -> Result<(), GatewayError> {
-    if !auth_mode.supports_gateway_discovery() || auth_mode == ExternalMcpAuthMode::None {
+    let sends_gateway_credentials =
+        auth_mode.supports_gateway_discovery() || auth_mode == ExternalMcpAuthMode::OauthObo;
+    if !sends_gateway_credentials || auth_mode == ExternalMcpAuthMode::None {
         return Ok(());
     }
     let url = Url::parse(value)
         .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
     if url.scheme() != "https" && !is_loopback_http_url(&url) {
         return Err(GatewayError::InvalidRequest(
-            "gateway-managed MCP credentials require an https server_url unless the host is loopback"
-                .to_string(),
+            "MCP credentials require an https server_url unless the host is loopback".to_string(),
         ));
     }
     Ok(())
@@ -471,6 +472,19 @@ mod tests {
                 ])),
             }
         );
+
+        let mut insecure_server = server;
+        insecure_server.server_url = "http://example.test/mcp".to_string();
+        assert!(
+            validate_gateway_managed_server_url(
+                &insecure_server.server_url,
+                insecure_server.auth_mode,
+            )
+            .is_err()
+        );
+        insecure_server.server_url = "http://127.0.0.1:8080/mcp".to_string();
+        validate_gateway_managed_server_url(&insecure_server.server_url, insecure_server.auth_mode)
+            .expect("loopback OAuth development endpoint");
     }
 
     #[test]
@@ -488,6 +502,35 @@ mod tests {
         assert!(
             validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &invalid_discovery).is_err()
         );
+
+        let insecure_resource = Map::from_iter([
+            ("provider_key".to_string(), json!("google")),
+            (
+                "resource".to_string(),
+                json!("http://drivemcp.googleapis.com/mcp/v1"),
+            ),
+            (
+                "scopes".to_string(),
+                json!(["https://www.googleapis.com/auth/drive.readonly"]),
+            ),
+        ]);
+        assert!(
+            validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &insecure_resource).is_err()
+        );
+
+        let default_discovery = Map::from_iter([
+            ("provider_key".to_string(), json!("google")),
+            (
+                "resource".to_string(),
+                json!("https://drivemcp.googleapis.com/mcp/v1"),
+            ),
+            (
+                "scopes".to_string(),
+                json!(["https://www.googleapis.com/auth/drive.readonly"]),
+            ),
+        ]);
+        let server = server_record(ExternalMcpAuthMode::OauthObo, default_discovery);
+        assert!(!supports_public_discovery(&server));
     }
 
     fn server_record(

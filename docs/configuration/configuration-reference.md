@@ -425,11 +425,9 @@ mcp:
         provider_type: google
         client_id: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_ID
         client_secret: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_SECRET
-        authorization_url: https://accounts.google.com/o/oauth2/v2/auth
-        token_url: https://oauth2.googleapis.com/token
 ```
 
-`public_base_url` is required when an MCP OAuth provider is configured. It must be the external HTTPS origin used for callbacks. Google is the first supported provider type. Its endpoint fields have the defaults shown above. The server registry, not provider configuration, owns each server's OAuth resource and scopes.
+`public_base_url` is required when an MCP OAuth provider is configured. It must be the external HTTPS origin used for callbacks, without a path, query, fragment, or user information. Google is the first supported provider type. Its authorization and token endpoints are fixed to the official Google endpoints. The optional endpoint fields accept only those fixed values. The server registry, not provider configuration, owns each server's OAuth resource and scopes.
 
 `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` is also required when this provider list is not empty. It must contain a base64-encoded 32-byte key.
 

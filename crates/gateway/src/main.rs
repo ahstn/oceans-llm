@@ -207,7 +207,10 @@ async fn run_serve_with_store(
             store: service.store().clone(),
             providers,
             metrics,
-            mcp_http_client: reqwest::Client::new(),
+            mcp_http_client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("MCP HTTP client configuration must be valid"),
             mcp_oauth_runtime: Arc::new(
                 config
                     .mcp

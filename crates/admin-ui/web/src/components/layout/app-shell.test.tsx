@@ -5,9 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppShell } from '@/components/layout/app-shell'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
+let routerPath = '/admin/api-keys'
+
 vi.mock('@tanstack/react-router', async () => ({
-  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
-  useRouterState: () => '/admin/api-keys',
+  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
+    select({ location: { pathname: routerPath } }),
 }))
 
 const logoutAdminSession = vi.fn()
@@ -20,6 +23,7 @@ describe('AppShell', () => {
   const originalLocation = window.location
 
   beforeEach(() => {
+    routerPath = '/admin/api-keys'
     logoutAdminSession.mockReset()
     logoutAdminSession.mockResolvedValue({ data: { status: 'ok' } })
     Object.defineProperty(window, 'location', {
@@ -96,6 +100,7 @@ describe('AppShell', () => {
   })
 
   it('limits a regular user to the connection page', () => {
+    routerPath = '/admin/account/connections'
     render(
       <TooltipProvider>
         <AppShell
@@ -115,8 +120,13 @@ describe('AppShell', () => {
       </TooltipProvider>,
     )
 
-    expect(screen.getByText('Account')).toBeVisible()
-    expect(screen.getByText('Connections')).toBeVisible()
+    expect(screen.getAllByText('Account').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Connections').length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute(
+      'href',
+      '/account/connections',
+    )
+    expect(screen.queryByText('Control Plane')).not.toBeInTheDocument()
     expect(screen.queryByText('Models')).not.toBeInTheDocument()
     expect(screen.queryByText('Identity')).not.toBeInTheDocument()
   })

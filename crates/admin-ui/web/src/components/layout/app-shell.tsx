@@ -4,9 +4,11 @@ import { toast } from 'sonner'
 
 import { AppSidebar } from '@/components/app-sidebar'
 import {
+  adminNavSections,
   getActiveNavItem,
   getActiveNavSection,
   normalizeAdminPath,
+  regularUserNavSections,
 } from '@/components/layout/admin-nav'
 import {
   Breadcrumb,
@@ -32,8 +34,10 @@ export function AppShell({ children, session, oceansVersion }: AppShellProps) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [isSigningOut, startSignOut] = useTransition()
   const currentPath = normalizeAdminPath(pathname)
-  const activeSection = getActiveNavSection(currentPath)
-  const activeItem = getActiveNavItem(currentPath)
+  const isPlatformAdmin = isPlatformAdminSession(session)
+  const visibleSections = isPlatformAdmin ? adminNavSections : regularUserNavSections
+  const activeSection = getActiveNavSection(currentPath, visibleSections)
+  const activeItem = getActiveNavItem(currentPath, visibleSections)
 
   function handleSignOut() {
     startSignOut(async () => {
@@ -54,7 +58,7 @@ export function AppShell({ children, session, oceansVersion }: AppShellProps) {
         oceansVersion={oceansVersion}
         signOutPending={isSigningOut}
         onSignOut={handleSignOut}
-        isPlatformAdmin={isPlatformAdminSession(session)}
+        isPlatformAdmin={isPlatformAdmin}
       />
 
       <SidebarInset>
