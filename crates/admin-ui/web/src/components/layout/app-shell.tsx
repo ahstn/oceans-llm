@@ -4,11 +4,10 @@ import { toast } from 'sonner'
 
 import { AppSidebar } from '@/components/app-sidebar'
 import {
-  adminNavSections,
   getActiveNavItem,
   getActiveNavSection,
+  getAdminNavSections,
   normalizeAdminPath,
-  regularUserNavSections,
 } from '@/components/layout/admin-nav'
 import {
   Breadcrumb,
@@ -22,7 +21,6 @@ import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { logoutAdminSession } from '@/server/admin-data.functions'
 import type { AuthSessionView } from '@/types/api'
-import { isPlatformAdminSession } from '@/routes/-auth-routing'
 
 interface AppShellProps {
   children: ReactNode
@@ -34,10 +32,9 @@ export function AppShell({ children, session, oceansVersion }: AppShellProps) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [isSigningOut, startSignOut] = useTransition()
   const currentPath = normalizeAdminPath(pathname)
-  const isPlatformAdmin = isPlatformAdminSession(session)
-  const visibleSections = isPlatformAdmin ? adminNavSections : regularUserNavSections
-  const activeSection = getActiveNavSection(currentPath, visibleSections)
-  const activeItem = getActiveNavItem(currentPath, visibleSections)
+  const navSections = getAdminNavSections(session.user.global_role)
+  const activeSection = getActiveNavSection(currentPath, navSections)
+  const activeItem = getActiveNavItem(currentPath, navSections)
 
   function handleSignOut() {
     startSignOut(async () => {
@@ -58,7 +55,6 @@ export function AppShell({ children, session, oceansVersion }: AppShellProps) {
         oceansVersion={oceansVersion}
         signOutPending={isSigningOut}
         onSignOut={handleSignOut}
-        isPlatformAdmin={isPlatformAdmin}
       />
 
       <SidebarInset>

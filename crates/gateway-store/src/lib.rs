@@ -7585,7 +7585,7 @@ mod tests {
         assert_eq!(service_account_sum, Money4::from_scaled(22_000));
 
         let daily = store
-            .list_usage_daily_aggregates(window_start, window_end, None)
+            .list_usage_daily_aggregates(window_start, window_end, None, None)
             .await
             .expect("daily aggregates");
         assert_eq!(daily.len(), 2);
@@ -7609,7 +7609,7 @@ mod tests {
         assert_eq!(second.usage_missing_request_count, 1);
 
         let owners = store
-            .list_usage_owner_aggregates(window_start, window_end, None)
+            .list_usage_owner_aggregates(window_start, window_end, None, None)
             .await
             .expect("owner aggregates");
         assert_eq!(owners.len(), 2);
@@ -7636,7 +7636,7 @@ mod tests {
         assert_eq!(service_account_owner.usage_missing_request_count, 1);
 
         let models = store
-            .list_usage_model_aggregates(window_start, window_end, None)
+            .list_usage_model_aggregates(window_start, window_end, None, None)
             .await
             .expect("model aggregates");
         assert_eq!(models.len(), 2);
@@ -7656,6 +7656,40 @@ mod tests {
         assert_eq!(upstream_model.priced_request_count, 1);
         assert_eq!(upstream_model.unpriced_request_count, 1);
         assert_eq!(upstream_model.usage_missing_request_count, 1);
+
+        let user_daily = store
+            .list_usage_daily_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user daily aggregates");
+        assert_eq!(user_daily.len(), 1);
+        assert_eq!(user_daily[0].priced_cost_usd, Money4::from_scaled(11_000));
+        let user_owners = store
+            .list_usage_owner_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user owner aggregates");
+        assert_eq!(user_owners.len(), 1);
+        assert_eq!(user_owners[0].owner_id, user.user_id);
+        let user_models = store
+            .list_usage_model_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user model aggregates");
+        assert_eq!(user_models.len(), 1);
+        assert_eq!(user_models[0].model_key, "fast");
 
         assert_focus_export_aggregates(
             &store,
@@ -8477,7 +8511,7 @@ mod tests {
         assert_eq!(service_account_sum, Money4::from_scaled(22_000));
 
         let daily = store
-            .list_usage_daily_aggregates(window_start, window_end, None)
+            .list_usage_daily_aggregates(window_start, window_end, None, None)
             .await
             .expect("daily aggregates");
         assert_eq!(daily.len(), 2);
@@ -8501,7 +8535,7 @@ mod tests {
         assert_eq!(second.usage_missing_request_count, 1);
 
         let owners = store
-            .list_usage_owner_aggregates(window_start, window_end, None)
+            .list_usage_owner_aggregates(window_start, window_end, None, None)
             .await
             .expect("owner aggregates");
         assert_eq!(owners.len(), 2);
@@ -8528,7 +8562,7 @@ mod tests {
         assert_eq!(service_account_owner.usage_missing_request_count, 1);
 
         let models = store
-            .list_usage_model_aggregates(window_start, window_end, None)
+            .list_usage_model_aggregates(window_start, window_end, None, None)
             .await
             .expect("model aggregates");
         assert_eq!(models.len(), 2);
@@ -8548,6 +8582,40 @@ mod tests {
         assert_eq!(upstream_model.priced_request_count, 1);
         assert_eq!(upstream_model.unpriced_request_count, 1);
         assert_eq!(upstream_model.usage_missing_request_count, 1);
+
+        let user_daily = store
+            .list_usage_daily_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user daily aggregates");
+        assert_eq!(user_daily.len(), 1);
+        assert_eq!(user_daily[0].priced_cost_usd, Money4::from_scaled(11_000));
+        let user_owners = store
+            .list_usage_owner_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user owner aggregates");
+        assert_eq!(user_owners.len(), 1);
+        assert_eq!(user_owners[0].owner_id, user.user_id);
+        let user_models = store
+            .list_usage_model_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user model aggregates");
+        assert_eq!(user_models.len(), 1);
+        assert_eq!(user_models[0].model_key, "fast");
 
         assert_focus_export_aggregates(
             &store,

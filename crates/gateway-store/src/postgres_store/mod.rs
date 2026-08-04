@@ -763,6 +763,13 @@ impl AdminIdentityRepository for PostgresStore {
         Self::list_identity_users(self).await
     }
 
+    async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<IdentityUserRecord>, StoreError> {
+        Self::get_identity_user(self, user_id).await
+    }
+
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         Self::list_active_teams(self).await
     }

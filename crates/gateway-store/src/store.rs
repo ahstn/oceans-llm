@@ -478,6 +478,14 @@ impl AdminApiKeyRepository for AnyStore {
         dispatch_store!(self, list_api_keys())
     }
 
+    async fn list_api_keys_for_user_scope(
+        &self,
+        user_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<gateway_core::ApiKeyRecord>, StoreError> {
+        dispatch_store!(self, list_api_keys_for_user_scope(user_id, team_id))
+    }
+
     async fn get_api_key_by_id(
         &self,
         api_key_id: Uuid,
@@ -663,6 +671,13 @@ impl AdminIdentityRepository for AnyStore {
         dispatch_store!(self, list_identity_users())
     }
 
+    async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<IdentityUserRecord>, StoreError> {
+        dispatch_store!(self, get_identity_user(user_id))
+    }
+
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         dispatch_store!(self, list_active_teams())
     }
@@ -807,10 +822,11 @@ impl BudgetRepository for AnyStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<gateway_core::SpendDailyAggregateRecord>, StoreError> {
         dispatch_store!(
             self,
-            list_usage_daily_aggregates(window_start, window_end, owner_kind)
+            list_usage_daily_aggregates(window_start, window_end, owner_kind, owner_user_id)
         )
     }
 
@@ -819,10 +835,11 @@ impl BudgetRepository for AnyStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<gateway_core::SpendOwnerAggregateRecord>, StoreError> {
         dispatch_store!(
             self,
-            list_usage_owner_aggregates(window_start, window_end, owner_kind)
+            list_usage_owner_aggregates(window_start, window_end, owner_kind, owner_user_id)
         )
     }
 
@@ -831,10 +848,11 @@ impl BudgetRepository for AnyStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<gateway_core::SpendModelAggregateRecord>, StoreError> {
         dispatch_store!(
             self,
-            list_usage_model_aggregates(window_start, window_end, owner_kind)
+            list_usage_model_aggregates(window_start, window_end, owner_kind, owner_user_id)
         )
     }
 

@@ -15,6 +15,7 @@ export interface AdminNavItem {
   label: string
   to: string
   icon: unknown
+  adminOnly?: boolean
 }
 
 export interface AdminNavSection {
@@ -29,14 +30,6 @@ export const connectionsNavItem: AdminNavItem = {
   icon: McpServerIcon,
 }
 
-export const regularUserNavSections: AdminNavSection[] = [
-  {
-    label: 'Account',
-    icon: UserIcon,
-    items: [connectionsNavItem],
-  },
-]
-
 export const adminNavSections: AdminNavSection[] = [
   {
     label: 'Control Plane',
@@ -44,9 +37,14 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       { label: 'API Keys', to: '/api-keys', icon: SearchIcon },
       { label: 'Models', to: '/models', icon: HomeIcon },
-      { label: 'MCP', to: '/mcp', icon: McpServerIcon },
       connectionsNavItem,
-      { label: 'Review Agent', to: '/review-agent', icon: GitPullRequestIcon },
+      { label: 'MCP', to: '/mcp', icon: McpServerIcon, adminOnly: true },
+      {
+        label: 'Review Agent',
+        to: '/review-agent',
+        icon: GitPullRequestIcon,
+        adminOnly: true,
+      },
     ],
   },
   {
@@ -62,11 +60,13 @@ export const adminNavSections: AdminNavSection[] = [
         label: 'Spend Controls',
         to: '/spend-controls',
         icon: Notification03Icon,
+        adminOnly: true,
       },
       {
         label: 'Leaderboard',
         to: '/observability/leaderboard',
         icon: WaterfallUp02Icon,
+        adminOnly: true,
       },
     ],
   },
@@ -78,6 +78,7 @@ export const adminNavSections: AdminNavSection[] = [
         label: 'Agent Harnesses',
         to: '/observability/agent-harnesses',
         icon: RoboticIcon,
+        adminOnly: true,
       },
       {
         label: 'Request Logs',
@@ -97,13 +98,31 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       { label: 'Teams', to: '/identity/teams', icon: UserGroupIcon },
       { label: 'Users', to: '/identity/users', icon: UserIcon },
-      { label: 'Service Accounts', to: '/identity/service-accounts', icon: RoboticIcon },
+      {
+        label: 'Service Accounts',
+        to: '/identity/service-accounts',
+        icon: RoboticIcon,
+        adminOnly: true,
+      },
     ],
   },
 ]
 
 export function normalizeAdminPath(pathname: string) {
   return pathname.replace(/^\/admin(?=\/|$)/, '') || '/'
+}
+
+export function getAdminNavSections(globalRole: string) {
+  if (globalRole === 'platform_admin') {
+    return adminNavSections
+  }
+
+  return adminNavSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => !item.adminOnly),
+    }))
+    .filter((section) => section.items.length > 0)
 }
 
 export function getActiveNavSection(

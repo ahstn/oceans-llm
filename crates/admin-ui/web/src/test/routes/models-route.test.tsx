@@ -89,6 +89,7 @@ const refreshModelPricingMock = vi.hoisted(() => vi.fn())
 
 const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
+  useRouteContext: vi.fn(),
   useSearch: vi.fn(),
 }))
 
@@ -266,6 +267,18 @@ describe('ModelsPage', () => {
   beforeEach(() => {
     cleanup()
     routeMock.useLoaderData.mockReset()
+    routeMock.useRouteContext.mockReset()
+    routeMock.useRouteContext.mockReturnValue({
+      session: {
+        must_change_password: false,
+        user: {
+          id: 'admin_1',
+          name: 'Admin User',
+          email: 'admin@example.com',
+          global_role: 'platform_admin',
+        },
+      },
+    })
     routeMock.useSearch.mockReset()
     navigateMock.mockReset()
     invalidateMock.mockReset()
@@ -839,5 +852,33 @@ describe('ModelsPage', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Client config' })
     expect(within(dialog).getByText('claude-sonnet')).toBeInTheDocument()
     expect(within(dialog).getByText('fast')).toBeInTheDocument()
+  })
+
+  it('shows all models and client config actions without admin controls to regular users', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    routeMock.useRouteContext.mockReturnValue({
+      session: {
+        must_change_password: false,
+        user: {
+          id: 'user_1',
+          name: 'Regular User',
+          email: 'user@example.com',
+          global_role: 'user',
+        },
+      },
+    })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    expect(screen.getAllByText('fast').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('claude-sonnet').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Generate config' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Refresh pricing' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Allow List')).not.toBeInTheDocument()
+    expect(screen.queryByText('alice@example.com')).not.toBeInTheDocument()
   })
 })

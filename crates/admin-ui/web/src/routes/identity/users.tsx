@@ -37,7 +37,8 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui
 import { Input } from '@/components/ui/input'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
-import { requireAdminSession } from '@/routes/-admin-guard'
+import { requireAuthenticatedSession } from '@/routes/-admin-guard'
+import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import {
   Select,
   SelectContent,
@@ -67,6 +68,7 @@ import {
 import {
   deactivateIdentityUser,
   createIdentityUser,
+  getUserDirectory,
   getUsers,
   reactivateIdentityUser,
   resetIdentityUserOnboarding,
@@ -77,18 +79,22 @@ import {
   EntityTagsField,
   sanitizeEntityTags,
 } from '@/routes/identity/-entity-tags'
+import { ReadOnlyUsersDirectory } from '@/routes/identity/-read-only-directory'
+import { sanitizeOnboardingUpdateForm } from '@/routes/identity/-user-form'
 import type {
   CreateUserInput,
   CreateUserResult,
+  IdentityDirectoryUsersPayload,
   IdentityUsersPayload,
   UpdateUserInput,
   UserView,
 } from '@/types/api'
 
 export const Route = createFileRoute('/identity/users')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
   validateSearch: (search: Record<string, unknown>) => normalizeUserSearch(search),
-  loader: () => getUsers(),
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
+  loader: ({ context }) =>
+    isPlatformAdminSession(context.session) ? getUsers() : getUserDirectory(),
   component: UsersPage,
 })
 
@@ -114,6 +120,11 @@ const initialUpdateForm: UpdateUserInput = {
   tags: [],
 }
 
+const emptyAdminUsers: IdentityUsersPayload['users'] = []
+const emptyAdminTeams: IdentityUsersPayload['teams'] = []
+const emptyOidcProviders: IdentityUsersPayload['oidc_providers'] = []
+const emptyOauthProviders: IdentityUsersPayload['oauth_providers'] = []
+
 const userDetailsSections = [
   { id: 'overview', label: 'Overview', icon: UserCircleIcon },
   { id: 'configuration', label: 'Configuration', icon: Configuration01Icon },
@@ -125,9 +136,15 @@ type UserDetailsSection = (typeof userDetailsSections)[number]['id']
 
 export function UsersPage() {
   const router = useRouter()
-  const {
-    data: { users, teams, oidc_providers: oidcProviders, oauth_providers: oauthProviders },
-  } = Route.useLoaderData() as { data: IdentityUsersPayload }
+  const { session } = Route.useRouteContext()
+  const isPlatformAdmin = isPlatformAdminSession(session)
+  const loaderData = Route.useLoaderData()
+  const adminData = isPlatformAdmin ? (loaderData.data as IdentityUsersPayload) : null
+  const directoryData = isPlatformAdmin ? null : (loaderData.data as IdentityDirectoryUsersPayload)
+  const users = adminData?.users ?? emptyAdminUsers
+  const teams = adminData?.teams ?? emptyAdminTeams
+  const oidcProviders = adminData?.oidc_providers ?? emptyOidcProviders
+  const oauthProviders = adminData?.oauth_providers ?? emptyOauthProviders
   const [isOpen, setIsOpen] = useState(false)
   const [form, setForm] = useState<CreateUserInput>(initialForm)
   const [result, setResult] = useState<CreateUserResult | null>(null)
@@ -167,6 +184,10 @@ export function UsersPage() {
   useEffect(() => {
     setOnboardingResult(null)
   }, [selectedUserId])
+
+  if (!isPlatformAdmin) {
+    return <ReadOnlyUsersDirectory users={directoryData?.users ?? []} />
+  }
 
   function resetDialog() {
     setForm(initialForm)
@@ -1438,41 +1459,6 @@ function sanitizeUpdateForm(
   }
 
   if (user.status === 'invited' && update.auth_mode === 'oauth') {
-    const validProvider = oauthProviders.find(
-      (provider) => provider.key === update.oauth_provider_key,
-    )
-    update.oauth_provider_key = validProvider ? update.oauth_provider_key : null
-  }
-
-  return update
-}
-
-export function sanitizeOnboardingUpdateForm(
-  form: UpdateUserInput,
-  user: UserView,
-  oidcProviders: IdentityUsersPayload['oidc_providers'],
-  oauthProviders: IdentityUsersPayload['oauth_providers'],
-): UpdateUserInput {
-  const update: UpdateUserInput = {
-    global_role: user.global_role,
-    auth_mode: form.auth_mode,
-    oidc_provider_key: form.auth_mode === 'oidc' ? (form.oidc_provider_key ?? null) : null,
-    oauth_provider_key: form.auth_mode === 'oauth' ? (form.oauth_provider_key ?? null) : null,
-  }
-
-  if (user.team_role !== 'owner') {
-    update.team_id = user.team_id ?? null
-    update.team_role = user.team_id ? (user.team_role ?? 'member') : null
-  }
-
-  if (update.auth_mode === 'oidc') {
-    const validProvider = oidcProviders.find(
-      (provider) => provider.key === update.oidc_provider_key,
-    )
-    update.oidc_provider_key = validProvider ? update.oidc_provider_key : null
-  }
-
-  if (update.auth_mode === 'oauth') {
     const validProvider = oauthProviders.find(
       (provider) => provider.key === update.oauth_provider_key,
     )

@@ -7,9 +7,9 @@ import { AuthLayout } from '@/components/layout/auth-layout'
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { ssoErrorMessage } from '@/lib/sso-errors'
 import { getOidcLoginOptions, loginAdminWithPassword } from '@/server/admin-data.functions'
 import { postLoginAdminHref } from '@/routes/-auth-routing'
+import { ssoErrorMessage } from '@/routes/-login-messages'
 
 export const Route = createFileRoute('/login')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -68,7 +68,7 @@ export function LoginPage() {
   return (
     <AuthLayout
       title="Sign in"
-      description="Sign in to manage your Oceans account. Platform admins can also open the control plane."
+      description="Use your Oceans credentials or an enabled SSO provider to open the browser UI."
     >
       <Alert>
         <AlertTitle>Bootstrap access</AlertTitle>
@@ -106,7 +106,7 @@ export function LoginPage() {
               onChange={(event) => setPassword(event.target.value)}
               required
             />
-            <FieldDescription>Use the configured bootstrap admin password.</FieldDescription>
+            <FieldDescription>Use your Oceans password.</FieldDescription>
           </Field>
         </FieldGroup>
 

@@ -16,6 +16,7 @@ function parseCookieHeader(setCookie: string): { name: string; value: string } {
 async function login(
   request: APIRequestContext,
   root: string,
+  email: string,
   password: string,
 ): Promise<{
   response: Awaited<ReturnType<APIRequestContext['post']>>
@@ -27,7 +28,7 @@ async function login(
       'content-type': 'application/json',
     },
     data: {
-      email: adminEmail,
+      email,
       password,
     },
   })
@@ -57,13 +58,27 @@ async function login(
   }
 }
 
+export async function loginWithPasswordSession(
+  request: APIRequestContext,
+  root: string,
+  email: string,
+  password: string,
+): Promise<string> {
+  const result = await login(request, root, email, password)
+  expect(result.response.status()).toBe(200)
+  if (!result.cookieHeader) {
+    throw new Error(`login for ${email} did not include a set-cookie header`)
+  }
+  return result.cookieHeader
+}
+
 export async function ensureAdminSession(
   page: Page,
   request: APIRequestContext,
   root: string,
 ): Promise<string> {
   for (const candidate of [newPassword, adminPassword]) {
-    const result = await login(request, root, candidate)
+    const result = await login(request, root, adminEmail, candidate)
     if (result.response.status() !== 200 || !result.cookieHeader) {
       continue
     }
@@ -82,7 +97,7 @@ export async function ensureAdminSession(
       })
       expect(rotateResponse.ok()).toBe(true)
 
-      const relogin = await login(request, root, newPassword)
+      const relogin = await login(request, root, adminEmail, newPassword)
       expect(relogin.response.status()).toBe(200)
       if (!relogin.cookieHeader) {
         throw new Error('relogin after password change did not include a set-cookie header')

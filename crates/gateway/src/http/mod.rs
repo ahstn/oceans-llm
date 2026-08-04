@@ -20,7 +20,7 @@ pub mod state;
 
 use admin_ui::{AdminUiConfig, mount_admin_ui};
 use axum::{
-    Router,
+    Router, middleware,
     routing::{delete, get, patch, post},
 };
 use http::HeaderName;
@@ -36,6 +36,7 @@ use self::{
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
     let request_id_header = HeaderName::from_static("x-request-id");
+    let identity_guard_state = state.clone();
 
     let api_router = Router::new()
         .route("/healthz", get(healthz))
@@ -68,6 +69,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             get(list_identity_users).post(create_identity_user),
         )
         .route(
+            "/api/v1/identity/directory/users",
+            get(list_identity_directory_users),
+        )
+        .route(
             "/api/v1/admin/identity/users/{user_id}",
             patch(update_identity_user),
         )
@@ -86,6 +91,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/identity/teams",
             get(list_identity_teams).post(create_identity_team),
+        )
+        .route(
+            "/api/v1/identity/directory/teams",
+            get(list_identity_directory_teams),
         )
         .route(
             "/api/v1/admin/identity/teams/{team_id}",
@@ -318,6 +327,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
                 .delete(mcp_streamable_http_proxy),
         )
         .with_state(state)
+        .layer(middleware::from_fn_with_state(
+            identity_guard_state,
+            enforce_identity_mutation_admin,
+        ))
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &http::Request<_>| {
                 let request_id = request

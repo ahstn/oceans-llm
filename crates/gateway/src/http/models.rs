@@ -3,12 +3,13 @@ use axum::{
     extract::{Query, State},
     http::HeaderMap,
 };
+use gateway_core::GlobalRole;
 use gateway_service::{
     AdminModelSummary, AdminModelsService, EffectiveMetadataSource, EffectiveMetadataSourceKind,
 };
 
 use crate::http::{
-    admin_auth::require_platform_admin,
+    admin_auth::{require_active_session, require_platform_admin},
     admin_contract::{
         AdminModelAllowlistView, AdminModelClientConfigBlockView,
         AdminModelClientConfigSetupItemView, AdminModelClientConfigView, AdminModelListQuery,
@@ -37,7 +38,8 @@ pub async fn list_models(
     headers: HeaderMap,
     Query(query): Query<AdminModelListQuery>,
 ) -> Result<Json<Envelope<AdminModelPageView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_active_session(&state, &headers).await?;
+    let include_allowlist = actor.global_role == GlobalRole::PlatformAdmin;
 
     let page = query.page.unwrap_or(DEFAULT_PAGE).max(1);
     let page_size = query
@@ -53,7 +55,7 @@ pub async fn list_models(
         .into_iter()
         .skip(start)
         .take(page_size as usize)
-        .map(map_model_summary)
+        .map(|model| map_model_summary(model, include_allowlist))
         .collect();
 
     Ok(Json(envelope(AdminModelPageView {
@@ -76,7 +78,7 @@ pub async fn generate_model_client_configs(
     headers: HeaderMap,
     Json(request): Json<GenerateModelClientConfigsRequest>,
 ) -> Result<Json<Envelope<GenerateModelClientConfigsResponse>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    require_active_session(&state, &headers).await?;
 
     let service = admin_models_service(&state);
     let client_configurations = service
@@ -143,7 +145,16 @@ fn admin_models_service(state: &AppState) -> AdminModelsService<gateway_store::A
     }
 }
 
-fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
+fn map_model_summary(model: AdminModelSummary, include_allowlist: bool) -> AdminModelView {
+    let allowlist = if include_allowlist {
+        model.allowlist.map(|policy| AdminModelAllowlistView {
+            users: policy.users,
+            teams: policy.teams,
+        })
+    } else {
+        None
+    };
+
     AdminModelView {
         id: model.id,
         model_id: model.model_id,
@@ -151,10 +162,7 @@ fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
         alias_of: model.alias_of,
         description: model.description,
         tags: model.tags,
-        allowlist: model.allowlist.map(|policy| AdminModelAllowlistView {
-            users: policy.users,
-            teams: policy.teams,
-        }),
+        allowlist,
         status: model.status.into(),
         provider_key: model.provider_key,
         provider_label: model.provider_label,

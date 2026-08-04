@@ -70,6 +70,23 @@ pub struct AdminIdentityUserView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct IdentityDirectoryUsersPayload {
+    pub users: Vec<IdentityDirectoryUserView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct IdentityDirectoryUserView {
+    pub id: String,
+    pub name: String,
+    pub email: String,
+    pub global_role: String,
+    pub team_id: Option<String>,
+    pub team_name: Option<String>,
+    pub team_role: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminTeamView {
     pub id: String,
     pub name: String,
@@ -81,6 +98,20 @@ pub struct AdminTeamsPayload {
     pub users: Vec<AdminTeamAssignableUserView>,
     pub oidc_providers: Vec<AdminOidcProviderView>,
     pub oauth_providers: Vec<AdminOauthProviderView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct IdentityDirectoryTeamsPayload {
+    pub teams: Vec<IdentityDirectoryTeamView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct IdentityDirectoryTeamView {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub member_count: usize,
+    pub members: Vec<AdminTeamMemberView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1215,6 +1246,8 @@ pub struct RequestLogPayloadView {
         crate::http::api_keys::reveal_api_key_secret,
         crate::http::identity::list_identity_users,
         crate::http::identity::list_identity_teams,
+        crate::http::identity::list_identity_directory_users,
+        crate::http::identity::list_identity_directory_teams,
         crate::http::models::list_models,
         crate::http::models::generate_model_client_configs,
         crate::http::models::refresh_model_pricing_catalog,

@@ -103,8 +103,8 @@ export function ApiKeysCard({
   onManage,
 }: {
   items: ApiKeyView[]
-  onCreate: () => void
-  onManage: (apiKeyId: string) => void
+  onCreate?: () => void
+  onManage?: (apiKeyId: string) => void
 }) {
   return (
     <Card>
@@ -112,13 +112,16 @@ export function ApiKeysCard({
         <div className="flex flex-col gap-1">
           <CardTitle>API Keys</CardTitle>
           <CardDescription>
-            Issue gateway credentials with explicit owners and model grant modes, then revoke them
-            when access should stop.
+            {onCreate
+              ? 'Issue gateway credentials with explicit owners and model grant modes, then revoke them when access should stop.'
+              : 'Review your personal gateway credentials and any service-account credentials you can manage for your team.'}
           </CardDescription>
         </div>
-        <Button type="button" onClick={onCreate}>
-          Create API key
-        </Button>
+        {onCreate ? (
+          <Button type="button" onClick={onCreate}>
+            Create API key
+          </Button>
+        ) : null}
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {items.length === 0 ? (
@@ -129,14 +132,18 @@ export function ApiKeysCard({
               </EmptyMedia>
               <EmptyTitle>No API keys yet</EmptyTitle>
               <EmptyDescription>
-                Create a gateway key before distributing credentials to downstream clients.
+                {onCreate
+                  ? 'Create a gateway key before distributing credentials to downstream clients.'
+                  : 'No gateway credentials are assigned to your account.'}
               </EmptyDescription>
             </EmptyHeader>
-            <EmptyContent>
-              <Button type="button" onClick={onCreate}>
-                Create the first key
-              </Button>
-            </EmptyContent>
+            {onCreate ? (
+              <EmptyContent>
+                <Button type="button" onClick={onCreate}>
+                  Create the first key
+                </Button>
+              </EmptyContent>
+            ) : null}
           </Empty>
         ) : (
           <ApiKeyList items={items} onManage={onManage} />
@@ -151,7 +158,7 @@ export function ApiKeyList({
   onManage,
 }: {
   items: ApiKeyView[]
-  onManage: (apiKeyId: string) => void
+  onManage?: (apiKeyId: string) => void
 }) {
   return (
     <>
@@ -190,11 +197,13 @@ export function ApiKeyList({
                 <dd className="text-[var(--color-text)]">{formatLastUsedAt(item.last_used_at)}</dd>
               </div>
             </dl>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" onClick={() => onManage(item.id)}>
-                Manage
-              </Button>
-            </div>
+            {onManage ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={() => onManage(item.id)}>
+                  Manage
+                </Button>
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -209,7 +218,7 @@ export function ApiKeyList({
               <th className="px-3 py-2 font-semibold">Created</th>
               <th className="px-3 py-2 font-semibold">Last used</th>
               <th className="px-3 py-2 font-semibold">Status</th>
-              <th className="px-3 py-2 font-semibold">Actions</th>
+              {onManage ? <th className="px-3 py-2 font-semibold">Actions</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -238,13 +247,15 @@ export function ApiKeyList({
                     {item.status}
                   </Badge>
                 </td>
-                <td className="px-3 py-3">
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="secondary" onClick={() => onManage(item.id)}>
-                      Manage
-                    </Button>
-                  </div>
-                </td>
+                {onManage ? (
+                  <td className="px-3 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" variant="secondary" onClick={() => onManage(item.id)}>
+                        Manage
+                      </Button>
+                    </div>
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>

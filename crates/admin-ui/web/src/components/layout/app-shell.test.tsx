@@ -99,7 +99,7 @@ describe('AppShell', () => {
     expect(screen.queryByText(/^Oceans v/)).not.toBeInTheDocument()
   })
 
-  it('limits a regular user to the connection page', () => {
+  it('shows the connection page within regular-user navigation', () => {
     routerPath = '/admin/account/connections'
     render(
       <TooltipProvider>
@@ -120,15 +120,10 @@ describe('AppShell', () => {
       </TooltipProvider>,
     )
 
-    expect(screen.getAllByText('Account').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Connections').length).toBeGreaterThan(0)
-    expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute(
-      'href',
-      '/account/connections',
-    )
-    expect(screen.queryByText('Control Plane')).not.toBeInTheDocument()
-    expect(screen.queryByText('Models')).not.toBeInTheDocument()
-    expect(screen.queryByText('Identity')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Control Plane' })).toHaveAttribute('href', '/api-keys')
+    expect(screen.getAllByText('Models').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Identity').length).toBeGreaterThan(0)
   })
 
   it('signs out from the account menu', async () => {
@@ -161,5 +156,39 @@ describe('AppShell', () => {
       expect(logoutAdminSession).toHaveBeenCalledTimes(1)
       expect(window.location.replace).toHaveBeenCalledWith('/admin/login')
     })
+  })
+
+  it('shows self-service credentials, models, and observability links to regular users', () => {
+    render(
+      <TooltipProvider>
+        <AppShell
+          oceansVersion="0.17.0"
+          session={{
+            must_change_password: false,
+            user: {
+              id: 'user_2',
+              name: 'Regular User',
+              email: 'user@example.com',
+              global_role: 'user',
+            },
+          }}
+        >
+          content
+        </AppShell>
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByText('Usage Costs')).toBeVisible()
+    expect(screen.getByText('Request Logs')).toBeVisible()
+    expect(screen.getByText('MCP Invocations')).toBeVisible()
+    expect(screen.getByText('Connections')).toBeVisible()
+    expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Models').length).toBeGreaterThan(0)
+    expect(screen.getByText('Teams')).toBeVisible()
+    expect(screen.getByText('Users')).toBeVisible()
+    expect(screen.getByText('Identity')).toBeVisible()
+    expect(screen.queryByText('Leaderboard')).not.toBeInTheDocument()
+    expect(screen.queryByText('Agent Harnesses')).not.toBeInTheDocument()
+    expect(screen.queryByText('Service Accounts')).not.toBeInTheDocument()
   })
 })

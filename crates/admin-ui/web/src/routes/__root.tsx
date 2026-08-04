@@ -22,10 +22,9 @@ import globalsCss from '@/styles/globals.css?url'
 import faviconUrl from '@/assets/oceans-logo-rounded-square.png?url'
 import {
   buildRedirectTarget,
-  defaultPathForSession,
-  isPlatformAdminSession,
+  canAccessSignedInPath,
+  defaultSignedInPath,
   isPublicAdminRoute,
-  isSelfServicePath,
   normalizeAdminPath,
 } from '@/routes/-auth-routing'
 
@@ -52,7 +51,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     if (isPublicRoute) {
       if (currentPath === '/login' && session) {
         throw redirect({
-          to: session.must_change_password ? '/change-password' : defaultPathForSession(session),
+          to: session.must_change_password ? '/change-password' : defaultSignedInPath(session),
         })
       }
 
@@ -66,7 +65,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       return { session, oceansVersion: null }
     }
 
-    if (!session || (!isPlatformAdminSession(session) && !isSelfServicePath(currentPath))) {
+    if (!session) {
       throw redirect({
         to: '/login',
         search: {
@@ -77,6 +76,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
     if (session.must_change_password && currentPath !== '/change-password') {
       throw redirect({ to: '/change-password' })
+    }
+
+    if (!canAccessSignedInPath(session, currentPath)) {
+      throw redirect({ to: defaultSignedInPath(session) })
     }
 
     const oceansVersion = await loadOceansVersion().catch(() => null)

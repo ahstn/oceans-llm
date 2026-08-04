@@ -2,11 +2,7 @@ import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
 import { Link } from '@tanstack/react-router'
 
 import { AppIcon } from '@/components/icons/app-icon'
-import {
-  adminNavSections,
-  matchesAdminPath,
-  regularUserNavSections,
-} from '@/components/layout/admin-nav'
+import { getAdminNavSections, matchesAdminPath } from '@/components/layout/admin-nav'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import {
   DropdownMenu,
@@ -37,7 +33,6 @@ interface AppSidebarProps {
   oceansVersion: string | null
   signOutPending: boolean
   onSignOut: () => void
-  isPlatformAdmin: boolean
 }
 
 export function AppSidebar({
@@ -46,9 +41,9 @@ export function AppSidebar({
   oceansVersion,
   signOutPending,
   onSignOut,
-  isPlatformAdmin,
 }: AppSidebarProps) {
-  const visibleSections = isPlatformAdmin ? adminNavSections : regularUserNavSections
+  const navSections = getAdminNavSections(session.user.global_role)
+
   return (
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="gap-3 p-3 pb-2">
@@ -78,7 +73,7 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent className="px-2 py-3">
-        {visibleSections.map((section) => (
+        {navSections.map((section) => (
           <SidebarGroup key={section.label} className="px-0 py-1">
             <SidebarGroupLabel className="px-2 text-xs font-medium">
               {section.label}
