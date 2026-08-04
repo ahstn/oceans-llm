@@ -151,7 +151,7 @@ pub async fn list_api_keys(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<AdminApiKeysPayload>>, AppError> {
-    let scope = require_api_key_admin_scope(&state, &headers).await?;
+    let scope = require_api_key_list_scope(&state, &headers).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
     let payload = service.list_api_keys().await?;
@@ -273,6 +273,43 @@ enum ApiKeyAdminScope {
     Team(Uuid),
 }
 
+enum ApiKeyListScope {
+    Platform,
+    TeamAndUser { team_id: Uuid, user_id: Uuid },
+    User(Uuid),
+}
+
+async fn require_api_key_list_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<ApiKeyListScope, AppError> {
+    let actor = require_authenticated_session(state, headers).await?;
+    if actor.status != UserStatus::Active {
+        return Err(insufficient_privileges());
+    }
+    if actor.global_role == GlobalRole::PlatformAdmin {
+        return Ok(ApiKeyListScope::Platform);
+    }
+
+    let membership = state
+        .store
+        .get_team_membership_for_user(actor.user_id)
+        .await?;
+    if let Some(membership) = membership
+        && matches!(
+            membership.role,
+            MembershipRole::Owner | MembershipRole::Admin
+        )
+    {
+        return Ok(ApiKeyListScope::TeamAndUser {
+            team_id: membership.team_id,
+            user_id: actor.user_id,
+        });
+    }
+
+    Ok(ApiKeyListScope::User(actor.user_id))
+}
+
 async fn require_api_key_admin_scope(
     state: &AppState,
     headers: &HeaderMap,
@@ -390,20 +427,59 @@ async fn authorize_existing_api_key(
 
 fn map_payload_for_scope(
     payload: ServiceAdminApiKeysPayload,
-    scope: &ApiKeyAdminScope,
+    scope: &ApiKeyListScope,
 ) -> AdminApiKeysPayload {
     let mut mapped = map_payload(payload);
-    if let ApiKeyAdminScope::Team(team_id) = scope {
-        let team_id = team_id.to_string();
-        mapped
-            .items
-            .retain(|item| item.owner_service_account_team_id.as_deref() == Some(team_id.as_str()));
-        mapped
-            .service_accounts
-            .retain(|service_account| service_account.team_id == team_id);
-        mapped.users.clear();
+    match scope {
+        ApiKeyListScope::Platform => {}
+        ApiKeyListScope::TeamAndUser { team_id, user_id } => {
+            let team_id = team_id.to_string();
+            let user_id = user_id.to_string();
+            mapped.items.retain(|item| {
+                api_key_visible_in_scope(
+                    &item.owner_kind,
+                    &item.owner_id,
+                    item.owner_service_account_team_id.as_deref(),
+                    scope,
+                )
+            });
+            mapped
+                .service_accounts
+                .retain(|service_account| service_account.team_id == team_id);
+            mapped
+                .users
+                .retain(|user| user.id.as_str() == user_id.as_str());
+        }
+        ApiKeyListScope::User(_) => {
+            mapped.items.retain(|item| {
+                api_key_visible_in_scope(
+                    &item.owner_kind,
+                    &item.owner_id,
+                    item.owner_service_account_team_id.as_deref(),
+                    scope,
+                )
+            });
+            mapped.users.clear();
+            mapped.service_accounts.clear();
+        }
     }
     mapped
+}
+
+fn api_key_visible_in_scope(
+    owner_kind: &str,
+    owner_id: &str,
+    service_account_team_id: Option<&str>,
+    scope: &ApiKeyListScope,
+) -> bool {
+    match scope {
+        ApiKeyListScope::Platform => true,
+        ApiKeyListScope::TeamAndUser { team_id, user_id } => {
+            service_account_team_id == Some(team_id.to_string().as_str())
+                || owner_kind == "user" && owner_id == user_id.to_string()
+        }
+        ApiKeyListScope::User(user_id) => owner_kind == "user" && owner_id == user_id.to_string(),
+    }
 }
 
 fn insufficient_privileges() -> AppError {
@@ -496,4 +572,61 @@ fn parse_uuid(raw: &str, field_name: &str) -> Result<Uuid, AppError> {
             "{field_name} must be a valid uuid"
         )))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const USER_ID: &str = "11111111-1111-1111-1111-111111111111";
+    const OTHER_USER_ID: &str = "22222222-2222-2222-2222-222222222222";
+    const TEAM_ID: &str = "33333333-3333-3333-3333-333333333333";
+    const OTHER_TEAM_ID: &str = "44444444-4444-4444-4444-444444444444";
+
+    #[test]
+    fn user_scope_only_lists_keys_owned_by_that_user() {
+        let scope = ApiKeyListScope::User(Uuid::parse_str(USER_ID).expect("valid user id"));
+
+        assert!(api_key_visible_in_scope("user", USER_ID, None, &scope));
+        assert!(!api_key_visible_in_scope(
+            "user",
+            OTHER_USER_ID,
+            None,
+            &scope
+        ));
+        assert!(!api_key_visible_in_scope(
+            "service_account",
+            OTHER_USER_ID,
+            Some(TEAM_ID),
+            &scope
+        ));
+    }
+
+    #[test]
+    fn team_admin_list_scope_includes_own_and_team_service_account_keys() {
+        let scope = ApiKeyListScope::TeamAndUser {
+            team_id: Uuid::parse_str(TEAM_ID).expect("valid team id"),
+            user_id: Uuid::parse_str(USER_ID).expect("valid user id"),
+        };
+
+        assert!(api_key_visible_in_scope("user", USER_ID, None, &scope));
+        assert!(api_key_visible_in_scope(
+            "service_account",
+            OTHER_USER_ID,
+            Some(TEAM_ID),
+            &scope
+        ));
+        assert!(!api_key_visible_in_scope(
+            "user",
+            OTHER_USER_ID,
+            None,
+            &scope
+        ));
+        assert!(!api_key_visible_in_scope(
+            "service_account",
+            OTHER_USER_ID,
+            Some(OTHER_TEAM_ID),
+            &scope
+        ));
+    }
 }

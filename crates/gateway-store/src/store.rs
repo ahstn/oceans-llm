@@ -801,10 +801,11 @@ impl BudgetRepository for AnyStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<gateway_core::SpendDailyAggregateRecord>, StoreError> {
         dispatch_store!(
             self,
-            list_usage_daily_aggregates(window_start, window_end, owner_kind)
+            list_usage_daily_aggregates(window_start, window_end, owner_kind, owner_user_id)
         )
     }
 
@@ -813,10 +814,11 @@ impl BudgetRepository for AnyStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<gateway_core::SpendOwnerAggregateRecord>, StoreError> {
         dispatch_store!(
             self,
-            list_usage_owner_aggregates(window_start, window_end, owner_kind)
+            list_usage_owner_aggregates(window_start, window_end, owner_kind, owner_user_id)
         )
     }
 
@@ -825,10 +827,11 @@ impl BudgetRepository for AnyStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<gateway_core::SpendModelAggregateRecord>, StoreError> {
         dispatch_store!(
             self,
-            list_usage_model_aggregates(window_start, window_end, owner_kind)
+            list_usage_model_aggregates(window_start, window_end, owner_kind, owner_user_id)
         )
     }
 

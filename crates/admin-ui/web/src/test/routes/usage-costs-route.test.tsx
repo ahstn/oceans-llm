@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const routeMock = {
   useLoaderData: vi.fn(),
+  useRouteContext: vi.fn(),
 }
 
 vi.mock('@tanstack/react-router', () => ({
@@ -19,6 +20,22 @@ vi.mock('sonner', () => ({
 describe('UsageCostsPage', () => {
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
+    routeMock.useRouteContext.mockReset()
+    routeMock.useRouteContext.mockReturnValue({
+      session: {
+        must_change_password: false,
+        user: {
+          id: 'user_1',
+          name: 'Admin User',
+          email: 'admin@example.com',
+          global_role: 'platform_admin',
+        },
+      },
+    })
+  })
+
+  afterEach(() => {
+    cleanup()
   })
 
   it('renders live ledger totals and owner/model breakdowns', async () => {
@@ -73,5 +90,46 @@ describe('UsageCostsPage', () => {
     expect(screen.getByText('CI Indexer')).toBeInTheDocument()
     expect(screen.getByText('fast')).toBeInTheDocument()
     expect(screen.getByText('Priced requests')).toBeInTheDocument()
+  })
+
+  it('shows a self-service view without cross-owner controls to regular users', async () => {
+    routeMock.useRouteContext.mockReturnValue({
+      session: {
+        must_change_password: false,
+        user: {
+          id: 'user_2',
+          name: 'Regular User',
+          email: 'user@example.com',
+          global_role: 'user',
+        },
+      },
+    })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        window_days: 7,
+        owner_kind: 'user',
+        window_start: '2026-03-01T00:00:00Z',
+        window_end: '2026-03-08T00:00:00Z',
+        totals: {
+          priced_cost_usd_10000: 10_000,
+          priced_request_count: 2,
+          unpriced_request_count: 0,
+          usage_missing_request_count: 0,
+        },
+        daily: [],
+        owners: [],
+        models: [],
+      },
+    })
+
+    const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
+    render(<UsageCostsPage />)
+
+    expect(
+      screen.getByText('Your spend and request pricing details from the durable usage ledger.'),
+    ).toBeVisible()
+    expect(screen.getByText('Spend attributed to your user account.')).toBeVisible()
+    expect(screen.queryByText('All owners')).not.toBeInTheDocument()
+    expect(screen.queryByText('Service accounts')).not.toBeInTheDocument()
   })
 })

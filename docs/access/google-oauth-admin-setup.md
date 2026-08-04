@@ -2,7 +2,7 @@
 
 `See also`: [OIDC and SSO](oidc-and-sso-status.md), [Identity and Access](identity-and-access.md), [Configuration Reference](../configuration/configuration-reference.md)
 
-Oceans LLM can use a Google Auth Platform **OAuth 2.0 Client** for admin sign-in today. Configure Google through Oceans' existing generic OIDC provider; no gateway code changes or separate Google provider type are required.
+Oceans LLM can use a Google Auth Platform **OAuth 2.0 Client** for browser sign-in. Configure Google through Oceans' existing generic OIDC provider; no gateway code changes or separate Google provider type are required.
 
 Google documents this authentication flow in [OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect).
 
@@ -139,7 +139,9 @@ After restarting or deploying the gateway:
 2. Open `https://<your-oceans-host>/admin/login`.
 3. Choose **Sign in with Google**.
 4. Complete Google sign-in with an eligible account.
-5. Confirm the browser returns to `/admin` with an Oceans session.
+5. Confirm the browser returns to the correct Oceans UI for the assigned role:
+   - `platform_admin` users open the full admin control plane.
+   - `user` users open `/admin/observability/usage-costs` and can inspect only their own usage, request logs, and MCP invocations.
 
 For invite-only access, complete the test with an invited user whose normalized email matches the verified email returned by Google.
 
@@ -161,6 +163,12 @@ Check the Oceans user policy:
 - a password user with the same email is not automatically converted or linked to Google SSO
 - Google must return both `email` and `email_verified: true`
 - disabled Oceans users remain denied
+
+### Google sign-in returns to the login page
+
+Google uses the generic OIDC callback while GitHub uses its provider-specific OAuth callback. Both callbacks create the same Oceans browser session and then apply the same role-based UI redirect.
+
+Confirm `/api/v1/auth/session` returns the signed-in user. A `user` account should go to `/admin/observability/usage-costs` and can open API Keys, Models, Usage Costs, Request Logs, and MCP Invocations. API key mutation and other platform-admin controls remain unavailable. If the session endpoint returns no user, inspect gateway logs for the OIDC callback error and confirm the public base URL and cookie origin match the browser origin.
 
 ### A user outside the organization can authorize the app
 

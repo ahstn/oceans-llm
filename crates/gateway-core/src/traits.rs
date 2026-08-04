@@ -398,8 +398,9 @@ pub trait BudgetRepository: Send + Sync {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<crate::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<SpendDailyAggregateRecord>, StoreError> {
-        let _ = (window_start, window_end, owner_kind);
+        let _ = (window_start, window_end, owner_kind, owner_user_id);
         Err(StoreError::Unexpected(
             "list_usage_daily_aggregates is not implemented for this repository".to_string(),
         ))
@@ -409,8 +410,9 @@ pub trait BudgetRepository: Send + Sync {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<crate::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<SpendOwnerAggregateRecord>, StoreError> {
-        let _ = (window_start, window_end, owner_kind);
+        let _ = (window_start, window_end, owner_kind, owner_user_id);
         Err(StoreError::Unexpected(
             "list_usage_owner_aggregates is not implemented for this repository".to_string(),
         ))
@@ -420,8 +422,9 @@ pub trait BudgetRepository: Send + Sync {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<crate::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<SpendModelAggregateRecord>, StoreError> {
-        let _ = (window_start, window_end, owner_kind);
+        let _ = (window_start, window_end, owner_kind, owner_user_id);
         Err(StoreError::Unexpected(
             "list_usage_model_aggregates is not implemented for this repository".to_string(),
         ))

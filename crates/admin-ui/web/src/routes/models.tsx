@@ -49,7 +49,8 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
-import { requireAdminSession } from '@/routes/-admin-guard'
+import { requireAuthenticatedSession } from '@/routes/-admin-guard'
+import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import {
   getModelClientConfigs,
   getModels,
@@ -77,7 +78,7 @@ const CLIENT_HARNESS_CONFIGURATION_URL =
 type ModelInfoSectionKey = 'overview' | 'routing' | 'economics' | 'access'
 
 export const Route = createFileRoute('/models')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   validateSearch: (search: Record<string, unknown>) => normalizeModelsSearch(search),
   loaderDeps: ({ search }) => search,
   loader: ({ deps }) => getModels({ data: deps }),
@@ -86,6 +87,8 @@ export const Route = createFileRoute('/models')({
 
 export function ModelsPage() {
   const { data: modelPage } = Route.useLoaderData()
+  const { session } = Route.useRouteContext()
+  const isPlatformAdmin = isPlatformAdminSession(session)
   const search = Route.useSearch()
   const router = useRouter()
   const [configDialog, setConfigDialog] = useState<{
@@ -112,12 +115,20 @@ export function ModelsPage() {
     selectableModels.every((model) => selectedModelIdSet.has(model.id))
   const desktopTableMinWidth =
     visibleColumns.contextWindow && visibleColumns.capabilities
-      ? 'min-w-[103rem]'
+      ? isPlatformAdmin
+        ? 'min-w-[103rem]'
+        : 'min-w-[91rem]'
       : visibleColumns.capabilities
-        ? 'min-w-[91rem]'
+        ? isPlatformAdmin
+          ? 'min-w-[91rem]'
+          : 'min-w-[79rem]'
         : visibleColumns.contextWindow
-          ? 'min-w-[85rem]'
-          : 'min-w-[73rem]'
+          ? isPlatformAdmin
+            ? 'min-w-[85rem]'
+            : 'min-w-[73rem]'
+          : isPlatformAdmin
+            ? 'min-w-[73rem]'
+            : 'min-w-[61rem]'
 
   function navigateToPage(page: number) {
     void router.navigate({
@@ -346,17 +357,19 @@ export function ModelsPage() {
                   <AppIcon icon={CodeIcon} size={14} stroke={1.5} data-icon="inline-start" />
                   Generate config
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => void refreshPricing()}
-                  disabled={isRefreshingPricing}
-                >
-                  <AppIcon icon={RefreshIcon} size={14} stroke={1.5} data-icon="inline-start" />
-                  {isRefreshingPricing ? 'Refreshing...' : 'Refresh pricing'}
-                </Button>
+                {isPlatformAdmin ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => void refreshPricing()}
+                    disabled={isRefreshingPricing}
+                  >
+                    <AppIcon icon={RefreshIcon} size={14} stroke={1.5} data-icon="inline-start" />
+                    {isRefreshingPricing ? 'Refreshing...' : 'Refresh pricing'}
+                  </Button>
+                ) : null}
               </div>
             </div>
           </div>
@@ -385,6 +398,7 @@ export function ModelsPage() {
                   <ModelCard
                     key={model.id}
                     model={model}
+                    showAccessDetails={isPlatformAdmin}
                     onCopy={(modelId) => handleCopyValue(modelId, 'Model ID copied')}
                     onOpenClientConfig={openSingleClientConfig}
                   />
@@ -428,9 +442,11 @@ export function ModelsPage() {
                           Capabilities
                         </TableHead>
                       ) : null}
-                      <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Allow List
-                      </TableHead>
+                      {isPlatformAdmin ? (
+                        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                          Allow List
+                        </TableHead>
+                      ) : null}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -531,9 +547,11 @@ export function ModelsPage() {
                             <CapabilityBadges model={model} />
                           </TableCell>
                         ) : null}
-                        <TableCell className="px-3 py-1 whitespace-normal">
-                          <ModelAllowlistDetail model={model} compact />
-                        </TableCell>
+                        {isPlatformAdmin ? (
+                          <TableCell className="px-3 py-1 whitespace-normal">
+                            <ModelAllowlistDetail model={model} compact />
+                          </TableCell>
+                        ) : null}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -581,6 +599,7 @@ export function ModelsPage() {
       <ModelInfoDialog
         model={infoDialogModel}
         activeSection={modelInfoSection}
+        showAccessDetails={isPlatformAdmin}
         onActiveSectionChange={setModelInfoSection}
         onOpenChange={(open) => {
           if (!open) {
@@ -596,10 +615,12 @@ function ModelCard({
   model,
   onCopy,
   onOpenClientConfig,
+  showAccessDetails,
 }: {
   model: ModelView
   onCopy: (modelId: string) => void
   onOpenClientConfig: (model: ModelView) => void
+  showAccessDetails: boolean
 }) {
   return (
     <Card>
@@ -658,7 +679,9 @@ function ModelCard({
             }
           />
           <MetricDetail label="Capabilities" value={<CapabilityBadges model={model} />} />
-          <MetricDetail label="Model allowlist" value={<ModelAllowlistDetail model={model} />} />
+          {showAccessDetails ? (
+            <MetricDetail label="Model allowlist" value={<ModelAllowlistDetail model={model} />} />
+          ) : null}
         </dl>
         <ModelNotes model={model} />
         <ClientConfigButton model={model} onOpen={onOpenClientConfig} />
@@ -761,17 +784,19 @@ function ModelInfoDialog({
   activeSection,
   onActiveSectionChange,
   onOpenChange,
+  showAccessDetails,
 }: {
   model: ModelView | null
   activeSection: ModelInfoSectionKey
   onActiveSectionChange: (section: ModelInfoSectionKey) => void
   onOpenChange: (open: boolean) => void
+  showAccessDetails: boolean
 }) {
   const sections: Array<{ key: ModelInfoSectionKey; label: string }> = [
     { key: 'overview', label: 'Overview' },
     { key: 'routing', label: 'Routing' },
     { key: 'economics', label: 'Economics' },
-    { key: 'access', label: 'Access' },
+    ...(showAccessDetails ? ([{ key: 'access', label: 'Access' }] as const) : []),
   ]
 
   const activeLabel = sections.find((section) => section.key === activeSection)?.label ?? 'Overview'

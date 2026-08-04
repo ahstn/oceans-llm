@@ -39,14 +39,14 @@ function ChangePasswordPage() {
 
     startTransition(async () => {
       try {
-        await changeCurrentPassword({
+        const response = await changeCurrentPassword({
           data: {
             current_password: currentPassword,
             new_password: newPassword,
           },
         })
         toast.success('Password updated')
-        window.location.assign(signedInAdminHref(search.redirect))
+        window.location.assign(signedInAdminHref(response.data, search.redirect))
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Unable to change password')
       }
@@ -56,12 +56,12 @@ function ChangePasswordPage() {
   return (
     <AuthLayout
       title="Change password"
-      description="Rotate the bootstrap password before entering the rest of the control plane."
+      description="Rotate your password before entering the rest of the control plane."
     >
       <Alert>
         <AlertTitle>Rotation required</AlertTitle>
         <AlertDescription>
-          This admin session cannot access the control plane until the password is updated.
+          This session cannot access the control plane until the password is updated.
         </AlertDescription>
       </Alert>
 

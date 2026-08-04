@@ -66,8 +66,8 @@ export function LoginPage() {
 
   return (
     <AuthLayout
-      title="Admin sign in"
-      description="Use the bootstrap platform-admin credentials or your rotated admin password to enter the control plane."
+      title="Sign in"
+      description="Use your Oceans credentials or an enabled SSO provider to open the browser UI."
     >
       <Alert>
         <AlertTitle>Bootstrap access</AlertTitle>

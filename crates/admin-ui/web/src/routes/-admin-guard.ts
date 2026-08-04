@@ -31,3 +31,23 @@ export async function requireAdminSession(location: {
 
   return { session: adminSession }
 }
+
+export async function requireAuthenticatedSession(location: {
+  pathname: string
+  search: Record<string, unknown>
+}) {
+  const { data: session } = await loadAuthSession()
+
+  if (!session) {
+    throw redirect({
+      to: '/login',
+      search: { redirect: buildRedirectTarget(location.pathname, location.search) },
+    })
+  }
+
+  if (session.must_change_password) {
+    throw redirect({ to: '/change-password' })
+  }
+
+  return { session }
+}

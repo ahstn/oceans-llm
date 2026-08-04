@@ -43,7 +43,7 @@ describe('AppShell', () => {
               id: 'user_1',
               name: 'Admin User',
               email: 'admin@example.com',
-              global_role: 'owner',
+              global_role: 'platform_admin',
             },
           }}
         >
@@ -82,7 +82,7 @@ describe('AppShell', () => {
               id: 'user_1',
               name: 'Admin User',
               email: 'admin@example.com',
-              global_role: 'owner',
+              global_role: 'platform_admin',
             },
           }}
         >
@@ -125,5 +125,35 @@ describe('AppShell', () => {
       expect(logoutAdminSession).toHaveBeenCalledTimes(1)
       expect(window.location.replace).toHaveBeenCalledWith('/admin/login')
     })
+  })
+
+  it('shows self-service credentials, models, and observability links to regular users', () => {
+    render(
+      <TooltipProvider>
+        <AppShell
+          oceansVersion="0.17.0"
+          session={{
+            must_change_password: false,
+            user: {
+              id: 'user_2',
+              name: 'Regular User',
+              email: 'user@example.com',
+              global_role: 'user',
+            },
+          }}
+        >
+          content
+        </AppShell>
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByText('Usage Costs')).toBeVisible()
+    expect(screen.getByText('Request Logs')).toBeVisible()
+    expect(screen.getByText('MCP Invocations')).toBeVisible()
+    expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Models').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Leaderboard')).not.toBeInTheDocument()
+    expect(screen.queryByText('Agent Harnesses')).not.toBeInTheDocument()
+    expect(screen.queryByText('Identity')).not.toBeInTheDocument()
   })
 })

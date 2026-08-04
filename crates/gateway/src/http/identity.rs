@@ -557,9 +557,6 @@ pub async fn login_with_password(
     if !password_ok {
         return Err(invalid_credentials());
     }
-    if user.global_role != GlobalRole::PlatformAdmin {
-        return Err(invalid_credentials());
-    }
     if user.status != UserStatus::Active {
         return Err(invalid_credentials());
     }
@@ -622,11 +619,6 @@ pub async fn change_password(
     }
 
     let user = require_authenticated_session(&state, &headers).await?;
-    if user.global_role != GlobalRole::PlatformAdmin {
-        return Err(AppError(GatewayError::Auth(
-            AuthError::InsufficientPrivileges,
-        )));
-    }
     if user.auth_mode != AuthMode::Password {
         return Err(AppError(GatewayError::InvalidRequest(
             "password changes are only valid for password users".to_string(),

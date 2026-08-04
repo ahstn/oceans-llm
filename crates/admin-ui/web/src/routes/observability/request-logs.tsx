@@ -34,7 +34,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
-import { requireAdminSession } from '@/routes/-admin-guard'
+import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
 import type {
   RequestAttemptView,
@@ -44,7 +44,7 @@ import type {
 } from '@/types/api'
 
 export const Route = createFileRoute('/observability/request-logs')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   validateSearch: (search: Record<string, unknown>) => normalizeFilterSearch(search),
   loaderDeps: ({ search }) => search,
   loader: ({ deps }) => getRequestLogs({ data: deps }),
