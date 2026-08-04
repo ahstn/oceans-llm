@@ -68,6 +68,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             get(list_identity_users).post(create_identity_user),
         )
         .route(
+            "/api/v1/identity/directory/users",
+            get(list_identity_directory_users),
+        )
+        .route(
             "/api/v1/admin/identity/users/{user_id}",
             patch(update_identity_user),
         )
@@ -86,6 +90,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/identity/teams",
             get(list_identity_teams).post(create_identity_team),
+        )
+        .route(
+            "/api/v1/identity/directory/teams",
+            get(list_identity_directory_teams),
         )
         .route(
             "/api/v1/admin/identity/teams/{team_id}",

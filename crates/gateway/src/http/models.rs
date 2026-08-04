@@ -9,7 +9,7 @@ use gateway_service::{
 };
 
 use crate::http::{
-    admin_auth::{require_authenticated_session, require_platform_admin},
+    admin_auth::{require_active_session, require_platform_admin},
     admin_contract::{
         AdminModelAllowlistView, AdminModelClientConfigBlockView,
         AdminModelClientConfigSetupItemView, AdminModelClientConfigView, AdminModelListQuery,
@@ -38,7 +38,7 @@ pub async fn list_models(
     headers: HeaderMap,
     Query(query): Query<AdminModelListQuery>,
 ) -> Result<Json<Envelope<AdminModelPageView>>, AppError> {
-    let actor = require_authenticated_session(&state, &headers).await?;
+    let actor = require_active_session(&state, &headers).await?;
     let include_allowlist = actor.global_role == GlobalRole::PlatformAdmin;
 
     let page = query.page.unwrap_or(DEFAULT_PAGE).max(1);
@@ -78,7 +78,7 @@ pub async fn generate_model_client_configs(
     headers: HeaderMap,
     Json(request): Json<GenerateModelClientConfigsRequest>,
 ) -> Result<Json<Envelope<GenerateModelClientConfigsResponse>>, AppError> {
-    require_authenticated_session(&state, &headers).await?;
+    require_active_session(&state, &headers).await?;
 
     let service = admin_models_service(&state);
     let client_configurations = service

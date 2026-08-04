@@ -34,6 +34,7 @@ vi.mock('@/server/admin-data.functions', () => ({
   deactivateIdentityUser: vi.fn(),
   createIdentityUser: (...args: unknown[]) => createIdentityUserMock(...args),
   getUsers: vi.fn(),
+  getUserDirectory: vi.fn(),
   reactivateIdentityUser: vi.fn(),
   resetIdentityUserOnboarding: (...args: unknown[]) => resetOnboardingMock(...args),
   resendIdentityUserPasswordInvite: (...args: unknown[]) => resendInviteMock(...args),
@@ -114,24 +115,27 @@ describe('UsersPage', () => {
     })
     routeMock.useLoaderData.mockReturnValue({
       data: {
-        ...basePayload,
         users: [
-          invitedUser({
+          {
             id: 'user_1',
             name: 'Regular User',
             email: 'regular@example.com',
+            global_role: 'user',
             status: 'active',
+            team_id: 'team_1',
             team_name: 'Platform',
             team_role: 'member',
-          }),
-          invitedUser({
+          },
+          {
             id: 'user_2',
             name: 'Other User',
             email: 'other@example.com',
+            global_role: 'user',
             status: 'active',
+            team_id: 'team_2',
             team_name: 'Research',
             team_role: 'admin',
-          }),
+          },
         ],
       },
     })
@@ -144,6 +148,7 @@ describe('UsersPage', () => {
     expect(screen.getByText('other@example.com')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add user' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Sign-in')).not.toBeInTheDocument()
     expect(screen.getByText(/Only platform administrators can change users/)).toBeInTheDocument()
   })
 
@@ -381,7 +386,7 @@ describe('UsersPage', () => {
   })
 
   it('sanitizes onboarding updates to auth fields and persisted role/team membership', async () => {
-    const { sanitizeOnboardingUpdateForm } = await import('@/routes/identity/users')
+    const { sanitizeOnboardingUpdateForm } = await import('@/routes/identity/-user-form')
 
     const input = sanitizeOnboardingUpdateForm(
       {

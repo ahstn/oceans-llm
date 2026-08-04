@@ -9,6 +9,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui
 import { Input } from '@/components/ui/input'
 import { getOidcLoginOptions, loginAdminWithPassword } from '@/server/admin-data.functions'
 import { postLoginAdminHref } from '@/routes/-auth-routing'
+import { ssoErrorMessage } from '@/routes/-login-messages'
 
 export const Route = createFileRoute('/login')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -105,7 +106,7 @@ export function LoginPage() {
               onChange={(event) => setPassword(event.target.value)}
               required
             />
-            <FieldDescription>Use the configured bootstrap admin password.</FieldDescription>
+            <FieldDescription>Use your Oceans password.</FieldDescription>
           </Field>
         </FieldGroup>
 
@@ -159,26 +160,4 @@ function ssoRedirectTarget(redirect: string | undefined) {
   if (redirect.startsWith('/admin')) return redirect
   if (redirect.startsWith('/') && !redirect.startsWith('//')) return `/admin${redirect}`
   return '/admin'
-}
-
-export function ssoErrorMessage(code: string | undefined) {
-  switch (code) {
-    case 'access_denied':
-    case 'denied':
-      return 'Access was denied for this SSO account.'
-    case 'unmatched_identity':
-      return 'This SSO account is not allowed to sign in.'
-    case 'github_unverified_email':
-      return 'GitHub did not return a primary verified email for this account. Verify your primary email at https://github.com/settings/emails, then try signing in again.'
-    case 'state_expired':
-      return 'The SSO sign-in request expired. Start sign-in again.'
-    case 'state_invalid':
-      return 'The SSO sign-in request could not be verified. Start sign-in again.'
-    case 'provider_failure':
-      return 'The identity provider did not complete sign-in.'
-    case 'identity_conflict':
-      return 'A password account already exists for this email address.'
-    default:
-      return undefined
-  }
 }

@@ -63,7 +63,7 @@ The UI applies these role boundaries after authentication:
 
 - `platform_admin` users can use the global control-plane pages.
 - `user` users can open API Keys, Models, Teams, Users, Usage Costs, Request Logs, and MCP Invocations.
-- The API Keys page shows only credentials owned by the signed-in user. Key creation, updates, secret reveal, and revocation stay restricted to administrators.
+- The API Keys page shows credentials owned by the signed-in user. Active team owners and team admins also see service-account credentials for their team. The regular-user view does not show mutation controls.
 - The Models page shows the full routed-model catalog and can generate client configuration. Model allowlist membership and pricing refresh stay platform-admin-only.
 - The Teams and Users pages show the full identity directory read-only. Onboarding links, provider setup data, assignable-user payloads, and all identity mutations stay platform-admin-only.
 - Regular-user spend queries are forced to the signed-in user and exclude service-account spend.

@@ -531,7 +531,7 @@ describe('ApiKeysPage', () => {
     render(<ApiKeysPage />)
 
     expect(screen.getAllByText('gwk_prod_liv****').length).toBeGreaterThan(0)
-    expect(screen.getByText(/credentials assigned to your account/i)).toBeInTheDocument()
+    expect(screen.getByText(/personal gateway credentials/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create API key' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
   })

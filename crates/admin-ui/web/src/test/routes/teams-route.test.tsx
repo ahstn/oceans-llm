@@ -2,7 +2,7 @@ import type * as React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { IdentityTeamsPayload } from '@/types/api'
+import type { IdentityDirectoryTeamsPayload, IdentityTeamsPayload } from '@/types/api'
 
 const routeMock = {
   useLoaderData: vi.fn(),
@@ -40,6 +40,7 @@ vi.mock('@/server/admin-data.functions', () => ({
   createIdentityTeam: vi.fn(),
   createIdentityUser: vi.fn(),
   getTeams: vi.fn(),
+  getTeamDirectory: vi.fn(),
   removeIdentityTeamMember: vi.fn(),
   transferIdentityTeamMember: vi.fn(),
   updateIdentityTeam: vi.fn(),
@@ -88,11 +89,8 @@ describe('TeamsPage', () => {
           {
             id: 'team_1',
             name: 'Research',
-            key: 'research',
             status: 'active',
-            tags: [],
             member_count: 1,
-            admins: [],
             members: [
               {
                 id: 'user_2',
@@ -104,7 +102,7 @@ describe('TeamsPage', () => {
             ],
           },
         ],
-      } satisfies IdentityTeamsPayload,
+      } satisfies IdentityDirectoryTeamsPayload,
     })
 
     const { TeamsPage } = await import('@/routes/identity/teams')
@@ -117,6 +115,7 @@ describe('TeamsPage', () => {
     expect(screen.queryByRole('button', { name: 'Edit team' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add members' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+    expect(screen.queryByText('research')).not.toBeInTheDocument()
     expect(screen.getByText(/Only platform administrators can change teams/)).toBeInTheDocument()
   })
 

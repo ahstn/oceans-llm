@@ -14,10 +14,10 @@ import type { ApiKeysPayload } from '@/types/api'
 import { useApiKeysPageState } from './api-keys/-use-api-keys-page'
 
 export const Route = createFileRoute('/api-keys')({
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   validateSearch: (search: Record<string, unknown>) => ({
     api_key_id: typeof search.api_key_id === 'string' ? search.api_key_id : undefined,
   }),
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: () => getApiKeys(),
   component: ApiKeysPage,
 })

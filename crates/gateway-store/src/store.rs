@@ -472,6 +472,14 @@ impl AdminApiKeyRepository for AnyStore {
         dispatch_store!(self, list_api_keys())
     }
 
+    async fn list_api_keys_for_user_scope(
+        &self,
+        user_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<gateway_core::ApiKeyRecord>, StoreError> {
+        dispatch_store!(self, list_api_keys_for_user_scope(user_id, team_id))
+    }
+
     async fn get_api_key_by_id(
         &self,
         api_key_id: Uuid,
@@ -655,6 +663,13 @@ impl IdentityRepository for AnyStore {
 impl AdminIdentityRepository for AnyStore {
     async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError> {
         dispatch_store!(self, list_identity_users())
+    }
+
+    async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<IdentityUserRecord>, StoreError> {
+        dispatch_store!(self, get_identity_user(user_id))
     }
 
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {

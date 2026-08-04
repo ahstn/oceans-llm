@@ -63,6 +63,12 @@ pub trait ApiKeyRepository: Send + Sync {
 pub trait AdminApiKeyRepository: Send + Sync {
     async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError>;
 
+    async fn list_api_keys_for_user_scope(
+        &self,
+        user_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<ApiKeyRecord>, StoreError>;
+
     async fn get_api_key_by_id(&self, api_key_id: Uuid)
     -> Result<Option<ApiKeyRecord>, StoreError>;
 
@@ -307,6 +313,10 @@ pub trait IdentityRepository: Send + Sync {
 #[async_trait]
 pub trait AdminIdentityRepository: Send + Sync {
     async fn list_identity_users(&self) -> Result<Vec<crate::IdentityUserRecord>, StoreError>;
+    async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<crate::IdentityUserRecord>, StoreError>;
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
     async fn list_active_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {

@@ -7,19 +7,27 @@ pub(crate) async fn require_platform_admin(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<UserRecord, AppError> {
-    let current_user = require_authenticated_session(state, headers).await?;
+    let current_user = require_active_session(state, headers).await?;
 
     if current_user.global_role != GlobalRole::PlatformAdmin {
         return Err(AppError(GatewayError::Auth(
             AuthError::InsufficientPrivileges,
         )));
     }
+
+    Ok(current_user)
+}
+
+pub(crate) async fn require_active_session(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<UserRecord, AppError> {
+    let current_user = require_authenticated_session(state, headers).await?;
     if current_user.status != UserStatus::Active {
-        return Err(AppError(GatewayError::InvalidRequest(
-            "only active admins can access admin endpoints".to_string(),
+        return Err(AppError(GatewayError::Auth(
+            AuthError::InsufficientPrivileges,
         )));
     }
-
     Ok(current_user)
 }
 

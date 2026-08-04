@@ -44,9 +44,9 @@ import type {
 } from '@/types/api'
 
 export const Route = createFileRoute('/observability/request-logs')({
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   validateSearch: (search: Record<string, unknown>) => normalizeFilterSearch(search),
   loaderDeps: ({ search }) => search,
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: ({ deps }) => getRequestLogs({ data: deps }),
   component: RequestLogsPage,
 })

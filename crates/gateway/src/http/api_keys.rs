@@ -154,8 +154,18 @@ pub async fn list_api_keys(
     let scope = require_api_key_list_scope(&state, &headers).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
-    let payload = service.list_api_keys().await?;
-    Ok(Json(envelope(map_payload_for_scope(payload, &scope))))
+    let payload = match scope {
+        ApiKeyListScope::Platform => service.list_api_keys().await?,
+        ApiKeyListScope::TeamAndUser { team_id, user_id } => {
+            service
+                .list_api_keys_for_user_scope(user_id, Some(team_id))
+                .await?
+        }
+        ApiKeyListScope::User(user_id) => {
+            service.list_api_keys_for_user_scope(user_id, None).await?
+        }
+    };
+    Ok(Json(envelope(map_payload(payload))))
 }
 
 #[utoipa::path(
@@ -425,63 +435,6 @@ async fn authorize_existing_api_key(
     Ok(())
 }
 
-fn map_payload_for_scope(
-    payload: ServiceAdminApiKeysPayload,
-    scope: &ApiKeyListScope,
-) -> AdminApiKeysPayload {
-    let mut mapped = map_payload(payload);
-    match scope {
-        ApiKeyListScope::Platform => {}
-        ApiKeyListScope::TeamAndUser { team_id, user_id } => {
-            let team_id = team_id.to_string();
-            let user_id = user_id.to_string();
-            mapped.items.retain(|item| {
-                api_key_visible_in_scope(
-                    &item.owner_kind,
-                    &item.owner_id,
-                    item.owner_service_account_team_id.as_deref(),
-                    scope,
-                )
-            });
-            mapped
-                .service_accounts
-                .retain(|service_account| service_account.team_id == team_id);
-            mapped
-                .users
-                .retain(|user| user.id.as_str() == user_id.as_str());
-        }
-        ApiKeyListScope::User(_) => {
-            mapped.items.retain(|item| {
-                api_key_visible_in_scope(
-                    &item.owner_kind,
-                    &item.owner_id,
-                    item.owner_service_account_team_id.as_deref(),
-                    scope,
-                )
-            });
-            mapped.users.clear();
-            mapped.service_accounts.clear();
-        }
-    }
-    mapped
-}
-
-fn api_key_visible_in_scope(
-    owner_kind: &str,
-    owner_id: &str,
-    service_account_team_id: Option<&str>,
-    scope: &ApiKeyListScope,
-) -> bool {
-    match scope {
-        ApiKeyListScope::Platform => true,
-        ApiKeyListScope::TeamAndUser { team_id, user_id } => {
-            service_account_team_id == Some(team_id.to_string().as_str())
-                || owner_kind == "user" && owner_id == user_id.to_string()
-        }
-        ApiKeyListScope::User(user_id) => owner_kind == "user" && owner_id == user_id.to_string(),
-    }
-}
-
 fn insufficient_privileges() -> AppError {
     AppError(GatewayError::Auth(AuthError::InsufficientPrivileges))
 }
@@ -572,61 +525,4 @@ fn parse_uuid(raw: &str, field_name: &str) -> Result<Uuid, AppError> {
             "{field_name} must be a valid uuid"
         )))
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const USER_ID: &str = "11111111-1111-1111-1111-111111111111";
-    const OTHER_USER_ID: &str = "22222222-2222-2222-2222-222222222222";
-    const TEAM_ID: &str = "33333333-3333-3333-3333-333333333333";
-    const OTHER_TEAM_ID: &str = "44444444-4444-4444-4444-444444444444";
-
-    #[test]
-    fn user_scope_only_lists_keys_owned_by_that_user() {
-        let scope = ApiKeyListScope::User(Uuid::parse_str(USER_ID).expect("valid user id"));
-
-        assert!(api_key_visible_in_scope("user", USER_ID, None, &scope));
-        assert!(!api_key_visible_in_scope(
-            "user",
-            OTHER_USER_ID,
-            None,
-            &scope
-        ));
-        assert!(!api_key_visible_in_scope(
-            "service_account",
-            OTHER_USER_ID,
-            Some(TEAM_ID),
-            &scope
-        ));
-    }
-
-    #[test]
-    fn team_admin_list_scope_includes_own_and_team_service_account_keys() {
-        let scope = ApiKeyListScope::TeamAndUser {
-            team_id: Uuid::parse_str(TEAM_ID).expect("valid team id"),
-            user_id: Uuid::parse_str(USER_ID).expect("valid user id"),
-        };
-
-        assert!(api_key_visible_in_scope("user", USER_ID, None, &scope));
-        assert!(api_key_visible_in_scope(
-            "service_account",
-            OTHER_USER_ID,
-            Some(TEAM_ID),
-            &scope
-        ));
-        assert!(!api_key_visible_in_scope(
-            "user",
-            OTHER_USER_ID,
-            None,
-            &scope
-        ));
-        assert!(!api_key_visible_in_scope(
-            "service_account",
-            OTHER_USER_ID,
-            Some(OTHER_TEAM_ID),
-            &scope
-        ));
-    }
 }

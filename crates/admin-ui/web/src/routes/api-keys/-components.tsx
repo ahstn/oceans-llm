@@ -114,7 +114,7 @@ export function ApiKeysCard({
           <CardDescription>
             {onCreate
               ? 'Issue gateway credentials with explicit owners and model grant modes, then revoke them when access should stop.'
-              : 'Review the gateway credentials assigned to your account and their model access.'}
+              : 'Review your personal gateway credentials and any service-account credentials you can manage for your team.'}
           </CardDescription>
         </div>
         {onCreate ? (

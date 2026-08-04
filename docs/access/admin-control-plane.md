@@ -112,7 +112,7 @@ Current limits:
 
 Most global admin-control-plane workflows require a `platform_admin` account. Service-account workflows also allow scoped team operators: active team owners and team admins can manage service accounts for their own team without gaining platform-wide access.
 
-Regular `user` accounts can sign in and monitor their own activity. They can open API Keys, Models, Teams, Users, Usage Costs, Request Logs, and MCP Invocations. The API Keys page lists only keys owned by the signed-in user and does not expose mutation controls. The Models page lists all routed models and can generate client configuration, but it hides model allowlist membership and pricing refresh. Teams and Users provide a read-only directory without onboarding links, provider setup data, or mutation controls. The gateway forces observability queries to the signed-in user and checks ownership again for detail requests. Regular users cannot open leaderboard, harness-wide usage, service-account, budget, or configuration pages.
+Regular `user` accounts can sign in and monitor their own activity. They can open API Keys, Models, Teams, Users, Usage Costs, Request Logs, and MCP Invocations. The API Keys page lists keys owned by the signed-in user. Active team owners and team admins also see service-account keys for their team. The regular-user view does not expose mutation controls. The Models page lists all routed models and can generate client configuration, but it hides model allowlist membership and pricing refresh. Teams and Users provide a read-only directory without onboarding links, provider setup data, internal team keys, entity tags, authentication configuration, or mutation controls. The gateway forces observability queries to the signed-in user and checks ownership again for detail requests. Regular users cannot open leaderboard, harness-wide usage, service-account, budget, or configuration pages.
 
 User and team write routes have two backend authorization layers. A centralized HTTP mutation guard requires an active `platform_admin` session for every POST, PUT, PATCH, or DELETE request under `/api/v1/admin/identity/users` and `/api/v1/admin/identity/teams`. Each mutation handler also repeats the platform-admin check before it reads or changes identity state.
 
@@ -153,6 +153,9 @@ Regular users can:
 - see per-row MCP/tool cardinality counts for request logs
 - see normalized harness and bounded raw `User-Agent` detail for request logs
 - inspect request-linked MCP invocations by request id, server, tool, API key, user, team, status, and time range
+
+Additional platform-admin capabilities:
+
 - compare leaderboard users with average tool exposure and invocation counts
 - manage MCP servers from `/admin/mcp/servers`
 - inspect MCP discovery status as the current server health signal

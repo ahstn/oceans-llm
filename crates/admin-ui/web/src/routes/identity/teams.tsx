@@ -60,6 +60,7 @@ import {
   createIdentityTeam,
   createIdentityUser,
   getTeams,
+  getTeamDirectory,
   removeIdentityTeamMember,
   transferIdentityTeamMember,
   updateIdentityTeam,
@@ -75,6 +76,7 @@ import type {
   CreateUserInput,
   CreateUserResult,
   IdentityTeamsPayload,
+  IdentityDirectoryTeamsPayload,
   TeamAssignableUserView,
   TeamManagementView,
   TransferTeamMemberInput,
@@ -82,7 +84,8 @@ import type {
 
 export const Route = createFileRoute('/identity/teams')({
   beforeLoad: ({ location }) => requireAuthenticatedSession(location),
-  loader: () => getTeams(),
+  loader: ({ context }) =>
+    isPlatformAdminSession(context.session) ? getTeams() : getTeamDirectory(),
   component: TeamsPage,
 })
 
@@ -104,6 +107,11 @@ const initialInviteForm: CreateUserInput = {
   tags: [],
 }
 
+const emptyAdminTeams: IdentityTeamsPayload['teams'] = []
+const emptyAssignableUsers: IdentityTeamsPayload['users'] = []
+const emptyOidcProviders: IdentityTeamsPayload['oidc_providers'] = []
+const emptyOauthProviders: IdentityTeamsPayload['oauth_providers'] = []
+
 type TeamDialogState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; teamId: string }
 
 type MembersDialogState = { mode: 'closed' } | { mode: 'open'; teamId: string }
@@ -117,9 +125,13 @@ export function TeamsPage() {
   const router = useRouter()
   const { session } = Route.useRouteContext()
   const isPlatformAdmin = isPlatformAdminSession(session)
-  const {
-    data: { teams, users, oidc_providers: oidcProviders, oauth_providers: oauthProviders },
-  } = Route.useLoaderData() as { data: IdentityTeamsPayload }
+  const loaderData = Route.useLoaderData()
+  const adminData = isPlatformAdmin ? (loaderData.data as IdentityTeamsPayload) : null
+  const directoryData = isPlatformAdmin ? null : (loaderData.data as IdentityDirectoryTeamsPayload)
+  const teams = adminData?.teams ?? emptyAdminTeams
+  const users = adminData?.users ?? emptyAssignableUsers
+  const oidcProviders = adminData?.oidc_providers ?? emptyOidcProviders
+  const oauthProviders = adminData?.oauth_providers ?? emptyOauthProviders
   const [teamDialog, setTeamDialog] = useState<TeamDialogState>({ mode: 'closed' })
   const [teamForm, setTeamForm] = useState<CreateTeamInput>(initialTeamForm)
   const [membersDialog, setMembersDialog] = useState<MembersDialogState>({ mode: 'closed' })
@@ -188,7 +200,7 @@ export function TeamsPage() {
   )
 
   if (!isPlatformAdmin) {
-    return <ReadOnlyTeamsDirectory teams={teams} />
+    return <ReadOnlyTeamsDirectory teams={directoryData?.teams ?? []} />
   }
 
   async function refreshTeams() {

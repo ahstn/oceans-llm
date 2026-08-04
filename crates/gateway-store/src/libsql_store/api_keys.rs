@@ -30,6 +30,39 @@ impl AdminApiKeyRepository for LibsqlStore {
         Ok(api_keys)
     }
 
+    async fn list_api_keys_for_user_scope(
+        &self,
+        user_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<ApiKeyRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT id, public_id, secret_hash, name, status, model_grant_mode,
+                       owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
+                       created_at, last_used_at, revoked_at
+                FROM api_keys
+                WHERE (owner_kind = 'user' AND owner_user_id = ?1)
+                   OR (?2 IS NOT NULL AND owner_kind = 'service_account' AND owner_team_id = ?2)
+                ORDER BY created_at DESC, public_id ASC
+                "#,
+                libsql::params![user_id.to_string(), team_id.map(|value| value.to_string())],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let mut api_keys = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        {
+            api_keys.push(decode_api_key(&row)?);
+        }
+        Ok(api_keys)
+    }
+
     async fn get_api_key_by_id(
         &self,
         api_key_id: Uuid,

@@ -29,14 +29,17 @@ use uuid::Uuid;
 use crate::{
     config::resolve_secret_reference,
     http::{
-        admin_auth::{require_authenticated_session, require_platform_admin},
+        admin_auth::{
+            require_active_session, require_authenticated_session, require_platform_admin,
+        },
         admin_contract::{
             AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload,
             AdminOauthProviderView, AdminOidcProviderView, AdminServiceAccountView,
             AdminServiceAccountsPayload, AdminTeamManagementView, AdminTeamView, AdminTeamsPayload,
             AuthSessionUserView, AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
             CompleteInvitationResponse, CreateServiceAccountRequest, CreateTeamRequest,
-            CreateUserRequest, CreateUserResponse, Envelope, IdentityActionStatus, InvitationView,
+            CreateUserRequest, CreateUserResponse, Envelope, IdentityActionStatus,
+            IdentityDirectoryTeamsPayload, IdentityDirectoryUsersPayload, InvitationView,
             OauthCallbackQuery, OauthStartQuery, OidcCallbackQuery, OidcStartQuery,
             PasswordInviteResponse, PasswordLoginRequest, PublicOauthProviderView,
             PublicOauthProvidersPayload, PublicOidcProviderView, PublicOidcProvidersPayload,
@@ -52,6 +55,7 @@ use crate::{
         },
         identity_views::{
             build_admin_identity_user_view, build_admin_team_views, build_assignable_user_views,
+            build_identity_directory_team_views, build_identity_directory_user_views,
             entity_tag_views, reload_identity_user, reload_team_view,
         },
         state::AppState,
@@ -97,19 +101,6 @@ fn is_mutating_method(method: &Method) -> bool {
         || method == Method::DELETE
 }
 
-async fn require_active_identity_viewer(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<UserRecord, AppError> {
-    let actor = require_authenticated_session(state, headers).await?;
-    if actor.status != UserStatus::Active {
-        return Err(AppError(GatewayError::Auth(
-            AuthError::InsufficientPrivileges,
-        )));
-    }
-    Ok(actor)
-}
-
 #[utoipa::path(
     get,
     path = "/api/v1/admin/identity/users",
@@ -120,8 +111,7 @@ pub async fn list_identity_users(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<AdminIdentityPayload>>, AppError> {
-    let actor = require_active_identity_viewer(&state, &headers).await?;
-    let include_admin_details = actor.global_role == GlobalRole::PlatformAdmin;
+    require_platform_admin(&state, &headers).await?;
 
     let origin = request_origin(&headers);
     let users = state.store.list_identity_users().await?;
@@ -139,7 +129,7 @@ pub async fn list_identity_users(
                 &origin,
                 now,
                 user,
-                include_admin_details,
+                true,
             )
             .await?,
         );
@@ -154,30 +144,39 @@ pub async fn list_identity_users(
                 name: team.team_name,
             })
             .collect(),
-        oidc_providers: if include_admin_details {
-            providers
-                .into_iter()
-                .map(|provider| AdminOidcProviderView {
-                    id: provider.oidc_provider_id,
-                    key: provider.provider_key.clone(),
-                    label: provider.provider_key,
-                })
-                .collect()
-        } else {
-            Vec::new()
-        },
-        oauth_providers: if include_admin_details {
-            oauth_providers
-                .into_iter()
-                .map(|provider| AdminOauthProviderView {
-                    id: provider.oauth_provider_id,
-                    key: provider.provider_key.clone(),
-                    label: provider.provider_key,
-                })
-                .collect()
-        } else {
-            Vec::new()
-        },
+        oidc_providers: providers
+            .into_iter()
+            .map(|provider| AdminOidcProviderView {
+                id: provider.oidc_provider_id,
+                key: provider.provider_key.clone(),
+                label: provider.provider_key,
+            })
+            .collect(),
+        oauth_providers: oauth_providers
+            .into_iter()
+            .map(|provider| AdminOauthProviderView {
+                id: provider.oauth_provider_id,
+                key: provider.provider_key.clone(),
+                label: provider.provider_key,
+            })
+            .collect(),
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/identity/directory/users",
+    responses((status = 200, body = Envelope<IdentityDirectoryUsersPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_identity_directory_users(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<IdentityDirectoryUsersPayload>>, AppError> {
+    require_active_session(&state, &headers).await?;
+    let users = state.store.list_identity_users().await?;
+    Ok(Json(envelope(IdentityDirectoryUsersPayload {
+        users: build_identity_directory_user_views(&users),
     })))
 }
 
@@ -191,8 +190,7 @@ pub async fn list_identity_teams(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<AdminTeamsPayload>>, AppError> {
-    let actor = require_active_identity_viewer(&state, &headers).await?;
-    let include_admin_details = actor.global_role == GlobalRole::PlatformAdmin;
+    require_platform_admin(&state, &headers).await?;
 
     let teams = state.store.list_teams().await?;
     let users = state.store.list_identity_users().await?;
@@ -201,35 +199,41 @@ pub async fn list_identity_teams(
 
     Ok(Json(envelope(AdminTeamsPayload {
         teams: build_admin_team_views(&teams, &users),
-        users: if include_admin_details {
-            build_assignable_user_views(&users)
-        } else {
-            Vec::new()
-        },
-        oidc_providers: if include_admin_details {
-            providers
-                .into_iter()
-                .map(|provider| AdminOidcProviderView {
-                    id: provider.oidc_provider_id,
-                    key: provider.provider_key.clone(),
-                    label: provider.provider_key,
-                })
-                .collect()
-        } else {
-            Vec::new()
-        },
-        oauth_providers: if include_admin_details {
-            oauth_providers
-                .into_iter()
-                .map(|provider| AdminOauthProviderView {
-                    id: provider.oauth_provider_id,
-                    key: provider.provider_key.clone(),
-                    label: provider.provider_key,
-                })
-                .collect()
-        } else {
-            Vec::new()
-        },
+        users: build_assignable_user_views(&users),
+        oidc_providers: providers
+            .into_iter()
+            .map(|provider| AdminOidcProviderView {
+                id: provider.oidc_provider_id,
+                key: provider.provider_key.clone(),
+                label: provider.provider_key,
+            })
+            .collect(),
+        oauth_providers: oauth_providers
+            .into_iter()
+            .map(|provider| AdminOauthProviderView {
+                id: provider.oauth_provider_id,
+                key: provider.provider_key.clone(),
+                label: provider.provider_key,
+            })
+            .collect(),
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/identity/directory/teams",
+    responses((status = 200, body = Envelope<IdentityDirectoryTeamsPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_identity_directory_teams(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<IdentityDirectoryTeamsPayload>>, AppError> {
+    require_active_session(&state, &headers).await?;
+    let teams = state.store.list_teams().await?;
+    let users = state.store.list_identity_users().await?;
+    Ok(Json(envelope(IdentityDirectoryTeamsPayload {
+        teams: build_identity_directory_team_views(&teams, &users),
     })))
 }
 

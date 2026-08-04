@@ -7,7 +7,7 @@ use crate::http::{
     admin_contract::{
         AdminEntityTagView, AdminIdentityUserView, AdminOnboardingActionView, AdminTeamAdminView,
         AdminTeamAssignableUserView, AdminTeamManagementView, AdminTeamMemberView,
-        format_timestamp,
+        IdentityDirectoryTeamView, IdentityDirectoryUserView, format_timestamp,
     },
     error::AppError,
     identity::{invitation_url, oauth_sign_in_url, oidc_sign_in_url},
@@ -68,6 +68,69 @@ pub(crate) async fn build_admin_identity_user_view(
         tags: entity_tag_views(&user.user.tags),
         onboarding,
     })
+}
+
+pub(crate) fn build_identity_directory_user_views(
+    users: &[IdentityUserRecord],
+) -> Vec<IdentityDirectoryUserView> {
+    users
+        .iter()
+        .map(|user| IdentityDirectoryUserView {
+            id: user.user.user_id.to_string(),
+            name: user.user.name.clone(),
+            email: user.user.email.clone(),
+            global_role: user.user.global_role.as_str().to_string(),
+            team_id: user.team_id.map(|value| value.to_string()),
+            team_name: user.team_name.clone(),
+            team_role: user.membership_role.map(|value| value.as_str().to_string()),
+            status: format_user_status(user.user.status),
+        })
+        .collect()
+}
+
+pub(crate) fn build_identity_directory_team_views(
+    teams: &[gateway_core::TeamRecord],
+    users: &[IdentityUserRecord],
+) -> Vec<IdentityDirectoryTeamView> {
+    let mut members_by_team: std::collections::HashMap<Uuid, Vec<AdminTeamMemberView>> =
+        std::collections::HashMap::new();
+    for user in users {
+        let Some(team_id) = user.team_id else {
+            continue;
+        };
+        members_by_team
+            .entry(team_id)
+            .or_default()
+            .push(AdminTeamMemberView {
+                id: user.user.user_id.to_string(),
+                name: user.user.name.clone(),
+                email: user.user.email.clone(),
+                status: format_user_status(user.user.status),
+                role: user
+                    .membership_role
+                    .map(|value| value.as_str().to_string())
+                    .unwrap_or_else(|| "member".to_string()),
+            });
+    }
+
+    teams
+        .iter()
+        .map(|team| {
+            let mut members = members_by_team.remove(&team.team_id).unwrap_or_default();
+            members.sort_by(|left, right| {
+                left.name
+                    .cmp(&right.name)
+                    .then_with(|| left.email.cmp(&right.email))
+            });
+            IdentityDirectoryTeamView {
+                id: team.team_id.to_string(),
+                name: team.team_name.clone(),
+                status: team.status.clone(),
+                member_count: members.len(),
+                members,
+            }
+        })
+        .collect()
 }
 
 pub(crate) fn build_assignable_user_views(

@@ -19,6 +19,31 @@ impl AdminApiKeyRepository for PostgresStore {
         rows.iter().map(decode_api_key).collect()
     }
 
+    async fn list_api_keys_for_user_scope(
+        &self,
+        user_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<ApiKeyRecord>, StoreError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, public_id, secret_hash, name, status, model_grant_mode,
+                   owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
+                   created_at, last_used_at, revoked_at
+            FROM api_keys
+            WHERE (owner_kind = 'user' AND owner_user_id = $1)
+               OR ($2 IS NOT NULL AND owner_kind = 'service_account' AND owner_team_id = $2)
+            ORDER BY created_at DESC, public_id ASC
+            "#,
+        )
+        .bind(user_id.to_string())
+        .bind(team_id.map(|value| value.to_string()))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        rows.iter().map(decode_api_key).collect()
+    }
+
     async fn get_api_key_by_id(
         &self,
         api_key_id: Uuid,

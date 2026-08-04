@@ -78,9 +78,9 @@ const CLIENT_HARNESS_CONFIGURATION_URL =
 type ModelInfoSectionKey = 'overview' | 'routing' | 'economics' | 'access'
 
 export const Route = createFileRoute('/models')({
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   validateSearch: (search: Record<string, unknown>) => normalizeModelsSearch(search),
   loaderDeps: ({ search }) => search,
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: ({ deps }) => getModels({ data: deps }),
   component: ModelsPage,
 })

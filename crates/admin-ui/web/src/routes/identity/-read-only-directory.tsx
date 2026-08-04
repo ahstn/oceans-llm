@@ -1,10 +1,9 @@
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
-import { EntityTagBadges } from '@/routes/identity/-entity-tags'
-import type { TeamManagementView, UserView } from '@/types/api'
+import type { IdentityDirectoryTeamView, IdentityDirectoryUserView } from '@/types/api'
 
-export function ReadOnlyUsersDirectory({ users }: { users: UserView[] }) {
+export function ReadOnlyUsersDirectory({ users }: { users: IdentityDirectoryUserView[] }) {
   return (
     <Card>
       <CardHeader>
@@ -37,12 +36,10 @@ export function ReadOnlyUsersDirectory({ users }: { users: UserView[] }) {
                     <p className="truncate text-sm text-[var(--color-text-muted)]">{user.email}</p>
                   </div>
                 </div>
-                <dl className="grid gap-3 text-sm sm:grid-cols-3">
+                <dl className="grid gap-3 text-sm sm:grid-cols-2">
                   <DirectoryDetail label="Team" value={user.team_name ?? 'No team'} />
                   <DirectoryDetail label="Team role" value={formatRole(user.team_role)} />
-                  <DirectoryDetail label="Sign-in" value={formatRole(user.auth_mode)} />
                 </dl>
-                <EntityTagBadges tags={user.tags} />
               </article>
             ))}
           </div>
@@ -52,7 +49,7 @@ export function ReadOnlyUsersDirectory({ users }: { users: UserView[] }) {
   )
 }
 
-export function ReadOnlyTeamsDirectory({ teams }: { teams: TeamManagementView[] }) {
+export function ReadOnlyTeamsDirectory({ teams }: { teams: IdentityDirectoryTeamView[] }) {
   return (
     <Card>
       <CardHeader>
@@ -81,15 +78,11 @@ export function ReadOnlyTeamsDirectory({ teams }: { teams: TeamManagementView[] 
                       </h2>
                       <Badge>{team.status}</Badge>
                     </div>
-                    <p className="truncate font-mono text-xs text-[var(--color-text-soft)]">
-                      {team.key}
-                    </p>
                   </div>
                   <span className="text-sm text-[var(--color-text-muted)]">
                     {formatMemberCount(team.member_count)}
                   </span>
                 </div>
-                <EntityTagBadges tags={team.tags} />
                 <div className="flex flex-col gap-2">
                   <h3 className="text-xs font-medium tracking-wide text-[var(--color-text-soft)] uppercase">
                     Members
