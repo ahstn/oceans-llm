@@ -18,6 +18,12 @@ type ConnectionsSearch = {
   oauth_error?: string
 }
 
+const utcTimestampFormatter = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'UTC',
+})
+
 export const Route = createFileRoute('/account/connections')({
   validateSearch: (search: Record<string, unknown>): ConnectionsSearch => ({
     oauth: typeof search.oauth === 'string' ? search.oauth : undefined,
@@ -125,13 +131,8 @@ export function ConnectionsPage() {
                   </div>
                   {connection.expires_at ? (
                     <p className="text-muted-foreground text-xs">
-                      Access token expires{' '}
-                      {new Date(connection.expires_at).toLocaleString('en-US', {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                        timeZone: 'UTC',
-                      })}{' '}
-                      UTC; Oceans refreshes it before use.
+                      Access token expires {formatUtcTimestamp(connection.expires_at)} UTC; Oceans
+                      refreshes it before use.
                     </p>
                   ) : null}
                   {connection.availability_error ? (
@@ -167,6 +168,10 @@ export function ConnectionsPage() {
 
 function formatStatus(status: McpOauthConnectionView['status']) {
   return status.charAt(0).toUpperCase() + status.slice(1)
+}
+
+function formatUtcTimestamp(timestamp: string) {
+  return utcTimestampFormatter.format(new Date(timestamp))
 }
 
 function connectionActionLabel(status: McpOauthConnectionView['status'], pending: boolean) {
