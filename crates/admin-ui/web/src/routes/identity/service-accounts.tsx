@@ -2,6 +2,7 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { RoboticIcon, SearchIcon } from '@hugeicons/core-free-icons'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { PageHeader } from '@/components/layout/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -47,14 +48,19 @@ export function ServiceAccountsPage() {
   const rows = buildServiceAccountRows(serviceAccounts, apiKeys)
 
   return (
-    <div className="flex flex-col gap-4">
+    <main className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Identity"
+        title="Service accounts"
+        description="Review automated accounts, their teams, and the API keys that they use."
+      />
+
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-1">
-            <CardTitle>Service Accounts</CardTitle>
+            <CardTitle>Account list</CardTitle>
             <CardDescription>
-              Review non-human gateway principals, their owning teams, and attached API-key
-              credentials. This page is read-only.
+              Open a team or API key from the table. You cannot make changes on this page.
             </CardDescription>
           </div>
         </CardHeader>
@@ -78,7 +84,7 @@ export function ServiceAccountsPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </main>
   )
 }
 

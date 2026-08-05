@@ -71,7 +71,7 @@ describe('McpInvocationsPage', () => {
 
     render(<McpInvocationsPage />)
 
-    expect(screen.getByText('MCP Invocations')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'MCP invocations' })).toBeInTheDocument()
     expect(screen.getByTestId('mcp-filter-request-id')).toBeInTheDocument()
     expect(screen.getByTestId('mcp-filter-server')).toBeInTheDocument()
     expect(screen.getByTestId('mcp-filter-tool')).toBeInTheDocument()

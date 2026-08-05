@@ -149,7 +149,7 @@ describe('UsersPage', () => {
     expect(screen.queryByRole('button', { name: 'Add user' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
     expect(screen.queryByText('Sign-in')).not.toBeInTheDocument()
-    expect(screen.getByText(/Only platform administrators can change users/)).toBeInTheDocument()
+    expect(screen.getByText(/Only administrators can make changes/)).toBeInTheDocument()
   })
 
   it('teaches the next step when no users exist', async () => {

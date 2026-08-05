@@ -4,6 +4,7 @@ import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { toast } from 'sonner'
 
 import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
+import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   ChartContainer,
@@ -109,13 +110,19 @@ export function AgentHarnessesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <main className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Observability"
+        title="Agent harnesses"
+        description="Compare request activity from user harnesses over time."
+      />
+
       <Card>
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex flex-col gap-1">
-            <CardTitle>Agent Harnesses</CardTitle>
+            <CardTitle>Request activity</CardTitle>
             <CardDescription>
-              Compare self-reported User-Agent harness traffic over UTC 12-hour windows.
+              Compare request counts for each agent application in 12-hour periods.
             </CardDescription>
           </div>
           <ToggleGroup
@@ -255,7 +262,7 @@ export function AgentHarnessesPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </main>
   )
 }
 

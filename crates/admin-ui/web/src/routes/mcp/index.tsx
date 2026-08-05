@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { PageHeader } from '@/components/layout/page-header'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   getApiKeys,
@@ -81,40 +82,38 @@ export function McpWorkspacePage() {
     applySearch({ tab: 'toolsets' })
   }
 
-  const workspaceHeader = (
-    <>
-      <CardTitle>MCP</CardTitle>
-      <CardDescription>
-        Register servers, curate toolsets, and manage access in one workspace.
-      </CardDescription>
-      <CardAction>
-        <SegmentedTabs
-          ariaLabel="MCP workspace sections"
-          value={search.tab}
-          onValueChange={(value) => applySearch({ tab: value as McpTab })}
-          items={workspaceTabs}
-        />
-      </CardAction>
-    </>
+  const workspaceNavigation = (
+    <CardAction>
+      <SegmentedTabs
+        ariaLabel="MCP workspace sections"
+        value={search.tab}
+        onValueChange={(value) => applySearch({ tab: value as McpTab })}
+        items={workspaceTabs}
+      />
+    </CardAction>
   )
 
-  if (search.tab === 'servers') {
-    return (
+  const workspaceContent =
+    search.tab === 'servers' ? (
       <ServersTab
         servers={data.servers}
         recommended={data.recommended}
         selectedServerId={selectedServerId}
-        workspaceHeader={workspaceHeader}
+        workspaceHeader={workspaceNavigation}
         onSelectServer={(serverId) => applySearch({ server_id: serverId ?? undefined })}
         onAddToToolset={handleAddToToolset}
       />
-    )
-  }
-
-  return (
-    <div className="flex min-w-0 flex-col gap-4">
+    ) : (
       <Card className="min-w-0">
-        <CardHeader>{workspaceHeader}</CardHeader>
+        <CardHeader>
+          <CardTitle>{search.tab === 'toolsets' ? 'Toolsets' : 'Access rules'}</CardTitle>
+          <CardDescription>
+            {search.tab === 'toolsets'
+              ? 'Combine related tools so that you can manage them as one group.'
+              : 'Choose which people and accounts can use each tool or group of tools.'}
+          </CardDescription>
+          {workspaceNavigation}
+        </CardHeader>
         <CardContent className="min-w-0">
           {search.tab === 'toolsets' ? (
             <ToolsetsTab
@@ -141,7 +140,17 @@ export function McpWorkspacePage() {
           ) : null}
         </CardContent>
       </Card>
-    </div>
+    )
+
+  return (
+    <main className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Control Plane"
+        title="MCP"
+        description="Manage the servers and tools exposed to applications and end users."
+      />
+      {workspaceContent}
+    </main>
   )
 }
 

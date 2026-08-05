@@ -7,10 +7,9 @@ export function ReadOnlyUsersDirectory({ users }: { users: IdentityDirectoryUser
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Users</CardTitle>
+        <CardTitle>User list</CardTitle>
         <CardDescription>
-          View user identity, access role, team membership, and account status. Only platform
-          administrators can change users.
+          Select a user to review account and team details. Only administrators can make changes.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -53,10 +52,9 @@ export function ReadOnlyTeamsDirectory({ teams }: { teams: IdentityDirectoryTeam
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Teams</CardTitle>
+        <CardTitle>Team list</CardTitle>
         <CardDescription>
-          View all teams and their current membership. Only platform administrators can change teams
-          or membership.
+          Select a team to review its members. Only administrators can make changes.
         </CardDescription>
       </CardHeader>
       <CardContent>

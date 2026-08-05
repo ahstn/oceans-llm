@@ -100,7 +100,7 @@ describe('SpendControlsPage', () => {
     const { SpendControlsPage } = await import('@/routes/spend-controls')
     render(<SpendControlsPage />)
 
-    expect(screen.getByText('Spend Controls')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Spend controls' })).toBeInTheDocument()
     expect(screen.getAllByText('Jane Admin').length).toBeGreaterThan(0)
     expect(screen.getByText('CI Indexer')).toBeInTheDocument()
     expect(screen.getByText('User Model Budgets')).toBeInTheDocument()

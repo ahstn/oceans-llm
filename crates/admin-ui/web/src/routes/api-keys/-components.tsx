@@ -110,11 +110,11 @@ export function ApiKeysCard({
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <CardTitle>API Keys</CardTitle>
+          <CardTitle>Keys</CardTitle>
           <CardDescription>
             {onCreate
-              ? 'Issue gateway credentials with explicit owners and model grant modes, then revoke them when access should stop.'
-              : 'Review your personal gateway credentials and any service-account credentials you can manage for your team.'}
+              ? 'Review each key owner, model access, status, and recent use.'
+              : 'Review the keys that you can use or manage.'}
           </CardDescription>
         </div>
         {onCreate ? (

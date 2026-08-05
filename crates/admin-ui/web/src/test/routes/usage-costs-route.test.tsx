@@ -86,7 +86,7 @@ describe('UsageCostsPage', () => {
     const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
     render(<UsageCostsPage />)
 
-    expect(screen.getByText('Usage Costs')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Usage costs' })).toBeInTheDocument()
     expect(screen.getByText('CI Indexer')).toBeInTheDocument()
     expect(screen.getByText('fast')).toBeInTheDocument()
     expect(screen.getByText('Priced requests')).toBeInTheDocument()
@@ -126,7 +126,7 @@ describe('UsageCostsPage', () => {
     render(<UsageCostsPage />)
 
     expect(
-      screen.getByText('Your spend and request pricing details from the durable usage ledger.'),
+      screen.getByText('Review your costs over time and see the price of each request.'),
     ).toBeVisible()
     expect(screen.getByText('Spend attributed to your user account.')).toBeVisible()
     expect(screen.queryByText('All owners')).not.toBeInTheDocument()

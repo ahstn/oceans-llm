@@ -11,6 +11,7 @@ import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -185,8 +186,21 @@ export function UsersPage() {
     setOnboardingResult(null)
   }, [selectedUserId])
 
+  const pageHeader = (
+    <PageHeader
+      section="Identity"
+      title="Users"
+      description="Review user accounts, team assignments, and access settings."
+    />
+  )
+
   if (!isPlatformAdmin) {
-    return <ReadOnlyUsersDirectory users={directoryData?.users ?? []} />
+    return (
+      <main className="flex min-w-0 flex-1 flex-col gap-6">
+        {pageHeader}
+        <ReadOnlyUsersDirectory users={directoryData?.users ?? []} />
+      </main>
+    )
   }
 
   function resetDialog() {
@@ -390,15 +404,14 @@ export function UsersPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <main className="flex min-w-0 flex-1 flex-col gap-6">
+      {pageHeader}
+
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <CardTitle>Users</CardTitle>
-            <CardDescription>
-              Create password or SSO users, then hand off the generated onboarding URL. A valid
-              email address is also required for budget alert emails.
-            </CardDescription>
+            <CardTitle>User list</CardTitle>
+            <CardDescription>Select a user to review account and access settings.</CardDescription>
           </div>
 
           <Dialog
@@ -1373,7 +1386,7 @@ export function UsersPage() {
           ) : null}
         </DialogContent>
       </Dialog>
-    </div>
+    </main>
   )
 }
 

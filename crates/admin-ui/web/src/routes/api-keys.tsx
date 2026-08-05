@@ -6,6 +6,7 @@ import {
   CreatedApiKeyAlert,
   ManageApiKeyDialog,
 } from '@/routes/api-keys/-components'
+import { PageHeader } from '@/components/layout/page-header'
 import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import { getApiKeys } from '@/server/admin-data.functions'
@@ -37,7 +38,17 @@ export function ApiKeysPage() {
   })
 
   return (
-    <div className="flex flex-col gap-4">
+    <main className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Control Plane"
+        title="API keys"
+        description={
+          isPlatformAdmin
+            ? 'Create and manage keys that identities use to send requests.'
+            : 'Review the keys that you and your team use to send requests.'
+        }
+      />
+
       {isPlatformAdmin ? (
         <CreatedApiKeyAlert
           result={state.createdResult}
@@ -90,6 +101,6 @@ export function ApiKeysPage() {
           onSubmit={state.actions.handleUpdateApiKey}
         />
       ) : null}
-    </div>
+    </main>
   )
 }
