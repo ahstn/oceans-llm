@@ -16,6 +16,6 @@ export function ssoErrorMessage(code: string | undefined) {
     case 'identity_conflict':
       return 'A password account already exists for this email address.'
     default:
-      return undefined
+      return code ? 'SSO sign-in did not complete. Start sign-in again.' : undefined
   }
 }
