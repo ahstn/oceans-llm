@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, env, fs, path::Path};
+use std::{collections::BTreeMap, env, fs, net::SocketAddr, path::Path};
 
 use anyhow::{Context, bail};
 use gateway_core::{
@@ -85,6 +85,7 @@ impl GatewayConfig {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
+        self.server.validate()?;
         let _ = self.database.connection_options()?;
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
@@ -1248,6 +1249,34 @@ impl Default for ServerConfig {
             otel_export_interval_secs: default_otel_export_interval_secs(),
         }
     }
+}
+
+impl ServerConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        let _ = self.bind_address()?;
+        validate_otel_endpoint("server.otel_endpoint", self.otel_endpoint.as_deref())?;
+        validate_otel_endpoint(
+            "server.otel_metrics_endpoint",
+            self.otel_metrics_endpoint.as_deref(),
+        )?;
+        Ok(())
+    }
+
+    pub fn bind_address(&self) -> anyhow::Result<SocketAddr> {
+        self.bind
+            .parse()
+            .with_context(|| format!("server.bind `{}` is not a valid socket address", self.bind))
+    }
+}
+
+fn validate_otel_endpoint(field: &str, endpoint: Option<&str>) -> anyhow::Result<()> {
+    let Some(endpoint) = endpoint else {
+        return Ok(());
+    };
+    let _: http::Uri = endpoint
+        .parse()
+        .with_context(|| format!("{field} `{endpoint}` is not a valid URI"))?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -3266,6 +3295,33 @@ mod tests {
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
+    }
+
+    #[test]
+    fn rejects_invalid_server_bind_address() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(&config_path, "server:\n  bind: not-a-socket-address\n");
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+
+        assert!(format!("{error:#}").contains("server.bind"));
+    }
+
+    #[test]
+    fn rejects_invalid_otel_endpoints() {
+        for field in ["otel_endpoint", "otel_metrics_endpoint"] {
+            let tmp = tempdir().expect("tempdir");
+            let config_path = tmp.path().join("gateway.yaml");
+            write_config(
+                &config_path,
+                &format!("server:\n  {field}: 'not a valid URI'\n"),
+            );
+
+            let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+
+            assert!(format!("{error:#}").contains(&format!("server.{field}")));
+        }
     }
 
     #[test]
