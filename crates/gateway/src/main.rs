@@ -1,4 +1,4 @@
-use std::{env, net::SocketAddr, path::Path, sync::Arc, time::Duration};
+use std::{env, path::Path, sync::Arc, time::Duration};
 
 use admin_ui::AdminUiConfig;
 use anyhow::Context;
@@ -31,13 +31,14 @@ use local_demo_seed::{LOCAL_DEMO_USER_PASSWORD, seed_local_demo_data};
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let command = cli.command.unwrap_or(Command::Serve(ServeArgs::default()));
-    let config = load_config(&cli.config)?;
 
     if matches!(&command, Command::Config(ConfigCommand::Validate)) {
+        validate_config_file(&cli.config)?;
         println!("gateway configuration `{}` is valid", cli.config);
         return Ok(());
     }
 
+    let config = load_config(&cli.config)?;
     let observability = observability::init_observability(&config.server)?;
 
     let result = match command {
@@ -56,6 +57,14 @@ async fn main() -> anyhow::Result<()> {
 fn load_config(config_path: &str) -> anyhow::Result<GatewayConfig> {
     GatewayConfig::from_path(Path::new(config_path))
         .with_context(|| format!("failed to load gateway configuration from `{config_path}`"))
+}
+
+fn validate_config_file(config_path: &str) -> anyhow::Result<()> {
+    if !Path::new(config_path).exists() {
+        anyhow::bail!("gateway configuration `{config_path}` does not exist");
+    }
+    let _ = load_config(config_path)?;
+    Ok(())
 }
 
 fn database_options(
@@ -202,11 +211,7 @@ async fn run_serve_with_store(
     )
     .context("invalid MCP credential runtime configuration")?;
 
-    let bind_address: SocketAddr = config
-        .server
-        .bind
-        .parse()
-        .with_context(|| format!("invalid bind address `{}`", config.server.bind))?;
+    let bind_address = config.server.bind_address()?;
 
     let app = build_router(
         AppState {
@@ -524,4 +529,22 @@ fn env_u64(key: &str, default: u64) -> u64 {
 fn load_identity_token_secret() -> String {
     env::var("GATEWAY_IDENTITY_TOKEN_SECRET")
         .unwrap_or_else(|_| "local-dev-identity-secret".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::validate_config_file;
+
+    #[test]
+    fn config_validation_requires_an_existing_file() {
+        let tmp = tempdir().expect("tempdir");
+        let missing_path = tmp.path().join("missing.yaml");
+
+        let error = validate_config_file(missing_path.to_str().expect("utf-8 path"))
+            .expect_err("missing config should fail");
+
+        assert!(format!("{error:#}").contains("does not exist"));
+    }
 }
