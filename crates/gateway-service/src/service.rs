@@ -64,6 +64,14 @@ struct RouteContextOverrideConflict {
     catalog_context: i64,
 }
 
+struct PassiveRequestOutcome<'a> {
+    request_log_id: Option<Uuid>,
+    response_body: Option<&'a Value>,
+    terminal_success: Option<bool>,
+    response_payload_truncated: bool,
+    completed_at: OffsetDateTime,
+}
+
 #[derive(Clone)]
 pub struct GatewayService<S, P> {
     store: Arc<S>,
@@ -365,6 +373,7 @@ where
     where
         S: AgentSessionAnalysisRepository,
     {
+        let completed_at = OffsetDateTime::now_utc();
         let logged = self
             .request_logging
             .log_non_stream_success(
@@ -382,10 +391,13 @@ where
             self.record_passive_request(
                 auth,
                 context,
-                Some(logged.request_log_id),
-                Some(response_body),
-                Some(true),
-                logged.response_payload_truncated,
+                PassiveRequestOutcome {
+                    request_log_id: Some(logged.request_log_id),
+                    response_body: logged.analysis_response.as_ref(),
+                    terminal_success: Some(true),
+                    response_payload_truncated: logged.response_payload_truncated,
+                    completed_at,
+                },
             )
             .await;
         }
@@ -406,6 +418,7 @@ where
     where
         S: AgentSessionAnalysisRepository,
     {
+        let completed_at = OffsetDateTime::now_utc();
         let logged = self
             .request_logging
             .log_non_stream_failure(
@@ -422,10 +435,13 @@ where
             self.record_passive_request(
                 auth,
                 context,
-                Some(logged.request_log_id),
-                None,
-                Some(false),
-                logged.response_payload_truncated,
+                PassiveRequestOutcome {
+                    request_log_id: Some(logged.request_log_id),
+                    response_body: None,
+                    terminal_success: Some(false),
+                    response_payload_truncated: logged.response_payload_truncated,
+                    completed_at,
+                },
             )
             .await;
         }
@@ -448,7 +464,7 @@ where
         } else {
             Some(false)
         };
-        let response_body = stream_result.collector.analysis_payload();
+        let completed_at = OffsetDateTime::now_utc();
         let logged = self
             .request_logging
             .log_stream_result(auth, context, stream_result)
@@ -457,10 +473,13 @@ where
             self.record_passive_request(
                 auth,
                 context,
-                Some(logged.request_log_id),
-                response_body.as_ref(),
-                terminal_success,
-                logged.response_payload_truncated,
+                PassiveRequestOutcome {
+                    request_log_id: Some(logged.request_log_id),
+                    response_body: logged.analysis_response.as_ref(),
+                    terminal_success,
+                    response_payload_truncated: logged.response_payload_truncated,
+                    completed_at,
+                },
             )
             .await;
         }
@@ -471,10 +490,7 @@ where
         &self,
         auth: &AuthenticatedApiKey,
         context: &RequestLogContext,
-        request_log_id: Option<Uuid>,
-        response_body: Option<&Value>,
-        terminal_success: Option<bool>,
-        response_payload_truncated: bool,
+        outcome: PassiveRequestOutcome<'_>,
     ) where
         S: AgentSessionAnalysisRepository,
     {
@@ -492,7 +508,7 @@ where
         let store = Arc::clone(&self.store);
         let auth = auth.clone();
         let request_id = context.request_id.clone();
-        let resolved_model_key = context.resolved_model_key.clone();
+        let requested_model_key = context.requested_model_key.clone();
         let request_tags = context.request_tags.clone();
         let request_tags_value = match serde_json::to_value(&request_tags) {
             Ok(value) => value,
@@ -511,11 +527,13 @@ where
         let metadata = context.analysis_metadata.clone();
         let analysis_payload_permitted = context.analysis_payload_permitted;
         let occurred_at = context.started_at;
-        let payload_truncated = response_payload_truncated;
-        let response_body = response_body.cloned();
+        let payload_truncated = outcome.response_payload_truncated;
+        let response_body = outcome.response_body.cloned();
+        let request_log_id = outcome.request_log_id;
+        let completed_at = outcome.completed_at;
+        let terminal_success = outcome.terminal_success;
         let desired_versions = self.agent_analysis_desired_versions.clone();
         tokio::spawn(async move {
-            let completed_at = OffsetDateTime::now_utc();
             let boundary_group_key = session_boundary_group_key(&request_tags);
             let input = PassiveRequestRecord {
                 auth: &auth,
@@ -531,7 +549,7 @@ where
                 completed_at,
                 terminal_success,
                 payload_truncated,
-                requested_model_key: &resolved_model_key,
+                requested_model_key: &requested_model_key,
                 operation,
                 request_tags: request_tags_value,
                 boundary_group_key: &boundary_group_key,

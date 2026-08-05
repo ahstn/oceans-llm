@@ -116,6 +116,25 @@ export interface DateSelectorValue {
   rangeEnd?: { year: number; value: number }
 }
 
+function dateSelectorValuesEqual(left: DateSelectorValue, right: DateSelectorValue) {
+  const sameDate = (a?: Date, b?: Date) => a?.getTime() === b?.getTime()
+  const samePeriod = (a?: { year: number; value: number }, b?: { year: number; value: number }) =>
+    a?.year === b?.year && a?.value === b?.value
+
+  return (
+    left.period === right.period &&
+    left.operator === right.operator &&
+    sameDate(left.startDate, right.startDate) &&
+    sameDate(left.endDate, right.endDate) &&
+    left.year === right.year &&
+    left.month === right.month &&
+    left.quarter === right.quarter &&
+    left.halfYear === right.halfYear &&
+    samePeriod(left.rangeStart, right.rangeStart) &&
+    samePeriod(left.rangeEnd, right.rangeEnd)
+  )
+}
+
 export interface DateSelectorContextValue {
   i18n: DateSelectorI18nConfig
   variant: 'outline' | 'default'
@@ -409,7 +428,7 @@ export function useDateSelector({
   )
 
   useEffect(() => {
-    if (value) {
+    if (value && !dateSelectorValuesEqual(value, currentValue)) {
       setPeriodType(value.period || validDefaultPeriodType)
       // Use presetMode if provided, otherwise use value's operator or default
       const newFilterType = presetMode ?? value.operator ?? defaultFilterType
@@ -423,7 +442,7 @@ export function useDateSelector({
       setRangeStart(value.rangeStart)
       setRangeEnd(value.rangeEnd)
     }
-  }, [value, validDefaultPeriodType, defaultFilterType, presetMode])
+  }, [value, currentValue, validDefaultPeriodType, defaultFilterType, presetMode])
 
   // Sync filterType when presetMode changes
   useEffect(() => {
@@ -433,8 +452,10 @@ export function useDateSelector({
   }, [presetMode])
 
   useEffect(() => {
-    onChange?.(currentValue)
-  }, [currentValue, onChange])
+    if (!value || !dateSelectorValuesEqual(value, currentValue)) {
+      onChange?.(currentValue)
+    }
+  }, [currentValue, onChange, value])
 
   return {
     // State
@@ -1117,6 +1138,7 @@ export function DateSelector({
             {(inputHint ? inputValue : displayValue) && (
               <button
                 type="button"
+                aria-label={mergedI18n.clear}
                 onClick={clearSelection}
                 className={cn(
                   // Base Styles
@@ -1127,7 +1149,12 @@ export function DateSelector({
                   'ring-offset-background focus:ring-ring focus:ring-2 focus:ring-offset-2 focus:outline-none',
                 )}
               >
-                <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
+                <HugeiconsIcon
+                  icon={Cancel01Icon}
+                  strokeWidth={2}
+                  className="size-4"
+                  aria-hidden="true"
+                />
               </button>
             )}
           </div>

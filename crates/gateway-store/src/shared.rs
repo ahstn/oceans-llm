@@ -16,6 +16,16 @@ pub(crate) fn unix_to_datetime(ts: i64) -> Result<OffsetDateTime, StoreError> {
         .map_err(|error| StoreError::Serialization(error.to_string()))
 }
 
+pub(crate) fn datetime_to_unix_millis(value: OffsetDateTime) -> Result<i64, StoreError> {
+    i64::try_from(value.unix_timestamp_nanos() / 1_000_000)
+        .map_err(|error| StoreError::Serialization(error.to_string()))
+}
+
+pub(crate) fn unix_millis_to_datetime(ts: i64) -> Result<OffsetDateTime, StoreError> {
+    OffsetDateTime::from_unix_timestamp_nanos(i128::from(ts) * 1_000_000)
+        .map_err(|error| StoreError::Serialization(error.to_string()))
+}
+
 pub(crate) fn json_object_from_str(value: &str) -> Result<Map<String, Value>, StoreError> {
     serde_json::from_str(value).map_err(|error| StoreError::Serialization(error.to_string()))
 }
@@ -38,8 +48,16 @@ fn same_timestamp(left: OffsetDateTime, right: OffsetDateTime) -> bool {
     left.unix_timestamp() == right.unix_timestamp()
 }
 
-fn same_optional_timestamp(left: Option<OffsetDateTime>, right: Option<OffsetDateTime>) -> bool {
-    left.map(OffsetDateTime::unix_timestamp) == right.map(OffsetDateTime::unix_timestamp)
+fn same_timestamp_millis(left: OffsetDateTime, right: OffsetDateTime) -> bool {
+    left.unix_timestamp_nanos() / 1_000_000 == right.unix_timestamp_nanos() / 1_000_000
+}
+
+fn same_optional_timestamp_millis(
+    left: Option<OffsetDateTime>,
+    right: Option<OffsetDateTime>,
+) -> bool {
+    left.map(|value| value.unix_timestamp_nanos() / 1_000_000)
+        == right.map(|value| value.unix_timestamp_nanos() / 1_000_000)
 }
 
 pub(crate) fn agent_session_source_identity_matches(
@@ -48,15 +66,12 @@ pub(crate) fn agent_session_source_identity_matches(
 ) -> bool {
     stored.agent_session_source_id == candidate.agent_session_source_id
         && stored.ownership_scope_key == candidate.ownership_scope_key
-        && stored.api_key_id == candidate.api_key_id
         && stored.user_id == candidate.user_id
         && stored.team_id == candidate.team_id
         && stored.service_account_id == candidate.service_account_id
         && stored.actor_user_id == candidate.actor_user_id
         && stored.normalized_session_id == candidate.normalized_session_id
         && stored.adapter_namespace == candidate.adapter_namespace
-        && stored.adapter_version == candidate.adapter_version
-        && stored.source_provenance == candidate.source_provenance
         && stored.harness_key == candidate.harness_key
         && stored.harness_label == candidate.harness_label
 }
@@ -68,7 +83,6 @@ pub(crate) fn agent_session_identity_matches(
     stored.agent_session_id == candidate.agent_session_id
         && stored.agent_session_source_id == candidate.agent_session_source_id
         && stored.ownership_scope_key == candidate.ownership_scope_key
-        && stored.api_key_id == candidate.api_key_id
         && stored.user_id == candidate.user_id
         && stored.team_id == candidate.team_id
         && stored.service_account_id == candidate.service_account_id
@@ -91,7 +105,7 @@ pub(crate) fn agent_observation_set_matches(
     stored.observation_set_id == candidate.observation_set_id
         && stored.agent_session_id == candidate.agent_session_id
         && stored.parser_version == candidate.parser_version
-        && same_timestamp(stored.source_watermark_at, candidate.source_watermark_at)
+        && same_timestamp_millis(stored.source_watermark_at, candidate.source_watermark_at)
         && stored.coverage == candidate.coverage
         && same_timestamp(stored.created_at, candidate.created_at)
         && stored.observations.len() == candidate.observations.len()
@@ -118,7 +132,7 @@ pub(crate) fn agent_session_analysis_matches(
     stored.agent_session_id == candidate.agent_session_id
         && stored.configuration_version == candidate.configuration_version
         && stored.boundary_policy_version == candidate.boundary_policy_version
-        && same_timestamp(stored.input_watermark_at, candidate.input_watermark_at)
+        && same_timestamp_millis(stored.input_watermark_at, candidate.input_watermark_at)
         && stored.observation_set_id == candidate.observation_set_id
         && stored.observation_parser_version == candidate.observation_parser_version
         && stored.pricing_policy_version == candidate.pricing_policy_version
@@ -126,6 +140,7 @@ pub(crate) fn agent_session_analysis_matches(
         && stored.cohort_fallback_level == candidate.cohort_fallback_level
         && stored.cohort_sample_size == candidate.cohort_sample_size
         && stored.cohort_snapshot_digest == candidate.cohort_snapshot_digest
+        && stored.direct_mcp_snapshot_digest == candidate.direct_mcp_snapshot_digest
         && stored.report == candidate.report
         && stored.ownership_scope_key == candidate.ownership_scope_key
         && stored.user_id == candidate.user_id
@@ -176,8 +191,8 @@ pub(crate) fn agent_session_request_matches(
         && stored_normalized_session_id == candidate_normalized_session_id
         && stored_confidence == candidate_confidence
         && stored_limitations == candidate_limitations
-        && same_timestamp(*stored_occurred_at, *candidate_occurred_at)
-        && same_optional_timestamp(*stored_completed_at, *candidate_completed_at)
+        && same_timestamp_millis(*stored_occurred_at, *candidate_occurred_at)
+        && same_optional_timestamp_millis(*stored_completed_at, *candidate_completed_at)
         && stored_terminal_success == candidate_terminal_success
 }
 

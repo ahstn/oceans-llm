@@ -775,6 +775,17 @@ impl BudgetRepository for AnyStore {
         )
     }
 
+    async fn get_usage_ledgers_by_request_ids_and_scope(
+        &self,
+        request_ids: &[String],
+        ownership_scope_key: &str,
+    ) -> Result<Vec<gateway_core::UsageLedgerRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            get_usage_ledgers_by_request_ids_and_scope(request_ids, ownership_scope_key)
+        )
+    }
+
     async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
         scope: &gateway_core::BudgetScope,

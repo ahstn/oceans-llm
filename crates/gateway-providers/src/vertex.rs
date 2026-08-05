@@ -2212,14 +2212,11 @@ fn map_anthropic_usage(value: &Value) -> Option<Value> {
     if let Some(output) = usage.get("output_tokens") {
         mapped.insert("completion_tokens".to_string(), output.clone());
     }
-    if let Some(total) = usage.get("total_tokens").cloned().or_else(|| {
-        usage
-            .get("input_tokens")
-            .and_then(Value::as_i64)
-            .zip(usage.get("output_tokens").and_then(Value::as_i64))
-            .and_then(|(input, output)| input.checked_add(output))
-            .map(|total| Value::Number(total.into()))
-    }) {
+    if let Some(total) = usage
+        .get("total_tokens")
+        .cloned()
+        .or_else(|| anthropic_usage_total(usage))
+    {
         mapped.insert("total_tokens".to_string(), total);
     }
     mapped.insert(
@@ -2246,14 +2243,11 @@ fn map_anthropic_stream_usage(value: &Value) -> Option<Value> {
     if let Some(completion) = usage.get("output_tokens") {
         mapped.insert("completion_tokens".to_string(), completion.clone());
     }
-    if let Some(total) = usage.get("total_tokens").cloned().or_else(|| {
-        usage
-            .get("input_tokens")
-            .and_then(Value::as_i64)
-            .zip(usage.get("output_tokens").and_then(Value::as_i64))
-            .and_then(|(input, output)| input.checked_add(output))
-            .map(|total| Value::Number(total.into()))
-    }) {
+    if let Some(total) = usage
+        .get("total_tokens")
+        .cloned()
+        .or_else(|| anthropic_usage_total(usage))
+    {
         mapped.insert("total_tokens".to_string(), total);
     }
     mapped.insert(
@@ -2262,6 +2256,20 @@ fn map_anthropic_stream_usage(value: &Value) -> Option<Value> {
     );
     mapped.insert("provider_usage".to_string(), Value::Object(usage.clone()));
     Some(Value::Object(mapped))
+}
+
+fn anthropic_usage_total(usage: &Map<String, Value>) -> Option<Value> {
+    [
+        "input_tokens",
+        "output_tokens",
+        "cache_read_input_tokens",
+        "cache_creation_input_tokens",
+    ]
+    .into_iter()
+    .try_fold(0_i64, |total, key| {
+        total.checked_add(usage.get(key).and_then(Value::as_i64).unwrap_or(0))
+    })
+    .map(|total| Value::Number(total.into()))
 }
 
 fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Value) -> Value {
@@ -2273,10 +2281,6 @@ fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Value) -> Value
 fn openai_usage_with_known_fields(usage: Value, latest: Option<&Value>) -> Value {
     let prompt_tokens = merged_usage_counter(&usage, latest, "prompt_tokens");
     let completion_tokens = merged_usage_counter(&usage, latest, "completion_tokens");
-    let total_tokens = prompt_tokens
-        .zip(completion_tokens)
-        .and_then(|(prompt, completion)| prompt.checked_add(completion))
-        .or_else(|| merged_usage_counter(&usage, latest, "total_tokens"));
 
     let mut object = latest
         .and_then(Value::as_object)
@@ -2291,10 +2295,33 @@ fn openai_usage_with_known_fields(usage: Value, latest: Option<&Value>) -> Value
     if let Some(completion_tokens) = completion_tokens {
         object.insert("completion_tokens".to_string(), json!(completion_tokens));
     }
+    let total_tokens =
+        if object.get("usage_source").and_then(Value::as_str) == Some("vertex_anthropic") {
+            anthropic_openai_usage_total(&object)
+        } else {
+            prompt_tokens
+                .zip(completion_tokens)
+                .and_then(|(prompt, completion)| prompt.checked_add(completion))
+                .or_else(|| merged_usage_counter(&usage, latest, "total_tokens"))
+        };
     if let Some(total_tokens) = total_tokens {
         object.insert("total_tokens".to_string(), json!(total_tokens));
     }
     Value::Object(object)
+}
+
+fn anthropic_openai_usage_total(usage: &Map<String, Value>) -> Option<i64> {
+    let provider_usage = usage.get("provider_usage")?.as_object()?;
+    [
+        provider_usage.get("input_tokens"),
+        provider_usage.get("output_tokens"),
+        provider_usage.get("cache_read_input_tokens"),
+        provider_usage.get("cache_creation_input_tokens"),
+    ]
+    .into_iter()
+    .try_fold(0_i64, |total, value| {
+        total.checked_add(value.and_then(Value::as_i64).unwrap_or(0))
+    })
 }
 
 fn merge_usage_maps(current: &mut Map<String, Value>, incoming: &Map<String, Value>) {
@@ -4352,6 +4379,7 @@ mod tests {
         assert_eq!(normalized["choices"][0]["message"]["content"], "hello");
         assert_eq!(normalized["usage"]["prompt_tokens"], 5);
         assert_eq!(normalized["usage"]["completion_tokens"], 7);
+        assert_eq!(normalized["usage"]["total_tokens"], 17);
         assert_eq!(normalized["usage"]["usage_source"], "vertex_anthropic");
         assert_eq!(
             normalized["usage"]["provider_usage"]["cache_read_input_tokens"],
@@ -4700,13 +4728,13 @@ data: {"type":"vertex_event"}
         assert!(events.iter().any(|event| {
             event["usage"]["prompt_tokens"] == json!(9)
                 && event["usage"]["completion_tokens"] == json!(0)
-                && event["usage"]["total_tokens"] == json!(9)
+                && event["usage"]["total_tokens"] == json!(16)
         }));
         assert!(events.iter().any(|event| {
             event["choices"][0]["finish_reason"] == json!("stop")
                 && event["usage"]["prompt_tokens"] == json!(9)
                 && event["usage"]["completion_tokens"] == json!(2)
-                && event["usage"]["total_tokens"] == json!(11)
+                && event["usage"]["total_tokens"] == json!(18)
                 && event["usage"]["usage_source"] == json!("vertex_anthropic")
                 && event["usage"]["provider_usage"]["cache_read_input_tokens"] == json!(4)
                 && event["usage"]["provider_usage"]["cache_creation_input_tokens"] == json!(3)

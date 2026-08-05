@@ -111,6 +111,7 @@ pub struct AgentSessionAnalysisRecord {
     pub cohort_fallback_level: u8,
     pub cohort_sample_size: u64,
     pub cohort_snapshot_digest: String,
+    pub direct_mcp_snapshot_digest: String,
     pub analyzed_at: OffsetDateTime,
     pub report: SessionEfficiencyReport,
     pub stale: bool,

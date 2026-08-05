@@ -92,6 +92,7 @@ pub struct LoggedRequest {
     pub request_log_id: Uuid,
     pub wrote: bool,
     pub response_payload_truncated: bool,
+    pub analysis_response: Option<Value>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -679,7 +680,9 @@ where
                     &self.payload_policy,
                 );
                 let redacted = truncate_large_payload_fields(&redacted);
-                let analysis_headers = redacted
+                let (request_json, truncated) =
+                    truncate_payload(redacted, self.payload_policy.request_max_bytes);
+                let analysis_headers = request_json
                     .get("headers")
                     .and_then(Value::as_object)
                     .into_iter()
@@ -688,11 +691,9 @@ where
                         value.as_str().map(|value| (key.clone(), value.to_string()))
                     })
                     .collect::<BTreeMap<_, _>>();
-                let analysis_body = redacted.get("body").unwrap_or(&Value::Null);
+                let analysis_body = request_json.get("body").unwrap_or(&Value::Null);
                 let analysis_metadata =
                     extract_request_metadata(analysis_body, &analysis_headers, true, harness.key);
-                let (request_json, truncated) =
-                    truncate_payload(redacted, self.payload_policy.request_max_bytes);
                 (analysis_metadata, Some(request_json), truncated)
             } else {
                 (
@@ -948,6 +949,7 @@ where
                 request_log_id: context.request_log_id,
                 wrote: false,
                 response_payload_truncated: false,
+                analysis_response: None,
             });
         }
 
@@ -990,6 +992,13 @@ where
             metadata,
             occurred_at: OffsetDateTime::now_utc(),
         };
+        let analysis_response = if has_payload && !response_payload_truncated {
+            response_json
+                .as_ref()
+                .map(|value| value.get("body").cloned().unwrap_or_else(|| value.clone()))
+        } else {
+            None
+        };
         let payload = match (has_payload, context.request_json.clone(), response_json) {
             (true, Some(request_json), Some(response_json)) => Some(RequestLogPayloadRecord {
                 request_log_id: context.request_log_id,
@@ -1007,6 +1016,7 @@ where
             request_log_id: context.request_log_id,
             wrote: true,
             response_payload_truncated: has_payload && response_payload_truncated,
+            analysis_response,
         })
     }
 }

@@ -26,6 +26,12 @@ const MAX_TOOL_NAME_CHARS: usize = 128;
 const MAX_SKILL_FACTS: usize = 256;
 const MAX_FILE_INTERACTION_FACTS: usize = 256;
 const MAX_RELIABILITY_EVENTS: usize = 2_048;
+const MAX_SESSION_WINDOW_CAS_ATTEMPTS: usize = 8;
+const MAX_IDLE_FINALIZATION_PAGES: usize = 100;
+const MAX_DIRECT_MCP_SCAN_PAGES: u32 = 100;
+const MAX_COHORT_SCAN_PAGES: u32 = 25;
+const MAX_COHORT_SAMPLES_PER_LEVEL: usize = 2_000;
+const COHORT_LOOKBACK: Duration = Duration::days(90);
 use uuid::Uuid;
 
 use crate::redaction::REDACTED_VALUE;
@@ -297,7 +303,13 @@ where
     } else {
         input.auth.owner_team_id
     };
-    let normalized_session_id = input.metadata.external_session_id.clone();
+    let normalized_session_id = input
+        .metadata
+        .external_session_id
+        .as_deref()
+        .map(|candidate| {
+            hash_lineage_candidate(&ownership_scope_key, &input.harness_key, candidate)
+        });
     let session_source = if input.metadata.external_session_id.is_some() {
         let now = input.completed_at;
         Some(
@@ -391,6 +403,7 @@ where
                 .await?;
         }
     }
+    let mut window_cas_attempts = 0_usize;
     while let Some(existing_session) = open_session.as_ref() {
         if store
             .count_agent_session_requests(existing_session.agent_session_id)
@@ -399,6 +412,13 @@ where
         {
             break;
         }
+        if window_cas_attempts >= MAX_SESSION_WINDOW_CAS_ATTEMPTS {
+            return Err(GatewayError::Internal(
+                "agent session window changed too often while enforcing the request limit"
+                    .to_string(),
+            ));
+        }
+        window_cas_attempts = window_cas_attempts.saturating_add(1);
         let expected_watermark = existing_session.input_watermark_at;
         let mut finalized = existing_session.clone();
         finalized.lifecycle = SessionLifecycleState::Finalized;
@@ -538,21 +558,31 @@ where
             terminal_success,
         })
         .await?;
-    let prior_request_count = store
-        .count_agent_session_requests(session.agent_session_id)
-        .await?;
-    let nested_fact_request_limit =
-        u64::try_from(MAX_AGENT_SESSION_NESTED_FACTS / MAX_SKILL_FACTS).unwrap_or_default();
-    let nested_facts_truncated = prior_request_count >= nested_fact_request_limit
-        && input.observations.iter().any(|observation| {
-            !observation.facts.supplied_tools.is_empty()
-                || !observation.facts.supplied_skills.is_empty()
-                || !observation.facts.file_interactions.is_empty()
+    let prior_nested_fact_count = store
+        .load_agent_observation_sets(session.agent_session_id)
+        .await?
+        .iter()
+        .flat_map(|set| &set.observations)
+        .filter(|observation| observation.source_request_id != input.request_id)
+        .fold(0_usize, |total, observation| {
+            total
+                .saturating_add(observation.facts.supplied_tools.len())
+                .saturating_add(observation.facts.supplied_skills.len())
+                .saturating_add(observation.facts.file_interactions.len())
         });
-    if !request_inserted {
-        return Ok(session.agent_session_id);
-    }
-    if input.completed_at > session.input_watermark_at {
+    let incoming_nested_fact_count =
+        input
+            .observations
+            .iter()
+            .fold(0_usize, |total, observation| {
+                total
+                    .saturating_add(observation.facts.supplied_tools.len())
+                    .saturating_add(observation.facts.supplied_skills.len())
+                    .saturating_add(observation.facts.file_interactions.len())
+            });
+    let nested_facts_truncated = prior_nested_fact_count.saturating_add(incoming_nested_fact_count)
+        > MAX_AGENT_SESSION_NESTED_FACTS;
+    if request_inserted && input.completed_at > session.input_watermark_at {
         session.input_watermark_at = input.completed_at;
         session.updated_at = input.completed_at;
         store.update_agent_session_window(&session).await?;
@@ -722,7 +752,7 @@ where
 {
     let cutoff = now - SESSION_IDLE_GAP;
     let mut finalized = 0_u64;
-    loop {
+    for _ in 0..MAX_IDLE_FINALIZATION_PAGES {
         let page = store
             .list_agent_sessions(&AgentSessionListQuery {
                 page: 1,
@@ -737,6 +767,7 @@ where
         if candidates.is_empty() {
             break;
         }
+        let finalized_before_page = finalized;
         for mut session in candidates {
             let last_activity_at = session.input_watermark_at;
             session.lifecycle = SessionLifecycleState::Finalized;
@@ -765,6 +796,9 @@ where
             finalized = finalized.saturating_add(1);
         }
         if page.total <= u64::from(gateway_core::MAX_AGENT_SESSION_PAGE_SIZE) {
+            break;
+        }
+        if finalized == finalized_before_page {
             break;
         }
     }
@@ -900,23 +934,27 @@ where
         )));
     }
 
-    let observation_sets = store.load_agent_observation_sets(agent_session_id).await?;
-    if observation_sets.is_empty() {
+    let all_observation_sets = store.load_agent_observation_sets(agent_session_id).await?;
+    if all_observation_sets.is_empty() {
         return Err(GatewayError::Internal(
             "agent session has no observation set".to_string(),
         ));
     }
-    if observation_sets.len() > gateway_core::MAX_AGENT_SESSION_REQUESTS as usize {
+    if all_observation_sets.len() > gateway_core::MAX_AGENT_SESSION_REQUESTS as usize {
         return Err(GatewayError::Internal(format!(
             "agent session `{agent_session_id}` exceeds the bounded observation-set limit"
         )));
     }
-    if observation_sets
-        .iter()
-        .any(|set| set.parser_version != versions.observation_parser_version)
-    {
+    let observation_sets = all_observation_sets
+        .into_iter()
+        .filter(|set| set.parser_version == versions.observation_parser_version)
+        .collect::<Vec<_>>();
+    if observation_sets.is_empty() && trace.latest_analysis.is_some() {
+        return Ok(());
+    }
+    if observation_sets.is_empty() {
         return Err(GatewayError::Internal(
-            "agent session contains observations from an unsupported parser version".to_string(),
+            "agent session has no observations for the requested parser version".to_string(),
         ));
     }
     let observation_set = observation_sets
@@ -961,13 +999,22 @@ where
 
     let mut requests = Vec::with_capacity(trace.requests.len());
     let mut intervals = Vec::with_capacity(trace.requests.len());
+    let request_ids = trace
+        .requests
+        .iter()
+        .map(|link| link.request_id.clone())
+        .collect::<Vec<_>>();
+    let mut usage_by_request = store
+        .get_usage_ledgers_by_request_ids_and_scope(
+            &request_ids,
+            &trace.session.ownership_scope_key,
+        )
+        .await?
+        .into_iter()
+        .map(|usage| (usage.request_id.clone(), usage))
+        .collect::<BTreeMap<_, _>>();
     for link in &trace.requests {
-        let usage = store
-            .get_usage_ledger_by_request_and_scope(
-                &link.request_id,
-                &trace.session.ownership_scope_key,
-            )
-            .await?;
+        let usage = usage_by_request.remove(&link.request_id);
         if let Some(interval) = link
             .completed_at
             .and_then(|completed_at| ActivityInterval::new(link.occurred_at, completed_at))
@@ -1062,6 +1109,7 @@ where
             || hash_identifier("no-cohort"),
             |value| value.snapshot_digest.clone(),
         ),
+        direct_mcp_snapshot_digest,
         analyzed_at: now,
         report,
         stale: false,
@@ -1102,7 +1150,7 @@ where
         .map(|request| request.request_id.as_str())
         .collect::<BTreeSet<_>>();
     let mut invocations = Vec::new();
-    loop {
+    while page <= MAX_DIRECT_MCP_SCAN_PAGES {
         let result = store
             .list_mcp_tool_invocations(&McpToolInvocationQuery {
                 page,
@@ -1119,14 +1167,18 @@ where
             }
             let latency_ms = invocation.latency_ms.unwrap_or_default().max(0);
             let started_at = invocation.occurred_at - Duration::milliseconds(latency_ms);
-            if let Some(interval) = ActivityInterval::new(started_at, invocation.occurred_at) {
+            if intervals.len() < MAX_RELIABILITY_EVENTS
+                && let Some(interval) = ActivityInterval::new(started_at, invocation.occurred_at)
+            {
                 intervals.push(interval);
             }
-            snapshot.push((
-                invocation.mcp_tool_invocation_id,
-                invocation.occurred_at.unix_timestamp_nanos(),
-                invocation.latency_ms,
-            ));
+            if snapshot.len() < MAX_RELIABILITY_EVENTS {
+                snapshot.push((
+                    invocation.mcp_tool_invocation_id,
+                    invocation.occurred_at.unix_timestamp_nanos(),
+                    invocation.latency_ms,
+                ));
+            }
             if invocations.len() < MAX_RELIABILITY_EVENTS {
                 invocations.push(ToolInvocationFact {
                     request_id: invocation.request_id.clone(),
@@ -1235,13 +1287,14 @@ where
 {
     let mut samples: [Vec<(Uuid, i64, i64)>; 4] = std::array::from_fn(|_| Vec::new());
     let mut page_number = 1;
-    loop {
+    while page_number <= MAX_COHORT_SCAN_PAGES {
         let page = store
             .list_agent_sessions(&AgentSessionListQuery {
                 harness_key: Some(current.session.harness_key.clone()),
                 lifecycle: Some(SessionLifecycleState::Finalized),
                 ownership_scope_key: Some(current.session.ownership_scope_key.clone()),
                 input_watermark_before: Some(current.session.input_watermark_at),
+                started_after: Some(current.session.started_at - COHORT_LOOKBACK),
                 page: page_number,
                 page_size: gateway_core::MAX_AGENT_SESSION_PAGE_SIZE,
                 ..Default::default()
@@ -1273,14 +1326,22 @@ where
                 continue;
             };
             let sample = (analysis.analysis_id, cost, active_time);
-            samples[3].push(sample);
+            if samples[3].len() < MAX_COHORT_SAMPLES_PER_LEVEL {
+                samples[3].push(sample);
+            }
             if candidate.session.requested_model_key == current.session.requested_model_key {
-                samples[2].push(sample);
+                if samples[2].len() < MAX_COHORT_SAMPLES_PER_LEVEL {
+                    samples[2].push(sample);
+                }
                 if candidate.session.operation == current.session.operation
                     && candidate.session.caller_class == current.session.caller_class
                 {
-                    samples[1].push(sample);
-                    if candidate.session.boundary_group_key == current.session.boundary_group_key {
+                    if samples[1].len() < MAX_COHORT_SAMPLES_PER_LEVEL {
+                        samples[1].push(sample);
+                    }
+                    if candidate.session.boundary_group_key == current.session.boundary_group_key
+                        && samples[0].len() < MAX_COHORT_SAMPLES_PER_LEVEL
+                    {
                         samples[0].push(sample);
                     }
                 }
@@ -1451,6 +1512,12 @@ fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredOb
         }
         let mut calls = Vec::new();
         let scan_truncated = collect_tool_calls(response, &mut calls);
+        let mut seen_call_ids = BTreeSet::new();
+        calls.retain(|call| {
+            call.id
+                .map(|id| seen_call_ids.insert(id.to_string()))
+                .unwrap_or(true)
+        });
         let first_observation = observations.len();
         observations.extend(
             calls
@@ -1502,6 +1569,7 @@ fn response_finish_reasons(response: &Value) -> (Option<String>, Option<String>)
 }
 
 struct ToolCall<'a> {
+    id: Option<&'a str>,
     name: &'a str,
     arguments: Option<&'a str>,
 }
@@ -1533,6 +1601,10 @@ fn collect_tool_calls_bounded<'a>(
                 && let Some(name) = function.get("name").and_then(Value::as_str)
             {
                 calls.push(ToolCall {
+                    id: object
+                        .get("id")
+                        .or_else(|| object.get("call_id"))
+                        .and_then(Value::as_str),
                     name,
                     arguments: function.get("arguments").and_then(Value::as_str),
                 });
@@ -1542,6 +1614,10 @@ fn collect_tool_calls_bounded<'a>(
             ) && let Some(name) = object.get("name").and_then(Value::as_str)
             {
                 calls.push(ToolCall {
+                    id: object
+                        .get("id")
+                        .or_else(|| object.get("call_id"))
+                        .and_then(Value::as_str),
                     name,
                     arguments: object.get("arguments").and_then(Value::as_str),
                 });
@@ -2940,6 +3016,7 @@ mod tests {
         let observation = classify_tool_call(
             &input,
             ToolCall {
+                id: None,
                 name: "edit_file",
                 arguments: Some(r#"{"path":"/private/source.rs"}"#),
             },
@@ -2949,6 +3026,7 @@ mod tests {
         let overwrite = classify_tool_call(
             &input,
             ToolCall {
+                id: None,
                 name: "overwrite_file",
                 arguments: None,
             },

@@ -209,8 +209,3 @@ ALTER TABLE request_logs ADD COLUMN agent_session_source_id TEXT;
 ALTER TABLE request_logs ADD COLUMN agent_session_id TEXT;
 ALTER TABLE request_logs ADD COLUMN agent_analysis_source TEXT;
 ALTER TABLE request_logs ADD COLUMN agent_analysis_coverage_json TEXT;
-
-CREATE INDEX IF NOT EXISTS idx_request_logs_agent_session_source
-  ON request_logs(agent_session_source_id, occurred_at);
-CREATE INDEX IF NOT EXISTS idx_request_logs_agent_session
-  ON request_logs(agent_session_id, occurred_at);

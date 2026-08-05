@@ -1,8 +1,8 @@
 use super::*;
 use crate::shared::{
     agent_observation_set_matches, agent_session_analysis_matches, agent_session_identity_matches,
-    agent_session_request_matches, agent_session_source_identity_matches, parse_uuid,
-    unix_to_datetime,
+    agent_session_request_matches, agent_session_source_identity_matches, datetime_to_unix_millis,
+    parse_uuid, unix_millis_to_datetime, unix_to_datetime,
 };
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,
@@ -85,7 +85,7 @@ fn decode_session(row: &libsql::Row) -> Result<AgentSessionRecord, StoreError> {
         boundary_confidence: parse_confidence(&confidence)?,
         started_at: unix_to_datetime(row.get(17).map_err(to_query_error)?)?,
         ended_at: ended_at.map(unix_to_datetime).transpose()?,
-        input_watermark_at: unix_to_datetime(row.get(19).map_err(to_query_error)?)?,
+        input_watermark_at: unix_millis_to_datetime(row.get(19).map_err(to_query_error)?)?,
         finalized_reason: row.get(20).map_err(to_query_error)?,
         created_at: unix_to_datetime(row.get(21).map_err(to_query_error)?)?,
         updated_at: unix_to_datetime(row.get(22).map_err(to_query_error)?)?,
@@ -108,8 +108,8 @@ fn decode_request_link(row: &libsql::Row) -> Result<AgentSessionRequestLinkRecor
         correlation_confidence: parse_confidence(&confidence)?,
         limitation_codes: serde_json::from_str(&limitations_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
-        occurred_at: unix_to_datetime(row.get(10).map_err(to_query_error)?)?,
-        completed_at: completed_at.map(unix_to_datetime).transpose()?,
+        occurred_at: unix_millis_to_datetime(row.get(10).map_err(to_query_error)?)?,
+        completed_at: completed_at.map(unix_millis_to_datetime).transpose()?,
         terminal_success: row
             .get::<Option<i64>>(12)
             .map_err(to_query_error)?
@@ -139,14 +139,14 @@ fn decode_observation(row: &libsql::Row) -> Result<InferredObservation, StoreErr
 }
 
 fn decode_analysis(row: &libsql::Row) -> Result<AgentSessionAnalysisRecord, StoreError> {
-    let report_json: String = row.get(14).map_err(to_query_error)?;
-    let superseded_by: Option<String> = row.get(16).map_err(to_query_error)?;
+    let report_json: String = row.get(15).map_err(to_query_error)?;
+    let superseded_by: Option<String> = row.get(17).map_err(to_query_error)?;
     Ok(AgentSessionAnalysisRecord {
         analysis_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
         agent_session_id: parse_uuid(&row.get::<String>(1).map_err(to_query_error)?)?,
-        configuration_version: row.get(22).map_err(to_query_error)?,
+        configuration_version: row.get(23).map_err(to_query_error)?,
         boundary_policy_version: row.get(3).map_err(to_query_error)?,
-        input_watermark_at: unix_to_datetime(row.get(4).map_err(to_query_error)?)?,
+        input_watermark_at: unix_millis_to_datetime(row.get(4).map_err(to_query_error)?)?,
         observation_set_id: parse_uuid(&row.get::<String>(5).map_err(to_query_error)?)?,
         observation_parser_version: row.get(6).map_err(to_query_error)?,
         pricing_policy_version: row.get(9).map_err(to_query_error)?,
@@ -156,15 +156,16 @@ fn decode_analysis(row: &libsql::Row) -> Result<AgentSessionAnalysisRecord, Stor
         cohort_sample_size: u64::try_from(row.get::<i64>(12).map_err(to_query_error)?)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         cohort_snapshot_digest: row.get(13).map_err(to_query_error)?,
-        analyzed_at: unix_to_datetime(row.get(15).map_err(to_query_error)?)?,
+        direct_mcp_snapshot_digest: row.get(14).map_err(to_query_error)?,
+        analyzed_at: unix_to_datetime(row.get(16).map_err(to_query_error)?)?,
         report: serde_json::from_str(&report_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
-        stale: row.get::<i64>(17).map_err(to_query_error)? == 1,
+        stale: row.get::<i64>(18).map_err(to_query_error)? == 1,
         superseded_by_analysis_id: superseded_by.as_deref().map(parse_uuid).transpose()?,
-        expires_at: unix_to_datetime(row.get(18).map_err(to_query_error)?)?,
-        ownership_scope_key: row.get(19).map_err(to_query_error)?,
-        user_id: parse_optional_uuid(row.get(20).map_err(to_query_error)?)?,
-        service_account_id: parse_optional_uuid(row.get(21).map_err(to_query_error)?)?,
+        expires_at: unix_to_datetime(row.get(19).map_err(to_query_error)?)?,
+        ownership_scope_key: row.get(20).map_err(to_query_error)?,
+        user_id: parse_optional_uuid(row.get(21).map_err(to_query_error)?)?,
+        service_account_id: parse_optional_uuid(row.get(22).map_err(to_query_error)?)?,
     })
 }
 
@@ -201,7 +202,7 @@ fn decode_queue(row: &libsql::Row) -> Result<AgentAnalysisQueueRecord, StoreErro
 const SESSION_SOURCE_COLUMNS: &str = "agent_session_source_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, normalized_session_hash, adapter_namespace, adapter_version, source_provenance, harness_key, harness_label, first_seen_at, last_seen_at, created_at, updated_at";
 const SESSION_COLUMNS: &str = "agent_session_id, agent_session_source_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, requested_model_key, operation, caller_class, request_tags_json, harness_key, boundary_group_key, boundary_policy_version, lifecycle, boundary_confidence, started_at, ended_at, input_watermark_at, finalized_reason, created_at, updated_at";
 const REQUEST_COLUMNS: &str = "agent_session_id, request_id, request_log_id, usage_event_id, ordinal, execution_id, parent_execution_id, normalized_session_id, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success";
-const ANALYSIS_COLUMNS: &str = "analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, report_json, analyzed_at, superseded_by_analysis_id, stale, expires_at, ownership_scope_key, user_id, service_account_id, configuration_version";
+const ANALYSIS_COLUMNS: &str = "analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, direct_mcp_snapshot_digest, report_json, analyzed_at, superseded_by_analysis_id, stale, expires_at, ownership_scope_key, user_id, service_account_id, configuration_version";
 const QUEUE_COLUMNS: &str = "queue_item_id, agent_session_id, reason, desired_versions_json, status, lease_owner, lease_expires_at, attempts, max_attempts, last_error, available_at, created_at, updated_at, completed_at";
 
 impl LibsqlStore {
@@ -267,8 +268,8 @@ impl LibsqlStore {
         let observation_set_id = parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?;
         let coverage_json: String = row.get(4).map_err(to_query_error)?;
         let mut observation_rows = self.connection.query(
-            "SELECT o.observation_id, o.kind, o.source_request_id, o.evidence, o.occurred_at, o.facts_json, o.limitation_codes_json, s.parser_version FROM agent_inferred_observations o JOIN agent_inferred_observation_sets s ON s.observation_set_id = o.observation_set_id WHERE o.agent_session_id = ?1 ORDER BY o.occurred_at, o.observation_id",
-            [agent_session_id.to_string()],
+            "SELECT o.observation_id, o.kind, o.source_request_id, o.evidence, o.occurred_at, o.facts_json, o.limitation_codes_json, s.parser_version FROM agent_inferred_observations o JOIN agent_inferred_observation_sets s ON s.observation_set_id = o.observation_set_id WHERE o.observation_set_id = ?1 ORDER BY o.occurred_at, o.observation_id",
+            [observation_set_id.to_string()],
         ).await.map_err(to_query_error)?;
         let mut observations = Vec::new();
         while let Some(observation_row) = observation_rows.next().await.map_err(to_query_error)? {
@@ -278,7 +279,7 @@ impl LibsqlStore {
             observation_set_id,
             agent_session_id: parse_uuid(&row.get::<String>(1).map_err(to_query_error)?)?,
             parser_version: row.get(2).map_err(to_query_error)?,
-            source_watermark_at: unix_to_datetime(row.get(3).map_err(to_query_error)?)?,
+            source_watermark_at: unix_millis_to_datetime(row.get(3).map_err(to_query_error)?)?,
             coverage: serde_json::from_str(&coverage_json)
                 .map_err(|error| StoreError::Serialization(error.to_string()))?,
             created_at: unix_to_datetime(row.get(5).map_err(to_query_error)?)?,
@@ -309,7 +310,7 @@ impl LibsqlStore {
             observation_set_id,
             agent_session_id: parse_uuid(&row.get::<String>(1).map_err(to_query_error)?)?,
             parser_version: row.get(2).map_err(to_query_error)?,
-            source_watermark_at: unix_to_datetime(row.get(3).map_err(to_query_error)?)?,
+            source_watermark_at: unix_millis_to_datetime(row.get(3).map_err(to_query_error)?)?,
             coverage: serde_json::from_str(&coverage_json)
                 .map_err(|error| StoreError::Serialization(error.to_string()))?,
             created_at: unix_to_datetime(row.get(5).map_err(to_query_error)?)?,
@@ -348,8 +349,8 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             )));
         }
         self.connection.execute(
-            "UPDATE agent_session_sources SET first_seen_at = MIN(first_seen_at, ?2), last_seen_at = MAX(last_seen_at, ?3), updated_at = MAX(updated_at, ?4) WHERE agent_session_source_id = ?1",
-            libsql::params![session.agent_session_source_id.to_string(), session.first_seen_at.unix_timestamp(), session.last_seen_at.unix_timestamp(), session.updated_at.unix_timestamp()],
+            "UPDATE agent_session_sources SET api_key_id = ?2, adapter_version = ?3, source_provenance = ?4, first_seen_at = MIN(first_seen_at, ?5), last_seen_at = MAX(last_seen_at, ?6), updated_at = MAX(updated_at, ?7) WHERE agent_session_source_id = ?1",
+            libsql::params![session.agent_session_source_id.to_string(), session.api_key_id.to_string(), session.adapter_version.as_str(), session.source_provenance.as_str(), session.first_seen_at.unix_timestamp(), session.last_seen_at.unix_timestamp(), session.updated_at.unix_timestamp()],
         ).await.map_err(to_query_error)?;
         self.query_session_source_by_natural_key(
             &session.ownership_scope_key,
@@ -388,7 +389,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         boundary_group_key: &str,
     ) -> Result<Option<AgentSessionRecord>, StoreError> {
         let sql = format!(
-            "SELECT {SESSION_COLUMNS} FROM agent_session_sources WHERE ownership_scope_key = ?1 AND lifecycle = 'open' AND boundary_group_key = ?4 AND ((?2 IS NULL AND agent_session_source_id IS NULL AND harness_key = ?3) OR agent_session_source_id = ?2) ORDER BY started_at DESC LIMIT 1"
+            "SELECT {SESSION_COLUMNS} FROM agent_sessions WHERE ownership_scope_key = ?1 AND lifecycle = 'open' AND boundary_group_key = ?4 AND ((?2 IS NULL AND agent_session_source_id IS NULL AND harness_key = ?3) OR agent_session_source_id = ?2) ORDER BY started_at DESC LIMIT 1"
         );
         let mut rows = self
             .connection
@@ -417,7 +418,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
     ) -> Result<bool, StoreError> {
         let written = self.connection.execute(
             "INSERT INTO agent_sessions (agent_session_id, agent_session_source_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, requested_model_key, operation, caller_class, request_tags_json, harness_key, boundary_group_key, boundary_policy_version, lifecycle, boundary_confidence, started_at, ended_at, input_watermark_at, finalized_reason, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23) ON CONFLICT DO NOTHING",
-            libsql::params![session.agent_session_id.to_string(), session.agent_session_source_id.map(|value| value.to_string()), session.ownership_scope_key.as_str(), session.api_key_id.to_string(), session.user_id.map(|value| value.to_string()), session.team_id.map(|value| value.to_string()), session.service_account_id.map(|value| value.to_string()), session.actor_user_id.map(|value| value.to_string()), session.requested_model_key.as_str(), session.operation.as_str(), session.caller_class.as_str(), crate::shared::serialize_json(&session.request_tags)?, session.harness_key.as_str(), session.boundary_group_key.as_str(), session.boundary_policy_version.as_str(), enum_name(session.lifecycle)?, enum_name(session.boundary_confidence)?, session.started_at.unix_timestamp(), session.ended_at.map(OffsetDateTime::unix_timestamp), session.input_watermark_at.unix_timestamp(), session.finalized_reason.as_deref(), session.created_at.unix_timestamp(), session.updated_at.unix_timestamp()],
+            libsql::params![session.agent_session_id.to_string(), session.agent_session_source_id.map(|value| value.to_string()), session.ownership_scope_key.as_str(), session.api_key_id.to_string(), session.user_id.map(|value| value.to_string()), session.team_id.map(|value| value.to_string()), session.service_account_id.map(|value| value.to_string()), session.actor_user_id.map(|value| value.to_string()), session.requested_model_key.as_str(), session.operation.as_str(), session.caller_class.as_str(), crate::shared::serialize_json(&session.request_tags)?, session.harness_key.as_str(), session.boundary_group_key.as_str(), session.boundary_policy_version.as_str(), enum_name(session.lifecycle)?, enum_name(session.boundary_confidence)?, session.started_at.unix_timestamp(), session.ended_at.map(OffsetDateTime::unix_timestamp), datetime_to_unix_millis(session.input_watermark_at)?, session.finalized_reason.as_deref(), session.created_at.unix_timestamp(), session.updated_at.unix_timestamp()],
         ).await.map_err(to_query_error)?;
         if written > 0 {
             return Ok(true);
@@ -426,6 +427,16 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             return Ok(false);
         };
         if agent_session_identity_matches(&existing, session) {
+            self.connection
+                .execute(
+                    "UPDATE agent_sessions SET api_key_id = ?2 WHERE agent_session_id = ?1",
+                    libsql::params![
+                        session.agent_session_id.to_string(),
+                        session.api_key_id.to_string()
+                    ],
+                )
+                .await
+                .map_err(to_query_error)?;
             Ok(false)
         } else {
             Err(StoreError::Conflict(format!(
@@ -441,7 +452,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
     ) -> Result<(), StoreError> {
         let updated = self.connection.execute(
             "UPDATE agent_sessions SET lifecycle = ?2, boundary_confidence = ?3, ended_at = ?4, input_watermark_at = MAX(input_watermark_at, ?5), finalized_reason = ?6, updated_at = MAX(updated_at, ?7) WHERE agent_session_id = ?1",
-            libsql::params![session.agent_session_id.to_string(), enum_name(session.lifecycle)?, enum_name(session.boundary_confidence)?, session.ended_at.map(OffsetDateTime::unix_timestamp), session.input_watermark_at.unix_timestamp(), session.finalized_reason.as_deref(), session.updated_at.unix_timestamp()],
+            libsql::params![session.agent_session_id.to_string(), enum_name(session.lifecycle)?, enum_name(session.boundary_confidence)?, session.ended_at.map(OffsetDateTime::unix_timestamp), datetime_to_unix_millis(session.input_watermark_at)?, session.finalized_reason.as_deref(), session.updated_at.unix_timestamp()],
         ).await.map_err(to_query_error)?;
         if updated == 0 {
             return Err(StoreError::NotFound(
@@ -458,7 +469,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
     ) -> Result<bool, StoreError> {
         let updated = self.connection.execute(
             "UPDATE agent_sessions SET lifecycle = ?2, boundary_confidence = ?3, ended_at = ?4, input_watermark_at = ?5, finalized_reason = ?6, updated_at = ?7 WHERE agent_session_id = ?1 AND lifecycle = 'open' AND input_watermark_at = ?8",
-            libsql::params![session.agent_session_id.to_string(), enum_name(session.lifecycle)?, enum_name(session.boundary_confidence)?, session.ended_at.map(OffsetDateTime::unix_timestamp), session.input_watermark_at.unix_timestamp(), session.finalized_reason.as_deref(), session.updated_at.unix_timestamp(), expected_input_watermark_at.unix_timestamp()],
+            libsql::params![session.agent_session_id.to_string(), enum_name(session.lifecycle)?, enum_name(session.boundary_confidence)?, session.ended_at.map(OffsetDateTime::unix_timestamp), datetime_to_unix_millis(session.input_watermark_at)?, session.finalized_reason.as_deref(), session.updated_at.unix_timestamp(), datetime_to_unix_millis(expected_input_watermark_at)?],
         ).await.map_err(to_query_error)?;
         Ok(updated > 0)
     }
@@ -474,13 +485,59 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
             .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
             .map_err(to_query_error)?;
+        let mut lifecycle_rows = transaction
+            .query(
+                "SELECT lifecycle FROM agent_sessions WHERE agent_session_id = ?1",
+                [link.agent_session_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let lifecycle = lifecycle_rows
+            .next()
+            .await
+            .map_err(to_query_error)?
+            .ok_or_else(|| StoreError::NotFound("agent session window not found".to_string()))?
+            .get::<String>(0)
+            .map_err(to_query_error)?;
+        if lifecycle != "open" {
+            return Err(StoreError::Conflict(format!(
+                "agent session `{}` is already finalized",
+                link.agent_session_id
+            )));
+        }
+        let mut request_count_rows = transaction
+            .query(
+                "SELECT COUNT(*), EXISTS(SELECT 1 FROM agent_session_requests WHERE agent_session_id = ?1 AND request_id = ?2) FROM agent_session_requests WHERE agent_session_id = ?1",
+                libsql::params![link.agent_session_id.to_string(), link.request_id.as_str()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let request_count_row = request_count_rows
+            .next()
+            .await
+            .map_err(to_query_error)?
+            .ok_or_else(|| {
+                StoreError::Unexpected("request count query returned no row".to_string())
+            })?;
+        let request_count: i64 = request_count_row.get(0).map_err(to_query_error)?;
+        let request_exists: i64 = request_count_row.get(1).map_err(to_query_error)?;
+        if request_exists == 0
+            && request_count
+                >= i64::try_from(gateway_core::MAX_AGENT_SESSION_REQUESTS)
+                    .expect("agent session request limit fits in i64")
+        {
+            return Err(StoreError::Conflict(format!(
+                "agent session `{}` reached the request limit",
+                link.agent_session_id
+            )));
+        }
         let written = transaction.execute(
             "INSERT INTO agent_session_requests (agent_session_id, request_id, request_log_id, usage_event_id, ordinal, execution_id, parent_execution_id, normalized_session_id, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success) VALUES (?1, ?2, ?3, ?4, (SELECT COALESCE(MAX(ordinal) + 1, 0) FROM agent_session_requests WHERE agent_session_id = ?1), ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) ON CONFLICT(agent_session_id, request_id) DO NOTHING",
-            libsql::params![link.agent_session_id.to_string(), link.request_id.as_str(), link.request_log_id.map(|value| value.to_string()), link.usage_event_id.map(|value| value.to_string()), link.execution_id.as_deref(), link.parent_execution_id.as_deref(), link.normalized_session_id.as_deref(), enum_name(link.correlation_confidence)?, limitations_json, link.occurred_at.unix_timestamp(), link.completed_at.map(OffsetDateTime::unix_timestamp), link.terminal_success.map(i64::from)],
+            libsql::params![link.agent_session_id.to_string(), link.request_id.as_str(), link.request_log_id.map(|value| value.to_string()), link.usage_event_id.map(|value| value.to_string()), link.execution_id.as_deref(), link.parent_execution_id.as_deref(), link.normalized_session_id.as_deref(), enum_name(link.correlation_confidence)?, limitations_json, datetime_to_unix_millis(link.occurred_at)?, link.completed_at.map(datetime_to_unix_millis).transpose()?, link.terminal_success.map(i64::from)],
         ).await.map_err(to_query_error)?;
         let inserted = written > 0;
         if inserted {
-            transaction.execute("UPDATE agent_sessions SET input_watermark_at = MAX(input_watermark_at, ?2), updated_at = MAX(updated_at, ?2) WHERE agent_session_id = ?1", libsql::params![link.agent_session_id.to_string(), activity_at.unix_timestamp()]).await.map_err(to_query_error)?;
+            transaction.execute("UPDATE agent_sessions SET started_at = MIN(started_at, ?2), input_watermark_at = MAX(input_watermark_at, ?3), updated_at = MAX(updated_at, ?4) WHERE agent_session_id = ?1", libsql::params![link.agent_session_id.to_string(), link.occurred_at.unix_timestamp(), datetime_to_unix_millis(activity_at)?, activity_at.unix_timestamp()]).await.map_err(to_query_error)?;
         } else {
             let sql = format!(
                 "SELECT {REQUEST_COLUMNS} FROM agent_session_requests WHERE agent_session_id = ?1 AND request_id = ?2"
@@ -579,7 +636,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         let coverage_json = crate::shared::serialize_json(&set.coverage)?;
         let written = transaction.execute(
             "INSERT INTO agent_inferred_observation_sets (observation_set_id, agent_session_id, parser_version, source_watermark_at, coverage_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(observation_set_id) DO NOTHING",
-            libsql::params![set.observation_set_id.to_string(), set.agent_session_id.to_string(), set.parser_version.as_str(), set.source_watermark_at.unix_timestamp(), coverage_json, set.created_at.unix_timestamp()],
+            libsql::params![set.observation_set_id.to_string(), set.agent_session_id.to_string(), set.parser_version.as_str(), datetime_to_unix_millis(set.source_watermark_at)?, coverage_json, set.created_at.unix_timestamp()],
         ).await.map_err(to_query_error)?;
         if written > 0 {
             for observation in &set.observations {
@@ -730,14 +787,14 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         analysis: &AgentSessionAnalysisRecord,
     ) -> Result<bool, StoreError> {
         let written = self.connection.execute(
-            "INSERT INTO agent_session_analyses (analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, analyzed_at, report_json, stale, superseded_by_analysis_id, expires_at, ownership_scope_key, user_id, service_account_id, configuration_version) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23 WHERE EXISTS (SELECT 1 FROM agent_sessions WHERE agent_session_id = ?2 AND input_watermark_at = ?5) AND EXISTS (SELECT 1 FROM agent_inferred_observation_sets WHERE observation_set_id = ?6 AND agent_session_id = ?2) ON CONFLICT DO NOTHING",
-            libsql::params![analysis.analysis_id.to_string(), analysis.agent_session_id.to_string(), analysis.report.report_schema_version.as_str(), analysis.boundary_policy_version.as_str(), analysis.input_watermark_at.unix_timestamp(), analysis.observation_set_id.to_string(), analysis.observation_parser_version.as_str(), analysis.report.analyzer_version.as_str(), analysis.report.score_policy_version.as_str(), analysis.pricing_policy_version.as_str(), analysis.cohort_version.as_str(), i64::from(analysis.cohort_fallback_level), i64::try_from(analysis.cohort_sample_size).map_err(|error| StoreError::Serialization(error.to_string()))?, analysis.cohort_snapshot_digest.as_str(), analysis.analyzed_at.unix_timestamp(), crate::shared::serialize_json(&analysis.report)?, i64::from(analysis.stale), analysis.superseded_by_analysis_id.map(|value| value.to_string()), analysis.expires_at.unix_timestamp(), analysis.ownership_scope_key.as_str(), analysis.user_id.map(|value| value.to_string()), analysis.service_account_id.map(|value| value.to_string()), analysis.configuration_version.as_str()],
+            "INSERT INTO agent_session_analyses (analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, direct_mcp_snapshot_digest, analyzed_at, report_json, stale, superseded_by_analysis_id, expires_at, ownership_scope_key, user_id, service_account_id, configuration_version) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24 WHERE EXISTS (SELECT 1 FROM agent_sessions WHERE agent_session_id = ?2 AND input_watermark_at = ?5) AND EXISTS (SELECT 1 FROM agent_inferred_observation_sets WHERE observation_set_id = ?6 AND agent_session_id = ?2) ON CONFLICT DO NOTHING",
+            libsql::params![analysis.analysis_id.to_string(), analysis.agent_session_id.to_string(), analysis.report.report_schema_version.as_str(), analysis.boundary_policy_version.as_str(), datetime_to_unix_millis(analysis.input_watermark_at)?, analysis.observation_set_id.to_string(), analysis.observation_parser_version.as_str(), analysis.report.analyzer_version.as_str(), analysis.report.score_policy_version.as_str(), analysis.pricing_policy_version.as_str(), analysis.cohort_version.as_str(), i64::from(analysis.cohort_fallback_level), i64::try_from(analysis.cohort_sample_size).map_err(|error| StoreError::Serialization(error.to_string()))?, analysis.cohort_snapshot_digest.as_str(), analysis.direct_mcp_snapshot_digest.as_str(), analysis.analyzed_at.unix_timestamp(), crate::shared::serialize_json(&analysis.report)?, i64::from(analysis.stale), analysis.superseded_by_analysis_id.map(|value| value.to_string()), analysis.expires_at.unix_timestamp(), analysis.ownership_scope_key.as_str(), analysis.user_id.map(|value| value.to_string()), analysis.service_account_id.map(|value| value.to_string()), analysis.configuration_version.as_str()],
         ).await.map_err(to_query_error)?;
         if written > 0 {
             return Ok(true);
         }
         let sql = format!(
-            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = ?1 AND report_schema_version = ?2 AND boundary_policy_version = ?3 AND input_watermark_at = ?4 AND observation_set_id = ?5 AND observation_parser_version = ?6 AND analyzer_version = ?7 AND score_policy_version = ?8 AND pricing_policy_version = ?9 AND cohort_version = ?10 AND cohort_fallback_level = ?11 AND cohort_sample_size = ?12 AND cohort_snapshot_digest = ?13 AND configuration_version = ?14"
+            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = ?1 AND report_schema_version = ?2 AND boundary_policy_version = ?3 AND input_watermark_at = ?4 AND observation_set_id = ?5 AND observation_parser_version = ?6 AND analyzer_version = ?7 AND score_policy_version = ?8 AND pricing_policy_version = ?9 AND cohort_version = ?10 AND cohort_fallback_level = ?11 AND cohort_sample_size = ?12 AND cohort_snapshot_digest = ?13 AND direct_mcp_snapshot_digest = ?14 AND configuration_version = ?15"
         );
         let mut rows = self
             .connection
@@ -747,7 +804,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
                     analysis.agent_session_id.to_string(),
                     analysis.report.report_schema_version.as_str(),
                     analysis.boundary_policy_version.as_str(),
-                    analysis.input_watermark_at.unix_timestamp(),
+                    datetime_to_unix_millis(analysis.input_watermark_at)?,
                     analysis.observation_set_id.to_string(),
                     analysis.observation_parser_version.as_str(),
                     analysis.report.analyzer_version.as_str(),
@@ -758,6 +815,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
                     i64::try_from(analysis.cohort_sample_size)
                         .map_err(|error| StoreError::Serialization(error.to_string()))?,
                     analysis.cohort_snapshot_digest.as_str(),
+                    analysis.direct_mcp_snapshot_digest.as_str(),
                     analysis.configuration_version.as_str()
                 ],
             )
@@ -788,7 +846,10 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
                 analysis.analysis_id
             )));
         }
-        Ok(false)
+        Err(StoreError::Conflict(format!(
+            "agent session `{}` changed while its analysis was being stored",
+            analysis.agent_session_id
+        )))
     }
 
     async fn list_agent_sessions(
@@ -806,9 +867,7 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         let where_sql = concat!(
             "(?1 IS NULL OR t.ownership_scope_key = ?1)",
             " AND (?2 IS NULL OR t.user_id = ?2)",
-            " AND (?3 IS NULL OR t.team_id = ?3",
-            " OR EXISTS (SELECT 1 FROM team_memberships tm WHERE tm.user_id = t.user_id AND tm.team_id = ?3)",
-            " OR EXISTS (SELECT 1 FROM service_accounts sa WHERE sa.service_account_id = t.service_account_id AND sa.team_id = ?3))",
+            " AND (?3 IS NULL OR t.team_id = ?3)",
             " AND (?4 IS NULL OR t.service_account_id = ?4)",
             " AND (?5 IS NULL OR t.harness_key = ?5)",
             " AND (?6 IS NULL OR t.lifecycle = ?6)",
@@ -1075,19 +1134,20 @@ impl AgentSessionAnalysisRepository for LibsqlStore {
         &self,
         request_cutoff: OffsetDateTime,
     ) -> Result<u64, StoreError> {
+        let request_cutoff_millis = datetime_to_unix_millis(request_cutoff)?;
         let observations = self.connection.execute(
-            "DELETE FROM agent_inferred_observation_sets WHERE agent_session_id IN (SELECT agent_session_id FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < ?1) AND NOT EXISTS (SELECT 1 FROM agent_session_analyses a WHERE a.observation_set_id = agent_inferred_observation_sets.observation_set_id AND a.agent_session_id = agent_inferred_observation_sets.agent_session_id)",
-            [request_cutoff.unix_timestamp()],
+            "DELETE FROM agent_inferred_observation_sets WHERE agent_session_id IN (SELECT agent_session_id FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < ?1)",
+            [request_cutoff_millis],
         ).await.map_err(to_query_error)?;
         let requests = self.connection.execute(
             "DELETE FROM agent_session_requests WHERE agent_session_id IN (SELECT agent_session_id FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < ?1)",
-            [request_cutoff.unix_timestamp()],
+            [request_cutoff_millis],
         ).await.map_err(to_query_error)?;
         let sessions = self
             .connection
             .execute(
                 "DELETE FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < ?1 AND NOT EXISTS (SELECT 1 FROM agent_session_analyses a WHERE a.agent_session_id = agent_sessions.agent_session_id) AND NOT EXISTS (SELECT 1 FROM agent_analysis_recompute_queue q WHERE q.agent_session_id = agent_sessions.agent_session_id)",
-                [request_cutoff.unix_timestamp()],
+                [request_cutoff_millis],
             )
             .await
             .map_err(to_query_error)?;

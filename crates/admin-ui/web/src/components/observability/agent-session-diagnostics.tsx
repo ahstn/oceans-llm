@@ -5,8 +5,10 @@ import { AppIcon } from '@/components/icons/app-icon'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import type { AgentSessionDetailView } from '@/types/api'
-
-export type MetricAvailability = 'measured' | 'unknown' | 'disabled'
+import {
+  getAgentSessionToolMetricAvailability,
+  type MetricAvailability,
+} from './agent-session-metrics'
 
 type AgentSessionDiagnosticsProps = {
   detail: AgentSessionDetailView
@@ -14,21 +16,6 @@ type AgentSessionDiagnosticsProps = {
   formatDuration: (value?: number | null) => string
   formatTimestamp: (value: string) => string
   humanize: (value?: string | null) => string
-}
-
-export function getAgentSessionToolMetricAvailability(
-  detail: AgentSessionDetailView,
-): MetricAvailability {
-  const diagnostics = detail.report?.diagnostics
-  const measured =
-    detail.observations.some(
-      ({ facts }) =>
-        typeof facts.supplied_tool_count === 'number' ||
-        facts.supplied_tools.length > 0 ||
-        typeof facts.tool_name === 'string',
-    ) || (diagnostics?.tools_and_changes.observed_tool_calls ?? 0) > 0
-
-  return metricAvailability(diagnostics?.enabled_metrics.tool_metrics, measured)
 }
 
 export function AgentSessionDiagnostics({
@@ -54,6 +41,9 @@ export function AgentSessionDiagnostics({
       diagnostics.token_and_cache.output_tokens,
     ].some((value) => value !== null)
   const toolAvailability = getAgentSessionToolMetricAvailability(detail)
+  const enabledMetricGroups = diagnostics
+    ? formatEnabledMetricGroups(diagnostics.enabled_metrics, humanize)
+    : 'Not available'
 
   return (
     <>
@@ -159,9 +149,7 @@ export function AgentSessionDiagnostics({
       <DiagnosticSection
         title="Token and cache use"
         availability={metricAvailability(
-          enabledMetrics
-            ? enabledMetrics.token_metrics || enabledMetrics.cache_metrics
-            : undefined,
+          enabledMetrics ? enabledMetrics.token_metrics || enabledMetrics.cache_metrics : undefined,
           tokenMetricsMeasured,
         )}
       >
@@ -433,10 +421,7 @@ export function AgentSessionDiagnostics({
         />
         <DiagnosticRow
           label="Failed file operations"
-          value={formatNullable(
-            diagnostics?.outcome.failed_file_interactions,
-            'Not measured',
-          )}
+          value={formatNullable(diagnostics?.outcome.failed_file_interactions, 'Not measured')}
         />
         <DiagnosticRow
           label="Zero detected outcome"
@@ -470,7 +455,11 @@ export function AgentSessionDiagnostics({
           value={formatNullable(diagnostics?.finish_reasons.length_limited_requests)}
         />
         {diagnostics?.finish_reasons.items.map((item) => (
-          <DiagnosticRow key={item.reason} label={humanize(item.reason)} value={item.count} />
+          <DiagnosticRow
+            key={item.reason}
+            label={humanize(item.reason)}
+            value={formatTokenCount(item.count)}
+          />
         ))}
       </DiagnosticSection>
 
@@ -516,7 +505,9 @@ export function AgentSessionDiagnostics({
         />
         <DiagnosticRow
           label="Context score penalty"
-          value={diagnostics ? `${diagnostics.context.score_penalty_points} points` : 'Not measured'}
+          value={
+            diagnostics ? `${diagnostics.context.score_penalty_points} points` : 'Not measured'
+          }
         />
         <DiagnosticRow
           label="Prompt token growth per turn"
@@ -554,17 +545,7 @@ export function AgentSessionDiagnostics({
           label="Configuration"
           value={report?.configuration_version || 'Default configuration'}
         />
-        <DiagnosticRow
-          label="Enabled metric groups"
-          value={
-            diagnostics
-              ? Object.entries(diagnostics.enabled_metrics)
-                  .filter(([, enabled]) => enabled)
-                  .map(([name]) => humanize(name))
-                  .join(' · ') || 'None'
-              : 'Not available'
-          }
-        />
+        <DiagnosticRow label="Enabled metric groups" value={enabledMetricGroups} />
         <DiagnosticRow
           label="Boundary policy"
           value={detail.analysis?.boundary_policy_version ?? '—'}
@@ -591,10 +572,7 @@ export function AgentSessionDiagnostics({
   )
 }
 
-function metricAvailability(
-  enabled: boolean | undefined,
-  measured: boolean,
-): MetricAvailability {
+function metricAvailability(enabled: boolean | undefined, measured: boolean): MetricAvailability {
   if (enabled === false) return 'disabled'
   return measured ? 'measured' : 'unknown'
 }
@@ -616,11 +594,7 @@ export function DiagnosticSection({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <Collapsible
-      open={open}
-      onOpenChange={setOpen}
-      className="overflow-hidden border-x"
-    >
+    <Collapsible open={open} onOpenChange={setOpen} className="overflow-hidden border-x">
       <h3>
         <CollapsibleTrigger className="group hover:bg-muted/40 focus-visible:ring-ring flex w-full items-center gap-3 px-4 py-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset">
           <span className="font-medium">{title}</span>
@@ -676,7 +650,9 @@ function formatPercent(value?: number | null) {
 }
 
 function formatTokenCount(value?: number | null) {
-  return value === null || value === undefined ? 'Not available' : value.toLocaleString()
+  return value === null || value === undefined
+    ? 'Not available'
+    : new Intl.NumberFormat('en-GB').format(value)
 }
 
 function formatBytes(value?: number | null) {
@@ -694,4 +670,15 @@ function formatScaledCost(
 
 function formatNullable(value: unknown, fallback = '—') {
   return value === null || value === undefined ? fallback : String(value)
+}
+
+function formatEnabledMetricGroups(
+  metrics: Record<string, boolean>,
+  humanize: (value?: string | null) => string,
+) {
+  const names = Object.entries(metrics).reduce<string[]>((enabled, [name, isEnabled]) => {
+    if (isEnabled) enabled.push(humanize(name))
+    return enabled
+  }, [])
+  return names.join(' · ') || 'None'
 }

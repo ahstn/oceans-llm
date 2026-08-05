@@ -847,9 +847,7 @@ fn tool_and_change_diagnostics(
             supplied_tool_schema_bytes.max(observation.facts.tool_schema_bytes);
         if observation.facts.tool_name.is_some() {
             observed_tool_calls = observed_tool_calls.saturating_add(1);
-            if observation.kind == InferredObservationKind::ToolCallClassified {
-                classified_tool_calls = classified_tool_calls.saturating_add(1);
-            }
+            classified_tool_calls = classified_tool_calls.saturating_add(1);
         }
         if let Some(file) = observation.facts.opaque_file_id.as_deref() {
             opaque_files.insert(file);

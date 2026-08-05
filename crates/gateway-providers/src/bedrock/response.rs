@@ -649,11 +649,22 @@ pub(super) fn map_usage(value: &Value) -> Option<Value> {
         .or_else(|| usage.get("total_tokens"))
         .cloned()
         .or_else(|| {
-            input
-                .and_then(Value::as_i64)
-                .zip(output.and_then(Value::as_i64))
-                .and_then(|(input, output)| input.checked_add(output))
-                .map(|total| Value::Number(total.into()))
+            [
+                input.and_then(Value::as_i64),
+                output.and_then(Value::as_i64),
+                usage
+                    .get("cacheReadInputTokens")
+                    .or_else(|| usage.get("cache_read_input_tokens"))
+                    .and_then(Value::as_i64),
+                usage
+                    .get("cacheWriteInputTokens")
+                    .or_else(|| usage.get("cache_write_input_tokens"))
+                    .or_else(|| usage.get("cache_creation_input_tokens"))
+                    .and_then(Value::as_i64),
+            ]
+            .into_iter()
+            .try_fold(0_i64, |total, value| total.checked_add(value.unwrap_or(0)))
+            .map(|total| Value::Number(total.into()))
         });
 
     let mut mapped = Map::new();

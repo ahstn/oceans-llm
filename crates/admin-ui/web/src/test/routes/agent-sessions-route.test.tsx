@@ -384,11 +384,12 @@ const detail: AgentSessionDetailView = {
   },
 }
 
-function setCapabilities(calibratedScoreVisible: boolean) {
+function setCapabilities(calibratedScoreVisible: boolean, platformAdmin = false) {
   routeMock.useRouteContext.mockReturnValue({
     session: {
       capabilities: {
         calibrated_score_visible: calibratedScoreVisible,
+        platform_admin: platformAdmin,
       },
     },
   })
@@ -485,6 +486,7 @@ describe('AgentSessionsPage', () => {
   })
 
   it('deep-links to session diagnostics with request outcomes and retained observations', async () => {
+    setCapabilities(false, true)
     routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, session_id: 'session_1' })
     getAgentSessionDetailMock.mockResolvedValue({ data: detail })
 
@@ -568,6 +570,20 @@ describe('AgentSessionsPage', () => {
     expect(screen.getAllByText('25.0%').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('93%').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Failed file operations')).toBeInTheDocument()
+  })
+
+  it('does not link team admins to platform-only request logs', async () => {
+    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, session_id: 'session_1' })
+    getAgentSessionDetailMock.mockResolvedValue({ data: detail })
+
+    render(<AgentSessionsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Request 1' })).toBeInTheDocument()
+    })
+    expect(
+      screen.queryByRole('link', { name: 'Open request req_1 in request logs' }),
+    ).not.toBeInTheDocument()
   })
 
   it('shows unknown and disabled states instead of false zero metrics', async () => {

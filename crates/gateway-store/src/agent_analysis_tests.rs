@@ -135,24 +135,17 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         later_session.last_seen_at
     );
     assert_eq!(out_of_order_session.updated_at, later_session.updated_at);
-    assert!(matches!(
-        store
-            .upsert_agent_session_source(&AgentSessionSourceRecord {
-                adapter_version: "v2".to_string(),
-                source_provenance: "different_source".to_string(),
-                updated_at: now + Duration::seconds(20),
-                ..session_source.clone()
-            })
-            .await,
-        Err(StoreError::Conflict(_))
-    ));
-    let unchanged_session = store
-        .load_agent_session_source(session_source.agent_session_source_id)
+    let upgraded_session = store
+        .upsert_agent_session_source(&AgentSessionSourceRecord {
+            adapter_version: "v2".to_string(),
+            source_provenance: "different_source".to_string(),
+            updated_at: now + Duration::seconds(20),
+            ..session_source.clone()
+        })
         .await
-        .expect("load unchanged session")
-        .expect("unchanged session");
-    assert_eq!(unchanged_session.adapter_version, "v1");
-    assert_eq!(unchanged_session.source_provenance, "session_id_header");
+        .expect("adapter upgrade");
+    assert_eq!(upgraded_session.adapter_version, "v2");
+    assert_eq!(upgraded_session.source_provenance, "different_source");
 
     let session = AgentSessionRecord {
         agent_session_id: Uuid::new_v4(),
@@ -174,12 +167,12 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         harness_key: "codex".to_string(),
         boundary_policy_version: agent_session_analysis::SESSION_BOUNDARY_POLICY_VERSION
             .to_string(),
-        lifecycle: SessionLifecycleState::Finalized,
+        lifecycle: SessionLifecycleState::Open,
         boundary_confidence: Confidence::High,
         started_at: now,
-        ended_at: Some(now + Duration::seconds(1)),
+        ended_at: None,
         input_watermark_at: now + Duration::seconds(1),
-        finalized_reason: Some("idle_gap".to_string()),
+        finalized_reason: None,
         created_at: now,
         updated_at: now,
     };
@@ -392,6 +385,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         cohort_fallback_level: 7,
         cohort_sample_size: 0,
         cohort_snapshot_digest: "sha256:no-cohort".to_string(),
+        direct_mcp_snapshot_digest: "sha256:no-direct-mcp".to_string(),
         analyzed_at: now,
         report,
         stale: false,
@@ -447,16 +441,16 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .update_agent_session_window(&advanced_session)
         .await
         .expect("advance session watermark");
-    assert!(
-        !store
+    assert!(matches!(
+        store
             .append_agent_session_analysis(&AgentSessionAnalysisRecord {
                 analysis_id: Uuid::new_v4(),
                 cohort_version: "late-worker-v1".to_string(),
                 ..analysis.clone()
             })
-            .await
-            .expect("stale worker analysis")
-    );
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
     assert!(
         store
             .append_agent_session_analysis(&AgentSessionAnalysisRecord {
@@ -480,16 +474,18 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
             .expect("foreign session")
     );
     assert!(
-        !store
-            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
-                analysis_id: Uuid::new_v4(),
-                agent_session_id: foreign_session.agent_session_id,
-                input_watermark_at: foreign_session.input_watermark_at,
-                cohort_version: "foreign-observation-v1".to_string(),
-                ..analysis.clone()
-            })
-            .await
-            .expect("reject foreign observation set"),
+        matches!(
+            store
+                .append_agent_session_analysis(&AgentSessionAnalysisRecord {
+                    analysis_id: Uuid::new_v4(),
+                    agent_session_id: foreign_session.agent_session_id,
+                    input_watermark_at: foreign_session.input_watermark_at,
+                    cohort_version: "foreign-observation-v1".to_string(),
+                    ..analysis.clone()
+                })
+                .await,
+            Err(StoreError::Conflict(_))
+        ),
         "analysis must not reference another session's observation set"
     );
     store
@@ -513,30 +509,11 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("session trace");
     assert_eq!(trace.requests.len(), 1);
     assert_eq!(trace.requests[0].terminal_success, Some(true));
-    let observations = trace
-        .latest_observation_set
-        .expect("observation set")
-        .observations;
-    assert_eq!(observations.len(), 3);
-    assert_eq!(
-        observations
-            .iter()
-            .filter(|observation| observation.parser_version == "passive-observations-v1")
-            .count(),
-        2
-    );
-    assert_eq!(
-        observations
-            .iter()
-            .filter(|observation| observation.parser_version == "passive-observations-v2")
-            .count(),
-        1
-    );
-    assert!(
-        observations
-            .iter()
-            .any(|observation| observation.source_request_id == "request-2")
-    );
+    let latest_observation_set = trace.latest_observation_set.expect("observation set");
+    let latest_parser_version = latest_observation_set.parser_version.clone();
+    let observations = latest_observation_set.observations;
+    assert_eq!(observations.len(), 1);
+    assert_eq!(observations[0].parser_version, latest_parser_version);
     let page = store
         .list_agent_sessions(&AgentSessionListQuery {
             ownership_scope_key: Some(scope),
@@ -713,6 +690,14 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .complete_agent_analysis(queue.queue_item_id, "worker", now + Duration::seconds(2))
         .await
         .expect("complete");
+    let mut finalized_session = advanced_session.clone();
+    finalized_session.lifecycle = SessionLifecycleState::Finalized;
+    finalized_session.ended_at = Some(finalized_session.input_watermark_at);
+    finalized_session.finalized_reason = Some("idle_gap".to_string());
+    store
+        .update_agent_session_window(&finalized_session)
+        .await
+        .expect("finalize session before retention purge");
     let purged = store
         .purge_agent_analysis_before(now + Duration::seconds(3))
         .await
@@ -724,8 +709,8 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("trace after fact retention")
         .expect("retained session and report");
     assert!(retained_trace.requests.is_empty());
-    assert!(retained_trace.latest_observation_set.is_some());
-    assert!(retained_trace.latest_analysis.is_some());
+    assert!(retained_trace.latest_observation_set.is_none());
+    assert!(retained_trace.latest_analysis.is_none());
     let mut retained_report_rows = store
         .connection()
         .query(
@@ -739,13 +724,13 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .await
         .expect("retained report row")
         .expect("retained report");
-    assert_eq!(retained_report.get::<i64>(0).expect("report count"), 1);
+    assert_eq!(retained_report.get::<i64>(0).expect("report count"), 0);
 
     let expired = store
         .purge_expired_agent_analysis(now + Duration::days(91), now + Duration::seconds(3))
         .await
         .expect("purge expired reports and queue");
-    assert!(expired >= 2);
+    assert!(expired >= 1);
 
     store
         .connection()

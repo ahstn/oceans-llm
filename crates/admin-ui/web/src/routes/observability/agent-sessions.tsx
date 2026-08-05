@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react'
 import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
 
 import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
@@ -15,9 +15,11 @@ import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import {
   AgentSessionDiagnostics,
   DiagnosticSection,
+} from '@/components/observability/agent-session-diagnostics'
+import {
   getAgentSessionToolMetricAvailability,
   type MetricAvailability,
-} from '@/components/observability/agent-session-diagnostics'
+} from '@/components/observability/agent-session-metrics'
 import { DataGrid } from '@/components/reui/data-grid/data-grid'
 import { DataGridPagination } from '@/components/reui/data-grid/data-grid-pagination'
 import { DataGridTable } from '@/components/reui/data-grid/data-grid-table'
@@ -56,21 +58,23 @@ import type {
 } from '@/types/api'
 
 type AgentSessionRouteSearch = AgentSessionFiltersInput & { session_id?: string }
-type AgentRequestAttempt =
-  NonNullable<AgentSessionDetailView['report']>['diagnostics']['reliability']['attempts'][number]
+type AgentRequestAttempt = NonNullable<
+  AgentSessionDetailView['report']
+>['diagnostics']['reliability']['attempts'][number]
 
-const timestampFormatter = new Intl.DateTimeFormat(undefined, {
+const timestampFormatter = new Intl.DateTimeFormat('en-GB', {
   dateStyle: 'medium',
   timeStyle: 'short',
+  timeZone: 'UTC',
 })
 const currencyFormatters = {
-  standard: new Intl.NumberFormat(undefined, {
+  standard: new Intl.NumberFormat('en-GB', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }),
-  precise: new Intl.NumberFormat(undefined, {
+  precise: new Intl.NumberFormat('en-GB', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 4,
@@ -537,6 +541,7 @@ export function AgentSessionsPage() {
                 key={selectedDetail.session.session_id}
                 detail={selectedDetail}
                 showScore={showScore}
+                canAccessRequestLogs={session.capabilities.platform_admin}
               />
             ) : null}
           </div>
@@ -549,9 +554,11 @@ export function AgentSessionsPage() {
 function SessionDetail({
   detail,
   showScore,
+  canAccessRequestLogs,
 }: {
   detail: AgentSessionDetailView
   showScore: boolean
+  canAccessRequestLogs: boolean
 }) {
   const report = detail.report
   const components = report?.components
@@ -603,6 +610,7 @@ function SessionDetail({
           observations={detail.observations}
           historyTruncated={detail.request_history_truncated}
           attempts={diagnostics?.reliability.attempts ?? []}
+          canAccessRequestLogs={canAccessRequestLogs}
         />
         <ToolExposure
           observations={detail.observations}
@@ -633,11 +641,13 @@ function SessionEventStream({
   observations,
   attempts,
   historyTruncated,
+  canAccessRequestLogs,
 }: {
   requests: AgentSessionRequestView[]
   observations: AgentObservationView[]
   attempts: AgentRequestAttempt[]
   historyTruncated: boolean
+  canAccessRequestLogs: boolean
 }) {
   const [visibleCount, setVisibleCount] = useState(25)
   const visible = requests.slice(0, visibleCount)
@@ -682,11 +692,9 @@ function SessionEventStream({
                     }
                   />
                   <TimelineSeparator />
-                  <Link
-                    to="/observability/request-logs"
-                    search={{ request_id: request.request_id }}
-                    aria-label={`Open request ${request.request_id} in request logs`}
-                    className="group/event hover:bg-muted/50 focus-visible:ring-ring block rounded-md px-2 py-2 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                  <RequestLogEntryLink
+                    enabled={canAccessRequestLogs}
+                    requestId={request.request_id}
                   >
                     <TimelineHeader className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-baseline gap-2">
@@ -704,13 +712,15 @@ function SessionEventStream({
                         >
                           {formatTimestamp(request.occurred_at)}
                         </TimelineDate>
-                        <AppIcon
-                          icon={ArrowRight01Icon}
-                          size={14}
-                          stroke={1.5}
-                          className="text-muted-foreground transition-transform group-hover/event:translate-x-0.5"
-                          aria-hidden
-                        />
+                        {canAccessRequestLogs ? (
+                          <AppIcon
+                            icon={ArrowRight01Icon}
+                            size={14}
+                            stroke={1.5}
+                            className="text-muted-foreground transition-transform group-hover/event:translate-x-0.5"
+                            aria-hidden
+                          />
+                        ) : null}
                       </div>
                     </TimelineHeader>
                     <TimelineContent className="mt-2 flex flex-wrap gap-1.5">
@@ -752,7 +762,7 @@ function SessionEventStream({
                         </span>
                       ) : null}
                     </TimelineContent>
-                  </Link>
+                  </RequestLogEntryLink>
                 </TimelineItem>
               )
             })}
@@ -774,6 +784,32 @@ function SessionEventStream({
   )
 }
 
+function RequestLogEntryLink({
+  enabled,
+  requestId,
+  children,
+}: {
+  enabled: boolean
+  requestId: string
+  children: ReactNode
+}) {
+  const className =
+    'group/event block rounded-md px-2 py-2 focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none'
+  if (!enabled) {
+    return <div className={className}>{children}</div>
+  }
+  return (
+    <Link
+      to="/observability/request-logs"
+      search={{ request_id: requestId }}
+      aria-label={`Open request ${requestId} in request logs`}
+      className={`${className} hover:bg-muted/50 transition-colors`}
+    >
+      {children}
+    </Link>
+  )
+}
+
 function ToolExposure({
   observations,
   availability,
@@ -788,7 +824,11 @@ function ToolExposure({
   return (
     <DiagnosticSection
       title="Tool exposure"
-      summary={availability === 'measured' ? `${used.length} used · ${neverCalled.length} never called` : undefined}
+      summary={
+        availability === 'measured'
+          ? `${used.length} used · ${neverCalled.length} never called`
+          : undefined
+      }
       availability={availability}
     >
       <div className="grid gap-3 xl:grid-cols-2">

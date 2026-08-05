@@ -608,7 +608,7 @@ fn spawn_pricing_catalog_refresh_loop(
 }
 
 fn spawn_agent_analysis_loop(service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>) {
-    let lease_owner = format!("gateway-{}", std::process::id());
+    let lease_owner = format!("gateway-{}-{}", std::process::id(), uuid::Uuid::new_v4());
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         loop {

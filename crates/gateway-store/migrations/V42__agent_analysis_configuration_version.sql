@@ -15,6 +15,7 @@ CREATE TABLE agent_session_analyses (
   cohort_fallback_level INTEGER NOT NULL,
   cohort_sample_size INTEGER NOT NULL,
   cohort_snapshot_digest TEXT NOT NULL,
+  direct_mcp_snapshot_digest TEXT NOT NULL,
   analyzed_at INTEGER NOT NULL,
   report_json TEXT NOT NULL,
   stale INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0, 1)),
@@ -28,7 +29,7 @@ CREATE TABLE agent_session_analyses (
     agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at,
     observation_set_id, observation_parser_version, analyzer_version, score_policy_version,
     pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size,
-    cohort_snapshot_digest, configuration_version
+    cohort_snapshot_digest, direct_mcp_snapshot_digest, configuration_version
   ),
   FOREIGN KEY (superseded_by_analysis_id) REFERENCES agent_session_analyses(analysis_id) ON DELETE SET NULL,
   FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
@@ -45,7 +46,7 @@ INSERT INTO agent_session_analyses (
   score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level,
   cohort_sample_size, cohort_snapshot_digest, analyzed_at, report_json, stale,
   superseded_by_analysis_id, expires_at, ownership_scope_key, user_id, service_account_id,
-  configuration_version
+  configuration_version, direct_mcp_snapshot_digest
 )
 SELECT
   analysis_id, agent_session_id, report_schema_version, boundary_policy_version,
@@ -53,7 +54,7 @@ SELECT
   score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level,
   cohort_sample_size, cohort_snapshot_digest, analyzed_at, report_json, stale,
   superseded_by_analysis_id, expires_at, ownership_scope_key, user_id, service_account_id,
-  COALESCE(json_extract(report_json, '$.configuration_version'), '')
+  COALESCE(json_extract(report_json, '$.configuration_version'), ''), ''
 FROM agent_session_analyses_v41;
 
 DROP TABLE agent_session_analyses_v41;
