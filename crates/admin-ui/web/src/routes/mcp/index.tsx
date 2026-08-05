@@ -143,14 +143,14 @@ export function McpWorkspacePage() {
     )
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Control Plane"
         title="MCP"
         description="Manage the servers and tools exposed to applications and end users."
       />
       {workspaceContent}
-    </main>
+    </div>
   )
 }
 

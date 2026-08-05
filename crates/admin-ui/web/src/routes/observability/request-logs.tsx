@@ -156,7 +156,7 @@ export function RequestLogsPage() {
     Boolean(normalizedFilters.tag_key) !== Boolean(normalizedFilters.tag_value)
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Observability"
         title="Request logs"
@@ -555,7 +555,7 @@ export function RequestLogsPage() {
           </div>
         </SheetContent>
       </Sheet>
-    </main>
+    </div>
   )
 }
 

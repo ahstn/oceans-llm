@@ -406,7 +406,7 @@ export function ReviewAgentPage() {
   const serviceAccountById = new Map(serviceAccounts.map((account) => [account.id, account]))
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Control Plane"
         title="Review agent"
@@ -1225,7 +1225,7 @@ export function ReviewAgentPage() {
           ) : null}
         </DialogContent>
       </Dialog>
-    </main>
+    </div>
   )
 }
 

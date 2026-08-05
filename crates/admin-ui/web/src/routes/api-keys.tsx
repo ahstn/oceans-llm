@@ -38,7 +38,7 @@ export function ApiKeysPage() {
   })
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Control Plane"
         title="API keys"
@@ -101,6 +101,6 @@ export function ApiKeysPage() {
           onSubmit={state.actions.handleUpdateApiKey}
         />
       ) : null}
-    </main>
+    </div>
   )
 }

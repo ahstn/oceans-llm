@@ -216,11 +216,11 @@ export function SpendControlsPage() {
   }
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Budget & Spending"
         title="Spend controls"
-        description="Set spending limits for people, automated accounts, and models. Review recent alerts."
+        description="Set spending limits for users, automated accounts, and each user's model use. Review recent alerts."
       />
 
       <BudgetTable
@@ -565,7 +565,7 @@ export function SpendControlsPage() {
           </form>
         </DialogContent>
       </Dialog>
-    </main>
+    </div>
   )
 }
 

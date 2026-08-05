@@ -9,7 +9,7 @@ export function ReadOnlyUsersDirectory({ users }: { users: IdentityDirectoryUser
       <CardHeader>
         <CardTitle>User list</CardTitle>
         <CardDescription>
-          Select a user to review account and team details. Only administrators can make changes.
+          Review each user's account and team details. Only administrators can make changes.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -54,7 +54,7 @@ export function ReadOnlyTeamsDirectory({ teams }: { teams: IdentityDirectoryTeam
       <CardHeader>
         <CardTitle>Team list</CardTitle>
         <CardDescription>
-          Select a team to review its members. Only administrators can make changes.
+          Review each team and its members. Only administrators can make changes.
         </CardDescription>
       </CardHeader>
       <CardContent>

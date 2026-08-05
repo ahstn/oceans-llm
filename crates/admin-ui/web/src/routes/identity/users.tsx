@@ -196,10 +196,10 @@ export function UsersPage() {
 
   if (!isPlatformAdmin) {
     return (
-      <main className="flex min-w-0 flex-1 flex-col gap-6">
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
         {pageHeader}
         <ReadOnlyUsersDirectory users={directoryData?.users ?? []} />
-      </main>
+      </div>
     )
   }
 
@@ -404,7 +404,7 @@ export function UsersPage() {
   }
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       {pageHeader}
 
       <Card>
@@ -1386,7 +1386,7 @@ export function UsersPage() {
           ) : null}
         </DialogContent>
       </Dialog>
-    </main>
+    </div>
   )
 }
 

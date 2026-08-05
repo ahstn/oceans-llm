@@ -110,7 +110,7 @@ export function AgentHarnessesPage() {
   }
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Observability"
         title="Agent harnesses"
@@ -122,7 +122,7 @@ export function AgentHarnessesPage() {
           <div className="flex flex-col gap-1">
             <CardTitle>Request activity</CardTitle>
             <CardDescription>
-              Compare request counts for each agent application in 12-hour periods.
+              Compare request counts for each harness in 12-hour periods.
             </CardDescription>
           </div>
           <ToggleGroup
@@ -262,7 +262,7 @@ export function AgentHarnessesPage() {
           )}
         </CardContent>
       </Card>
-    </main>
+    </div>
   )
 }
 

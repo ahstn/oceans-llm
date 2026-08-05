@@ -126,7 +126,7 @@ describe('UsageCostsPage', () => {
     render(<UsageCostsPage />)
 
     expect(
-      screen.getByText('Review your costs over time and see the price of each request.'),
+      screen.getByText('Review your costs over time and see how each model affects the total.'),
     ).toBeVisible()
     expect(screen.getByText('Spend attributed to your user account.')).toBeVisible()
     expect(screen.queryByText('All owners')).not.toBeInTheDocument()

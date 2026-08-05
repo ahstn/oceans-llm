@@ -65,14 +65,14 @@ export function UsageCostsPage() {
   }
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Budget & Spending"
         title="Usage costs"
         description={
           isPlatformAdmin
             ? 'Review costs over time and see how each account and model affects the total.'
-            : 'Review your costs over time and see the price of each request.'
+            : 'Review your costs over time and see how each model affects the total.'
         }
       />
 
@@ -296,7 +296,7 @@ export function UsageCostsPage() {
           </div>
         </CardContent>
       </Card>
-    </main>
+    </div>
   )
 }
 

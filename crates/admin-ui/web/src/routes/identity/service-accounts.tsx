@@ -48,7 +48,7 @@ export function ServiceAccountsPage() {
   const rows = buildServiceAccountRows(serviceAccounts, apiKeys)
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Identity"
         title="Service accounts"
@@ -84,7 +84,7 @@ export function ServiceAccountsPage() {
           )}
         </CardContent>
       </Card>
-    </main>
+    </div>
   )
 }
 

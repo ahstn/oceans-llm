@@ -246,7 +246,7 @@ export function ModelsPage() {
     null
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Control Plane"
         title="Models"
@@ -612,7 +612,7 @@ export function ModelsPage() {
           }
         }}
       />
-    </main>
+    </div>
   )
 }
 

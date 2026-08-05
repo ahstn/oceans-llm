@@ -109,7 +109,7 @@ export function ObservabilityLeaderboardPage() {
   }
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Budget & Spending"
         title="Leaderboard"
@@ -121,7 +121,7 @@ export function ObservabilityLeaderboardPage() {
           <div className="flex flex-col gap-1">
             <CardTitle>User costs over time</CardTitle>
             <CardDescription>
-              Compare the five users with the highest cost in each 12-hour period.
+              Compare 12-hour costs for the five users with the highest total cost.
             </CardDescription>
           </div>
           <ToggleGroup
@@ -264,7 +264,7 @@ export function ObservabilityLeaderboardPage() {
           )}
         </CardContent>
       </Card>
-    </main>
+    </div>
   )
 }
 

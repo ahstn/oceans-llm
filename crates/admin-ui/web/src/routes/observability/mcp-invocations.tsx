@@ -129,7 +129,7 @@ export function McpInvocationsPage() {
   const normalizedFilters = normalizeFilterSearch(filters)
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Observability"
         title="MCP invocations"
@@ -416,7 +416,7 @@ export function McpInvocationsPage() {
           </CardContent>
         </Card>
       ) : null}
-    </main>
+    </div>
   )
 }
 

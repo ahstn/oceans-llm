@@ -210,10 +210,10 @@ export function TeamsPage() {
 
   if (!isPlatformAdmin) {
     return (
-      <main className="flex min-w-0 flex-1 flex-col gap-6">
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
         {pageHeader}
         <ReadOnlyTeamsDirectory teams={directoryData?.teams ?? []} />
-      </main>
+      </div>
     )
   }
 
@@ -425,7 +425,7 @@ export function TeamsPage() {
   }
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
       {pageHeader}
 
       <Card>
@@ -1186,7 +1186,7 @@ export function TeamsPage() {
           ) : null}
         </DialogContent>
       </Dialog>
-    </main>
+    </div>
   )
 }
 
