@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.20.1] - 2026-08-05
+### :bug: Bug fixes
+- *(helm)* Validate gateway config before migration wait by @ahstn
+- *(gateway)* Validate server configuration by @ahstn
+- *(helm)* Validate gateway config before migration wait by @ahstn in [#265](https://github.com/ahstn/oceans-llm/pull/265)
+- *(admin-ui)* Address page header review feedback by @ahstn
+
+### Build
+- Post release tasks - v0.20.0 by @ahstn
+
+### Miscellaneous
+- *(deps)* Minor version upgrades by @ahstn
+- *(version)* V0.20.1
+
+### Styling
+- *(admin-ui)* Add page headers by @ahstn
+- *(admin-ui)* Add page headers by @ahstn in [#264](https://github.com/ahstn/oceans-llm/pull/264)
+
+
+
+
 ## [0.20.0] - 2026-08-05
 ### :rocket: New features
 - *(admin-ui)* Add agent harness icons by @ahstn
@@ -44,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Merge auth self-service changes by @ahstn
 - *(pricing)* Updating model catalog by @ahstn
 - Merge latest origin/main by @ahstn
-- *(version)* V0.20.0
+- *(version)* V0.20.0 by @ahstn
 
 ### Testing
 - *(admin-ui)* Strengthen models table coverage by @ahstn
@@ -852,6 +873,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.20.1]: https://github.com/ahstn/oceans-llm/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/ahstn/oceans-llm/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/ahstn/oceans-llm/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/ahstn/oceans-llm/compare/v0.17.0...v0.18.0
