@@ -299,7 +299,7 @@ describe('ModelsPage', () => {
     expect(screen.getByTestId('models-mobile-list')).toBeInTheDocument()
     expect(screen.getByTestId('models-desktop-table')).toBeInTheDocument()
     expect(
-      screen.getByText('Review routed models, upstream targets, and current health status.'),
+      screen.getByText('Review the models that users can select and check their current status.'),
     ).toBeInTheDocument()
     expect(screen.getByText('Select models to generate multi-model config')).toBeInTheDocument()
 

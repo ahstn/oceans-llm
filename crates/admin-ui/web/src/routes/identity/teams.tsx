@@ -4,6 +4,7 @@ import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -199,8 +200,21 @@ export function TeamsPage() {
     [membersTeam, users],
   )
 
+  const pageHeader = (
+    <PageHeader
+      section="Identity"
+      title="Teams"
+      description="Review teams, their administrators, and their members."
+    />
+  )
+
   if (!isPlatformAdmin) {
-    return <ReadOnlyTeamsDirectory teams={directoryData?.teams ?? []} />
+    return (
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
+        {pageHeader}
+        <ReadOnlyTeamsDirectory teams={directoryData?.teams ?? []} />
+      </div>
+    )
   }
 
   async function refreshTeams() {
@@ -411,14 +425,14 @@ export function TeamsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
+      {pageHeader}
+
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <CardTitle>Teams</CardTitle>
-            <CardDescription>
-              Create teams, assign team admins, and add members over time as users arrive.
-            </CardDescription>
+            <CardTitle>Team list</CardTitle>
+            <CardDescription>Select a team to review its members and settings.</CardDescription>
           </div>
           <Button type="button" onClick={openCreateTeamDialog}>
             Add team

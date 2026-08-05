@@ -21,6 +21,7 @@ import { AppIcon } from '@/components/icons/app-icon'
 import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
@@ -245,13 +246,17 @@ export function ModelsPage() {
     null
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Control Plane"
+        title="Models"
+        description="Review the models that users can select and check their current status."
+      />
+
       <Card className="min-w-0">
         <CardHeader>
-          <CardTitle>Models</CardTitle>
-          <CardDescription>
-            Review routed models, upstream targets, and current health status.
-          </CardDescription>
+          <CardTitle>Model list</CardTitle>
+          <CardDescription>Select models to create a configuration file.</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--color-text-muted)]">

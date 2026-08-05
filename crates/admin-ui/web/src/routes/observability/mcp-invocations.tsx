@@ -4,6 +4,7 @@ import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
@@ -128,13 +129,18 @@ export function McpInvocationsPage() {
   const normalizedFilters = normalizeFilterSearch(filters)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Observability"
+        title="MCP invocations"
+        description="Review each use of an MCP tool, its result, and the data that the system stored."
+      />
+
       <Card>
         <CardHeader className="flex flex-col gap-1">
-          <CardTitle>MCP Invocations</CardTitle>
+          <CardTitle>Tool activity</CardTitle>
           <CardDescription>
-            Audit request-linked MCP tool calls by API key, user, team, server, tool, policy result,
-            status, and payload retention state.
+            Filter the records, then select one to review more details.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
