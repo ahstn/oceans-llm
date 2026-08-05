@@ -6,6 +6,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.20.0] - 2026-08-05
+### :rocket: New features
+- *(admin-ui)* Add agent harness icons by @ahstn
+- *(admin-ui)* Add agent harness icons by @ahstn in [#258](https://github.com/ahstn/oceans-llm/pull/258)
+- *(mcp)* Add Google Workspace OAuth connections by @ahstn
+- *(auth)* Add regular-user self-service access by @ahstn
+- *(identity)* Add read-only user directories by @ahstn
+- *(auth)* Add regular-user self-service access by @ahstn in [#261](https://github.com/ahstn/oceans-llm/pull/261)
+- *(mcp)* Add Google Workspace OAuth connections by @ahstn in [#260](https://github.com/ahstn/oceans-llm/pull/260)
+- *(admin-ui)* Redesign authentication flows by @ahstn
+- *(admin-ui)* Redesign authentication flows by @ahstn in [#262](https://github.com/ahstn/oceans-llm/pull/262)
+
+### :bug: Bug fixes
+- *(admin-ui)* Tighten models table layout by @ahstn
+- *(admin-ui)* Polish models table controls by @ahstn
+- *(admin-ui)* Compact model allow list by @ahstn
+- *(admin-ui)* Compact model allow list by @ahstn in [#257](https://github.com/ahstn/oceans-llm/pull/257)
+- *(mcp)* Harden OAuth connection lifecycle by @ahstn
+- *(ui)* Satisfy React Doctor checks by @ahstn
+- *(mcp)* Address security review findings by @ahstn
+- *(mcp)* Address OAuth review feedback by @ahstn
+- *(admin)* Harden regular-user access by @ahstn
+- *(admin-ui)* Simplify account ready guidance by @ahstn
+- *(admin-ui)* Address authentication review findings by @ahstn
+- *(admin-ui)* Complete SSO redirect feedback by @ahstn
+
+### Build
+- Post release tasks - v0.19.0 by @ahstn
+
+### Documentation
+- *(auth)* Link canonical access policy by @ahstn
+
+### Miscellaneous
+- Update skills by @ahstn
+- *(pricing)* Updating model catalog by @ahstn
+- Merge auth self-service changes by @ahstn
+- *(pricing)* Updating model catalog by @ahstn
+- Merge latest origin/main by @ahstn
+- *(version)* V0.20.0
+
+### Testing
+- *(admin-ui)* Strengthen models table coverage by @ahstn
+
+
+
+
 ## [0.19.0] - 2026-07-20
 ### :rocket: New features
 - Initial mise.toml by @ahstn
@@ -37,8 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Miscellaneous
 - *(deps)* Update age-qualified Rust dependencies by @ahstn
 - *(deps)* Update age-qualified Rust dependencies by @ahstn in [#251](https://github.com/ahstn/oceans-llm/pull/251)
-- *(pricing)* Updating model catalog
-- *(version)* V0.19.0
+- *(pricing)* Updating model catalog by @ahstn
+- *(version)* V0.19.0 by @ahstn
 
 ### Testing
 - Add native harness integration coverage by @ahstn
@@ -806,6 +852,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.20.0]: https://github.com/ahstn/oceans-llm/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/ahstn/oceans-llm/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/ahstn/oceans-llm/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/ahstn/oceans-llm/compare/v0.16.0...v0.17.0
