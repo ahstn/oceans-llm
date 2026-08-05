@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Design A — Triage Drawer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #0a0a0a; color: #fafafa; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .card { background: #141416; border: 1px solid #26262a; border-radius: 0.75rem; }
+  .muted { color: #a1a1aa; }
+  .row { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.875rem; padding: 0.3rem 0; }
+  .tab { padding: 0.5rem 0.9rem; font-size: 0.875rem; border-radius: 0.5rem; color: #a1a1aa; cursor: pointer; }
+  .tab[data-active="true"] { background: #232326; color: #fafafa; }
+  .panel { display: none; }
+  .panel[data-active="true"] { display: block; }
+  .chip { display: inline-flex; align-items: center; gap: 0.375rem; border: 1px solid #2c2c30; border-radius: 9999px; padding: 0.2rem 0.65rem; font-size: 0.75rem; color: #d4d4d8; }
+  .seg-label { font-size: 0.7rem; color: #a1a1aa; }
+  details > summary { cursor: pointer; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+</style>
+</head>
+<body>
+
+<!-- Dimmed sessions list behind the drawer -->
+<div class="fixed inset-0 opacity-30 blur-[2px] pointer-events-none px-10 py-8">
+  <div class="text-lg font-medium mb-4">Agent sessions</div>
+  <div class="card p-4 space-y-3">
+    <div class="h-3 w-2/3 rounded bg-zinc-800"></div>
+    <div class="h-3 w-1/2 rounded bg-zinc-800"></div>
+    <div class="h-3 w-3/4 rounded bg-zinc-800"></div>
+    <div class="h-3 w-1/3 rounded bg-zinc-800"></div>
+    <div class="h-3 w-2/3 rounded bg-zinc-800"></div>
+    <div class="h-3 w-1/2 rounded bg-zinc-800"></div>
+  </div>
+</div>
+<div class="fixed inset-0 bg-black/60"></div>
+
+<!-- Drawer -->
+<aside class="fixed inset-y-0 right-0 w-full sm:max-w-3xl bg-[#0e0e10] border-l border-[#232326] flex flex-col">
+
+  <!-- Sticky summary header -->
+  <header class="sticky top-0 z-10 border-b border-[#232326] bg-[#0e0e10] px-6 pt-5 pb-4">
+    <div class="flex items-start justify-between gap-4">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2.5">
+          <h1 class="text-base font-semibold">Agent session</h1>
+          <span class="inline-flex items-center gap-1.5 rounded-full border border-emerald-800 bg-emerald-950/60 px-2.5 py-0.5 text-xs font-medium text-emerald-400">
+            <svg viewBox="0 0 24 24" class="size-3" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
+            Succeeded
+          </span>
+          <span class="inline-flex items-center rounded-full border border-amber-800 bg-amber-950/60 px-2.5 py-0.5 text-xs text-amber-400">Low confidence</span>
+        </div>
+        <p class="mt-1 truncate font-mono text-xs muted">e9801b53-d2c7-5af1-a573-bfb7df6a808b</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="rounded-md border border-[#2c2c30] px-2.5 py-1.5 text-xs muted hover:text-zinc-200">Open full view</button>
+        <button class="rounded-md border border-[#2c2c30] px-2 py-1.5 text-xs muted hover:text-zinc-200">✕</button>
+      </div>
+    </div>
+
+    <!-- KPI row: always visible -->
+    <div class="mt-4 grid grid-cols-4 gap-2.5">
+      <div class="card px-3 py-2.5">
+        <p class="text-[0.68rem] uppercase tracking-wide muted">Score</p>
+        <p class="mt-0.5 text-lg font-semibold">—</p>
+        <p class="text-[0.68rem] muted">Calibrating</p>
+      </div>
+      <div class="card px-3 py-2.5">
+        <p class="text-[0.68rem] uppercase tracking-wide muted">Cost</p>
+        <p class="mt-0.5 text-lg font-semibold tabular-nums">US$3.96</p>
+        <p class="text-[0.68rem] muted">$0.40 / request</p>
+      </div>
+      <div class="card px-3 py-2.5">
+        <p class="text-[0.68rem] uppercase tracking-wide muted">Active time</p>
+        <p class="mt-0.5 text-lg font-semibold tabular-nums">5.1 min</p>
+        <p class="text-[0.68rem] muted">of 29.0 min</p>
+      </div>
+      <div class="card px-3 py-2.5">
+        <p class="text-[0.68rem] uppercase tracking-wide muted">Requests</p>
+        <p class="mt-0.5 text-lg font-semibold tabular-nums">10</p>
+        <p class="text-[0.68rem] text-emerald-500">10 succeeded</p>
+      </div>
+    </div>
+
+    <!-- Efficiency strip: the headline answer -->
+    <div class="mt-3 card px-3 py-2.5">
+      <div class="flex items-center justify-between">
+        <p class="text-xs muted">Where the 29.0 minutes went</p>
+        <p class="text-xs font-medium"><span class="text-emerald-400">18% active</span> <span class="muted">· 9.8 s model work</span></p>
+      </div>
+      <div class="mt-2 flex h-2.5 w-full overflow-hidden rounded-full">
+        <div class="bg-emerald-500" style="width:17.6%" title="Active 5.1 min"></div>
+        <div class="bg-zinc-700" style="width:82.4%" title="Excluded long gaps 23.9 min"></div>
+      </div>
+      <div class="mt-1.5 flex gap-4">
+        <span class="seg-label"><span class="mr-1 inline-block size-2 rounded-full bg-emerald-500"></span>Active 5.1 min</span>
+        <span class="seg-label"><span class="mr-1 inline-block size-2 rounded-full bg-zinc-600"></span>Excluded gaps 23.9 min</span>
+        <span class="seg-label ml-auto">Overlap saved 800 ms</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Tabs -->
+  <div class="border-b border-[#232326] px-6 py-2.5">
+    <nav class="flex gap-1" id="tabs">
+      <button class="tab" data-active="true" data-panel="overview">Overview</button>
+      <button class="tab" data-active="false" data-panel="activity">Activity</button>
+      <button class="tab" data-active="false" data-panel="diagnostics">Diagnostics</button>
+    </nav>
+  </div>
+
+  <!-- Scrollable body -->
+  <div class="flex-1 overflow-y-auto px-6 py-5">
+
+    <!-- OVERVIEW -->
+    <section class="panel" data-active="true" data-panel="overview">
+      <div class="flex flex-wrap gap-2">
+        <span class="chip">Model · openai-fast-v2</span>
+        <span class="chip">Chat Completions</span>
+        <span class="chip">Harness · Codex</span>
+        <span class="chip">Caller · User</span>
+        <span class="chip font-mono">ext · demo-jira-release-coordination-2026-07</span>
+      </div>
+
+      <div class="mt-5 card p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-medium">Telemetry coverage</h3>
+          <span class="text-sm font-semibold tabular-nums">62%</span>
+        </div>
+        <div class="mt-2.5 space-y-1.5">
+          <div>
+            <div class="flex justify-between text-xs"><span class="muted">Outcome · Cost · Timing</span><span>100%</span></div>
+            <div class="mt-1 h-1.5 rounded-full bg-zinc-800"><div class="h-1.5 rounded-full bg-emerald-500" style="width:100%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs"><span class="muted">Payload</span><span>10%</span></div>
+            <div class="mt-1 h-1.5 rounded-full bg-zinc-800"><div class="h-1.5 rounded-full bg-amber-500" style="width:10%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs"><span class="muted">Comparison group</span><span>0%</span></div>
+            <div class="mt-1 h-1.5 rounded-full bg-zinc-800"><div class="h-1.5 rounded-full bg-red-500" style="width:2%"></div></div>
+          </div>
+        </div>
+        <p class="mt-3 text-xs muted">No comparison group — the score stays experimental until cohort data exists.</p>
+      </div>
+
+      <div class="mt-4 card p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-medium">Tokens</h3>
+          <span class="text-sm tabular-nums muted">26,020 total</span>
+        </div>
+        <div class="mt-2.5 flex h-2.5 w-full overflow-hidden rounded-full">
+          <div class="bg-sky-500" style="width:88%"></div>
+          <div class="bg-violet-500" style="width:12%"></div>
+        </div>
+        <div class="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+          <span class="muted"><span class="mr-1 inline-block size-2 rounded-full bg-sky-500"></span>Fresh input</span><span class="text-right tabular-nums">22,890</span>
+          <span class="muted"><span class="mr-1 inline-block size-2 rounded-full bg-violet-500"></span>Output</span><span class="text-right tabular-nums">3,130</span>
+          <span class="muted"><span class="mr-1 inline-block size-2 rounded-full bg-zinc-700"></span>Cache read / created</span><span class="text-right tabular-nums">0 / 0</span>
+          <span class="muted">Cache savings</span><span class="text-right tabular-nums text-amber-400">0.0% — cache unused</span>
+        </div>
+      </div>
+
+      <div class="mt-4 rounded-lg border border-amber-900/60 bg-amber-950/30 px-4 py-3 text-xs text-amber-300">
+        Answer verification is not available for this session. Source data: request metadata · response payload.
+      </div>
+    </section>
+
+    <!-- ACTIVITY: merged timeline -->
+    <section class="panel" data-active="false" data-panel="activity">
+      <p class="text-xs muted">Requests and detected activity merged into one chronological feed. Gap markers replace the second table.</p>
+      <ol class="mt-4 relative border-l border-[#26262a] ml-2 space-y-4">
+        <!-- item template repeated -->
+        <li class="ml-5">
+          <span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full bg-emerald-500"></span>
+          <div class="flex items-center justify-between gap-3">
+            <span class="font-mono text-xs">demo-agent-session-001</span>
+            <span class="text-xs muted tabular-nums">22:02</span>
+          </div>
+          <p class="mt-0.5 text-xs muted">Request 1 · Succeeded · High-confidence inference</p>
+        </li>
+        <li class="ml-5">
+          <span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full border border-zinc-600 bg-[#0e0e10]"></span>
+          <p class="text-xs italic muted">6 min idle — excluded long gap</p>
+        </li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full bg-emerald-500"></span>
+          <div class="flex items-center justify-between gap-3"><span class="font-mono text-xs">demo-agent-session-002</span><span class="text-xs muted tabular-nums">22:08</span></div>
+          <p class="mt-0.5 text-xs muted">Request 2 · Succeeded · High-confidence inference</p></li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full border border-zinc-600 bg-[#0e0e10]"></span><p class="text-xs italic muted">6 min idle — excluded long gap</p></li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full bg-emerald-500"></span>
+          <div class="flex items-center justify-between gap-3"><span class="font-mono text-xs">demo-agent-session-003</span><span class="text-xs muted tabular-nums">22:14</span></div>
+          <p class="mt-0.5 text-xs muted">Request 3 · Succeeded · High-confidence inference</p></li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full border border-zinc-600 bg-[#0e0e10]"></span><p class="text-xs italic muted">6 min idle — excluded long gap</p></li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full bg-emerald-500"></span>
+          <div class="flex items-center justify-between gap-3"><span class="font-mono text-xs">demo-agent-session-004</span><span class="text-xs muted tabular-nums">22:20</span></div>
+          <p class="mt-0.5 text-xs muted">Request 4 · Succeeded · High-confidence inference</p></li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full border border-zinc-600 bg-[#0e0e10]"></span><p class="text-xs italic muted">6 min idle — excluded long gap</p></li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full bg-emerald-500"></span>
+          <div class="flex items-center justify-between gap-3"><span class="font-mono text-xs">demo-agent-session-005</span><span class="text-xs muted tabular-nums">22:26</span></div>
+          <p class="mt-0.5 text-xs muted">Request 5 · Succeeded · High-confidence inference</p></li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full bg-emerald-500"></span>
+          <div class="flex items-center justify-between gap-3"><span class="font-mono text-xs">demo-agent-mcp-001</span><span class="text-xs muted tabular-nums">22:27</span></div>
+          <p class="mt-0.5 text-xs muted">Request 6 · MCP · Succeeded · High-confidence inference</p></li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full bg-emerald-500"></span>
+          <div class="flex items-center justify-between gap-3"><span class="font-mono text-xs">demo-agent-mcp-002</span><span class="text-xs muted tabular-nums">22:28</span></div>
+          <p class="mt-0.5 text-xs muted">Request 7 · MCP · Succeeded · High-confidence inference</p></li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full bg-emerald-500"></span>
+          <div class="flex items-center justify-between gap-3"><span class="font-mono text-xs">demo-agent-mcp-003</span><span class="text-xs muted tabular-nums">22:29</span></div>
+          <p class="mt-0.5 text-xs muted">Request 8 · MCP · Succeeded · High-confidence inference</p></li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full bg-emerald-500"></span>
+          <div class="flex items-center justify-between gap-3"><span class="font-mono text-xs">demo-agent-mcp-004</span><span class="text-xs muted tabular-nums">22:30</span></div>
+          <p class="mt-0.5 text-xs muted">Request 9 · MCP · Succeeded · High-confidence inference</p></li>
+        <li class="ml-5"><span class="absolute -left-[5px] mt-1.5 size-2.5 rounded-full bg-emerald-500"></span>
+          <div class="flex items-center justify-between gap-3"><span class="font-mono text-xs">demo-agent-mcp-005</span><span class="text-xs muted tabular-nums">22:31</span></div>
+          <p class="mt-0.5 text-xs muted">Request 10 · MCP · Succeeded · High-confidence inference</p></li>
+      </ol>
+    </section>
+
+    <!-- DIAGNOSTICS: progressive disclosure -->
+    <section class="panel" data-active="false" data-panel="diagnostics">
+      <div class="space-y-2.5">
+        <details class="card px-4 py-3" open>
+          <summary class="flex items-center justify-between text-sm font-medium">Score components <span class="muted text-xs">▾</span></summary>
+          <div class="mt-3 border-t border-[#232326] pt-2">
+            <div class="row"><span class="muted">Outcome factor</span><span class="tabular-nums">100.0%</span></div>
+            <div class="row"><span class="muted">Total request and MCP time</span><span class="tabular-nums">9.8 s</span></div>
+            <div class="row"><span class="muted">Elapsed time</span><span class="tabular-nums">29.0 min</span></div>
+            <div class="row"><span class="muted">Excluded long gaps</span><span class="tabular-nums">23.9 min</span></div>
+            <div class="row"><span class="muted">Overlapping work time</span><span class="tabular-nums">800 ms</span></div>
+            <div class="row"><span class="muted">Cost / active-time efficiency</span><span class="muted">Not available</span></div>
+          </div>
+        </details>
+        <details class="card px-4 py-3">
+          <summary class="flex items-center justify-between text-sm font-medium">Tools and changes <span class="muted text-xs">▾</span></summary>
+          <div class="mt-3 border-t border-[#232326] pt-2">
+            <div class="row"><span class="muted">Tool calls</span><span>Not available</span></div>
+            <div class="row"><span class="muted">Direct MCP calls</span><span class="tabular-nums">5</span></div>
+            <div class="row"><span class="muted">File activity</span><span>Not available</span></div>
+          </div>
+        </details>
+        <details class="card px-4 py-3">
+          <summary class="flex items-center justify-between text-sm font-medium">Prompt context <span class="muted text-xs">▾</span></summary>
+          <div class="mt-3 border-t border-[#232326] pt-2">
+            <div class="row"><span class="muted">Answer verification</span><span>Not available</span></div>
+          </div>
+        </details>
+        <details class="card px-4 py-3">
+          <summary class="flex items-center justify-between text-sm font-medium">Analysis versions <span class="muted text-xs">▾</span></summary>
+          <div class="mt-3 border-t border-[#232326] pt-2 font-mono text-xs space-y-1.5">
+            <div class="row"><span class="muted">Report schema</span><span>—</span></div>
+            <div class="row"><span class="muted">Analyzer</span><span>—</span></div>
+            <div class="row"><span class="muted">Score policy</span><span>—</span></div>
+            <div class="row"><span class="muted">Boundary policy</span><span>—</span></div>
+            <div class="row"><span class="muted">Observation parser</span><span>—</span></div>
+            <div class="row"><span class="muted">Pricing policy</span><span>—</span></div>
+          </div>
+        </details>
+        <details class="card px-4 py-3">
+          <summary class="flex items-center justify-between text-sm font-medium">Session identity <span class="muted text-xs">▾</span></summary>
+          <div class="mt-3 border-t border-[#232326] pt-2">
+            <div class="row"><span class="muted">Session ID</span><span class="font-mono text-xs">e9801b53-d2c7-5af1-a573-bfb7df6a808b</span></div>
+            <div class="row"><span class="muted">External session ID</span><span class="font-mono text-xs">demo-jira-release-coordination-2026-07</span></div>
+          </div>
+        </details>
+      </div>
+    </section>
+  </div>
+</aside>
+
+<div class="fixed bottom-4 left-4 text-xs muted">
+  <a href="index.html" class="underline underline-offset-4">← All proposals</a> · Design A — Triage Drawer
+</div>
+
+<script>
+  const tabs = document.querySelectorAll('#tabs .tab');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.dataset.active = 'false');
+    t.dataset.active = 'true';
+    document.querySelectorAll('.panel').forEach(p => p.dataset.active = String(p.dataset.panel === t.dataset.panel));
+  }));
+</script>
+</body>
+</html>
