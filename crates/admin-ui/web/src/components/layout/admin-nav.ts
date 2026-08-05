@@ -163,5 +163,5 @@ function stripTrailingSlash(path: string) {
 }
 
 function adminNavItems() {
-  return adminNavSections.flatMap((section) => section.items).values()
+  return adminNavSections.flatMap((section) => section.items)
 }
