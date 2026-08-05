@@ -45,6 +45,14 @@ describe('login SSO errors', () => {
       'https://github.com/settings/emails',
     )
   })
+
+  it('provides a safe fallback for unknown provider errors', async () => {
+    const { ssoErrorMessage } = await import('@/routes/-login-messages')
+
+    expect(ssoErrorMessage('unexpected_provider_error')).toBe(
+      'SSO sign-in did not complete. Start sign-in again.',
+    )
+  })
 })
 
 describe('LoginPage', () => {
@@ -77,6 +85,18 @@ describe('LoginPage', () => {
     expect(screen.getByRole('link', { name: 'GitHub' })).toHaveAttribute(
       'href',
       'https://gateway.example/api/v1/auth/oauth/start?provider_key=github&redirect_to=%2Fadmin',
+    )
+  })
+
+  it('shows callback errors in an alert', async () => {
+    routeMock.useSearch.mockReturnValue({ sso_error: 'provider_failure' })
+    const { LoginPage } = await import('@/routes/login')
+
+    render(<LoginPage />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('SSO sign in failed')
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The identity provider did not complete sign-in.',
     )
   })
 })
