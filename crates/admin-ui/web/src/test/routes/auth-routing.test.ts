@@ -5,27 +5,11 @@ import {
   defaultSignedInPath,
   postLoginAdminHref,
 } from '@/routes/-auth-routing'
+import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 import type { AuthSessionView } from '@/types/api'
 
-const adminSession: AuthSessionView = {
-  must_change_password: false,
-  user: {
-    id: 'admin_1',
-    name: 'Admin User',
-    email: 'admin@example.com',
-    global_role: 'platform_admin',
-  },
-}
-
-const userSession: AuthSessionView = {
-  must_change_password: false,
-  user: {
-    id: 'user_1',
-    name: 'Regular User',
-    email: 'user@example.com',
-    global_role: 'user',
-  },
-}
+const adminSession = platformAdminSession()
+const userSession = regularUserSession()
 
 describe('signed-in route selection', () => {
   it('uses role-specific default routes', () => {
@@ -38,6 +22,9 @@ describe('signed-in route selection', () => {
     expect(canAccessSignedInPath(userSession, '/models?page=2')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/identity/teams')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/identity/users?user_id=user_2')).toBe(true)
+    expect(canAccessSignedInPath(userSession, '/identity/service-accounts')).toBe(true)
+    expect(canAccessSignedInPath(userSession, '/observability/leaderboard')).toBe(true)
+    expect(canAccessSignedInPath(userSession, '/observability/agent-harnesses')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/observability/request-logs?status=failed')).toBe(
       true,
     )
@@ -46,10 +33,26 @@ describe('signed-in route selection', () => {
     )
   })
 
-  it('replaces a regular user redirect to an admin-only route', () => {
-    expect(canAccessSignedInPath(userSession, '/identity/service-accounts')).toBe(false)
-    expect(postLoginAdminHref(userSession, '/identity/service-accounts')).toBe(
-      '/admin/observability/usage-costs',
+  it('replaces a redirect to a page that is absent from the resolved set', () => {
+    const modelsOnlySession = regularUserSession(['models'])
+
+    expect(canAccessSignedInPath(modelsOnlySession, '/identity/service-accounts')).toBe(false)
+    expect(postLoginAdminHref(modelsOnlySession, '/identity/service-accounts')).toBe(
+      '/admin/models',
     )
+  })
+
+  it('uses the no-access route when the resolved set is empty', () => {
+    const noAccessSession: AuthSessionView = {
+      ...regularUserSession([]),
+      permissions: {
+        group: 'users',
+        pages: [],
+        default_page: null,
+      },
+    }
+
+    expect(defaultSignedInPath(noAccessSession)).toBe('/no-access')
+    expect(canAccessSignedInPath(noAccessSession, '/no-access')).toBe(true)
   })
 })

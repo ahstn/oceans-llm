@@ -4,6 +4,7 @@ import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { canAccessPage } from '@/components/layout/admin-nav'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -37,7 +38,6 @@ import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { Input } from '@/components/ui/input'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import {
   Select,
@@ -83,7 +83,6 @@ import type {
 } from '@/types/api'
 
 export const Route = createFileRoute('/identity/teams')({
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: ({ context }) =>
     isPlatformAdminSession(context.session) ? getTeams() : getTeamDirectory(),
   component: TeamsPage,
@@ -1183,6 +1182,16 @@ function UserEntityLink({
   user: { id: string; name: string; email: string; status?: string }
   compact?: boolean
 }) {
+  const { session } = Route.useRouteContext()
+  if (!session || !canAccessPage(session, 'users')) {
+    return (
+      <span className="inline-flex items-center gap-2 px-2 py-1">
+        <GeneratedAvatar kind="user" name={user.name || user.email} size={compact ? 20 : 24} />
+        <span className="truncate">{user.name}</span>
+      </span>
+    )
+  }
+
   return (
     <Button asChild type="button" size="sm" variant="secondary" className="h-auto px-2 py-1">
       <Link

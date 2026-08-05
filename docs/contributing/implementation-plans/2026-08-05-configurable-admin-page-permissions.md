@@ -3,7 +3,7 @@
 `See also`: [Identity and Access](../../access/identity-and-access.md), [Admin Control Plane](../../access/admin-control-plane.md), [Configuration Reference](../../configuration/configuration-reference.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../../adr/2026-05-10-team-service-accounts.md)
 
 - Date: 2026-08-05
-- Status: Draft plan
+- Status: Implemented
 - Preceding change: [PR #261](https://github.com/ahstn/oceans-llm/pull/261)
 - Primary target: control which signed-in admin UI pages each user group can see and open
 

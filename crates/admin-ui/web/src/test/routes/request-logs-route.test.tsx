@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { regularUserSession } from '@/test/auth-session'
 import type { RequestLogView } from '@/types/api'
 
 const getObservabilityRequestLogDetailMock = vi.fn()
@@ -9,6 +10,7 @@ const navigateMock = vi.fn()
 
 const routeMock = {
   useLoaderData: vi.fn(),
+  useRouteContext: vi.fn(),
   useSearch: vi.fn(),
 }
 
@@ -88,6 +90,8 @@ const items: RequestLogView[] = [
 describe('RequestLogsPage', () => {
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
+    routeMock.useRouteContext.mockReset()
+    routeMock.useRouteContext.mockReturnValue({ session: regularUserSession() })
     routeMock.useSearch.mockReset()
     getObservabilityRequestLogDetailMock.mockReset()
     navigateMock.mockReset()

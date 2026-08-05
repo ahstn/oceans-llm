@@ -2,6 +2,7 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { RoboticIcon, SearchIcon } from '@hugeicons/core-free-icons'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { canAccessPage } from '@/components/layout/admin-nav'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,18 +17,19 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { requireAdminSession } from '@/routes/-admin-guard'
 import { getApiKeys, getServiceAccounts } from '@/server/admin-data.functions'
 import type { ApiKeyView, ServiceAccountView } from '@/types/api'
 
 export const Route = createFileRoute('/identity/service-accounts')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
-  loader: async () => {
-    const [serviceAccounts, apiKeys] = await Promise.all([getServiceAccounts(), getApiKeys()])
+  loader: async ({ context }) => {
+    const [serviceAccounts, apiKeys] = await Promise.all([
+      getServiceAccounts(),
+      context.session?.permissions.group === 'users' ? null : getApiKeys(),
+    ])
 
     return {
       serviceAccounts: serviceAccounts.data.service_accounts,
-      apiKeys: apiKeys.data.items,
+      apiKeys: apiKeys?.data.items ?? [],
     }
   },
   component: ServiceAccountsPage,
@@ -40,11 +42,13 @@ type ServiceAccountCredentialRow = {
 }
 
 export function ServiceAccountsPage() {
+  const { session } = Route.useRouteContext()
   const { serviceAccounts, apiKeys } = Route.useLoaderData() as {
     serviceAccounts: ServiceAccountView[]
     apiKeys: ApiKeyView[]
   }
   const rows = buildServiceAccountRows(serviceAccounts, apiKeys)
+  const credentialAccessRestricted = session?.permissions.group === 'users'
 
   return (
     <div className="flex flex-col gap-4">
@@ -74,7 +78,10 @@ export function ServiceAccountsPage() {
               </EmptyHeader>
             </Empty>
           ) : (
-            <ServiceAccountTable rows={rows} />
+            <ServiceAccountTable
+              rows={rows}
+              credentialAccessRestricted={credentialAccessRestricted}
+            />
           )}
         </CardContent>
       </Card>
@@ -82,7 +89,13 @@ export function ServiceAccountsPage() {
   )
 }
 
-function ServiceAccountTable({ rows }: { rows: ServiceAccountCredentialRow[] }) {
+function ServiceAccountTable({
+  rows,
+  credentialAccessRestricted,
+}: {
+  rows: ServiceAccountCredentialRow[]
+  credentialAccessRestricted: boolean
+}) {
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-3 md:hidden">
@@ -128,7 +141,7 @@ function ServiceAccountTable({ rows }: { rows: ServiceAccountCredentialRow[] }) 
                   API key
                 </dt>
                 <dd className="mt-1 text-[var(--color-text-muted)]">
-                  {row.apiKey ? row.apiKey.name : 'No credential attached'}
+                  {credentialLabel(row.apiKey, credentialAccessRestricted)}
                 </dd>
               </div>
             </dl>
@@ -189,7 +202,7 @@ function ServiceAccountTable({ rows }: { rows: ServiceAccountCredentialRow[] }) 
                   <EntityTagBadges tags={row.serviceAccount.tags} />
                 </TableCell>
                 <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
-                  {row.apiKey ? row.apiKey.name : 'No credential attached'}
+                  {credentialLabel(row.apiKey, credentialAccessRestricted)}
                 </TableCell>
                 <TableCell className="px-3 py-3">
                   {row.apiKey ? (
@@ -214,6 +227,16 @@ function TeamLink({
   serviceAccount: ServiceAccountView
   compact?: boolean
 }) {
+  const { session } = Route.useRouteContext()
+  if (!session || !canAccessPage(session, 'teams')) {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <GeneratedAvatar kind="team" name={serviceAccount.team_name} size={compact ? 20 : 24} />
+        <span className="truncate">{serviceAccount.team_name}</span>
+      </span>
+    )
+  }
+
   return (
     <Button asChild type="button" size="sm" variant="secondary" className="h-auto px-2 py-1">
       <Link to="/identity/teams" aria-label={`Open ${serviceAccount.team_name} in Teams`}>
@@ -230,6 +253,9 @@ function TeamLink({
 }
 
 function ApiKeyLink({ apiKey }: { apiKey: ApiKeyView }) {
+  const { session } = Route.useRouteContext()
+  if (!session || !canAccessPage(session, 'api_keys')) return null
+
   return (
     <Button asChild type="button" size="sm" variant="secondary">
       <Link
@@ -242,6 +268,11 @@ function ApiKeyLink({ apiKey }: { apiKey: ApiKeyView }) {
       </Link>
     </Button>
   )
+}
+
+function credentialLabel(apiKey: ApiKeyView | null, accessRestricted: boolean) {
+  if (apiKey) return apiKey.name
+  return accessRestricted ? 'Credential details restricted' : 'No credential attached'
 }
 
 function StatusBadge({ status }: { status: string }) {

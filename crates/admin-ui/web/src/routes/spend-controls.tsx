@@ -31,7 +31,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   getBudgetAlertHistory,
   getModels,
@@ -52,7 +51,6 @@ import type {
 } from '@/types/api'
 
 export const Route = createFileRoute('/spend-controls')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
   loader: async () => {
     const [budgets, alerts, models] = await Promise.all([
       getSpendBudgets(),

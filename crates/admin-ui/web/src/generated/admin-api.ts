@@ -1416,6 +1416,10 @@ export interface components {
             provider_label: string;
             sign_in_url: string;
         };
+        /** @enum {string} */
+        AdminPage: "api_keys" | "models" | "mcp" | "review_agent" | "usage_costs" | "spend_controls" | "leaderboard" | "agent_harnesses" | "request_logs" | "mcp_invocations" | "teams" | "users" | "service_accounts";
+        /** @enum {string} */
+        AdminPermissionGroup: "platform_admins" | "team_admins" | "users";
         AdminServiceAccountView: {
             id: string;
             key: string;
@@ -1474,6 +1478,11 @@ export interface components {
         };
         /** @enum {string} */
         ApiKeyModelGrantModeView: "all" | "explicit";
+        AuthSessionPermissionsView: {
+            default_page?: null | components["schemas"]["AdminPage"];
+            group: components["schemas"]["AdminPermissionGroup"];
+            pages: components["schemas"]["AdminPage"][];
+        };
         AuthSessionUserView: {
             email: string;
             global_role: string;
@@ -1482,6 +1491,7 @@ export interface components {
         };
         AuthSessionView: {
             must_change_password: boolean;
+            permissions: components["schemas"]["AuthSessionPermissionsView"];
             user: components["schemas"]["AuthSessionUserView"];
         };
         BudgetAlertHistoryItemView: {
@@ -1773,6 +1783,7 @@ export interface components {
         Envelope_AuthSessionView: {
             data: {
                 must_change_password: boolean;
+                permissions: components["schemas"]["AuthSessionPermissionsView"];
                 user: components["schemas"]["AuthSessionUserView"];
             };
             meta: components["schemas"]["ResponseMeta"];
@@ -1994,6 +2005,7 @@ export interface components {
         Envelope_Option_AuthSessionView: {
             data: null | {
                 must_change_password: boolean;
+                permissions: components["schemas"]["AuthSessionPermissionsView"];
                 user: components["schemas"]["AuthSessionUserView"];
             };
             meta: components["schemas"]["ResponseMeta"];

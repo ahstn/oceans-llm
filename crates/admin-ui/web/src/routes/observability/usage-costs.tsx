@@ -15,12 +15,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
-import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { getSpendUsageReport, getUsageCosts } from '@/server/admin-data.functions'
 import type { SpendOwnerKind, SpendReportView } from '@/types/api'
 
 export const Route = createFileRoute('/observability/usage-costs')({
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: () => getUsageCosts(),
   component: UsageCostsPage,
 })

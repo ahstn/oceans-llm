@@ -1,6 +1,6 @@
 # Admin Control Plane
 
-`See also`: [Identity and Access](identity-and-access.md), [Service Accounts](service-accounts.md), [Budgets](budgets.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../contributing/reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../contributing/reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Service Accounts](service-accounts.md), [Budgets](budgets.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../contributing/reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../contributing/reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
 
 This page describes what platform admins can do and which self-service views regular users can open in the browser UI today.
 
@@ -110,9 +110,9 @@ Current limits:
 
 ## Admin Auth and Session Behavior
 
-Most global admin-control-plane workflows require a `platform_admin` account. Service-account workflows also allow scoped team operators: active team owners and team admins can manage service accounts for their own team without gaining platform-wide access.
+Admins can control signed-in page visibility with the top-level `permissions` config. The gateway returns the resolved page set in each session, and the UI uses it for navigation, direct routes, and the landing page. Team admins inherit user pages, and platform admins inherit both lower groups. See [Identity and Access](identity-and-access.md#admin-page-permission-groups) for the group and data-scope policy, and see the [`permissions` config reference](../configuration/configuration-reference.md#permissions) for syntax.
 
-Regular `user` accounts can sign in and monitor their own activity. They can open API Keys, Models, Teams, Users, Usage Costs, Request Logs, and MCP Invocations. The API Keys page lists keys owned by the signed-in user. Active team owners and team admins also see service-account keys for their team. The regular-user view does not expose mutation controls. The Models page lists all routed models and can generate client configuration, but it hides model allowlist membership and pricing refresh. Teams and Users provide a read-only directory without onboarding links, provider setup data, internal team keys, entity tags, authentication configuration, or mutation controls. The gateway forces observability queries to the signed-in user and checks ownership again for detail requests. Regular users cannot open leaderboard, harness-wide usage, service-account, budget, or configuration pages.
+The default shared set includes API Keys, Models, Teams, Users, Usage Costs, Leaderboard, Agent Harnesses, Request Logs, MCP Invocations, and Service Accounts. Leaderboard and Agent Harnesses are global read views. Service Accounts is team-scoped for regular users. Hiding a page does not revoke direct API access; handler authorization remains the security boundary.
 
 User and team write routes have two backend authorization layers. A centralized HTTP mutation guard requires an active `platform_admin` session for every POST, PUT, PATCH, or DELETE request under `/api/v1/admin/identity/users` and `/api/v1/admin/identity/teams`. Each mutation handler also repeats the platform-admin check before it reads or changes identity state.
 
@@ -145,6 +145,9 @@ Regular users can:
 - export their own FOCUS billing rows
 - inspect their own request-log list and details
 - inspect their own MCP invocation list and details
+- inspect the global 7-day or 31-day usage leaderboard
+- inspect global 7-day or 31-day agent harness usage
+- inspect active service accounts for their own team without credential metadata
 - inspect request-log summaries
 - filter request logs by caller service, component, environment, and one bespoke tag match
 - inspect sanitized request-log payload detail

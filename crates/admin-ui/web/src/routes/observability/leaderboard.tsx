@@ -23,7 +23,6 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   getObservabilityLeaderboard,
   refreshObservabilityLeaderboard,
@@ -31,7 +30,6 @@ import {
 import type { LeaderboardRange, LeaderboardLeaderView, LeaderboardView } from '@/types/api'
 
 export const Route = createFileRoute('/observability/leaderboard')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
   loader: () => getObservabilityLeaderboard({ data: { range: '7d' } }),
   component: ObservabilityLeaderboardPage,
 })

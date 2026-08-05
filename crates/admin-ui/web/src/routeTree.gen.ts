@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SpendControlsRouteImport } from './routes/spend-controls'
 import { Route as ReviewAgentRouteImport } from './routes/review-agent'
+import { Route as NoAccessRouteImport } from './routes/no-access'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ChangePasswordRouteImport } from './routes/change-password'
@@ -38,6 +39,11 @@ const SpendControlsRoute = SpendControlsRouteImport.update({
 const ReviewAgentRoute = ReviewAgentRouteImport.update({
   id: '/review-agent',
   path: '/review-agent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NoAccessRoute = NoAccessRouteImport.update({
+  id: '/no-access',
+  path: '/no-access',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ModelsRoute = ModelsRouteImport.update({
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/no-access': typeof NoAccessRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/identity/service-accounts': typeof IdentityServiceAccountsRoute
@@ -164,6 +171,7 @@ export interface FileRoutesByTo {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/no-access': typeof NoAccessRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/identity/service-accounts': typeof IdentityServiceAccountsRoute
@@ -187,6 +195,7 @@ export interface FileRoutesById {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/no-access': typeof NoAccessRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/identity/service-accounts': typeof IdentityServiceAccountsRoute
@@ -211,6 +220,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/no-access'
     | '/review-agent'
     | '/spend-controls'
     | '/identity/service-accounts'
@@ -233,6 +243,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/no-access'
     | '/review-agent'
     | '/spend-controls'
     | '/identity/service-accounts'
@@ -255,6 +266,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/no-access'
     | '/review-agent'
     | '/spend-controls'
     | '/identity/service-accounts'
@@ -278,6 +290,7 @@ export interface RootRouteChildren {
   ChangePasswordRoute: typeof ChangePasswordRoute
   LoginRoute: typeof LoginRoute
   ModelsRoute: typeof ModelsRoute
+  NoAccessRoute: typeof NoAccessRoute
   ReviewAgentRoute: typeof ReviewAgentRoute
   SpendControlsRoute: typeof SpendControlsRoute
   IdentityServiceAccountsRoute: typeof IdentityServiceAccountsRoute
@@ -308,6 +321,13 @@ declare module '@tanstack/react-router' {
       path: '/review-agent'
       fullPath: '/review-agent'
       preLoaderRoute: typeof ReviewAgentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/no-access': {
+      id: '/no-access'
+      path: '/no-access'
+      fullPath: '/no-access'
+      preLoaderRoute: typeof NoAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/models': {
@@ -446,6 +466,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChangePasswordRoute: ChangePasswordRoute,
   LoginRoute: LoginRoute,
   ModelsRoute: ModelsRoute,
+  NoAccessRoute: NoAccessRoute,
   ReviewAgentRoute: ReviewAgentRoute,
   SpendControlsRoute: SpendControlsRoute,
   IdentityServiceAccountsRoute: IdentityServiceAccountsRoute,

@@ -28,7 +28,13 @@ use serde::{Deserialize, Deserializer, de};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
+mod permissions;
 mod providers;
+
+pub use permissions::{
+    AdminPage, AdminPermissionGroup, PagePermissionSetConfig, PermissionsConfig,
+    ResolvedAdminPermissions, ResolvedPagePermissions,
+};
 
 pub use providers::{
     AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
@@ -51,6 +57,8 @@ pub struct GatewayConfig {
     pub budgets: BudgetsConfig,
     #[serde(default)]
     pub request_logging: RequestLoggingConfig,
+    #[serde(default)]
+    pub permissions: PermissionsConfig,
     #[serde(default)]
     pub providers: Vec<ProviderConfig>,
     #[serde(default)]
@@ -85,6 +93,7 @@ impl GatewayConfig {
         let _ = self.database.connection_options()?;
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
+        let _ = self.permissions.resolve()?;
         self.auth.oidc.validate(&self.teams)?;
         self.auth.oauth.validate(&self.teams)?;
 
@@ -583,6 +592,10 @@ impl GatewayConfig {
         }
 
         Ok(())
+    }
+
+    pub fn resolved_admin_permissions(&self) -> anyhow::Result<ResolvedAdminPermissions> {
+        self.permissions.resolve()
     }
 
     fn validate_budget_defaults(

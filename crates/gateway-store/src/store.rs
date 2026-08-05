@@ -686,6 +686,13 @@ impl AdminIdentityRepository for AnyStore {
         dispatch_store!(self, list_active_service_accounts())
     }
 
+    async fn list_active_service_accounts_for_team(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<gateway_core::ServiceAccountRecord>, StoreError> {
+        dispatch_store!(self, list_active_service_accounts_for_team(team_id))
+    }
+
     async fn list_service_accounts(
         &self,
     ) -> Result<Vec<gateway_core::ServiceAccountRecord>, StoreError> {

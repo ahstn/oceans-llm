@@ -6,7 +6,6 @@ import {
   CreatedApiKeyAlert,
   ManageApiKeyDialog,
 } from '@/routes/api-keys/-components'
-import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import { getApiKeys } from '@/server/admin-data.functions'
 import type { ApiKeysPayload } from '@/types/api'
@@ -17,7 +16,6 @@ export const Route = createFileRoute('/api-keys')({
   validateSearch: (search: Record<string, unknown>) => ({
     api_key_id: typeof search.api_key_id === 'string' ? search.api_key_id : undefined,
   }),
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: () => getApiKeys(),
   component: ApiKeysPage,
 })

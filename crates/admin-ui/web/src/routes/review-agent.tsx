@@ -42,7 +42,6 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { Input } from '@/components/ui/input'
-import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   Select,
   SelectContent,
@@ -88,7 +87,6 @@ import type {
 } from '@/types/api'
 
 export const Route = createFileRoute('/review-agent')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
   validateSearch: (search: Record<string, unknown>) => normalizeReviewAgentSearch(search),
   loader: () => getReviewAgentOverview(),
   component: ReviewAgentPage,

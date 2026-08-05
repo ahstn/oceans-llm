@@ -42,7 +42,7 @@ export function AppSidebar({
   signOutPending,
   onSignOut,
 }: AppSidebarProps) {
-  const navSections = getAdminNavSections(session.user.global_role)
+  const navSections = getAdminNavSections(session.permissions.pages)
 
   return (
     <Sidebar collapsible="icon" variant="inset">

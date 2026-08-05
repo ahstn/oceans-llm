@@ -33,6 +33,8 @@ pub struct GatewayMetrics {
     mcp_discovery_refresh_duration: Histogram<f64>,
     usage_records: Counter<u64>,
     usage_record_failures: Counter<u64>,
+    admin_view_cache_requests: Counter<u64>,
+    admin_view_cache_load_duration: Histogram<f64>,
     #[cfg(any(test, debug_assertions))]
     test_counters: Arc<TestMetricCounters>,
 }
@@ -147,6 +149,15 @@ impl GatewayMetrics {
                 .u64_counter("gateway.chat.usage_record_failures")
                 .with_description("Post-success chat usage record failures")
                 .build(),
+            admin_view_cache_requests: meter
+                .u64_counter("gateway.admin.view_cache.requests")
+                .with_description("Admin global-view cache requests by result")
+                .build(),
+            admin_view_cache_load_duration: meter
+                .f64_histogram("gateway.admin.view_cache.load.duration")
+                .with_unit("s")
+                .with_description("Admin global-view cache load duration in seconds")
+                .build(),
             #[cfg(any(test, debug_assertions))]
             test_counters: Arc::new(TestMetricCounters::default()),
         }
@@ -213,6 +224,26 @@ impl GatewayMetrics {
         let mut attrs = base_attrs(labels);
         attrs.push(KeyValue::new("operation", operation.to_string()));
         self.usage_record_failures.add(1, &attrs);
+    }
+
+    pub fn record_admin_view_cache_request(&self, view: &str, result: &str) {
+        self.admin_view_cache_requests.add(
+            1,
+            &[
+                KeyValue::new("view", view.to_string()),
+                KeyValue::new("result", result.to_string()),
+            ],
+        );
+    }
+
+    pub fn record_admin_view_cache_load(&self, view: &str, outcome: &str, duration: Duration) {
+        self.admin_view_cache_load_duration.record(
+            duration.as_secs_f64(),
+            &[
+                KeyValue::new("view", view.to_string()),
+                KeyValue::new("outcome", outcome.to_string()),
+            ],
+        );
     }
 
     pub fn record_tool_cardinality(

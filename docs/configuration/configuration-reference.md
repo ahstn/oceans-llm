@@ -1,6 +1,6 @@
 # Configuration Reference
 
-`See also`: [Oceans LLM Gateway](../../README.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [OIDC and SSO](../access/oidc-and-sso-status.md)
+`See also`: [Oceans LLM Gateway](../../README.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [OIDC and SSO](../access/oidc-and-sso-status.md), [ADR: Configurable Admin Page Permissions](../adr/2026-08-05-configurable-admin-page-permissions.md)
 
 This page owns config syntax and parse-time rules. It does not own the full runtime story after a request starts moving.
 
@@ -22,6 +22,7 @@ This page owns config syntax and parse-time rules. It does not own the full runt
 - `server`
 - `database`
 - `auth`
+- `permissions`
 - `budgets`
 - `budget_alerts`
 - `request_logging`
@@ -190,8 +191,57 @@ Important defaults from config parsing and domain deserialization:
 - `request_logging.purge.retention` defaults to `7d`
 - `budgets.users.default` is absent by default; when present, it creates inherited user budgets for all human users
 - `budgets.users.model_defaults` is empty by default; entries create inherited user model budgets for all human users for selected gateway models
+- `permissions.users.pages` defaults to the 10 shared console pages
+- `permissions.team_admins.pages` has no direct default grants and inherits the user pages
+- `permissions.platform_admins.pages` defaults to `mcp`, `review_agent`, and `spend_controls`, then inherits both lower groups
 
 The startup meaning of bootstrap-admin lives in [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md). Non-human data-plane access is managed through [service accounts](../access/service-accounts.md), not config-seeded legacy runtime keys.
+
+## `permissions`
+
+`permissions` controls which signed-in admin UI pages each group can see and open. It does not replace API authorization or change the data returned by an API.
+
+```yaml
+permissions:
+  users:
+    pages:
+      - api_keys
+      - models
+      - usage_costs
+      - leaderboard
+      - agent_harnesses
+      - request_logs
+      - mcp_invocations
+      - teams
+      - users
+      - service_accounts
+    default_page: usage_costs
+  team_admins:
+    pages: []
+    default_page: usage_costs
+  platform_admins:
+    pages:
+      - mcp
+      - review_agent
+      - spend_controls
+    default_page: api_keys
+```
+
+Each `pages` list contains direct grants for that group. The gateway forms effective sets with these unions:
+
+- `users`: `users.pages`
+- `team_admins`: `users.pages` plus `team_admins.pages`
+- `platform_admins`: all three `pages` lists
+
+Repeated page names are valid and appear once in the effective set. An explicit empty list removes that group's direct grants, but inherited grants still apply. If a group or its `pages` field is absent, the gateway uses the direct defaults shown above.
+
+The valid page names are `api_keys`, `models`, `mcp`, `review_agent`, `usage_costs`, `spend_controls`, `leaderboard`, `agent_harnesses`, `request_logs`, `mcp_invocations`, `teams`, `users`, and `service_accounts`.
+
+The `users` and `team_admins` groups can receive only the 10 shared page names in the example. Only `platform_admins` can receive `mcp`, `review_agent`, or `spend_controls`. Startup fails for an unknown field, unknown page, unsupported group grant, or `default_page` that is not in the final effective set.
+
+If `default_page` is absent, the gateway uses the normal group default when that page is available. Otherwise, it uses the first effective page in a stable order. A group with no effective pages uses the signed-in `/admin/no-access` page.
+
+Config changes take effect after a gateway restart. See [Identity and Access](../access/identity-and-access.md#admin-page-permission-groups) for group selection and data-scope rules.
 
 ## `server`
 

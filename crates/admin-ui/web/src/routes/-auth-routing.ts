@@ -1,21 +1,12 @@
 import type { AuthSessionView } from '@/types/api'
+import {
+  canAccessPage,
+  getAdminPageForPath,
+  getAdminPagePath,
+  normalizeAdminPath,
+} from '@/components/layout/admin-nav'
 
-export const DEFAULT_SIGNED_IN_PATH = '/api-keys'
-export const DEFAULT_USER_PATH = '/observability/usage-costs'
-
-const USER_ACCESSIBLE_PATHS = [
-  '/api-keys',
-  '/models',
-  '/identity/teams',
-  '/identity/users',
-  DEFAULT_USER_PATH,
-  '/observability/request-logs',
-  '/observability/mcp-invocations',
-]
-
-export function normalizeAdminPath(pathname: string) {
-  return pathname.replace(/^\/admin(?=\/|$)/, '') || '/'
-}
+export { normalizeAdminPath }
 
 export function isPublicAdminRoute(currentPath: string) {
   return (
@@ -40,18 +31,21 @@ export function buildRedirectTarget(pathname: string, search: Record<string, unk
   return searchString ? `${currentPath}?${searchString}` : currentPath
 }
 
+export function defaultSignedInPath(session: AuthSessionView) {
+  const defaultPage = session.permissions.default_page
+  return (defaultPage && getAdminPagePath(defaultPage)) || '/no-access'
+}
+
 export function isPlatformAdminSession(session: AuthSessionView | null | undefined) {
   return session?.user.global_role === 'platform_admin'
 }
 
-export function defaultSignedInPath(session: AuthSessionView) {
-  return isPlatformAdminSession(session) ? DEFAULT_SIGNED_IN_PATH : DEFAULT_USER_PATH
-}
-
 export function canAccessSignedInPath(session: AuthSessionView, path: string) {
-  if (isPlatformAdminSession(session)) return true
   const pathname = path.split(/[?#]/, 1)[0]
-  return USER_ACCESSIBLE_PATHS.some((allowedPath) => pathname === allowedPath)
+  if (pathname === '/') return true
+  if (pathname === '/no-access') return session.permissions.pages.length === 0
+  const page = getAdminPageForPath(pathname)
+  return page ? canAccessPage(session, page) : false
 }
 
 export function signedInAdminHref(session: AuthSessionView, redirect?: string) {
