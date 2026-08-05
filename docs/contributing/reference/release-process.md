@@ -2,117 +2,191 @@
 
 `See also`: [Contributing](../../../CONTRIBUTING.md), [Deploy and Operations](../../setup/deploy-and-operations.md), [Admin Runbooks](../../operations/operator-runbooks.md), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../../adr/2026-03-06-release-versioning-and-ghcr-publishing.md)
 
-This page is the maintainer-facing release runbook.
+This runbook explains how maintainers prepare, review, publish, and verify an Oceans LLM release.
 
-## Source of Truth
+## Release Contract
 
-- local release task:
-  - [../mise.toml](../../../mise.toml)
-- release workflow:
-  - [../.github/workflows/release.yml](../../../.github/workflows/release.yml)
-- Helm chart:
-  - [../../deploy/helm/oceans-llm](../../../deploy/helm/oceans-llm/README.md)
-- changelog config:
-  - [../cliff.toml](../../../cliff.toml)
+Oceans LLM uses one Semantic Version for the gateway, admin UI, container images, and Helm chart. A tag named `vX.Y.Z` identifies the source for all release artifacts.
+
+The release has three maintainer gates:
+
+1. `mise run release` prepares a local release commit and tag.
+2. `mise run release-publish` pushes the reviewed commit and tag, then creates a draft GitHub release.
+3. `mise run release-finalize` publishes the GitHub release after distribution checks pass.
+
+The first command has no remote side effects. The second command starts distribution because the pushed tag triggers GitHub Actions.
+
+## Source Files
+
+- [mise.toml](../../../mise.toml) defines the release commands.
+- [cog.toml](../../../cog.toml) defines versioning and pre-bump hooks.
+- [cliff.toml](../../../cliff.toml) defines changelog content and layout.
+- [release.yml](../../../.github/workflows/release.yml) builds and publishes release artifacts.
+- [Helm chart](../../../deploy/helm/oceans-llm/README.md) defines the Kubernetes package.
+
+## Merge and Changelog Rules
+
+The repository uses squash merges. The pull request title becomes the commit title on `main`, so each pull request produces one changelog candidate. Pull request titles must follow Conventional Commits.
+
+git-cliff also removes merge commits when it reads old history. This prevents a merge title and its source commit from producing duplicate entries.
+
+The changelog contains user-facing changes under these headings:
+
+- `Added` for new behavior.
+- `Changed` for changes to existing behavior.
+- `Fixed` for bug fixes.
+- `Security` for `fix(security)` commits.
+
+Build, chore, CI, documentation, style, and test commits do not appear by default. Use a `changelog: ignore` commit footer when another conventional commit must not appear. Breaking commits remain visible even when their type is normally hidden.
+
+The changelog is a release record, not a copy of the Git log. Commit titles must explain the effect of a notable change.
 
 ## Release Preflight
 
-Before `mise run release`, confirm:
+Before release preparation:
 
-- `main` is up to date locally
-- the intended release state is already merged
-- normal CI is green for that commit
-- generated admin contract artifacts are current
-- changelog-worthy commits are in the expected shape
+- Update local `main` from `origin/main`.
+- Confirm that the worktree is clean.
+- Confirm that normal CI passed for the current commit.
+- Confirm that generated admin contract files are current.
+- Confirm that each changelog-worthy commit has a clear title.
+- Set a valid `GITHUB_TOKEN` to let git-cliff read GitHub contributor and pull request data.
 
-The tag workflow is distribution, not the quality gate.
-
-## Current Release Flow
-
-1. update `main` locally
-2. run `mise run release`
-3. review the generated version changes and `CHANGELOG.md`
-4. confirm the GitHub release was created for the new tag
-5. push the release commit and tag
-6. let the tag-triggered GitHub Actions workflow build, attest, and publish images, then publish the Helm chart
-
-## What `mise run release` Does
-
-Current task steps:
-
-1. `mise run sync-pricing-catalog`
-2. `cog bump --auto --skip-untracked`
-3. `git-cliff -o CHANGELOG.md`
-4. `gh release create v$(cog get-version) ...`
-5. `cargo release version $(cog get-version) --execute`
-
-That means release metadata and version updates are authored locally before any push happens. The GitHub release is not created as a draft by this task.
-
-## What GitHub Actions Does
-
-The pushed `v*` tag triggers [../.github/workflows/release.yml](../../../.github/workflows/release.yml).
-
-Current workflow responsibilities:
-
-- build and publish the gateway image
-- build and publish the admin UI image
-- attest image provenance
-- validate, package, and publish the Helm chart after both image jobs succeed
-
-The workflow does not create or update the GitHub release body. It consumes the pushed tag as the image distribution trigger.
-
-## Helm Chart Publishing
-
-The release workflow publishes:
+Run the preview:
 
 ```bash
+mise run release-dry-run
+```
+
+The preview calculates the next version, previews Cargo version changes, and renders the next changelog without changing the repository.
+
+## Prepare the Release
+
+Run this command from a clean `main` branch:
+
+```bash
+mise run release
+```
+
+The command completes these steps:
+
+1. Verify that the worktree is clean.
+2. Update the pricing catalog.
+3. Ask Cocogitto to calculate the next version.
+4. Update workspace Cargo versions through a Cocogitto pre-bump hook.
+5. Regenerate `CHANGELOG.md` through a Cocogitto pre-bump hook.
+6. Create the local release commit and `vX.Y.Z` tag.
+
+The tag points to a commit that contains the Cargo version changes and the new changelog section. The command does not push the commit or tag and does not create a GitHub release.
+
+## Review the Prepared Release
+
+Get the prepared tag and confirm that it points to `HEAD`:
+
+```bash
+tag="$(cog get-version --tag)"
+test "$(git rev-parse "${tag}^{commit}")" = "$(git rev-parse HEAD)"
+```
+
+Review these items before publication:
+
+- The version matches the expected impact.
+- `CHANGELOG.md` has no duplicate or internal-only entries.
+- Cargo manifests and `Cargo.lock` use the new version.
+- The release commit contains only expected generated and version files.
+- The worktree is clean.
+
+Useful review commands:
+
+```bash
+git status --short
+git show --stat --decorate HEAD
+git show "${tag}:CHANGELOG.md"
+```
+
+Do not publish a release that needs edits. The tag is still local, so remove the local release tag and repair the release commits before you run the preparation step again. Inspect `git reflog` before any history repair so the release commit remains recoverable.
+
+## Publish the Tag and Draft Release
+
+After review, run:
+
+```bash
+mise run release-publish
+```
+
+The command:
+
+1. Confirms that the current branch is `main` and the worktree is clean.
+2. Confirms that the release tag points to `HEAD`.
+3. Extracts the newest release section from the committed `CHANGELOG.md` into a temporary notes file.
+4. Pushes `main` and the tag in one atomic Git operation.
+5. Creates a draft GitHub release from the pushed tag and the reviewed notes file.
+
+An atomic push prevents the branch and tag from moving separately. The draft release lets maintainers verify the final Markdown before publication.
+
+If GitHub release creation fails after the push, fix the GitHub CLI or permission problem and run `mise run release-publish` again. The repeated Git push is safe when the same commit and tag already exist on the remote.
+
+## Distribution Workflow
+
+The pushed `v*` tag triggers [release.yml](../../../.github/workflows/release.yml). The workflow:
+
+- Builds and publishes the gateway image for `linux/amd64`.
+- Builds and publishes the admin UI image for `linux/amd64` and `linux/arm64`.
+- Adds provenance attestations to both images.
+- Validates, packages, and publishes the Helm chart after both image jobs pass.
+
+The workflow publishes the Helm chart to:
+
+```text
 oci://ghcr.io/ahstn/charts/oceans-llm
 ```
 
-For a tag `vX.Y.Z`, the chart is packaged with:
+For a tag named `vX.Y.Z`, the chart version is `X.Y.Z` and its `appVersion` is `vX.Y.Z`.
 
-- chart version: `X.Y.Z`
-- chart appVersion: `vX.Y.Z`
+The workflow does not create, edit, or publish the draft GitHub release.
 
-The publish step runs `mise run helm-check`, packages [../../deploy/helm/oceans-llm](../../../deploy/helm/oceans-llm/README.md), logs in to GHCR with the workflow token, and pushes the package with `helm push ... oci://ghcr.io/ahstn/charts`.
+## Verify and Finalize
 
-The push target intentionally omits the chart basename and tag. Helm infers `oceans-llm:X.Y.Z` from the packaged chart name and version.
+After the tag workflow passes, verify:
 
-## Current Image Reality
+- The gateway and admin UI image tags exist.
+- Image digests and provenance attestations exist.
+- The Helm chart version exists at the expected OCI path.
+- The draft release notes match the reviewed changelog section.
+- The deploy documentation still matches the published image platforms.
 
-The workflow is not symmetric across both deployables today:
+If the release changed behavior for admins or users, confirm that the canonical documentation describes that behavior.
 
-- gateway image:
-  - `linux/amd64`
-- admin UI image:
-  - `linux/amd64`
-  - `linux/arm64`
+Publish the verified draft release:
 
-## Post-Release Verification
+```bash
+mise run release-finalize
+```
 
-After the workflow finishes, verify:
+## Failure Recovery
 
-- the GitHub release exists for the pushed tag
-- the expected image tags were published
-- the expected chart version was published at `oci://ghcr.io/ahstn/charts/oceans-llm`
-- the release notes look sane
-- the deploy docs still match the image reality
+### Preparation failed before tag creation
 
-If the release changed admin- or user-visible behavior, update the canonical docs in the same pass.
+Inspect the worktree and command output. Correct the local problem, restore a clean starting state, and run `mise run release` again.
 
-## CI Responsibility Boundary
+### Preparation failed after local tag creation
 
-The release workflow does not explicitly depend on prior CI runs.
+Do not push the tag. Confirm the tag and release commit with `git show` and `git reflog`. Remove only the local release state that you inspected, then rerun preparation.
 
-In practice:
+### Atomic push failed
 
-- maintainers are responsible for cutting releases from a known-good state
-- normal CI is the preflight signal
-- tag CI is the distribution step
+Neither `main` nor the tag should move when the remote supports atomic pushes. Update local `main`, resolve the conflict, prepare a new valid release state, and retry.
 
-## Failure Recovery Notes
+### Tag workflow failed
 
-- If `mise run release` creates a release but local version changes fail afterward, inspect the working tree before rerunning.
-- If the tag was not pushed, fix the local state and either reuse or delete the created GitHub release deliberately.
-- If the tag was pushed but image or chart publishing failed, fix the workflow issue and rerun the failed workflow for the same tag when possible.
-- Avoid retagging an existing published version unless the release is still private to maintainers and no deploy path consumed it.
+Keep the GitHub release as a draft. Fix the workflow problem and rerun the failed jobs for the same tag when the source is valid. Do not move a published tag to a different commit.
+
+### Draft release is wrong
+
+Edit the draft or correct its notes before finalization. If the tag source is wrong, stop distribution and follow the tag recovery policy. Do not publish the draft to hide a source or artifact mismatch.
+
+## CI Boundary
+
+Normal CI is the quality gate for the release source. Tag CI is the distribution gate. The release commands do not replace either gate.
+
+Maintainers must start from a known-good `main` commit. The draft release must stay unpublished until the tag workflow and artifact checks pass.

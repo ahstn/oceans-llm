@@ -356,26 +356,53 @@ depends = ["harness-integration-install"]
 run = "npm test --prefix tests/harness-integration"
 
 [tasks.release]
-description = "Analyze commits and dispatch the release workflow when a release is pending"
-depends = ["sync-pricing-catalog"]
+description = "Prepare and tag a release locally for maintainer review"
 env = { GITHUB_TOKEN = { required = true } }
-# Cocogitto is used purely for version bumping and publishing tags.
-# git-cliff, might be able to replace it entirely, but failed when an initial tag didn't exist.
-# Requires GITHUB_TOKEN to be set in the environment to avoid rate limits
 run = [
+  'test -z "$(git status --porcelain)"',
+  "mise run sync-pricing-catalog",
   "cog bump --auto --skip-untracked",
-  "git-cliff -o CHANGELOG.md",
-  # GitHub release with version specific notes (git-cliff)
-  'gh release create v$(cog get-version) --notes "$(git-cliff --tag v$(cog get-version) --latest --strip header)"',
-  # Bump package Cargo.toml versions
-  "cargo release version $(cog get-version) --execute",
 ]
 
+[tasks.release-publish]
+description = "Push the reviewed release commit and tag, then create a draft GitHub release"
+env = { GITHUB_TOKEN = { required = true } }
+run = '''
+set -euo pipefail
+
+test "$(git branch --show-current)" = "main"
+test -z "$(git status --porcelain)"
+
+tag="$(cog get-version --tag)"
+test "$(git rev-parse "${tag}^{commit}")" = "$(git rev-parse HEAD)"
+
+release_notes_file="$(mktemp -t oceans-llm-release-notes.XXXXXX)"
+trap 'rm -f "$release_notes_file"' EXIT
+awk 'BEGIN { found = 0 } /^## \[/ { if (found) exit; found = 1; next } found { print }' CHANGELOG.md > "$release_notes_file"
+test -s "$release_notes_file"
+
+git push --atomic origin main "$tag"
+gh release create "$tag" --draft --verify-tag --title "$tag" --notes-file "$release_notes_file"
+'''
+
+[tasks.release-finalize]
+description = "Publish the draft GitHub release after distribution checks pass"
+env = { GITHUB_TOKEN = { required = true } }
+run = 'gh release edit "$(cog get-version --tag)" --draft=false'
 
 [tasks.release-dry-run]
-description = "Validate semantic-release configuration in dry-run mode"
+description = "Preview the next version and validate release rendering without changing the repository"
 env = { GITHUB_TOKEN = { required = true } }
-run = [
-  "cog bump --auto --dry-run --skip-untracked",
-  "git-cliff --dry-run --offline",
-]
+run = '''
+set -euo pipefail
+
+next_tag="$(cog bump --auto --dry-run --skip-untracked)"
+case "$next_tag" in
+  v[0-9]*) ;;
+  *) echo "$next_tag" >&2; exit 1 ;;
+esac
+next_version="${next_tag#v}"
+
+cargo release version "$next_version"
+git-cliff --unreleased --tag "$next_tag" --offline
+'''

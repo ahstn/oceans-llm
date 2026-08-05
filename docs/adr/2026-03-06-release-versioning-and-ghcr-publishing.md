@@ -239,10 +239,11 @@ Tradeoffs:
 
 ## Current Implementation Status
 
-The live workflow is slightly narrower than the original ADR language:
+The release flow was tightened after the first implementation exposed a review-order problem. The tag previously moved before Cargo versions and `CHANGELOG.md` were updated. The current flow preserves the ADR decision while adding explicit preparation, publication, and finalization gates:
 
-- `mise run release` creates the GitHub release before the tag workflow publishes artifacts
-- `mise run release` does not push automatically
+- `mise run release` updates Cargo versions and `CHANGELOG.md` before it creates the local release tag
+- `mise run release-publish` pushes the reviewed commit and tag, then creates a draft GitHub release
+- `mise run release-finalize` publishes the draft after distribution checks pass
 - the current workflow publishes `vX.Y.Z`, `sha-<sha>`, and `latest`
 - the gateway image is currently `linux/amd64` only
 - the admin UI image is currently `linux/amd64` and `linux/arm64`

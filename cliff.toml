@@ -6,21 +6,16 @@ repo = "oceans-llm"
 conventional_commits = true
 filter_unconventional = false
 split_commits = false
-commit_preprocessors = [{ pattern = '\((\w+\s)?#([0-9]+)\)', replace = "" }]
+commit_preprocessors = [{ pattern = '\s+\((\w+\s)?#[0-9]+\)\s*$', replace = "" }]
 commit_parsers = [
+  { footer = '^changelog: ?ignore', skip = true },
   { message = '^docs\(release\): update changelog for v', skip = true },
-  { message = "^feat", group = "<!-- 0 -->:rocket: New features" },
-  { message = "^fix", group = "<!-- 1 -->:bug: Bug fixes" },
-  { message = "^perf", group = "Changed" },
-  { message = "^refactor", group = "Changed" },
-  { message = "^revert", group = "Changed" },
-  { message = "^docs", group = "Documentation" },
-  { message = "^test", group = "Testing" },
-  { message = "^build", group = "Build" },
-  { message = "^ci", group = "CI" },
-  { message = "^style", group = "Styling" },
-  { message = "^chore", group = "Miscellaneous" },
-  { message = "^.*", group = "Changed" },
+  { message = "^feat", group = "<!-- 0 -->Added" },
+  { message = "^(perf|refactor|revert)", group = "<!-- 1 -->Changed" },
+  { message = '^fix\(security\)', group = "<!-- 3 -->Security" },
+  { message = "^fix", group = "<!-- 2 -->Fixed" },
+  { message = "^(build|chore|ci|docs|style|test)", skip = true },
+  { message = "^.*", group = "<!-- 1 -->Changed" },
 ]
 protect_breaking_commits = true
 filter_commits = false
@@ -36,7 +31,7 @@ header = """
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n\n
 """
 body = """
@@ -50,9 +45,9 @@ body = """
 ## [Unreleased]
 {% endif -%}
 
-{% for group, commits in commits | group_by(attribute="group") -%}
+{% for group, commits in commits | filter(attribute="merge_commit", value=false) | group_by(attribute="group") -%}
 ### {{ group | striptags | trim | upper_first }}
-{% for commit in commits -%}
+{% for commit in commits | unique(attribute="message") -%}
 - {% if commit.scope %}*({{ commit.scope }})* {% endif %}{% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | split(pat="\n") | first | upper_first | trim }}{% if commit.remote.username %} by @{{ commit.remote.username }}{% endif %}{% if commit.remote.pr_number %} in [#{{ commit.remote.pr_number }}]({{ self::remote_url() }}/pull/{{ commit.remote.pr_number }}){% endif %}
 {% endfor %}
 {% endfor %}
