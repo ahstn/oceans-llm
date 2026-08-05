@@ -183,6 +183,10 @@ const contributingSidebar = [
     text: "Plans and Research",
     items: [
       {
+        text: "Configurable Admin Page Permissions",
+        link: "/contributing/implementation-plans/2026-08-05-configurable-admin-page-permissions",
+      },
+      {
         text: "Issue 206 Service Account Config",
         link: "/contributing/implementation-plans/issue-206-service-account-config",
       },

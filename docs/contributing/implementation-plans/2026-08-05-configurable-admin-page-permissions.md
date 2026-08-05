@@ -1,6 +1,6 @@
 # Configurable Admin Page Permissions
 
-`See also`: [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [Configuration Reference](../configuration/configuration-reference.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md)
+`See also`: [Identity and Access](../../access/identity-and-access.md), [Admin Control Plane](../../access/admin-control-plane.md), [Configuration Reference](../../configuration/configuration-reference.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../../adr/2026-05-10-team-service-accounts.md)
 
 - Date: 2026-08-05
 - Status: Draft plan
@@ -141,7 +141,7 @@ Place this named policy concept in `crates/gateway/src/config/permissions.rs` an
 - If `pages` is present, it replaces only that group's direct default grants. Inherited grants still apply.
 - An explicit empty list is valid. A group can still receive inherited pages.
 - Validate `default_page` against the final effective set, not only the group's direct list.
-- If `default_page` is absent, keep the current preferred default when it is effective. Otherwise, select the first effective page from the fixed navigation order.
+- If `default_page` is absent, keep the current preferred default when it is effective. Otherwise, select the first effective page from a stable gateway fallback priority.
 - If the final effective set is empty, the user will land on a signed-in no-access page.
 - Do not support `*` in v1. New pages must not become visible through an old explicit list without an admin review.
 
@@ -179,13 +179,15 @@ The ceiling applies to direct grants before inheritance. It prevents a configura
 
 Derive a compact, validated `ResolvedAdminPermissions` value from `GatewayConfig` during startup. Apply the role unions once during this step. Store the resolved effective sets in `AppState` as an `Arc`. Do not store the full gateway config in HTTP state.
 
+The gateway fallback priority controls only automatic default selection. It does not map URLs or control sidebar order. The UI will use the resolved `default_page` from the session response.
+
 Resolve the user group on each session response:
 
 1. `global_role: platform_admin` resolves to `platform_admins` and takes precedence over team membership.
 2. An `owner` or `admin` membership resolves to `team_admins`.
 3. A `member` membership or no membership resolves to `users`.
 
-The current store permits at most one team membership per user, so this rule does not need multi-team precedence logic. Membership changes will affect the next session lookup without session re-issuance.
+The current store permits at most one team membership per user, so this rule does not need multi-team precedence logic. Membership changes will affect the next session lookup without session re-issuance. Do not query team membership for a platform admin because the global role has precedence.
 
 Extend `AuthSessionView`:
 
@@ -203,7 +205,7 @@ pub struct AuthSessionView {
 }
 ```
 
-Convert `build_auth_session_view` to an async builder that can call `get_team_membership_for_user`. Use it for session lookup, password login, password change, and any other response that returns `AuthSessionView`.
+Convert `build_auth_session_view` to an async builder that can call `get_team_membership_for_user`. Use it for session lookup, password login, password change, and any other response that returns `AuthSessionView`. Each response must resolve membership once.
 
 The `pages` field in the session response contains the final effective set after inheritance and duplicate removal. Regenerate the OpenAPI JSON and TypeScript types after the contract changes. The UI must consume the generated `AdminPage` and group unions instead of duplicating string unions by hand.
 
@@ -221,6 +223,7 @@ Use this registry for:
 - path-to-page conversion
 - default-page redirects
 - direct-route checks
+- cross-page link and action checks
 
 Map child paths to their owning page. For example, `/mcp`, `/mcp/servers`, and the legacy `/mcp/access` path all map to `mcp`.
 
@@ -228,9 +231,11 @@ Remove `adminOnly` and `USER_ACCESSIBLE_PATHS`. They are parallel permission lis
 
 ### Route enforcement
 
-Replace role-specific page guards with `requirePageSession(page, location)`. The guard will load the session and check `session.permissions.pages`.
+Remove the role-specific page guards. The root route will load the session once, resolve the current path through the page registry, and check `session.permissions.pages`. Child routes will consume the root route context and must not fetch the session again.
 
-The root route will also use the same registry and session permission set before rendering a signed-in page. This keeps SSR, client navigation, and direct URLs consistent. A hidden page will redirect to the resolved default page. It must not redirect to login because the user is authenticated.
+This keeps SSR, client navigation, and direct URLs consistent. A hidden page will redirect to the resolved default page. It must not redirect to login because the user is authenticated. Route files will not repeat page identifiers or path-to-page mappings.
+
+Use one `canAccessPage(session, page)` helper for links and actions that open another configurable page. Hide or disable an action when its target page is not effective. This includes Teams to Users, Service Accounts to Teams or API Keys, and Request Logs to MCP Invocations.
 
 Change the `/` index redirect so it uses `session.permissions.default_page` instead of the current constant.
 
@@ -247,12 +252,14 @@ Public and account-lifecycle routes remain outside page permissions:
 
 Visible pages must return useful data. Change only the read APIs required by the new shared pages:
 
-- Leaderboard: allow every active signed-in user to read the current global leaderboard view. The response still contains user names, user ids, spend, request counts, model use, and tool-cardinality totals.
+- Leaderboard: allow every active signed-in user to read the current global leaderboard view. The response still contains user names, user ids, exact spend, request counts, model use, and tool-cardinality totals. This is an accepted cross-team disclosure because the page is a platform-wide ranking. Page config does not remove direct API access to this view.
 - Agent Harnesses: allow every active signed-in user to read the current global harness-usage view.
 - Service Accounts: allow every active signed-in user to list service accounts for their own team. Platform admins still see all teams. Teamless users receive an empty list.
 - Service-account credential metadata: keep the current rule. Platform admins and team owners or admins can see team service-account API-key metadata. Ordinary team members must see an explicit restricted state, not the false text `No credential attached`.
 
-Use `require_active_session` for the two global observability reads. Extend the service-account list authorization to active team members, but keep team scoping in the handler.
+Use `require_active_session` for the two global observability reads. Add a short-lived response cache keyed by range for each global view. Use single-flight loading so concurrent cache misses do not repeat the same aggregate queries. Record cache hit, miss, and load duration metrics.
+
+Extend the service-account list authorization to active team members. Add store methods that load one active team and its active service accounts by `team_id`. Use them for regular users instead of loading all teams and accounts before filtering. Keep the current unscoped store calls for platform admins.
 
 ### Security boundary
 
@@ -266,6 +273,8 @@ Do not use page grants as API authorization. Existing rules remain in place exce
 Page config is a console policy. It is not a general-purpose RBAC engine.
 
 ## Implementation Phases
+
+Keep this as one feature change because the session contract, shared reads, and UI routing must move together.
 
 ### 1. Add typed config and defaults
 
@@ -298,9 +307,14 @@ Files:
 
 - `crates/gateway/src/http/observability.rs`
 - `crates/gateway/src/http/identity.rs`
+- `crates/gateway-store/src/store.rs`
+- `crates/gateway-store/src/libsql_store/identity.rs`
+- `crates/gateway-store/src/libsql_store/mod.rs`
+- `crates/gateway-store/src/postgres_store/identity.rs`
+- `crates/gateway-store/src/postgres_store/mod.rs`
 - related gateway handler and contract tests
 
-Allow active users to read Leaderboard and Agent Harnesses. Extend the service-account list handler to active team members and keep its results team-scoped. Do not widen any write route.
+Allow active users to read Leaderboard and Agent Harnesses. Cache the shared aggregate responses for a short time. Extend the service-account list handler to active team members, and load only their team data. Do not widen any write route.
 
 ### 4. Make UI navigation and routing permission-driven
 
@@ -313,10 +327,10 @@ Files:
 - `crates/admin-ui/web/src/routes/-admin-guard.ts`
 - `crates/admin-ui/web/src/routes/__root.tsx`
 - `crates/admin-ui/web/src/routes/index.tsx`
-- each signed-in page route that selects a page guard
 - new `crates/admin-ui/web/src/routes/no-access.tsx`
+- pages with links or actions that target another configurable page
 
-Filter navigation and route access from `session.permissions.pages`. Keep the page identifier next to each route declaration so a route review shows its permission key.
+Filter navigation, route access, and cross-page actions from `session.permissions.pages`. Keep `admin-nav.ts` as the only UI path-to-page mapping. Load the session once in the root route and pass it to child routes through route context.
 
 Update the Service Accounts page so ordinary team members see team service accounts without credential metadata. Show a clear restricted label when credential details are not available.
 
@@ -335,7 +349,7 @@ Files:
 
 Use the Configuration Reference as the canonical syntax page. Use Identity and Access as the canonical page for group inheritance and data scope. Keep the Admin Control Plane page concise and link to those owners.
 
-Add a commented or explicit permissions example that produces the default unions without repeated shared pages. The ADR must record the three-group derivation, union rules, duplicate handling, capability ceilings, session-owned effective policy, shared read changes, and the separation between page visibility and API authorization.
+Add a commented or explicit permissions example that produces the default unions without repeated shared pages. The ADR must record the three-group derivation, union rules, duplicate handling, capability ceilings, session-owned effective policy, shared read changes, the accepted global leaderboard disclosure, and the separation between page visibility and API authorization.
 
 ### 6. Add cross-layer tests
 
@@ -359,6 +373,7 @@ Session contract tests:
 - team member and teamless user resolve to `users`
 - membership changes appear on the next session response
 - each login or password response returns the same permission shape as session lookup
+- a platform-admin session does not query team membership
 
 UI unit tests:
 
@@ -370,6 +385,8 @@ UI unit tests:
 - login redirect targets are accepted only when their page is allowed
 - default users see Leaderboard, Agent Harnesses, and Service Accounts
 - ordinary team members see a restricted credential state on Service Accounts
+- cross-page links and actions are hidden when the target page is not effective
+- root and child loaders share one session lookup per navigation
 
 End-to-end tests:
 
@@ -378,10 +395,19 @@ End-to-end tests:
 - hide one regular-user page and verify both sidebar removal and direct-URL redirect
 - repeat one user page under both admin groups and verify config is accepted without duplicate navigation items
 - verify Leaderboard and Agent Harnesses load for an ordinary user
+- verify the global leaderboard fields and cross-team disclosure for an ordinary user
+- verify a hidden Leaderboard page remains available through its authenticated read API
 - verify an ordinary team member can open Service Accounts and sees only that team's accounts
 - verify the ordinary member cannot see service-account credential metadata or use service-account write APIs
 - verify a teamless user sees the Service Accounts empty state
 - verify API authorization still rejects unsupported operations regardless of UI visibility
+
+Performance tests:
+
+- repeated and concurrent global observability requests reuse the range cache
+- cache expiry refreshes each global view
+- team-member service-account reads query only the member's team
+- query plans for the 7-day and 31-day global ranges use the expected time indexes
 
 ## Verification
 
@@ -395,19 +421,9 @@ mise run ui-check
 mise run rust-test
 mise run e2e-test
 mise run docs:check
+mise run docs:verify
 mise run lint
 ```
-
-## Delivery Order
-
-Keep this as one feature change because the session contract, shared reads, and UI routing must move together. Within the change, use this review order:
-
-1. Typed config, direct defaults, unions, and validation.
-2. Runtime group resolution and session contract.
-3. Shared observability and service-account read access.
-4. Generated OpenAPI and TypeScript artifacts.
-5. UI page registry, route guards, restricted credential state, and no-access state.
-6. E2E coverage, examples, ADR, and user docs.
 
 ## Acceptance Criteria
 
@@ -422,6 +438,10 @@ Keep this as one feature change because the session contract, shared reads, and 
 - Invalid or unsupported page grants fail during config load with a specific error.
 - Session responses contain the resolved group, effective pages, and optional default page.
 - All active users can read the global Leaderboard and Agent Harnesses views.
+- The global leaderboard disclosure is documented and covered by a cross-team response test.
 - Active team members can list their own team's service accounts, while teamless users receive an empty list.
+- Team-member service-account reads do not load all teams or all service accounts.
 - Service-account credential metadata and all write authorization keep their current stricter rules.
+- Each navigation loads the auth session once, and cross-page actions respect the target page grant.
+- Shared global observability responses use bounded range caches with single-flight loading.
 - Config, Rust, UI, contract, E2E, docs, and lint checks pass.

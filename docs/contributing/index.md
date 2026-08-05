@@ -36,6 +36,7 @@ Use the primary docs for admin, user, caller, and client workflows. Use this sur
 - MCP registry implementation trail:
   - [MCP Registry and Discovery](mcp/mcp-registry-and-discovery.md)
 - Active implementation plans:
+  - [Configurable Admin Page Permissions](implementation-plans/2026-08-05-configurable-admin-page-permissions.md)
   - [Issue 206: Top-Level Service Account Config](implementation-plans/issue-206-service-account-config.md)
 - Discovery interviews:
   - [Request ID and Request Attempt Observability Interview](interviews/2026-04-24-request-id-and-request-attempt-observability.md)
