@@ -4,7 +4,7 @@ use admin_ui::AdminUiConfig;
 use anyhow::Context;
 use clap::Parser;
 use gateway::{
-    cli::{Cli, Command, MigrateAction, ServeArgs},
+    cli::{Cli, Command, ConfigCommand, MigrateAction, ServeArgs},
     config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
     email::build_budget_alert_sender,
     http::{build_router, state::AppState},
@@ -30,11 +30,18 @@ use local_demo_seed::{LOCAL_DEMO_USER_PASSWORD, seed_local_demo_data};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let command = cli.command.unwrap_or(Command::Serve(ServeArgs::default()));
     let config = load_config(&cli.config)?;
+
+    if matches!(&command, Command::Config(ConfigCommand::Validate)) {
+        println!("gateway configuration `{}` is valid", cli.config);
+        return Ok(());
+    }
 
     let observability = observability::init_observability(&config.server)?;
 
-    let result = match cli.command.unwrap_or(Command::Serve(ServeArgs::default())) {
+    let result = match command {
+        Command::Config(ConfigCommand::Validate) => unreachable!("handled before runtime startup"),
         Command::Serve(args) => run_serve(&config, observability.metrics.clone(), args).await,
         Command::Migrate(args) => run_migrate(&config, args.action()?).await,
         Command::PurgeRequestLogs(args) => request_log_purge::run_command(&config, args).await,
