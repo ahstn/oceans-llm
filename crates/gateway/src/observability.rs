@@ -13,7 +13,7 @@ use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     Resource,
     metrics::{PeriodicReader, SdkMeterProvider},
-    trace::SdkTracerProvider,
+    trace::{Sampler, SdkTracerProvider},
 };
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -317,6 +317,9 @@ pub fn init_observability(config: &ServerConfig) -> anyhow::Result<Observability
 
         let tracer_provider = SdkTracerProvider::builder()
             .with_resource(resource.clone())
+            .with_sampler(Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(
+                config.otel_trace_sample_ratio,
+            ))))
             .with_batch_exporter(exporter)
             .build();
         let tracer = tracer_provider.tracer("gateway");

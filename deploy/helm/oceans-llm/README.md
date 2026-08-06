@@ -102,6 +102,7 @@ Example values live in [examples](examples):
 - ingress with TLS and HPA behavior
 - CloudNativePG
 - observability sidecar wiring
+- direct OpenTelemetry export to an existing Datadog Agent DaemonSet
 
 ## Publishing
 

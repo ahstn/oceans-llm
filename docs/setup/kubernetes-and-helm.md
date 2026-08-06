@@ -1,6 +1,6 @@
 # Kubernetes and Helm
 
-`See also`: [Deploy and Operations](deploy-and-operations.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Admin Runbooks](../operations/operator-runbooks.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Configuration Reference](../configuration/configuration-reference.md), [Release Process](../contributing/reference/release-process.md), [Deploy](../../deploy/README.md)
+`See also`: [Deploy and Operations](deploy-and-operations.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Admin Runbooks](../operations/operator-runbooks.md), [Export Traces and Metrics](../operations/observability/export-traces-and-metrics.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Configuration Reference](../configuration/configuration-reference.md), [Release Process](../contributing/reference/release-process.md), [Deploy](../../deploy/README.md)
 
 This page owns the Kubernetes and Helm deployment contract for Oceans LLM.
 
@@ -141,7 +141,9 @@ The chart does not install an OpenTelemetry Collector or vendor agent. It expose
 - `observability.volumeMounts`
 - `observability.sidecars`
 
-Use `gateway.config.server.otel_endpoint`, `gateway.config.server.otel_metrics_endpoint`, and `observability.env` to point the gateway at an existing collector, DaemonSet, sidecar, or vendor endpoint. Examples cover OpenTelemetry and Datadog Agent-style wiring without making either one a bundled dependency.
+Use `gateway.config.server.otel_endpoint`, `gateway.config.server.otel_metrics_endpoint`, `gateway.config.server.otel_trace_sample_ratio`, and `observability.env` to point the gateway at an existing collector, DaemonSet, sidecar, or vendor endpoint. Trace sampling is parent-based and does not sample exported metrics. Examples cover OpenTelemetry and Datadog Agent-style wiring without making either one a bundled dependency.
+
+Use [Export Traces and Metrics](../operations/observability/export-traces-and-metrics.md) for the complete setup and verification procedure.
 
 ## Example Values
 
@@ -153,6 +155,7 @@ Checked-in examples cover:
 - ingress with TLS and HPA behavior
 - CloudNativePG
 - observability sidecar wiring
+- direct OpenTelemetry export to an existing Datadog Agent DaemonSet
 
 Render them locally with:
 

@@ -1,0 +1,45 @@
+# This example sends OpenTelemetry traces and metrics directly to an existing
+# Datadog Agent DaemonSet. It does not deploy an OpenTelemetry Collector sidecar.
+# Enable the Agent's OTLP/gRPC receiver before applying these values. Keep the
+# Agent-wide probabilistic sampler disabled when the Agent is shared; this
+# gateway applies its own trace sampling ratio below.
+gateway:
+  config:
+    server:
+      bind: "0.0.0.0:8080"
+      log_format: "json"
+      # Replace the service name and namespace with the Service that exposes the
+      # Datadog Agent OTLP/gRPC receiver on port 4317. Configure that Service with
+      # internalTrafficPolicy: Local so telemetry stays on the gateway pod's node.
+      otel_endpoint: "http://datadog-agent.monitoring.svc.cluster.local:4317"
+      # Metrics use a separate setting so their destination can change without
+      # changing trace export. Both signals can use the same Agent OTLP receiver.
+      otel_metrics_endpoint: "http://datadog-agent.monitoring.svc.cluster.local:4317"
+      # Sample 50% of root traces in the gateway. ParentBased sampling preserves
+      # an upstream trace decision. This setting does not sample OTLP metrics.
+      otel_trace_sample_ratio: 0.5
+      # Export metric batches every 30 seconds.
+      otel_export_interval_secs: 30
+    database:
+      kind: postgres
+      url: env.POSTGRES_URL
+    auth:
+      bootstrap_admin:
+        enabled: false
+        email: admin@local
+        password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
+        require_password_change: true
+
+database:
+  mode: external
+  external:
+    existingSecret:
+      name: oceans-llm-postgres
+      key: POSTGRES_URL
+
+observability:
+  # Unified service tags let Datadog correlate gateway telemetry consistently.
+  # Set the environment label to the deployment environment used in Datadog.
+  podLabels:
+    tags.datadoghq.com/service: oceans-llm-gateway
+    tags.datadoghq.com/env: production

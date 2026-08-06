@@ -41,7 +41,7 @@ features:
     link: /access/budgets
     linkText: Manage budgets
   - title: Trace requests
-    details: Follow request logs, retention purge, MCP invocation records, observability payloads, failure modes, and provider compatibility edges.
-    link: /operations/observability/request-logs
+    details: Export traces and metrics through OTLP, then inspect request logs, MCP invocations, payload state, and failure details.
+    link: /operations/observability/export-traces-and-metrics
     linkText: Inspect observability
 ---

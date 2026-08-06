@@ -1235,6 +1235,8 @@ pub struct ServerConfig {
     pub otel_endpoint: Option<String>,
     #[serde(default)]
     pub otel_metrics_endpoint: Option<String>,
+    #[serde(default = "default_otel_trace_sample_ratio")]
+    pub otel_trace_sample_ratio: f64,
     #[serde(default = "default_otel_export_interval_secs")]
     pub otel_export_interval_secs: u64,
 }
@@ -1246,6 +1248,7 @@ impl Default for ServerConfig {
             log_format: default_log_format(),
             otel_endpoint: None,
             otel_metrics_endpoint: None,
+            otel_trace_sample_ratio: default_otel_trace_sample_ratio(),
             otel_export_interval_secs: default_otel_export_interval_secs(),
         }
     }
@@ -1259,6 +1262,9 @@ impl ServerConfig {
             "server.otel_metrics_endpoint",
             self.otel_metrics_endpoint.as_deref(),
         )?;
+        if !(0.0..=1.0).contains(&self.otel_trace_sample_ratio) {
+            bail!("server.otel_trace_sample_ratio must be between 0.0 and 1.0 inclusive");
+        }
         Ok(())
     }
 
@@ -3133,6 +3139,10 @@ const fn default_otel_export_interval_secs() -> u64 {
     30
 }
 
+const fn default_otel_trace_sample_ratio() -> f64 {
+    1.0
+}
+
 fn default_db_path() -> String {
     "./gateway.db".to_string()
 }
@@ -3321,6 +3331,33 @@ mod tests {
             let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
 
             assert!(format!("{error:#}").contains(&format!("server.{field}")));
+        }
+    }
+
+    #[test]
+    fn parses_otel_trace_sample_ratio() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(&config_path, "server:\n  otel_trace_sample_ratio: 0.5\n");
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+
+        assert_eq!(config.server.otel_trace_sample_ratio, 0.5);
+    }
+
+    #[test]
+    fn rejects_invalid_otel_trace_sample_ratio() {
+        for ratio in ["-0.1", "1.1", ".nan"] {
+            let tmp = tempdir().expect("tempdir");
+            let config_path = tmp.path().join("gateway.yaml");
+            write_config(
+                &config_path,
+                &format!("server:\n  otel_trace_sample_ratio: {ratio}\n"),
+            );
+
+            let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+
+            assert!(format!("{error:#}").contains("server.otel_trace_sample_ratio"));
         }
     }
 
