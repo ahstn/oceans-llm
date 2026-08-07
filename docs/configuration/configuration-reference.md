@@ -202,9 +202,10 @@ Important fields:
 - `log_format`
 - `otel_endpoint`
 - `otel_metrics_endpoint`
+- `otel_trace_sample_ratio` (`0.0` through `1.0`, default `1.0`)
 - `otel_export_interval_secs`
 
-For collector assumptions and request-log implications, see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
+For collector and Datadog setup, see [Export Traces and Metrics](../operations/observability/export-traces-and-metrics.md). For request-log storage, see [Observability and Request Logs](../operations/observability-and-request-logs.md).
 
 ## `request_logging`
 

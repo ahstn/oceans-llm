@@ -13,7 +13,8 @@ use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     Resource,
     metrics::{PeriodicReader, SdkMeterProvider},
-    trace::SdkTracerProvider,
+    propagation::TraceContextPropagator,
+    trace::{Sampler, SdkTracerProvider},
 };
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -294,6 +295,8 @@ fn base_attrs(labels: &ChatMetricLabels<'_>) -> Vec<KeyValue> {
 }
 
 pub fn init_observability(config: &ServerConfig) -> anyhow::Result<ObservabilityGuard> {
+    global::set_text_map_propagator(TraceContextPropagator::new());
+
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         "gateway=info,gateway_core=info,gateway_service=info,gateway_store=info,gateway_providers=info"
             .parse()
@@ -317,6 +320,9 @@ pub fn init_observability(config: &ServerConfig) -> anyhow::Result<Observability
 
         let tracer_provider = SdkTracerProvider::builder()
             .with_resource(resource.clone())
+            .with_sampler(Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(
+                config.otel_trace_sample_ratio,
+            ))))
             .with_batch_exporter(exporter)
             .build();
         let tracer = tracer_provider.tracer("gateway");

@@ -79,6 +79,10 @@ const primarySidebar = [
         link: "/operations/observability-and-request-logs",
         items: [
           {
+            text: "Export Traces and Metrics",
+            link: "/operations/observability/export-traces-and-metrics",
+          },
+          {
             text: "Request Logs",
             link: "/operations/observability/request-logs",
           },

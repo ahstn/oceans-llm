@@ -55,6 +55,7 @@ const sidebarIcons: Record<string, readonly HugeIconNode[]> = {
   "/mcp/mcp-invocations": Activity01Icon,
   "/operations/tagging": Tag01Icon,
   "/operations/observability-and-request-logs": FileSearchIcon,
+  "/operations/observability/export-traces-and-metrics": Activity01Icon,
   "/operations/observability/request-logs": FileSearchIcon,
   "/operations/agent-harness-usage": RoboticIcon,
   "/operations/operator-runbooks": Book02Icon,
