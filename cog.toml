@@ -14,7 +14,7 @@ tag_prefix = "v"
 post_bump_hooks = []
 pre_bump_hooks = [
   "cargo release version {{version}} --execute --no-confirm",
-  "scripts/generate-release-changelog.sh {{version_tag}}",
+  "mise run generate-release-changelog {{version_tag}}",
 ]
 # Hooks to execute
 pre_package_bump_hooks = []

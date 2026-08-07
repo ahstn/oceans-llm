@@ -18,7 +18,7 @@ The command creates the version commit and tag, pushes them, and creates a publi
 
 ## Source Files
 
-- [mise.toml](../../../mise.toml) defines the release command.
+- [mise.toml](../../../mise.toml) defines the release and changelog tasks.
 - [cog.toml](../../../cog.toml) defines versioning and pre-bump hooks.
 - [cliff.toml](../../../cliff.toml) defines changelog content and layout.
 - [release.yml](../../../.github/workflows/release.yml) builds and publishes release artifacts.

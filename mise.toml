@@ -355,6 +355,28 @@ description = "Run Pi and OpenCode live integration tests through Oceans LLM Gat
 depends = ["harness-integration-install"]
 run = "npm test --prefix tests/harness-integration"
 
+[tasks.generate-release-changelog]
+description = "Regenerate CHANGELOG.md for a new version tag"
+usage = 'arg "<version_tag>" help="Version tag for the new changelog section"'
+run = '''
+set -euo pipefail
+
+version_tag="${usage_version_tag?}"
+
+if git rev-parse --verify --quiet "refs/tags/${version_tag}" >/dev/null; then
+  echo "tag already exists: ${version_tag}" >&2
+  exit 1
+fi
+
+cleanup() {
+  git tag --delete "$version_tag" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+git tag "$version_tag" HEAD
+git-cliff -o CHANGELOG.md
+'''
+
 [tasks.release]
 description = "Create and publish a release"
 depends = ["sync-pricing-catalog"]
