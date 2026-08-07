@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### :bug: Bug fixes
 - *(release)* Clean generated release notes
+- *(release)* Simplify publication flow
+
+### Changed
+- *(release)* Move changelog generation into mise
 
 
 
@@ -351,7 +355,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(providers)* Share openai stream normalization by @ahstn
 - *(bedrock)* Make projects snippet loadable by @ahstn
 - Implement MCP grants and token overhead telemetry by @ahstn
-- Address MCP PR review findings by @ahstn
 - Refresh shadcn skill lock hash by @ahstn
 - Merge remote-tracking branch 'origin/main' into codex/openrouter-routing-policy by @ahstn
 - *(gateway)* Simplify oauth domain policy helpers by @ahstn
@@ -490,12 +493,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updating gitignore by @ahstn
 - Merge remote-tracking branch 'origin/codex/seed-local-demo-data' into codex/ui-preset-polish-sync by @ahstn
 - Polish API key management flows by @ahstn
-- Add observability usage leaderboard by @ahstn
 - Normalize generated admin API typings by @ahstn
 - Merge branch 'main' into codex/models-page-scroll-refresh by @ahstn
 - Fix admin UI localhost SSR auth flow by @ahstn
 - Adding images/screenshots by @ahstn
-- Harden request log payload policy by @ahstn
 - *(adr)* Record admin logout decision by @ahstn
 - Merge origin/main into request log payload policy by @ahstn
 - Align payload policy OpenAPI limits by @ahstn
@@ -548,7 +549,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.0] - 2026-03-17
 ### :rocket: New features
 - *(auth)* Add bootstrap admin login flow by @ahstn
-- *(identity)* Add user signup and onboarding flow (#12) by @ahstn in [#12](https://github.com/ahstn/oceans-llm/pull/12)
+- *(identity)* Add user signup and onboarding flow by @ahstn in [#12](https://github.com/ahstn/oceans-llm/pull/12)
 - *(admin-ui)* Add team management flow by @ahstn in [#13](https://github.com/ahstn/oceans-llm/pull/13)
 - *(deploy)* Add local and GHCR compose stacks by @ahstn in [#15](https://github.com/ahstn/oceans-llm/pull/15)
 - *(gateway)* Add postgres runtime backend by @ahstn

@@ -369,11 +369,19 @@ if git rev-parse --verify --quiet "refs/tags/${version_tag}" >/dev/null; then
 fi
 
 cleanup() {
-  git tag --delete "$version_tag" >/dev/null 2>&1 || true
+  if [ "$temporary_tag_created" = "true" ]; then
+    current_target="$(git rev-parse --verify "refs/tags/${version_tag}^{commit}" 2>/dev/null || true)"
+    if [ "$current_target" = "$temporary_target" ]; then
+      git tag --delete "$version_tag" >/dev/null 2>&1 || true
+    fi
+  fi
 }
 trap cleanup EXIT
 
-git tag "$version_tag" HEAD
+temporary_target="$(git rev-parse HEAD)"
+temporary_tag_created=false
+git tag "$version_tag" "$temporary_target"
+temporary_tag_created=true
 git-cliff -o CHANGELOG.md
 '''
 
@@ -386,8 +394,10 @@ set -euo pipefail
 
 cog bump --auto --skip-untracked
 tag="$(cog get-version --tag)"
-git push origin main "$tag"
-gh release create "$tag" --title "$tag" --notes "$(git-cliff --tag "$tag" --latest --strip header)"
+previous_tag="$(git describe --tags --abbrev=0 "${tag}^")"
+release_notes="$(git-cliff "${previous_tag}..${tag}^" --tag "$tag" --strip header)"
+git push --atomic origin main "$tag"
+gh release create "$tag" --title "$tag" --notes "$release_notes"
 '''
 
 [tasks.release-dry-run]

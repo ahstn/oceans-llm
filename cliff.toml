@@ -6,7 +6,7 @@ repo = "oceans-llm"
 conventional_commits = true
 filter_unconventional = false
 split_commits = false
-commit_preprocessors = [{ pattern = '\s+\((\w+\s)?#[0-9]+\)\s*$', replace = "" }]
+commit_preprocessors = [{ pattern = '(?m)[ \t]+\((\w+[ \t]+)?#[0-9]+\)[ \t]*$', replace = "" }]
 commit_parsers = [
   { footer = '^changelog: ?ignore', skip = true },
   { message = '^docs\(release\): update changelog for v', skip = true },
@@ -44,20 +44,57 @@ body = """
 ## [Unreleased]
 {% endif -%}
 
-{% for group, commits in commits | group_by(attribute="group") -%}
-### {{ group | striptags | trim | upper_first }}
 {% set_global seen_messages = [] -%}
+{% set_global seen_scoped_messages = [] -%}
+{% set_global seen_unscoped_messages = [] -%}
 {% set_global selected_commits = [] -%}
+{% set_global breaking_messages = [] -%}
+{% set_global breaking_scoped_messages = [] -%}
+{% set_global breaking_unscoped_messages = [] -%}
 {% for commit in commits | reverse -%}
 {% set message_key = commit.message | split(pat="\n") | first | lower -%}
-{% if not seen_messages is containing(message_key) -%}
+{% if commit.scope -%}
+{% set scope_key = commit.scope | lower -%}
+{% set scoped_message_key = [scope_key, message_key] | json_encode -%}
+{% set is_duplicate = seen_unscoped_messages is containing(message_key) or seen_scoped_messages is containing(scoped_message_key) -%}
+{% else -%}
+{% set is_duplicate = seen_messages is containing(message_key) -%}
+{% endif -%}
+{% if not is_duplicate -%}
 {% set_global seen_messages = seen_messages | concat(with=[message_key]) -%}
+{% if commit.scope -%}
+{% set_global seen_scoped_messages = seen_scoped_messages | concat(with=[scoped_message_key]) -%}
+{% else -%}
+{% set_global seen_unscoped_messages = seen_unscoped_messages | concat(with=[message_key]) -%}
+{% endif -%}
 {% set_global selected_commits = selected_commits | concat(with=[commit.id]) -%}
 {% endif -%}
+{% if commit.breaking -%}
+{% set_global breaking_messages = breaking_messages | concat(with=[message_key]) -%}
+{% if commit.scope -%}
+{% set_global breaking_scoped_messages = breaking_scoped_messages | concat(with=[scoped_message_key]) -%}
+{% else -%}
+{% set_global breaking_unscoped_messages = breaking_unscoped_messages | concat(with=[message_key]) -%}
+{% endif -%}
+{% endif -%}
 {% endfor -%}
+{% for group, commits in commits | group_by(attribute="group") -%}
+{% set_global rendered_heading = false -%}
 {% for commit in commits -%}
 {% if selected_commits is containing(commit.id) -%}
-- {% if commit.scope %}*({{ commit.scope }})* {% endif %}{% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | split(pat="\n") | first | upper_first | trim }}{% if commit.remote.username %} by @{{ commit.remote.username }}{% endif %}{% if commit.remote.pr_number %} in [#{{ commit.remote.pr_number }}]({{ self::remote_url() }}/pull/{{ commit.remote.pr_number }}){% endif %}
+{% if not rendered_heading -%}
+### {{ group | striptags | trim | upper_first }}
+{% set_global rendered_heading = true -%}
+{% endif -%}
+{% set message_key = commit.message | split(pat="\n") | first | lower -%}
+{% if commit.scope -%}
+{% set scope_key = commit.scope | lower -%}
+{% set scoped_message_key = [scope_key, message_key] | json_encode -%}
+{% set is_breaking = breaking_unscoped_messages is containing(message_key) or breaking_scoped_messages is containing(scoped_message_key) -%}
+{% else -%}
+{% set is_breaking = breaking_messages is containing(message_key) -%}
+{% endif -%}
+- {% if commit.scope %}*({{ commit.scope }})* {% endif %}{% if is_breaking %}[**breaking**] {% endif %}{{ commit.message | split(pat="\n") | first | upper_first | trim }}{% if commit.remote.username %} by @{{ commit.remote.username }}{% endif %}{% if commit.remote.pr_number %} in [#{{ commit.remote.pr_number }}]({{ self::remote_url() }}/pull/{{ commit.remote.pr_number }}){% endif %}
 {% endif -%}
 {% endfor %}
 {% endfor %}

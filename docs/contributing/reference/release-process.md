@@ -28,7 +28,7 @@ The command creates the version commit and tag, pushes them, and creates a publi
 
 Pull request titles must follow Conventional Commits. Merge commits include the pull request number, author, and link in the generated changelog.
 
-git-cliff removes duplicate messages within each release. When both a source commit and its merge commit have the same message, it keeps the later merge commit so the pull request link remains.
+git-cliff removes duplicate entries across each release. It keeps the later commit so the pull request link remains. It also keeps distinct scoped entries and any breaking-change marker from the duplicate commits.
 
 The changelog uses these groups in this order:
 
