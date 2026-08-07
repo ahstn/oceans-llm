@@ -21,7 +21,8 @@ use uuid::Uuid;
 use crate::{
     Authenticator, LoggedRequest, ModelAccess, ModelResolver, PricingCatalog, RequestLogContext,
     RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
-    ResolvedProviderConnection, StreamLogResultInput, StreamResponseCollector,
+    ResolvedProviderConnection, StreamFailureSummary, StreamLogResultInput,
+    StreamResponseCollector,
     agent_analysis::{
         PassiveRequestRecord, REPORT_RETENTION, desired_versions_for_policy,
         finalize_idle_sessions, process_next_analysis, record_prepared_passive_request,
@@ -70,6 +71,21 @@ struct PassiveRequestOutcome<'a> {
     terminal_success: Option<bool>,
     response_payload_truncated: bool,
     completed_at: OffsetDateTime,
+}
+
+fn stream_terminal_success(
+    collector: &mut StreamResponseCollector,
+    explicit_failure: Option<&StreamFailureSummary>,
+) -> Option<bool> {
+    collector.finish();
+    let failure = explicit_failure.or_else(|| collector.failure());
+    if failure.is_none() {
+        Some(true)
+    } else if collector.usage().is_some() {
+        None
+    } else {
+        Some(false)
+    }
 }
 
 #[derive(Clone)]
@@ -457,13 +473,9 @@ where
     where
         S: AgentSessionAnalysisRepository,
     {
-        let terminal_success = if stream_result.failure.is_none() {
-            Some(true)
-        } else if stream_result.collector.usage().is_some() {
-            None
-        } else {
-            Some(false)
-        };
+        let mut stream_result = stream_result;
+        let terminal_success =
+            stream_terminal_success(&mut stream_result.collector, stream_result.failure.as_ref());
         let completed_at = OffsetDateTime::now_utc();
         let logged = self
             .request_logging
@@ -1341,7 +1353,8 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{GatewayService, UsageCostPolicy};
+    use super::{GatewayService, UsageCostPolicy, stream_terminal_success};
+    use crate::StreamResponseCollector;
 
     #[derive(Clone, Default)]
     struct UsageAccountingRepo {
@@ -1355,6 +1368,28 @@ mod tests {
     }
 
     struct PassThroughPlanner;
+
+    #[test]
+    fn stream_terminal_success_includes_collector_failures() {
+        let mut event_failure = StreamResponseCollector::default();
+        event_failure.observe_chunk(
+            br#"event: error
+data: {"type":"error","error":{"code":"upstream_failed"}}
+
+"#,
+        );
+        assert_eq!(
+            stream_terminal_success(&mut event_failure, None),
+            Some(false)
+        );
+
+        let mut finish_failure = StreamResponseCollector::default();
+        finish_failure.observe_chunk(br#"data: {"incomplete":true}"#);
+        assert_eq!(
+            stream_terminal_success(&mut finish_failure, None),
+            Some(false)
+        );
+    }
 
     impl RoutePlanner for PassThroughPlanner {
         fn plan_routes(&self, routes: &[ModelRoute]) -> Result<Vec<ModelRoute>, RouteError> {

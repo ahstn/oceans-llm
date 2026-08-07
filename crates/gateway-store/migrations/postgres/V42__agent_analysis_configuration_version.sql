@@ -26,7 +26,7 @@ BEGIN
       constraint_name
     );
   END IF;
-END
+END;
 $$;
 
 ALTER TABLE agent_session_analyses
