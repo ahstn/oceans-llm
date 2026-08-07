@@ -10,12 +10,11 @@ commit_preprocessors = [{ pattern = '\s+\((\w+\s)?#[0-9]+\)\s*$', replace = "" }
 commit_parsers = [
   { footer = '^changelog: ?ignore', skip = true },
   { message = '^docs\(release\): update changelog for v', skip = true },
-  { message = "^feat", group = "<!-- 0 -->Added" },
-  { message = "^(perf|refactor|revert)", group = "<!-- 1 -->Changed" },
-  { message = '^fix\(security\)', group = "<!-- 3 -->Security" },
-  { message = "^fix", group = "<!-- 2 -->Fixed" },
-  { message = "^(build|chore|ci|docs|style|test)", skip = true },
-  { message = "^.*", group = "<!-- 1 -->Changed" },
+  { message = "^feat", group = "<!-- 0 -->:rocket: New features" },
+  { message = "^fix", group = "<!-- 1 -->:bug: Bug fixes" },
+  { message = "^(perf|refactor|revert|docs|chore)", group = "<!-- 2 -->Changed" },
+  { message = "^(build|ci|style|test)", skip = true },
+  { message = "^.*", group = "<!-- 2 -->Changed" },
 ]
 protect_breaking_commits = true
 filter_commits = false
@@ -45,10 +44,21 @@ body = """
 ## [Unreleased]
 {% endif -%}
 
-{% for group, commits in commits | filter(attribute="merge_commit", value=false) | group_by(attribute="group") -%}
+{% for group, commits in commits | group_by(attribute="group") -%}
 ### {{ group | striptags | trim | upper_first }}
-{% for commit in commits | unique(attribute="message") -%}
+{% set_global seen_messages = [] -%}
+{% set_global selected_commits = [] -%}
+{% for commit in commits | reverse -%}
+{% set message_key = commit.message | split(pat="\n") | first | lower -%}
+{% if not seen_messages is containing(message_key) -%}
+{% set_global seen_messages = seen_messages | concat(with=[message_key]) -%}
+{% set_global selected_commits = selected_commits | concat(with=[commit.id]) -%}
+{% endif -%}
+{% endfor -%}
+{% for commit in commits -%}
+{% if selected_commits is containing(commit.id) -%}
 - {% if commit.scope %}*({{ commit.scope }})* {% endif %}{% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | split(pat="\n") | first | upper_first | trim }}{% if commit.remote.username %} by @{{ commit.remote.username }}{% endif %}{% if commit.remote.pr_number %} in [#{{ commit.remote.pr_number }}]({{ self::remote_url() }}/pull/{{ commit.remote.pr_number }}){% endif %}
+{% endif -%}
 {% endfor %}
 {% endfor %}
 

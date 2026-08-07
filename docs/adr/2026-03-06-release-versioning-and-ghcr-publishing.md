@@ -239,11 +239,10 @@ Tradeoffs:
 
 ## Current Implementation Status
 
-The release flow was tightened after the first implementation exposed a review-order problem. The tag previously moved before Cargo versions and `CHANGELOG.md` were updated. The current flow preserves the ADR decision while adding explicit preparation, publication, and finalization gates:
+The release flow was tightened after the first implementation exposed an ordering problem. The tag previously moved before Cargo versions and `CHANGELOG.md` were updated. The current flow preserves the single release command while correcting that order:
 
-- `mise run release` updates Cargo versions and `CHANGELOG.md` before it creates the local release tag
-- `mise run release-publish` pushes the reviewed commit and tag, then creates a draft GitHub release
-- `mise run release-finalize` publishes the draft after distribution checks pass
+- `mise run release` updates Cargo versions and `CHANGELOG.md` before it creates the release tag
+- the same command pushes the release commit and tag, then creates the published GitHub release
 - the current workflow publishes `vX.Y.Z`, `sha-<sha>`, and `latest`
 - the gateway image is currently `linux/amd64` only
 - the admin UI image is currently `linux/amd64` and `linux/arm64`
