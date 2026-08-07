@@ -23,6 +23,7 @@ http.workspace = true
 lettre.workspace = true
 openidconnect.workspace = true
 opentelemetry.workspace = true
+opentelemetry-http.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
 reqwest.workspace = true

@@ -141,7 +141,7 @@ The chart does not install an OpenTelemetry Collector or vendor agent. It expose
 - `observability.volumeMounts`
 - `observability.sidecars`
 
-Use `gateway.config.server.otel_endpoint`, `gateway.config.server.otel_metrics_endpoint`, `gateway.config.server.otel_trace_sample_ratio`, and `observability.env` to point the gateway at an existing collector, DaemonSet, sidecar, or vendor endpoint. Trace sampling is parent-based and does not sample exported metrics. Examples cover OpenTelemetry and Datadog Agent-style wiring without making either one a bundled dependency.
+Use `gateway.config.server.otel_endpoint`, `gateway.config.server.otel_metrics_endpoint`, and `gateway.config.server.otel_trace_sample_ratio` to configure gateway OTLP export. Use `observability.env` for environment variables required by sidecars or vendor agents. Trace sampling is parent-based and does not sample exported metrics. Examples cover OpenTelemetry and Datadog Agent-style wiring without making either one a bundled dependency.
 
 Use [Export Traces and Metrics](../operations/observability/export-traces-and-metrics.md) for the complete setup and verification procedure.
 

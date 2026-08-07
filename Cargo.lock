@@ -1641,6 +1641,7 @@ dependencies = [
  "libsql",
  "openidconnect",
  "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "reqwest 0.12.28",

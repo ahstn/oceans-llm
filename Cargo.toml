@@ -37,6 +37,7 @@ lettre = { version = "0.11", default-features = false, features = ["builder", "h
 libsql = "0.9"
 openidconnect = "4.0.1"
 opentelemetry = { version = "0.32", features = ["metrics", "trace"] }
+opentelemetry-http = "0.32"
 opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "metrics", "trace"] }
 opentelemetry_sdk = { version = "0.32", features = ["metrics", "rt-tokio", "trace"] }
 percent-encoding = "2"

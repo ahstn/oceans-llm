@@ -8,11 +8,14 @@ The gateway uses OTLP over gRPC. The examples use receiver port `4317`. You can 
 
 ## Understand the Data Flow
 
-The gateway creates telemetry and sends it to one OTLP receiver:
+The gateway creates telemetry and sends each configured signal to its OTLP receiver:
 
 ```text
-Oceans LLM gateway -> OTLP/gRPC receiver -> observability backend
+Oceans LLM gateway -- traces --> OTLP/gRPC receiver -- traces --> backend
+                   -- metrics -> OTLP/gRPC receiver -- metrics -> backend
 ```
+
+Traces and metrics can use the same receiver or separate receivers.
 
 The receiver can be:
 
@@ -32,7 +35,7 @@ Before you configure the gateway:
 3. Allow TCP traffic from the gateway to the receiver port.
 4. Configure the receiver to send data to its backend.
 
-Use an `http://` URI for an unencrypted in-cluster endpoint. Use the TLS address required by your receiver for traffic that leaves the trusted network.
+The current gateway exporter supports plaintext OTLP/gRPC endpoints. Use an `http://` URI on a trusted network. For secure external export, send plaintext traffic to a local or in-cluster collector and configure that collector to use TLS when it sends data to the external backend.
 
 ## Configure OTLP Export
 

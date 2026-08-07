@@ -3335,14 +3335,30 @@ mod tests {
     }
 
     #[test]
-    fn parses_otel_trace_sample_ratio() {
+    fn otel_trace_sample_ratio_defaults_to_one() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
-        write_config(&config_path, "server:\n  otel_trace_sample_ratio: 0.5\n");
+        write_config(&config_path, "server: {}\n");
 
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
 
-        assert_eq!(config.server.otel_trace_sample_ratio, 0.5);
+        assert_eq!(config.server.otel_trace_sample_ratio, 1.0);
+    }
+
+    #[test]
+    fn accepts_inclusive_otel_trace_sample_ratio_boundaries() {
+        for ratio in [0.0, 1.0] {
+            let tmp = tempdir().expect("tempdir");
+            let config_path = tmp.path().join("gateway.yaml");
+            write_config(
+                &config_path,
+                &format!("server:\n  otel_trace_sample_ratio: {ratio}\n"),
+            );
+
+            let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+
+            assert_eq!(config.server.otel_trace_sample_ratio, ratio);
+        }
     }
 
     #[test]
