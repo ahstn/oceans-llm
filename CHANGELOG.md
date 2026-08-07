@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.21.0] - 2026-08-07
+### :rocket: New features
+- *(observability)* Add configurable OTLP trace sampling by @ahstn
+- *(observability)* Add configurable OTLP trace sampling by @ahstn in [#268](https://github.com/ahstn/oceans-llm/pull/268)
+
+### :bug: Bug fixes
+- *(observability)* Preserve remote trace context by @ahstn
+- *(admin-ui)* Render harness icon masks by @ahstn
+- *(admin-ui)* Render harness icon masks by @ahstn in [#269](https://github.com/ahstn/oceans-llm/pull/269)
+
+### Build
+- Post release tasks - v0.20.1 by @ahstn
+
+### Miscellaneous
+- *(version)* V0.21.0
+
+### Testing
+- *(admin-ui)* Verify harness mask properties by @ahstn
+
+
+
+
 ## [0.20.1] - 2026-08-05
 ### :bug: Bug fixes
 - *(helm)* Validate gateway config before migration wait by @ahstn
@@ -18,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Miscellaneous
 - *(deps)* Minor version upgrades by @ahstn
-- *(version)* V0.20.1
+- *(version)* V0.20.1 by @ahstn
 
 ### Styling
 - *(admin-ui)* Add page headers by @ahstn
@@ -873,6 +895,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.21.0]: https://github.com/ahstn/oceans-llm/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/ahstn/oceans-llm/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/ahstn/oceans-llm/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/ahstn/oceans-llm/compare/v0.18.0...v0.19.0
