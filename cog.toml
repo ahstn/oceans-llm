@@ -11,8 +11,11 @@ skip_ci = "[skip ci]"
 skip_untracked = true
 tag_prefix = "v"
 
-post_bump_hooks = ["git push origin {{version_tag}}"]
-pre_bump_hooks = []
+post_bump_hooks = []
+pre_bump_hooks = [
+  "cargo release version {{version}} --execute --no-confirm",
+  "mise run generate-release-changelog {{version_tag}}",
+]
 # Hooks to execute
 pre_package_bump_hooks = []
 
