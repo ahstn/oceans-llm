@@ -6,8 +6,14 @@ import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 describe('AgentHarnessLabel', () => {
   it.each(['OpenCode', 'Pi', 'Claude Code', 'Codex'])('renders the %s harness icon', (label) => {
     const { container } = render(<AgentHarnessLabel harnessKey={label}>{label}</AgentHarnessLabel>)
+    const icon = container.querySelector<HTMLElement>('[data-agent-harness-icon]')
 
-    expect(container.querySelector('[data-agent-harness-icon]')).toBeInTheDocument()
+    expect(icon).toBeInTheDocument()
+    expect(icon).toHaveAttribute('style', expect.stringContaining('mask-image: url('))
+    expect(icon).toHaveAttribute('style', expect.stringContaining('mask-position: center'))
+    expect(icon).toHaveAttribute('style', expect.stringContaining('mask-repeat: no-repeat'))
+    expect(icon).toHaveAttribute('style', expect.stringContaining('mask-size: contain'))
+    expect(icon).toHaveAttribute('style', expect.stringContaining('background-color: currentcolor'))
   })
 
   it('keeps unknown harness labels text-only', () => {
