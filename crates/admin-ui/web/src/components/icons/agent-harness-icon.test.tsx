@@ -9,11 +9,15 @@ describe('AgentHarnessLabel', () => {
     const icon = container.querySelector<HTMLElement>('[data-agent-harness-icon]')
 
     expect(icon).toBeInTheDocument()
-    expect(icon).toHaveAttribute('style', expect.stringContaining('mask-image: url('))
-    expect(icon).toHaveAttribute('style', expect.stringContaining('mask-position: center'))
-    expect(icon).toHaveAttribute('style', expect.stringContaining('mask-repeat: no-repeat'))
-    expect(icon).toHaveAttribute('style', expect.stringContaining('mask-size: contain'))
-    expect(icon).toHaveAttribute('style', expect.stringContaining('background-color: currentcolor'))
+    expect(icon?.style.getPropertyValue('-webkit-mask-image')).toContain('url(')
+    expect(icon?.style.getPropertyValue('-webkit-mask-position')).toBe('center')
+    expect(icon?.style.getPropertyValue('-webkit-mask-repeat')).toBe('no-repeat')
+    expect(icon?.style.getPropertyValue('-webkit-mask-size')).toBe('contain')
+    expect(icon?.style.getPropertyValue('mask-image')).toContain('url(')
+    expect(icon?.style.getPropertyValue('mask-position')).toBe('center')
+    expect(icon?.style.getPropertyValue('mask-repeat')).toBe('no-repeat')
+    expect(icon?.style.getPropertyValue('mask-size')).toBe('contain')
+    expect(icon?.style.getPropertyValue('background-color')).toBe('currentcolor')
   })
 
   it('keeps unknown harness labels text-only', () => {
