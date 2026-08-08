@@ -177,15 +177,15 @@ export function UsageCostsPage() {
           <div className="grid gap-3 md:grid-cols-3">
             <MetricCard
               label="Uncached input tokens"
-              value={report.totals.uncached_input_tokens.toLocaleString()}
+              value={report.totals.uncached_input_tokens?.toLocaleString() ?? 'Unavailable'}
             />
             <MetricCard
               label="Cache-read tokens"
-              value={report.totals.cache_read_tokens.toLocaleString()}
+              value={report.totals.cache_read_tokens?.toLocaleString() ?? 'Unavailable'}
             />
             <MetricCard
               label="Cache-write tokens"
-              value={report.totals.cache_write_tokens.toLocaleString()}
+              value={report.totals.cache_write_tokens?.toLocaleString() ?? 'Unavailable'}
             />
           </div>
 

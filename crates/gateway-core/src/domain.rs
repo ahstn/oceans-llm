@@ -874,6 +874,9 @@ pub struct SpendDailyAggregateRecord {
     pub priced_request_count: i64,
     pub unpriced_request_count: i64,
     pub usage_missing_request_count: i64,
+    pub uncached_input_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -898,9 +901,9 @@ pub struct SpendModelAggregateRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CacheUsageAggregateRecord {
-    pub uncached_input_tokens: i64,
-    pub cache_read_tokens: i64,
-    pub cache_write_tokens: i64,
+    pub uncached_input_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -917,9 +920,9 @@ pub struct FocusExportAggregateRecord {
     pub pricing_status: UsagePricingStatus,
     pub pricing_row_id: Option<Uuid>,
     pub prompt_tokens: i64,
-    pub uncached_input_tokens: i64,
-    pub cache_read_tokens: i64,
-    pub cache_write_tokens: i64,
+    pub uncached_input_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
     pub completion_tokens: i64,
     pub total_tokens: i64,
     pub request_count: i64,

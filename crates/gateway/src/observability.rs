@@ -185,6 +185,12 @@ impl GatewayMetrics {
             "pricing_status",
             usage.pricing_status.as_str().to_string(),
         ));
+        if let Some(reason) = usage.unpriced_reason.as_deref() {
+            attrs.push(KeyValue::new(
+                "usage_reason",
+                usage_reason_category(reason).to_string(),
+            ));
+        }
         self.usage_records.add(1, &attrs);
 
         for (token_type, value) in [
@@ -282,6 +288,10 @@ impl GatewayMetrics {
                 .clone(),
         }
     }
+}
+
+fn usage_reason_category(reason: &str) -> &str {
+    reason.split([':', ';']).next().unwrap_or(reason)
 }
 
 fn base_attrs(labels: &ChatMetricLabels<'_>) -> Vec<KeyValue> {

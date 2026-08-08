@@ -405,7 +405,19 @@ impl BudgetRepository for LibsqlStore {
                     SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END)
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)
-                        AS usage_missing_request_count
+                        AS usage_missing_request_count,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(uncached_input_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_read_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_write_tokens), 0) END
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
@@ -426,7 +438,19 @@ impl BudgetRepository for LibsqlStore {
                     SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END)
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)
-                        AS usage_missing_request_count
+                        AS usage_missing_request_count,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(uncached_input_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_read_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_write_tokens), 0) END
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
@@ -447,7 +471,19 @@ impl BudgetRepository for LibsqlStore {
                     SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END)
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)
-                        AS usage_missing_request_count
+                        AS usage_missing_request_count,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(uncached_input_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_read_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_write_tokens), 0) END
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
@@ -484,6 +520,9 @@ impl BudgetRepository for LibsqlStore {
                 priced_request_count,
                 unpriced_request_count,
                 usage_missing_request_count,
+                uncached_input_tokens: row.get(5).map_err(to_query_error)?,
+                cache_read_tokens: row.get(6).map_err(to_query_error)?,
+                cache_write_tokens: row.get(7).map_err(to_query_error)?,
             });
         }
         Ok(output)
@@ -750,9 +789,18 @@ impl BudgetRepository for LibsqlStore {
             .query(
                 r#"
                 SELECT
-                    COALESCE(SUM(uncached_input_tokens), 0),
-                    COALESCE(SUM(cache_read_tokens), 0),
-                    COALESCE(SUM(cache_write_tokens), 0)
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(uncached_input_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_read_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_write_tokens), 0) END
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
@@ -811,9 +859,18 @@ impl BudgetRepository for LibsqlStore {
                         u.pricing_status,
                         u.pricing_row_id,
                         COALESCE(SUM(u.prompt_tokens), 0) AS prompt_tokens,
-                        COALESCE(SUM(u.uncached_input_tokens), 0) AS uncached_input_tokens,
-                        COALESCE(SUM(u.cache_read_tokens), 0) AS cache_read_tokens,
-                        COALESCE(SUM(u.cache_write_tokens), 0) AS cache_write_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.uncached_input_tokens), 0) END AS uncached_input_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.cache_read_tokens), 0) END AS cache_read_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.cache_write_tokens), 0) END AS cache_write_tokens,
                         COALESCE(SUM(u.completion_tokens), 0) AS completion_tokens,
                         COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
                         COUNT(*) AS request_count,
@@ -842,9 +899,18 @@ impl BudgetRepository for LibsqlStore {
                         u.pricing_status,
                         u.pricing_row_id,
                         COALESCE(SUM(u.prompt_tokens), 0) AS prompt_tokens,
-                        COALESCE(SUM(u.uncached_input_tokens), 0) AS uncached_input_tokens,
-                        COALESCE(SUM(u.cache_read_tokens), 0) AS cache_read_tokens,
-                        COALESCE(SUM(u.cache_write_tokens), 0) AS cache_write_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.uncached_input_tokens), 0) END AS uncached_input_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.cache_read_tokens), 0) END AS cache_read_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.cache_write_tokens), 0) END AS cache_write_tokens,
                         COALESCE(SUM(u.completion_tokens), 0) AS completion_tokens,
                         COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
                         COUNT(*) AS request_count,

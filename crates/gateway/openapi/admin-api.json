@@ -11148,18 +11148,21 @@
           "priced_cost_usd_10000",
           "priced_request_count",
           "unpriced_request_count",
-          "usage_missing_request_count",
-          "uncached_input_tokens",
-          "cache_read_tokens",
-          "cache_write_tokens"
+          "usage_missing_request_count"
         ],
         "properties": {
           "cache_read_tokens": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "cache_write_tokens": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "priced_cost_usd_10000": {
@@ -11171,7 +11174,10 @@
             "format": "int64"
           },
           "uncached_input_tokens": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "unpriced_request_count": {

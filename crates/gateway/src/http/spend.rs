@@ -67,11 +67,6 @@ pub async fn get_spend_report(
         .store
         .list_usage_model_aggregates(window_start, window_end, owner_kind, owner_user_id)
         .await?;
-    let cache_usage = state
-        .store
-        .get_cache_usage_aggregate(window_start, window_end, owner_kind, owner_user_id)
-        .await?;
-
     let mut daily_map = std::collections::BTreeMap::new();
     for row in daily_rows {
         daily_map.insert(row.day_start.unix_timestamp(), row);
@@ -82,15 +77,21 @@ pub async fn get_spend_report(
         priced_request_count: 0,
         unpriced_request_count: 0,
         usage_missing_request_count: 0,
-        uncached_input_tokens: cache_usage.uncached_input_tokens,
-        cache_read_tokens: cache_usage.cache_read_tokens,
-        cache_write_tokens: cache_usage.cache_write_tokens,
+        uncached_input_tokens: Some(0),
+        cache_read_tokens: Some(0),
+        cache_write_tokens: Some(0),
     };
 
     let mut daily = Vec::with_capacity(window_days as usize);
     for day_offset in 0..window_days {
         let day_start = window_start + Duration::days(i64::from(day_offset));
         if let Some(row) = daily_map.remove(&day_start.unix_timestamp()) {
+            totals.uncached_input_tokens =
+                add_optional_total(totals.uncached_input_tokens, row.uncached_input_tokens);
+            totals.cache_read_tokens =
+                add_optional_total(totals.cache_read_tokens, row.cache_read_tokens);
+            totals.cache_write_tokens =
+                add_optional_total(totals.cache_write_tokens, row.cache_write_tokens);
             let priced_cost = row.priced_cost_usd.as_scaled_i64();
             totals.priced_cost_usd_10000 += priced_cost;
             totals.priced_request_count += row.priced_request_count;
@@ -151,6 +152,10 @@ pub async fn get_spend_report(
         owners,
         models,
     })))
+}
+
+fn add_optional_total(total: Option<i64>, value: Option<i64>) -> Option<i64> {
+    total.and_then(|total| value.and_then(|value| total.checked_add(value)))
 }
 
 #[utoipa::path(

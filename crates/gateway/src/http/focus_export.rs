@@ -132,14 +132,18 @@ fn focus_row_values(row: &FocusExportAggregateRecord) -> Vec<String> {
         row.upstream_model.clone(),
         model_id,
         row.prompt_tokens.to_string(),
-        row.uncached_input_tokens.to_string(),
-        row.cache_read_tokens.to_string(),
-        row.cache_write_tokens.to_string(),
+        optional_token_count(row.uncached_input_tokens),
+        optional_token_count(row.cache_read_tokens),
+        optional_token_count(row.cache_write_tokens),
         row.completion_tokens.to_string(),
         row.total_tokens.to_string(),
         row.request_count.to_string(),
         row.pricing_status.as_str().to_string(),
     ]
+}
+
+fn optional_token_count(value: Option<i64>) -> String {
+    value.map_or_else(String::new, |value| value.to_string())
 }
 
 fn focus_tags(tags: &[RequestTag]) -> String {
@@ -294,6 +298,7 @@ mod tests {
         assert!(export.body.contains("1.2345"));
         assert!(export.body.contains("\"A, \"\"quoted\"\" user\""));
         assert!(export.body.contains(",0.000003,"));
+        assert!(export.body.contains(",1,1,0,0,2,3,1,priced"));
     }
 
     #[test]
@@ -369,9 +374,9 @@ mod tests {
             pricing_status: UsagePricingStatus::Priced,
             pricing_row_id: None,
             prompt_tokens: 1,
-            uncached_input_tokens: 1,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
+            uncached_input_tokens: Some(1),
+            cache_read_tokens: Some(0),
+            cache_write_tokens: Some(0),
             completion_tokens: 2,
             total_tokens: 3,
             request_count: 1,

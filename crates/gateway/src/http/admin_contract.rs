@@ -658,9 +658,9 @@ pub struct SpendTotalsView {
     pub priced_request_count: i64,
     pub unpriced_request_count: i64,
     pub usage_missing_request_count: i64,
-    pub uncached_input_tokens: i64,
-    pub cache_read_tokens: i64,
-    pub cache_write_tokens: i64,
+    pub uncached_input_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

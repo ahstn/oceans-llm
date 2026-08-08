@@ -29,6 +29,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct RecordedChatUsage {
     pub pricing_status: UsagePricingStatus,
+    pub unpriced_reason: Option<String>,
     pub prompt_tokens: Option<i64>,
     pub uncached_input_tokens: Option<i64>,
     pub cache_read_tokens: Option<i64>,
@@ -602,7 +603,7 @@ where
             total_tokens: usage_summary.total_tokens,
             provider_usage,
             pricing_status: UsagePricingStatus::UsageMissing,
-            unpriced_reason: usage_summary.normalization_error.clone(),
+            unpriced_reason: usage_summary.cache_usage.reason(),
             pricing_row_id: None,
             pricing_provider_id: None,
             pricing_model_id: None,
@@ -620,13 +621,21 @@ where
 
         if usage_summary.has_usage() {
             match self.resolve_route_pricing(route, occurred_at).await? {
-                PricingResolution::Exact { pricing } => apply_exact_pricing(&mut record, &pricing)?,
+                PricingResolution::Exact { pricing } => {
+                    apply_exact_pricing(&mut record, &pricing, &usage_summary.cache_usage)?
+                }
                 PricingResolution::ConfiguredOverride { pricing } => {
-                    apply_configured_pricing(&mut record, &pricing)?
+                    apply_configured_pricing(&mut record, &pricing, &usage_summary.cache_usage)?
                 }
                 PricingResolution::Unpriced { reason } => {
                     record.pricing_status = UsagePricingStatus::Unpriced;
-                    record.unpriced_reason = Some(unpriced_reason_string(&reason));
+                    let pricing_reason = unpriced_reason_string(&reason);
+                    record.unpriced_reason = Some(match record.unpriced_reason.take() {
+                        Some(normalization_reason) => {
+                            format!("{normalization_reason};pricing_unavailable:{pricing_reason}")
+                        }
+                        None => pricing_reason,
+                    });
                     warn!(
                         request_id = %request_id,
                         provider_key = %route.provider_key,
@@ -659,6 +668,7 @@ where
 
         Ok(RecordedChatUsage {
             pricing_status: record.pricing_status,
+            unpriced_reason: record.unpriced_reason.clone(),
             prompt_tokens: record.prompt_tokens,
             uncached_input_tokens: record.uncached_input_tokens,
             cache_read_tokens: record.cache_read_tokens,
@@ -678,7 +688,7 @@ struct UsageSummary {
     cache_write_tokens: Option<i64>,
     completion_tokens: Option<i64>,
     total_tokens: Option<i64>,
-    normalization_error: Option<String>,
+    cache_usage: CacheUsageNormalization,
 }
 
 impl UsageSummary {
@@ -694,7 +704,7 @@ fn usage_summary_from_value(value: Option<&Value>) -> Result<UsageSummary, Gatew
         return Ok(UsageSummary::default());
     };
 
-    let prompt_tokens = usage
+    let raw_prompt_tokens = usage
         .get("prompt_tokens")
         .or_else(|| usage.get("input_tokens"))
         .and_then(Value::as_i64);
@@ -704,7 +714,7 @@ fn usage_summary_from_value(value: Option<&Value>) -> Result<UsageSummary, Gatew
         .and_then(Value::as_i64);
     let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
         some @ Some(_) => some,
-        None => match (prompt_tokens, completion_tokens) {
+        None => match (raw_prompt_tokens, completion_tokens) {
             (Some(prompt), Some(completion)) => prompt
                 .checked_add(completion)
                 .ok_or_else(|| GatewayError::Internal("token total overflow".to_string()))
@@ -713,8 +723,29 @@ fn usage_summary_from_value(value: Option<&Value>) -> Result<UsageSummary, Gatew
         },
     };
 
-    let (uncached_input_tokens, cache_read_tokens, cache_write_tokens, normalization_error) =
-        normalize_responses_cache_tokens(usage, prompt_tokens);
+    let cache_usage = normalize_cache_tokens(usage, raw_prompt_tokens);
+    let prompt_tokens = cache_usage
+        .tokens()
+        .map_or(raw_prompt_tokens, |tokens| Some(tokens.total_input_tokens));
+    let total_tokens = if prompt_tokens != raw_prompt_tokens {
+        match (prompt_tokens, completion_tokens) {
+            (Some(prompt), Some(completion)) => prompt
+                .checked_add(completion)
+                .ok_or_else(|| GatewayError::Internal("token total overflow".to_string()))
+                .map(Some)?,
+            _ => total_tokens,
+        }
+    } else {
+        total_tokens
+    };
+    let (uncached_input_tokens, cache_read_tokens, cache_write_tokens) =
+        cache_usage.tokens().map_or((None, None, None), |tokens| {
+            (
+                Some(tokens.uncached_input_tokens),
+                Some(tokens.cache_read_tokens),
+                Some(tokens.cache_write_tokens),
+            )
+        });
 
     Ok(UsageSummary {
         prompt_tokens,
@@ -723,57 +754,208 @@ fn usage_summary_from_value(value: Option<&Value>) -> Result<UsageSummary, Gatew
         cache_write_tokens,
         completion_tokens,
         total_tokens,
-        normalization_error,
+        cache_usage,
     })
 }
 
-fn normalize_responses_cache_tokens(
+#[derive(Debug, Clone, Default)]
+enum CacheUsageNormalization {
+    #[default]
+    Unavailable,
+    Valid(CacheTokenSummary),
+    Invalid(String),
+    Unsupported(String),
+}
+
+impl CacheUsageNormalization {
+    fn tokens(&self) -> Option<&CacheTokenSummary> {
+        match self {
+            Self::Valid(tokens) => Some(tokens),
+            Self::Unavailable | Self::Invalid(_) | Self::Unsupported(_) => None,
+        }
+    }
+
+    fn reason(&self) -> Option<String> {
+        match self {
+            Self::Invalid(reason) => Some(format!("invalid_cache_token_usage:{reason}")),
+            Self::Unsupported(reason) => Some(format!("unsupported_cache_token_usage:{reason}")),
+            Self::Unavailable | Self::Valid(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CacheTokenSummary {
+    total_input_tokens: i64,
+    uncached_input_tokens: i64,
+    cache_read_tokens: i64,
+    cache_write_tokens: i64,
+}
+
+fn normalize_cache_tokens(
     usage: &serde_json::Map<String, Value>,
     prompt_tokens: Option<i64>,
-) -> (Option<i64>, Option<i64>, Option<i64>, Option<String>) {
+) -> CacheUsageNormalization {
     let provider_usage = usage.get("provider_usage").and_then(Value::as_object);
     let details = usage
         .get("input_tokens_details")
         .or_else(|| usage.get("prompt_tokens_details"))
         .or_else(|| provider_usage.and_then(|raw| raw.get("input_tokens_details")))
         .or_else(|| provider_usage.and_then(|raw| raw.get("prompt_tokens_details")));
-    let Some(details) = details else {
-        return (None, None, None, None);
-    };
-    let Some(details) = details.as_object() else {
-        return cache_normalization_error("cache token details must be an object");
-    };
+    if let Some(details) = details {
+        let Some(details) = details.as_object() else {
+            return CacheUsageNormalization::Invalid(
+                "cache token details must be an object".to_string(),
+            );
+        };
+        return normalize_inclusive_cache_tokens(details, prompt_tokens);
+    }
 
-    let cache_read_tokens = match cache_token_field(details, "cached_tokens") {
+    if let Some(provider_usage) = provider_usage {
+        if provider_usage.contains_key("cached_tokens")
+            || provider_usage.contains_key("cache_write_tokens")
+        {
+            return normalize_inclusive_cache_tokens(provider_usage, prompt_tokens);
+        }
+        if provider_usage.contains_key("cacheReadInputTokens")
+            || provider_usage.contains_key("cacheWriteInputTokens")
+        {
+            if has_mixed_bedrock_ttl_cache_writes(provider_usage) {
+                return CacheUsageNormalization::Unsupported(
+                    "mixed_ttl_cache_write_classes".to_string(),
+                );
+            }
+            return normalize_exclusive_cache_tokens(
+                provider_usage,
+                prompt_tokens,
+                "cacheReadInputTokens",
+                "cacheWriteInputTokens",
+            );
+        }
+        if provider_usage.contains_key("cache_read_input_tokens")
+            || provider_usage.contains_key("cache_creation_input_tokens")
+        {
+            if has_mixed_ttl_cache_writes(provider_usage) {
+                return CacheUsageNormalization::Unsupported(
+                    "mixed_ttl_cache_write_classes".to_string(),
+                );
+            }
+            return normalize_exclusive_cache_tokens(
+                provider_usage,
+                prompt_tokens,
+                "cache_read_input_tokens",
+                "cache_creation_input_tokens",
+            );
+        }
+    }
+
+    CacheUsageNormalization::Unavailable
+}
+
+fn normalize_inclusive_cache_tokens(
+    fields: &serde_json::Map<String, Value>,
+    prompt_tokens: Option<i64>,
+) -> CacheUsageNormalization {
+    let cache_read_tokens = match cache_token_field(fields, "cached_tokens") {
         Ok(tokens) => tokens,
-        Err(reason) => return cache_normalization_error(&reason),
+        Err(reason) => return CacheUsageNormalization::Invalid(reason),
     };
-    let cache_write_tokens = match cache_token_field(details, "cache_write_tokens") {
+    let cache_write_tokens = match cache_token_field(fields, "cache_write_tokens") {
         Ok(tokens) => tokens,
-        Err(reason) => return cache_normalization_error(&reason),
+        Err(reason) => return CacheUsageNormalization::Invalid(reason),
     };
     let Some(prompt_tokens) = prompt_tokens else {
-        return cache_normalization_error("cache token details require total input tokens");
+        return CacheUsageNormalization::Invalid(
+            "cache token details require total input tokens".to_string(),
+        );
     };
     if prompt_tokens < 0 {
-        return cache_normalization_error("input token count cannot be negative");
+        return CacheUsageNormalization::Invalid(
+            "input token count cannot be negative".to_string(),
+        );
     }
     let Some(cached_input_tokens) = cache_read_tokens.checked_add(cache_write_tokens) else {
-        return cache_normalization_error("cache token total overflow");
+        return CacheUsageNormalization::Invalid("cache token total overflow".to_string());
     };
     if cached_input_tokens > prompt_tokens {
-        return cache_normalization_error("cache token buckets exceed total input tokens");
+        return CacheUsageNormalization::Invalid(
+            "cache token buckets exceed total input tokens".to_string(),
+        );
     }
-    let Some(uncached_input_tokens) = prompt_tokens.checked_sub(cached_input_tokens) else {
-        return cache_normalization_error("cache token buckets exceed total input tokens");
-    };
+    CacheUsageNormalization::Valid(CacheTokenSummary {
+        total_input_tokens: prompt_tokens,
+        uncached_input_tokens: prompt_tokens - cached_input_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
+    })
+}
 
-    (
-        Some(uncached_input_tokens),
-        Some(cache_read_tokens),
-        Some(cache_write_tokens),
-        None,
-    )
+fn normalize_exclusive_cache_tokens(
+    fields: &serde_json::Map<String, Value>,
+    uncached_input_tokens: Option<i64>,
+    read_field: &str,
+    write_field: &str,
+) -> CacheUsageNormalization {
+    let Some(uncached_input_tokens) = uncached_input_tokens else {
+        return CacheUsageNormalization::Invalid(
+            "provider cache counters require uncached input tokens".to_string(),
+        );
+    };
+    if uncached_input_tokens < 0 {
+        return CacheUsageNormalization::Invalid(
+            "input token count cannot be negative".to_string(),
+        );
+    }
+    let cache_read_tokens = match cache_token_field(fields, read_field) {
+        Ok(tokens) => tokens,
+        Err(reason) => return CacheUsageNormalization::Invalid(reason),
+    };
+    let cache_write_tokens = match cache_token_field(fields, write_field) {
+        Ok(tokens) => tokens,
+        Err(reason) => return CacheUsageNormalization::Invalid(reason),
+    };
+    let Some(total_input_tokens) = uncached_input_tokens
+        .checked_add(cache_read_tokens)
+        .and_then(|total| total.checked_add(cache_write_tokens))
+    else {
+        return CacheUsageNormalization::Invalid("cache token total overflow".to_string());
+    };
+    CacheUsageNormalization::Valid(CacheTokenSummary {
+        total_input_tokens,
+        uncached_input_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
+    })
+}
+
+fn has_mixed_ttl_cache_writes(fields: &serde_json::Map<String, Value>) -> bool {
+    let Some(classes) = fields.get("cache_creation").and_then(Value::as_object) else {
+        return false;
+    };
+    classes
+        .values()
+        .filter_map(Value::as_i64)
+        .filter(|tokens| *tokens > 0)
+        .count()
+        > 1
+}
+
+fn has_mixed_bedrock_ttl_cache_writes(fields: &serde_json::Map<String, Value>) -> bool {
+    let Some(details) = fields.get("cacheDetails").and_then(Value::as_array) else {
+        return false;
+    };
+    let mut positive_ttls = Vec::new();
+    for detail in details.iter().filter_map(Value::as_object) {
+        let tokens = detail.get("inputTokens").and_then(Value::as_i64);
+        let ttl = detail.get("ttl").and_then(Value::as_str);
+        if tokens.is_some_and(|tokens| tokens > 0)
+            && let Some(ttl) = ttl
+            && !positive_ttls.contains(&ttl)
+        {
+            positive_ttls.push(ttl);
+        }
+    }
+    positive_ttls.len() > 1
 }
 
 fn cache_token_field(details: &serde_json::Map<String, Value>, field: &str) -> Result<i64, String> {
@@ -789,17 +971,6 @@ fn cache_token_field(details: &serde_json::Map<String, Value>, field: &str) -> R
     Ok(tokens)
 }
 
-fn cache_normalization_error(
-    reason: &str,
-) -> (Option<i64>, Option<i64>, Option<i64>, Option<String>) {
-    (
-        None,
-        None,
-        None,
-        Some(format!("invalid_cache_token_usage:{reason}")),
-    )
-}
-
 fn money_to_f64(value: Money4) -> Option<f64> {
     if value == Money4::ZERO {
         None
@@ -811,6 +982,7 @@ fn money_to_f64(value: Money4) -> Option<f64> {
 fn apply_exact_pricing(
     record: &mut UsageLedgerRecord,
     pricing: &ResolvedModelPricing,
+    cache_usage: &CacheUsageNormalization,
 ) -> Result<(), GatewayError> {
     record.pricing_row_id = Some(pricing.model_pricing_id);
     record.pricing_provider_id = Some(pricing.pricing_provider_id.clone());
@@ -828,12 +1000,14 @@ fn apply_exact_pricing(
         record,
         pricing.input_cost_per_million_tokens,
         pricing.output_cost_per_million_tokens,
+        cache_usage,
     )
 }
 
 fn apply_configured_pricing(
     record: &mut UsageLedgerRecord,
     pricing: &RoutePricingOverride,
+    cache_usage: &CacheUsageNormalization,
 ) -> Result<(), GatewayError> {
     record.pricing_source = Some("configured_override".to_string());
     record.input_cost_per_million_tokens = Some(pricing.input_cost_per_million_tokens);
@@ -845,6 +1019,7 @@ fn apply_configured_pricing(
         record,
         Some(pricing.input_cost_per_million_tokens),
         Some(pricing.output_cost_per_million_tokens),
+        cache_usage,
     )
 }
 
@@ -852,13 +1027,28 @@ fn apply_token_rates(
     record: &mut UsageLedgerRecord,
     input_rate: Option<Money4>,
     output_rate: Option<Money4>,
+    cache_usage: &CacheUsageNormalization,
 ) -> Result<(), GatewayError> {
-    if record
-        .unpriced_reason
-        .as_deref()
-        .is_some_and(|reason| reason.starts_with("invalid_cache_token_usage:"))
-    {
+    if matches!(cache_usage, CacheUsageNormalization::Unsupported(_)) {
         record.pricing_status = UsagePricingStatus::Unpriced;
+        return Ok(());
+    }
+    if matches!(cache_usage, CacheUsageNormalization::Invalid(_)) {
+        if record.prompt_tokens.unwrap_or_default() > 0 && input_rate.is_none() {
+            record.pricing_status = UsagePricingStatus::Unpriced;
+            return Ok(());
+        }
+        if record.completion_tokens.unwrap_or_default() > 0 && output_rate.is_none() {
+            record.pricing_status = UsagePricingStatus::Unpriced;
+            return Ok(());
+        }
+        record.pricing_status = UsagePricingStatus::LegacyEstimated;
+        record.computed_cost_usd = compute_usage_cost(
+            record.prompt_tokens,
+            input_rate,
+            record.completion_tokens,
+            output_rate,
+        )?;
         return Ok(());
     }
     let input_tokens_requiring_standard_rate = record
@@ -1016,7 +1206,7 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{GatewayService, usage_summary_from_value};
+    use super::{CacheUsageNormalization, GatewayService, usage_summary_from_value};
 
     #[derive(Clone, Default)]
     struct UsageAccountingRepo {
@@ -1998,7 +2188,74 @@ mod tests {
         assert_eq!(summary.uncached_input_tokens, Some(100));
         assert_eq!(summary.cache_read_tokens, Some(900));
         assert_eq!(summary.cache_write_tokens, Some(200));
-        assert_eq!(summary.normalization_error, None);
+        assert!(matches!(
+            summary.cache_usage,
+            CacheUsageNormalization::Valid(_)
+        ));
+    }
+
+    #[test]
+    fn responses_cache_tokens_normalize_from_root_raw_provider_usage() {
+        let summary = usage_summary_from_value(Some(&json!({
+            "input_tokens": 1_200,
+            "output_tokens": 40,
+            "provider_usage": {
+                "cached_tokens": 900,
+                "cache_write_tokens": 200
+            }
+        })))
+        .expect("root raw provider usage should normalize");
+
+        assert_eq!(summary.prompt_tokens, Some(1_200));
+        assert_eq!(summary.uncached_input_tokens, Some(100));
+        assert_eq!(summary.cache_read_tokens, Some(900));
+        assert_eq!(summary.cache_write_tokens, Some(200));
+    }
+
+    #[test]
+    fn bedrock_converse_cache_tokens_add_to_exclusive_input_total() {
+        let summary = usage_summary_from_value(Some(&json!({
+            "prompt_tokens": 100,
+            "completion_tokens": 20,
+            "total_tokens": 120,
+            "provider_usage": {
+                "inputTokens": 100,
+                "cacheReadInputTokens": 900,
+                "cacheWriteInputTokens": 200
+            }
+        })))
+        .expect("Bedrock cache usage should normalize");
+
+        assert_eq!(summary.prompt_tokens, Some(1_200));
+        assert_eq!(summary.total_tokens, Some(1_220));
+        assert_eq!(summary.uncached_input_tokens, Some(100));
+        assert_eq!(summary.cache_read_tokens, Some(900));
+        assert_eq!(summary.cache_write_tokens, Some(200));
+    }
+
+    #[test]
+    fn mixed_anthropic_ttl_write_classes_remain_unavailable() {
+        let summary = usage_summary_from_value(Some(&json!({
+            "prompt_tokens": 100,
+            "completion_tokens": 20,
+            "provider_usage": {
+                "input_tokens": 100,
+                "cache_read_input_tokens": 900,
+                "cache_creation_input_tokens": 200,
+                "cache_creation": {
+                    "ephemeral_5m_input_tokens": 80,
+                    "ephemeral_1h_input_tokens": 120
+                }
+            }
+        })))
+        .expect("mixed TTL usage should remain recorded");
+
+        assert_eq!(summary.uncached_input_tokens, None);
+        assert!(matches!(
+            summary.cache_usage,
+            CacheUsageNormalization::Unsupported(ref reason)
+                if reason == "mixed_ttl_cache_write_classes"
+        ));
     }
 
     #[tokio::test]
@@ -2045,7 +2302,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inconsistent_cache_counters_are_recorded_as_unpriced() {
+    async fn inconsistent_cache_counters_use_legacy_estimate_with_diagnostic() {
         let auth = auth();
         let model_id = Uuid::new_v4();
         let model = model(model_id);
@@ -2066,6 +2323,46 @@ mod tests {
                 &route,
                 "req_invalid_cache_usage",
                 Some(json!({
+                    "input_tokens": 100_000,
+                    "output_tokens": 10_000,
+                    "input_tokens_details": {
+                        "cached_tokens": 90_000,
+                        "cache_write_tokens": 20_000
+                    }
+                })),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("invalid cache usage should still be recorded");
+
+        assert_eq!(recorded.pricing_status, UsagePricingStatus::LegacyEstimated);
+        let events = repo.events.lock().expect("events lock");
+        assert!(
+            events[0]
+                .unpriced_reason
+                .as_deref()
+                .is_some_and(|reason| reason.starts_with("invalid_cache_token_usage:"))
+        );
+        assert_eq!(events[0].uncached_input_tokens, None);
+        assert_eq!(events[0].computed_cost_usd, Money4::from_scaled(1_200));
+    }
+
+    #[tokio::test]
+    async fn invalid_cache_counters_preserve_pricing_resolution_failure() {
+        let auth = auth();
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let route = vertex_embedding_route(model_id);
+        let repo = Arc::new(UsageAccountingRepo::default());
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+
+        let recorded = service
+            .record_chat_usage(
+                &auth,
+                &model,
+                &route,
+                "req_invalid_cache_usage_without_pricing",
+                Some(json!({
                     "input_tokens": 100,
                     "output_tokens": 10,
                     "input_tokens_details": {
@@ -2079,13 +2376,11 @@ mod tests {
             .expect("invalid cache usage should still be recorded");
 
         assert_eq!(recorded.pricing_status, UsagePricingStatus::Unpriced);
-        let events = repo.events.lock().expect("events lock");
-        assert!(
-            events[0]
-                .unpriced_reason
-                .as_deref()
-                .is_some_and(|reason| reason.starts_with("invalid_cache_token_usage:"))
-        );
-        assert_eq!(events[0].uncached_input_tokens, None);
+        let reason = recorded
+            .unpriced_reason
+            .as_deref()
+            .expect("combined unpriced reason");
+        assert!(reason.starts_with("invalid_cache_token_usage:"));
+        assert!(reason.contains(";pricing_unavailable:"));
     }
 }

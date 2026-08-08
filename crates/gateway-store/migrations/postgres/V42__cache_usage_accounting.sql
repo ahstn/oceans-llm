@@ -10,7 +10,7 @@ ALTER TABLE usage_cost_events
     OR cache_write_tokens IS NULL
     OR prompt_tokens IS NULL
     OR uncached_input_tokens + cache_read_tokens + cache_write_tokens = prompt_tokens
-  );
+  ) NOT VALID;
 
-CREATE INDEX IF NOT EXISTS usage_cost_events_cache_usage_idx
-  ON usage_cost_events (occurred_at, cache_read_tokens, cache_write_tokens);
+ALTER TABLE usage_cost_events
+  VALIDATE CONSTRAINT usage_cost_events_cache_input_buckets_check;

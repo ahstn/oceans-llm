@@ -204,19 +204,21 @@ Current `main` already uses migration V41 for MCP OAuth state. PR #256 uses V41 
 - `crates/gateway/src/main.rs`;
 - generated admin contracts and UI navigation.
 
-## Recommended integration order
+## Implemented integration and remaining order
 
-### 1. Extract a cache-accounting prerequisite on current main
+### 1. Cache-accounting prerequisite implemented in PR #283
 
-Port the following coherent slice from PR #256:
+PR #283 implements the bounded accounting prerequisite directly on current `main`:
 
-- `usage_normalization.rs` and its provider-shape tests;
-- `NormalizedUsageAccounting` and `UsageCostAuthority`;
-- normalized usage persistence;
-- cache-aware component pricing and shadow discrepancy;
-- the guarded shadow-to-normalized policy switch.
+- supported provider-shape normalization with raw usage retention;
+- normalized cache bucket persistence;
+- cache-aware component pricing;
+- spend, FOCUS, metric, and admin UI reporting;
+- an external repeated-request canary.
 
-Use the next available migration number on current `main`. At the time of this audit, that is V42.
+The implementation uses typed normalization state instead of the earlier `NormalizedUsageAccounting` proposal. It does not add a persisted shadow-cost column or a runtime authority switch. Invalid counters retain a diagnostic and use aggregate input/output pricing as `legacy_estimated`; unsupported mixed TTL write classes remain unpriced.
+
+The prerequisite uses migration V42 on current `main`.
 
 Add the production evidence case used in this audit as a redacted test fixture:
 
@@ -241,18 +243,17 @@ The expected input buckets are two fresh tokens, 3,340 cache-read tokens, and 27
 
 In a separate bounded change:
 
-- keep Pi on Responses for the Bedrock Mantle model;
-- preserve `prompt_cache_key`, `prompt_cache_options`, and nested breakpoints;
-- do not inject cache controls;
-- reject conflicting route overrides rather than silently replacing harness intent;
 - declare that the pinned Bedrock Mantle route can preserve GPT-5.6 cache controls and counters;
-- add request-shape and streaming usage tests.
+- add explicit nested-breakpoint and streaming usage tests;
+- define behavior when a selected route cannot honor caller cache intent;
+- do not inject cache controls;
+- preserve the provider-boundary conflict rejection added by PR #283.
 
-### 3. Run shadow accounting and a live canary
+### 3. Run independent accounting comparison and a live canary
 
-Before authoritative cutover:
+Before production rollout on a cache-priced route:
 
-- compare legacy and normalized event costs;
+- compare aggregate-input and normalized event costs on redacted samples;
 - verify missing-rate and malformed-counter behaviour;
 - run the same stable-prefix request twice;
 - require first-turn `cache_write_tokens > 0`;
@@ -275,7 +276,7 @@ If the cache prerequisite uses V42, the remaining PR #256 migrations should star
 
 ## Rollout gates
 
-Do not make normalized cost authoritative until all of these conditions pass:
+Do not roll cache-aware pricing into a production route until all of these conditions pass:
 
 1. OpenAI Responses read and write counters normalize into disjoint buckets.
 2. Required cache prices resolve for the selected Bedrock route.
