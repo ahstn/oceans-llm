@@ -856,6 +856,19 @@ impl BudgetRepository for AnyStore {
         )
     }
 
+    async fn get_cache_usage_aggregate(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<gateway_core::CacheUsageAggregateRecord, StoreError> {
+        dispatch_store!(
+            self,
+            get_cache_usage_aggregate(window_start, window_end, owner_kind, owner_user_id)
+        )
+    }
+
     async fn list_focus_export_aggregates(
         &self,
         window_start: OffsetDateTime,

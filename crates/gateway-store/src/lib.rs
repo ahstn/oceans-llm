@@ -703,6 +703,9 @@ mod tests {
             provider_key: "openai-prod".to_string(),
             upstream_model: upstream_model.to_string(),
             prompt_tokens: Some(100),
+            uncached_input_tokens: Some(10),
+            cache_read_tokens: Some(80),
+            cache_write_tokens: Some(10),
             completion_tokens: Some(50),
             total_tokens: Some(150),
             provider_usage: json!({
@@ -4235,6 +4238,9 @@ mod tests {
             kept_usage.cache_write_cost_per_million_tokens,
             Some(Money4::from_scaled(250))
         );
+        assert_eq!(kept_usage.uncached_input_tokens, Some(10));
+        assert_eq!(kept_usage.cache_read_tokens, Some(80));
+        assert_eq!(kept_usage.cache_write_tokens, Some(10));
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(
@@ -4503,6 +4509,9 @@ mod tests {
             kept_usage.cache_write_cost_per_million_tokens,
             Some(Money4::from_scaled(250))
         );
+        assert_eq!(kept_usage.uncached_input_tokens, Some(10));
+        assert_eq!(kept_usage.cache_read_tokens, Some(80));
+        assert_eq!(kept_usage.cache_write_tokens, Some(10));
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(
@@ -7584,6 +7593,27 @@ mod tests {
             .expect("service account sum");
         assert_eq!(service_account_sum, Money4::from_scaled(22_000));
 
+        let cache_usage = store
+            .get_cache_usage_aggregate(window_start, window_end, None, None)
+            .await
+            .expect("cache usage aggregate");
+        assert_eq!(cache_usage.uncached_input_tokens, 50);
+        assert_eq!(cache_usage.cache_read_tokens, 400);
+        assert_eq!(cache_usage.cache_write_tokens, 50);
+
+        let user_cache_usage = store
+            .get_cache_usage_aggregate(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user cache usage aggregate");
+        assert_eq!(user_cache_usage.uncached_input_tokens, 20);
+        assert_eq!(user_cache_usage.cache_read_tokens, 160);
+        assert_eq!(user_cache_usage.cache_write_tokens, 20);
+
         let daily = store
             .list_usage_daily_aggregates(window_start, window_end, None, None)
             .await
@@ -7990,6 +8020,9 @@ mod tests {
             provider_key: "openai-prod".to_string(),
             upstream_model: "gpt-5".to_string(),
             prompt_tokens: Some(10),
+            uncached_input_tokens: None,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
             completion_tokens: Some(5),
             total_tokens: Some(15),
             provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
@@ -8023,6 +8056,9 @@ mod tests {
             provider_key: "openai-prod".to_string(),
             upstream_model: "gpt-5".to_string(),
             prompt_tokens: Some(10),
+            uncached_input_tokens: None,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
             completion_tokens: Some(5),
             total_tokens: Some(15),
             provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
@@ -8509,6 +8545,27 @@ mod tests {
             .await
             .expect("service account sum");
         assert_eq!(service_account_sum, Money4::from_scaled(22_000));
+
+        let cache_usage = store
+            .get_cache_usage_aggregate(window_start, window_end, None, None)
+            .await
+            .expect("cache usage aggregate");
+        assert_eq!(cache_usage.uncached_input_tokens, 50);
+        assert_eq!(cache_usage.cache_read_tokens, 400);
+        assert_eq!(cache_usage.cache_write_tokens, 50);
+
+        let user_cache_usage = store
+            .get_cache_usage_aggregate(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user cache usage aggregate");
+        assert_eq!(user_cache_usage.uncached_input_tokens, 20);
+        assert_eq!(user_cache_usage.cache_read_tokens, 160);
+        assert_eq!(user_cache_usage.cache_write_tokens, 20);
 
         let daily = store
             .list_usage_daily_aggregates(window_start, window_end, None, None)

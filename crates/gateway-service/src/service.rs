@@ -30,6 +30,9 @@ use crate::{
 pub struct RecordedChatUsage {
     pub pricing_status: UsagePricingStatus,
     pub prompt_tokens: Option<i64>,
+    pub uncached_input_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
     pub cost_usd: Option<f64>,
@@ -592,11 +595,14 @@ where
             provider_key: route.provider_key.clone(),
             upstream_model: route.upstream_model.clone(),
             prompt_tokens: usage_summary.prompt_tokens,
+            uncached_input_tokens: usage_summary.uncached_input_tokens,
+            cache_read_tokens: usage_summary.cache_read_tokens,
+            cache_write_tokens: usage_summary.cache_write_tokens,
             completion_tokens: usage_summary.completion_tokens,
             total_tokens: usage_summary.total_tokens,
             provider_usage,
             pricing_status: UsagePricingStatus::UsageMissing,
-            unpriced_reason: None,
+            unpriced_reason: usage_summary.normalization_error.clone(),
             pricing_row_id: None,
             pricing_provider_id: None,
             pricing_model_id: None,
@@ -654,6 +660,9 @@ where
         Ok(RecordedChatUsage {
             pricing_status: record.pricing_status,
             prompt_tokens: record.prompt_tokens,
+            uncached_input_tokens: record.uncached_input_tokens,
+            cache_read_tokens: record.cache_read_tokens,
+            cache_write_tokens: record.cache_write_tokens,
             completion_tokens: record.completion_tokens,
             total_tokens: record.total_tokens,
             cost_usd: money_to_f64(record.computed_cost_usd),
@@ -661,15 +670,19 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 struct UsageSummary {
     prompt_tokens: Option<i64>,
+    uncached_input_tokens: Option<i64>,
+    cache_read_tokens: Option<i64>,
+    cache_write_tokens: Option<i64>,
     completion_tokens: Option<i64>,
     total_tokens: Option<i64>,
+    normalization_error: Option<String>,
 }
 
 impl UsageSummary {
-    fn has_usage(self) -> bool {
+    fn has_usage(&self) -> bool {
         self.prompt_tokens.is_some()
             || self.completion_tokens.is_some()
             || self.total_tokens.is_some()
@@ -700,11 +713,91 @@ fn usage_summary_from_value(value: Option<&Value>) -> Result<UsageSummary, Gatew
         },
     };
 
+    let (uncached_input_tokens, cache_read_tokens, cache_write_tokens, normalization_error) =
+        normalize_responses_cache_tokens(usage, prompt_tokens);
+
     Ok(UsageSummary {
         prompt_tokens,
+        uncached_input_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
         completion_tokens,
         total_tokens,
+        normalization_error,
     })
+}
+
+fn normalize_responses_cache_tokens(
+    usage: &serde_json::Map<String, Value>,
+    prompt_tokens: Option<i64>,
+) -> (Option<i64>, Option<i64>, Option<i64>, Option<String>) {
+    let provider_usage = usage.get("provider_usage").and_then(Value::as_object);
+    let details = usage
+        .get("input_tokens_details")
+        .or_else(|| usage.get("prompt_tokens_details"))
+        .or_else(|| provider_usage.and_then(|raw| raw.get("input_tokens_details")))
+        .or_else(|| provider_usage.and_then(|raw| raw.get("prompt_tokens_details")));
+    let Some(details) = details else {
+        return (None, None, None, None);
+    };
+    let Some(details) = details.as_object() else {
+        return cache_normalization_error("cache token details must be an object");
+    };
+
+    let cache_read_tokens = match cache_token_field(details, "cached_tokens") {
+        Ok(tokens) => tokens,
+        Err(reason) => return cache_normalization_error(&reason),
+    };
+    let cache_write_tokens = match cache_token_field(details, "cache_write_tokens") {
+        Ok(tokens) => tokens,
+        Err(reason) => return cache_normalization_error(&reason),
+    };
+    let Some(prompt_tokens) = prompt_tokens else {
+        return cache_normalization_error("cache token details require total input tokens");
+    };
+    if prompt_tokens < 0 {
+        return cache_normalization_error("input token count cannot be negative");
+    }
+    let Some(cached_input_tokens) = cache_read_tokens.checked_add(cache_write_tokens) else {
+        return cache_normalization_error("cache token total overflow");
+    };
+    if cached_input_tokens > prompt_tokens {
+        return cache_normalization_error("cache token buckets exceed total input tokens");
+    }
+    let Some(uncached_input_tokens) = prompt_tokens.checked_sub(cached_input_tokens) else {
+        return cache_normalization_error("cache token buckets exceed total input tokens");
+    };
+
+    (
+        Some(uncached_input_tokens),
+        Some(cache_read_tokens),
+        Some(cache_write_tokens),
+        None,
+    )
+}
+
+fn cache_token_field(details: &serde_json::Map<String, Value>, field: &str) -> Result<i64, String> {
+    let Some(value) = details.get(field) else {
+        return Ok(0);
+    };
+    let Some(tokens) = value.as_i64() else {
+        return Err(format!("cache token field `{field}` must be an integer"));
+    };
+    if tokens < 0 {
+        return Err(format!("cache token field `{field}` cannot be negative"));
+    }
+    Ok(tokens)
+}
+
+fn cache_normalization_error(
+    reason: &str,
+) -> (Option<i64>, Option<i64>, Option<i64>, Option<String>) {
+    (
+        None,
+        None,
+        None,
+        Some(format!("invalid_cache_token_usage:{reason}")),
+    )
 }
 
 fn money_to_f64(value: Money4) -> Option<f64> {
@@ -760,7 +853,18 @@ fn apply_token_rates(
     input_rate: Option<Money4>,
     output_rate: Option<Money4>,
 ) -> Result<(), GatewayError> {
-    if record.prompt_tokens.unwrap_or_default() > 0 && input_rate.is_none() {
+    if record
+        .unpriced_reason
+        .as_deref()
+        .is_some_and(|reason| reason.starts_with("invalid_cache_token_usage:"))
+    {
+        record.pricing_status = UsagePricingStatus::Unpriced;
+        return Ok(());
+    }
+    let input_tokens_requiring_standard_rate = record
+        .uncached_input_tokens
+        .unwrap_or_else(|| record.prompt_tokens.unwrap_or_default());
+    if input_tokens_requiring_standard_rate > 0 && input_rate.is_none() {
         record.pricing_status = UsagePricingStatus::Unpriced;
         record.unpriced_reason = Some("missing_input_rate".to_string());
         return Ok(());
@@ -770,15 +874,63 @@ fn apply_token_rates(
         record.unpriced_reason = Some("missing_output_rate".to_string());
         return Ok(());
     }
+    if record.cache_read_tokens.unwrap_or_default() > 0
+        && record.cache_read_cost_per_million_tokens.is_none()
+    {
+        record.pricing_status = UsagePricingStatus::Unpriced;
+        record.unpriced_reason = Some("missing_cache_read_rate".to_string());
+        return Ok(());
+    }
+    if record.cache_write_tokens.unwrap_or_default() > 0
+        && record.cache_write_cost_per_million_tokens.is_none()
+    {
+        record.pricing_status = UsagePricingStatus::Unpriced;
+        record.unpriced_reason = Some("missing_cache_write_rate".to_string());
+        return Ok(());
+    }
 
     record.pricing_status = UsagePricingStatus::Priced;
-    record.computed_cost_usd = compute_usage_cost(
-        record.prompt_tokens,
-        input_rate,
-        record.completion_tokens,
-        output_rate,
-    )?;
+    record.computed_cost_usd = if record.uncached_input_tokens.is_some() {
+        compute_cache_aware_usage_cost(record, input_rate, output_rate)?
+    } else {
+        compute_usage_cost(
+            record.prompt_tokens,
+            input_rate,
+            record.completion_tokens,
+            output_rate,
+        )?
+    };
     Ok(())
+}
+
+fn compute_cache_aware_usage_cost(
+    record: &UsageLedgerRecord,
+    input_rate: Option<Money4>,
+    output_rate: Option<Money4>,
+) -> Result<Money4, GatewayError> {
+    let components = [
+        (record.uncached_input_tokens, input_rate),
+        (
+            record.cache_read_tokens,
+            record.cache_read_cost_per_million_tokens,
+        ),
+        (
+            record.cache_write_tokens,
+            record.cache_write_cost_per_million_tokens,
+        ),
+        (record.completion_tokens, output_rate),
+    ];
+    components
+        .into_iter()
+        .try_fold(Money4::ZERO, |total, (tokens, rate)| {
+            let component = match (tokens, rate) {
+                (Some(tokens), Some(rate)) => scaled_cost_for_tokens(tokens, rate)?,
+                _ => Money4::ZERO,
+            };
+            total
+                .checked_add(component)
+                .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))
+        })
 }
 
 fn compute_usage_cost(
@@ -864,7 +1016,7 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::GatewayService;
+    use super::{GatewayService, usage_summary_from_value};
 
     #[derive(Clone, Default)]
     struct UsageAccountingRepo {
@@ -1776,5 +1928,164 @@ mod tests {
             gateway_core::PricingResolution::ConfiguredOverride { pricing }
                 if pricing == route.pricing_override.expect("pricing override")
         ));
+    }
+
+    #[tokio::test]
+    async fn responses_cache_tokens_are_disjoint_and_priced_by_bucket() {
+        let auth = auth();
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
+            cache_write_cost_per_million_tokens: Some(Money4::from_scaled(12_500)),
+        });
+        let repo = Arc::new(UsageAccountingRepo::default());
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+
+        let recorded = service
+            .record_chat_usage(
+                &auth,
+                &model,
+                &route,
+                "req_responses_cache_usage",
+                Some(json!({
+                    "input_tokens": 3_618,
+                    "output_tokens": 303,
+                    "total_tokens": 3_921,
+                    "input_tokens_details": {
+                        "cached_tokens": 3_340,
+                        "cache_write_tokens": 276
+                    },
+                    "output_tokens_details": {"reasoning_tokens": 95}
+                })),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("cache usage should be recorded");
+
+        assert_eq!(recorded.pricing_status, UsagePricingStatus::Priced);
+        assert_eq!(recorded.uncached_input_tokens, Some(2));
+        assert_eq!(recorded.cache_read_tokens, Some(3_340));
+        assert_eq!(recorded.cache_write_tokens, Some(276));
+        assert_eq!(recorded.cost_usd, Some(0.0012));
+
+        let events = repo.events.lock().expect("events lock");
+        let event = events.first().expect("usage event");
+        assert_eq!(
+            event.provider_usage["input_tokens_details"]["cached_tokens"],
+            3_340
+        );
+        assert_eq!(event.computed_cost_usd, Money4::from_scaled(12));
+    }
+
+    #[test]
+    fn responses_cache_tokens_normalize_from_nested_raw_provider_usage() {
+        let summary = usage_summary_from_value(Some(&json!({
+            "input_tokens": 1_200,
+            "output_tokens": 40,
+            "provider_usage": {
+                "input_tokens_details": {
+                    "cached_tokens": 900,
+                    "cache_write_tokens": 200
+                }
+            }
+        })))
+        .expect("nested raw provider usage should normalize");
+
+        assert_eq!(summary.uncached_input_tokens, Some(100));
+        assert_eq!(summary.cache_read_tokens, Some(900));
+        assert_eq!(summary.cache_write_tokens, Some(200));
+        assert_eq!(summary.normalization_error, None);
+    }
+
+    #[tokio::test]
+    async fn positive_cache_tokens_without_required_rate_are_unpriced() {
+        let auth = auth();
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
+            cache_write_cost_per_million_tokens: None,
+        });
+        let repo = Arc::new(UsageAccountingRepo::default());
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+
+        let recorded = service
+            .record_chat_usage(
+                &auth,
+                &model,
+                &route,
+                "req_missing_cache_write_rate",
+                Some(json!({
+                    "input_tokens": 2_000,
+                    "output_tokens": 10,
+                    "input_tokens_details": {
+                        "cached_tokens": 1_000,
+                        "cache_write_tokens": 500
+                    }
+                })),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("unpriced cache usage should still be recorded");
+
+        assert_eq!(recorded.pricing_status, UsagePricingStatus::Unpriced);
+        let events = repo.events.lock().expect("events lock");
+        assert_eq!(
+            events[0].unpriced_reason.as_deref(),
+            Some("missing_cache_write_rate")
+        );
+        assert_eq!(events[0].computed_cost_usd, Money4::ZERO);
+    }
+
+    #[tokio::test]
+    async fn inconsistent_cache_counters_are_recorded_as_unpriced() {
+        let auth = auth();
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
+            cache_write_cost_per_million_tokens: Some(Money4::from_scaled(12_500)),
+        });
+        let repo = Arc::new(UsageAccountingRepo::default());
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+
+        let recorded = service
+            .record_chat_usage(
+                &auth,
+                &model,
+                &route,
+                "req_invalid_cache_usage",
+                Some(json!({
+                    "input_tokens": 100,
+                    "output_tokens": 10,
+                    "input_tokens_details": {
+                        "cached_tokens": 90,
+                        "cache_write_tokens": 20
+                    }
+                })),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("invalid cache usage should still be recorded");
+
+        assert_eq!(recorded.pricing_status, UsagePricingStatus::Unpriced);
+        let events = repo.events.lock().expect("events lock");
+        assert!(
+            events[0]
+                .unpriced_reason
+                .as_deref()
+                .is_some_and(|reason| reason.starts_with("invalid_cache_token_usage:"))
+        );
+        assert_eq!(events[0].uncached_input_tokens, None);
     }
 }

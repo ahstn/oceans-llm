@@ -67,6 +67,10 @@ pub async fn get_spend_report(
         .store
         .list_usage_model_aggregates(window_start, window_end, owner_kind, owner_user_id)
         .await?;
+    let cache_usage = state
+        .store
+        .get_cache_usage_aggregate(window_start, window_end, owner_kind, owner_user_id)
+        .await?;
 
     let mut daily_map = std::collections::BTreeMap::new();
     for row in daily_rows {
@@ -78,6 +82,9 @@ pub async fn get_spend_report(
         priced_request_count: 0,
         unpriced_request_count: 0,
         usage_missing_request_count: 0,
+        uncached_input_tokens: cache_usage.uncached_input_tokens,
+        cache_read_tokens: cache_usage.cache_read_tokens,
+        cache_write_tokens: cache_usage.cache_write_tokens,
     };
 
     let mut daily = Vec::with_capacity(window_days as usize);

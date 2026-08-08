@@ -20,6 +20,7 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 
 use crate::config::ServerConfig;
 use gateway_core::RequestToolCardinality;
+use gateway_service::RecordedChatUsage;
 
 #[derive(Clone)]
 pub struct GatewayMetrics {
@@ -178,23 +179,21 @@ impl GatewayMetrics {
         }
     }
 
-    pub fn record_usage(
-        &self,
-        labels: &ChatMetricLabels<'_>,
-        pricing_status: &str,
-        prompt_tokens: Option<i64>,
-        completion_tokens: Option<i64>,
-        total_tokens: Option<i64>,
-        cost_usd: Option<f64>,
-    ) {
+    pub fn record_usage(&self, labels: &ChatMetricLabels<'_>, usage: &RecordedChatUsage) {
         let mut attrs = base_attrs(labels);
-        attrs.push(KeyValue::new("pricing_status", pricing_status.to_string()));
+        attrs.push(KeyValue::new(
+            "pricing_status",
+            usage.pricing_status.as_str().to_string(),
+        ));
         self.usage_records.add(1, &attrs);
 
         for (token_type, value) in [
-            ("prompt", prompt_tokens),
-            ("completion", completion_tokens),
-            ("total", total_tokens),
+            ("prompt", usage.prompt_tokens),
+            ("uncached_input", usage.uncached_input_tokens),
+            ("cache_read", usage.cache_read_tokens),
+            ("cache_write", usage.cache_write_tokens),
+            ("completion", usage.completion_tokens),
+            ("total", usage.total_tokens),
         ] {
             if let Some(value) = value.and_then(|value| u64::try_from(value).ok()) {
                 let mut token_attrs = attrs.clone();
@@ -203,7 +202,7 @@ impl GatewayMetrics {
             }
         }
 
-        if let Some(cost_usd) = cost_usd
+        if let Some(cost_usd) = usage.cost_usd
             && cost_usd > 0.0
         {
             self.cost_usd.add(cost_usd, &attrs);
