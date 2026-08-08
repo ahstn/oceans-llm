@@ -153,13 +153,35 @@ pub(super) fn map_openai_responses_request(
             "model".to_string(),
             Value::String(context.upstream_model.clone()),
         );
-        for (key, value) in &context.extra_body {
-            object.insert(key.clone(), value.clone());
-        }
+        merge_responses_route_overrides(object, &context.extra_body)?;
         enforce_bedrock_responses_hosted_tool_compatibility(object, context)?;
     }
     crate::replay_id::normalize_openai_responses_replay_ids(&mut body)?;
     Ok(body)
+}
+
+fn merge_responses_route_overrides(
+    body: &mut Map<String, Value>,
+    overrides: &Map<String, Value>,
+) -> Result<(), ProviderError> {
+    const HARNESS_CACHE_FIELDS: [&str; 3] = [
+        "prompt_cache_key",
+        "prompt_cache_options",
+        "prompt_cache_retention",
+    ];
+
+    for (key, value) in overrides {
+        if HARNESS_CACHE_FIELDS.contains(&key.as_str())
+            && let Some(request_value) = body.get(key)
+            && request_value != value
+        {
+            return Err(ProviderError::InvalidRequest(format!(
+                "route extra_body `{key}` conflicts with caller prompt-cache intent"
+            )));
+        }
+        body.insert(key.clone(), value.clone());
+    }
+    Ok(())
 }
 
 fn enforce_bedrock_responses_hosted_tool_compatibility(

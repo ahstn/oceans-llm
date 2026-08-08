@@ -174,6 +174,21 @@ export function UsageCostsPage() {
             />
           </div>
 
+          <div className="grid gap-3 md:grid-cols-3">
+            <MetricCard
+              label="Uncached input tokens"
+              value={report.totals.uncached_input_tokens?.toLocaleString() ?? 'Unavailable'}
+            />
+            <MetricCard
+              label="Cache-read tokens"
+              value={report.totals.cache_read_tokens?.toLocaleString() ?? 'Unavailable'}
+            />
+            <MetricCard
+              label="Cache-write tokens"
+              value={report.totals.cache_write_tokens?.toLocaleString() ?? 'Unavailable'}
+            />
+          </div>
+
           <div className="flex flex-col gap-3 rounded-md border border-[color:var(--color-border)] p-4">
             {report.daily.map((point) => {
               const amount = point.priced_cost_usd_10000 / 10_000
