@@ -2,14 +2,13 @@ use anyhow::Context;
 use gateway_core::{
     AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRepository, ApiKeyStatus,
     BudgetRepository, IdentityRepository, McpTokenEstimateConfidence, McpTokenEstimateSource,
-    McpTokenOverheadRepository, ModelRepository, Money4, NewApiKeyRecord,
-    NormalizedUsageAccounting, RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord,
-    RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord, RequestTag, RequestTags,
-    UsageCostAuthority, UsageLedgerRecord, UsagePricingStatus, UserStatus,
+    McpTokenOverheadRepository, ModelRepository, Money4, NewApiKeyRecord, RequestAttemptRecord,
+    RequestAttemptStatus, RequestLogPayloadRecord, RequestLogRecord, RequestLogRepository,
+    RequestMcpTokenOverheadRecord, RequestTag, RequestTags, UsageLedgerRecord, UsagePricingStatus,
+    UserStatus,
 };
 use gateway_service::{
-    NORMALIZED_PRICING_POLICY_VERSION, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
-    TOKEN_USAGE_SEMANTICS_VERSION, hash_gateway_key_secret,
+    RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, hash_gateway_key_secret,
 };
 use gateway_store::{AnyStore, GatewayStore};
 use serde_json::{Map, Value, json};
@@ -418,6 +417,9 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             provider_key: fixture.provider_key.to_string(),
             upstream_model: fixture.upstream_model.to_string(),
             prompt_tokens: fixture.prompt_tokens,
+            uncached_input_tokens: priced.then_some(fixture.prompt_tokens).flatten(),
+            cache_read_tokens: priced.then_some(0),
+            cache_write_tokens: priced.then_some(0),
             completion_tokens: fixture.completion_tokens,
             total_tokens,
             provider_usage: if priced {
@@ -429,7 +431,6 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             } else {
                 json!({"status_code": fixture.status_code, "error_code": fixture.error_code})
             },
-            normalized_usage: demo_normalized_usage(fixture),
             pricing_status: if priced {
                 UsagePricingStatus::Priced
             } else {
@@ -561,51 +562,6 @@ fn demo_seed_metadata() -> Map<String, Value> {
         "seed_source".to_string(),
         Value::String("local_demo_seed".to_string()),
     )])
-}
-
-fn demo_normalized_usage(fixture: &LocalDemoRequestFixture) -> Option<NormalizedUsageAccounting> {
-    if fixture.error_code.is_some() {
-        return None;
-    }
-
-    let total_tokens = fixture
-        .prompt_tokens
-        .zip(fixture.completion_tokens)
-        .map(|(prompt, completion)| prompt + completion);
-    let fresh_input_cost = Money4::from_scaled(fixture.cost_scaled * 2 / 5);
-    let output_cost = Money4::from_scaled(fixture.cost_scaled - fresh_input_cost.as_scaled_i64());
-    let normalized_cost = Money4::from_scaled(fixture.cost_scaled);
-    Some(NormalizedUsageAccounting {
-        fresh_input_tokens: fixture.prompt_tokens,
-        cache_read_tokens: Some(0),
-        cache_creation_tokens: Some(0),
-        cache_creation_5m_tokens: Some(0),
-        cache_creation_30m_tokens: Some(0),
-        cache_creation_1h_tokens: Some(0),
-        output_tokens: fixture.completion_tokens,
-        reasoning_tokens: Some(0),
-        provider_total_tokens: total_tokens,
-        output_includes_reasoning: Some(true),
-        finish_reason: Some("stop".to_string()),
-        incomplete_reason: None,
-        semantics_version: TOKEN_USAGE_SEMANTICS_VERSION.to_string(),
-        semantics: json!({"source": "local_demo_seed", "cache_semantics": "explicit_zero"}),
-        normalization_error: None,
-        fresh_input_cost_usd: Some(fresh_input_cost),
-        cache_read_cost_usd: Some(Money4::from_scaled(0)),
-        cache_creation_cost_usd: Some(Money4::from_scaled(0)),
-        output_cost_usd: Some(output_cost),
-        reasoning_cost_usd: Some(Money4::from_scaled(0)),
-        uncached_input_cost_usd: Some(fresh_input_cost),
-        legacy_cost_usd: normalized_cost,
-        normalized_cost_usd: Some(normalized_cost),
-        normalized_pricing_status: UsagePricingStatus::Priced,
-        normalized_unpriced_reason: None,
-        pricing_policy_version: NORMALIZED_PRICING_POLICY_VERSION.to_string(),
-        authoritative_cost: UsageCostAuthority::Normalized,
-        discrepancy_usd: Some(Money4::from_scaled(0)),
-        discrepancy_reason: None,
-    })
 }
 
 fn demo_payload_record(

@@ -8,13 +8,13 @@ use axum::{
 use gateway_core::{
     AdminApiKeyRepository, AgentSessionAnalysisRepository, AgentSessionListQuery,
     AgentSessionSourceRecord, AgentSessionTraceRecord, AuthError, BudgetRepository, Confidence,
-    GatewayError, GatewayOutcomeState, IdentityRepository, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE,
-    MAX_REQUEST_LOG_PAGE_SIZE, McpTokenOverheadRepository, McpToolInvocationDetail,
-    McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-    McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection, ProviderRepository,
-    RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery,
-    RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord, RequestTag, RequestTags,
-    ScoreMaturity, SessionLifecycleState,
+    GatewayError, GatewayOutcomeState, GlobalRole, IdentityRepository,
+    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, MAX_REQUEST_LOG_PAGE_SIZE, McpTokenOverheadRepository,
+    McpToolInvocationDetail, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+    McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection,
+    ProviderRepository, RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord,
+    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord,
+    RequestTag, RequestTags, ScoreMaturity, SessionLifecycleState,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
@@ -27,7 +27,10 @@ use time::{Duration, OffsetDateTime, UtcOffset, format_description::well_known::
 use uuid::Uuid;
 
 use crate::http::{
-    admin_auth::{AdminDataScope, require_agent_analysis_scope, require_platform_admin},
+    admin_auth::{
+        AdminDataScope, require_agent_analysis_scope, require_authenticated_session,
+        require_platform_admin,
+    },
     admin_contract::{
         AgentAnalysisMetricPolicyView, AgentContextDiagnosticsView, AgentFileInteractionFactView,
         AgentFinishReasonDiagnosticsView, AgentFinishReasonItemView, AgentObservationCoverageView,
@@ -1059,7 +1062,7 @@ pub async fn list_request_logs(
     headers: HeaderMap,
     Query(query): Query<RequestLogListQuery>,
 ) -> Result<Json<Envelope<RequestLogPageView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let current_user = require_authenticated_session(&state, &headers).await?;
 
     let request_log_query = RequestLogQuery {
         page: query.page.unwrap_or(DEFAULT_PAGE).max(1),
@@ -1071,7 +1074,11 @@ pub async fn list_request_logs(
         model_key: empty_to_none(query.model_key),
         provider_key: empty_to_none(query.provider_key),
         status_code: query.status_code,
-        user_id: parse_optional_uuid(query.user_id.as_deref(), "user_id")?,
+        user_id: scoped_user_id(
+            current_user.user_id,
+            current_user.global_role,
+            parse_optional_uuid(query.user_id.as_deref(), "user_id")?,
+        ),
         team_id: parse_optional_uuid(query.team_id.as_deref(), "team_id")?,
         service_account_id: parse_optional_uuid(
             query.service_account_id.as_deref(),
@@ -1121,9 +1128,14 @@ pub async fn get_request_log_detail(
     headers: HeaderMap,
     Path(request_log_id): Path<Uuid>,
 ) -> Result<Json<Envelope<RequestLogDetailView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let current_user = require_authenticated_session(&state, &headers).await?;
 
     let detail = state.service.get_request_log_detail(request_log_id).await?;
+    require_owned_record(
+        current_user.user_id,
+        current_user.global_role,
+        detail.log.user_id,
+    )?;
     let provider = provider_connection(&state, detail.log.provider_key.as_str()).await?;
     let callers = request_caller_directory(&state, std::slice::from_ref(&detail.log)).await?;
     let mcp_token_overhead = state
@@ -1150,7 +1162,7 @@ pub async fn list_mcp_tool_invocations(
     headers: HeaderMap,
     Query(query): Query<McpToolInvocationListQuery>,
 ) -> Result<Json<Envelope<McpToolInvocationPageView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let current_user = require_authenticated_session(&state, &headers).await?;
 
     let query = McpToolInvocationQuery {
         page: query.page.unwrap_or(DEFAULT_PAGE).max(1),
@@ -1164,7 +1176,11 @@ pub async fn list_mcp_tool_invocations(
         tool_display_key: empty_to_none(query.tool_display_key),
         tool_display_name: empty_to_none(query.tool_display_name),
         api_key_id: parse_optional_uuid(query.api_key_id.as_deref(), "api_key_id")?,
-        user_id: parse_optional_uuid(query.user_id.as_deref(), "user_id")?,
+        user_id: scoped_user_id(
+            current_user.user_id,
+            current_user.global_role,
+            parse_optional_uuid(query.user_id.as_deref(), "user_id")?,
+        ),
         team_id: parse_optional_uuid(query.team_id.as_deref(), "team_id")?,
         status: parse_optional_mcp_status(query.status.as_deref())?,
         policy_result: parse_optional_mcp_policy_result(query.policy_result.as_deref())?,
@@ -1203,13 +1219,44 @@ pub async fn get_mcp_tool_invocation_detail(
     headers: HeaderMap,
     Path(mcp_tool_invocation_id): Path<Uuid>,
 ) -> Result<Json<Envelope<McpToolInvocationDetailView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let current_user = require_authenticated_session(&state, &headers).await?;
 
     let detail = state
         .service
         .get_mcp_tool_invocation_detail(mcp_tool_invocation_id)
         .await?;
+    require_owned_record(
+        current_user.user_id,
+        current_user.global_role,
+        detail.invocation.user_id,
+    )?;
     Ok(Json(envelope(mcp_invocation_detail_view(detail))))
+}
+
+fn scoped_user_id(
+    current_user_id: Uuid,
+    global_role: GlobalRole,
+    requested_user_id: Option<Uuid>,
+) -> Option<Uuid> {
+    if global_role == GlobalRole::PlatformAdmin {
+        requested_user_id
+    } else {
+        Some(current_user_id)
+    }
+}
+
+fn require_owned_record(
+    current_user_id: Uuid,
+    global_role: GlobalRole,
+    record_user_id: Option<Uuid>,
+) -> Result<(), AppError> {
+    if global_role == GlobalRole::PlatformAdmin || record_user_id == Some(current_user_id) {
+        return Ok(());
+    }
+
+    Err(AppError(GatewayError::Auth(
+        AuthError::InsufficientPrivileges,
+    )))
 }
 
 async fn provider_connections_by_key(
@@ -1848,6 +1895,43 @@ mod tests {
             ),
             Ok(_) => panic!("expected invalid range to fail"),
         }
+    }
+
+    #[test]
+    fn regular_user_query_scope_ignores_requested_user() {
+        let current_user_id = Uuid::new_v4();
+
+        assert_eq!(
+            scoped_user_id(current_user_id, GlobalRole::User, Some(Uuid::new_v4()),),
+            Some(current_user_id)
+        );
+    }
+
+    #[test]
+    fn platform_admin_query_scope_preserves_requested_user() {
+        let requested_user_id = Uuid::new_v4();
+
+        assert_eq!(
+            scoped_user_id(
+                Uuid::new_v4(),
+                GlobalRole::PlatformAdmin,
+                Some(requested_user_id),
+            ),
+            Some(requested_user_id)
+        );
+    }
+
+    #[test]
+    fn regular_user_can_open_only_owned_observability_records() {
+        let current_user_id = Uuid::new_v4();
+
+        assert!(
+            require_owned_record(current_user_id, GlobalRole::User, Some(current_user_id)).is_ok()
+        );
+        assert!(
+            require_owned_record(current_user_id, GlobalRole::User, Some(Uuid::new_v4())).is_err()
+        );
+        assert!(require_owned_record(current_user_id, GlobalRole::User, None).is_err());
     }
 
     #[test]

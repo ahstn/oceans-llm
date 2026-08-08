@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -14,12 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { requireAdminSession } from '@/routes/-admin-guard'
+import { isPlatformAdminSession } from '@/routes/-auth-routing'
+import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { getSpendUsageReport, getUsageCosts } from '@/server/admin-data.functions'
 import type { SpendOwnerKind, SpendReportView } from '@/types/api'
 
 export const Route = createFileRoute('/observability/usage-costs')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: () => getUsageCosts(),
   component: UsageCostsPage,
 })
@@ -33,6 +35,8 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
 
 export function UsageCostsPage() {
   const loaderData = Route.useLoaderData()
+  const { session } = Route.useRouteContext()
+  const isPlatformAdmin = isPlatformAdminSession(session)
   const [report, setReport] = useState<SpendReportView>(loaderData.data)
   const [windowDays, setWindowDays] = useState<7 | 30>((loaderData.data.window_days as 7 | 30) ?? 7)
   const [ownerKind, setOwnerKind] = useState<SpendOwnerKind>(loaderData.data.owner_kind ?? 'all')
@@ -61,14 +65,22 @@ export function UsageCostsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Budget & Spending"
+        title="Usage costs"
+        description={
+          isPlatformAdmin
+            ? 'Review costs over time and see how each account and model affects the total.'
+            : 'Review your costs over time and see how each model affects the total.'
+        }
+      />
+
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <CardTitle>Usage Costs</CardTitle>
-            <CardDescription>
-              Live spend from the durable usage ledger with owner and model breakdowns.
-            </CardDescription>
+            <CardTitle>Cost history</CardTitle>
+            <CardDescription>Choose a date range and review daily costs.</CardDescription>
           </div>
           <div className="flex items-center gap-2">
             <Select
@@ -85,21 +97,23 @@ export function UsageCostsPage() {
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <Select
-              value={ownerKind}
-              onValueChange={(value) => setOwnerKind(value as SpendOwnerKind)}
-            >
-              <SelectTrigger className="w-[130px]">
-                <SelectValue placeholder="Owner" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="all">All owners</SelectItem>
-                  <SelectItem value="user">User owners</SelectItem>
-                  <SelectItem value="service_account">Service accounts</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+            {isPlatformAdmin ? (
+              <Select
+                value={ownerKind}
+                onValueChange={(value) => setOwnerKind(value as SpendOwnerKind)}
+              >
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue placeholder="Owner" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="all">All owners</SelectItem>
+                    <SelectItem value="user">User owners</SelectItem>
+                    <SelectItem value="service_account">Service accounts</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            ) : null}
             <Button type="button" variant="secondary" onClick={refreshReport} disabled={isPending}>
               {isPending ? 'Refreshing...' : 'Refresh'}
             </Button>
@@ -119,7 +133,7 @@ export function UsageCostsPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadFocusRange(windowDays, ownerKind)}
+                onClick={() => downloadFocusRange(windowDays, ownerKind, !isPlatformAdmin)}
               >
                 Export {windowDays}d CSV
               </Button>
@@ -132,7 +146,10 @@ export function UsageCostsPage() {
                   className="h-9 w-[150px]"
                 />
               </label>
-              <Button type="button" onClick={() => downloadFocusDay(exportDay, ownerKind)}>
+              <Button
+                type="button"
+                onClick={() => downloadFocusDay(exportDay, ownerKind, !isPlatformAdmin)}
+              >
                 Export day
               </Button>
             </div>
@@ -154,6 +171,21 @@ export function UsageCostsPage() {
             <MetricCard
               label="Usage-missing requests"
               value={String(report.totals.usage_missing_request_count)}
+            />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <MetricCard
+              label="Uncached input tokens"
+              value={report.totals.uncached_input_tokens?.toLocaleString() ?? 'Unavailable'}
+            />
+            <MetricCard
+              label="Cache-read tokens"
+              value={report.totals.cache_read_tokens?.toLocaleString() ?? 'Unavailable'}
+            />
+            <MetricCard
+              label="Cache-write tokens"
+              value={report.totals.cache_write_tokens?.toLocaleString() ?? 'Unavailable'}
             />
           </div>
 
@@ -191,7 +223,11 @@ export function UsageCostsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Owner Breakdown</CardTitle>
-          <CardDescription>Spend by user and service account ownership scopes.</CardDescription>
+          <CardDescription>
+            {isPlatformAdmin
+              ? 'Spend by user and service account ownership scopes.'
+              : 'Spend attributed to your user account.'}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
@@ -305,7 +341,11 @@ function formatOwnerKind(ownerKind: string) {
   return ownerKind
 }
 
-function downloadFocusRange(windowDays: 7 | 30, ownerKind: SpendOwnerKind) {
+function downloadFocusRange(
+  windowDays: 7 | 30,
+  ownerKind: SpendOwnerKind,
+  currentUserOnly: boolean,
+) {
   const end = utcDateAtDayOffset(0)
   const start = utcDateAtDayOffset(-(windowDays - 1))
   const params = new URLSearchParams({
@@ -313,13 +353,14 @@ function downloadFocusRange(windowDays: 7 | 30, ownerKind: SpendOwnerKind) {
     end,
     granularity: 'daily',
   })
-  if (ownerKind !== 'all') {
+  if (!currentUserOnly && ownerKind !== 'all') {
     params.set('owner_kind', ownerKind)
   }
-  window.location.assign(`/api/v1/admin/spend/focus.csv?${params.toString()}`)
+  const path = currentUserOnly ? '/api/v1/me/spend/focus.csv' : '/api/v1/admin/spend/focus.csv'
+  window.location.assign(`${path}?${params.toString()}`)
 }
 
-function downloadFocusDay(day: string, ownerKind: SpendOwnerKind) {
+function downloadFocusDay(day: string, ownerKind: SpendOwnerKind, currentUserOnly: boolean) {
   if (!day) {
     toast.error('Choose a day to export')
     return
@@ -332,10 +373,11 @@ function downloadFocusDay(day: string, ownerKind: SpendOwnerKind) {
     day,
     granularity: 'daily',
   })
-  if (ownerKind !== 'all') {
+  if (!currentUserOnly && ownerKind !== 'all') {
     params.set('owner_kind', ownerKind)
   }
-  window.location.assign(`/api/v1/admin/spend/focus.csv?${params.toString()}`)
+  const path = currentUserOnly ? '/api/v1/me/spend/focus.csv' : '/api/v1/admin/spend/focus.csv'
+  window.location.assign(`${path}?${params.toString()}`)
 }
 
 function utcDateAtDayOffset(dayOffset: number) {

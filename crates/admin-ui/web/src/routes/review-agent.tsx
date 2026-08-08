@@ -20,6 +20,7 @@ import { AppIcon } from '@/components/icons/app-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
@@ -405,14 +406,19 @@ export function ReviewAgentPage() {
   const serviceAccountById = new Map(serviceAccounts.map((account) => [account.id, account]))
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Control Plane"
+        title="Review agent"
+        description="Set up automatic code reviews and review recent results."
+      />
+
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <CardTitle>Review Agent</CardTitle>
+            <CardTitle>Repositories</CardTitle>
             <CardDescription>
-              Configure repositories for Pi-powered pull request reviews, then copy the generated
-              GitHub Actions workflow into each repository to finish onboarding.
+              Choose the repositories that use automatic code reviews.
             </CardDescription>
           </div>
 

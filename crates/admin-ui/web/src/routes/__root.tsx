@@ -22,9 +22,8 @@ import globalsCss from '@/styles/globals.css?url'
 import faviconUrl from '@/assets/oceans-logo-rounded-square.png?url'
 import {
   buildRedirectTarget,
-  canAccessAdminPath,
+  canAccessSignedInPath,
   defaultSignedInPath,
-  isAdminSession,
   isPublicAdminRoute,
   normalizeAdminPath,
 } from '@/routes/-auth-routing'
@@ -48,28 +47,25 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     const currentPath = normalizeAdminPath(location.pathname)
     const isPublicRoute = isPublicAdminRoute(currentPath)
     const { data: session } = await loadAuthSession()
-    const adminSession = isAdminSession(session) ? session : null
 
     if (isPublicRoute) {
-      if (currentPath === '/login' && adminSession) {
+      if (currentPath === '/login' && session) {
         throw redirect({
-          to: adminSession.must_change_password
-            ? '/change-password'
-            : defaultSignedInPath(adminSession),
+          to: session.must_change_password ? '/change-password' : defaultSignedInPath(session),
         })
       }
 
-      if (currentPath === '/change-password' && !adminSession) {
+      if (currentPath === '/change-password' && !session) {
         throw redirect({
           to: '/login',
           search: { redirect: '/change-password' },
         })
       }
 
-      return { session: adminSession, oceansVersion: null }
+      return { session, oceansVersion: null }
     }
 
-    if (!adminSession) {
+    if (!session) {
       throw redirect({
         to: '/login',
         search: {
@@ -78,16 +74,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       })
     }
 
-    if (adminSession.must_change_password && currentPath !== '/change-password') {
+    if (session.must_change_password && currentPath !== '/change-password') {
       throw redirect({ to: '/change-password' })
     }
 
-    if (!canAccessAdminPath(adminSession, currentPath)) {
-      throw redirect({ to: defaultSignedInPath(adminSession) })
+    if (!canAccessSignedInPath(session, currentPath)) {
+      throw redirect({ to: defaultSignedInPath(session) })
     }
 
     const oceansVersion = await loadOceansVersion().catch(() => null)
-    return { session: adminSession, oceansVersion }
+    return { session, oceansVersion }
   },
   errorComponent: RootErrorComponent,
   head: () => ({

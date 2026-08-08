@@ -46,7 +46,7 @@ pub(crate) mod tests {
         BudgetModelSelector, BudgetRepository, BudgetScope, BudgetSettings, BudgetSource,
         BudgetSourceKind, Confidence, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
         ExternalMcpDiscoveryStatus, ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole,
-        IdentityRepository, ManagedApiKeySource, McpRegistryRepository,
+        IdentityRepository, ManagedApiKeySource, McpOauthStateRecord, McpRegistryRepository,
         McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
         McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult,
         McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
@@ -56,18 +56,19 @@ pub(crate) mod tests {
         OidcLoginStateRecord, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
-        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        RequestTag, RequestTags, RequestToolCardinality, ReviewAgentProvider,
-        ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryStatus,
-        ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, RoutePricingOverride,
-        SeedApiKey, SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
-        SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
-        SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
-        SeedUserModelBudgetDefault, ServiceAccountStatus, SessionLifecycleState, StoreError,
-        StoreHealth, UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord,
-        UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord,
-        UpsertReviewAgentPullRequestRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        PricingProvenance, ProviderCapabilities, RefreshMcpOauthCredentialBindingRecord,
+        RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord, RequestLogQuery,
+        RequestLogRecord, RequestLogRepository, RequestTag, RequestTags, RequestToolCardinality,
+        ReviewAgentProvider, ReviewAgentPullRequestState, ReviewAgentRepository,
+        ReviewAgentRepositoryStatus, ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility,
+        RoutePricingOverride, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
+        SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
+        SeedOauthProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+        SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountStatus,
+        SessionLifecycleState, StoreError, StoreHealth, UpdateExternalMcpServerRecord,
+        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
+        UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -708,6 +709,9 @@ pub(crate) mod tests {
             provider_key: "openai-prod".to_string(),
             upstream_model: upstream_model.to_string(),
             prompt_tokens: Some(100),
+            uncached_input_tokens: Some(10),
+            cache_read_tokens: Some(80),
+            cache_write_tokens: Some(10),
             completion_tokens: Some(50),
             total_tokens: Some(150),
             provider_usage: json!({
@@ -715,7 +719,6 @@ pub(crate) mod tests {
                 "completion_tokens": 50,
                 "total_tokens": 150
             }),
-            normalized_usage: None,
             pricing_status,
             unpriced_reason,
             pricing_row_id: None,
@@ -1024,6 +1027,9 @@ pub(crate) mod tests {
         assert_eq!(user_row.computed_cost_usd, Money4::from_scaled(11_000));
         assert_eq!(user_row.request_count, 1);
         assert_eq!(user_row.prompt_tokens, 100);
+        assert_eq!(user_row.uncached_input_tokens, Some(10));
+        assert_eq!(user_row.cache_read_tokens, Some(80));
+        assert_eq!(user_row.cache_write_tokens, Some(10));
         assert_eq!(user_row.completion_tokens, 50);
         assert_eq!(user_row.total_tokens, 150);
         assert_eq!(
@@ -1048,6 +1054,9 @@ pub(crate) mod tests {
             service_account_row.pricing_status,
             UsagePricingStatus::LegacyEstimated
         );
+        assert_eq!(service_account_row.uncached_input_tokens, Some(10));
+        assert_eq!(service_account_row.cache_read_tokens, Some(80));
+        assert_eq!(service_account_row.cache_write_tokens, Some(10));
         assert_eq!(
             service_account_row.owner_tags,
             vec![RequestTag {
@@ -1511,6 +1520,63 @@ pub(crate) mod tests {
             .await
             .expect("create credential owner user");
         let user_id = user.user_id;
+        let oauth_state = McpOauthStateRecord {
+            state_hash: "mcp-oauth-state-hash".to_string(),
+            user_id,
+            mcp_server_id: server.mcp_server_id,
+            provider_key: "google".to_string(),
+            pkce_verifier: "pkce-verifier".to_string(),
+            redirect_to: "/admin/account/connections".to_string(),
+            resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
+            scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+            expires_at: now + Duration::minutes(10),
+            consumed_at: None,
+            created_at: now,
+        };
+        store
+            .create_mcp_oauth_state(&oauth_state)
+            .await
+            .expect("create MCP OAuth state");
+        let consumed_state = store
+            .consume_mcp_oauth_state(&oauth_state.state_hash, now + Duration::seconds(1))
+            .await
+            .expect("consume MCP OAuth state")
+            .expect("MCP OAuth state exists");
+        assert_eq!(consumed_state.user_id, user_id);
+        assert_eq!(consumed_state.pkce_verifier, oauth_state.pkce_verifier);
+        assert_eq!(consumed_state.resource, oauth_state.resource);
+        assert_eq!(consumed_state.scopes, oauth_state.scopes);
+        assert!(
+            store
+                .consume_mcp_oauth_state(&oauth_state.state_hash, now + Duration::seconds(2),)
+                .await
+                .expect("reject reused MCP OAuth state")
+                .is_none()
+        );
+        let expired_state = McpOauthStateRecord {
+            state_hash: "mcp-oauth-state-hash-expired".to_string(),
+            user_id,
+            mcp_server_id: server.mcp_server_id,
+            provider_key: "google".to_string(),
+            pkce_verifier: "expired-pkce-verifier".to_string(),
+            redirect_to: "/admin/account/connections".to_string(),
+            resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
+            scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+            expires_at: now - Duration::minutes(1),
+            consumed_at: None,
+            created_at: now,
+        };
+        store
+            .create_mcp_oauth_state(&expired_state)
+            .await
+            .expect("create expired MCP OAuth state");
+        assert!(
+            store
+                .consume_mcp_oauth_state(&expired_state.state_hash, now)
+                .await
+                .expect("reject expired MCP OAuth state")
+                .is_none()
+        );
         let scope_key = format!("mcp_credential:v1:user:{user_id}");
         let binding = store
             .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
@@ -1605,6 +1671,54 @@ pub(crate) mod tests {
             Some(last_used_at.unix_timestamp())
         );
 
+        let first_lease = Uuid::new_v4();
+        let second_lease = Uuid::new_v4();
+        assert!(
+            store
+                .try_acquire_mcp_oauth_refresh_lease(
+                    binding.credential_binding_id,
+                    first_lease,
+                    now,
+                    now + Duration::minutes(1),
+                )
+                .await
+                .expect("acquire first refresh lease")
+        );
+        assert!(
+            !store
+                .try_acquire_mcp_oauth_refresh_lease(
+                    binding.credential_binding_id,
+                    second_lease,
+                    now + Duration::seconds(1),
+                    now + Duration::minutes(2),
+                )
+                .await
+                .expect("reject concurrent refresh lease")
+        );
+        assert!(
+            store
+                .try_acquire_mcp_oauth_refresh_lease(
+                    binding.credential_binding_id,
+                    second_lease,
+                    now + Duration::minutes(1),
+                    now + Duration::minutes(2),
+                )
+                .await
+                .expect("replace expired refresh lease")
+        );
+        assert!(
+            !store
+                .release_mcp_oauth_refresh_lease(binding.credential_binding_id, first_lease)
+                .await
+                .expect("reject stale refresh lease release")
+        );
+        assert!(
+            store
+                .release_mcp_oauth_refresh_lease(binding.credential_binding_id, second_lease)
+                .await
+                .expect("release refresh lease")
+        );
+
         assert!(
             store
                 .revoke_mcp_upstream_credential_binding(
@@ -1677,6 +1791,178 @@ pub(crate) mod tests {
         assert_eq!(
             replacement.material_kind,
             McpUpstreamCredentialMaterialKind::StaticHeader
+        );
+
+        let oauth_user = store
+            .create_identity_user(
+                "MCP OAuth Refresh User",
+                "mcp-oauth-refresh-user@example.com",
+                "mcp-oauth-refresh-user@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("create OAuth refresh user");
+        let oauth_scope_key = format!("mcp_credential:v1:user:{}", oauth_user.user_id);
+        let oauth_binding = store
+            .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id: server.mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: oauth_scope_key.clone(),
+                owner_user_id: Some(oauth_user.user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind: McpUpstreamCredentialMaterialKind::OauthTokens,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("oauth-cipher-v1".to_string()),
+                secret_nonce: Some("oauth-nonce-v1".to_string()),
+                secret_key_id: Some("oauth-key".to_string()),
+                secret_ref: None,
+                expires_at: Some(now + Duration::hours(1)),
+                metadata: Map::from_iter([("grant".to_string(), json!("v1"))]),
+                updated_at: now + Duration::minutes(20),
+            })
+            .await
+            .expect("create OAuth credential");
+        let refreshed = store
+            .compare_and_swap_mcp_oauth_credential_refresh(
+                &RefreshMcpOauthCredentialBindingRecord {
+                    credential_binding_id: oauth_binding.credential_binding_id,
+                    expected_secret_ciphertext: "oauth-cipher-v1".to_string(),
+                    secret_ciphertext: "oauth-cipher-v2".to_string(),
+                    secret_nonce: "oauth-nonce-v2".to_string(),
+                    secret_key_id: "oauth-key".to_string(),
+                    expires_at: now + Duration::hours(2),
+                    metadata: Map::from_iter([("grant".to_string(), json!("v2"))]),
+                    updated_at: now + Duration::minutes(21),
+                },
+            )
+            .await
+            .expect("refresh OAuth credential")
+            .expect("unchanged OAuth binding");
+        assert_eq!(
+            refreshed.secret_ciphertext.as_deref(),
+            Some("oauth-cipher-v2")
+        );
+        assert_eq!(refreshed.secret_nonce.as_deref(), Some("oauth-nonce-v2"));
+        assert_eq!(refreshed.secret_key_id.as_deref(), Some("oauth-key"));
+        assert_eq!(
+            refreshed.expires_at.map(OffsetDateTime::unix_timestamp),
+            Some((now + Duration::hours(2)).unix_timestamp())
+        );
+        assert_eq!(
+            refreshed.updated_at.unix_timestamp(),
+            (now + Duration::minutes(21)).unix_timestamp()
+        );
+        assert_eq!(refreshed.metadata.get("grant"), Some(&json!("v2")));
+
+        let reconnected = store
+            .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: Some(oauth_binding.credential_binding_id),
+                mcp_server_id: server.mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: oauth_scope_key.clone(),
+                owner_user_id: Some(oauth_user.user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind: McpUpstreamCredentialMaterialKind::OauthTokens,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("oauth-cipher-v3".to_string()),
+                secret_nonce: Some("oauth-nonce-v3".to_string()),
+                secret_key_id: Some("oauth-key".to_string()),
+                secret_ref: None,
+                expires_at: Some(now + Duration::hours(3)),
+                metadata: Map::from_iter([("grant".to_string(), json!("v3"))]),
+                updated_at: now + Duration::minutes(22),
+            })
+            .await
+            .expect("reconnect OAuth credential");
+        assert!(
+            !store
+                .revoke_mcp_oauth_credential_if_unchanged(
+                    reconnected.credential_binding_id,
+                    "oauth-cipher-v2",
+                    now + Duration::minutes(23),
+                )
+                .await
+                .expect("reject stale OAuth revocation")
+        );
+        assert!(
+            store
+                .compare_and_swap_mcp_oauth_credential_refresh(
+                    &RefreshMcpOauthCredentialBindingRecord {
+                        credential_binding_id: reconnected.credential_binding_id,
+                        expected_secret_ciphertext: "oauth-cipher-v2".to_string(),
+                        secret_ciphertext: "stale-refresh".to_string(),
+                        secret_nonce: "stale-nonce".to_string(),
+                        secret_key_id: "oauth-key".to_string(),
+                        expires_at: now + Duration::hours(4),
+                        metadata: Map::new(),
+                        updated_at: now + Duration::minutes(24),
+                    },
+                )
+                .await
+                .expect("reject stale OAuth refresh")
+                .is_none()
+        );
+        let current = store
+            .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &oauth_scope_key)
+            .await
+            .expect("load reconnected OAuth credential")
+            .expect("active OAuth credential");
+        assert_eq!(
+            current.secret_ciphertext.as_deref(),
+            Some("oauth-cipher-v3")
+        );
+        assert_eq!(current.secret_nonce.as_deref(), Some("oauth-nonce-v3"));
+        assert_eq!(current.secret_key_id.as_deref(), Some("oauth-key"));
+        assert_eq!(
+            current.expires_at.map(OffsetDateTime::unix_timestamp),
+            Some((now + Duration::hours(3)).unix_timestamp())
+        );
+        assert_eq!(
+            current.updated_at.unix_timestamp(),
+            (now + Duration::minutes(22)).unix_timestamp()
+        );
+        assert_eq!(current.metadata.get("grant"), Some(&json!("v3")));
+        assert!(
+            store
+                .revoke_mcp_oauth_credential_if_unchanged(
+                    current.credential_binding_id,
+                    "oauth-cipher-v3",
+                    now + Duration::minutes(25),
+                )
+                .await
+                .expect("disconnect unchanged OAuth credential")
+        );
+        assert!(
+            store
+                .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &oauth_scope_key,)
+                .await
+                .expect("load disconnected OAuth credential")
+                .is_none()
+        );
+        assert!(
+            store
+                .compare_and_swap_mcp_oauth_credential_refresh(
+                    &RefreshMcpOauthCredentialBindingRecord {
+                        credential_binding_id: current.credential_binding_id,
+                        expected_secret_ciphertext: "oauth-cipher-v3".to_string(),
+                        secret_ciphertext: "reactivated".to_string(),
+                        secret_nonce: "reactivated-nonce".to_string(),
+                        secret_key_id: "oauth-key".to_string(),
+                        expires_at: now + Duration::hours(4),
+                        metadata: Map::new(),
+                        updated_at: now + Duration::minutes(26),
+                    },
+                )
+                .await
+                .expect("reject refresh after disconnect")
+                .is_none()
         );
     }
 
@@ -3964,6 +4250,9 @@ pub(crate) mod tests {
             kept_usage.cache_write_cost_per_million_tokens,
             Some(Money4::from_scaled(250))
         );
+        assert_eq!(kept_usage.uncached_input_tokens, Some(10));
+        assert_eq!(kept_usage.cache_read_tokens, Some(80));
+        assert_eq!(kept_usage.cache_write_tokens, Some(10));
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(
@@ -4232,6 +4521,9 @@ pub(crate) mod tests {
             kept_usage.cache_write_cost_per_million_tokens,
             Some(Money4::from_scaled(250))
         );
+        assert_eq!(kept_usage.uncached_input_tokens, Some(10));
+        assert_eq!(kept_usage.cache_read_tokens, Some(80));
+        assert_eq!(kept_usage.cache_write_tokens, Some(10));
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(
@@ -7279,19 +7571,25 @@ pub(crate) mod tests {
                 0,
                 day_two,
             ),
-            build_usage_ledger_record(
-                "req-service-account-usage-missing",
-                format!("service_account:{service_account_id}"),
-                api_key.id,
-                None,
-                Some(team_id),
-                Some(service_account_id),
-                None,
-                "claude-3-5-sonnet",
-                UsagePricingStatus::UsageMissing,
-                0,
-                day_two,
-            ),
+            {
+                let mut event = build_usage_ledger_record(
+                    "req-service-account-usage-missing",
+                    format!("service_account:{service_account_id}"),
+                    api_key.id,
+                    None,
+                    Some(team_id),
+                    Some(service_account_id),
+                    None,
+                    "claude-3-5-sonnet",
+                    UsagePricingStatus::UsageMissing,
+                    0,
+                    day_two,
+                );
+                event.uncached_input_tokens = None;
+                event.cache_read_tokens = None;
+                event.cache_write_tokens = None;
+                event
+            },
         ] {
             assert!(
                 store
@@ -7300,6 +7598,28 @@ pub(crate) mod tests {
                     .expect("insert usage ledger")
             );
         }
+
+        let mut invalid_cache_event = build_usage_ledger_record(
+            "req-invalid-cache-buckets",
+            format!("user:{}", user.user_id),
+            api_key.id,
+            Some(user.user_id),
+            None,
+            None,
+            Some(model.id),
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            1,
+            day_one,
+        );
+        invalid_cache_event.uncached_input_tokens = Some(11);
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&invalid_cache_event)
+                .await
+                .is_err(),
+            "storage must reject cache buckets that do not equal prompt tokens"
+        );
 
         let window_start = day_one - Duration::hours(1);
         let window_end = day_two + Duration::days(1);
@@ -7313,10 +7633,37 @@ pub(crate) mod tests {
             .expect("service account sum");
         assert_eq!(service_account_sum, Money4::from_scaled(22_000));
 
+        let cache_usage = store
+            .get_cache_usage_aggregate(window_start, window_end, None, None)
+            .await
+            .expect("cache usage aggregate");
+        assert_eq!(cache_usage.uncached_input_tokens, None);
+        assert_eq!(cache_usage.cache_read_tokens, None);
+        assert_eq!(cache_usage.cache_write_tokens, None);
+
+        let user_cache_usage = store
+            .get_cache_usage_aggregate(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user cache usage aggregate");
+        assert_eq!(user_cache_usage.uncached_input_tokens, Some(20));
+        assert_eq!(user_cache_usage.cache_read_tokens, Some(160));
+        assert_eq!(user_cache_usage.cache_write_tokens, Some(20));
+
         let daily = store
-            .list_usage_daily_aggregates(window_start, window_end, None)
+            .list_usage_daily_aggregates(window_start, window_end, None, None)
             .await
             .expect("daily aggregates");
+        assert_eq!(daily[0].uncached_input_tokens, Some(20));
+        assert_eq!(daily[0].cache_read_tokens, Some(160));
+        assert_eq!(daily[0].cache_write_tokens, Some(20));
+        assert_eq!(daily[1].uncached_input_tokens, None);
+        assert_eq!(daily[1].cache_read_tokens, None);
+        assert_eq!(daily[1].cache_write_tokens, None);
         assert_eq!(daily.len(), 2);
         let day_one_bucket = (day_one.unix_timestamp() / 86_400) * 86_400;
         let day_two_bucket = (day_two.unix_timestamp() / 86_400) * 86_400;
@@ -7338,7 +7685,7 @@ pub(crate) mod tests {
         assert_eq!(second.usage_missing_request_count, 1);
 
         let owners = store
-            .list_usage_owner_aggregates(window_start, window_end, None)
+            .list_usage_owner_aggregates(window_start, window_end, None, None)
             .await
             .expect("owner aggregates");
         assert_eq!(owners.len(), 2);
@@ -7365,7 +7712,7 @@ pub(crate) mod tests {
         assert_eq!(service_account_owner.usage_missing_request_count, 1);
 
         let models = store
-            .list_usage_model_aggregates(window_start, window_end, None)
+            .list_usage_model_aggregates(window_start, window_end, None, None)
             .await
             .expect("model aggregates");
         assert_eq!(models.len(), 2);
@@ -7385,6 +7732,40 @@ pub(crate) mod tests {
         assert_eq!(upstream_model.priced_request_count, 1);
         assert_eq!(upstream_model.unpriced_request_count, 1);
         assert_eq!(upstream_model.usage_missing_request_count, 1);
+
+        let user_daily = store
+            .list_usage_daily_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user daily aggregates");
+        assert_eq!(user_daily.len(), 1);
+        assert_eq!(user_daily[0].priced_cost_usd, Money4::from_scaled(11_000));
+        let user_owners = store
+            .list_usage_owner_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user owner aggregates");
+        assert_eq!(user_owners.len(), 1);
+        assert_eq!(user_owners[0].owner_id, user.user_id);
+        let user_models = store
+            .list_usage_model_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user model aggregates");
+        assert_eq!(user_models.len(), 1);
+        assert_eq!(user_models[0].model_key, "fast");
 
         assert_focus_export_aggregates(
             &store,
@@ -7685,10 +8066,12 @@ pub(crate) mod tests {
             provider_key: "openai-prod".to_string(),
             upstream_model: "gpt-5".to_string(),
             prompt_tokens: Some(10),
+            uncached_input_tokens: None,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
             completion_tokens: Some(5),
             total_tokens: Some(15),
             provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
-            normalized_usage: None,
             pricing_status: UsagePricingStatus::Priced,
             unpriced_reason: None,
             pricing_row_id: Some(pricing_record.model_pricing_id),
@@ -7719,10 +8102,12 @@ pub(crate) mod tests {
             provider_key: "openai-prod".to_string(),
             upstream_model: "gpt-5".to_string(),
             prompt_tokens: Some(10),
+            uncached_input_tokens: None,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
             completion_tokens: Some(5),
             total_tokens: Some(15),
             provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
-            normalized_usage: None,
             pricing_status: UsagePricingStatus::Unpriced,
             unpriced_reason: Some("missing_pricing".to_string()),
             pricing_row_id: None,
@@ -8244,19 +8629,25 @@ pub(crate) mod tests {
                 0,
                 day_two,
             ),
-            build_usage_ledger_record(
-                "req-service-account-usage-missing",
-                format!("service_account:{service_account_id}"),
-                api_key.id,
-                None,
-                Some(team_id),
-                Some(service_account_id),
-                None,
-                "claude-3-5-sonnet",
-                UsagePricingStatus::UsageMissing,
-                0,
-                day_two,
-            ),
+            {
+                let mut event = build_usage_ledger_record(
+                    "req-service-account-usage-missing",
+                    format!("service_account:{service_account_id}"),
+                    api_key.id,
+                    None,
+                    Some(team_id),
+                    Some(service_account_id),
+                    None,
+                    "claude-3-5-sonnet",
+                    UsagePricingStatus::UsageMissing,
+                    0,
+                    day_two,
+                );
+                event.uncached_input_tokens = None;
+                event.cache_read_tokens = None;
+                event.cache_write_tokens = None;
+                event
+            },
         ] {
             assert!(
                 store
@@ -8265,6 +8656,28 @@ pub(crate) mod tests {
                     .expect("insert usage ledger")
             );
         }
+
+        let mut invalid_cache_event = build_usage_ledger_record(
+            "req-invalid-cache-buckets",
+            format!("user:{}", user.user_id),
+            api_key.id,
+            Some(user.user_id),
+            None,
+            None,
+            Some(model.id),
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            1,
+            day_one,
+        );
+        invalid_cache_event.uncached_input_tokens = Some(11);
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&invalid_cache_event)
+                .await
+                .is_err(),
+            "storage must reject cache buckets that do not equal prompt tokens"
+        );
 
         let window_start = day_one - Duration::hours(1);
         let window_end = day_two + Duration::days(1);
@@ -8278,10 +8691,37 @@ pub(crate) mod tests {
             .expect("service account sum");
         assert_eq!(service_account_sum, Money4::from_scaled(22_000));
 
+        let cache_usage = store
+            .get_cache_usage_aggregate(window_start, window_end, None, None)
+            .await
+            .expect("cache usage aggregate");
+        assert_eq!(cache_usage.uncached_input_tokens, None);
+        assert_eq!(cache_usage.cache_read_tokens, None);
+        assert_eq!(cache_usage.cache_write_tokens, None);
+
+        let user_cache_usage = store
+            .get_cache_usage_aggregate(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user cache usage aggregate");
+        assert_eq!(user_cache_usage.uncached_input_tokens, Some(20));
+        assert_eq!(user_cache_usage.cache_read_tokens, Some(160));
+        assert_eq!(user_cache_usage.cache_write_tokens, Some(20));
+
         let daily = store
-            .list_usage_daily_aggregates(window_start, window_end, None)
+            .list_usage_daily_aggregates(window_start, window_end, None, None)
             .await
             .expect("daily aggregates");
+        assert_eq!(daily[0].uncached_input_tokens, Some(20));
+        assert_eq!(daily[0].cache_read_tokens, Some(160));
+        assert_eq!(daily[0].cache_write_tokens, Some(20));
+        assert_eq!(daily[1].uncached_input_tokens, None);
+        assert_eq!(daily[1].cache_read_tokens, None);
+        assert_eq!(daily[1].cache_write_tokens, None);
         assert_eq!(daily.len(), 2);
         let day_one_bucket = (day_one.unix_timestamp() / 86_400) * 86_400;
         let day_two_bucket = (day_two.unix_timestamp() / 86_400) * 86_400;
@@ -8303,7 +8743,7 @@ pub(crate) mod tests {
         assert_eq!(second.usage_missing_request_count, 1);
 
         let owners = store
-            .list_usage_owner_aggregates(window_start, window_end, None)
+            .list_usage_owner_aggregates(window_start, window_end, None, None)
             .await
             .expect("owner aggregates");
         assert_eq!(owners.len(), 2);
@@ -8330,7 +8770,7 @@ pub(crate) mod tests {
         assert_eq!(service_account_owner.usage_missing_request_count, 1);
 
         let models = store
-            .list_usage_model_aggregates(window_start, window_end, None)
+            .list_usage_model_aggregates(window_start, window_end, None, None)
             .await
             .expect("model aggregates");
         assert_eq!(models.len(), 2);
@@ -8350,6 +8790,40 @@ pub(crate) mod tests {
         assert_eq!(upstream_model.priced_request_count, 1);
         assert_eq!(upstream_model.unpriced_request_count, 1);
         assert_eq!(upstream_model.usage_missing_request_count, 1);
+
+        let user_daily = store
+            .list_usage_daily_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user daily aggregates");
+        assert_eq!(user_daily.len(), 1);
+        assert_eq!(user_daily[0].priced_cost_usd, Money4::from_scaled(11_000));
+        let user_owners = store
+            .list_usage_owner_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user owner aggregates");
+        assert_eq!(user_owners.len(), 1);
+        assert_eq!(user_owners[0].owner_id, user.user_id);
+        let user_models = store
+            .list_usage_model_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user model aggregates");
+        assert_eq!(user_models.len(), 1);
+        assert_eq!(user_models[0].model_key, "fast");
 
         assert_focus_export_aggregates(
             &store,

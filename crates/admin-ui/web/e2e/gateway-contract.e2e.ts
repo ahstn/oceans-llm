@@ -1,6 +1,6 @@
 import { type APIRequestContext, expect, test } from 'playwright/test'
 
-import { ensureAdminSession } from './admin-session'
+import { ensureAdminSession, loginWithPasswordSession } from './admin-session'
 import { requireEnv, stubAdminUrl } from './env'
 
 const gatewayApiKey = process.env.E2E_GATEWAY_API_KEY ?? 'gwk_e2e.secret-value'
@@ -16,6 +16,52 @@ function invitationToken(inviteUrl: string, root: string): string {
     throw new Error(`expected password invite URL to include a token: ${inviteUrl}`)
   }
   return token
+}
+
+async function createActiveRegularUser(
+  request: APIRequestContext,
+  root: string,
+  adminCookie: string,
+  label: string,
+): Promise<{ id: string; cookie: string }> {
+  const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const email = `${label}-${unique}@example.com`
+  const password = `${label}-passw0rd`
+  const createResponse = await request.post(`${root}/api/v1/admin/identity/users`, {
+    headers: {
+      cookie: adminCookie,
+      'content-type': 'application/json',
+    },
+    data: {
+      name: `${label} User`,
+      email,
+      auth_mode: 'password',
+      global_role: 'user',
+      tags: [{ key: 'department', value: 'security' }],
+    },
+  })
+  expect(createResponse.status()).toBe(200)
+  const createBody = (await createResponse.json()) as {
+    data: { kind: 'password_invite'; user: { id: string }; invite_url: string } | { kind: string }
+  }
+  expect(createBody.data.kind).toBe('password_invite')
+  if (createBody.data.kind !== 'password_invite') {
+    throw new Error(`expected password invite onboarding, received ${createBody.data.kind}`)
+  }
+
+  const completeResponse = await request.post(
+    `${root}/api/v1/auth/invitations/${invitationToken(createBody.data.invite_url, root)}/password`,
+    {
+      headers: { 'content-type': 'application/json' },
+      data: { password },
+    },
+  )
+  expect(completeResponse.status()).toBe(200)
+
+  return {
+    id: createBody.data.user.id,
+    cookie: await loginWithPasswordSession(request, root, email, password),
+  }
 }
 
 async function createActiveApiKeyOwner(
@@ -406,6 +452,202 @@ test('identity users endpoints support live create-and-list flows', async ({
         user.status === 'invited',
     ),
   ).toBe(true)
+})
+
+test('regular identity directory is redacted and identity mutations fail without state changes', async ({
+  request,
+  page,
+  baseURL,
+}) => {
+  const root = baseURL ?? requireEnv('E2E_BASE_URL')
+  const adminCookie = await ensureAdminSession(page, request, root)
+  const actor = await createActiveRegularUser(request, root, adminCookie, 'directory-actor')
+  const target = await createActiveRegularUser(request, root, adminCookie, 'directory-target')
+  const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const targetId = target.id
+
+  const teamResponse = await request.post(`${root}/api/v1/admin/identity/teams`, {
+    headers: { cookie: adminCookie, 'content-type': 'application/json' },
+    data: {
+      name: `Directory Team ${unique}`,
+      admin_user_ids: [actor.id],
+      tags: [{ key: 'cost_center', value: 'restricted' }],
+    },
+  })
+  expect(teamResponse.status()).toBe(200)
+  const teamBody = (await teamResponse.json()) as {
+    data: { id: string; key: string; tags: Array<{ key: string; value: string }> }
+  }
+  expect(teamBody.data.key).toBeTruthy()
+  expect(teamBody.data.tags).toEqual([{ key: 'cost_center', value: 'restricted' }])
+  const teamId = teamBody.data.id
+
+  const personalKeyIds: string[] = []
+  for (const [name, ownerUserId] of [
+    ['Visible personal key', actor.id],
+    ['Hidden personal key', target.id],
+  ] as const) {
+    const keyResponse = await request.post(`${root}/api/v1/admin/api-keys`, {
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      data: {
+        name: `${name} ${unique}`,
+        owner_kind: 'user',
+        owner_user_id: ownerUserId,
+        owner_team_id: null,
+        owner_service_account_id: null,
+        model_grant_mode: 'all',
+        model_keys: [],
+      },
+    })
+    expect(keyResponse.status()).toBe(200)
+    const keyBody = (await keyResponse.json()) as { data: { api_key: { id: string } } }
+    personalKeyIds.push(keyBody.data.api_key.id)
+  }
+
+  const scopedKeysResponse = await request.get(`${root}/api/v1/admin/api-keys`, {
+    headers: { cookie: actor.cookie },
+  })
+  expect(scopedKeysResponse.status()).toBe(200)
+  const scopedKeysBody = (await scopedKeysResponse.json()) as {
+    data: {
+      items: Array<{ id: string }>
+      users: unknown[]
+      service_accounts: unknown[]
+      models: unknown[]
+    }
+  }
+  expect(scopedKeysBody.data.items.some((item) => item.id === personalKeyIds[0])).toBe(true)
+  expect(scopedKeysBody.data.items.some((item) => item.id === personalKeyIds[1])).toBe(false)
+  expect(scopedKeysBody.data.users).toEqual([])
+  expect(scopedKeysBody.data.service_accounts).toEqual([])
+  expect(scopedKeysBody.data.models).toEqual([])
+
+  const directoryUsersResponse = await request.get(`${root}/api/v1/identity/directory/users`, {
+    headers: { cookie: actor.cookie },
+  })
+  expect(directoryUsersResponse.status()).toBe(200)
+  const directoryUsersBody = (await directoryUsersResponse.json()) as {
+    data: { users: Array<Record<string, unknown>> }
+  }
+  const actorView = directoryUsersBody.data.users.find((user) => user.id === actor.id)
+  expect(actorView).toBeTruthy()
+  expect(Object.keys(actorView ?? {}).sort()).toEqual([
+    'email',
+    'global_role',
+    'id',
+    'name',
+    'status',
+    'team_id',
+    'team_name',
+    'team_role',
+  ])
+  expect(actorView).not.toHaveProperty('auth_mode')
+  expect(actorView).not.toHaveProperty('request_logging_enabled')
+  expect(actorView).not.toHaveProperty('tags')
+  expect(actorView).not.toHaveProperty('onboarding')
+
+  const directoryTeamsResponse = await request.get(`${root}/api/v1/identity/directory/teams`, {
+    headers: { cookie: actor.cookie },
+  })
+  expect(directoryTeamsResponse.status()).toBe(200)
+  const directoryTeamsBody = (await directoryTeamsResponse.json()) as {
+    data: { teams: Array<Record<string, unknown> & { id: string; members: unknown[] }> }
+  }
+  const teamView = directoryTeamsBody.data.teams.find((team) => team.id === teamId)
+  expect(teamView).toBeTruthy()
+  expect(Object.keys(teamView ?? {}).sort()).toEqual([
+    'id',
+    'member_count',
+    'members',
+    'name',
+    'status',
+  ])
+  expect(teamView).not.toHaveProperty('key')
+  expect(teamView).not.toHaveProperty('tags')
+  expect(teamView).not.toHaveProperty('admins')
+
+  for (const adminPath of ['/api/v1/admin/identity/users', '/api/v1/admin/identity/teams']) {
+    const response = await request.get(`${root}${adminPath}`, {
+      headers: { cookie: actor.cookie },
+    })
+    expect(response.status()).toBe(403)
+  }
+
+  const adminHeaders = { cookie: adminCookie }
+  const usersBefore = await (
+    await request.get(`${root}/api/v1/admin/identity/users`, { headers: adminHeaders })
+  ).json()
+  const teamsBefore = await (
+    await request.get(`${root}/api/v1/admin/identity/teams`, { headers: adminHeaders })
+  ).json()
+  const mutationHeaders = { cookie: actor.cookie, 'content-type': 'application/json' }
+  const mutations: Array<{
+    method: 'post' | 'patch' | 'delete'
+    path: string
+    data?: Record<string, unknown>
+  }> = [
+    {
+      method: 'post',
+      path: '/api/v1/admin/identity/users',
+      data: {
+        name: 'Forbidden User',
+        email: `forbidden-${unique}@example.com`,
+        auth_mode: 'password',
+        global_role: 'user',
+      },
+    },
+    {
+      method: 'patch',
+      path: `/api/v1/admin/identity/users/${targetId}`,
+      data: { global_role: 'platform_admin' },
+    },
+    { method: 'post', path: `/api/v1/admin/identity/users/${targetId}/deactivate` },
+    { method: 'post', path: `/api/v1/admin/identity/users/${targetId}/reactivate` },
+    { method: 'post', path: `/api/v1/admin/identity/users/${targetId}/reset-onboarding` },
+    { method: 'post', path: `/api/v1/admin/identity/users/${targetId}/password-invite` },
+    {
+      method: 'post',
+      path: '/api/v1/admin/identity/teams',
+      data: { name: 'Forbidden Team', admin_user_ids: [] },
+    },
+    {
+      method: 'patch',
+      path: `/api/v1/admin/identity/teams/${teamId}`,
+      data: { name: 'Forbidden Rename', admin_user_ids: [actor.id] },
+    },
+    {
+      method: 'post',
+      path: `/api/v1/admin/identity/teams/${teamId}/members`,
+      data: { user_ids: [targetId] },
+    },
+    {
+      method: 'delete',
+      path: `/api/v1/admin/identity/teams/${teamId}/members/${actor.id}`,
+    },
+    {
+      method: 'post',
+      path: `/api/v1/admin/identity/teams/${teamId}/members/${actor.id}/transfer`,
+      data: { destination_team_id: teamId, destination_role: 'member' },
+    },
+  ]
+
+  for (const mutation of mutations) {
+    const response = await request.fetch(`${root}${mutation.path}`, {
+      method: mutation.method,
+      headers: mutationHeaders,
+      data: mutation.data,
+    })
+    expect(response.status(), `${mutation.method.toUpperCase()} ${mutation.path}`).toBe(403)
+  }
+
+  const usersAfter = await (
+    await request.get(`${root}/api/v1/admin/identity/users`, { headers: adminHeaders })
+  ).json()
+  const teamsAfter = await (
+    await request.get(`${root}/api/v1/admin/identity/teams`, { headers: adminHeaders })
+  ).json()
+  expect(usersAfter.data).toEqual(usersBefore.data)
+  expect(teamsAfter.data).toEqual(teamsBefore.data)
 })
 
 test('admin ui can create, manage, and revoke an api key that gates live gateway access', async ({

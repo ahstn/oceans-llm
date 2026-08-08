@@ -2,8 +2,9 @@ use std::collections::{BTreeSet, HashMap};
 
 use axum::{
     Json,
-    extract::{Path, Query, State},
-    http::{HeaderMap, HeaderValue, header::SET_COOKIE},
+    extract::{Path, Query, Request, State},
+    http::{HeaderMap, HeaderValue, Method, header::SET_COOKIE},
+    middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
 use gateway_core::{
@@ -28,7 +29,9 @@ use uuid::Uuid;
 use crate::{
     config::resolve_secret_reference,
     http::{
-        admin_auth::{require_authenticated_session, require_platform_admin},
+        admin_auth::{
+            require_active_session, require_authenticated_session, require_platform_admin,
+        },
         admin_contract::{
             AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload,
             AdminOauthProviderView, AdminOidcProviderView, AdminServiceAccountView,
@@ -36,7 +39,8 @@ use crate::{
             AuthSessionCapabilitiesView, AuthSessionUserView, AuthSessionView,
             ChangePasswordRequest, CompleteInvitationRequest, CompleteInvitationResponse,
             CreateServiceAccountRequest, CreateTeamRequest, CreateUserRequest, CreateUserResponse,
-            Envelope, IdentityActionStatus, InvitationView, OauthCallbackQuery, OauthStartQuery,
+            Envelope, IdentityActionStatus, IdentityDirectoryTeamsPayload,
+            IdentityDirectoryUsersPayload, InvitationView, OauthCallbackQuery, OauthStartQuery,
             OidcCallbackQuery, OidcStartQuery, PasswordInviteResponse, PasswordLoginRequest,
             PublicOauthProviderView, PublicOauthProvidersPayload, PublicOidcProviderView,
             PublicOidcProvidersPayload, TransferTeamMemberRequest, UpdateServiceAccountRequest,
@@ -51,6 +55,7 @@ use crate::{
         },
         identity_views::{
             build_admin_identity_user_view, build_admin_team_views, build_assignable_user_views,
+            build_identity_directory_team_views, build_identity_directory_user_views,
             entity_tag_views, reload_identity_user, reload_team_view,
         },
         state::AppState,
@@ -63,6 +68,38 @@ const SESSION_TTL_DAYS: i64 = 30;
 const SESSION_TTL_SECONDS: i64 = SESSION_TTL_DAYS * 24 * 60 * 60;
 const OIDC_STATE_TTL_MINUTES: i64 = 10;
 const OAUTH_STATE_TTL_MINUTES: i64 = 10;
+
+pub(crate) async fn enforce_identity_mutation_admin(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    if is_identity_mutation(request.method(), request.uri().path()) {
+        require_platform_admin(&state, request.headers()).await?;
+    }
+
+    Ok(next.run(request).await)
+}
+
+fn is_identity_mutation(method: &Method, path: &str) -> bool {
+    is_mutating_method(method)
+        && [
+            "/api/v1/admin/identity/users",
+            "/api/v1/admin/identity/teams",
+        ]
+        .iter()
+        .any(|root| {
+            path.strip_prefix(root)
+                .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with('/'))
+        })
+}
+
+fn is_mutating_method(method: &Method) -> bool {
+    method == Method::POST
+        || method == Method::PUT
+        || method == Method::PATCH
+        || method == Method::DELETE
+}
 
 #[utoipa::path(
     get,
@@ -92,6 +129,7 @@ pub async fn list_identity_users(
                 &origin,
                 now,
                 user,
+                true,
             )
             .await?,
         );
@@ -122,6 +160,23 @@ pub async fn list_identity_users(
                 label: provider.provider_key,
             })
             .collect(),
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/identity/directory/users",
+    responses((status = 200, body = Envelope<IdentityDirectoryUsersPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_identity_directory_users(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<IdentityDirectoryUsersPayload>>, AppError> {
+    require_active_session(&state, &headers).await?;
+    let users = state.store.list_identity_users().await?;
+    Ok(Json(envelope(IdentityDirectoryUsersPayload {
+        users: build_identity_directory_user_views(&users),
     })))
 }
 
@@ -161,6 +216,24 @@ pub async fn list_identity_teams(
                 label: provider.provider_key,
             })
             .collect(),
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/identity/directory/teams",
+    responses((status = 200, body = Envelope<IdentityDirectoryTeamsPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_identity_directory_teams(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<IdentityDirectoryTeamsPayload>>, AppError> {
+    require_active_session(&state, &headers).await?;
+    let teams = state.store.list_teams().await?;
+    let users = state.store.list_identity_users().await?;
+    Ok(Json(envelope(IdentityDirectoryTeamsPayload {
+        teams: build_identity_directory_team_views(&teams, &users),
     })))
 }
 
@@ -559,13 +632,10 @@ pub async fn login_with_password(
     if !password_ok {
         return Err(invalid_credentials());
     }
-    let session_view = build_auth_session_view(&state, user.clone()).await?;
-    if !session_view.capabilities.platform_admin && !session_view.capabilities.agent_analysis {
-        return Err(invalid_credentials());
-    }
     if user.status != UserStatus::Active {
         return Err(invalid_credentials());
     }
+    let session_view = build_auth_session_view(&state, user.clone()).await?;
 
     let now = OffsetDateTime::now_utc();
     let session_cookie =
@@ -2775,6 +2845,7 @@ async fn build_onboarding_response(
                 origin,
                 now,
                 reload_identity_user(&state.store, user.user.user_id).await?,
+                true,
             )
             .await?;
             Ok(CreateUserResponse::PasswordInvite {
@@ -2796,6 +2867,7 @@ async fn build_onboarding_response(
                 origin,
                 now,
                 user.clone(),
+                true,
             )
             .await?;
             Ok(CreateUserResponse::OidcSignIn {
@@ -2817,6 +2889,7 @@ async fn build_onboarding_response(
                 origin,
                 now,
                 user.clone(),
+                true,
             )
             .await?;
             let oauth_origin = state
@@ -3204,13 +3277,64 @@ pub async fn list_public_oauth_providers(
 
 #[cfg(test)]
 mod tests {
+    use axum::http::Method;
     use gateway_core::{GatewayError, MembershipRole};
     use uuid::Uuid;
 
     use super::{
         GithubEmailLookupError, GithubEmailResponse, github_email_domain_allowed,
-        parse_update_requested_membership, select_github_primary_email,
+        is_identity_mutation, parse_update_requested_membership, select_github_primary_email,
     };
+
+    #[test]
+    fn identity_mutation_guard_covers_all_user_and_team_write_paths() {
+        let guarded = [
+            (Method::POST, "/api/v1/admin/identity/users"),
+            (Method::PATCH, "/api/v1/admin/identity/users/user-1"),
+            (
+                Method::POST,
+                "/api/v1/admin/identity/users/user-1/deactivate",
+            ),
+            (Method::POST, "/api/v1/admin/identity/teams"),
+            (Method::PATCH, "/api/v1/admin/identity/teams/team-1"),
+            (
+                Method::DELETE,
+                "/api/v1/admin/identity/teams/team-1/members/user-1",
+            ),
+        ];
+
+        for (method, path) in guarded {
+            assert!(is_identity_mutation(&method, path), "{method} {path}");
+        }
+    }
+
+    #[test]
+    fn identity_mutation_guard_does_not_block_reads_or_other_domains() {
+        assert!(!is_identity_mutation(
+            &Method::GET,
+            "/api/v1/admin/identity/users"
+        ));
+        assert!(!is_identity_mutation(
+            &Method::GET,
+            "/api/v1/admin/identity/teams/team-1"
+        ));
+        assert!(!is_identity_mutation(
+            &Method::OPTIONS,
+            "/api/v1/admin/identity/users"
+        ));
+        assert!(!is_identity_mutation(
+            &Method::HEAD,
+            "/api/v1/admin/identity/teams"
+        ));
+        assert!(!is_identity_mutation(
+            &Method::POST,
+            "/api/v1/admin/identity/service-accounts"
+        ));
+        assert!(!is_identity_mutation(
+            &Method::POST,
+            "/api/v1/auth/password/change"
+        ));
+    }
 
     #[test]
     fn github_email_domain_policy_allows_empty_policy() {

@@ -4,6 +4,8 @@
 
 Accepted
 
+Superseded in part by [User-Owned OAuth for Upstream MCP Servers](./2026-08-04-user-owned-mcp-oauth.md). Manual and legacy bindings remain valid, but OAuth browser setup and refresh are now implemented for configured providers.
+
 ## Context
 
 The aggregate `/mcp` endpoint originally exposed search and describe only. That made tool discovery safe, but agents still needed a separate per-server route for execution and there was no durable place to bind user, team, or service-account upstream credentials.
@@ -47,6 +49,6 @@ Missing credentials return a stable `credential_required` MCP tool error from ag
 
 This keeps registry, grants, credentials, and invocation logging as separate concerns. Admin APIs can list and revoke bindings without ever returning raw secrets.
 
-OAuth browser setup, token refresh, OpenAPI, GraphQL, custom sources, CLI work, and sandboxed code execution remain out of scope.
+OpenAPI, GraphQL, custom sources, CLI work, and sandboxed code execution remain out of scope for this decision.
 
 No legacy HTTP+SSE compatibility fallback is added. Streamable HTTP remains the only MCP transport for this gateway path.

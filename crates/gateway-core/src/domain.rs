@@ -682,6 +682,21 @@ pub struct OauthLoginStateRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpOauthStateRecord {
+    pub state_hash: String,
+    pub user_id: Uuid,
+    pub mcp_server_id: Uuid,
+    pub provider_key: String,
+    pub pkce_verifier: String,
+    pub redirect_to: String,
+    pub resource: String,
+    pub scopes: Vec<String>,
+    pub expires_at: OffsetDateTime,
+    pub consumed_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserOidcAuthRecord {
     pub user_id: Uuid,
     pub oidc_provider_id: String,
@@ -859,6 +874,9 @@ pub struct SpendDailyAggregateRecord {
     pub priced_request_count: i64,
     pub unpriced_request_count: i64,
     pub usage_missing_request_count: i64,
+    pub uncached_input_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -881,6 +899,13 @@ pub struct SpendModelAggregateRecord {
     pub usage_missing_request_count: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CacheUsageAggregateRecord {
+    pub uncached_input_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FocusExportAggregateRecord {
     pub day_start: OffsetDateTime,
@@ -895,6 +920,9 @@ pub struct FocusExportAggregateRecord {
     pub pricing_status: UsagePricingStatus,
     pub pricing_row_id: Option<Uuid>,
     pub prompt_tokens: i64,
+    pub uncached_input_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
     pub completion_tokens: i64,
     pub total_tokens: i64,
     pub request_count: i64,
@@ -938,54 +966,6 @@ pub struct HarnessUsageBucketRecord {
     pub request_count: i64,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum UsageCostAuthority {
-    Legacy,
-    Normalized,
-    LegacyFallback,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct NormalizedUsageAccounting {
-    pub fresh_input_tokens: Option<i64>,
-    pub cache_read_tokens: Option<i64>,
-    pub cache_creation_tokens: Option<i64>,
-    #[serde(default)]
-    pub cache_creation_5m_tokens: Option<i64>,
-    #[serde(default)]
-    pub cache_creation_30m_tokens: Option<i64>,
-    #[serde(default)]
-    pub cache_creation_1h_tokens: Option<i64>,
-    pub output_tokens: Option<i64>,
-    pub reasoning_tokens: Option<i64>,
-    pub provider_total_tokens: Option<i64>,
-    #[serde(default)]
-    pub output_includes_reasoning: Option<bool>,
-    #[serde(default)]
-    pub finish_reason: Option<String>,
-    #[serde(default)]
-    pub incomplete_reason: Option<String>,
-    pub semantics_version: String,
-    pub semantics: Value,
-    pub normalization_error: Option<String>,
-    pub fresh_input_cost_usd: Option<Money4>,
-    pub cache_read_cost_usd: Option<Money4>,
-    pub cache_creation_cost_usd: Option<Money4>,
-    pub output_cost_usd: Option<Money4>,
-    pub reasoning_cost_usd: Option<Money4>,
-    #[serde(default)]
-    pub uncached_input_cost_usd: Option<Money4>,
-    pub legacy_cost_usd: Money4,
-    pub normalized_cost_usd: Option<Money4>,
-    pub normalized_pricing_status: UsagePricingStatus,
-    pub normalized_unpriced_reason: Option<String>,
-    pub pricing_policy_version: String,
-    pub authoritative_cost: UsageCostAuthority,
-    pub discrepancy_usd: Option<Money4>,
-    pub discrepancy_reason: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageLedgerRecord {
     pub usage_event_id: Uuid,
@@ -1002,11 +982,15 @@ pub struct UsageLedgerRecord {
     pub provider_key: String,
     pub upstream_model: String,
     pub prompt_tokens: Option<i64>,
+    #[serde(default)]
+    pub uncached_input_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_read_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_write_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
     pub provider_usage: Value,
-    #[serde(default)]
-    pub normalized_usage: Option<NormalizedUsageAccounting>,
     pub pricing_status: UsagePricingStatus,
     pub unpriced_reason: Option<String>,
     pub pricing_row_id: Option<Uuid>,
@@ -1758,6 +1742,18 @@ pub struct UpsertMcpUpstreamCredentialBindingRecord {
     pub secret_key_id: Option<String>,
     pub secret_ref: Option<String>,
     pub expires_at: Option<OffsetDateTime>,
+    pub metadata: Map<String, Value>,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefreshMcpOauthCredentialBindingRecord {
+    pub credential_binding_id: Uuid,
+    pub expected_secret_ciphertext: String,
+    pub secret_ciphertext: String,
+    pub secret_nonce: String,
+    pub secret_key_id: String,
+    pub expires_at: OffsetDateTime,
     pub metadata: Map<String, Value>,
     pub updated_at: OffsetDateTime,
 }

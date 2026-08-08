@@ -175,6 +175,64 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         row.as_ref().map(decode_credential).transpose()
     }
 
+    async fn compare_and_swap_mcp_oauth_credential_refresh(
+        &self,
+        input: &RefreshMcpOauthCredentialBindingRecord,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let metadata_json = serialize_json(&input.metadata)?;
+        let result = sqlx::query(
+            r#"
+            UPDATE mcp_upstream_credential_bindings
+            SET secret_ciphertext = $1, secret_nonce = $2, secret_key_id = $3,
+                expires_at = $4, metadata_json = $5::jsonb, updated_at = $6
+            WHERE credential_binding_id = $7
+              AND revoked_at IS NULL
+              AND secret_ciphertext = $8
+            "#,
+        )
+        .bind(&input.secret_ciphertext)
+        .bind(&input.secret_nonce)
+        .bind(&input.secret_key_id)
+        .bind(input.expires_at.unix_timestamp())
+        .bind(&metadata_json)
+        .bind(input.updated_at.unix_timestamp())
+        .bind(input.credential_binding_id.to_string())
+        .bind(&input.expected_secret_ciphertext)
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        if result.rows_affected() == 0 {
+            return Ok(None);
+        }
+        load_credential(&self.pool, input.credential_binding_id)
+            .await
+            .map(Some)
+    }
+
+    async fn revoke_mcp_oauth_credential_if_unchanged(
+        &self,
+        credential_binding_id: Uuid,
+        expected_secret_ciphertext: &str,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            r#"
+            UPDATE mcp_upstream_credential_bindings
+            SET revoked_at = $1, updated_at = $1
+            WHERE credential_binding_id = $2
+              AND revoked_at IS NULL
+              AND secret_ciphertext = $3
+            "#,
+        )
+        .bind(revoked_at.unix_timestamp())
+        .bind(credential_binding_id.to_string())
+        .bind(expected_secret_ciphertext)
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn list_mcp_upstream_credential_bindings(
         &self,
         mcp_server_id: Option<Uuid>,
@@ -238,6 +296,50 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         )
         .bind(last_used_at.unix_timestamp())
         .bind(credential_binding_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn try_acquire_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+        now: OffsetDateTime,
+        expires_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO mcp_oauth_refresh_leases (
+                credential_binding_id, lease_token, expires_at
+            ) VALUES ($1, $2, $3)
+            ON CONFLICT(credential_binding_id) DO UPDATE SET
+                lease_token = excluded.lease_token,
+                expires_at = excluded.expires_at
+            WHERE mcp_oauth_refresh_leases.expires_at <= $4
+            "#,
+        )
+        .bind(credential_binding_id.to_string())
+        .bind(lease_token.to_string())
+        .bind(expires_at.unix_timestamp())
+        .bind(now.unix_timestamp())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn release_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            "DELETE FROM mcp_oauth_refresh_leases WHERE credential_binding_id = $1 AND lease_token = $2",
+        )
+        .bind(credential_binding_id.to_string())
+        .bind(lease_token.to_string())
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;

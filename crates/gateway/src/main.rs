@@ -1,10 +1,10 @@
-use std::{env, net::SocketAddr, path::Path, sync::Arc, time::Duration};
+use std::{env, path::Path, sync::Arc, time::Duration};
 
 use admin_ui::AdminUiConfig;
 use anyhow::Context;
 use clap::Parser;
 use gateway::{
-    cli::{Cli, Command, MigrateAction, ServeArgs},
+    cli::{Cli, Command, ConfigCommand, MigrateAction, ServeArgs},
     config::{
         AgentAnalysisCacheTtlConfig, AgentAnalysisConfig, BootstrapAdminConfig,
         BudgetAlertEmailConfig, GatewayConfig,
@@ -21,7 +21,7 @@ use gateway_providers::{BedrockProvider, OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
     AnalysisMetricPolicy, AnalysisPolicy, CacheProfileRule, CacheTtl,
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
-    UsageCostPolicy, WeightedRoutePlanner, default_cache_profiles, hash_gateway_key_secret,
+    WeightedRoutePlanner, default_cache_profiles, hash_gateway_key_secret,
 };
 use gateway_store::{
     AnyStore, GatewayStore, MigrationStatus, check_migrations_with_options,
@@ -38,11 +38,19 @@ use local_demo_seed::{LOCAL_DEMO_USER_PASSWORD, seed_local_demo_data};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let config = load_config(&cli.config)?;
+    let command = cli.command.unwrap_or(Command::Serve(ServeArgs::default()));
 
+    if matches!(&command, Command::Config(ConfigCommand::Validate)) {
+        validate_config_file(&cli.config)?;
+        println!("gateway configuration `{}` is valid", cli.config);
+        return Ok(());
+    }
+
+    let config = load_config(&cli.config)?;
     let observability = observability::init_observability(&config.server)?;
 
-    let result = match cli.command.unwrap_or(Command::Serve(ServeArgs::default())) {
+    let result = match command {
+        Command::Config(ConfigCommand::Validate) => unreachable!("handled before runtime startup"),
         Command::Serve(args) => run_serve(&config, observability.metrics.clone(), args).await,
         Command::Migrate(args) => run_migrate(&config, args.action()?).await,
         Command::PurgeRequestLogs(args) => request_log_purge::run_command(&config, args).await,
@@ -60,6 +68,14 @@ async fn main() -> anyhow::Result<()> {
 fn load_config(config_path: &str) -> anyhow::Result<GatewayConfig> {
     GatewayConfig::from_path(Path::new(config_path))
         .with_context(|| format!("failed to load gateway configuration from `{config_path}`"))
+}
+
+fn validate_config_file(config_path: &str) -> anyhow::Result<()> {
+    if !Path::new(config_path).exists() {
+        anyhow::bail!("gateway configuration `{config_path}` does not exist");
+    }
+    let _ = load_config(config_path)?;
+    Ok(())
 }
 
 fn database_options(
@@ -188,12 +204,10 @@ async fn run_serve_with_store(
         .context("failed to ensure bootstrap admin access")?;
     }
 
-    let usage_cost_policy = load_usage_cost_policy()?;
     let agent_analysis = load_agent_analysis_settings(&config.agent_analysis)?;
     let service = build_gateway_service(
         config,
         store,
-        usage_cost_policy,
         agent_analysis.capabilities.passive_analysis_enabled,
         agent_analysis.report_retention,
         agent_analysis.queue_retention,
@@ -215,14 +229,12 @@ async fn run_serve_with_store(
     spawn_agent_analysis_retention_loop(service.clone());
     request_log_purge::spawn_loop(service.clone(), &config.request_logging.purge);
     let providers = build_provider_registry(config)?;
-    McpCredentialService::<AnyStore>::validate_runtime_configuration()
-        .context("invalid MCP credential runtime configuration")?;
+    McpCredentialService::<AnyStore>::validate_runtime_configuration(
+        !config.mcp.oauth.providers.is_empty(),
+    )
+    .context("invalid MCP credential runtime configuration")?;
 
-    let bind_address: SocketAddr = config
-        .server
-        .bind
-        .parse()
-        .with_context(|| format!("invalid bind address `{}`", config.server.bind))?;
+    let bind_address = config.server.bind_address()?;
 
     let app = build_router(
         AppState {
@@ -230,7 +242,17 @@ async fn run_serve_with_store(
             store: service.store().clone(),
             providers,
             metrics,
-            mcp_http_client: reqwest::Client::new(),
+            mcp_http_client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("MCP HTTP client configuration must be valid"),
+            mcp_oauth_runtime: Arc::new(
+                config
+                    .mcp
+                    .oauth
+                    .runtime()
+                    .context("failed resolving MCP OAuth configuration")?,
+            ),
             identity_token_secret: Arc::new(load_identity_token_secret()),
             oidc_public_base_url: Arc::new(
                 config
@@ -557,27 +579,6 @@ pub(crate) fn load_agent_analysis_settings(
     })
 }
 
-fn load_usage_cost_policy() -> anyhow::Result<UsageCostPolicy> {
-    let value =
-        env::var("GATEWAY_USAGE_COST_POLICY").unwrap_or_else(|_| "shadow_legacy".to_string());
-    match value.as_str() {
-        "shadow_legacy" => Ok(UsageCostPolicy::ShadowLegacy),
-        "normalized" => {
-            let approval = env::var("GATEWAY_NORMALIZED_COST_CUTOVER_APPROVAL")
-                .context(
-                    "GATEWAY_USAGE_COST_POLICY=normalized requires GATEWAY_NORMALIZED_COST_CUTOVER_APPROVAL",
-                )?;
-            if approval.trim().is_empty() || approval.len() != approval.trim().len() {
-                anyhow::bail!(
-                    "GATEWAY_NORMALIZED_COST_CUTOVER_APPROVAL must be a non-empty, trimmed approval identity"
-                );
-            }
-            Ok(UsageCostPolicy::Normalized)
-        }
-        _ => anyhow::bail!("GATEWAY_USAGE_COST_POLICY must be `shadow_legacy` or `normalized`"),
-    }
-}
-
 fn environment_flag(name: &str, default: bool) -> anyhow::Result<bool> {
     let value = match env::var(name) {
         Ok(value) => value,
@@ -675,7 +676,6 @@ fn spawn_budget_alert_delivery_loop(
 fn build_gateway_service(
     config: &GatewayConfig,
     store: Arc<AnyStore>,
-    usage_cost_policy: UsageCostPolicy,
     agent_analysis_enabled: bool,
     analysis_report_retention: time::Duration,
     analysis_queue_retention: time::Duration,
@@ -694,7 +694,6 @@ fn build_gateway_service(
             budget_alert_sender,
             payload_policy,
         )
-        .with_usage_cost_policy(usage_cost_policy)
         .with_agent_analysis_enabled(agent_analysis_enabled)
         .with_agent_analysis_retention(analysis_report_retention, analysis_queue_retention)
         .with_agent_analysis_policy(analysis_policy),
@@ -721,4 +720,22 @@ fn env_days(key: &str, default: u64) -> time::Duration {
 fn load_identity_token_secret() -> String {
     env::var("GATEWAY_IDENTITY_TOKEN_SECRET")
         .unwrap_or_else(|_| "local-dev-identity-secret".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::validate_config_file;
+
+    #[test]
+    fn config_validation_requires_an_existing_file() {
+        let tmp = tempdir().expect("tempdir");
+        let missing_path = tmp.path().join("missing.yaml");
+
+        let error = validate_config_file(missing_path.to_str().expect("utf-8 path"))
+            .expect_err("missing config should fail");
+
+        assert!(format!("{error:#}").contains("does not exist"));
+    }
 }

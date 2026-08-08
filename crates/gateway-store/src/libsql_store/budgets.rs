@@ -330,7 +330,7 @@ impl BudgetRepository for LibsqlStore {
                     output_cost_per_million_tokens_10000,
                     cache_read_cost_per_million_tokens_10000,
                     cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
-                    normalized_usage_json
+                    uncached_input_tokens, cache_read_tokens, cache_write_tokens
                 FROM usage_cost_events
                 WHERE request_id = ?1
                   AND ownership_scope_key = ?2
@@ -373,7 +373,7 @@ impl BudgetRepository for LibsqlStore {
                     output_cost_per_million_tokens_10000,
                     cache_read_cost_per_million_tokens_10000,
                     cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
-                    normalized_usage_json
+                    uncached_input_tokens, cache_read_tokens, cache_write_tokens
                 FROM usage_cost_events
                 WHERE request_id IN (SELECT value FROM json_each(?1))
                   AND ownership_scope_key = ?2
@@ -431,7 +431,9 @@ impl BudgetRepository for LibsqlStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<SpendDailyAggregateRecord>, StoreError> {
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
         let query = match owner_kind {
             Some(ApiKeyOwnerKind::User) => {
                 r#"
@@ -444,11 +446,24 @@ impl BudgetRepository for LibsqlStore {
                     SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END)
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)
-                        AS usage_missing_request_count
+                        AS usage_missing_request_count,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(uncached_input_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_read_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_write_tokens), 0) END
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
                   AND user_id IS NOT NULL
+                  AND (?3 IS NULL OR user_id = ?3)
                 GROUP BY day_start
                 ORDER BY day_start ASC
                 "#
@@ -464,11 +479,24 @@ impl BudgetRepository for LibsqlStore {
                     SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END)
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)
-                        AS usage_missing_request_count
+                        AS usage_missing_request_count,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(uncached_input_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_read_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_write_tokens), 0) END
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
                   AND service_account_id IS NOT NULL
+                  AND (?3 IS NULL OR user_id = ?3)
                 GROUP BY day_start
                 ORDER BY day_start ASC
                 "#
@@ -484,10 +512,23 @@ impl BudgetRepository for LibsqlStore {
                     SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END)
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)
-                        AS usage_missing_request_count
+                        AS usage_missing_request_count,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(uncached_input_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_read_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_write_tokens), 0) END
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
+                  AND (?3 IS NULL OR user_id = ?3)
                 GROUP BY day_start
                 ORDER BY day_start ASC
                 "#
@@ -498,7 +539,11 @@ impl BudgetRepository for LibsqlStore {
             .connection
             .query(
                 query,
-                libsql::params![window_start.unix_timestamp(), window_end.unix_timestamp()],
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    owner_user_filter,
+                ],
             )
             .await
             .map_err(to_query_error)?;
@@ -516,6 +561,9 @@ impl BudgetRepository for LibsqlStore {
                 priced_request_count,
                 unpriced_request_count,
                 usage_missing_request_count,
+                uncached_input_tokens: row.get(5).map_err(to_query_error)?,
+                cache_read_tokens: row.get(6).map_err(to_query_error)?,
+                cache_write_tokens: row.get(7).map_err(to_query_error)?,
             });
         }
         Ok(output)
@@ -526,7 +574,9 @@ impl BudgetRepository for LibsqlStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<SpendOwnerAggregateRecord>, StoreError> {
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
         let query = match owner_kind {
             Some(ApiKeyOwnerKind::User) => {
                 r#"
@@ -547,6 +597,7 @@ impl BudgetRepository for LibsqlStore {
                 WHERE u.occurred_at >= ?1
                   AND u.occurred_at < ?2
                   AND u.user_id IS NOT NULL
+                  AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY u.user_id, users.name
                 ORDER BY priced_cost_10000 DESC, owner_name ASC
                 "#
@@ -570,6 +621,7 @@ impl BudgetRepository for LibsqlStore {
                 WHERE u.occurred_at >= ?1
                   AND u.occurred_at < ?2
                   AND u.service_account_id IS NOT NULL
+                  AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY u.service_account_id, service_accounts.service_account_name
                 ORDER BY priced_cost_10000 DESC, owner_name ASC
                 "#
@@ -594,6 +646,7 @@ impl BudgetRepository for LibsqlStore {
                     WHERE u.occurred_at >= ?1
                       AND u.occurred_at < ?2
                       AND u.user_id IS NOT NULL
+                      AND (?3 IS NULL OR u.user_id = ?3)
                     GROUP BY u.user_id, users.name
                     UNION ALL
                     SELECT
@@ -613,6 +666,7 @@ impl BudgetRepository for LibsqlStore {
                     WHERE u.occurred_at >= ?1
                       AND u.occurred_at < ?2
                       AND u.service_account_id IS NOT NULL
+                      AND (?3 IS NULL OR u.user_id = ?3)
                     GROUP BY u.service_account_id, service_accounts.service_account_name
                 )
                 ORDER BY priced_cost_10000 DESC, owner_name ASC
@@ -624,7 +678,11 @@ impl BudgetRepository for LibsqlStore {
             .connection
             .query(
                 query,
-                libsql::params![window_start.unix_timestamp(), window_end.unix_timestamp()],
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    owner_user_filter,
+                ],
             )
             .await
             .map_err(to_query_error)?;
@@ -657,7 +715,9 @@ impl BudgetRepository for LibsqlStore {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
     ) -> Result<Vec<SpendModelAggregateRecord>, StoreError> {
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
         let query = match owner_kind {
             Some(ApiKeyOwnerKind::User) => {
                 r#"
@@ -676,6 +736,7 @@ impl BudgetRepository for LibsqlStore {
                 WHERE u.occurred_at >= ?1
                   AND u.occurred_at < ?2
                   AND u.user_id IS NOT NULL
+                  AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY model_key
                 ORDER BY priced_cost_10000 DESC, model_key ASC
                 "#
@@ -697,6 +758,7 @@ impl BudgetRepository for LibsqlStore {
                 WHERE u.occurred_at >= ?1
                   AND u.occurred_at < ?2
                   AND u.service_account_id IS NOT NULL
+                  AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY model_key
                 ORDER BY priced_cost_10000 DESC, model_key ASC
                 "#
@@ -717,6 +779,7 @@ impl BudgetRepository for LibsqlStore {
                 LEFT JOIN gateway_models g ON g.id = u.model_id
                 WHERE u.occurred_at >= ?1
                   AND u.occurred_at < ?2
+                  AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY model_key
                 ORDER BY priced_cost_10000 DESC, model_key ASC
                 "#
@@ -727,7 +790,11 @@ impl BudgetRepository for LibsqlStore {
             .connection
             .query(
                 query,
-                libsql::params![window_start.unix_timestamp(), window_end.unix_timestamp()],
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    owner_user_filter,
+                ],
             )
             .await
             .map_err(to_query_error)?;
@@ -747,6 +814,63 @@ impl BudgetRepository for LibsqlStore {
             });
         }
         Ok(output)
+    }
+
+    async fn get_cache_usage_aggregate(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<gateway_core::CacheUsageAggregateRecord, StoreError> {
+        let owner_kind_filter = owner_kind.map(|kind| kind.as_str().to_string());
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(uncached_input_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_read_tokens), 0) END,
+                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
+                           AND COUNT(*) = COUNT(cache_read_tokens)
+                           AND COUNT(*) = COUNT(cache_write_tokens)
+                        THEN COALESCE(SUM(cache_write_tokens), 0) END
+                FROM usage_cost_events
+                WHERE occurred_at >= ?1
+                  AND occurred_at < ?2
+                  AND (
+                    ?3 IS NULL
+                    OR (?3 = 'user' AND user_id IS NOT NULL)
+                    OR (?3 = 'service_account' AND service_account_id IS NOT NULL)
+                  )
+                  AND (?4 IS NULL OR user_id = ?4)
+                "#,
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    owner_kind_filter,
+                    owner_user_filter,
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let row =
+            rows.next().await.map_err(to_query_error)?.ok_or_else(|| {
+                StoreError::Query("cache usage aggregate row missing".to_string())
+            })?;
+
+        Ok(gateway_core::CacheUsageAggregateRecord {
+            uncached_input_tokens: row.get(0).map_err(to_query_error)?,
+            cache_read_tokens: row.get(1).map_err(to_query_error)?,
+            cache_write_tokens: row.get(2).map_err(to_query_error)?,
+        })
     }
 
     async fn list_focus_export_aggregates(
@@ -776,6 +900,18 @@ impl BudgetRepository for LibsqlStore {
                         u.pricing_status,
                         u.pricing_row_id,
                         COALESCE(SUM(u.prompt_tokens), 0) AS prompt_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.uncached_input_tokens), 0) END AS uncached_input_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.cache_read_tokens), 0) END AS cache_read_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.cache_write_tokens), 0) END AS cache_write_tokens,
                         COALESCE(SUM(u.completion_tokens), 0) AS completion_tokens,
                         COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
                         COUNT(*) AS request_count,
@@ -804,6 +940,18 @@ impl BudgetRepository for LibsqlStore {
                         u.pricing_status,
                         u.pricing_row_id,
                         COALESCE(SUM(u.prompt_tokens), 0) AS prompt_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.uncached_input_tokens), 0) END AS uncached_input_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.cache_read_tokens), 0) END AS cache_read_tokens,
+                        CASE WHEN COUNT(*) = COUNT(u.uncached_input_tokens)
+                               AND COUNT(*) = COUNT(u.cache_read_tokens)
+                               AND COUNT(*) = COUNT(u.cache_write_tokens)
+                            THEN COALESCE(SUM(u.cache_write_tokens), 0) END AS cache_write_tokens,
                         COALESCE(SUM(u.completion_tokens), 0) AS completion_tokens,
                         COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
                         COUNT(*) AS request_count,
@@ -846,7 +994,7 @@ impl BudgetRepository for LibsqlStore {
             let model_id: Option<String> = row.get(5).map_err(to_query_error)?;
             let pricing_status: String = row.get(9).map_err(to_query_error)?;
             let pricing_row_id: Option<String> = row.get(10).map_err(to_query_error)?;
-            let computed_cost_10000: i64 = row.get(15).map_err(to_query_error)?;
+            let computed_cost_10000: i64 = row.get(18).map_err(to_query_error)?;
             output.push(FocusExportAggregateRecord {
                 day_start: unix_to_datetime(row.get(0).map_err(to_query_error)?)?,
                 owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
@@ -866,9 +1014,12 @@ impl BudgetRepository for LibsqlStore {
                 })?,
                 pricing_row_id: pricing_row_id.as_deref().map(parse_uuid).transpose()?,
                 prompt_tokens: row.get(11).map_err(to_query_error)?,
-                completion_tokens: row.get(12).map_err(to_query_error)?,
-                total_tokens: row.get(13).map_err(to_query_error)?,
-                request_count: row.get(14).map_err(to_query_error)?,
+                uncached_input_tokens: row.get(12).map_err(to_query_error)?,
+                cache_read_tokens: row.get(13).map_err(to_query_error)?,
+                cache_write_tokens: row.get(14).map_err(to_query_error)?,
+                completion_tokens: row.get(15).map_err(to_query_error)?,
+                total_tokens: row.get(16).map_err(to_query_error)?,
+                request_count: row.get(17).map_err(to_query_error)?,
                 computed_cost_usd: Money4::from_scaled(computed_cost_10000),
             });
         }
@@ -1104,12 +1255,6 @@ impl BudgetRepository for LibsqlStore {
         event: &UsageLedgerRecord,
     ) -> Result<bool, StoreError> {
         let provider_usage_json = crate::shared::serialize_json(&event.provider_usage)?;
-        let normalized_usage_json = event
-            .normalized_usage
-            .as_ref()
-            .map(crate::shared::serialize_json)
-            .transpose()?;
-
         let written = self
             .connection
             .execute(
@@ -1125,11 +1270,11 @@ impl BudgetRepository for LibsqlStore {
                     output_cost_per_million_tokens_10000,
                     cache_read_cost_per_million_tokens_10000,
                     cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
-                    normalized_usage_json
+                    uncached_input_tokens, cache_read_tokens, cache_write_tokens
                 ) VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
                     ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28,
-                    ?29, ?30, ?31, ?32
+                    ?29, ?30, ?31, ?32, ?33, ?34
                 )
                 ON CONFLICT(request_id, ownership_scope_key) DO NOTHING
                 "#,
@@ -1175,7 +1320,9 @@ impl BudgetRepository for LibsqlStore {
                         .map(Money4::as_scaled_i64),
                     event.computed_cost_usd.as_scaled_i64(),
                     event.occurred_at.unix_timestamp(),
-                    normalized_usage_json
+                    event.uncached_input_tokens,
+                    event.cache_read_tokens,
+                    event.cache_write_tokens
                 ],
             )
             .await

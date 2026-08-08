@@ -3,6 +3,7 @@ import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { BrandIcon } from '@/components/icons/brand-icon'
+import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -34,7 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
-import { requireAdminSession } from '@/routes/-admin-guard'
+import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
 import type {
   RequestAttemptView,
@@ -44,9 +45,9 @@ import type {
 } from '@/types/api'
 
 export const Route = createFileRoute('/observability/request-logs')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
   validateSearch: (search: Record<string, unknown>) => normalizeFilterSearch(search),
   loaderDeps: ({ search }) => search,
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: ({ deps }) => getRequestLogs({ data: deps }),
   component: RequestLogsPage,
 })
@@ -155,14 +156,19 @@ export function RequestLogsPage() {
     Boolean(normalizedFilters.tag_key) !== Boolean(normalizedFilters.tag_value)
 
   return (
-    <>
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Observability"
+        title="Request logs"
+        description="Review each request, how long it took, and the data that the system stored."
+      />
+
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <CardTitle>Request Logs</CardTitle>
+            <CardTitle>Request list</CardTitle>
             <CardDescription>
-              Inspect single-route request execution, latency, and sanitized payloads without
-              dropping into raw traces.
+              Filter requests, then select one to review more details.
             </CardDescription>
           </div>
         </CardHeader>
@@ -549,7 +555,7 @@ export function RequestLogsPage() {
           </div>
         </SheetContent>
       </Sheet>
-    </>
+    </div>
   )
 }
 

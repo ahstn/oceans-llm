@@ -4,6 +4,7 @@ import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -37,7 +38,8 @@ import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { Input } from '@/components/ui/input'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { requireAdminSession } from '@/routes/-admin-guard'
+import { requireAuthenticatedSession } from '@/routes/-admin-guard'
+import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import {
   Select,
   SelectContent,
@@ -59,6 +61,7 @@ import {
   createIdentityTeam,
   createIdentityUser,
   getTeams,
+  getTeamDirectory,
   removeIdentityTeamMember,
   transferIdentityTeamMember,
   updateIdentityTeam,
@@ -68,19 +71,22 @@ import {
   EntityTagsField,
   sanitizeEntityTags,
 } from '@/routes/identity/-entity-tags'
+import { ReadOnlyTeamsDirectory } from '@/routes/identity/-read-only-directory'
 import type {
   CreateTeamInput,
   CreateUserInput,
   CreateUserResult,
   IdentityTeamsPayload,
+  IdentityDirectoryTeamsPayload,
   TeamAssignableUserView,
   TeamManagementView,
   TransferTeamMemberInput,
 } from '@/types/api'
 
 export const Route = createFileRoute('/identity/teams')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
-  loader: () => getTeams(),
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
+  loader: ({ context }) =>
+    isPlatformAdminSession(context.session) ? getTeams() : getTeamDirectory(),
   component: TeamsPage,
 })
 
@@ -102,6 +108,11 @@ const initialInviteForm: CreateUserInput = {
   tags: [],
 }
 
+const emptyAdminTeams: IdentityTeamsPayload['teams'] = []
+const emptyAssignableUsers: IdentityTeamsPayload['users'] = []
+const emptyOidcProviders: IdentityTeamsPayload['oidc_providers'] = []
+const emptyOauthProviders: IdentityTeamsPayload['oauth_providers'] = []
+
 type TeamDialogState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; teamId: string }
 
 type MembersDialogState = { mode: 'closed' } | { mode: 'open'; teamId: string }
@@ -113,9 +124,15 @@ type TeamMemberDialogState =
 
 export function TeamsPage() {
   const router = useRouter()
-  const {
-    data: { teams, users, oidc_providers: oidcProviders, oauth_providers: oauthProviders },
-  } = Route.useLoaderData() as { data: IdentityTeamsPayload }
+  const { session } = Route.useRouteContext()
+  const isPlatformAdmin = isPlatformAdminSession(session)
+  const loaderData = Route.useLoaderData()
+  const adminData = isPlatformAdmin ? (loaderData.data as IdentityTeamsPayload) : null
+  const directoryData = isPlatformAdmin ? null : (loaderData.data as IdentityDirectoryTeamsPayload)
+  const teams = adminData?.teams ?? emptyAdminTeams
+  const users = adminData?.users ?? emptyAssignableUsers
+  const oidcProviders = adminData?.oidc_providers ?? emptyOidcProviders
+  const oauthProviders = adminData?.oauth_providers ?? emptyOauthProviders
   const [teamDialog, setTeamDialog] = useState<TeamDialogState>({ mode: 'closed' })
   const [teamForm, setTeamForm] = useState<CreateTeamInput>(initialTeamForm)
   const [membersDialog, setMembersDialog] = useState<MembersDialogState>({ mode: 'closed' })
@@ -182,6 +199,23 @@ export function TeamsPage() {
       })),
     [membersTeam, users],
   )
+
+  const pageHeader = (
+    <PageHeader
+      section="Identity"
+      title="Teams"
+      description="Review teams, their administrators, and their members."
+    />
+  )
+
+  if (!isPlatformAdmin) {
+    return (
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
+        {pageHeader}
+        <ReadOnlyTeamsDirectory teams={directoryData?.teams ?? []} />
+      </div>
+    )
+  }
 
   async function refreshTeams() {
     await router.invalidate()
@@ -391,14 +425,14 @@ export function TeamsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
+      {pageHeader}
+
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <CardTitle>Teams</CardTitle>
-            <CardDescription>
-              Create teams, assign team admins, and add members over time as users arrive.
-            </CardDescription>
+            <CardTitle>Team list</CardTitle>
+            <CardDescription>Select a team to review its members and settings.</CardDescription>
           </div>
           <Button type="button" onClick={openCreateTeamDialog}>
             Add team

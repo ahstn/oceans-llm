@@ -5,6 +5,7 @@ import type { IdentityUsersPayload } from '@/types/api'
 
 const routeMock = {
   useLoaderData: vi.fn(),
+  useRouteContext: vi.fn(),
   useSearch: vi.fn(),
 }
 
@@ -33,6 +34,7 @@ vi.mock('@/server/admin-data.functions', () => ({
   deactivateIdentityUser: vi.fn(),
   createIdentityUser: (...args: unknown[]) => createIdentityUserMock(...args),
   getUsers: vi.fn(),
+  getUserDirectory: vi.fn(),
   reactivateIdentityUser: vi.fn(),
   resetIdentityUserOnboarding: (...args: unknown[]) => resetOnboardingMock(...args),
   resendIdentityUserPasswordInvite: (...args: unknown[]) => resendInviteMock(...args),
@@ -75,6 +77,18 @@ describe('UsersPage', () => {
       Element.prototype.releasePointerCapture = () => {}
     }
     routeMock.useLoaderData.mockReset()
+    routeMock.useRouteContext.mockReset()
+    routeMock.useRouteContext.mockReturnValue({
+      session: {
+        must_change_password: false,
+        user: {
+          id: 'admin_1',
+          name: 'Admin User',
+          email: 'admin@example.com',
+          global_role: 'platform_admin',
+        },
+      },
+    })
     routeMock.useSearch.mockReturnValue({ user_id: undefined, user_section: 'overview' })
     routerMock.invalidate.mockClear()
     createIdentityUserMock.mockReset()
@@ -85,6 +99,57 @@ describe('UsersPage', () => {
 
   afterEach(() => {
     cleanup()
+  })
+
+  it('shows the user directory without mutation controls to regular users', async () => {
+    routeMock.useRouteContext.mockReturnValue({
+      session: {
+        must_change_password: false,
+        user: {
+          id: 'user_1',
+          name: 'Regular User',
+          email: 'regular@example.com',
+          global_role: 'user',
+        },
+      },
+    })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        users: [
+          {
+            id: 'user_1',
+            name: 'Regular User',
+            email: 'regular@example.com',
+            global_role: 'user',
+            status: 'active',
+            team_id: 'team_1',
+            team_name: 'Platform',
+            team_role: 'member',
+          },
+          {
+            id: 'user_2',
+            name: 'Other User',
+            email: 'other@example.com',
+            global_role: 'user',
+            status: 'active',
+            team_id: 'team_2',
+            team_name: 'Research',
+            team_role: 'admin',
+          },
+        ],
+      },
+    })
+
+    const { UsersPage } = await import('@/routes/identity/users')
+    render(<UsersPage />)
+
+    expect(screen.getByText('Regular User')).toBeInTheDocument()
+    expect(screen.getByText('Other User')).toBeInTheDocument()
+    expect(screen.getByText('other@example.com')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add user' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Sign-in')).not.toBeInTheDocument()
+    expect(screen.getByText(/Only administrators can make changes/)).toBeInTheDocument()
   })
 
   it('teaches the next step when no users exist', async () => {
@@ -321,7 +386,7 @@ describe('UsersPage', () => {
   })
 
   it('sanitizes onboarding updates to auth fields and persisted role/team membership', async () => {
-    const { sanitizeOnboardingUpdateForm } = await import('@/routes/identity/users')
+    const { sanitizeOnboardingUpdateForm } = await import('@/routes/identity/-user-form')
 
     const input = sanitizeOnboardingUpdateForm(
       {

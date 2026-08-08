@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
-use gateway_service::{GatewayService, WeightedRoutePlanner};
+use gateway_service::{GatewayService, McpOauthRuntime, WeightedRoutePlanner};
 use gateway_store::AnyStore;
 
 use crate::observability::GatewayMetrics;
@@ -23,6 +23,7 @@ pub struct AppState {
     pub providers: ProviderRegistry,
     pub metrics: Arc<GatewayMetrics>,
     pub mcp_http_client: reqwest::Client,
+    pub mcp_oauth_runtime: Arc<McpOauthRuntime>,
     pub identity_token_secret: Arc<String>,
     pub oidc_public_base_url: Arc<Option<String>>,
     pub oauth_public_base_url: Arc<Option<String>>,

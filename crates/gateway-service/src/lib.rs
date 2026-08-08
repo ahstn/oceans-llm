@@ -12,6 +12,7 @@ pub mod mcp_catalog;
 pub mod mcp_credentials;
 pub mod mcp_gateway;
 pub mod mcp_invocation_logging;
+pub mod mcp_oauth;
 pub mod mcp_registry;
 pub mod mcp_token_overhead;
 pub mod mcp_upstream_auth;
@@ -24,7 +25,6 @@ pub mod review_agent;
 pub mod route_planner;
 pub mod secret_storage;
 pub mod service;
-pub mod usage_normalization;
 
 pub use admin_api_keys::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
@@ -71,11 +71,15 @@ pub use mcp_invocation_logging::{
     LoggedMcpToolInvocation, McpInvocationLogInput, McpInvocationLogging,
     McpInvocationPayloadPolicy,
 };
+pub use mcp_oauth::{McpOauthProvider, McpOauthRuntime, McpOauthTokenBundle, McpOauthTokenGrant};
 pub use mcp_registry::{
     CreateExternalMcpServerInput, HttpMcpDiscoveryClient, McpDiscoveryClient, McpDiscoveryResult,
     McpRegistryService, RecommendedMcpServerCatalogEntry, UpdateExternalMcpServerInput,
 };
 pub use mcp_token_overhead::{McpTokenOverhead, McpTokenOverheadInput, McpTokenOverheadSummary};
+pub use mcp_upstream_auth::{
+    McpOauthServerConfig, mcp_oauth_server_config, supports_public_discovery,
+};
 pub use model_access::ModelAccess;
 pub use model_resolution::{
     ModelResolver, ResolvedGatewayRequest, ResolvedModelSelection, ResolvedProviderConnection,
@@ -106,11 +110,4 @@ pub use secret_storage::{
     GATEWAY_API_KEY_SECRET_KEY_ENV, GATEWAY_API_KEY_SECRET_KEY_ID, decrypt_gateway_api_key_secret,
     encrypt_gateway_api_key_secret,
 };
-pub use service::{
-    GatewayService, NORMALIZED_PRICING_POLICY_VERSION, RecordedUsage, UsageCostPolicy,
-};
-pub use usage_normalization::{
-    NormalizedTokenUsage, TOKEN_USAGE_SEMANTICS_VERSION, TokenFieldAvailability,
-    TokenUsageSemantics, UsageCoverage, UsageNormalizationError, UsageNormalizationOutcome,
-    normalize_token_usage, normalize_token_usage_best_effort,
-};
+pub use service::{GatewayService, RecordedChatUsage};

@@ -38,9 +38,10 @@ itertools = "0.14"
 lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "pool", "smtp-transport", "tokio1", "tokio1-rustls-tls"] }
 libsql = "0.9"
 openidconnect = "4.0.1"
-opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "metrics", "trace"] }
-opentelemetry_sdk = { version = "0.31", features = ["metrics", "rt-tokio", "trace"] }
+opentelemetry = { version = "0.32", features = ["metrics", "trace"] }
+opentelemetry-http = "0.32"
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "metrics", "trace"] }
+opentelemetry_sdk = { version = "0.32", features = ["metrics", "rt-tokio", "trace"] }
 percent-encoding = "2"
 rand = "0.8"
 refinery = "0.8"
@@ -57,7 +58,7 @@ toml = "0.8"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["request-id", "trace", "util"] }
 tracing = "0.1"
-tracing-opentelemetry = "0.32"
+tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 utoipa = { version = "5", features = ["axum_extras", "time", "uuid"] }
 utoipa-axum = "0.2"

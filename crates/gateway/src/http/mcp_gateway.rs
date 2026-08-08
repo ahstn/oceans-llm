@@ -76,7 +76,8 @@ pub async fn mcp_streamable_http_proxy(
         ));
     }
 
-    let gateway = McpGatewayService::new(state.store.clone());
+    let gateway = McpGatewayService::new(state.store.clone())
+        .with_oauth_runtime(state.mcp_oauth_runtime.clone());
     let server = match gateway.load_active_server(&server_key).await {
         Ok(server) => server,
         Err(error) => return mcp_error_response(error),
@@ -285,7 +286,8 @@ async fn handle_tools_call(
         );
     };
 
-    let gateway = McpGatewayService::new(state.store.clone());
+    let gateway = McpGatewayService::new(state.store.clone())
+        .with_oauth_runtime(state.mcp_oauth_runtime.clone());
     let upstream = match gateway.prepare_upstream_for_auth(auth, server).await {
         Ok(upstream) => upstream,
         Err(error) => {

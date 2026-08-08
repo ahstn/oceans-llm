@@ -6,10 +6,18 @@ import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 describe('AgentHarnessLabel', () => {
   it.each(['OpenCode', 'Pi', 'Claude Code', 'Codex'])('renders the %s harness icon', (label) => {
     const { container } = render(<AgentHarnessLabel harnessKey={label}>{label}</AgentHarnessLabel>)
-
     const icon = container.querySelector<HTMLElement>('[data-agent-harness-icon]')
+
     expect(icon).toBeInTheDocument()
-    expect(icon).toHaveStyle({ maskImage: expect.stringContaining('url(') })
+    expect(icon?.style.getPropertyValue('-webkit-mask-image')).toContain('url(')
+    expect(icon?.style.getPropertyValue('-webkit-mask-position')).toBe('center')
+    expect(icon?.style.getPropertyValue('-webkit-mask-repeat')).toBe('no-repeat')
+    expect(icon?.style.getPropertyValue('-webkit-mask-size')).toBe('contain')
+    expect(icon?.style.getPropertyValue('mask-image')).toContain('url(')
+    expect(icon?.style.getPropertyValue('mask-position')).toBe('center')
+    expect(icon?.style.getPropertyValue('mask-repeat')).toBe('no-repeat')
+    expect(icon?.style.getPropertyValue('mask-size')).toBe('contain')
+    expect(icon?.style.getPropertyValue('background-color')).toBe('currentcolor')
   })
 
   it('keeps unknown harness labels text-only', () => {

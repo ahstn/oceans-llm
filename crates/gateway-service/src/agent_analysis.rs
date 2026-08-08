@@ -14,8 +14,9 @@ use gateway_core::{
     AuthenticatedApiKey, BoundedObservationFacts, BoundedToolDefinitionFact, BudgetRepository,
     Confidence, EvidenceQuality, GatewayError, GatewayOutcomeState, IdentityRepository,
     InferredObservation, InferredObservationKind, LimitationCode, MAX_AGENT_SESSION_NESTED_FACTS,
-    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationQuery, McpToolInvocationRepository,
+    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationQuery, McpToolInvocationRepository, Money4,
     RequestLogRepository, RequestTags, SessionLifecycleState, UsageLedgerRecord,
+    UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -35,9 +36,10 @@ const COHORT_LOOKBACK: Duration = Duration::days(90);
 use uuid::Uuid;
 
 use crate::redaction::REDACTED_VALUE;
-use crate::{NORMALIZED_PRICING_POLICY_VERSION, budget_scopes::usage_ownership_scope_key};
+use crate::{budget_scopes::usage_ownership_scope_key, service::scaled_cost_for_tokens};
 
 pub const COHORT_VERSION: &str = "successful-boundary-group-v2";
+pub const PRICING_POLICY_VERSION: &str = "usage-ledger-cache-v1";
 pub const SESSION_IDLE_GAP: Duration = Duration::minutes(30);
 pub const REPORT_RETENTION: Duration = Duration::days(90);
 const SESSION_SOURCE_ID_NAMESPACE: Uuid = Uuid::from_u128(0xc3fc5f3b_56a6_4d1f_99fe_f8ba6d1cc9e1);
@@ -1228,47 +1230,50 @@ fn observation_coverage_count(
         .unwrap_or(u32::MAX)
 }
 fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
-    let accounting = record.normalized_usage.as_ref();
+    let priced = record.pricing_status == UsagePricingStatus::Priced;
+    let component_cost = |tokens: Option<i64>, rate: Option<Money4>| {
+        tokens
+            .zip(rate)
+            .and_then(|(tokens, rate)| scaled_cost_for_tokens(tokens, rate).ok())
+            .map(Money4::as_scaled_i64)
+    };
     SessionUsageFact {
-        fresh_input_tokens: accounting.and_then(|value| value.fresh_input_tokens),
-        cache_read_tokens: accounting.and_then(|value| value.cache_read_tokens),
-        cache_creation_tokens: accounting.and_then(|value| value.cache_creation_tokens),
-        output_tokens: accounting.and_then(|value| value.output_tokens),
-        reasoning_tokens: accounting.and_then(|value| value.reasoning_tokens),
-        provider_total_tokens: accounting.and_then(|value| value.provider_total_tokens),
-        cache_creation_5m_tokens: accounting.and_then(|value| value.cache_creation_5m_tokens),
-        cache_creation_30m_tokens: accounting.and_then(|value| value.cache_creation_30m_tokens),
-        cache_creation_1h_tokens: accounting.and_then(|value| value.cache_creation_1h_tokens),
-        output_includes_reasoning: accounting.and_then(|value| value.output_includes_reasoning),
-        fresh_input_cost_10000: accounting
-            .and_then(|value| value.fresh_input_cost_usd)
-            .map(|value| value.as_scaled_i64()),
-        cache_read_cost_10000: accounting
-            .and_then(|value| value.cache_read_cost_usd)
-            .map(|value| value.as_scaled_i64()),
-        cache_creation_cost_10000: accounting
-            .and_then(|value| value.cache_creation_cost_usd)
-            .map(|value| value.as_scaled_i64()),
-        output_cost_10000: accounting
-            .and_then(|value| value.output_cost_usd)
-            .map(|value| value.as_scaled_i64()),
-        reasoning_cost_10000: accounting
-            .and_then(|value| value.reasoning_cost_usd)
-            .map(|value| value.as_scaled_i64()),
-        legacy_cost_10000: accounting
-            .map_or(Some(record.computed_cost_usd), |value| {
-                Some(value.legacy_cost_usd)
-            })
-            .map(|value| value.as_scaled_i64()),
-        normalized_cost_10000: accounting
-            .and_then(|value| value.normalized_cost_usd)
-            .map(|value| value.as_scaled_i64()),
-        uncached_input_cost_10000: accounting
-            .and_then(|value| value.uncached_input_cost_usd)
-            .map(|value| value.as_scaled_i64()),
+        fresh_input_tokens: record.uncached_input_tokens,
+        cache_read_tokens: record.cache_read_tokens,
+        cache_creation_tokens: record.cache_write_tokens,
+        output_tokens: record.completion_tokens,
+        reasoning_tokens: None,
+        provider_total_tokens: record.total_tokens,
+        cache_creation_5m_tokens: None,
+        cache_creation_30m_tokens: None,
+        cache_creation_1h_tokens: None,
+        output_includes_reasoning: None,
+        fresh_input_cost_10000: component_cost(
+            record.uncached_input_tokens,
+            record.input_cost_per_million_tokens,
+        ),
+        cache_read_cost_10000: component_cost(
+            record.cache_read_tokens,
+            record.cache_read_cost_per_million_tokens,
+        ),
+        cache_creation_cost_10000: component_cost(
+            record.cache_write_tokens,
+            record.cache_write_cost_per_million_tokens,
+        ),
+        output_cost_10000: component_cost(
+            record.completion_tokens,
+            record.output_cost_per_million_tokens,
+        ),
+        reasoning_cost_10000: None,
+        legacy_cost_10000: None,
+        normalized_cost_10000: priced.then_some(record.computed_cost_usd.as_scaled_i64()),
+        uncached_input_cost_10000: component_cost(
+            record.prompt_tokens,
+            record.input_cost_per_million_tokens,
+        ),
         provider_key: Some(record.provider_key.clone()),
         upstream_model: Some(record.upstream_model.clone()),
-        pricing_policy_version: accounting.map(|value| value.pricing_policy_version.clone()),
+        pricing_policy_version: Some(PRICING_POLICY_VERSION.to_string()),
     }
 }
 
@@ -1452,7 +1457,7 @@ pub fn desired_versions_for_policy(policy: &AnalysisPolicy) -> AgentAnalysisDesi
         observation_parser_version: OBSERVATION_PARSER_VERSION.to_string(),
         analyzer_version: agent_session_analysis::ANALYZER_VERSION.to_string(),
         score_policy_version: agent_session_analysis::SCORE_POLICY_VERSION.to_string(),
-        pricing_policy_version: NORMALIZED_PRICING_POLICY_VERSION.to_string(),
+        pricing_policy_version: PRICING_POLICY_VERSION.to_string(),
         cohort_version: COHORT_VERSION.to_string(),
         configuration_version,
         score_maturity: policy.maturity,

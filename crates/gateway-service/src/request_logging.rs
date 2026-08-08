@@ -9,7 +9,6 @@ use gateway_core::{
     SseEventParser,
 };
 
-use crate::usage_normalization::{NormalizedTokenUsage, normalize_token_usage_best_effort};
 use crate::{REQUEST_LOG_MODEL_ICON_KEY, REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata};
 use serde_json::{Map, Value, json};
 use std::collections::HashSet;
@@ -95,7 +94,7 @@ pub struct LoggedRequest {
     pub analysis_response: Option<Value>,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct UsageSummary {
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
@@ -172,16 +171,6 @@ impl UsageSummary {
         self.prompt_tokens.is_some()
             || self.completion_tokens.is_some()
             || self.total_tokens.is_some()
-    }
-}
-
-impl From<&NormalizedTokenUsage> for UsageSummary {
-    fn from(usage: &NormalizedTokenUsage) -> Self {
-        Self {
-            prompt_tokens: usage.legacy_prompt_tokens(),
-            completion_tokens: usage.legacy_completion_tokens(),
-            total_tokens: usage.legacy_total_tokens(),
-        }
     }
 }
 
@@ -1150,8 +1139,31 @@ pub fn classify_agent_harness(user_agent: Option<&str>) -> AgentHarness {
 }
 
 pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
-    let outcome = normalize_token_usage_best_effort(value);
-    UsageSummary::from(&outcome.usage)
+    let Some(usage) = value.and_then(Value::as_object) else {
+        return UsageSummary::default();
+    };
+
+    let prompt_tokens = usage
+        .get("prompt_tokens")
+        .or_else(|| usage.get("input_tokens"))
+        .and_then(Value::as_i64);
+    let completion_tokens = usage
+        .get("completion_tokens")
+        .or_else(|| usage.get("output_tokens"))
+        .and_then(Value::as_i64);
+    let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
+        some @ Some(_) => some,
+        None => match (prompt_tokens, completion_tokens) {
+            (Some(prompt), Some(completion)) => prompt.checked_add(completion),
+            _ => None,
+        },
+    };
+
+    UsageSummary {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+    }
 }
 
 fn request_log_metadata(
@@ -1354,9 +1366,10 @@ mod tests {
 
     use super::{
         AgentHarness, RequestLogging, StreamFailureSummary, StreamLogResultInput,
-        StreamResponseCollector, classify_agent_harness, invoked_tool_count_from_response_body,
-        normalized_user_agent, request_user_agent, shallow_tool_count_from_request_body,
-        truncate_attempt_error_detail, usage_summary_from_value,
+        StreamResponseCollector, UsageSummary, classify_agent_harness,
+        invoked_tool_count_from_response_body, normalized_user_agent, request_user_agent,
+        shallow_tool_count_from_request_body, truncate_attempt_error_detail,
+        usage_summary_from_value,
     };
 
     #[derive(Clone, Default)]
@@ -2504,52 +2517,31 @@ data: {"type":"error","error":{"code":"upstream_failed"}}
                 error_code: "upstream_failed".to_string(),
             })
         );
-        let outcome = crate::normalize_token_usage_best_effort(collector.usage());
-        assert_eq!(outcome.usage.fresh_input_tokens, Some(30));
-        assert_eq!(outcome.usage.cache_read_tokens, Some(20));
-        assert_eq!(outcome.usage.cache_creation_tokens, Some(10));
-        assert_eq!(outcome.usage.output_tokens, Some(7));
-        assert_eq!(outcome.usage.provider_total_tokens, Some(67));
+        assert_eq!(
+            usage_summary_from_value(collector.usage()),
+            UsageSummary {
+                prompt_tokens: Some(30),
+                completion_tokens: Some(7),
+                total_tokens: Some(37),
+            }
+        );
     }
 
     #[test]
-    fn request_summary_uses_typed_normalizer_for_totals_and_limitations() {
-        let fixtures = [
-            json!({
+    fn request_summary_uses_provider_totals_without_cache_accounting() {
+        assert_eq!(
+            usage_summary_from_value(Some(&json!({
                 "prompt_tokens": 100,
                 "completion_tokens": 20,
                 "total_tokens": 120,
-                "prompt_tokens_details": {
-                    "cached_tokens": 40,
-                    "cache_write_tokens": "malformed"
-                }
-            }),
-            json!({"prompt_tokens": -1, "completion_tokens": 3}),
-            json!({"prompt_tokens": i64::MAX, "completion_tokens": 1}),
-            json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 99}),
-            json!({}),
-        ];
-
-        for fixture in fixtures {
-            let outcome = crate::normalize_token_usage_best_effort(Some(&fixture));
-            let summary = usage_summary_from_value(Some(&fixture));
-            assert_eq!(
-                (
-                    summary.prompt_tokens,
-                    summary.completion_tokens,
-                    summary.total_tokens,
-                ),
-                (
-                    outcome.usage.legacy_prompt_tokens(),
-                    outcome.usage.legacy_completion_tokens(),
-                    outcome.usage.legacy_total_tokens(),
-                )
-            );
-            assert_eq!(
-                outcome.error.is_some(),
-                crate::normalize_token_usage(Some(&fixture)).is_err()
-            );
-        }
+                "prompt_tokens_details": {"cached_tokens": 40}
+            }))),
+            UsageSummary {
+                prompt_tokens: Some(100),
+                completion_tokens: Some(20),
+                total_tokens: Some(120),
+            }
+        );
     }
 
     #[test]

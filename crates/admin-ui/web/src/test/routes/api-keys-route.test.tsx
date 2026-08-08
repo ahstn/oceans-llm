@@ -5,6 +5,7 @@ import type { ApiKeysPayload } from '@/types/api'
 
 const routeMock = {
   useLoaderData: vi.fn(),
+  useRouteContext: vi.fn(),
   useSearch: vi.fn(),
 }
 
@@ -111,6 +112,18 @@ describe('ApiKeysPage', () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
     routeMock.useLoaderData.mockReset()
     routeMock.useLoaderData.mockReturnValue({ data: basePayload })
+    routeMock.useRouteContext.mockReset()
+    routeMock.useRouteContext.mockReturnValue({
+      session: {
+        must_change_password: false,
+        user: {
+          id: 'admin_1',
+          name: 'Admin User',
+          email: 'admin@example.com',
+          global_role: 'platform_admin',
+        },
+      },
+    })
     routeMock.useSearch.mockReset()
     routeMock.useSearch.mockReturnValue({ api_key_id: undefined })
     routerMock.invalidate.mockClear()
@@ -499,6 +512,30 @@ describe('ApiKeysPage', () => {
       data: { apiKeyId: 'api_key_1' },
     })
     expect(routerMock.invalidate).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows regular users their masked keys without mutation controls', async () => {
+    routeMock.useRouteContext.mockReturnValue({
+      session: {
+        must_change_password: false,
+        user: {
+          id: 'user_1',
+          name: 'Jane User',
+          email: 'jane@example.com',
+          global_role: 'user',
+        },
+      },
+    })
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    expect(screen.getAllByText('gwk_prod_liv****').length).toBeGreaterThan(0)
+    expect(
+      screen.getByText('Review the keys that you and your team use to send requests.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create API key' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
   })
 })
 

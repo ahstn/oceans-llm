@@ -7,8 +7,8 @@ use axum::{
 use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
     BudgetAlertRepository, BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetRepository,
-    BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource, GatewayError, IdentityRepository,
-    MembershipRole, ModelRepository, Money4, UserStatus, budget_window_utc,
+    BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource, GatewayError, GlobalRole,
+    IdentityRepository, MembershipRole, ModelRepository, Money4, UserStatus, budget_window_utc,
 };
 use gateway_store::GatewayStore;
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
@@ -45,25 +45,28 @@ pub async fn get_spend_report(
     headers: HeaderMap,
     Query(query): Query<SpendReportQuery>,
 ) -> Result<Json<Envelope<SpendReportView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let current_user = require_authenticated_session(&state, &headers).await?;
 
     let window_days = parse_window_days(query.days)?;
-    let owner_kind = parse_owner_kind(query.owner_kind.as_deref())?;
+    let (owner_kind, owner_user_id) = spend_report_scope(
+        current_user.user_id,
+        current_user.global_role,
+        query.owner_kind.as_deref(),
+    )?;
     let (window_start, window_end) = report_window_bounds_utc(window_days)?;
 
     let daily_rows = state
         .store
-        .list_usage_daily_aggregates(window_start, window_end, owner_kind)
+        .list_usage_daily_aggregates(window_start, window_end, owner_kind, owner_user_id)
         .await?;
     let owner_rows = state
         .store
-        .list_usage_owner_aggregates(window_start, window_end, owner_kind)
+        .list_usage_owner_aggregates(window_start, window_end, owner_kind, owner_user_id)
         .await?;
     let model_rows = state
         .store
-        .list_usage_model_aggregates(window_start, window_end, owner_kind)
+        .list_usage_model_aggregates(window_start, window_end, owner_kind, owner_user_id)
         .await?;
-
     let mut daily_map = std::collections::BTreeMap::new();
     for row in daily_rows {
         daily_map.insert(row.day_start.unix_timestamp(), row);
@@ -74,12 +77,21 @@ pub async fn get_spend_report(
         priced_request_count: 0,
         unpriced_request_count: 0,
         usage_missing_request_count: 0,
+        uncached_input_tokens: Some(0),
+        cache_read_tokens: Some(0),
+        cache_write_tokens: Some(0),
     };
 
     let mut daily = Vec::with_capacity(window_days as usize);
     for day_offset in 0..window_days {
         let day_start = window_start + Duration::days(i64::from(day_offset));
         if let Some(row) = daily_map.remove(&day_start.unix_timestamp()) {
+            totals.uncached_input_tokens =
+                add_optional_total(totals.uncached_input_tokens, row.uncached_input_tokens);
+            totals.cache_read_tokens =
+                add_optional_total(totals.cache_read_tokens, row.cache_read_tokens);
+            totals.cache_write_tokens =
+                add_optional_total(totals.cache_write_tokens, row.cache_write_tokens);
             let priced_cost = row.priced_cost_usd.as_scaled_i64();
             totals.priced_cost_usd_10000 += priced_cost;
             totals.priced_request_count += row.priced_request_count;
@@ -140,6 +152,10 @@ pub async fn get_spend_report(
         owners,
         models,
     })))
+}
+
+fn add_optional_total(total: Option<i64>, value: Option<i64>) -> Option<i64> {
+    total.and_then(|total| value.and_then(|value| total.checked_add(value)))
 }
 
 #[utoipa::path(
@@ -725,6 +741,18 @@ fn parse_owner_kind(value: Option<&str>) -> Result<Option<ApiKeyOwnerKind>, AppE
     }
 }
 
+fn spend_report_scope(
+    current_user_id: Uuid,
+    global_role: GlobalRole,
+    requested_owner_kind: Option<&str>,
+) -> Result<(Option<ApiKeyOwnerKind>, Option<Uuid>), AppError> {
+    if global_role == GlobalRole::PlatformAdmin {
+        return Ok((parse_owner_kind(requested_owner_kind)?, None));
+    }
+
+    Ok((Some(ApiKeyOwnerKind::User), Some(current_user_id)))
+}
+
 fn focus_export_window_bounds_utc(
     query: &FocusExportQuery,
 ) -> Result<(OffsetDateTime, OffsetDateTime), AppError> {
@@ -935,4 +963,34 @@ fn parse_uuid(raw: &str) -> Result<Uuid, AppError> {
             "invalid uuid `{raw}`: {error}"
         )))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn regular_user_spend_scope_is_forced_to_current_user() {
+        let current_user_id = Uuid::new_v4();
+        let result = spend_report_scope(current_user_id, GlobalRole::User, Some("service_account"));
+
+        assert!(matches!(
+            result,
+            Ok((Some(ApiKeyOwnerKind::User), Some(user_id))) if user_id == current_user_id
+        ));
+    }
+
+    #[test]
+    fn platform_admin_spend_scope_preserves_owner_filter() {
+        let result = spend_report_scope(
+            Uuid::new_v4(),
+            GlobalRole::PlatformAdmin,
+            Some("service_account"),
+        );
+
+        assert!(matches!(
+            result,
+            Ok((Some(ApiKeyOwnerKind::ServiceAccount), None))
+        ));
+    }
 }

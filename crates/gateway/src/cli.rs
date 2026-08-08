@@ -21,6 +21,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    #[command(subcommand)]
+    Config(ConfigCommand),
     Serve(ServeArgs),
     Migrate(MigrateArgs),
     PurgeRequestLogs(PurgeRequestLogsArgs),
@@ -28,6 +30,11 @@ pub enum Command {
     BootstrapAdmin,
     SeedConfig,
     SeedLocalDemo,
+}
+
+#[derive(Debug, Clone, Copy, Subcommand)]
+pub enum ConfigCommand {
+    Validate,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -144,7 +151,16 @@ mod tests {
 
     use gateway_core::RequestLogRetentionWindow;
 
-    use super::{Cli, Command, MigrateAction};
+    use super::{Cli, Command, ConfigCommand, MigrateAction};
+
+    #[test]
+    fn parses_config_validate_command() {
+        let cli = Cli::parse_from(["gateway", "config", "validate"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Config(ConfigCommand::Validate))
+        ));
+    }
 
     #[test]
     fn serve_flags_accept_explicit_false_values() {

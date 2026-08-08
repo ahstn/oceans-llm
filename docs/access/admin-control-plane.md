@@ -2,7 +2,7 @@
 
 `See also`: [Identity and Access](identity-and-access.md), [Service Accounts](service-accounts.md), [Budgets](budgets.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Agent Session Analysis](../operations/agent-session-analysis.md), [Admin API Contract Workflow](../contributing/reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../contributing/reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
 
-This page describes what admins can actually do in the admin UI today.
+This page describes what platform admins can do and which self-service views regular users can open in the browser UI today.
 
 ## Same-Origin Control Plane
 
@@ -111,7 +111,11 @@ Current limits:
 
 ## Admin Auth and Session Behavior
 
-Most global admin-control-plane workflows require a `platform_admin` account. Service-account workflows also allow scoped team operators: active team owners and team admins can manage service accounts for their own team without gaining platform-wide access. Ordinary members remain data-plane identities unless their role changes.
+Most global admin-control-plane workflows require a `platform_admin` account. Service-account workflows also allow scoped team operators: active team owners and team admins can manage service accounts for their own team without gaining platform-wide access.
+
+Regular `user` accounts can sign in and monitor their own activity. They can open API Keys, Models, Teams, Users, Usage Costs, Request Logs, and MCP Invocations. The API Keys page lists keys owned by the signed-in user. Active team owners and team admins also see service-account keys for their team. The regular-user view does not expose mutation controls. The Models page lists all routed models and can generate client configuration, but it hides model allowlist membership and pricing refresh. Teams and Users provide a read-only directory without onboarding links, provider setup data, internal team keys, entity tags, authentication configuration, or mutation controls. The gateway forces observability queries to the signed-in user and checks ownership again for detail requests. Regular users cannot open leaderboard, harness-wide usage, service-account, budget, or configuration pages.
+
+User and team write routes have two backend authorization layers. A centralized HTTP mutation guard requires an active `platform_admin` session for every POST, PUT, PATCH, or DELETE request under `/api/v1/admin/identity/users` and `/api/v1/admin/identity/teams`. Each mutation handler also repeats the platform-admin check before it reads or changes identity state.
 
 Current session behavior is cookie-backed and admin-visible:
 
@@ -120,6 +124,7 @@ Current session behavior is cookie-backed and admin-visible:
 - `/api/v1/auth/logout` revokes the current cookie-backed session and clears the browser cookie
 - expired or missing session state sends the admin back through the auth flow
 - bootstrap admin and regular admin accounts share the same session mechanics after sign-in
+- regular users use the same session mechanics and are sent to `/admin/observability/usage-costs` after sign-in
 
 What is still missing:
 
@@ -134,6 +139,13 @@ Admins can:
 - manage user, service-account, and user model budgets
 - inspect the 7-day or 31-day usage leaderboard
 - inspect 7-day or 31-day self-reported agent harness usage by request count
+
+Regular users can:
+
+- inspect their own 7-day and 30-day spend windows
+- export their own FOCUS billing rows
+- inspect their own request-log list and details
+- inspect their own MCP invocation list and details
 - inspect request-log summaries
 - filter request logs by caller service, component, environment, and one bespoke tag match
 - inspect sanitized request-log payload detail
@@ -142,6 +154,9 @@ Admins can:
 - see per-row MCP/tool cardinality counts for request logs
 - see normalized harness and bounded raw `User-Agent` detail for request logs
 - inspect request-linked MCP invocations by request id, server, tool, API key, user, team, status, and time range
+
+Additional platform-admin capabilities:
+
 - compare leaderboard users with average tool exposure and invocation counts
 - inspect grouped agent sessions, request outcomes, cost and time components, score confidence, data coverage, comparison groups, data limits, and formula versions when the runtime setting permits it
 - manage MCP servers from `/admin/mcp/servers`

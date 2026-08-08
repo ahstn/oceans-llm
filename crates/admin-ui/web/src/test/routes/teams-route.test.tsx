@@ -2,10 +2,11 @@ import type * as React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { IdentityTeamsPayload } from '@/types/api'
+import type { IdentityDirectoryTeamsPayload, IdentityTeamsPayload } from '@/types/api'
 
 const routeMock = {
   useLoaderData: vi.fn(),
+  useRouteContext: vi.fn(),
 }
 
 const routerMock = {
@@ -39,6 +40,7 @@ vi.mock('@/server/admin-data.functions', () => ({
   createIdentityTeam: vi.fn(),
   createIdentityUser: vi.fn(),
   getTeams: vi.fn(),
+  getTeamDirectory: vi.fn(),
   removeIdentityTeamMember: vi.fn(),
   transferIdentityTeamMember: vi.fn(),
   updateIdentityTeam: vi.fn(),
@@ -53,7 +55,68 @@ const basePayload: IdentityTeamsPayload = {
 describe('TeamsPage', () => {
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
+    routeMock.useRouteContext.mockReset()
+    routeMock.useRouteContext.mockReturnValue({
+      session: {
+        must_change_password: false,
+        user: {
+          id: 'admin_1',
+          name: 'Admin User',
+          email: 'admin@example.com',
+          global_role: 'platform_admin',
+        },
+      },
+    })
     routerMock.invalidate.mockClear()
+  })
+
+  it('shows all team membership without mutation controls to regular users', async () => {
+    routeMock.useRouteContext.mockReturnValue({
+      session: {
+        must_change_password: false,
+        user: {
+          id: 'user_1',
+          name: 'Regular User',
+          email: 'regular@example.com',
+          global_role: 'user',
+        },
+      },
+    })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        teams: [
+          {
+            id: 'team_1',
+            name: 'Research',
+            status: 'active',
+            member_count: 1,
+            members: [
+              {
+                id: 'user_2',
+                name: 'Other User',
+                email: 'other@example.com',
+                status: 'active',
+                role: 'member',
+              },
+            ],
+          },
+        ],
+      } satisfies IdentityDirectoryTeamsPayload,
+    })
+
+    const { TeamsPage } = await import('@/routes/identity/teams')
+    render(<TeamsPage />)
+
+    expect(screen.getByText('Research')).toBeInTheDocument()
+    expect(screen.getByText('Other User')).toBeInTheDocument()
+    expect(screen.getByText('other@example.com')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add team' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit team' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add members' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+    expect(screen.queryByText('research')).not.toBeInTheDocument()
+    expect(screen.getByText(/Only administrators can make changes/)).toBeInTheDocument()
   })
 
   it('teaches the next step when no teams exist', async () => {

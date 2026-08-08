@@ -10,7 +10,7 @@ test('bootstrap admin must rotate the password before accessing the control plan
   await page.goto('/admin/api-keys')
 
   await expect(page).toHaveURL(/\/admin\/login\?redirect=%2Fapi-keys$/)
-  await expect(page.getByText('Admin sign in')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
 
   await page.getByLabel('Email').fill(adminEmail)
   await page.getByLabel('Password').fill(adminPassword)

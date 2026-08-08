@@ -6,8 +6,9 @@ use std::{
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind,
     ApiKeyRecord, ApiKeySecretMaterialRecord, ApiKeySecretStorageKind, ApiKeyStatus,
-    BudgetRepository, BudgetScope, GatewayError, GatewayModel, IdentityUserRecord, ModelRepository,
-    NewApiKeyRecord, ServiceAccountRecord, StoreError, TeamRecord, UserStatus,
+    BudgetRepository, BudgetScope, GatewayError, GatewayModel, IdentityRepository,
+    IdentityUserRecord, ModelRepository, NewApiKeyRecord, ServiceAccountRecord, StoreError,
+    TeamRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -108,6 +109,7 @@ impl<R> AdminApiKeyService<R>
 where
     R: AdminApiKeyRepository
         + AdminIdentityRepository
+        + IdentityRepository
         + ModelRepository
         + BudgetRepository
         + Send
@@ -162,6 +164,67 @@ where
                     tags: model.tags,
                 })
                 .collect(),
+        })
+    }
+
+    pub async fn list_api_keys_for_user_scope(
+        &self,
+        user_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<AdminApiKeysPayload, GatewayError> {
+        let api_keys = self
+            .repo
+            .list_api_keys_for_user_scope(user_id, team_id)
+            .await?;
+        let user = self
+            .repo
+            .get_identity_user(user_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound(format!("user `{user_id}`")))?;
+        let users = vec![user];
+        let teams = match team_id {
+            Some(team_id) => vec![
+                self.repo
+                    .get_team_by_id(team_id)
+                    .await?
+                    .ok_or_else(|| StoreError::NotFound(format!("team `{team_id}`")))?,
+            ],
+            None => Vec::new(),
+        };
+
+        let service_account_ids: BTreeSet<_> = api_keys
+            .iter()
+            .filter_map(|api_key| api_key.owner_service_account_id)
+            .collect();
+        let mut service_accounts = Vec::with_capacity(service_account_ids.len());
+        for service_account_id in service_account_ids {
+            service_accounts.push(
+                self.repo
+                    .get_service_account_by_id(service_account_id)
+                    .await?
+                    .ok_or_else(|| {
+                        StoreError::NotFound(format!("service account `{service_account_id}`"))
+                    })?,
+            );
+        }
+
+        let mut items = Vec::with_capacity(api_keys.len());
+        for api_key in api_keys {
+            let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
+            items.push(build_api_key_summary(
+                &api_key,
+                &users,
+                &teams,
+                &service_accounts,
+                &granted_models,
+            )?);
+        }
+
+        Ok(AdminApiKeysPayload {
+            items,
+            users: Vec::new(),
+            service_accounts: Vec::new(),
+            models: Vec::new(),
         })
     }
 

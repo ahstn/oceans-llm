@@ -70,6 +70,23 @@ pub struct AdminIdentityUserView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct IdentityDirectoryUsersPayload {
+    pub users: Vec<IdentityDirectoryUserView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct IdentityDirectoryUserView {
+    pub id: String,
+    pub name: String,
+    pub email: String,
+    pub global_role: String,
+    pub team_id: Option<String>,
+    pub team_name: Option<String>,
+    pub team_role: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminTeamView {
     pub id: String,
     pub name: String,
@@ -81,6 +98,20 @@ pub struct AdminTeamsPayload {
     pub users: Vec<AdminTeamAssignableUserView>,
     pub oidc_providers: Vec<AdminOidcProviderView>,
     pub oauth_providers: Vec<AdminOauthProviderView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct IdentityDirectoryTeamsPayload {
+    pub teams: Vec<IdentityDirectoryTeamView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct IdentityDirectoryTeamView {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub member_count: usize,
+    pub members: Vec<AdminTeamMemberView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -640,6 +671,9 @@ pub struct SpendTotalsView {
     pub priced_request_count: i64,
     pub unpriced_request_count: i64,
     pub usage_missing_request_count: i64,
+    pub uncached_input_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1671,6 +1705,8 @@ pub struct AgentSessionDetailView {
         crate::http::api_keys::reveal_api_key_secret,
         crate::http::identity::list_identity_users,
         crate::http::identity::list_identity_teams,
+        crate::http::identity::list_identity_directory_users,
+        crate::http::identity::list_identity_directory_teams,
         crate::http::models::list_models,
         crate::http::models::generate_model_client_configs,
         crate::http::models::refresh_model_pricing_catalog,
@@ -1747,7 +1783,11 @@ pub struct AgentSessionDetailView {
         crate::http::mcp_registry::list_mcp_credential_bindings,
         crate::http::mcp_registry::upsert_mcp_credential_binding,
         crate::http::mcp_registry::revoke_mcp_credential_binding,
-        crate::http::mcp_registry::preview_mcp_effective_access
+        crate::http::mcp_registry::preview_mcp_effective_access,
+        crate::http::mcp_oauth::list_mcp_oauth_connections,
+        crate::http::mcp_oauth::start_mcp_oauth_connection,
+        crate::http::mcp_oauth::revoke_mcp_oauth_connection,
+        crate::http::mcp_oauth::mcp_oauth_callback
     ),
     components(schemas(ObservabilityRangeQueryValue)),
     modifiers(&AdminApiSecurity)
@@ -1862,6 +1902,10 @@ mod tests {
             paths.contains_key("/api/v1/admin/mcp/credential-bindings/{credential_binding_id}")
         );
         assert!(paths.contains_key("/api/v1/admin/mcp/effective-access"));
+        assert!(paths.contains_key("/api/v1/mcp/oauth/connections"));
+        assert!(paths.contains_key("/api/v1/mcp/servers/{server_id}/oauth/start"));
+        assert!(paths.contains_key("/api/v1/mcp/servers/{server_id}/oauth/connection"));
+        assert!(paths.contains_key("/api/v1/mcp/oauth/{provider_key}/callback"));
         assert!(paths.contains_key("/api/v1/auth/session"));
         assert!(paths.contains_key("/api/v1/auth/logout"));
 

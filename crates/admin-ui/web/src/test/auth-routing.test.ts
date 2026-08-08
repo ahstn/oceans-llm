@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { canAccessAdminPath, defaultSignedInPath, isAdminSession } from '@/routes/-auth-routing'
+import { canAccessSignedInPath, defaultSignedInPath } from '@/routes/-auth-routing'
 import type { AuthSessionView } from '@/types/api'
 
 function session(overrides: Partial<AuthSessionView['capabilities']>): AuthSessionView {
@@ -9,7 +9,7 @@ function session(overrides: Partial<AuthSessionView['capabilities']>): AuthSessi
       id: 'user-1',
       name: 'Admin',
       email: 'admin@example.com',
-      global_role: overrides.platform_admin ? 'platform_admin' : 'member',
+      global_role: overrides.platform_admin ? 'platform_admin' : 'user',
     },
     team_id: overrides.platform_admin ? null : 'team-1',
     team_role: overrides.platform_admin ? null : 'admin',
@@ -30,9 +30,8 @@ describe('admin route capabilities', () => {
   it('keeps platform admins signed in when analysis presentation is disabled', () => {
     const platformAdmin = session({ platform_admin: true })
 
-    expect(isAdminSession(platformAdmin)).toBe(true)
-    expect(canAccessAdminPath(platformAdmin, '/api-keys')).toBe(true)
-    expect(canAccessAdminPath(platformAdmin, '/observability/agent-sessions')).toBe(false)
+    expect(canAccessSignedInPath(platformAdmin, '/api-keys')).toBe(true)
+    expect(canAccessSignedInPath(platformAdmin, '/observability/agent-sessions')).toBe(false)
     expect(defaultSignedInPath(platformAdmin)).toBe('/api-keys')
   })
 
@@ -43,17 +42,16 @@ describe('admin route capabilities', () => {
       team_admin_analytics_enabled: true,
     })
 
-    expect(isAdminSession(teamAdmin)).toBe(true)
-    expect(canAccessAdminPath(teamAdmin, '/observability/agent-sessions')).toBe(true)
-    expect(canAccessAdminPath(teamAdmin, '/observability/agent-sessions/session-1')).toBe(true)
-    expect(canAccessAdminPath(teamAdmin, '/api-keys')).toBe(false)
+    expect(canAccessSignedInPath(teamAdmin, '/observability/agent-sessions')).toBe(true)
+    expect(canAccessSignedInPath(teamAdmin, '/observability/agent-sessions/session-1')).toBe(true)
+    expect(canAccessSignedInPath(teamAdmin, '/api-keys')).toBe(true)
     expect(defaultSignedInPath(teamAdmin)).toBe('/observability/agent-sessions')
   })
 
-  it('rejects ordinary members from the admin application', () => {
+  it('keeps ordinary users out of agent sessions', () => {
     const member = session({})
 
-    expect(isAdminSession(member)).toBe(false)
-    expect(canAccessAdminPath(member, '/observability/agent-sessions')).toBe(false)
+    expect(canAccessSignedInPath(member, '/api-keys')).toBe(true)
+    expect(canAccessSignedInPath(member, '/observability/agent-sessions')).toBe(false)
   })
 })

@@ -134,27 +134,33 @@ Routes can opt into that request shape with `compatibility.openai_compat.support
 
 This compatibility option applies to Chat Completions streams. Responses streams use the Responses event model and read usage from completed response events.
 
-## Normalized Cache Accounting Shadow
+## Cache-Aware Token Accounting
 
-The durable usage row keeps both the current authoritative legacy charge and versioned normalized accounting. The normalized form separates provider usage into fresh input, cache reads, cache creation, output, reasoning, and provider-reported total tokens when those fields are available.
+Oceans normalizes cache usage when a supported response supplies enough evidence to form disjoint input buckets. The ledger retains the raw provider usage and stores:
+
+- uncached input tokens;
+- cache-read tokens;
+- cache-write tokens.
+
+OpenAI Responses `input_tokens_details` and equivalent root provider counters use inclusive input totals. Bedrock Converse and Anthropic counters use exclusive uncached-input totals, so Oceans adds cache-read and cache-write tokens when it derives the logical prompt total. Missing cache evidence remains `NULL`; reports show the aggregate as unavailable if any included row lacks all three normalized buckets.
+
+Cache-aware pricing requires the standard input and output rates and each positive cache bucket's route rate. Malformed counters use aggregate input/output pricing as a `legacy_estimated` safety fallback and retain an `invalid_cache_token_usage` reason. Unsupported mixed TTL write classes remain unpriced because one cache-write rate cannot price them without loss.
+
+The catalog and provider responses can contain more billing signals than Oceans charges today.
 
 | Catalog, override, or provider signal | Current accounting status |
 | --- | --- |
-| prompt/input tokens | legacy charge remains authoritative during shadow; normalized accounting isolates fresh input when provider semantics permit it |
-| completion/output tokens | charged from the effective output rate in both policies |
+| prompt/input tokens | charged from the effective input rate |
+| completion/output tokens | charged from the effective output rate |
 | total tokens | stored for reporting and validation context |
-| cache read/write rates | used to calculate shadow cache-read and cache-creation components when matching token buckets exist |
-| cache read/write token counts | normalized from provider-specific fields with explicit semantics and coverage |
-| reasoning tokens or traces | normalized count can be retained; not charged separately |
-| image, audio, and file modality counters | not charged |
+| cache read/write rates | stored on spend events, propagated to generated client metadata, and used for positive normalized cache buckets |
+| cache read/write token counts | retained raw and normalized for supported response shapes |
+| reasoning tokens or traces | not charged separately yet |
+| image, audio, and file modality counters | not charged yet |
 
-The normalized pricing policy version is `cache-aware-v1-2026-07-21`. Each component uses fixed-point, half-up Money4 arithmetic. A required bucket with no matching rate makes normalized pricing unavailable; the gateway records the reason and retains the legacy charge. Normalization failures also fall back explicitly rather than treating a missing bucket as zero.
+AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Oceans normalizes these totals when one write-price class is sufficient. Mixed 5-minute and 1-hour cache writes remain unpriced until the ledger and pricing catalog represent each class separately. Bedrock Claude thinking and Converse reasoning blocks are preserved as provider metadata on Chat Completions messages or stream deltas, but they are not priced as separate ledger dimensions.
 
-The runtime remains on `ShadowLegacy`: budgets, spend reports, and the top-level `computed_cost_usd` use the legacy prompt-plus-output charge. The normalized component costs, total, authority, discrepancy, policy version, provider semantics, coverage, and failure reason are persisted for agent-session diagnostics and pricing review. A switch to `Normalized` requires a dated calibration and cost-cutover decision; this page will be updated when that happens.
-
-AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. OpenAI Chat Completions and Responses usage normalize their respective cached-input details. Provider families that omit or contradict bucket semantics remain visibly partial.
-
-Hidden thinking costs, reasoning-specific pricing, and non-text modality pricing remain future accounting work tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
+TTL-specific cache-write accounting, hidden thinking costs, and reasoning-specific counters remain future work tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92) and [issue #266](https://github.com/ahstn/oceans-llm/issues/266).
 
 ## Budgets And Reporting
 

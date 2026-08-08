@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use gateway_core::{
     ApiKeyOwnerKind, AuthenticatedApiKey, ExternalMcpServerRecord, GatewayError,
@@ -13,6 +13,10 @@ use uuid::Uuid;
 
 use crate::secret_storage::{
     EncryptedSecret, decrypt_secret_with_key, encrypt_secret_with_key, validate_secret_key_env,
+};
+use crate::{
+    McpOauthRuntime, McpOauthTokenBundle, McpOauthTokenGrant,
+    mcp_oauth::{needs_refresh, oauth_bundle_metadata, validate_oauth_bundle_for_server},
 };
 
 const CREDENTIAL_KEY_ENV: &str = "OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY";
@@ -44,6 +48,8 @@ pub struct RedactedMcpCredentialBinding {
     pub updated_at: OffsetDateTime,
     pub last_used_at: Option<OffsetDateTime>,
     pub revoked_at: Option<OffsetDateTime>,
+    pub oauth_provider_key: Option<String>,
+    pub granted_scopes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -65,7 +71,8 @@ pub struct UpsertMcpCredentialBindingInput {
 
 #[derive(Clone)]
 pub struct McpCredentialService<R> {
-    repo: std::sync::Arc<R>,
+    repo: Arc<R>,
+    oauth_runtime: Option<Arc<McpOauthRuntime>>,
 }
 
 impl<R> McpCredentialService<R>
@@ -73,11 +80,27 @@ where
     R: McpUpstreamCredentialRepository,
 {
     #[must_use]
-    pub fn new(repo: std::sync::Arc<R>) -> Self {
-        Self { repo }
+    pub fn new(repo: Arc<R>) -> Self {
+        Self {
+            repo,
+            oauth_runtime: None,
+        }
     }
 
-    pub fn validate_runtime_configuration() -> Result<(), GatewayError> {
+    #[must_use]
+    pub fn with_oauth_runtime(mut self, runtime: Arc<McpOauthRuntime>) -> Self {
+        self.oauth_runtime = Some(runtime);
+        self
+    }
+
+    pub fn validate_runtime_configuration(
+        require_encryption_key: bool,
+    ) -> Result<(), GatewayError> {
+        if require_encryption_key && std::env::var_os(CREDENTIAL_KEY_ENV).is_none() {
+            return Err(GatewayError::InvalidRequest(format!(
+                "{CREDENTIAL_KEY_ENV} is required when an MCP OAuth provider is configured"
+            )));
+        }
         if std::env::var(CREDENTIAL_KEY_ENV).is_ok() {
             validate_secret_key_env(CREDENTIAL_KEY_ENV)?;
         }
@@ -94,13 +117,31 @@ where
     {
         let mut expired_candidate_seen = false;
         for owner_scope_key in credential_lookup_order(self.repo.as_ref(), auth).await? {
-            let Some(binding) = self
+            let Some(mut binding) = self
                 .repo
                 .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &owner_scope_key)
                 .await?
             else {
                 continue;
             };
+            if binding.material_kind == McpUpstreamCredentialMaterialKind::OauthTokens
+                && needs_refresh(&binding)
+                && let Some(runtime) = self.oauth_runtime.as_ref()
+            {
+                match runtime
+                    .refresh_binding(self.repo.as_ref(), binding, server)
+                    .await
+                {
+                    Ok(refreshed) => binding = refreshed,
+                    Err(GatewayError::McpCredentialRequired { .. }) => continue,
+                    Err(GatewayError::McpCredentialExpired { .. }) => {
+                        expired_candidate_seen = true;
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            validate_oauth_binding_for_server(&binding, server)?;
             if binding
                 .expires_at
                 .is_some_and(|expires_at| expires_at <= OffsetDateTime::now_utc())
@@ -203,6 +244,42 @@ where
         ))
     }
 
+    pub async fn upsert_oauth_user_binding(
+        &self,
+        mcp_server_id: Uuid,
+        user_id: Uuid,
+        grant: McpOauthTokenGrant,
+    ) -> Result<RedactedMcpCredentialBinding, GatewayError> {
+        let owner_scope_key = credential_owner_scope_key(
+            McpUpstreamCredentialOwnerScopeKind::User,
+            Some(user_id),
+            None,
+            None,
+        )?;
+        let existing = self
+            .repo
+            .get_active_mcp_upstream_credential_binding(mcp_server_id, &owner_scope_key)
+            .await?;
+        let secret = serde_json::to_string(&grant.bundle)
+            .map_err(|error| GatewayError::Internal(error.to_string()))?;
+        let metadata = oauth_bundle_metadata(&grant.bundle);
+        self.upsert_binding(UpsertMcpCredentialBindingInput {
+            credential_binding_id: existing.map(|binding| binding.credential_binding_id),
+            mcp_server_id,
+            owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+            owner_user_id: Some(user_id),
+            owner_team_id: None,
+            owner_service_account_id: None,
+            material_kind: McpUpstreamCredentialMaterialKind::OauthTokens,
+            header_name: None,
+            secret: Some(secret),
+            secret_ref: None,
+            expires_at: Some(grant.expires_at),
+            metadata,
+        })
+        .await
+    }
+
     pub async fn list_bindings(
         &self,
         mcp_server_id: Option<Uuid>,
@@ -233,6 +310,26 @@ where
             )
             .await?)
     }
+}
+
+fn validate_oauth_binding_for_server(
+    binding: &McpUpstreamCredentialBindingRecord,
+    server: &ExternalMcpServerRecord,
+) -> Result<(), GatewayError> {
+    if binding.material_kind != McpUpstreamCredentialMaterialKind::OauthTokens {
+        return Ok(());
+    }
+    let secret = match binding.storage_kind {
+        McpUpstreamSecretStorageKind::EncryptedBlob => decrypt_binding_secret(binding)
+            .map_err(|_| credential_material_unavailable(&server.server_key))?,
+        McpUpstreamSecretStorageKind::SecretRef => return Ok(()),
+    };
+    let Ok(bundle) = serde_json::from_str::<McpOauthTokenBundle>(&secret) else {
+        // Legacy OAuth bindings stored a raw bearer token. Keep them valid until
+        // expiry, but require a new connection when refresh is needed.
+        return Ok(());
+    };
+    validate_oauth_bundle_for_server(&bundle, server)
 }
 
 pub fn credential_owner_scope_key(
@@ -380,11 +477,19 @@ fn credential_headers(
             validate_header_name(header_name)?;
             Ok(BTreeMap::from([(header_name.to_string(), secret)]))
         }
-        McpUpstreamCredentialMaterialKind::BearerToken
-        | McpUpstreamCredentialMaterialKind::OauthTokens => Ok(BTreeMap::from([(
+        McpUpstreamCredentialMaterialKind::BearerToken => Ok(BTreeMap::from([(
             "Authorization".to_string(),
             format!("Bearer {secret}"),
         )])),
+        McpUpstreamCredentialMaterialKind::OauthTokens => {
+            let access_token = serde_json::from_str::<McpOauthTokenBundle>(&secret)
+                .map(|bundle| bundle.access_token)
+                .unwrap_or(secret);
+            Ok(BTreeMap::from([(
+                "Authorization".to_string(),
+                format!("Bearer {access_token}"),
+            )]))
+        }
     }
 }
 
@@ -434,7 +539,7 @@ fn validate_header_name(header_name: &str) -> Result<(), GatewayError> {
     Ok(())
 }
 
-fn encrypt_secret(secret: &str) -> Result<EncryptedSecret, GatewayError> {
+pub(crate) fn encrypt_secret(secret: &str) -> Result<EncryptedSecret, GatewayError> {
     encrypt_secret_with_key(
         secret,
         CREDENTIAL_KEY_ENV,
@@ -443,7 +548,7 @@ fn encrypt_secret(secret: &str) -> Result<EncryptedSecret, GatewayError> {
     )
 }
 
-fn decrypt_binding_secret(
+pub(crate) fn decrypt_binding_secret(
     binding: &McpUpstreamCredentialBindingRecord,
 ) -> Result<String, GatewayError> {
     decrypt_secret_with_key(
@@ -501,6 +606,23 @@ fn credential_secret_env_name(secret_ref: &str) -> Result<&str, GatewayError> {
 }
 
 fn redact_binding(binding: McpUpstreamCredentialBindingRecord) -> RedactedMcpCredentialBinding {
+    let oauth_provider_key = binding
+        .metadata
+        .get("oauth_provider_key")
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned);
+    let granted_scopes = binding
+        .metadata
+        .get("granted_scopes")
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
     RedactedMcpCredentialBinding {
         credential_binding_id: binding.credential_binding_id,
         mcp_server_id: binding.mcp_server_id,
@@ -518,6 +640,8 @@ fn redact_binding(binding: McpUpstreamCredentialBindingRecord) -> RedactedMcpCre
         updated_at: binding.updated_at,
         last_used_at: binding.last_used_at,
         revoked_at: binding.revoked_at,
+        oauth_provider_key,
+        granted_scopes,
     }
 }
 
@@ -529,8 +653,9 @@ mod tests {
     use base64::engine::general_purpose::STANDARD as BASE64;
     use gateway_core::{
         ApiKeyModelGrantMode, ExternalMcpAuthMode, ExternalMcpDiscoveryStatus,
-        ExternalMcpServerStatus, ExternalMcpTransport, MembershipRole, StoreError,
-        TeamMembershipRecord, TeamRecord, UserRecord,
+        ExternalMcpServerStatus, ExternalMcpTransport, MembershipRole,
+        RefreshMcpOauthCredentialBindingRecord, StoreError, TeamMembershipRecord, TeamRecord,
+        UserRecord,
     };
     use std::{collections::HashMap, sync::Mutex};
     use time::Duration;
@@ -889,6 +1014,22 @@ mod tests {
                 .cloned())
         }
 
+        async fn compare_and_swap_mcp_oauth_credential_refresh(
+            &self,
+            _input: &RefreshMcpOauthCredentialBindingRecord,
+        ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn revoke_mcp_oauth_credential_if_unchanged(
+            &self,
+            _credential_binding_id: Uuid,
+            _expected_secret_ciphertext: &str,
+            _revoked_at: OffsetDateTime,
+        ) -> Result<bool, StoreError> {
+            unimplemented!()
+        }
+
         async fn list_mcp_upstream_credential_bindings(
             &self,
             _mcp_server_id: Option<Uuid>,
@@ -913,6 +1054,24 @@ mod tests {
             _last_used_at: OffsetDateTime,
         ) -> Result<bool, StoreError> {
             Ok(*self.touch_succeeds.lock().expect("touch succeeds"))
+        }
+
+        async fn try_acquire_mcp_oauth_refresh_lease(
+            &self,
+            _credential_binding_id: Uuid,
+            _lease_token: Uuid,
+            _now: OffsetDateTime,
+            _expires_at: OffsetDateTime,
+        ) -> Result<bool, StoreError> {
+            Ok(true)
+        }
+
+        async fn release_mcp_oauth_refresh_lease(
+            &self,
+            _credential_binding_id: Uuid,
+            _lease_token: Uuid,
+        ) -> Result<bool, StoreError> {
+            Ok(true)
         }
     }
 

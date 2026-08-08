@@ -50,14 +50,25 @@ Important rules:
 - the last active platform admin cannot be deactivated or demoted
 - the bootstrap admin stays out of normal user-management views
 
-## Admin Session Lifecycle
+## Browser Session Lifecycle
 
-Admin sessions are durable server-side records referenced by the `ogw_session` browser cookie.
+Browser sessions are durable server-side records referenced by the `ogw_session` browser cookie. Both platform admins and regular users can sign in to the UI.
 
 - normal sign-out revokes only the current cookie-backed session
 - logout is idempotent and clears the browser cookie even when the session is already gone
 - user lifecycle actions such as deactivation can revoke every active session for that user
-- expired, revoked, missing, or disabled-user sessions resolve as unauthenticated and return the admin to sign-in
+- expired, revoked, missing, or disabled-user sessions resolve as unauthenticated and return the user to sign-in
+
+The UI applies these role boundaries after authentication:
+
+- `platform_admin` users can use the global control-plane pages.
+- `user` users can open API Keys, Models, Teams, Users, Usage Costs, Request Logs, and MCP Invocations.
+- The API Keys page shows credentials owned by the signed-in user. Active team owners and team admins also see service-account credentials for their team. The regular-user view does not show mutation controls.
+- The Models page shows the full routed-model catalog and can generate client configuration. Model allowlist membership and pricing refresh stay platform-admin-only.
+- The Teams and Users pages show the full identity directory read-only. Onboarding links, provider setup data, assignable-user payloads, and all identity mutations stay platform-admin-only.
+- Regular-user spend queries are forced to the signed-in user and exclude service-account spend.
+- Regular-user request-log and MCP-invocation queries are forced to the signed-in user. Detail endpoints reject records that do not belong to that user.
+- Leaderboards, harness-wide usage, identity changes, service accounts, budgets, and configuration remain platform-admin-only.
 
 ## Bootstrap Admin
 
@@ -118,7 +129,7 @@ Identity tags do not change runtime access, budget checks, request routing, requ
 
 ## OIDC Boundary
 
-OIDC is part of the admin sign-in contract.
+OIDC is part of the browser sign-in contract.
 
 - enabled providers are seeded from `auth.oidc.providers`
 - pre-provisioned OIDC users are supported by provider key

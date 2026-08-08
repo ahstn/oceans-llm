@@ -6,8 +6,11 @@ use gateway_core::{
     StoreError,
 };
 
+use crate::McpOauthRuntime;
 use crate::mcp_credentials::McpCredentialService;
-use crate::mcp_upstream_auth::{gateway_mcp_upstream_headers, normalize_mcp_server_key};
+use crate::mcp_upstream_auth::{
+    gateway_mcp_upstream_headers, normalize_mcp_server_key, validate_mcp_server_auth_destination,
+};
 
 #[derive(Debug, Clone)]
 pub struct McpGatewayUpstream {
@@ -18,6 +21,7 @@ pub struct McpGatewayUpstream {
 #[derive(Clone)]
 pub struct McpGatewayService<R> {
     repo: Arc<R>,
+    oauth_runtime: Option<Arc<McpOauthRuntime>>,
 }
 
 impl<R> McpGatewayService<R>
@@ -26,7 +30,16 @@ where
 {
     #[must_use]
     pub fn new(repo: Arc<R>) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            oauth_runtime: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_oauth_runtime(mut self, runtime: Arc<McpOauthRuntime>) -> Self {
+        self.oauth_runtime = Some(runtime);
+        self
     }
 
     pub async fn prepare_upstream(
@@ -64,16 +77,22 @@ where
         auth: &AuthenticatedApiKey,
         server: ExternalMcpServerRecord,
     ) -> Result<McpGatewayUpstream, GatewayError> {
+        validate_mcp_server_auth_destination(
+            &server.server_url,
+            server.auth_mode,
+            &server.auth_config,
+        )?;
         let headers = match server.auth_mode {
             ExternalMcpAuthMode::None
             | ExternalMcpAuthMode::GatewayStaticHeader
             | ExternalMcpAuthMode::GatewayBearerToken => gateway_mcp_upstream_headers(&server)?,
-            ExternalMcpAuthMode::UserPassthrough | ExternalMcpAuthMode::OauthObo => Some(
-                McpCredentialService::new(self.repo.clone())
-                    .resolve_for_auth(auth, &server)
-                    .await?
-                    .headers,
-            ),
+            ExternalMcpAuthMode::UserPassthrough | ExternalMcpAuthMode::OauthObo => Some({
+                let mut credentials = McpCredentialService::new(self.repo.clone());
+                if let Some(runtime) = self.oauth_runtime.as_ref() {
+                    credentials = credentials.with_oauth_runtime(runtime.clone());
+                }
+                credentials.resolve_for_auth(auth, &server).await?.headers
+            }),
         };
         Ok(McpGatewayUpstream { server, headers })
     }

@@ -438,6 +438,31 @@ pub(super) fn decode_oauth_login_state_record(
     })
 }
 
+pub(super) fn decode_mcp_oauth_state_record(
+    row: &PgRow,
+) -> Result<McpOauthStateRecord, StoreError> {
+    let user_id: String = row.try_get(1).map_err(to_query_error)?;
+    let mcp_server_id: String = row.try_get(2).map_err(to_query_error)?;
+    let scopes_json: serde_json::Value = row.try_get(7).map_err(to_query_error)?;
+    let expires_at: i64 = row.try_get(8).map_err(to_query_error)?;
+    let consumed_at: Option<i64> = row.try_get(9).map_err(to_query_error)?;
+    let created_at: i64 = row.try_get(10).map_err(to_query_error)?;
+    Ok(McpOauthStateRecord {
+        state_hash: row.try_get(0).map_err(to_query_error)?,
+        user_id: parse_uuid(&user_id)?,
+        mcp_server_id: parse_uuid(&mcp_server_id)?,
+        provider_key: row.try_get(3).map_err(to_query_error)?,
+        pkce_verifier: row.try_get(4).map_err(to_query_error)?,
+        redirect_to: row.try_get(5).map_err(to_query_error)?,
+        resource: row.try_get(6).map_err(to_query_error)?,
+        scopes: serde_json::from_value(scopes_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        expires_at: unix_to_datetime(expires_at)?,
+        consumed_at: consumed_at.map(unix_to_datetime).transpose()?,
+        created_at: unix_to_datetime(created_at)?,
+    })
+}
+
 pub(super) fn decode_password_invitation_record(
     row: &PgRow,
 ) -> Result<PasswordInvitationRecord, StoreError> {
@@ -610,7 +635,9 @@ pub(super) fn decode_usage_ledger_record(row: &PgRow) -> Result<UsageLedgerRecor
         row.try_get(28).map_err(to_query_error)?;
     let computed_cost_10000: i64 = row.try_get(29).map_err(to_query_error)?;
     let occurred_at: i64 = row.try_get(30).map_err(to_query_error)?;
-    let normalized_usage_json: Option<String> = row.try_get(31).map_err(to_query_error)?;
+    let uncached_input_tokens: Option<i64> = row.try_get(31).map_err(to_query_error)?;
+    let cache_read_tokens: Option<i64> = row.try_get(32).map_err(to_query_error)?;
+    let cache_write_tokens: Option<i64> = row.try_get(33).map_err(to_query_error)?;
 
     Ok(UsageLedgerRecord {
         usage_event_id: parse_uuid(&usage_event_id)?,
@@ -626,14 +653,12 @@ pub(super) fn decode_usage_ledger_record(row: &PgRow) -> Result<UsageLedgerRecor
         provider_key: row.try_get(10).map_err(to_query_error)?,
         upstream_model: row.try_get(11).map_err(to_query_error)?,
         prompt_tokens: row.try_get(12).map_err(to_query_error)?,
+        uncached_input_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
         completion_tokens: row.try_get(13).map_err(to_query_error)?,
         total_tokens: row.try_get(14).map_err(to_query_error)?,
         provider_usage: serde_json::from_str(&provider_usage_json)
-            .map_err(|error| StoreError::Serialization(error.to_string()))?,
-        normalized_usage: normalized_usage_json
-            .as_deref()
-            .map(serde_json::from_str)
-            .transpose()
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         pricing_status: UsagePricingStatus::from_db(&pricing_status).ok_or_else(|| {
             StoreError::Serialization(format!("unknown usage pricing status `{pricing_status}`"))

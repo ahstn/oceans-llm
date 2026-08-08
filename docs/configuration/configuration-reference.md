@@ -22,6 +22,7 @@ This page owns config syntax and parse-time rules. It does not own the full runt
 - `server`
 - `database`
 - `auth`
+- `mcp`
 - `budgets`
 - `budget_alerts`
 - `request_logging`
@@ -240,9 +241,10 @@ Important fields:
 - `log_format`
 - `otel_endpoint`
 - `otel_metrics_endpoint`
+- `otel_trace_sample_ratio` (`0.0` through `1.0`, default `1.0`)
 - `otel_export_interval_secs`
 
-For collector assumptions and request-log implications, see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
+For collector and Datadog setup, see [Export Traces and Metrics](../operations/observability/export-traces-and-metrics.md). For request-log storage, see [Observability and Request Logs](../operations/observability-and-request-logs.md).
 
 ## `request_logging`
 
@@ -451,6 +453,23 @@ Important GitHub OAuth provider fields:
 - `jit`
 
 For GitHub setup steps and callback URL rules, see [GitHub OAuth SSO Setup for Admins](../access/github-oauth-admin-setup.md).
+
+Upstream MCP OAuth is separate from login OAuth and OIDC. Configure it under top-level `mcp.oauth`:
+
+```yaml
+mcp:
+  oauth:
+    public_base_url: https://gateway.example.com
+    providers:
+      - key: google
+        provider_type: google
+        client_id: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_ID
+        client_secret: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_SECRET
+```
+
+`public_base_url` is required when an MCP OAuth provider is configured. It must be the external HTTPS origin used for callbacks, without a path, query, fragment, or user information. Google is the first supported provider type. Its authorization and token endpoints are fixed to the official Google endpoints. The optional endpoint fields accept only those fixed values. The server registry, not provider configuration, owns each server's OAuth resource and scopes.
+
+`OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` is also required when this provider list is not empty. It must contain a base64-encoded 32-byte key.
 
 For startup behavior and first access after boot, use [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 

@@ -11,10 +11,10 @@ This page is the maintainer reference for the passive correlation, immutable ana
 | Pure formulas, bounded diagnostic contracts, and report types | `crates/agent-session-analysis/src/{lib,extended}.rs` |
 | Stable IDs, persistence records, and repository trait | `crates/gateway-core/src/agent_analysis.rs` |
 | Passive request metadata, correlation, and response observations | `crates/gateway-service/src/agent_analysis.rs` |
-| Provider usage normalization | `crates/gateway-service/src/usage_normalization.rs` |
+| Cache token and cost facts | Shared fields on `gateway_core::UsageLedgerRecord`, populated by `gateway-service` |
 | LibSQL/PostgreSQL persistence | `crates/gateway-store/src/{libsql_store,postgres_store}/agent_analysis.rs` |
 | Backend dispatch | `crates/gateway-store/src/any_store_agent_analysis.rs` |
-| Paired schema | `crates/gateway-store/migrations/{,postgres/}V41__agent_session_analysis.sql`, `crates/gateway-store/migrations/{,postgres/}V42__agent_analysis_configuration_version.sql` |
+| Paired schema | `crates/gateway-store/migrations/{,postgres/}V44__agent_session_analysis.sql`, `crates/gateway-store/migrations/{,postgres/}V45__agent_analysis_configuration_version.sql` |
 | Background finalization and queue worker | `crates/gateway/src/main.rs` |
 | Admin HTTP contract and handlers | `crates/gateway/src/http/{admin_contract,observability}.rs` |
 | Runtime authorization capability matrix | `crates/gateway/src/http/{state,admin_auth,identity}.rs` |
@@ -53,7 +53,7 @@ Request-log cutoff pruning deletes request links and inferred observation sets. 
 
 Stable IDs are UUIDs derived from canonical bounded inputs and explicit namespaces. Queue IDs include an event-specific deduplication key, observations include their canonical bounded facts, and analyses include the cohort-snapshot digest. A parser or policy change must change the corresponding version input rather than silently reinterpret an existing ID.
 
-The paired V41 and V42 migrations must remain behaviorally equivalent. Validate apply, reapply, and rollback for LibSQL and PostgreSQL. V42 rebuilds the LibSQL analysis table because LibSQL cannot replace the V41 uniqueness constraint in place. New foreign keys must use each backend's canonical `users` key (`user_id`), not an assumed `id` column.
+The paired V44 and V45 migrations must remain behaviorally equivalent. Validate apply, reapply, and rollback for LibSQL and PostgreSQL. V45 rebuilds the LibSQL analysis table because LibSQL cannot replace the V44 uniqueness constraint in place. New foreign keys must use each backend's canonical `users` key (`user_id`), not an assumed `id` column.
 
 ## Passive Session Adapter Registry
 

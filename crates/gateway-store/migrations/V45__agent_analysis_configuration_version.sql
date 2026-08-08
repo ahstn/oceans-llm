@@ -1,4 +1,4 @@
-ALTER TABLE agent_session_analyses RENAME TO agent_session_analyses_v41;
+ALTER TABLE agent_session_analyses RENAME TO agent_session_analyses_v44;
 
 CREATE TABLE agent_session_analyses (
   analysis_id TEXT PRIMARY KEY,
@@ -55,9 +55,9 @@ SELECT
   cohort_sample_size, cohort_snapshot_digest, analyzed_at, report_json, stale,
   superseded_by_analysis_id, expires_at, ownership_scope_key, user_id, service_account_id,
   COALESCE(json_extract(report_json, '$.configuration_version'), ''), ''
-FROM agent_session_analyses_v41;
+FROM agent_session_analyses_v44;
 
-DROP TABLE agent_session_analyses_v41;
+DROP TABLE agent_session_analyses_v44;
 
 CREATE INDEX idx_agent_session_analyses_latest
   ON agent_session_analyses(agent_session_id, stale, analyzed_at DESC);
