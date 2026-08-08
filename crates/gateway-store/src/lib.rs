@@ -703,6 +703,9 @@ mod tests {
             provider_key: "openai-prod".to_string(),
             upstream_model: upstream_model.to_string(),
             prompt_tokens: Some(100),
+            uncached_input_tokens: Some(10),
+            cache_read_tokens: Some(80),
+            cache_write_tokens: Some(10),
             completion_tokens: Some(50),
             total_tokens: Some(150),
             provider_usage: json!({
@@ -1018,6 +1021,9 @@ mod tests {
         assert_eq!(user_row.computed_cost_usd, Money4::from_scaled(11_000));
         assert_eq!(user_row.request_count, 1);
         assert_eq!(user_row.prompt_tokens, 100);
+        assert_eq!(user_row.uncached_input_tokens, Some(10));
+        assert_eq!(user_row.cache_read_tokens, Some(80));
+        assert_eq!(user_row.cache_write_tokens, Some(10));
         assert_eq!(user_row.completion_tokens, 50);
         assert_eq!(user_row.total_tokens, 150);
         assert_eq!(
@@ -1042,6 +1048,9 @@ mod tests {
             service_account_row.pricing_status,
             UsagePricingStatus::LegacyEstimated
         );
+        assert_eq!(service_account_row.uncached_input_tokens, Some(10));
+        assert_eq!(service_account_row.cache_read_tokens, Some(80));
+        assert_eq!(service_account_row.cache_write_tokens, Some(10));
         assert_eq!(
             service_account_row.owner_tags,
             vec![RequestTag {
@@ -4235,6 +4244,9 @@ mod tests {
             kept_usage.cache_write_cost_per_million_tokens,
             Some(Money4::from_scaled(250))
         );
+        assert_eq!(kept_usage.uncached_input_tokens, Some(10));
+        assert_eq!(kept_usage.cache_read_tokens, Some(80));
+        assert_eq!(kept_usage.cache_write_tokens, Some(10));
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(
@@ -4503,6 +4515,9 @@ mod tests {
             kept_usage.cache_write_cost_per_million_tokens,
             Some(Money4::from_scaled(250))
         );
+        assert_eq!(kept_usage.uncached_input_tokens, Some(10));
+        assert_eq!(kept_usage.cache_read_tokens, Some(80));
+        assert_eq!(kept_usage.cache_write_tokens, Some(10));
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(
@@ -7550,19 +7565,25 @@ mod tests {
                 0,
                 day_two,
             ),
-            build_usage_ledger_record(
-                "req-service-account-usage-missing",
-                format!("service_account:{service_account_id}"),
-                api_key.id,
-                None,
-                Some(team_id),
-                Some(service_account_id),
-                None,
-                "claude-3-5-sonnet",
-                UsagePricingStatus::UsageMissing,
-                0,
-                day_two,
-            ),
+            {
+                let mut event = build_usage_ledger_record(
+                    "req-service-account-usage-missing",
+                    format!("service_account:{service_account_id}"),
+                    api_key.id,
+                    None,
+                    Some(team_id),
+                    Some(service_account_id),
+                    None,
+                    "claude-3-5-sonnet",
+                    UsagePricingStatus::UsageMissing,
+                    0,
+                    day_two,
+                );
+                event.uncached_input_tokens = None;
+                event.cache_read_tokens = None;
+                event.cache_write_tokens = None;
+                event
+            },
         ] {
             assert!(
                 store
@@ -7571,6 +7592,28 @@ mod tests {
                     .expect("insert usage ledger")
             );
         }
+
+        let mut invalid_cache_event = build_usage_ledger_record(
+            "req-invalid-cache-buckets",
+            format!("user:{}", user.user_id),
+            api_key.id,
+            Some(user.user_id),
+            None,
+            None,
+            Some(model.id),
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            1,
+            day_one,
+        );
+        invalid_cache_event.uncached_input_tokens = Some(11);
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&invalid_cache_event)
+                .await
+                .is_err(),
+            "storage must reject cache buckets that do not equal prompt tokens"
+        );
 
         let window_start = day_one - Duration::hours(1);
         let window_end = day_two + Duration::days(1);
@@ -7584,10 +7627,37 @@ mod tests {
             .expect("service account sum");
         assert_eq!(service_account_sum, Money4::from_scaled(22_000));
 
+        let cache_usage = store
+            .get_cache_usage_aggregate(window_start, window_end, None, None)
+            .await
+            .expect("cache usage aggregate");
+        assert_eq!(cache_usage.uncached_input_tokens, None);
+        assert_eq!(cache_usage.cache_read_tokens, None);
+        assert_eq!(cache_usage.cache_write_tokens, None);
+
+        let user_cache_usage = store
+            .get_cache_usage_aggregate(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user cache usage aggregate");
+        assert_eq!(user_cache_usage.uncached_input_tokens, Some(20));
+        assert_eq!(user_cache_usage.cache_read_tokens, Some(160));
+        assert_eq!(user_cache_usage.cache_write_tokens, Some(20));
+
         let daily = store
             .list_usage_daily_aggregates(window_start, window_end, None, None)
             .await
             .expect("daily aggregates");
+        assert_eq!(daily[0].uncached_input_tokens, Some(20));
+        assert_eq!(daily[0].cache_read_tokens, Some(160));
+        assert_eq!(daily[0].cache_write_tokens, Some(20));
+        assert_eq!(daily[1].uncached_input_tokens, None);
+        assert_eq!(daily[1].cache_read_tokens, None);
+        assert_eq!(daily[1].cache_write_tokens, None);
         assert_eq!(daily.len(), 2);
         let day_one_bucket = (day_one.unix_timestamp() / 86_400) * 86_400;
         let day_two_bucket = (day_two.unix_timestamp() / 86_400) * 86_400;
@@ -7990,6 +8060,9 @@ mod tests {
             provider_key: "openai-prod".to_string(),
             upstream_model: "gpt-5".to_string(),
             prompt_tokens: Some(10),
+            uncached_input_tokens: None,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
             completion_tokens: Some(5),
             total_tokens: Some(15),
             provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
@@ -8023,6 +8096,9 @@ mod tests {
             provider_key: "openai-prod".to_string(),
             upstream_model: "gpt-5".to_string(),
             prompt_tokens: Some(10),
+            uncached_input_tokens: None,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
             completion_tokens: Some(5),
             total_tokens: Some(15),
             provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
@@ -8476,19 +8552,25 @@ mod tests {
                 0,
                 day_two,
             ),
-            build_usage_ledger_record(
-                "req-service-account-usage-missing",
-                format!("service_account:{service_account_id}"),
-                api_key.id,
-                None,
-                Some(team_id),
-                Some(service_account_id),
-                None,
-                "claude-3-5-sonnet",
-                UsagePricingStatus::UsageMissing,
-                0,
-                day_two,
-            ),
+            {
+                let mut event = build_usage_ledger_record(
+                    "req-service-account-usage-missing",
+                    format!("service_account:{service_account_id}"),
+                    api_key.id,
+                    None,
+                    Some(team_id),
+                    Some(service_account_id),
+                    None,
+                    "claude-3-5-sonnet",
+                    UsagePricingStatus::UsageMissing,
+                    0,
+                    day_two,
+                );
+                event.uncached_input_tokens = None;
+                event.cache_read_tokens = None;
+                event.cache_write_tokens = None;
+                event
+            },
         ] {
             assert!(
                 store
@@ -8497,6 +8579,28 @@ mod tests {
                     .expect("insert usage ledger")
             );
         }
+
+        let mut invalid_cache_event = build_usage_ledger_record(
+            "req-invalid-cache-buckets",
+            format!("user:{}", user.user_id),
+            api_key.id,
+            Some(user.user_id),
+            None,
+            None,
+            Some(model.id),
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            1,
+            day_one,
+        );
+        invalid_cache_event.uncached_input_tokens = Some(11);
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&invalid_cache_event)
+                .await
+                .is_err(),
+            "storage must reject cache buckets that do not equal prompt tokens"
+        );
 
         let window_start = day_one - Duration::hours(1);
         let window_end = day_two + Duration::days(1);
@@ -8510,10 +8614,37 @@ mod tests {
             .expect("service account sum");
         assert_eq!(service_account_sum, Money4::from_scaled(22_000));
 
+        let cache_usage = store
+            .get_cache_usage_aggregate(window_start, window_end, None, None)
+            .await
+            .expect("cache usage aggregate");
+        assert_eq!(cache_usage.uncached_input_tokens, None);
+        assert_eq!(cache_usage.cache_read_tokens, None);
+        assert_eq!(cache_usage.cache_write_tokens, None);
+
+        let user_cache_usage = store
+            .get_cache_usage_aggregate(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user.user_id),
+            )
+            .await
+            .expect("user cache usage aggregate");
+        assert_eq!(user_cache_usage.uncached_input_tokens, Some(20));
+        assert_eq!(user_cache_usage.cache_read_tokens, Some(160));
+        assert_eq!(user_cache_usage.cache_write_tokens, Some(20));
+
         let daily = store
             .list_usage_daily_aggregates(window_start, window_end, None, None)
             .await
             .expect("daily aggregates");
+        assert_eq!(daily[0].uncached_input_tokens, Some(20));
+        assert_eq!(daily[0].cache_read_tokens, Some(160));
+        assert_eq!(daily[0].cache_write_tokens, Some(20));
+        assert_eq!(daily[1].uncached_input_tokens, None);
+        assert_eq!(daily[1].cache_read_tokens, None);
+        assert_eq!(daily[1].cache_write_tokens, None);
         assert_eq!(daily.len(), 2);
         let day_one_bucket = (day_one.unix_timestamp() / 86_400) * 86_400;
         let day_two_bucket = (day_two.unix_timestamp() / 86_400) * 86_400;

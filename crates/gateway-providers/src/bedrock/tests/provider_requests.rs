@@ -683,6 +683,61 @@ async fn builds_mantle_openai_responses_request_with_function_named_image_genera
 }
 
 #[tokio::test]
+async fn preserves_matching_route_and_caller_prompt_cache_intent() {
+    let provider = mantle_bearer_provider();
+    let mut request = responses_request(false);
+    request
+        .extra
+        .insert("prompt_cache_key".to_string(), json!("session-1"));
+    request
+        .extra
+        .insert("prompt_cache_retention".to_string(), json!("in_memory"));
+    let mut context = context_with_api_style(
+        "openai.gpt-5.6-sol",
+        AwsBedrockApiStyle::MantleOpenaiResponses,
+        Some("/openai/v1"),
+    );
+    context
+        .extra_body
+        .insert("prompt_cache_key".to_string(), json!("session-1"));
+
+    let built = provider
+        .build_responses_request(&request, &context, false)
+        .await
+        .expect("matching cache intent");
+    let body: Value =
+        serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).expect("json body");
+
+    assert_eq!(body["prompt_cache_key"], "session-1");
+    assert_eq!(body["prompt_cache_retention"], "in_memory");
+}
+
+#[tokio::test]
+async fn rejects_route_override_that_conflicts_with_caller_prompt_cache_intent() {
+    let provider = mantle_bearer_provider();
+    let mut request = responses_request(false);
+    request
+        .extra
+        .insert("prompt_cache_key".to_string(), json!("caller-session"));
+    let mut context = context_with_api_style(
+        "openai.gpt-5.6-sol",
+        AwsBedrockApiStyle::MantleOpenaiResponses,
+        Some("/openai/v1"),
+    );
+    context
+        .extra_body
+        .insert("prompt_cache_key".to_string(), json!("route-session"));
+
+    let error = provider
+        .build_responses_request(&request, &context, false)
+        .await
+        .expect_err("conflicting cache intent must fail")
+        .to_string();
+
+    assert!(error.contains("conflicts with caller prompt-cache intent"));
+}
+
+#[tokio::test]
 async fn strips_image_generation_added_by_route_extra_body() {
     let provider = mantle_bearer_provider();
     let request = responses_request(false);

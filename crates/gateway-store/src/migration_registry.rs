@@ -208,6 +208,22 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V41__mcp_oauth_states.sql"),
         postgres_sql: include_str!("../migrations/postgres/V41__mcp_oauth_states.sql"),
     },
+    MigrationManifest {
+        version: 42,
+        name: "cache_usage_accounting",
+        checksum: "V42__cache_usage_accounting.sql",
+        libsql_sql: include_str!("../migrations/V42__cache_usage_accounting.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V42__cache_usage_accounting.sql"),
+    },
+    MigrationManifest {
+        version: 43,
+        name: "validate_cache_usage_accounting",
+        checksum: "V43__validate_cache_usage_accounting.sql",
+        libsql_sql: include_str!("../migrations/V43__validate_cache_usage_accounting.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V43__validate_cache_usage_accounting.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

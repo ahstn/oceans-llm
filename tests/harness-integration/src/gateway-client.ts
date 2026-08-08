@@ -14,7 +14,26 @@ const RequestLogPageSchema = z.object({
   items: z.array(RequestLogSchema),
 });
 
+const RequestLogDetailSchema = z.object({
+  log: RequestLogSchema,
+  payload: z
+    .object({
+      request_json: z.unknown(),
+      response_json: z.unknown(),
+    })
+    .nullable(),
+  attempts: z.array(
+    z.object({
+      provider_key: z.string(),
+      route_id: z.string(),
+      status_code: z.number().nullable(),
+      upstream_model: z.string(),
+    }),
+  ),
+});
+
 type RequestLog = z.infer<typeof RequestLogSchema>;
+export type RequestLogDetail = z.infer<typeof RequestLogDetailSchema>;
 
 export class GatewayAdminClient {
   readonly #runtime: GatewayRuntime;
@@ -59,6 +78,17 @@ export class GatewayAdminClient {
     throw new Error(
       `No successful request log appeared for Oceans model ${this.#runtime.model} and harness tag ${requestTag}`,
     );
+  }
+
+  async getRequestLogDetail(requestLogId: string): Promise<RequestLogDetail> {
+    if (!this.#cookie) {
+      throw new Error("GatewayAdminClient.login() must be called first");
+    }
+    const response = await fetchWithTimeout(
+      `${this.#runtime.baseUrl}/api/v1/admin/observability/request-logs/${requestLogId}`,
+      { headers: { cookie: this.#cookie } },
+    );
+    return readEnvelope(response, "request-log detail", RequestLogDetailSchema);
   }
 
   async #getRequestLogs(

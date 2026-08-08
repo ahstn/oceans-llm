@@ -11151,12 +11151,33 @@
           "usage_missing_request_count"
         ],
         "properties": {
+          "cache_read_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cache_write_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "priced_cost_usd_10000": {
             "type": "integer",
             "format": "int64"
           },
           "priced_request_count": {
             "type": "integer",
+            "format": "int64"
+          },
+          "uncached_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "unpriced_request_count": {

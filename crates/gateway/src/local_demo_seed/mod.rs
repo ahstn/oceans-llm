@@ -419,6 +419,9 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             provider_key: fixture.provider_key.to_string(),
             upstream_model: fixture.upstream_model.to_string(),
             prompt_tokens: fixture.prompt_tokens,
+            uncached_input_tokens: None,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
             completion_tokens: fixture.completion_tokens,
             total_tokens,
             provider_usage: if priced {
