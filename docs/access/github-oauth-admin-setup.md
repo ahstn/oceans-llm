@@ -74,6 +74,18 @@ Direct GitHub OAuth uses:
 
 Oceans does **not** auto-link existing password users by email.
 
+## Provision and Validate Sign-In
+
+For pre-provisioned access, declare the user in config or create the user in the control plane with OAuth provider key `github`. Then:
+
+1. Deploy or restart the gateway so config seeding and provider reconciliation complete.
+2. Open `https://<your-oceans-host>/api/v1/auth/oauth/providers` and confirm the response includes the enabled `github` provider.
+3. Share `https://<your-oceans-host>/admin/login` with the user.
+4. Ask the user to select GitHub and sign in with the account whose primary email matches the Oceans identity.
+5. Confirm the user changes from `invited` to `active` and reaches the UI for the assigned role.
+
+The control plane can generate a prefilled GitHub sign-in link. The link is optional and does not grant access. The shared login page starts the same OAuth flow without an email hint.
+
 ## Security Notes
 
 - Keep `jit.enabled: false` unless you explicitly want auto-provisioning.

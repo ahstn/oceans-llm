@@ -21,6 +21,33 @@ The OIDC/OAuth flow includes:
 - Google Auth Platform OAuth 2.0 clients work through the generic OIDC provider using issuer `https://accounts.google.com`; use an Internal Google audience when Google must restrict sign-in to one Workspace or Cloud Identity organization
 - local Authentik compose profiles provide a repeatable manual IdP fixture
 
+## Start SSO Sign-In
+
+Use the shared login page as the normal entry point for OIDC and OAuth users:
+
+```text
+https://<your-oceans-host>/admin/login
+```
+
+The page lists all enabled providers. A config-seeded or control-plane-created SSO user can complete onboarding without a generated per-user URL. The user selects the configured provider and signs in. On the first successful match, Oceans records the provider subject, changes the invited user to `active`, and creates the browser session.
+
+Use a provider-specific entry URL when a link must bypass provider selection:
+
+```text
+https://<your-oceans-host>/api/v1/auth/oidc/start?provider_key=<oidc-provider-key>&redirect_to=%2Fadmin
+https://<your-oceans-host>/api/v1/auth/oauth/start?provider_key=<oauth-provider-key>&redirect_to=%2Fadmin
+```
+
+The start URL is stable, but each request creates fresh state and PKCE values. Do not copy and distribute the temporary authorization URL returned by the provider redirect.
+
+The query parameters have these roles:
+
+- `provider_key` is required for a direct start URL and must identify an enabled provider.
+- `login_hint` is optional. It can help the provider preselect an account, but the provider may ignore it. Oceans does not use it as proof of identity or permission.
+- `redirect_to` is optional and must be a local `/admin` path. The login page uses `/admin` so the UI can select the correct page for the signed-in role.
+
+The control plane can generate a per-user SSO sign-in URL. That URL adds `login_hint` and sends the browser through the account-ready page, but it does not contain an invitation secret or grant more access than the shared login page. Password invite URLs are different: they contain a single-user token and remain required for password onboarding.
+
 ## Security Boundary
 
 The current flow preserves the same-origin browser session cookie model. Successful SSO creates the existing HttpOnly `ogw_session` cookie and redirects into `/admin`. The UI then selects the destination from the user's global role.

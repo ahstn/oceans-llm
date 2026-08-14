@@ -120,7 +120,7 @@ auth:
           request_logging_enabled: true
 ```
 
-Keep `jit.enabled: false` for invite-only access. Admins can invite a user and select the `google` OIDC provider; the invited user activates the account on the first successful Google sign-in.
+Keep `jit.enabled: false` for pre-provisioned access. Admins can declare a user in config or create the user in the control plane with the `google` OIDC provider. After deployment, share `https://<your-oceans-host>/admin/login`. The user activates the account after a successful Google sign-in with the matching verified email. The control plane can also generate a prefilled sign-in link. That link is optional and does not grant access.
 
 If you enable JIT:
 
