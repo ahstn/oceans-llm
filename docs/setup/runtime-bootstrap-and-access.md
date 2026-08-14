@@ -186,9 +186,12 @@ The right first-access path depends on the runtime shape.
 
 ### Config-seeded SSO users
 
+- for startup-seeded deployments, deploy or restart the gateway with config seeding enabled
+- for Helm deployments, enable `seedConfigJob.enabled` for the install or upgrade that applies the config; gateway pods use `GATEWAY_SEED_CONFIG=false` and do not seed on restart
 - confirm the configured provider appears at `/api/v1/auth/oidc/providers` or `/api/v1/auth/oauth/providers`
 - share `https://<your-oceans-host>/admin/login` with the user
-- ask the user to select the provider declared for their config identity and sign in with the matching provider email
+- ask the user to select the provider declared for the seeded user and sign in with an identity whose accepted provider email matches the seeded email
+- confirm the provider's email verification and allowed-domain policies accept the identity
 - confirm the user changes from `invited` to `active` after the first successful sign-in
 
 The shared login URL works for compose and Helm deployments. It does not depend on deployment output or an admin-generated SSO link. See [OIDC and SSO](../access/oidc-and-sso-status.md#start-sso-sign-in) for direct provider URLs and parameter behavior.

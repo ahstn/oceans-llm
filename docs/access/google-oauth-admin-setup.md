@@ -120,7 +120,7 @@ auth:
           request_logging_enabled: true
 ```
 
-Keep `jit.enabled: false` for pre-provisioned access. Admins can declare a user in config or create the user in the control plane with the `google` OIDC provider. After deployment, share `https://<your-oceans-host>/admin/login`. The user activates the account after a successful Google sign-in with the matching verified email. The control plane can also generate a prefilled sign-in link. That link is optional and does not grant access.
+Keep `jit.enabled: false` for pre-provisioned access. Admins can declare a user in config or create the user in the control plane with the `google` OIDC provider. Apply provider and user config through the deployment-specific seed path in [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md#config-seeded-sso-users), then follow the shared [SSO sign-in flow](oidc-and-sso-status.md#start-sso-sign-in). For invite-only access, the verified Google email must match the normalized Oceans user email.
 
 If you enable JIT:
 
@@ -133,17 +133,13 @@ Do not grant `platform_admin` through JIT unless every identity allowed by the G
 
 ## Validate Sign-In
 
-After restarting or deploying the gateway:
+After applying and reconciling the provider and user config:
 
 1. Open `https://<your-oceans-host>/api/v1/auth/oidc/providers` and confirm the response includes the enabled `google` provider.
-2. Open `https://<your-oceans-host>/admin/login`.
-3. Choose **Sign in with Google**.
-4. Complete Google sign-in with an eligible account.
-5. Confirm the browser returns to the correct Oceans UI for the assigned role:
+2. Complete the shared [SSO sign-in flow](oidc-and-sso-status.md#start-sso-sign-in) with an eligible account.
+3. Confirm the browser returns to the correct Oceans UI for the assigned role:
    - `platform_admin` users open the full admin control plane.
    - `user` users open `/admin/observability/usage-costs` and can inspect only their own usage, request logs, and MCP invocations.
-
-For invite-only access, complete the test with an invited user whose normalized email matches the verified email returned by Google.
 
 ## Troubleshooting
 

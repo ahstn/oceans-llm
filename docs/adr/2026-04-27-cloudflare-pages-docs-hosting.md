@@ -2,7 +2,7 @@
 
 - Date: 2026-04-27
 - Status: Accepted
-- Supersession note: The repository-managed docs graph check and its GitHub Actions workflow were removed on 2026-08-14. The VitePress build and Cloudflare Pages tasks remain available.
+- Supersession note: The repository-managed docs graph check was removed on 2026-08-14. The docs CI workflow now runs the VitePress static-site build, and the Cloudflare Pages tasks remain available.
 
 ## Context
 

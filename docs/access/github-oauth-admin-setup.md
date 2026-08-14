@@ -76,15 +76,9 @@ Oceans does **not** auto-link existing password users by email.
 
 ## Provision and Validate Sign-In
 
-For pre-provisioned access, declare the user in config or create the user in the control plane with OAuth provider key `github`. Then:
+For pre-provisioned access, declare the user in config or create the user in the control plane with OAuth provider key `github`. Apply provider and user config through the deployment-specific seed path in [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md#config-seeded-sso-users). A gateway pod restart does not seed config in the Helm deployment.
 
-1. Deploy or restart the gateway so config seeding and provider reconciliation complete.
-2. Open `https://<your-oceans-host>/api/v1/auth/oauth/providers` and confirm the response includes the enabled `github` provider.
-3. Share `https://<your-oceans-host>/admin/login` with the user.
-4. Ask the user to select GitHub and sign in with the account whose primary email matches the Oceans identity.
-5. Confirm the user changes from `invited` to `active` and reaches the UI for the assigned role.
-
-The control plane can generate a prefilled GitHub sign-in link. The link is optional and does not grant access. The shared login page starts the same OAuth flow without an email hint.
+Before asking the user to sign in, confirm that `/api/v1/auth/oauth/providers` includes the enabled `github` provider. Then follow the shared [SSO sign-in flow](oidc-and-sso-status.md#start-sso-sign-in). For invite-only access, use a GitHub account whose accepted primary email matches the normalized Oceans user email. With the default policy, GitHub must also mark that primary email as verified.
 
 ## Security Notes
 

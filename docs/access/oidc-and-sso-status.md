@@ -15,7 +15,7 @@ The OIDC/OAuth flow includes:
 - `/api/v1/auth/oidc/callback` consumes one-time state, exchanges the authorization code, verifies the ID token and nonce, and issues the existing `ogw_session` cookie
 - `/api/v1/auth/oauth/start` redirects to the OAuth provider with one-time state and PKCE
 - `/api/v1/auth/oauth/callback/github` consumes one-time state, exchanges the code with GitHub, resolves numeric subject plus the selected primary email, and issues `ogw_session`
-- invited/config-declared OIDC users activate on first successful provider login
+- invited/config-declared OIDC and OAuth users activate on first successful provider login
 - provider-specific JIT user creation can assign explicit global role, team membership, and request logging defaults
 - direct GitHub OAuth requires a GitHub-verified primary email by default, can use `sso_email_verification_enabled: false` as an admin escape hatch, and can restrict sign-in and JIT provisioning to configured email domains
 - Google Auth Platform OAuth 2.0 clients work through the generic OIDC provider using issuer `https://accounts.google.com`; use an Internal Google audience when Google must restrict sign-in to one Workspace or Cloud Identity organization
@@ -30,6 +30,8 @@ https://<your-oceans-host>/admin/login
 ```
 
 The page lists all enabled providers. A config-seeded or control-plane-created SSO user can complete onboarding without a generated per-user URL. The user selects the configured provider and signs in. On the first successful match, Oceans records the provider subject, changes the invited user to `active`, and creates the browser session.
+
+Before sharing the login page, apply and reconcile the provider and user config through the seed path for the deployment. See [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md#config-seeded-sso-users) for startup-seeded and Helm deployments.
 
 Use a provider-specific entry URL when a link must bypass provider selection:
 
@@ -55,7 +57,7 @@ The current flow preserves the same-origin browser session cookie model. Success
 Account linking is intentionally conservative:
 
 - existing `(provider, sub)` links win
-- invited/config-declared OIDC users with matching normalized email and provider link are activated and linked
+- invited/config-declared OIDC and OAuth users with a matching accepted provider email and seeded provider association are activated and linked
 - unmatched identities use the provider's explicit JIT policy
 - GitHub OAuth `sso_email_verification_enabled` and `allowed_email_domains` are enforced before account linking, invite activation, JIT creation, or session issuance
 - existing password/local users with the same email are rejected instead of auto-linked
