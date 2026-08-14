@@ -3,7 +3,11 @@ use std::collections::BTreeMap;
 use axum::Router;
 use axum::extract::Json;
 use axum::routing::post;
-use gateway_core::{CoreChatMessage, CoreChatRequest, ProviderClient, ProviderRequestContext};
+use gateway_core::{
+    CoreChatMessage, CoreChatRequest, CoreResponsesRequest, OpenAiCompatDeveloperRole,
+    OpenAiCompatMaxTokensField, OpenAiCompatRouteCompatibility, ProviderClient,
+    ProviderRequestContext,
+};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use tokio::net::TcpListener as TokioTcpListener;
@@ -221,7 +225,17 @@ async fn builds_claude_messages_request() {
                         .and_then(|v| v.to_str().ok())
                         .unwrap_or_default()
                         .to_string();
-                    tx.send((auth, body))
+                    let anthropic_version = headers
+                        .get("anthropic-version")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
+                    let plugin_version = headers
+                        .get("editor-plugin-version")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
+                    tx.send((auth, anthropic_version, plugin_version, body))
                         .await
                         .expect("failed to send message request data to test channel");
 
@@ -229,7 +243,14 @@ async fn builds_claude_messages_request() {
                         "id": "msg-test",
                         "type": "message",
                         "role": "assistant",
-                        "content": [{ "type": "text", "text": "Claude response" }],
+                        "content": [
+                            {
+                                "type": "thinking",
+                                "thinking": "hidden reasoning",
+                                "signature": "sig-test"
+                            },
+                            { "type": "text", "text": "Claude response" }
+                        ],
                         "usage": {
                             "input_tokens": 12,
                             "output_tokens": 4
@@ -284,13 +305,119 @@ async fn builds_claude_messages_request() {
         "Claude response"
     );
 
-    let (auth, body) = rx.recv().await.unwrap();
+    let (auth, anthropic_version, plugin_version, body) = rx.recv().await.unwrap();
     assert_eq!(auth, "Bearer ghs_bearer");
+    assert_eq!(anthropic_version, "2023-06-01");
+    assert_eq!(plugin_version, DEFAULT_COPILOT_PLUGIN_VERSION);
     assert_eq!(body["model"], "claude-3-7-sonnet");
     assert_eq!(body["system"], "System prompt");
     assert_eq!(body["messages"][0]["role"], "user");
     assert_eq!(body["messages"][0]["content"][0]["text"], "Hello Claude");
     assert_eq!(body["max_tokens"], 4096);
+    assert_eq!(
+        response["choices"][0]["message"]["provider_metadata"]["github_copilot"]["reasoning"]["source"],
+        "anthropic_messages"
+    );
+    assert!(response["choices"][0]["message"]["provider_metadata"]["aws_bedrock"].is_null());
+}
+#[tokio::test]
+async fn applies_openai_compatibility_to_chat_requests() {
+    let provider = CopilotProvider::new(CopilotProviderConfig::new(
+        "github_copilot".to_string(),
+        CopilotAuthConfig::Bearer {
+            token: "test-token".to_string(),
+        },
+    ))
+    .unwrap();
+    let mut request = CoreChatRequest {
+        model: "gpt-4o".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "developer".to_string(),
+            content: json!("Follow policy"),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra: BTreeMap::from([("max_completion_tokens".to_string(), json!(128))]),
+    };
+    request.extra.insert("store".to_string(), json!(true));
+    let mut context = dummy_context("gpt-4o");
+    context.compatibility.openai_compat = Some(OpenAiCompatRouteCompatibility {
+        supports_store: false,
+        max_tokens_field: OpenAiCompatMaxTokensField::MaxTokens,
+        developer_role: OpenAiCompatDeveloperRole::System,
+        ..Default::default()
+    });
+
+    let built = provider
+        .build_chat_request(&request, &context, false)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(
+        built
+            .body()
+            .and_then(reqwest::Body::as_bytes)
+            .expect("JSON request body"),
+    )
+    .unwrap();
+
+    assert_eq!(body["messages"][0]["role"], "system");
+    assert_eq!(body["max_tokens"], 128);
+    assert!(body.get("max_completion_tokens").is_none());
+    assert!(body.get("store").is_none());
+}
+
+#[tokio::test]
+async fn normalizes_responses_replay_ids() {
+    let provider = CopilotProvider::new(CopilotProviderConfig::new(
+        "github_copilot".to_string(),
+        CopilotAuthConfig::Bearer {
+            token: "test-token".to_string(),
+        },
+    ))
+    .unwrap();
+    let request = CoreResponsesRequest {
+        model: "gpt-5.4".to_string(),
+        input: json!([
+            {
+                "type": "function_call",
+                "id": "foreign item id",
+                "call_id": "foreign call id",
+                "name": "lookup",
+                "arguments": "{}"
+            },
+            {
+                "type": "function_call_output",
+                "call_id": "foreign call id",
+                "output": "done"
+            }
+        ]),
+        stream: false,
+        instructions: None,
+        tools: None,
+        tool_choice: None,
+        reasoning: None,
+        text: None,
+        extra: BTreeMap::new(),
+    };
+
+    let built = provider
+        .build_responses_request(&request, &dummy_context("gpt-5.4"), false)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(
+        built
+            .body()
+            .and_then(reqwest::Body::as_bytes)
+            .expect("JSON request body"),
+    )
+    .unwrap();
+
+    let function_call_id = body["input"][0]["id"].as_str().unwrap();
+    let call_id = body["input"][0]["call_id"].as_str().unwrap();
+    assert!(function_call_id.starts_with("fc_"));
+    assert!(call_id.starts_with("call_"));
+    assert_eq!(body["input"][1]["call_id"], call_id);
 }
 
 #[tokio::test]

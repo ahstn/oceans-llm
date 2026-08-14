@@ -15,6 +15,9 @@ use crate::bedrock::{
     normalize_anthropic_messages_response, normalize_anthropic_messages_stream,
 };
 use crate::http::{join_base_url, map_reqwest_error};
+use crate::openai_compat::{
+    apply_openai_compat_empty_tools_profile, apply_openai_compat_request_profile,
+};
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 use crate::token::CachedAccessTokenSource;
 
@@ -26,6 +29,7 @@ mod tests;
 
 pub const DEFAULT_COPILOT_API_URL: &str = "https://api.githubcopilot.com";
 pub const DEFAULT_COPILOT_EDITOR_VERSION: &str = "vscode/1.126.0";
+pub const DEFAULT_COPILOT_PLUGIN_VERSION: &str = "copilot-chat/0.35.0";
 pub const DEFAULT_COPILOT_INTEGRATION_ID: &str = "vscode-chat";
 pub const DEFAULT_COPILOT_API_VERSION: &str = "2026-06-01";
 
@@ -102,15 +106,21 @@ impl CopilotProvider {
         mut request: reqwest::RequestBuilder,
         token: &str,
         context: &ProviderRequestContext,
+        endpoint_suffix: &str,
     ) -> reqwest::RequestBuilder {
         request = request
             .bearer_auth(token)
             .header("editor-version", &self.config.editor_version)
+            .header("editor-plugin-version", DEFAULT_COPILOT_PLUGIN_VERSION)
             .header("copilot-integration-id", &self.config.integration_id)
             .header("openai-intent", "conversation-panel")
             .header("x-initiator", "agent")
             .header("x-github-api-version", DEFAULT_COPILOT_API_VERSION)
             .header("x-request-id", &context.request_id);
+
+        if endpoint_suffix == "v1/messages" {
+            request = request.header("anthropic-version", "2023-06-01");
+        }
 
         for (name, value) in &self.config.default_headers {
             request = request.header(name, value);
@@ -134,7 +144,7 @@ impl CopilotProvider {
         let token = self.token().await?;
         let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
         let req_builder = self.client.post(url).json(&body);
-        let req_builder = self.apply_copilot_headers(req_builder, &token, context);
+        let req_builder = self.apply_copilot_headers(req_builder, &token, context, endpoint_suffix);
         req_builder.build().map_err(map_reqwest_error)
     }
 
@@ -176,6 +186,8 @@ impl CopilotProvider {
                 );
                 merge_object_overrides(object, &context.extra_body);
             }
+            apply_openai_compat_empty_tools_profile(&mut body, context)?;
+            apply_openai_compat_request_profile(&mut body, context);
             body
         };
 
@@ -223,6 +235,7 @@ impl CopilotProvider {
             );
             merge_object_overrides(object, &context.extra_body);
         }
+        crate::replay_id::normalize_openai_responses_replay_ids(&mut body)?;
 
         self.build_copilot_request("responses", body, context).await
     }
@@ -286,7 +299,11 @@ impl ProviderClient for CopilotProvider {
         let request = self.build_chat_request(request, context, false).await?;
         let value = self.execute_json_request(request).await?;
         if endpoint_suffix == "v1/messages" {
-            Ok(normalize_anthropic_messages_response(&value, context))
+            Ok(normalize_anthropic_messages_response(
+                &value,
+                context,
+                "github_copilot",
+            ))
         } else {
             Ok(value)
         }
@@ -305,6 +322,7 @@ impl ProviderClient for CopilotProvider {
             Ok(normalize_anthropic_messages_stream(
                 response.bytes_stream(),
                 context.clone(),
+                "github_copilot",
             ))
         } else {
             Ok(normalize_openai_compat_stream(response.bytes_stream()))

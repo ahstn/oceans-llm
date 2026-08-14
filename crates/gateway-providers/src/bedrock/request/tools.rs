@@ -88,8 +88,7 @@ pub(super) fn map_anthropic_assistant_tool_uses(
             })?;
             if object.get("type").and_then(Value::as_str) != Some("function") {
                 return Err(ProviderError::InvalidRequest(
-                    "only function tool_calls are supported for aws_bedrock Anthropic Claude Messages"
-                        .to_string(),
+                    "only function tool_calls are supported for Anthropic Messages".to_string(),
                 ));
             }
             let id = object.get("id").and_then(Value::as_str).ok_or_else(|| {
@@ -439,8 +438,7 @@ pub(super) fn extract_anthropic_tools(
             && !tool_choice_is_none_or_auto(&tool_choice)
         {
             return Err(ProviderError::InvalidRequest(
-                "tool_choice requires non-empty tools for aws_bedrock Anthropic Claude Messages"
-                    .to_string(),
+                "tool_choice requires non-empty tools for Anthropic Messages".to_string(),
             ));
         }
         return Ok(None);
@@ -451,9 +449,7 @@ pub(super) fn extract_anthropic_tools(
     }
 
     let tools_array = tools.as_array().ok_or_else(|| {
-        ProviderError::InvalidRequest(
-            "tools must be an array for aws_bedrock Anthropic Claude Messages".to_string(),
-        )
+        ProviderError::InvalidRequest("tools must be an array for Anthropic Messages".to_string())
     })?;
     if tools_array.is_empty() {
         return Ok(None);
@@ -466,8 +462,7 @@ pub(super) fn extract_anthropic_tools(
         })?;
         if object.get("type").and_then(Value::as_str) != Some("function") {
             return Err(ProviderError::InvalidRequest(
-                "only OpenAI function tools are supported for aws_bedrock Anthropic Claude Messages"
-                    .to_string(),
+                "only OpenAI function tools are supported for Anthropic Messages".to_string(),
             ));
         }
         let function = object
@@ -586,7 +581,7 @@ pub(super) fn map_anthropic_tool_choice(value: &Value) -> Result<Option<Value>, 
             "required" => Ok(Some(json!({ "type": "any" }))),
             "none" => Ok(None),
             other => Err(ProviderError::InvalidRequest(format!(
-                "unsupported tool_choice `{other}` for aws_bedrock Anthropic Claude Messages"
+                "unsupported tool_choice `{other}` for Anthropic Messages"
             ))),
         },
         Value::Object(object) => match object.get("type").and_then(Value::as_str) {
@@ -621,7 +616,7 @@ pub(super) fn map_anthropic_tool_choice(value: &Value) -> Result<Option<Value>, 
                 Ok(Some(json!({ "type": "tool", "name": name })))
             }
             Some(other) => Err(ProviderError::InvalidRequest(format!(
-                "unsupported tool_choice type `{other}` for aws_bedrock Anthropic Claude Messages"
+                "unsupported tool_choice type `{other}` for Anthropic Messages"
             ))),
             None => Err(ProviderError::InvalidRequest(
                 "tool_choice object must include `type`".to_string(),
@@ -629,8 +624,7 @@ pub(super) fn map_anthropic_tool_choice(value: &Value) -> Result<Option<Value>, 
         },
         Value::Null => Ok(None),
         _ => Err(ProviderError::InvalidRequest(
-            "tool_choice must be a string or object for aws_bedrock Anthropic Claude Messages"
-                .to_string(),
+            "tool_choice must be a string or object for Anthropic Messages".to_string(),
         )),
     }
 }

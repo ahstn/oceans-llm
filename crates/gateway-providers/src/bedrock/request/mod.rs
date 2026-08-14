@@ -426,7 +426,7 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
             }
             other => {
                 return Err(ProviderError::InvalidRequest(format!(
-                    "unsupported message role `{other}` for aws_bedrock Anthropic Claude Messages mapping"
+                    "unsupported message role `{other}` for Anthropic Messages mapping"
                 )));
             }
         }
@@ -434,8 +434,7 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
 
     if messages.is_empty() {
         return Err(ProviderError::InvalidRequest(
-            "aws_bedrock Anthropic Claude Messages requires at least one user, assistant, or tool message"
-                .to_string(),
+            "Anthropic Messages requires at least one user, assistant, or tool message".to_string(),
         ));
     }
 
@@ -462,8 +461,7 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
 
     if !body.contains_key("max_tokens") {
         return Err(ProviderError::InvalidRequest(
-            "aws_bedrock Anthropic Claude Messages requires `max_tokens` or `max_completion_tokens`"
-                .to_string(),
+            "Anthropic Messages requires `max_tokens` or `max_completion_tokens`".to_string(),
         ));
     }
 

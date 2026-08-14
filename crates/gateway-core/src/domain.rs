@@ -2448,6 +2448,21 @@ pub fn vertex_route_capabilities_for_upstream_model(
 
     ProviderCapabilities::chat_only_streaming()
 }
+#[must_use]
+pub fn github_copilot_route_capabilities_for_upstream_model(
+    upstream_model: Option<&str>,
+) -> ProviderCapabilities {
+    let mut capabilities = ProviderCapabilities::all_enabled();
+    let Some(upstream_model) = upstream_model else {
+        return capabilities;
+    };
+    let normalized = upstream_model.to_ascii_lowercase();
+    let model_name = normalized.rsplit('/').next().unwrap_or(&normalized);
+    if model_name.starts_with("claude-") {
+        capabilities.json_schema = false;
+    }
+    capabilities
+}
 
 const fn default_true() -> bool {
     true
