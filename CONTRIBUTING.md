@@ -124,7 +124,6 @@ The CI contract lives in the workflow files under [.github/workflows](.github/wo
 | [.github/workflows/rust-ci.yml](.github/workflows/rust-ci.yml) | Rust linting, workspace tests, and PostgreSQL-backed checks |
 | [.github/workflows/ui-ci.yml](.github/workflows/ui-ci.yml) | admin UI lint, test, and build via `mise run ui-check` |
 | [.github/workflows/e2e-ci.yml](.github/workflows/e2e-ci.yml) | Playwright contract suite via `mise run e2e-test` |
-| [.github/workflows/docs-ci.yml](.github/workflows/docs-ci.yml) | VitePress docs graph checks and static-site build via `mise run docs-verify` |
 | [.github/workflows/pr-title.yml](.github/workflows/pr-title.yml) | PR title validation against Conventional Commit format |
 | [.github/workflows/release.yml](.github/workflows/release.yml) | tag-driven image build, GHCR publish, provenance, and GitHub release steps |
 
@@ -187,4 +186,4 @@ When behavior changes, update the owning page instead of adding a second explana
 - request routing, pricing, spend, and logging as one path:
   - [docs/reference/request-lifecycle-and-failure-modes.md](docs/reference/request-lifecycle-and-failure-modes.md)
 
-Run `mise run docs-check` after touching Markdown in the canonical docs set.
+Run `mise run //docs:build` after touching Markdown in the canonical docs set.

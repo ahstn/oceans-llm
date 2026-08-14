@@ -727,7 +727,7 @@ Routing caveats:
 - every `aws_bedrock` route requires `compatibility.aws_bedrock.api_style`.
 - OpenAI-shaped API styles require `compatibility.aws_bedrock.openai_base_path`, for example `/openai/v1`.
 - Route `extra_headers` is the supported way to proxy provider headers such as `OpenAI-Project`; arbitrary inbound caller headers are not forwarded to providers.
-- Validate documentation-only updates with `mise run docs-check`.
+- Validate documentation-only updates with `mise run //docs:build`.
 
 ## Model Config
 

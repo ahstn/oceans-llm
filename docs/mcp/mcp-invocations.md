@@ -97,4 +97,4 @@ Policy-denied `tools/call` requests are logged before upstream execution. Allowe
 
 ## Validation
 
-Run `mise run docs:check` before handing off documentation changes.
+Run `mise run //docs:build` before handing off documentation changes.
