@@ -357,12 +357,12 @@ pub(super) fn is_anthropic_claude_model(upstream_model: &str) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum AnthropicMessagesTarget {
+pub(crate) enum AnthropicMessagesTarget {
     RuntimeInvoke,
     MantleMessages,
 }
 
-pub(super) fn map_chat_request_to_anthropic_messages(
+pub(crate) fn map_chat_request_to_anthropic_messages(
     request: &CoreChatRequest,
     context: &ProviderRequestContext,
     target: AnthropicMessagesTarget,
@@ -470,7 +470,7 @@ pub(super) fn map_chat_request_to_anthropic_messages(
     Ok(Value::Object(body))
 }
 
-pub(super) fn merge_object_overrides(
+pub(crate) fn merge_object_overrides(
     base: &mut Map<String, Value>,
     overrides: &Map<String, Value>,
 ) {

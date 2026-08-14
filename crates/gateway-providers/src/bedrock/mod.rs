@@ -761,8 +761,13 @@ mod response;
 
 use eventstream::*;
 use request::*;
+pub(crate) use request::{
+    AnthropicMessagesTarget, map_chat_request_to_anthropic_messages, merge_object_overrides,
+};
 use response::*;
-pub(crate) use response::{normalize_anthropic_messages_response, normalize_anthropic_messages_stream};
+pub(crate) use response::{
+    normalize_anthropic_messages_response, normalize_anthropic_messages_stream,
+};
 
 #[cfg(test)]
 mod tests;

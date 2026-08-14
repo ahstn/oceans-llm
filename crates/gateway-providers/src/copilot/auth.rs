@@ -221,11 +221,9 @@ impl CopilotAuthConfig {
                 }
                 Ok(Arc::new(source))
             }
-            Self::Bearer { token } => {
-                Ok(Arc::new(crate::token::StaticBearerTokenSource::new(
-                    token.clone(),
-                )))
-            }
+            Self::Bearer { token } => Ok(Arc::new(crate::token::StaticBearerTokenSource::new(
+                token.clone(),
+            ))),
         }
     }
 }

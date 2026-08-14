@@ -348,6 +348,18 @@ impl GatewayConfig {
                             )
                         })?;
                     }
+                    if provider.editor_version.trim().is_empty() {
+                        bail!(
+                            "github_copilot provider `{}` editor_version cannot be empty",
+                            provider.id
+                        );
+                    }
+                    if provider.integration_id.trim().is_empty() {
+                        bail!(
+                            "github_copilot provider `{}` integration_id cannot be empty",
+                            provider.id
+                        );
+                    }
                     if let Some(pricing_provider_id) = provider.pricing_provider_id.as_deref() {
                         if pricing_provider_id.trim().is_empty() {
                             bail!(
@@ -1392,8 +1404,11 @@ impl GatewayConfig {
             };
 
             let mut config = CopilotProviderConfig::new(provider.id.clone(), auth);
-            config.base_url = provider.base_url.clone();
-            config.github_api_url = provider.github_api_url.clone();
+            config.base_url = provider.base_url.trim_end_matches('/').to_string();
+            config.github_api_url = provider
+                .github_api_url
+                .as_deref()
+                .map(|url| url.trim_end_matches('/').to_string());
             config.editor_version = provider.editor_version.clone();
             config.integration_id = provider.integration_id.clone();
             config.default_headers = provider.default_headers.clone();
@@ -6393,7 +6408,10 @@ models:
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
         let providers = config.seed_providers().expect("seed providers");
         assert_eq!(providers[0].provider_type, "github_copilot");
-        assert_eq!(providers[0].config["base_url"], "https://api.githubcopilot.com");
+        assert_eq!(
+            providers[0].config["base_url"],
+            "https://api.githubcopilot.com"
+        );
         assert_eq!(providers[0].config["editor_version"], "vscode/1.126.0");
         assert_eq!(providers[0].config["integration_id"], "vscode-chat");
         assert_eq!(providers[0].config["pricing_provider_id"], "openai");

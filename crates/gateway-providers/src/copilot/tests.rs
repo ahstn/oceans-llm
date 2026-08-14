@@ -1,12 +1,10 @@
 use std::collections::BTreeMap;
 
+use axum::Router;
 use axum::extract::Json;
 use axum::routing::post;
-use axum::Router;
-use gateway_core::{
-    CoreChatMessage, CoreChatRequest, ProviderClient, ProviderRequestContext,
-};
-use serde_json::{json, Map, Value};
+use gateway_core::{CoreChatMessage, CoreChatRequest, ProviderClient, ProviderRequestContext};
+use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio::sync::mpsc;
@@ -15,6 +13,8 @@ use super::*;
 use crate::copilot::auth::{CopilotAuthConfig, GitHubAppInstallationTokenSource};
 use crate::token::AccessTokenSource;
 
+// Note: This RSA private key is a throwaway fixture used strictly for unit testing
+// JWT signature generation and is not used in any production environment.
 const TEST_RSA_PRIVATE_KEY: &str = r#"-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCo1WHWzHdosbKK
 WTlCf4nJS2wANN4n/lXEc+7E/2OEoS8co9upp4NVgH0wcLjfSYXz1bmrCdnj7ppW
@@ -77,15 +77,15 @@ fn endpoint_routing_rules() {
     );
     assert_eq!(
         CopilotProvider::resolve_chat_endpoint_suffix("gpt-5.4"),
-        "responses"
+        "chat/completions"
     );
     assert_eq!(
         CopilotProvider::resolve_chat_endpoint_suffix("gpt-5-mini"),
-        "responses"
+        "chat/completions"
     );
     assert_eq!(
         CopilotProvider::resolve_chat_endpoint_suffix("gpt-5-codex"),
-        "responses"
+        "chat/completions"
     );
 }
 
@@ -95,55 +95,64 @@ async fn builds_chat_completions_with_copilot_headers() {
 
     let app = Router::new().route(
         "/chat/completions",
-        post(move |headers: axum::http::HeaderMap, Json(body): Json<Value>| {
-            let tx = tx.clone();
-            async move {
-                let editor_version = headers
-                    .get("editor-version")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or_default()
-                    .to_string();
-                let integration_id = headers
-                    .get("copilot-integration-id")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or_default()
-                    .to_string();
-                let auth = headers
-                    .get("authorization")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or_default()
-                    .to_string();
-                let api_version = headers
-                    .get("x-github-api-version")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or_default()
-                    .to_string();
-                let req_id = headers
-                    .get("x-request-id")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or_default()
-                    .to_string();
+        post(
+            move |headers: axum::http::HeaderMap, Json(body): Json<Value>| {
+                let tx = tx.clone();
+                async move {
+                    let editor_version = headers
+                        .get("editor-version")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
+                    let integration_id = headers
+                        .get("copilot-integration-id")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
+                    let auth = headers
+                        .get("authorization")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
+                    let api_version = headers
+                        .get("x-github-api-version")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
+                    let req_id = headers
+                        .get("x-request-id")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
 
-                let _ = tx
-                    .send((editor_version, integration_id, auth, api_version, req_id, body))
-                    .await;
+                    let _ = tx
+                        .send((
+                            editor_version,
+                            integration_id,
+                            auth,
+                            api_version,
+                            req_id,
+                            body,
+                        ))
+                        .await;
 
-                Json(json!({
-                    "id": "chatcmpl-test",
-                    "object": "chat.completion",
-                    "choices": [{
-                        "index": 0,
-                        "message": { "role": "assistant", "content": "Hello world" },
-                        "finish_reason": "stop"
-                    }],
-                    "usage": {
-                        "prompt_tokens": 10,
-                        "completion_tokens": 5,
-                        "total_tokens": 15
-                    }
-                }))
-            }
-        }),
+                    Json(json!({
+                        "id": "chatcmpl-test",
+                        "object": "chat.completion",
+                        "choices": [{
+                            "index": 0,
+                            "message": { "role": "assistant", "content": "Hello world" },
+                            "finish_reason": "stop"
+                        }],
+                        "usage": {
+                            "prompt_tokens": 10,
+                            "completion_tokens": 5,
+                            "total_tokens": 15
+                        }
+                    }))
+                }
+            },
+        ),
     );
 
     let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -195,28 +204,30 @@ async fn builds_claude_messages_request() {
 
     let app = Router::new().route(
         "/v1/messages",
-        post(move |headers: axum::http::HeaderMap, Json(body): Json<Value>| {
-            let tx = tx.clone();
-            async move {
-                let auth = headers
-                    .get("authorization")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or_default()
-                    .to_string();
-                let _ = tx.send((auth, body)).await;
+        post(
+            move |headers: axum::http::HeaderMap, Json(body): Json<Value>| {
+                let tx = tx.clone();
+                async move {
+                    let auth = headers
+                        .get("authorization")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
+                    let _ = tx.send((auth, body)).await;
 
-                Json(json!({
-                    "id": "msg-test",
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{ "type": "text", "text": "Claude response" }],
-                    "usage": {
-                        "input_tokens": 12,
-                        "output_tokens": 4
-                    }
-                }))
-            }
-        }),
+                    Json(json!({
+                        "id": "msg-test",
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{ "type": "text", "text": "Claude response" }],
+                        "usage": {
+                            "input_tokens": 12,
+                            "output_tokens": 4
+                        }
+                    }))
+                }
+            },
+        ),
     );
 
     let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -237,12 +248,20 @@ async fn builds_claude_messages_request() {
 
     let request = CoreChatRequest {
         model: "claude-3-7-sonnet".to_string(),
-        messages: vec![CoreChatMessage {
-            role: "user".to_string(),
-            content: json!("Hello Claude"),
-            name: None,
-            extra: BTreeMap::new(),
-        }],
+        messages: vec![
+            CoreChatMessage {
+                role: "system".to_string(),
+                content: json!("System prompt"),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: json!("Hello Claude"),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+        ],
         stream: false,
         extra: BTreeMap::new(),
     };
@@ -250,11 +269,17 @@ async fn builds_claude_messages_request() {
     let context = dummy_context("claude-3-7-sonnet");
     let response = provider.chat_completions(&request, &context).await.unwrap();
 
-    assert_eq!(response["choices"][0]["message"]["content"], "Claude response");
+    assert_eq!(
+        response["choices"][0]["message"]["content"],
+        "Claude response"
+    );
 
     let (auth, body) = rx.recv().await.unwrap();
     assert_eq!(auth, "Bearer ghs_bearer");
     assert_eq!(body["model"], "claude-3-7-sonnet");
+    assert_eq!(body["system"], "System prompt");
+    assert_eq!(body["messages"][0]["role"], "user");
+    assert_eq!(body["messages"][0]["content"][0]["text"], "Hello Claude");
     assert_eq!(body["max_tokens"], 4096);
 }
 
@@ -264,26 +289,28 @@ async fn github_app_installation_token_source_mints_token() {
 
     let app = Router::new().route(
         "/app/installations/12345/access_tokens",
-        post(move |headers: axum::http::HeaderMap, Json(body): Json<Value>| {
-            let tx = tx.clone();
-            async move {
-                let auth = headers
-                    .get("authorization")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or_default()
-                    .to_string();
-                let _ = tx.send((auth, body)).await;
+        post(
+            move |headers: axum::http::HeaderMap, Json(body): Json<Value>| {
+                let tx = tx.clone();
+                async move {
+                    let auth = headers
+                        .get("authorization")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
+                    let _ = tx.send((auth, body)).await;
 
-                let expires_at = (OffsetDateTime::now_utc() + time::Duration::hours(1))
-                    .format(&time::format_description::well_known::Rfc3339)
-                    .unwrap();
+                    let expires_at = (OffsetDateTime::now_utc() + time::Duration::hours(1))
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .unwrap();
 
-                Json(json!({
-                    "token": "ghs_installation_token_abc",
-                    "expires_at": expires_at
-                }))
-            }
-        }),
+                    Json(json!({
+                        "token": "ghs_installation_token_abc",
+                        "expires_at": expires_at
+                    }))
+                }
+            },
+        ),
     );
 
     let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -292,14 +319,10 @@ async fn github_app_installation_token_source_mints_token() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let source = GitHubAppInstallationTokenSource::new(
-        99999,
-        TEST_RSA_PRIVATE_KEY,
-        12345,
-        Some(67890),
-    )
-    .unwrap()
-    .with_api_url(format!("http://{addr}"));
+    let source =
+        GitHubAppInstallationTokenSource::new(99999, TEST_RSA_PRIVATE_KEY, 12345, Some(67890))
+            .unwrap()
+            .with_api_url(format!("http://{addr}"));
 
     let token = source.fetch_token().await.unwrap();
     assert_eq!(token.token, "ghs_installation_token_abc");

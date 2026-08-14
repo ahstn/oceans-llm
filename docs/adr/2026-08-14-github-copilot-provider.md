@@ -26,10 +26,10 @@ Add a first-class provider type named `github_copilot` in `gateway-providers` an
 ### Provider Architecture & Transport
 1. **Direct HTTP Integration:** The provider executes requests directly against `https://api.githubcopilot.com` (or configurable base URL / Enterprise hosts).
 2. **Endpoint Routing by Model Family:**
-   - OpenAI Chat Models (`gpt-4o`, `gpt-4.1`, `gemini-*`): Route to `/chat/completions`.
-   - OpenAI Responses Models (`gpt-5.4`, `*-codex`): Route to `/responses`.
-   - Anthropic Claude Models (`claude-*`): Route to native Anthropic `/v1/messages` (when using Anthropic wire formats) or `/chat/completions`.
-3. **Required Identity Headers:**
+   - OpenAI Chat Models (`gpt-4o`, `gpt-4.1`, `gemini-*`, `gpt-5*`): Route to `/chat/completions`.
+   - Anthropic Claude Models (`claude-*`): Route to `/v1/messages` using the Anthropic Messages wire format with automatic translation.
+   - OpenAI Responses Models (via `ProviderClient::responses`): Route to `/responses`.
+   - Embeddings Models (via `ProviderClient::embeddings`): Route to `/embeddings`.
    Every request sends:
    - `Authorization: Bearer <token>`
    - `Editor-Version: <configured | default vscode/1.126.0>`
@@ -44,7 +44,7 @@ Add a first-class provider type named `github_copilot` in `gateway-providers` an
 
 ### Usage & Cost Accounting
 - GitHub Copilot bills organizations through GitHub AI Credits based on token usage.
-- The provider normalizes prompt tokens, completion tokens, and cached token reads (`usage.input_tokens_details.cached_tokens`).
+- The provider extracts token usage from standard OpenAI and Anthropic response payloads (`prompt_tokens`, `completion_tokens`, `total_tokens`).
 - When a `pricing_provider_id` is not configured, routes are marked as unpriced or priced via explicit route-level `pricing_override`.
 
 ## Implementation
