@@ -409,8 +409,44 @@ fn map_google_request(
     let mut body = Map::new();
     let mut contents = Vec::new();
     let mut system_lines = Vec::new();
+    let mut known_tool_names = BTreeMap::new();
 
     for message in &request.messages {
+        if message.role == "assistant"
+            && let Some(tool_calls) = message.extra.get("tool_calls").and_then(Value::as_array)
+        {
+            for call in tool_calls {
+                if let Some(call_obj) = call.as_object()
+                    && let (Some(id), Some(name)) = (
+                        call_obj.get("id").and_then(Value::as_str),
+                        call_obj
+                            .get("function")
+                            .and_then(Value::as_object)
+                            .and_then(|f| f.get("name"))
+                            .and_then(Value::as_str),
+                    )
+                {
+                    known_tool_names.insert(id.to_string(), name.to_string());
+                }
+            }
+        }
+    }
+    let mut pending_tool_parts = Vec::new();
+
+    for message in &request.messages {
+        if message.role == "tool" {
+            let part = map_google_tool_result_part(message, &known_tool_names)?;
+            pending_tool_parts.push(part);
+            continue;
+        }
+
+        if !pending_tool_parts.is_empty() {
+            contents.push(json!({
+                "role": "user",
+                "parts": std::mem::take(&mut pending_tool_parts)
+            }));
+        }
+
         match message.role.as_str() {
             "system" | "developer" => {
                 system_lines.push(message_content_as_text(&message.content)?);
@@ -429,19 +465,19 @@ fn map_google_request(
                     "parts": parts
                 }));
             }
-            "tool" => {
-                let part = map_google_tool_result_part(message)?;
-                contents.push(json!({
-                    "role": "user",
-                    "parts": [part]
-                }));
-            }
             other => {
                 return Err(ProviderError::InvalidRequest(format!(
                     "unsupported message role `{other}` for google vertex mapping"
                 )));
             }
         }
+    }
+
+    if !pending_tool_parts.is_empty() {
+        contents.push(json!({
+            "role": "user",
+            "parts": pending_tool_parts
+        }));
     }
 
     if contents.is_empty() {
@@ -1533,7 +1569,15 @@ fn map_google_assistant_parts(message: &CoreChatMessage) -> Result<Vec<Value>, P
     Ok(parts)
 }
 
-fn map_google_tool_result_part(message: &CoreChatMessage) -> Result<Value, ProviderError> {
+fn map_google_tool_result_part(
+    message: &CoreChatMessage,
+    known_tool_names: &BTreeMap<String, String>,
+) -> Result<Value, ProviderError> {
+    let tool_call_id = message
+        .extra
+        .get("tool_call_id")
+        .and_then(Value::as_str);
+
     let tool_name = message
         .name
         .as_deref()
@@ -1548,6 +1592,9 @@ fn map_google_tool_result_part(message: &CoreChatMessage) -> Result<Value, Provi
                 .extra
                 .get("tool_name")
                 .and_then(Value::as_str)
+        })
+        .or_else(|| {
+            tool_call_id.and_then(|id| known_tool_names.get(id).map(String::as_str))
         })
         .unwrap_or("function");
 
@@ -1730,37 +1777,21 @@ fn map_openai_tool_result(message: &CoreChatMessage) -> Result<Value, ProviderEr
 }
 
 fn convert_openai_tools_for_google(body: &mut Map<String, Value>) -> Result<(), ProviderError> {
-    let mut allowed_function_names = Vec::new();
-
     if let Some(tool_choice) = body.remove("tool_choice") {
-        match tool_choice {
+        let is_none = match &tool_choice {
+            Value::String(choice) => choice == "none",
+            _ => false,
+        };
+        let function_calling_config = match tool_choice {
             Value::String(choice) if choice == "none" => {
                 body.remove("tools");
-                let mut tool_config = body
-                    .remove("toolConfig")
-                    .and_then(|v| v.as_object().cloned())
-                    .unwrap_or_default();
-                tool_config.insert("functionCallingConfig".to_string(), json!({ "mode": "NONE" }));
-                body.insert("toolConfig".to_string(), Value::Object(tool_config));
-                return Ok(());
+                Some(json!({ "mode": "NONE" }))
             }
-            Value::String(choice) if choice == "auto" => {
-                let mut tool_config = body
-                    .remove("toolConfig")
-                    .and_then(|v| v.as_object().cloned())
-                    .unwrap_or_default();
-                tool_config.insert("functionCallingConfig".to_string(), json!({ "mode": "AUTO" }));
-                body.insert("toolConfig".to_string(), Value::Object(tool_config));
-            }
-            Value::String(choice) if choice == "required" => {
-                let mut tool_config = body
-                    .remove("toolConfig")
-                    .and_then(|v| v.as_object().cloned())
-                    .unwrap_or_default();
-                tool_config.insert("functionCallingConfig".to_string(), json!({ "mode": "ANY" }));
-                body.insert("toolConfig".to_string(), Value::Object(tool_config));
-            }
-            Value::Object(object) if object.get("type").and_then(Value::as_str) == Some("function") => {
+            Value::String(choice) if choice == "auto" => Some(json!({ "mode": "AUTO" })),
+            Value::String(choice) if choice == "required" => Some(json!({ "mode": "ANY" })),
+            Value::Object(object)
+                if object.get("type").and_then(Value::as_str) == Some("function") =>
+            {
                 let name = object
                     .get("function")
                     .and_then(Value::as_object)
@@ -1770,27 +1801,29 @@ fn convert_openai_tools_for_google(body: &mut Map<String, Value>) -> Result<(), 
                         ProviderError::InvalidRequest(
                             "function tool_choice must include function.name".to_string(),
                         )
-                    })?
-                    .to_string();
-                allowed_function_names.push(name);
-                let mut tool_config = body
-                    .remove("toolConfig")
-                    .and_then(|v| v.as_object().cloned())
-                    .unwrap_or_default();
-                tool_config.insert(
-                    "functionCallingConfig".to_string(),
-                    json!({
-                        "mode": "ANY",
-                        "allowedFunctionNames": allowed_function_names
-                    }),
-                );
-                body.insert("toolConfig".to_string(), Value::Object(tool_config));
+                    })?;
+                Some(json!({
+                    "mode": "ANY",
+                    "allowedFunctionNames": [name]
+                }))
             }
-            Value::Null => {}
+            Value::Null => None,
             _ => {
                 return Err(ProviderError::InvalidRequest(
                     "unsupported tool_choice for google vertex mapping".to_string(),
                 ));
+            }
+        };
+
+        if let Some(config) = function_calling_config {
+            let mut tool_config = body
+                .remove("toolConfig")
+                .and_then(|v| v.as_object().cloned())
+                .unwrap_or_default();
+            tool_config.insert("functionCallingConfig".to_string(), config);
+            body.insert("toolConfig".to_string(), Value::Object(tool_config));
+            if is_none {
+                return Ok(());
             }
         }
     }
@@ -2648,6 +2681,7 @@ where
         let mut role_emitted = false;
         let mut finish_emitted = false;
         let mut stream_failed = false;
+        let mut stream_has_tool_calls = false;
         futures_util::pin_mut!(upstream);
 
         while let Some(chunk) = upstream.next().await {
@@ -2659,7 +2693,6 @@ where
                     break;
                 }
             };
-
             let objects = match parser.push_bytes(&chunk) {
                 Ok(objects) => objects,
                 Err(error) => {
@@ -2680,15 +2713,13 @@ where
                 let tool_calls = candidate
                     .map(extract_google_candidate_tool_calls)
                     .unwrap_or_default();
-                let finish_reason = if !tool_calls.is_empty() {
-                    Some("tool_calls")
-                } else {
-                    candidate
-                        .and_then(|candidate| candidate.get("finishReason"))
-                        .and_then(Value::as_str)
-                        .map(map_google_finish_reason)
-                };
-
+                if !tool_calls.is_empty() {
+                    stream_has_tool_calls = true;
+                }
+                let upstream_finish_reason = candidate
+                    .and_then(|candidate| candidate.get("finishReason"))
+                    .and_then(Value::as_str)
+                    .map(map_google_finish_reason);
                 if !text.is_empty() {
                     let delta = openai_chunk(
                         &stream_id,
@@ -2729,7 +2760,13 @@ where
                     yield Ok(openai_sse_chunk(&chunk));
                 }
 
-                if let Some(finish_reason) = finish_reason {
+                if let Some(reason) = upstream_finish_reason {
+                    let finish_reason = if stream_has_tool_calls {
+                        "tool_calls"
+                    } else {
+                        reason
+                    };
+                    // Emits the single terminal finish reason when upstream signals candidate completion.
                     let finish = openai_chunk(
                         &stream_id,
                         created,
@@ -2745,13 +2782,18 @@ where
         }
 
         if !stream_failed && !finish_emitted {
+            let finish_reason = if stream_has_tool_calls {
+                "tool_calls"
+            } else {
+                "stop"
+            };
             let finish = openai_chunk(
                 &stream_id,
                 created,
                 &model,
                 None,
                 None,
-                Some("stop"),
+                Some(finish_reason),
             );
             yield Ok(openai_sse_chunk(&finish));
         }
@@ -3507,6 +3549,76 @@ mod tests {
             mapped["contents"][2]["parts"][0]["functionResponse"]["response"]["temp"],
             20
         );
+    }
+
+    #[test]
+    fn maps_openai_tool_results_without_name_and_coalesces_parallel_turns() {
+        let mut assistant_extra = BTreeMap::new();
+        assistant_extra.insert(
+            "tool_calls".to_string(),
+            json!([
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "lookup_weather",
+                        "arguments": "{\"city\":\"London\"}"
+                    }
+                },
+                {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {
+                        "name": "lookup_time",
+                        "arguments": "{\"city\":\"London\"}"
+                    }
+                }
+            ]),
+        );
+        let mut tool1_extra = BTreeMap::new();
+        tool1_extra.insert("tool_call_id".to_string(), json!("call_1"));
+        let mut tool2_extra = BTreeMap::new();
+        tool2_extra.insert("tool_call_id".to_string(), json!("call_2"));
+
+        let request = chat_request(vec![
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("check both".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            CoreChatMessage {
+                role: "assistant".to_string(),
+                content: Value::Null,
+                name: None,
+                extra: assistant_extra,
+            },
+            CoreChatMessage {
+                role: "tool".to_string(),
+                content: Value::String("{\"temp\": 20}".to_string()),
+                name: None,
+                extra: tool1_extra,
+            },
+            CoreChatMessage {
+                role: "tool".to_string(),
+                content: Value::String("{\"time\": \"12:00\"}".to_string()),
+                name: None,
+                extra: tool2_extra,
+            },
+        ]);
+
+        let mapped =
+            map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+                .expect("mapped");
+
+        assert_eq!(mapped["contents"].as_array().expect("contents").len(), 3);
+        assert_eq!(mapped["contents"][2]["role"], "user");
+        let parts = mapped["contents"][2]["parts"].as_array().expect("parts");
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0]["functionResponse"]["name"], "lookup_weather");
+        assert_eq!(parts[0]["functionResponse"]["response"]["temp"], 20);
+        assert_eq!(parts[1]["functionResponse"]["name"], "lookup_time");
+        assert_eq!(parts[1]["functionResponse"]["response"]["time"], "12:00");
     }
 
     #[test]

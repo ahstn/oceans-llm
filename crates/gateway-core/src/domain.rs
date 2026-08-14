@@ -2419,6 +2419,7 @@ pub fn is_supported_vertex_text_embedding_upstream_model(upstream_model: &str) -
 #[must_use]
 pub fn is_supported_vertex_google_chat_upstream_model(upstream_model: &str) -> bool {
     upstream_model.starts_with("google/gemini-")
+        && !is_supported_vertex_text_embedding_upstream_model(upstream_model)
 }
 
 #[must_use]
@@ -2451,7 +2452,7 @@ pub fn vertex_route_capabilities_for_upstream_model(
         return ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true);
     }
 
-    if upstream_model.starts_with("google/") {
+    if is_supported_vertex_google_chat_upstream_model(upstream_model) {
         return ProviderCapabilities::with_dimensions(true, true, false, true, true, true, true);
     }
 
@@ -3180,6 +3181,9 @@ mod tests {
         assert!(is_supported_vertex_google_chat_upstream_model("google/gemini-2.0-flash"));
         assert!(is_supported_vertex_google_chat_upstream_model("google/gemini-1.5-pro"));
         assert!(!is_supported_vertex_google_chat_upstream_model("google/text-embedding-005"));
+        assert!(!is_supported_vertex_google_chat_upstream_model("google/gemini-embedding-001"));
+        assert!(!is_supported_vertex_google_chat_upstream_model("google/gemini-embedding-2"));
+        assert!(!is_supported_vertex_google_chat_upstream_model("google/text-bison"));
         assert!(!is_supported_vertex_google_chat_upstream_model("anthropic/claude-sonnet-4-6"));
     }
 
