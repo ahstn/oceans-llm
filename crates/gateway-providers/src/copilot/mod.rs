@@ -89,7 +89,8 @@ impl CopilotProvider {
     #[must_use]
     pub fn resolve_chat_endpoint_suffix(model: &str) -> &'static str {
         let normalized = model.to_ascii_lowercase();
-        if normalized.starts_with("claude-") {
+        let model_name = normalized.rsplit('/').next().unwrap_or(&normalized);
+        if model_name.starts_with("claude-") {
             "v1/messages"
         } else {
             "chat/completions"
@@ -148,6 +149,7 @@ impl CopilotProvider {
         let body = if endpoint_suffix == "v1/messages" {
             let mut stream_request = request.clone();
             stream_request.stream = stream;
+            // Anthropic Messages API requires `max_tokens`; inject a sensible default if unspecified.
             if !stream_request.extra.contains_key("max_tokens")
                 && !stream_request.extra.contains_key("max_completion_tokens")
             {

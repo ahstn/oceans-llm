@@ -76,6 +76,14 @@ fn endpoint_routing_rules() {
         "v1/messages"
     );
     assert_eq!(
+        CopilotProvider::resolve_chat_endpoint_suffix("anthropic/claude-3-7-sonnet"),
+        "v1/messages"
+    );
+    assert_eq!(
+        CopilotProvider::resolve_chat_endpoint_suffix("anthropic/claude-opus-4-5"),
+        "v1/messages"
+    );
+    assert_eq!(
         CopilotProvider::resolve_chat_endpoint_suffix("gpt-5.4"),
         "chat/completions"
     );
@@ -125,16 +133,16 @@ async fn builds_chat_completions_with_copilot_headers() {
                         .unwrap_or_default()
                         .to_string();
 
-                    let _ = tx
-                        .send((
-                            editor_version,
-                            integration_id,
-                            auth,
-                            api_version,
-                            req_id,
-                            body,
-                        ))
-                        .await;
+                    tx.send((
+                        editor_version,
+                        integration_id,
+                        auth,
+                        api_version,
+                        req_id,
+                        body,
+                    ))
+                    .await
+                    .expect("failed to send request data to test channel");
 
                     Json(json!({
                         "id": "chatcmpl-test",
@@ -213,7 +221,9 @@ async fn builds_claude_messages_request() {
                         .and_then(|v| v.to_str().ok())
                         .unwrap_or_default()
                         .to_string();
-                    let _ = tx.send((auth, body)).await;
+                    tx.send((auth, body))
+                        .await
+                        .expect("failed to send message request data to test channel");
 
                     Json(json!({
                         "id": "msg-test",
@@ -298,7 +308,9 @@ async fn github_app_installation_token_source_mints_token() {
                         .and_then(|v| v.to_str().ok())
                         .unwrap_or_default()
                         .to_string();
-                    let _ = tx.send((auth, body)).await;
+                    tx.send((auth, body))
+                        .await
+                        .expect("failed to send token request data to test channel");
 
                     let expires_at = (OffsetDateTime::now_utc() + time::Duration::hours(1))
                         .format(&time::format_description::well_known::Rfc3339)

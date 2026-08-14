@@ -910,7 +910,7 @@ impl GatewayConfig {
 
                     let config = json!({
                         "base_url": provider.base_url.trim_end_matches('/'),
-                        "github_api_url": provider.github_api_url.as_deref().map(|u| u.trim_end_matches('/')),
+                        "github_api_url": provider.github_api_url.as_deref().map(|url| url.trim_end_matches('/')),
                         "pricing_provider_id": provider.pricing_provider_id,
                         "editor_version": provider.editor_version,
                         "integration_id": provider.integration_id,
