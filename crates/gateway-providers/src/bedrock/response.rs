@@ -74,7 +74,7 @@ pub(super) fn normalize_converse_response(
     Value::Object(completion)
 }
 
-pub(super) fn normalize_anthropic_messages_response(
+pub(crate) fn normalize_anthropic_messages_response(
     value: &Value,
     context: &ProviderRequestContext,
 ) -> Value {
@@ -152,7 +152,7 @@ pub(super) fn normalize_anthropic_messages_response(
     Value::Object(completion)
 }
 
-pub(super) fn normalize_anthropic_messages_stream<S>(
+pub(crate) fn normalize_anthropic_messages_stream<S>(
     upstream: S,
     context: ProviderRequestContext,
 ) -> ProviderStream

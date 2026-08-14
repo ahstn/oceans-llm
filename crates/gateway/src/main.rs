@@ -11,7 +11,7 @@ use gateway::{
     observability,
 };
 use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
-use gateway_providers::{BedrockProvider, OpenAiCompatProvider, VertexProvider};
+use gateway_providers::{BedrockProvider, CopilotProvider, OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
     WeightedRoutePlanner, hash_gateway_key_secret,
@@ -407,6 +407,12 @@ fn build_provider_registry(config: &GatewayConfig) -> anyhow::Result<ProviderReg
     for provider_config in config.bedrock_provider_configs()? {
         let provider = BedrockProvider::new(provider_config)
             .map_err(|error| anyhow::anyhow!("failed building aws_bedrock provider: {error}"))?;
+        providers.register(Arc::new(provider));
+    }
+
+    for provider_config in config.copilot_provider_configs()? {
+        let provider = CopilotProvider::new(provider_config)
+            .map_err(|error| anyhow::anyhow!("failed building github_copilot provider: {error}"))?;
         providers.register(Arc::new(provider));
     }
 

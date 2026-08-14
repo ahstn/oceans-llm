@@ -762,6 +762,7 @@ mod response;
 use eventstream::*;
 use request::*;
 use response::*;
+pub(crate) use response::{normalize_anthropic_messages_response, normalize_anthropic_messages_stream};
 
 #[cfg(test)]
 mod tests;
