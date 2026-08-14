@@ -2084,7 +2084,7 @@ mod tests {
         assert!(chat_capabilities.chat_completions);
         assert!(chat_capabilities.stream);
         assert!(!chat_capabilities.embeddings);
-        assert!(!chat_capabilities.tools);
+        assert!(chat_capabilities.tools);
 
         let anthropic_route = route(
             "anthropic/claude-sonnet-4-6",

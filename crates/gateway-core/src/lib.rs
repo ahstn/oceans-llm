@@ -64,7 +64,8 @@ pub use domain::{
     UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord,
     UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
     VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc,
-    is_supported_vertex_text_embedding_model_id, is_supported_vertex_text_embedding_upstream_model,
+    is_supported_vertex_google_chat_upstream_model, is_supported_vertex_text_embedding_model_id,
+    is_supported_vertex_text_embedding_upstream_model,
     validate_entity_tags, validate_tag_key, validate_tag_value,
     vertex_route_capabilities_for_upstream_model, vertex_text_embedding_capabilities,
 };

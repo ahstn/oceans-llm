@@ -214,12 +214,14 @@ models:
           responses: false
           embeddings: false
           stream: true
-          tools: false
+          tools: true
           vision: true
           json_schema: false
 ```
 
 Vertex Google multimodal inputs currently accept `gs://` image and file URIs through OpenAI-compatible typed content. Inline/base64 data and remote HTTP URLs are not supported in this gateway slice.
+
+Google Gemini routes support OpenAI Chat Completions function tools, assistant `tool_calls`, tool-result continuations (`role: tool`), and streaming function-call deltas. Named tool choice (`tool_choice: {"type": "function", "function": {"name": "..."}}`), `tool_choice: "required"` / `"any"`, `tool_choice: "none"`, and `tool_choice: "auto"` map to Gemini `toolConfig.functionCallingConfig.mode` and `allowedFunctionNames`. Thought signatures returned by Gemini 3 / thinking-capable models are preserved and relayed across tool continuations.
 
 ## Text Embeddings Example
 
