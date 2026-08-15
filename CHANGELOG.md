@@ -6,13 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.22.0] - 2026-08-15
+### :rocket: New features
+- *(observability)* Account for prompt cache usage by @ahstn in [#283](https://github.com/ahstn/oceans-llm/pull/283)
+
 ### :bug: Bug fixes
-- *(release)* Clean generated release notes
-- *(release)* Simplify publication flow
+- *(release)* Simplify publication flow by @ahstn
+- *(release)* Address review findings by @ahstn
+- *(release)* Clean generated release notes by @ahstn in [#267](https://github.com/ahstn/oceans-llm/pull/267)
+- *(observability)* Address cache accounting review by @ahstn
+- *(store)* Separate cache constraint validation by @ahstn
+- *(vertex)* Address Gemini tool review findings by @ahstn
+- *(vertex)* Complete Gemini tool compatibility by @ahstn
+- *(vertex)* Support function tool calling for Google Gemini routes by @ahstn in [#286](https://github.com/ahstn/oceans-llm/pull/286)
 
 ### Changed
-- *(release)* Move changelog generation into mise
+- *(release)* Move changelog generation into mise by @ahstn
+- *(access)* Document shared SSO onboarding by @ahstn
+- *(docs)* Remove custom docs validation by @ahstn
+- Address onboarding review feedback by @ahstn
+- Clarify SSO onboarding and simplify docs CI by @ahstn in [#287](https://github.com/ahstn/oceans-llm/pull/287)
+- *(vertex)* Harden tool result name mapping, parallel grouping, and stream completion by @ahstn
+- *(housekeeping)* Remove repo bloat and left over files by @ahstn
+- *(deps)* Minor mise and bun version updates by @ahstn
+- *(pricing)* Updating model catalog
 
 
 
@@ -638,7 +655,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
-[unreleased]: https://github.com/ahstn/oceans-llm/compare/v0.21.0...HEAD
+[0.22.0]: https://github.com/ahstn/oceans-llm/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/ahstn/oceans-llm/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/ahstn/oceans-llm/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/ahstn/oceans-llm/compare/v0.19.0...v0.20.0
