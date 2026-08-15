@@ -103,4 +103,4 @@ For table-level relationships, see [Data Relationships](../contributing/referenc
 - User, team, service-account, and API-key lifecycle rules: [Identity and Access](../access/identity-and-access.md)
 - Spend ledger semantics and budget enforcement: [Budgets and Spending](../contributing/operations/budgets-and-spending.md)
 
-Validate documentation-only edits with `mise run docs:check`.
+Validate documentation-only edits with `mise run //docs:build`.

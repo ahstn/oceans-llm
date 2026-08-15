@@ -526,6 +526,8 @@ Seed semantics that matter:
 
 OIDC and OAuth provider existence is validated at seed time against enabled runtime providers, not YAML parse time.
 
+For OIDC and OAuth users, config seeding creates the invited identity and its provider association. It does not generate an onboarding URL. Config-seeded OIDC and OAuth users can sign in through the shared `/admin/login` page after deployment. A per-user SSO link from the control plane is optional. Config-seeded password users still require a unique password invite URL from the control plane. See [OIDC and SSO](../access/oidc-and-sso-status.md#start-sso-sign-in) for the complete sign-in contract.
+
 ## `budget_alerts`
 
 `budget_alerts.email` controls the background email dispatcher for threshold alerts created by budget enforcement and budget updates.
@@ -725,7 +727,7 @@ Routing caveats:
 - every `aws_bedrock` route requires `compatibility.aws_bedrock.api_style`.
 - OpenAI-shaped API styles require `compatibility.aws_bedrock.openai_base_path`, for example `/openai/v1`.
 - Route `extra_headers` is the supported way to proxy provider headers such as `OpenAI-Project`; arbitrary inbound caller headers are not forwarded to providers.
-- Validate documentation-only updates with `mise run docs-check`.
+- Validate documentation-only updates with `mise run //docs:build`.
 
 ## Model Config
 

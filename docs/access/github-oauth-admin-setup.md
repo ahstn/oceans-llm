@@ -74,6 +74,12 @@ Direct GitHub OAuth uses:
 
 Oceans does **not** auto-link existing password users by email.
 
+## Provision and Validate Sign-In
+
+For pre-provisioned access, declare the user in config or create the user in the control plane with OAuth provider key `github`. Apply provider and user config through the deployment-specific seed path in [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md#config-seeded-sso-users). A gateway pod restart does not seed config in the Helm deployment.
+
+Before asking the user to sign in, confirm that `/api/v1/auth/oauth/providers` includes the enabled `github` provider. Then follow the shared [SSO sign-in flow](oidc-and-sso-status.md#start-sso-sign-in). For invite-only access, use a GitHub account whose accepted primary email matches the normalized Oceans user email. With the default policy, GitHub must also mark that primary email as verified.
+
 ## Security Notes
 
 - Keep `jit.enabled: false` unless you explicitly want auto-provisioning.

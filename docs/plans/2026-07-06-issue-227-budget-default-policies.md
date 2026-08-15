@@ -426,7 +426,7 @@ Enforcement regression tests:
 Docs checks:
 
 ```bash
-mise run docs:check
+mise run //docs:build
 mise run admin-contract-generate
 mise run admin-contract-check
 mise run lint
@@ -497,7 +497,7 @@ Done when:
 - admins can configure default user budgets and selected model defaults from docs alone
 - docs clearly separate default-per-user policy from aggregate global budget
 - maintainer docs explain ownership metadata and reconciliation
-- `mise run docs:check` passes
+- `mise run //docs:build` passes
 
 ## Risks And Mitigations
 

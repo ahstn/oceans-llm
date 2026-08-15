@@ -335,4 +335,4 @@ Troubleshooting:
 
 ## Validation
 
-Validate documentation-only edits with `mise run docs-check`. For runtime Vertex adapter changes, run `cargo test -p gateway-providers vertex::tests` and `cargo clippy -p gateway-providers --all-targets -- -D warnings`.
+Validate documentation-only edits with `mise run //docs:build`. For runtime Vertex adapter changes, run `cargo test -p gateway-providers vertex::tests` and `cargo clippy -p gateway-providers --all-targets -- -D warnings`.

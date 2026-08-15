@@ -261,4 +261,4 @@ The current runtime executes one selected route. Priority and weight affect rout
 
 ## Validation
 
-Validate documentation-only edits with `mise run docs-check`. For runtime Bedrock adapter changes, run `mise run lint` and the focused provider tests such as `cargo test -p gateway-providers bedrock`.
+Validate documentation-only edits with `mise run //docs:build`. For runtime Bedrock adapter changes, run `mise run lint` and the focused provider tests such as `cargo test -p gateway-providers bedrock`.
