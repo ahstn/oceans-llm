@@ -1509,9 +1509,7 @@ fn map_google_parts(
     }
 }
 
-fn map_google_anthropic_tool_use_part(
-    object: &Map<String, Value>,
-) -> Result<Value, ProviderError> {
+fn map_google_anthropic_tool_use_part(object: &Map<String, Value>) -> Result<Value, ProviderError> {
     let id = object.get("id").and_then(Value::as_str).ok_or_else(|| {
         ProviderError::InvalidRequest("tool_use content must include `id`".to_string())
     })?;
@@ -1639,7 +1637,10 @@ fn map_google_assistant_parts(message: &CoreChatMessage) -> Result<Vec<Value>, P
             if let Some(id) = object.get("id").and_then(Value::as_str) {
                 function_call_part["functionCall"]["id"] = json!(id);
             }
-            if let Some(signature) = object.get("thought_signature").or_else(|| object.get("thoughtSignature")) {
+            if let Some(signature) = object
+                .get("thought_signature")
+                .or_else(|| object.get("thoughtSignature"))
+            {
                 function_call_part["thoughtSignature"] = signature.clone();
             }
             parts.push(function_call_part);
@@ -1893,19 +1894,13 @@ fn convert_openai_tools_for_google(body: &mut Map<String, Value>) -> Result<(), 
             Value::String(choice) if choice == "required" || choice == "any" => {
                 Some(json!({ "mode": "ANY" }))
             }
-            Value::Object(object)
-                if object.get("type").and_then(Value::as_str) == Some("auto") =>
-            {
+            Value::Object(object) if object.get("type").and_then(Value::as_str) == Some("auto") => {
                 Some(json!({ "mode": "AUTO" }))
             }
-            Value::Object(object)
-                if object.get("type").and_then(Value::as_str) == Some("any") =>
-            {
+            Value::Object(object) if object.get("type").and_then(Value::as_str) == Some("any") => {
                 Some(json!({ "mode": "ANY" }))
             }
-            Value::Object(object)
-                if object.get("type").and_then(Value::as_str) == Some("tool") =>
-            {
+            Value::Object(object) if object.get("type").and_then(Value::as_str) == Some("tool") => {
                 let name = object.get("name").and_then(Value::as_str).ok_or_else(|| {
                     ProviderError::InvalidRequest(
                         "tool tool_choice must include `name`".to_string(),
@@ -2009,13 +2004,19 @@ fn convert_openai_function_declarations(value: &Value) -> Result<Vec<Value>, Pro
             } else {
                 continue;
             };
-        let name = function.get("name").and_then(Value::as_str).ok_or_else(|| {
-            ProviderError::InvalidRequest("function tools must include a name".to_string())
-        })?;
+        let name = function
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest("function tools must include a name".to_string())
+            })?;
         let mut declaration = Map::new();
         declaration.insert("name".to_string(), Value::String(name.to_string()));
         if let Some(description) = function.get("description").and_then(Value::as_str) {
-            declaration.insert("description".to_string(), Value::String(description.to_string()));
+            declaration.insert(
+                "description".to_string(),
+                Value::String(description.to_string()),
+            );
         }
         if anthropic_shape {
             let input_schema = function.get("input_schema").ok_or_else(|| {
@@ -2776,7 +2777,10 @@ fn extract_google_candidate_tool_calls(candidate: &Value) -> Vec<Value> {
                     "arguments": args
                 }
             });
-            if let Some(signature) = part.get("thoughtSignature").or_else(|| part.get("thought_signature")) {
+            if let Some(signature) = part
+                .get("thoughtSignature")
+                .or_else(|| part.get("thought_signature"))
+            {
                 call_obj["thought_signature"] = signature.clone();
             }
             tool_calls.push(call_obj);
@@ -3731,9 +3735,8 @@ mod tests {
             json!({"type":"function","function":{"name":"lookup"}}),
         );
 
-        let mapped =
-            map_google_request(&request, &context("google/gemini-2.0-flash"), false)
-                .expect("mapped");
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
 
         assert_eq!(
             mapped["tools"][0]["functionDeclarations"][0]["name"],
@@ -3743,10 +3746,7 @@ mod tests {
             mapped["tools"][0]["functionDeclarations"][0]["description"],
             "Look up weather"
         );
-        assert_eq!(
-            mapped["toolConfig"]["functionCallingConfig"]["mode"],
-            "ANY"
-        );
+        assert_eq!(mapped["toolConfig"]["functionCallingConfig"]["mode"], "ANY");
         assert_eq!(
             mapped["toolConfig"]["functionCallingConfig"]["allowedFunctionNames"][0],
             "lookup"
@@ -3763,10 +3763,7 @@ mod tests {
             mapped["contents"][1]["parts"][0]["functionCall"]["args"]["city"],
             "London"
         );
-        assert_eq!(
-            mapped["contents"][2]["role"],
-            "user"
-        );
+        assert_eq!(mapped["contents"][2]["role"], "user");
         assert_eq!(
             mapped["contents"][2]["parts"][0]["functionResponse"]["name"],
             "lookup"
@@ -3829,9 +3826,8 @@ mod tests {
             json!({"type":"tool","name":"lookup"}),
         );
 
-        let mapped =
-            map_google_request(&request, &context("google/gemini-2.0-flash"), false)
-                .expect("mapped");
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
 
         assert_eq!(
             mapped["tools"][0]["functionDeclarations"][0]["parameters"]["required"][0],
@@ -3911,9 +3907,8 @@ mod tests {
             },
         ]);
 
-        let mapped =
-            map_google_request(&request, &context("google/gemini-2.0-flash"), false)
-                .expect("mapped");
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
 
         assert_eq!(mapped["contents"].as_array().expect("contents").len(), 3);
         assert_eq!(mapped["contents"][2]["role"], "user");
@@ -3956,9 +3951,8 @@ mod tests {
             },
         ]);
 
-        let error =
-            map_google_request(&request, &context("google/gemini-2.0-flash"), false)
-                .expect_err("future tool calls must not resolve earlier tool results");
+        let error = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect_err("future tool calls must not resolve earlier tool results");
 
         assert!(matches!(
             error,
@@ -3979,9 +3973,8 @@ mod tests {
             .extra
             .insert("tool_choice".to_string(), json!("none"));
 
-        let mapped =
-            map_google_request(&request, &context("google/gemini-2.0-flash"), false)
-                .expect("mapped");
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
 
         assert_eq!(
             mapped["toolConfig"]["functionCallingConfig"]["mode"],
@@ -4002,14 +3995,10 @@ mod tests {
             .extra
             .insert("tool_choice".to_string(), json!("any"));
 
-        let mapped =
-            map_google_request(&request, &context("google/gemini-2.0-flash"), false)
-                .expect("mapped");
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
 
-        assert_eq!(
-            mapped["toolConfig"]["functionCallingConfig"]["mode"],
-            "ANY"
-        );
+        assert_eq!(mapped["toolConfig"]["functionCallingConfig"]["mode"], "ANY");
     }
 
     #[test]
@@ -4031,12 +4020,8 @@ mod tests {
             .extra
             .insert("parallel_tool_calls".to_string(), json!(false));
 
-        let error = map_google_request(
-            &request,
-            &context("google/gemini-2.0-flash"),
-            false,
-        )
-        .expect_err("disabled parallel calls are not supported");
+        let error = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect_err("disabled parallel calls are not supported");
         assert!(matches!(
             error,
             ProviderError::InvalidRequest(message)
@@ -4046,9 +4031,8 @@ mod tests {
         request
             .extra
             .insert("parallel_tool_calls".to_string(), json!(true));
-        let mapped =
-            map_google_request(&request, &context("google/gemini-2.0-flash"), false)
-                .expect("parallel calls are supported");
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("parallel calls are supported");
         assert!(mapped.get("parallel_tool_calls").is_none());
     }
 
@@ -4071,15 +4055,19 @@ mod tests {
             }],
             "usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":7,"totalTokenCount":12}
         });
-        let normalized =
-            normalize_google_response(&response, &context("google/gemini-2.0-flash"));
+        let normalized = normalize_google_response(&response, &context("google/gemini-2.0-flash"));
 
         assert_eq!(normalized["choices"][0]["finish_reason"], "tool_calls");
-        let tool_calls = normalized["choices"][0]["message"]["tool_calls"].as_array().expect("tool_calls array");
+        let tool_calls = normalized["choices"][0]["message"]["tool_calls"]
+            .as_array()
+            .expect("tool_calls array");
         assert_eq!(tool_calls.len(), 1);
         assert_eq!(tool_calls[0]["id"], "provider-call-123");
         assert_eq!(tool_calls[0]["function"]["name"], "lookup");
-        assert_eq!(tool_calls[0]["function"]["arguments"], "{\"city\":\"London\"}");
+        assert_eq!(
+            tool_calls[0]["function"]["arguments"],
+            "{\"city\":\"London\"}"
+        );
     }
 
     #[test]
@@ -4098,8 +4086,7 @@ mod tests {
             }]
         });
 
-        let normalized =
-            normalize_google_response(&response, &context("google/gemini-2.0-flash"));
+        let normalized = normalize_google_response(&response, &context("google/gemini-2.0-flash"));
 
         assert_eq!(normalized["choices"][0]["finish_reason"], "stop");
         assert!(

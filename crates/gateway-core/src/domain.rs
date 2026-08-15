@@ -3178,18 +3178,33 @@ mod tests {
 
     #[test]
     fn identifies_supported_vertex_google_chat_upstream_models() {
-        assert!(is_supported_vertex_google_chat_upstream_model("google/gemini-2.0-flash"));
-        assert!(is_supported_vertex_google_chat_upstream_model("google/gemini-1.5-pro"));
-        assert!(!is_supported_vertex_google_chat_upstream_model("google/text-embedding-005"));
-        assert!(!is_supported_vertex_google_chat_upstream_model("google/gemini-embedding-001"));
-        assert!(!is_supported_vertex_google_chat_upstream_model("google/gemini-embedding-2"));
-        assert!(!is_supported_vertex_google_chat_upstream_model("google/text-bison"));
-        assert!(!is_supported_vertex_google_chat_upstream_model("anthropic/claude-sonnet-4-6"));
+        assert!(is_supported_vertex_google_chat_upstream_model(
+            "google/gemini-2.0-flash"
+        ));
+        assert!(is_supported_vertex_google_chat_upstream_model(
+            "google/gemini-1.5-pro"
+        ));
+        assert!(!is_supported_vertex_google_chat_upstream_model(
+            "google/text-embedding-005"
+        ));
+        assert!(!is_supported_vertex_google_chat_upstream_model(
+            "google/gemini-embedding-001"
+        ));
+        assert!(!is_supported_vertex_google_chat_upstream_model(
+            "google/gemini-embedding-2"
+        ));
+        assert!(!is_supported_vertex_google_chat_upstream_model(
+            "google/text-bison"
+        ));
+        assert!(!is_supported_vertex_google_chat_upstream_model(
+            "anthropic/claude-sonnet-4-6"
+        ));
     }
 
     #[test]
     fn vertex_route_capabilities_enable_tools_for_gemini_and_anthropic() {
-        let gemini_caps = vertex_route_capabilities_for_upstream_model(Some("google/gemini-2.0-flash"));
+        let gemini_caps =
+            vertex_route_capabilities_for_upstream_model(Some("google/gemini-2.0-flash"));
         assert!(gemini_caps.chat_completions);
         assert!(gemini_caps.stream);
         assert!(gemini_caps.tools);
@@ -3197,13 +3212,15 @@ mod tests {
         assert!(gemini_caps.developer_role);
         assert!(!gemini_caps.embeddings);
 
-        let anthropic_caps = vertex_route_capabilities_for_upstream_model(Some("anthropic/claude-sonnet-4-6"));
+        let anthropic_caps =
+            vertex_route_capabilities_for_upstream_model(Some("anthropic/claude-sonnet-4-6"));
         assert!(anthropic_caps.chat_completions);
         assert!(anthropic_caps.stream);
         assert!(anthropic_caps.tools);
         assert!(!anthropic_caps.embeddings);
 
-        let embedding_caps = vertex_route_capabilities_for_upstream_model(Some("google/gemini-embedding-001"));
+        let embedding_caps =
+            vertex_route_capabilities_for_upstream_model(Some("google/gemini-embedding-001"));
         assert!(embedding_caps.embeddings);
         assert!(!embedding_caps.chat_completions);
         assert!(!embedding_caps.stream);
