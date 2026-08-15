@@ -1494,11 +1494,10 @@ fn map_google_media_part(
         .get("url")
         .and_then(Value::as_str)
         .ok_or_else(|| ProviderError::InvalidRequest(format!("{field}.url must be a string")))?;
-    validate_google_media_uri(uri)?;
+    let parsed_uri = validate_google_media_uri(uri)?;
 
     let mime_type = explicit_media_mime_type(media, field)?
-        .map(str::to_string)
-        .or_else(|| guess_mime_type(uri))
+        .or_else(|| guess_mime_type(parsed_uri.path()))
         .ok_or_else(|| {
             ProviderError::InvalidRequest(format!(
                 "could not infer MIME type for {field} URI; set {field}.mime_type"
@@ -1521,18 +1520,23 @@ fn map_google_media_part(
     }))
 }
 
-fn validate_google_media_uri(uri: &str) -> Result<(), ProviderError> {
+fn validate_google_media_uri(uri: &str) -> Result<url::Url, ProviderError> {
     let parsed = url::Url::parse(uri).map_err(|error| {
         ProviderError::InvalidRequest(format!("invalid google vertex media URI: {error}"))
     })?;
-    if matches!(parsed.scheme(), "gs" | "https") {
-        return Ok(());
+    if !matches!(parsed.scheme(), "gs" | "https") {
+        return Err(ProviderError::InvalidRequest(format!(
+            "unsupported google vertex media URI scheme `{}`; expected gs:// or https://",
+            parsed.scheme()
+        )));
+    }
+    if parsed.host_str().is_none() {
+        return Err(ProviderError::InvalidRequest(
+            "google vertex media URI must include a host; expected gs:// or https://".to_string(),
+        ));
     }
 
-    Err(ProviderError::InvalidRequest(format!(
-        "unsupported google vertex media URI scheme `{}`; expected gs:// or https://",
-        parsed.scheme()
-    )))
+    Ok(parsed)
 }
 
 fn explicit_media_mime_type<'a>(
@@ -2882,42 +2886,26 @@ fn merge_object_overrides(base: &mut Map<String, Value>, overrides: &Map<String,
     }
 }
 
-fn guess_mime_type(uri: &str) -> Option<String> {
-    let path = url::Url::parse(uri).ok()?.path().to_ascii_lowercase();
-    let mime_type = if path.ends_with(".png") {
-        "image/png"
-    } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
-        "image/jpeg"
-    } else if path.ends_with(".webp") {
-        "image/webp"
-    } else if path.ends_with(".gif") {
-        "image/gif"
-    } else if path.ends_with(".pdf") {
-        "application/pdf"
-    } else if path.ends_with(".mp3") {
-        "audio/mpeg"
-    } else if path.ends_with(".wav") {
-        "audio/wav"
-    } else if path.ends_with(".mp4") {
-        "video/mp4"
-    } else if path.ends_with(".mov") {
-        "video/mov"
-    } else if path.ends_with(".mpeg") {
-        "video/mpeg"
-    } else if path.ends_with(".mpg") {
-        "video/mpg"
-    } else if path.ends_with(".avi") {
-        "video/avi"
-    } else if path.ends_with(".wmv") {
-        "video/wmv"
-    } else if path.ends_with(".mpegps") {
-        "video/mpegps"
-    } else if path.ends_with(".flv") {
-        "video/flv"
-    } else {
-        return None;
-    };
-    Some(mime_type.to_string())
+fn guess_mime_type(path: &str) -> Option<&'static str> {
+    let extension = path.rsplit_once('.')?.1.to_ascii_lowercase();
+    Some(match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "pdf" => "application/pdf",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "mp4" => "video/mp4",
+        "mov" => "video/mov",
+        "mpeg" => "video/mpeg",
+        "mpg" => "video/mpg",
+        "avi" => "video/avi",
+        "wmv" => "video/wmv",
+        "mpegps" => "video/mpegps",
+        "flv" => "video/flv",
+        _ => return None,
+    })
 }
 
 fn normalize_google_stream<S>(
@@ -3753,6 +3741,16 @@ mod tests {
                     }
                 }]),
                 "URI scheme `file`",
+            ),
+            (
+                json!([{
+                    "type": "video_url",
+                    "video_url": {
+                        "url": "gs:bucket/video.mp4",
+                        "mime_type": "video/mp4"
+                    }
+                }]),
+                "must include a host",
             ),
             (
                 json!([{

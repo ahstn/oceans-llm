@@ -70,6 +70,18 @@ const MEDIA_URL_PATHS: &[BuiltInPayloadPath] = &[
     ]),
 ];
 
+const ERROR_TEXT_PATHS: &[BuiltInPayloadPath] = &[
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("error"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("error"),
+        BuiltInPathSegment::Key("message"),
+    ]),
+];
+
 const LARGE_FIELD_PATHS: &[BuiltInPayloadPath] = &[
     BuiltInPayloadPath::new(&[
         BuiltInPathSegment::Key("body"),
@@ -420,9 +432,16 @@ fn redact_json_value_at_path(
         .iter()
         .any(|candidate| candidate.matches(path))
         && let Some(url) = value.as_str()
-        && let Some((base, _)) = url.split_once('?')
     {
-        return Value::String(format!("{base}?<redacted>"));
+        return Value::String(redact_url_query(url));
+    }
+
+    if ERROR_TEXT_PATHS
+        .iter()
+        .any(|candidate| candidate.matches(path))
+        && let Some(message) = value.as_str()
+    {
+        return Value::String(redact_https_url_queries(message));
     }
 
     match value {
@@ -450,6 +469,32 @@ fn redact_json_value_at_path(
         }
         _ => value.clone(),
     }
+}
+
+fn redact_url_query(url: &str) -> String {
+    url.split_once('?')
+        .map_or_else(|| url.to_string(), |(base, _)| format!("{base}?<redacted>"))
+}
+
+fn redact_https_url_queries(text: &str) -> String {
+    let lowercase = text.to_ascii_lowercase();
+    let mut redacted = String::with_capacity(text.len());
+    let mut cursor = 0;
+
+    while let Some(relative_start) = lowercase[cursor..].find("https://") {
+        let start = cursor + relative_start;
+        let end = text[start..]
+            .find(|character: char| {
+                character.is_ascii_whitespace() || matches!(character, '"' | '\'' | '`' | '<' | '>')
+            })
+            .map_or(text.len(), |relative_end| start + relative_end);
+        redacted.push_str(&text[cursor..start]);
+        redacted.push_str(&redact_url_query(&text[start..end]));
+        cursor = end;
+    }
+
+    redacted.push_str(&text[cursor..]);
+    redacted
 }
 
 #[must_use]
@@ -756,6 +801,25 @@ mod tests {
         for secret in ["image-secret", "video-secret", "file-secret"] {
             assert!(!retained.contains(secret));
         }
+    }
+
+    #[test]
+    fn redacts_signed_media_urls_echoed_in_error_messages() {
+        let input = json!({
+            "body": {
+                "error": {
+                    "message": "Vertex rejected HTTPS://media.example.invalid/video.mp4?signature=error-secret while processing the request"
+                }
+            }
+        });
+
+        let redacted = redact_json_value(&input);
+
+        assert_eq!(
+            redacted["body"]["error"]["message"],
+            "Vertex rejected HTTPS://media.example.invalid/video.mp4?<redacted> while processing the request"
+        );
+        assert!(!redacted.to_string().contains("error-secret"));
     }
 
     #[test]
