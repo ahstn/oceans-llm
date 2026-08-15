@@ -379,12 +379,12 @@ pub(super) fn is_anthropic_claude_model(upstream_model: &str) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum AnthropicMessagesTarget {
+pub(crate) enum AnthropicMessagesTarget {
     RuntimeInvoke,
     MantleMessages,
 }
 
-pub(super) fn map_chat_request_to_anthropic_messages(
+pub(crate) fn map_chat_request_to_anthropic_messages(
     request: &CoreChatRequest,
     context: &ProviderRequestContext,
     target: AnthropicMessagesTarget,
@@ -448,7 +448,7 @@ pub(super) fn map_chat_request_to_anthropic_messages(
             }
             other => {
                 return Err(ProviderError::InvalidRequest(format!(
-                    "unsupported message role `{other}` for aws_bedrock Anthropic Claude Messages mapping"
+                    "unsupported message role `{other}` for Anthropic Messages mapping"
                 )));
             }
         }
@@ -456,8 +456,7 @@ pub(super) fn map_chat_request_to_anthropic_messages(
 
     if messages.is_empty() {
         return Err(ProviderError::InvalidRequest(
-            "aws_bedrock Anthropic Claude Messages requires at least one user, assistant, or tool message"
-                .to_string(),
+            "Anthropic Messages requires at least one user, assistant, or tool message".to_string(),
         ));
     }
 
@@ -484,15 +483,14 @@ pub(super) fn map_chat_request_to_anthropic_messages(
 
     if !body.contains_key("max_tokens") {
         return Err(ProviderError::InvalidRequest(
-            "aws_bedrock Anthropic Claude Messages requires `max_tokens` or `max_completion_tokens`"
-                .to_string(),
+            "Anthropic Messages requires `max_tokens` or `max_completion_tokens`".to_string(),
         ));
     }
 
     Ok(Value::Object(body))
 }
 
-pub(super) fn merge_object_overrides(
+pub(crate) fn merge_object_overrides(
     base: &mut Map<String, Value>,
     overrides: &Map<String, Value>,
 ) {

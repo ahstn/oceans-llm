@@ -17,7 +17,8 @@ use gateway_core::{
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
-    OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig,
+    CopilotAuthConfig, CopilotProviderConfig, OpenAiCompatConfig, VertexAuthConfig,
+    VertexProviderConfig,
 };
 use gateway_service::{
     McpOauthProvider, McpOauthRuntime, PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode,
@@ -34,8 +35,9 @@ mod providers;
 pub use providers::{
     AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
     GcpCloudRunOpenAiCompatAuthHeaderConfig, GcpCloudRunOpenAiCompatProviderConfig,
-    GcpVertexAuthConfig, GcpVertexProviderConfig, OpenAiCompatAuthConfig,
-    OpenAiCompatProviderConfig, ProviderConfig, ProviderDisplayConfig, ProviderTimeouts,
+    GcpVertexAuthConfig, GcpVertexProviderConfig, GitHubCopilotAuthConfig,
+    GitHubCopilotProviderConfig, OpenAiCompatAuthConfig, OpenAiCompatProviderConfig,
+    ProviderConfig, ProviderDisplayConfig, ProviderTimeouts,
 };
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -315,6 +317,105 @@ impl GatewayConfig {
                                     );
                                 }
                             }
+                        }
+                    }
+                    validate_provider_display_config(
+                        provider.id.as_str(),
+                        provider.display.as_ref(),
+                    )?;
+                }
+                ProviderConfig::GitHubCopilot(provider) => {
+                    if provider.id.trim().is_empty() {
+                        bail!("github_copilot provider id cannot be empty");
+                    }
+                    if provider.base_url.trim().is_empty() {
+                        bail!(
+                            "github_copilot provider `{}` base_url cannot be empty",
+                            provider.id
+                        );
+                    }
+                    let _ = url::Url::parse(&provider.base_url).with_context(|| {
+                        format!(
+                            "github_copilot provider `{}` base_url is invalid",
+                            provider.id
+                        )
+                    })?;
+                    if let Some(github_api_url) = provider.github_api_url.as_deref() {
+                        let _ = url::Url::parse(github_api_url).with_context(|| {
+                            format!(
+                                "github_copilot provider `{}` github_api_url is invalid",
+                                provider.id
+                            )
+                        })?;
+                    }
+                    if provider.editor_version.trim().is_empty() {
+                        bail!(
+                            "github_copilot provider `{}` editor_version cannot be empty",
+                            provider.id
+                        );
+                    }
+                    if provider.integration_id.trim().is_empty() {
+                        bail!(
+                            "github_copilot provider `{}` integration_id cannot be empty",
+                            provider.id
+                        );
+                    }
+                    if let Some(pricing_provider_id) = provider.pricing_provider_id.as_deref() {
+                        if pricing_provider_id.trim().is_empty() {
+                            bail!(
+                                "github_copilot provider `{}` pricing_provider_id cannot be empty",
+                                provider.id
+                            );
+                        }
+                        if !is_supported_pricing_provider_id(pricing_provider_id) {
+                            bail!(
+                                "github_copilot provider `{}` specifies unsupported pricing_provider_id `{pricing_provider_id}`",
+                                provider.id
+                            );
+                        }
+                    }
+                    match &provider.auth {
+                        GitHubCopilotAuthConfig::GitHubApp {
+                            app_id,
+                            private_key,
+                            installation_id,
+                            ..
+                        } => {
+                            if *app_id == 0 {
+                                bail!(
+                                    "github_copilot provider `{}` auth.app_id cannot be 0",
+                                    provider.id
+                                );
+                            }
+                            if *installation_id == 0 {
+                                bail!(
+                                    "github_copilot provider `{}` auth.installation_id cannot be 0",
+                                    provider.id
+                                );
+                            }
+                            if private_key.trim().is_empty() {
+                                bail!(
+                                    "github_copilot provider `{}` auth.private_key cannot be empty",
+                                    provider.id
+                                );
+                            }
+                            let _ = resolve_secret_reference(private_key).with_context(|| {
+                                format!(
+                                    "github_copilot provider `{}` auth.private_key",
+                                    provider.id
+                                )
+                            })?;
+                        }
+                        GitHubCopilotAuthConfig::Bearer { token } => {
+                            if token.trim().is_empty() {
+                                bail!(
+                                    "github_copilot provider `{}` bearer.token cannot be empty",
+                                    provider.id
+                                );
+                            }
+                            let _ = resolve_secret_reference(token).with_context(|| {
+                                format!("github_copilot provider `{}` bearer.token", provider.id)
+                            })?;
                         }
                     }
                     validate_provider_display_config(
@@ -797,6 +898,53 @@ impl GatewayConfig {
                         secrets,
                     });
                 }
+                ProviderConfig::GitHubCopilot(provider) => {
+                    match &provider.auth {
+                        GitHubCopilotAuthConfig::GitHubApp { private_key, .. } => {
+                            validate_env_reference_if_needed(private_key)?;
+                        }
+                        GitHubCopilotAuthConfig::Bearer { token } => {
+                            validate_env_reference_if_needed(token)?;
+                        }
+                    }
+
+                    let config = json!({
+                        "base_url": provider.base_url.trim_end_matches('/'),
+                        "github_api_url": provider.github_api_url.as_deref().map(|url| url.trim_end_matches('/')),
+                        "pricing_provider_id": provider.pricing_provider_id,
+                        "editor_version": provider.editor_version,
+                        "integration_id": provider.integration_id,
+                        "default_headers": provider.default_headers,
+                        "timeouts": provider.timeouts,
+                        "display": provider.display,
+                    });
+
+                    let secrets = Some(match &provider.auth {
+                        GitHubCopilotAuthConfig::GitHubApp {
+                            app_id,
+                            private_key,
+                            installation_id,
+                            repository_id,
+                        } => json!({
+                            "mode": "github_app",
+                            "app_id": app_id,
+                            "private_key": private_key,
+                            "installation_id": installation_id,
+                            "repository_id": repository_id,
+                        }),
+                        GitHubCopilotAuthConfig::Bearer { token } => json!({
+                            "mode": "bearer",
+                            "token": token,
+                        }),
+                    });
+
+                    providers.push(SeedProvider {
+                        provider_key: provider.id.clone(),
+                        provider_type: "github_copilot".to_string(),
+                        config,
+                        secrets,
+                    });
+                }
             }
         }
 
@@ -1114,7 +1262,9 @@ impl GatewayConfig {
 
                     configs.push(config);
                 }
-                ProviderConfig::GcpVertex(_) | ProviderConfig::AwsBedrock(_) => {}
+                ProviderConfig::GcpVertex(_)
+                | ProviderConfig::AwsBedrock(_)
+                | ProviderConfig::GitHubCopilot(_) => {}
             }
         }
 
@@ -1211,6 +1361,64 @@ impl GatewayConfig {
                     .map(|timeouts| timeouts.total_ms)
                     .unwrap_or(120_000),
             });
+        }
+
+        Ok(configs)
+    }
+    pub fn copilot_provider_configs(&self) -> anyhow::Result<Vec<CopilotProviderConfig>> {
+        let mut configs = Vec::new();
+
+        for provider in &self.providers {
+            let ProviderConfig::GitHubCopilot(provider) = provider else {
+                continue;
+            };
+
+            let auth = match &provider.auth {
+                GitHubCopilotAuthConfig::GitHubApp {
+                    app_id,
+                    private_key,
+                    installation_id,
+                    repository_id,
+                } => {
+                    let private_key_resolved = resolve_secret_reference(private_key)?;
+                    if private_key_resolved.contains("BEGIN ") {
+                        CopilotAuthConfig::GitHubApp {
+                            app_id: *app_id,
+                            private_key_pem: private_key_resolved,
+                            installation_id: *installation_id,
+                            repository_id: *repository_id,
+                        }
+                    } else {
+                        let path = resolve_path_reference(private_key)?;
+                        CopilotAuthConfig::GitHubAppKeyFile {
+                            app_id: *app_id,
+                            private_key_path: path.into(),
+                            installation_id: *installation_id,
+                            repository_id: *repository_id,
+                        }
+                    }
+                }
+                GitHubCopilotAuthConfig::Bearer { token } => CopilotAuthConfig::Bearer {
+                    token: resolve_secret_reference(token)?,
+                },
+            };
+
+            let mut config = CopilotProviderConfig::new(provider.id.clone(), auth);
+            config.base_url = provider.base_url.trim_end_matches('/').to_string();
+            config.github_api_url = provider
+                .github_api_url
+                .as_deref()
+                .map(|url| url.trim_end_matches('/').to_string());
+            config.editor_version = provider.editor_version.clone();
+            config.integration_id = provider.integration_id.clone();
+            config.default_headers = provider.default_headers.clone();
+            config.request_timeout_ms = provider
+                .timeouts
+                .as_ref()
+                .map(|timeouts| timeouts.total_ms)
+                .unwrap_or(120_000);
+
+            configs.push(config);
         }
 
         Ok(configs)
@@ -6166,5 +6374,86 @@ mcp:
             };
             assert!(config.validate().is_err(), "accepted {invalid}");
         }
+    }
+
+    #[test]
+    fn parses_github_copilot_provider_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: copilot-org
+    type: github_copilot
+    base_url: https://api.githubcopilot.com
+    pricing_provider_id: openai
+    auth:
+      mode: github_app
+      app_id: 12345
+      installation_id: 67890
+      private_key: literal.test-private-key-content
+      repository_id: 112233
+    editor_version: vscode/1.126.0
+    integration_id: vscode-chat
+models:
+  - id: copilot-gpt-4o
+    routes:
+      - provider: copilot-org
+        upstream_model: gpt-4o
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let providers = config.seed_providers().expect("seed providers");
+        assert_eq!(providers[0].provider_type, "github_copilot");
+        assert_eq!(
+            providers[0].config["base_url"],
+            "https://api.githubcopilot.com"
+        );
+        assert_eq!(providers[0].config["editor_version"], "vscode/1.126.0");
+        assert_eq!(providers[0].config["integration_id"], "vscode-chat");
+        assert_eq!(providers[0].config["pricing_provider_id"], "openai");
+
+        let runtime_configs = config
+            .copilot_provider_configs()
+            .expect("copilot runtime provider configs");
+        assert_eq!(runtime_configs.len(), 1);
+        assert_eq!(runtime_configs[0].provider_key, "copilot-org");
+        assert_eq!(runtime_configs[0].base_url, "https://api.githubcopilot.com");
+        assert_eq!(runtime_configs[0].editor_version, "vscode/1.126.0");
+        assert_eq!(runtime_configs[0].integration_id, "vscode-chat");
+    }
+
+    #[test]
+    fn parses_github_copilot_bearer_auth_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: copilot-bearer
+    type: github_copilot
+    auth:
+      mode: bearer
+      token: literal.ghs_test_token
+models:
+  - id: copilot-claude
+    routes:
+      - provider: copilot-bearer
+        upstream_model: claude-3-7-sonnet
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let runtime_configs = config
+            .copilot_provider_configs()
+            .expect("copilot runtime provider configs");
+        assert_eq!(runtime_configs.len(), 1);
+        assert_eq!(runtime_configs[0].provider_key, "copilot-bearer");
+        assert_eq!(runtime_configs[0].base_url, "https://api.githubcopilot.com");
     }
 }

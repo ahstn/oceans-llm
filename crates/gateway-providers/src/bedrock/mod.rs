@@ -650,9 +650,9 @@ impl ProviderClient for BedrockProvider {
         match api_style {
             AwsBedrockApiStyle::RuntimeConverse => Ok(normalize_converse_response(&value, context)),
             AwsBedrockApiStyle::RuntimeAnthropicInvoke
-            | AwsBedrockApiStyle::MantleAnthropicMessages => {
-                Ok(normalize_anthropic_messages_response(&value, context))
-            }
+            | AwsBedrockApiStyle::MantleAnthropicMessages => Ok(
+                normalize_anthropic_messages_response(&value, context, "aws_bedrock"),
+            ),
             AwsBedrockApiStyle::RuntimeOpenaiChat | AwsBedrockApiStyle::MantleOpenaiChat => {
                 Ok(value)
             }
@@ -683,6 +683,7 @@ impl ProviderClient for BedrockProvider {
             AwsBedrockApiStyle::MantleAnthropicMessages => Ok(normalize_anthropic_messages_stream(
                 response.bytes_stream(),
                 context.clone(),
+                "aws_bedrock",
             )),
             AwsBedrockApiStyle::RuntimeAnthropicInvoke
             | AwsBedrockApiStyle::MantleOpenaiResponses => {
@@ -761,7 +762,13 @@ mod response;
 
 use eventstream::*;
 use request::*;
+pub(crate) use request::{
+    AnthropicMessagesTarget, map_chat_request_to_anthropic_messages, merge_object_overrides,
+};
 use response::*;
+pub(crate) use response::{
+    normalize_anthropic_messages_response, normalize_anthropic_messages_stream,
+};
 
 #[cfg(test)]
 mod tests;

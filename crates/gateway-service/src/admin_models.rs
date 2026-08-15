@@ -11,7 +11,8 @@ use gateway_client_config::{
 use gateway_core::{
     GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
     PricingCatalogRepository, PricingLimits, PricingModalities, ProviderCapabilities,
-    ProviderConnection, ProviderRepository, vertex_route_capabilities_for_upstream_model,
+    ProviderConnection, ProviderRepository, github_copilot_route_capabilities_for_upstream_model,
+    vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
 
@@ -441,6 +442,9 @@ fn provider_capabilities(
             ProviderCapabilities::openai_compat_baseline()
         }
         "gcp_vertex" => vertex_route_capabilities(route),
+        "github_copilot" => github_copilot_route_capabilities_for_upstream_model(
+            route.map(|route| route.upstream_model.as_str()),
+        ),
         "aws_bedrock" => ProviderCapabilities {
             chat_completions: true,
             responses: true,
@@ -976,6 +980,20 @@ mod tests {
         assert!(anthropic_capabilities.chat_completions);
         assert!(!anthropic_capabilities.embeddings);
         assert!(anthropic_capabilities.tools);
+    }
+    #[test]
+    fn copilot_provider_disables_json_schema_for_claude_routes() {
+        let provider = provider_connection("github_copilot");
+        let claude_route = model_route(
+            "anthropic/claude-sonnet-4-6",
+            ProviderCapabilities::all_enabled(),
+        );
+        let claude_capabilities = provider_capabilities(&provider, Some(&claude_route));
+        assert!(!claude_capabilities.json_schema);
+
+        let openai_route = model_route("gpt-5.4", ProviderCapabilities::all_enabled());
+        let openai_capabilities = provider_capabilities(&provider, Some(&openai_route));
+        assert!(openai_capabilities.json_schema);
     }
 
     #[test]

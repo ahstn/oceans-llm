@@ -74,9 +74,10 @@ pub(super) fn normalize_converse_response(
     Value::Object(completion)
 }
 
-pub(super) fn normalize_anthropic_messages_response(
+pub(crate) fn normalize_anthropic_messages_response(
     value: &Value,
     context: &ProviderRequestContext,
+    provider_namespace: &str,
 ) -> Value {
     let id = value
         .get("id")
@@ -117,7 +118,7 @@ pub(super) fn normalize_anthropic_messages_response(
     if !thinking_blocks.is_empty() {
         message.insert(
             "provider_metadata".to_string(),
-            bedrock_reasoning_metadata("anthropic_messages", thinking_blocks),
+            provider_reasoning_metadata(provider_namespace, "anthropic_messages", thinking_blocks),
         );
     }
 
@@ -152,9 +153,10 @@ pub(super) fn normalize_anthropic_messages_response(
     Value::Object(completion)
 }
 
-pub(super) fn normalize_anthropic_messages_stream<S>(
+pub(crate) fn normalize_anthropic_messages_stream<S>(
     upstream: S,
     context: ProviderRequestContext,
+    provider_namespace: &'static str,
 ) -> ProviderStream
 where
     S: futures_util::stream::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
@@ -166,6 +168,8 @@ where
         let mut stream_failed = false;
         let mut id = format!("chatcmpl-{}", Uuid::new_v4().simple());
         let mut sent_role = false;
+        let mut tool_block_indexes = BTreeMap::<u64, u32>::new();
+        let mut latest_usage = None;
         futures_util::pin_mut!(upstream);
 
         while let Some(chunk) = upstream.next().await {
@@ -240,6 +244,8 @@ where
                     {
                         id = message_id.to_string();
                     }
+                    let usage = map_anthropic_stream_usage(&value)
+                        .map(|usage| merge_openai_stream_usage(&mut latest_usage, &usage));
                     if !sent_role {
                         yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
                             &id,
@@ -247,7 +253,7 @@ where
                             &context,
                             json!({"role": "assistant"}),
                             None,
-                            None,
+                            usage,
                         )).unwrap_or_else(|_| "{}".to_string())));
                         sent_role = true;
                     }
@@ -276,11 +282,12 @@ where
                         sent_role = true;
                     }
 
-                    let index = value
+                    let block_index = value
                         .get("index")
                         .and_then(Value::as_u64)
-                        .and_then(|value| u32::try_from(value).ok())
                         .unwrap_or(0);
+                    let index = u32::try_from(tool_block_indexes.len()).unwrap_or(u32::MAX);
+                    tool_block_indexes.insert(block_index, index);
                     let tool_id = content_block
                         .get("id")
                         .and_then(Value::as_str)
@@ -336,7 +343,8 @@ where
                             )).unwrap_or_else(|_| "{}".to_string())));
                         }
                         Some("thinking_delta") | Some("signature_delta") => {
-                            let metadata = bedrock_reasoning_metadata(
+                            let metadata = provider_reasoning_metadata(
+                                provider_namespace,
                                 "anthropic_messages_stream",
                                 vec![Value::Object(delta.clone())],
                             );
@@ -357,7 +365,9 @@ where
                             let index = value
                                 .get("index")
                                 .and_then(Value::as_u64)
-                                .and_then(|value| u32::try_from(value).ok())
+                                .and_then(|block_index| {
+                                    tool_block_indexes.get(&block_index).copied()
+                                })
                                 .unwrap_or(0);
                             yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
                                 &id,
@@ -382,7 +392,8 @@ where
                         .and_then(|delta| delta.get("stop_reason"))
                         .and_then(Value::as_str)
                         .map(map_stop_reason);
-                    let usage = value.get("usage").cloned();
+                    let usage = map_anthropic_stream_usage(&value)
+                        .map(|usage| merge_openai_stream_usage(&mut latest_usage, &usage));
                     if finish_reason.is_some() || usage.is_some() {
                         yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
                             &id,
@@ -614,15 +625,26 @@ pub(super) fn normalize_bedrock_reasoning_content(reasoning: &Value) -> Option<V
     None
 }
 
-pub(super) fn bedrock_reasoning_metadata(source: &str, blocks: Vec<Value>) -> Value {
-    json!({
-        "aws_bedrock": {
+fn provider_reasoning_metadata(
+    provider_namespace: &str,
+    source: &str,
+    blocks: Vec<Value>,
+) -> Value {
+    let mut metadata = Map::new();
+    metadata.insert(
+        provider_namespace.to_string(),
+        json!({
             "reasoning": {
                 "source": source,
                 "blocks": blocks
             }
-        }
-    })
+        }),
+    );
+    Value::Object(metadata)
+}
+
+pub(super) fn bedrock_reasoning_metadata(source: &str, blocks: Vec<Value>) -> Value {
+    provider_reasoning_metadata("aws_bedrock", source, blocks)
 }
 
 pub(super) fn map_stop_reason(reason: &str) -> &'static str {
@@ -634,6 +656,66 @@ pub(super) fn map_stop_reason(reason: &str) -> &'static str {
         "malformed_model_output" | "malformed_tool_use" => "stop",
         _ => "stop",
     }
+}
+
+fn map_anthropic_stream_usage(value: &Value) -> Option<Value> {
+    let usage = value
+        .get("usage")
+        .or_else(|| {
+            value
+                .get("message")
+                .and_then(|message| message.get("usage"))
+        })?
+        .as_object()?;
+    let mut mapped = Map::new();
+    if let Some(prompt) = usage.get("input_tokens").and_then(Value::as_i64) {
+        mapped.insert("prompt_tokens".to_string(), Value::Number(prompt.into()));
+    }
+    if let Some(completion) = usage.get("output_tokens").and_then(Value::as_i64) {
+        mapped.insert(
+            "completion_tokens".to_string(),
+            Value::Number(completion.into()),
+        );
+    }
+    if mapped.is_empty() {
+        None
+    } else {
+        Some(Value::Object(mapped))
+    }
+}
+
+fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Value) -> Value {
+    let prompt = usage
+        .get("prompt_tokens")
+        .or_else(|| latest.as_ref().and_then(|usage| usage.get("prompt_tokens")))
+        .and_then(Value::as_i64);
+    let completion = usage
+        .get("completion_tokens")
+        .or_else(|| {
+            latest
+                .as_ref()
+                .and_then(|usage| usage.get("completion_tokens"))
+        })
+        .and_then(Value::as_i64);
+    let mut merged = Map::new();
+    if let Some(prompt) = prompt {
+        merged.insert("prompt_tokens".to_string(), Value::Number(prompt.into()));
+    }
+    if let Some(completion) = completion {
+        merged.insert(
+            "completion_tokens".to_string(),
+            Value::Number(completion.into()),
+        );
+    }
+    if let (Some(prompt), Some(completion)) = (prompt, completion) {
+        merged.insert(
+            "total_tokens".to_string(),
+            Value::Number((prompt + completion).into()),
+        );
+    }
+    let merged = Value::Object(merged);
+    *latest = Some(merged.clone());
+    merged
 }
 
 pub(super) fn map_usage(value: &Value) -> Option<Value> {

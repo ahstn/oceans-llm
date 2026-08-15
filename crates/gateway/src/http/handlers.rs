@@ -1174,6 +1174,11 @@ fn route_effective_provider_capabilities(
     if provider.provider_type() == "gcp_vertex" {
         return vertex_route_capabilities_for_upstream_model(Some(&route.upstream_model));
     }
+    if provider.provider_type() == "github_copilot" {
+        return gateway_core::github_copilot_route_capabilities_for_upstream_model(Some(
+            &route.upstream_model,
+        ));
+    }
 
     provider.capabilities()
 }
@@ -2089,6 +2094,23 @@ mod tests {
         assert!(anthropic_capabilities.chat_completions);
         assert!(!anthropic_capabilities.embeddings);
         assert!(anthropic_capabilities.tools);
+    }
+    #[test]
+    fn copilot_claude_route_is_not_eligible_for_json_schema() {
+        let provider = StaticProvider {
+            provider_type: "github_copilot",
+            capabilities: ProviderCapabilities::all_enabled(),
+        };
+        let claude_route = route(
+            "anthropic/claude-sonnet-4-6",
+            ProviderCapabilities::all_enabled(),
+        );
+        let capabilities = route_effective_provider_capabilities(&provider, &claude_route)
+            .intersect(claude_route.capabilities);
+
+        assert!(!capabilities.json_schema);
+        assert!(capabilities.chat_completions);
+        assert!(capabilities.tools);
     }
 
     #[test]
