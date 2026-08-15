@@ -61,8 +61,8 @@ Observed from the codebase:
 - `crates/gateway/src/http/handlers.rs::v1_embeddings` already performs auth, model resolution, capability filtering, request logging, pre-provider budget guard, provider execution, usage accounting, and non-stream request logging.
 - `crates/gateway-core/src/protocol/openai.rs`, `crates/gateway-core/src/protocol/core.rs`, and `crates/gateway-core/src/protocol/translate.rs` preserve embeddings requests as `model`, raw JSON `input`, and flattened `extra` fields.
 - `crates/gateway-providers/src/openai_compat.rs` already forwards embeddings to OpenAI-compatible `/embeddings` upstreams.
-- Initial planning found `crates/gateway-providers/src/vertex.rs::embeddings` returning `ProviderError::InvalidRequest("vertex embeddings are not supported in this v1 runtime")`; the implementation now supports the listed text-embedding routes.
-- Initial planning found `crates/gateway-providers/src/vertex.rs::capabilities` advertising `embeddings: false` for Vertex; route-aware capability derivation now lives in shared gateway-core metadata.
+- Initial planning found `crates/gateway-providers/src/vertex/mod.rs::embeddings` returning `ProviderError::InvalidRequest("vertex embeddings are not supported in this v1 runtime")`; the implementation now supports the listed text-embedding routes.
+- Initial planning found `crates/gateway-providers/src/vertex/mod.rs::capabilities` advertising `embeddings: false` for Vertex; route-aware capability derivation now lives in shared gateway-core metadata.
 - Initial planning found `crates/gateway-service/src/admin_models.rs::provider_capabilities` treating non-Anthropic `gcp_vertex` as `chat_only_streaming()`; admin/model views now use the shared Vertex route capability metadata.
 - `crates/gateway-service/src/pricing_catalog.rs` maps `gcp_vertex` `google/<model_id>` routes to pricing provider `google-vertex` and model id `<model_id>`.
 - `crates/gateway-service/data/pricing_catalog_fallback.json` contains input pricing for `google-vertex/gemini-embedding-001` and `google-vertex/gemini-embedding-2`.
@@ -120,7 +120,7 @@ flowchart TD
 ### Boundary Placement
 
 - Keep OpenAI/core DTOs loose. Do not add provider-specific fields to `gateway-core` unless every provider needs typed access.
-- Add native Vertex embedding mapping helpers in `crates/gateway-providers/src/vertex.rs` near existing Google request/response mapping helpers.
+- Keep native Vertex embedding mapping helpers in `crates/gateway-providers/src/vertex/embeddings.rs`, separate from chat request and response adapters.
 - Keep generic handler behavior in `crates/gateway/src/http/handlers.rs` unchanged unless route-aware capability derivation requires a small helper update.
 - Keep ledger and budget code generic. Do not add an embeddings-specific usage table or budget path.
 - Update admin capability derivation in `crates/gateway-service/src/admin_models.rs` using the same support predicate as runtime route filtering.
@@ -176,7 +176,7 @@ If route compatibility metadata is needed to support multiple Vertex embedding e
 
 ### 1. Add Vertex Embedding Model Classification
 
-Add helpers in `crates/gateway-providers/src/vertex.rs`:
+Add helpers in `crates/gateway-providers/src/vertex/embeddings.rs`:
 
 - parse and require `PublisherFamily::Google`
 - classify supported text embedding models:
@@ -438,7 +438,7 @@ Update runtime and admin surfaces together.
 
 Runtime targets:
 
-- `crates/gateway-providers/src/vertex.rs`
+- `crates/gateway-providers/src/vertex/`
   - implement `ProviderClient::embeddings`
   - expose provider capability in a way that does not make unsupported chat routes embedding-eligible
 - `crates/gateway/src/http/handlers.rs`
@@ -518,7 +518,7 @@ Update these pages after implementation:
 
 Delegate test authoring to the Tester agent during implementation. Tests should assert behavior, not implementation plumbing.
 
-### Provider Tests: `crates/gateway-providers/src/vertex.rs`
+### Provider Tests: `crates/gateway-providers/src/vertex/tests/embeddings.rs`
 
 Add focused unit/integration-style tests for:
 
