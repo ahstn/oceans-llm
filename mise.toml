@@ -1,4 +1,4 @@
-experimental_monorepo_root = true
+min_version = "2026.8.2"
 
 [settings]
 experimental = true
@@ -19,7 +19,6 @@ opentofu = "latest"
 git-cliff = "latest"
 cocogitto = "latest"
 prek = "latest"
-"npm:agent-browser" = "latest"
 
 [env]
 CARGO_TARGET_DIR = "$HOME/.cache/cargo/target/"
@@ -361,36 +360,6 @@ description = "Run Pi and OpenCode live integration tests through Oceans LLM Gat
 depends = ["harness-integration-install"]
 run = "npm test --prefix tests/harness-integration"
 
-[tasks.generate-release-changelog]
-description = "Regenerate CHANGELOG.md for a new version tag"
-usage = 'arg "<version_tag>" help="Version tag for the new changelog section"'
-run = '''
-set -euo pipefail
-
-version_tag="${usage_version_tag?}"
-
-if git rev-parse --verify --quiet "refs/tags/${version_tag}" >/dev/null; then
-  echo "tag already exists: ${version_tag}" >&2
-  exit 1
-fi
-
-cleanup() {
-  if [ "$temporary_tag_created" = "true" ]; then
-    current_target="$(git rev-parse --verify "refs/tags/${version_tag}^{commit}" 2>/dev/null || true)"
-    if [ "$current_target" = "$temporary_target" ]; then
-      git tag --delete "$version_tag" >/dev/null 2>&1 || true
-    fi
-  fi
-}
-trap cleanup EXIT
-
-temporary_target="$(git rev-parse HEAD)"
-temporary_tag_created=false
-git tag "$version_tag" "$temporary_target"
-temporary_tag_created=true
-git-cliff -o CHANGELOG.md
-'''
-
 [tasks.release]
 description = "Create and publish a release"
 depends = ["sync-pricing-catalog"]
@@ -399,25 +368,7 @@ run = '''
 set -euo pipefail
 
 cog bump --auto --skip-untracked
-tag="$(cog get-version --tag)"
-previous_tag="$(git describe --tags --abbrev=0 "${tag}^")"
-release_notes="$(git-cliff "${previous_tag}..${tag}^" --tag "$tag" --strip header)"
+tag="$(cog get-version --tag)" # TODO: prints over two lines
 git push --atomic origin main "$tag"
-gh release create "$tag" --title "$tag" --notes "$release_notes"
-'''
-
-[tasks.release-dry-run]
-description = "Preview the next version and validate release rendering without changing the repository"
-run = '''
-set -euo pipefail
-
-next_tag="$(cog bump --auto --dry-run --skip-untracked)"
-case "$next_tag" in
-  v[0-9]*) ;;
-  *) echo "$next_tag" >&2; exit 1 ;;
-esac
-next_version="${next_tag#v}"
-
-cargo release version "$next_version"
-git-cliff --unreleased --tag "$next_tag" --offline
+gh release create "$tag" --title "$tag" --notes $(git-cliff --latest)
 '''

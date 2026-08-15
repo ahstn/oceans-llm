@@ -12,8 +12,9 @@ pub enum ProviderConfig {
     GcpCloudRunOpenAiCompat(GcpCloudRunOpenAiCompatProviderConfig),
     GcpVertex(GcpVertexProviderConfig),
     AwsBedrock(AwsBedrockProviderConfig),
+    #[serde(rename = "github_copilot")]
+    GitHubCopilot(GitHubCopilotProviderConfig),
 }
-
 impl ProviderConfig {
     #[must_use]
     pub fn id(&self) -> &str {
@@ -22,6 +23,7 @@ impl ProviderConfig {
             Self::GcpCloudRunOpenAiCompat(provider) => &provider.id,
             Self::GcpVertex(provider) => &provider.id,
             Self::AwsBedrock(provider) => &provider.id,
+            Self::GitHubCopilot(provider) => &provider.id,
         }
     }
 }
@@ -141,6 +143,55 @@ pub struct AwsBedrockProviderConfig {
     pub timeouts: Option<ProviderTimeouts>,
     #[serde(default)]
     pub display: Option<ProviderDisplayConfig>,
+}
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitHubCopilotProviderConfig {
+    pub id: String,
+    #[serde(default = "default_copilot_base_url")]
+    pub base_url: String,
+    #[serde(default)]
+    pub github_api_url: Option<String>,
+    #[serde(default)]
+    pub pricing_provider_id: Option<String>,
+    pub auth: GitHubCopilotAuthConfig,
+    #[serde(default = "default_copilot_editor_version")]
+    pub editor_version: String,
+    #[serde(default = "default_copilot_integration_id")]
+    pub integration_id: String,
+    #[serde(default)]
+    pub default_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub timeouts: Option<ProviderTimeouts>,
+    #[serde(default)]
+    pub display: Option<ProviderDisplayConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum GitHubCopilotAuthConfig {
+    #[serde(rename = "github_app")]
+    GitHubApp {
+        app_id: u64,
+        private_key: String,
+        installation_id: u64,
+        #[serde(default)]
+        repository_id: Option<u64>,
+    },
+    Bearer {
+        token: String,
+    },
+}
+
+fn default_copilot_base_url() -> String {
+    gateway_providers::DEFAULT_COPILOT_API_URL.to_string()
+}
+
+fn default_copilot_editor_version() -> String {
+    gateway_providers::DEFAULT_COPILOT_EDITOR_VERSION.to_string()
+}
+
+fn default_copilot_integration_id() -> String {
+    gateway_providers::DEFAULT_COPILOT_INTEGRATION_ID.to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

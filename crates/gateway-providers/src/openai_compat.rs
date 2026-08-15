@@ -514,14 +514,17 @@ fn normalize_anthropic_messages_tool_choice_for_openai(tool_choice: &mut Value) 
     }
 }
 
-fn apply_openai_compat_request_profile(body: &mut Value, context: &ProviderRequestContext) {
+pub(crate) fn apply_openai_compat_request_profile(
+    body: &mut Value,
+    context: &ProviderRequestContext,
+) {
     let Some(profile) = context.compatibility.openai_compat.as_ref() else {
         return;
     };
     apply_openai_compat_profile_to_body(body, profile);
 }
 
-fn apply_openai_compat_empty_tools_profile(
+pub(crate) fn apply_openai_compat_empty_tools_profile(
     body: &mut Value,
     context: &ProviderRequestContext,
 ) -> Result<(), ProviderError> {

@@ -398,7 +398,7 @@ pub(super) fn map_anthropic_content_blocks(content: &Value) -> Result<Vec<Value>
                     }
                     other => {
                         return Err(ProviderError::InvalidRequest(format!(
-                            "unsupported content type `{other}` for aws_bedrock Anthropic Claude Messages mapping"
+                            "unsupported content type `{other}` for Anthropic Messages mapping"
                         )));
                     }
                 }
@@ -446,8 +446,7 @@ pub(super) fn map_anthropic_image_block(
         }
         Value::String(url) => map_anthropic_data_url_image(url, object),
         _ => Err(ProviderError::InvalidRequest(
-            "image_url must be a string or object for aws_bedrock Anthropic Claude Messages"
-                .to_string(),
+            "image_url must be a string or object for Anthropic Messages".to_string(),
         )),
     }
 }
@@ -460,8 +459,7 @@ fn validate_anthropic_base64_image_source(
         .and_then(Value::as_str)
         .ok_or_else(|| {
             ProviderError::InvalidRequest(
-                "base64 image sources for aws_bedrock Anthropic Claude Messages must include `media_type`"
-                    .to_string(),
+                "base64 image sources for Anthropic Messages must include `media_type`".to_string(),
             )
         })?;
     if !matches!(
@@ -469,13 +467,12 @@ fn validate_anthropic_base64_image_source(
         "image/jpeg" | "image/png" | "image/webp" | "image/gif"
     ) {
         return Err(ProviderError::InvalidRequest(format!(
-            "unsupported image media type `{media_type}` for aws_bedrock Anthropic Claude Messages"
+            "unsupported image media type `{media_type}` for Anthropic Messages"
         )));
     }
     if source.get("data").and_then(Value::as_str).is_none() {
         return Err(ProviderError::InvalidRequest(
-            "base64 image sources for aws_bedrock Anthropic Claude Messages must include string `data`"
-                .to_string(),
+            "base64 image sources for Anthropic Messages must include string `data`".to_string(),
         ));
     }
 
@@ -491,7 +488,7 @@ pub(super) fn map_anthropic_data_url_image(
         .and_then(|rest| rest.split_once(";base64,"))
     else {
         return Err(ProviderError::InvalidRequest(
-            "aws_bedrock Anthropic Claude Messages only supports base64 image data URLs; remote image URLs are not supported"
+            "Anthropic Messages only supports base64 image data URLs; remote image URLs are not supported"
                 .to_string(),
         ));
     };
@@ -510,7 +507,7 @@ pub(super) fn map_anthropic_data_url_image(
             }
         })),
         other => Err(ProviderError::InvalidRequest(format!(
-            "unsupported image media type `{other}` for aws_bedrock Anthropic Claude Messages"
+            "unsupported image media type `{other}` for Anthropic Messages"
         ))),
     }
 }

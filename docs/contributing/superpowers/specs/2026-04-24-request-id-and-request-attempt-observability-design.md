@@ -127,6 +127,6 @@ Run the relevant full checks before handoff:
 
 - `mise run admin-contract-generate`
 - `mise run admin-contract-check`
-- `mise run docs-check` or docs verification task
+- `mise run //docs:build`
 - `mise run lint`
 - `mise run test`

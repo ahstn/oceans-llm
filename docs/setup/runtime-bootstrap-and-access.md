@@ -138,7 +138,7 @@ Service accounts are for non-human data-plane access.
 - Direct team-owned runtime API keys and `system-legacy` seeded keys are not supported.
 - Config-managed service-account credentials require `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` so the raw key can be stored encrypted and revealed later.
 
-Seeded users and teams are also config-backed, but password and OIDC onboarding links are still generated through the admin UI after boot.
+Seeded users and teams are also config-backed. Password users still need a unique invite URL from the control plane. OIDC and OAuth users can use the shared `/admin/login` URL after seeding. A generated per-user SSO link is optional.
 
 ## Access Matrix
 
@@ -184,6 +184,18 @@ The right first-access path depends on the runtime shape.
 - call `/healthz` and `/readyz` through the gateway service or ingress
 - sign in to `/admin` only after bootstrap-admin is intentionally enabled or a pre-existing admin exists
 
+### Config-seeded SSO users
+
+- for startup-seeded deployments, deploy or restart the gateway with config seeding enabled
+- for Helm deployments, enable `seedConfigJob.enabled` for the install or upgrade that applies the config; gateway pods use `GATEWAY_SEED_CONFIG=false` and do not seed on restart
+- confirm the configured provider appears at `/api/v1/auth/oidc/providers` or `/api/v1/auth/oauth/providers`
+- share `https://<your-oceans-host>/admin/login` with the user
+- ask the user to select the provider declared for the seeded user and sign in with an identity whose accepted provider email matches the seeded email
+- confirm the provider's email verification and allowed-domain policies accept the identity
+- confirm the user changes from `invited` to `active` after the first successful sign-in
+
+The shared login URL works for compose and Helm deployments. It does not depend on deployment output or an admin-generated SSO link. See [OIDC and SSO](../access/oidc-and-sso-status.md#start-sso-sign-in) for direct provider URLs and parameter behavior.
+
 ## Admin UI Static Assets
 
 The gateway proxies `/admin/*` to the admin UI runtime. The admin UI runtime must serve built static assets such as `/admin/assets/*.css`, JavaScript bundles, images, and fonts before TanStack route auth runs. Static asset misses should fail as static misses instead of falling through to the protected app router; otherwise an unauthenticated asset URL can render the login HTML with `content-type: text/html`, leaving `/admin` unstyled even though the HTML and JavaScript routes are reachable. See [`server.ts`](../../crates/admin-ui/web/server.ts) for the implementation and [issue #222](https://github.com/ahstn/oceans-llm/issues/222) for the original report.
@@ -206,7 +218,7 @@ That means one environment can have:
 
 ## Authentication Notes
 
-OIDC/OAuth providers and password users are seeded by config when present in the active gateway config. Local SSO testing uses [../development/authentication-testing.md](../contributing/development/authentication-testing.md); production-shaped first access still depends on the active deploy config and supplied secrets.
+OIDC/OAuth providers and users are seeded by config when present in the active gateway config. Local SSO testing uses [../development/authentication-testing.md](../contributing/development/authentication-testing.md); production-shaped first access still depends on the active deploy config and supplied secrets.
 
 ## What This Page Does Not Own
 

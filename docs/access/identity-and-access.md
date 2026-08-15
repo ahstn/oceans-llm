@@ -82,13 +82,14 @@ For the startup and first-access path, use [runtime-bootstrap-and-access.md](../
 
 ## Onboarding Model
 
-Current onboarding is admin-mediated.
+User provisioning is admin-controlled. OIDC and OAuth sign-in use a shared login entry point.
 
-- admins create users or invite them into teams
-- the control plane generates password invite links or OIDC sign-in links
-- the admin shares that link out of band
+- admins create users through config or the control plane, or invite them into teams
+- password users require a unique, token-bearing invite URL from the control plane
+- pre-provisioned OIDC and OAuth users can open `/admin/login`, select their configured provider, and activate their account after a successful identity match
+- generated SSO sign-in URLs are optional convenience links that select a provider, add an email hint, and use the account-ready landing page
 
-There is no self-service discovery flow in this slice.
+An SSO sign-in URL does not grant access. The gateway still requires a valid provider identity and applies the configured invite or JIT policy. The public login page discovers enabled providers, but it does not create an account when JIT is disabled. See [OIDC and SSO](oidc-and-sso-status.md#start-sso-sign-in) for the sign-in URLs and parameter rules.
 
 ## Team Lifecycle
 
@@ -208,7 +209,9 @@ Config-backed identity is now part of the startup seed path.
 - listed users can reconcile team membership and active budgets
 - `teams[].tags`, `users[].tags`, and `service_accounts[].tags` reconcile identity tags from config when present
 - new config-seeded users start as `invited`
-- config seeding does not emit invite URLs; admins generate onboarding links from the admin UI when needed
+- config seeding does not emit onboarding URLs
+- config-seeded OIDC and OAuth users can use the shared `/admin/login` URL; admins may generate a prefilled SSO sign-in link from the control plane when useful
+- config-seeded password users still require a unique invite URL generated through the control plane
 
 Config seeding no longer creates legacy system-owned runtime API keys. Non-human team access is managed through service accounts.
 

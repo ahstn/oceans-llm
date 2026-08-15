@@ -221,7 +221,7 @@ pub(super) fn validate_caller_thinking_for_policy(
     };
     let thinking = thinking.as_object().ok_or_else(|| {
         ProviderError::InvalidRequest(
-            "`thinking` must be an object for aws_bedrock Anthropic Claude mapping".to_string(),
+            "`thinking` must be an object for Anthropic Messages".to_string(),
         )
     })?;
     let thinking_type = thinking.get("type").and_then(Value::as_str);

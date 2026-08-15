@@ -403,7 +403,7 @@ pub(super) fn reject_unknown_anthropic_messages_fields(
     }
     let unsupported_fields = extra.keys().cloned().collect::<Vec<_>>().join(", ");
     Err(ProviderError::InvalidRequest(format!(
-        "unsupported request field(s) for aws_bedrock Anthropic Claude Messages mapping: {unsupported_fields}. Use route `extra_body` for raw provider-specific overrides"
+        "unsupported request field(s) for Anthropic Messages mapping: {unsupported_fields}. Use route `extra_body` for raw provider-specific overrides"
     )))
 }
 
@@ -445,7 +445,7 @@ pub(super) fn reject_openai_only_fields(
 
     if let Some(field) = UNSUPPORTED.iter().find(|field| extra.contains_key(**field)) {
         return Err(ProviderError::InvalidRequest(format!(
-            "`{field}` is not supported for aws_bedrock chat in this slice"
+            "`{field}` is not supported by the Anthropic Messages mapping"
         )));
     }
 

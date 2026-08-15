@@ -614,7 +614,7 @@ Use `mise` per repo convention. Focused commands first:
 /Users/ahstn/.local/bin/mise exec -- cargo test -p gateway-core embeddings
 /Users/ahstn/.local/bin/mise exec -- cargo test -p gateway-service pricing_catalog admin_models request_logging budget_guard
 /Users/ahstn/.local/bin/mise exec -- cargo test -p gateway -- embeddings
-/Users/ahstn/.local/bin/mise run docs-check
+/Users/ahstn/.local/bin/mise run //docs:build
 ```
 
 Before handoff after implementation:

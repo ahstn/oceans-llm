@@ -2438,6 +2438,12 @@ pub fn is_supported_vertex_text_embedding_upstream_model(upstream_model: &str) -
 }
 
 #[must_use]
+pub fn is_supported_vertex_google_chat_upstream_model(upstream_model: &str) -> bool {
+    upstream_model.starts_with("google/gemini-")
+        && !is_supported_vertex_text_embedding_upstream_model(upstream_model)
+}
+
+#[must_use]
 pub const fn vertex_text_embedding_capabilities() -> ProviderCapabilities {
     ProviderCapabilities {
         chat_completions: false,
@@ -2467,7 +2473,26 @@ pub fn vertex_route_capabilities_for_upstream_model(
         return ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true);
     }
 
+    if is_supported_vertex_google_chat_upstream_model(upstream_model) {
+        return ProviderCapabilities::with_dimensions(true, true, false, true, true, true, true);
+    }
+
     ProviderCapabilities::chat_only_streaming()
+}
+#[must_use]
+pub fn github_copilot_route_capabilities_for_upstream_model(
+    upstream_model: Option<&str>,
+) -> ProviderCapabilities {
+    let mut capabilities = ProviderCapabilities::all_enabled();
+    let Some(upstream_model) = upstream_model else {
+        return capabilities;
+    };
+    let normalized = upstream_model.to_ascii_lowercase();
+    let model_name = normalized.rsplit('/').next().unwrap_or(&normalized);
+    if model_name.starts_with("claude-") {
+        capabilities.json_schema = false;
+    }
+    capabilities
 }
 
 const fn default_true() -> bool {
@@ -3178,4 +3203,68 @@ pub struct UpdateReviewAgentRunRecord {
     pub degraded_features_json: Option<Value>,
     pub error_summary: Option<String>,
     pub updated_at: OffsetDateTime,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        is_supported_vertex_google_chat_upstream_model,
+        vertex_route_capabilities_for_upstream_model,
+    };
+
+    #[test]
+    fn identifies_supported_vertex_google_chat_upstream_models() {
+        assert!(is_supported_vertex_google_chat_upstream_model(
+            "google/gemini-2.0-flash"
+        ));
+        assert!(is_supported_vertex_google_chat_upstream_model(
+            "google/gemini-1.5-pro"
+        ));
+        assert!(!is_supported_vertex_google_chat_upstream_model(
+            "google/text-embedding-005"
+        ));
+        assert!(!is_supported_vertex_google_chat_upstream_model(
+            "google/gemini-embedding-001"
+        ));
+        assert!(!is_supported_vertex_google_chat_upstream_model(
+            "google/gemini-embedding-2"
+        ));
+        assert!(!is_supported_vertex_google_chat_upstream_model(
+            "google/text-bison"
+        ));
+        assert!(!is_supported_vertex_google_chat_upstream_model(
+            "anthropic/claude-sonnet-4-6"
+        ));
+    }
+
+    #[test]
+    fn vertex_route_capabilities_enable_tools_for_gemini_and_anthropic() {
+        let gemini_caps =
+            vertex_route_capabilities_for_upstream_model(Some("google/gemini-2.0-flash"));
+        assert!(gemini_caps.chat_completions);
+        assert!(gemini_caps.stream);
+        assert!(gemini_caps.tools);
+        assert!(gemini_caps.vision);
+        assert!(gemini_caps.developer_role);
+        assert!(!gemini_caps.embeddings);
+
+        let anthropic_caps =
+            vertex_route_capabilities_for_upstream_model(Some("anthropic/claude-sonnet-4-6"));
+        assert!(anthropic_caps.chat_completions);
+        assert!(anthropic_caps.stream);
+        assert!(anthropic_caps.tools);
+        assert!(!anthropic_caps.embeddings);
+
+        let embedding_caps =
+            vertex_route_capabilities_for_upstream_model(Some("google/gemini-embedding-001"));
+        assert!(embedding_caps.embeddings);
+        assert!(!embedding_caps.chat_completions);
+        assert!(!embedding_caps.stream);
+        assert!(!embedding_caps.tools);
+
+        let unconfigured = vertex_route_capabilities_for_upstream_model(None);
+        assert!(unconfigured.chat_completions);
+        assert!(unconfigured.stream);
+        assert!(!unconfigured.tools);
+    }
 }

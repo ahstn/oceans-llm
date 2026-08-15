@@ -1,6 +1,4 @@
 [tools]
-node = "lts"
-gh = "latest"
 "npm:wrangler" = "latest"
 
 [env]
@@ -12,11 +10,6 @@ CLOUDFLARE_PAGES_CUSTOM_DOMAIN = "docs.oceans-llm.com"
 [tasks.install]
 description = "Install VitePress docs dependencies"
 run = "npm ci"
-
-[tasks.check]
-description = "Validate markdown links and required docs graph headers"
-depends = [":install"]
-run = "npm run docs:check"
 
 [tasks.dev]
 description = "Run the VitePress docs site locally"
@@ -32,10 +25,6 @@ run = "npm run docs:build"
 description = "Preview the built VitePress docs site"
 depends = [":build"]
 run = "npm run docs:preview"
-
-[tasks.verify]
-description = "Run docs structure checks and build the docs site"
-depends = [":check", ":build"]
 
 [tasks.cf-pages-create]
 description = "Create the Cloudflare Pages project for the docs site"

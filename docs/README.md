@@ -23,12 +23,11 @@ What lives where:
 - `contributing/` holds published maintainer and contributor workflows.
 - `adr/` explains why decisions were made.
 - `internal/` holds research and rough notes that should not be treated as live contract.
-- `scripts/docs-check.ts` keeps link, ownership, and nav checks close to the docs package.
 
 When adding a new canonical page:
 
 - place it in the right section folder
 - add it to the matching VitePress sidebar group
 - link it from `index.md` if it changes the audience map
-- run `npm run docs:check` or `mise run docs-check` before handing docs work off
+- run `mise run //docs:build` before handing docs work off
 - keep `adr/` and `internal/` out of the public nav
