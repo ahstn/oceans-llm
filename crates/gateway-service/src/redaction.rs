@@ -68,6 +68,24 @@ const MEDIA_URL_PATHS: &[BuiltInPayloadPath] = &[
         BuiltInPathSegment::Key("file"),
         BuiltInPathSegment::Key("url"),
     ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("messages"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("input_file"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("messages"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("document"),
+        BuiltInPathSegment::Key("url"),
+    ]),
 ];
 
 const ERROR_TEXT_PATHS: &[BuiltInPayloadPath] = &[
@@ -791,6 +809,18 @@ mod tests {
                             "file": {
                                 "url": "https://media.example.invalid/file.pdf?credential=file-secret"
                             }
+                        },
+                        {
+                            "type": "input_file",
+                            "input_file": {
+                                "url": "https://media.example.invalid/input.pdf?signature=input-secret"
+                            }
+                        },
+                        {
+                            "type": "document",
+                            "document": {
+                                "url": "https://media.example.invalid/document.pdf?signature=document-secret"
+                            }
                         }
                     ]
                 }]
@@ -813,8 +843,22 @@ mod tests {
             content[2]["file"]["url"],
             "https://media.example.invalid/file.pdf?<redacted>"
         );
+        assert_eq!(
+            content[3]["input_file"]["url"],
+            "https://media.example.invalid/input.pdf?<redacted>"
+        );
+        assert_eq!(
+            content[4]["document"]["url"],
+            "https://media.example.invalid/document.pdf?<redacted>"
+        );
         let retained = redacted.to_string();
-        for secret in ["image-secret", "video-secret", "file-secret"] {
+        for secret in [
+            "image-secret",
+            "video-secret",
+            "file-secret",
+            "input-secret",
+            "document-secret",
+        ] {
             assert!(!retained.contains(secret));
         }
     }

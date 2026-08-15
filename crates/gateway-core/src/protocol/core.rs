@@ -226,7 +226,9 @@ fn response_input_item_has_vision(value: &Value) -> bool {
         .is_some_and(|content_type| {
             matches!(
                 content_type,
-                ContentPartType::InputImage | ContentPartType::InputFile
+                ContentPartType::InputImage
+                    | ContentPartType::InputVideo
+                    | ContentPartType::InputFile
             )
         })
         || object
@@ -391,6 +393,23 @@ mod tests {
                 "{content_type} must require a vision-capable route"
             );
         }
+    }
+
+    #[test]
+    fn responses_input_video_requires_vision_capability() {
+        let request = super::ResponsesRequest {
+            model: "video-reader".to_string(),
+            input: json!([{"type":"input_video","video_url":"https://example.test/video.mp4"}]),
+            stream: false,
+            instructions: None,
+            tools: None,
+            tool_choice: None,
+            reasoning: None,
+            text: None,
+            extra: BTreeMap::new(),
+        };
+
+        assert!(request.requirements().vision);
     }
 
     #[test]
