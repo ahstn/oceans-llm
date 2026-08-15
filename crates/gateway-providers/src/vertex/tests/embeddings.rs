@@ -44,6 +44,25 @@ fn maps_vertex_embedding_aliases_to_predict_payload() {
     assert_eq!(mapped.bodies[0]["parameters"]["autoTruncate"], false);
 }
 
+#[test]
+fn rejects_unknown_embedding_model_dimension_limits_without_panicking() {
+    let mut request = embedding_request(json!("document text"));
+    request.extra.insert("dimensions".to_string(), json!(128));
+
+    let error = map_google_embedding_request(
+        &request,
+        &context("google/future-embedding-model"),
+        "future-embedding-model",
+    )
+    .expect_err("unknown model must return an error");
+
+    assert!(matches!(
+        error,
+        ProviderError::InvalidRequest(message)
+            if message.contains("unsupported vertex embeddings model")
+    ));
+}
+
 #[tokio::test]
 async fn rejects_invalid_vertex_embedding_inputs_and_alias_conflicts() {
     let cases = [

@@ -47,6 +47,33 @@ impl RequestRequirements {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentPartType {
+    ImageUrl,
+    InputImage,
+    VideoUrl,
+    InputVideo,
+    File,
+    InputFile,
+    Document,
+}
+
+impl ContentPartType {
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "image_url" => Some(Self::ImageUrl),
+            "input_image" => Some(Self::InputImage),
+            "video_url" => Some(Self::VideoUrl),
+            "input_video" => Some(Self::InputVideo),
+            "file" => Some(Self::File),
+            "input_file" => Some(Self::InputFile),
+            "document" => Some(Self::Document),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChatRequest {
     pub model: String,
@@ -192,12 +219,19 @@ fn response_input_item_has_vision(value: &Value) -> bool {
         return false;
     };
 
-    matches!(
-        object.get("type").and_then(Value::as_str),
-        Some("input_image" | "input_file")
-    ) || object
-        .get("content")
-        .is_some_and(response_input_content_has_vision)
+    object
+        .get("type")
+        .and_then(Value::as_str)
+        .and_then(ContentPartType::parse)
+        .is_some_and(|content_type| {
+            matches!(
+                content_type,
+                ContentPartType::InputImage | ContentPartType::InputFile
+            )
+        })
+        || object
+            .get("content")
+            .is_some_and(response_input_content_has_vision)
 }
 
 fn response_input_content_has_vision(value: &Value) -> bool {
@@ -250,18 +284,12 @@ fn content_part_has_vision_input(value: &Value) -> bool {
 
     // `vision` is the gateway's capability gate for non-text inputs. Keep the Chat file
     // aliases accepted by provider adapters aligned with Responses `input_file` routing.
-    matches!(
-        object.get("type").and_then(Value::as_str),
-        Some(
-            "image_url"
-                | "input_image"
-                | "video_url"
-                | "input_video"
-                | "file"
-                | "input_file"
-                | "document"
-        )
-    ) || object.contains_key("image_url")
+    object
+        .get("type")
+        .and_then(Value::as_str)
+        .and_then(ContentPartType::parse)
+        .is_some()
+        || object.contains_key("image_url")
 }
 
 #[cfg(test)]

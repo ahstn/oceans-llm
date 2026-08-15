@@ -93,11 +93,8 @@ pub(super) fn map_google_request(
         body.insert(key, value);
     }
 
-    if stream {
-        body.remove("stream");
-    }
-
     merge_object_overrides(&mut body, &context.extra_body);
+    body.remove("stream");
     convert_openai_tools_for_google(&mut body)?;
     reject_google_streamed_function_call_arguments(&body)?;
     validate_google_stream_candidate_count(&body, stream)?;
@@ -169,21 +166,22 @@ pub(super) fn map_google_parts(
                         })?;
                         parts.push(json!({ "text": text }));
                     }
-                    "image_url" | "input_image" => {
+                    kind if matches!(
+                        CoreContentPartType::parse(kind),
+                        Some(CoreContentPartType::ImageUrl | CoreContentPartType::InputImage)
+                    ) =>
+                    {
                         parts.push(map_google_media_part(
                             object,
                             "image_url",
                             MediaModality::Image,
                         )?);
                     }
-                    "video_url" => {
-                        parts.push(map_google_media_part(
-                            object,
-                            "video_url",
-                            MediaModality::Video,
-                        )?);
-                    }
-                    "input_video" => {
+                    kind if matches!(
+                        CoreContentPartType::parse(kind),
+                        Some(CoreContentPartType::VideoUrl | CoreContentPartType::InputVideo)
+                    ) =>
+                    {
                         let field = if object.contains_key("input_video") {
                             "input_video"
                         } else {
@@ -191,8 +189,20 @@ pub(super) fn map_google_parts(
                         };
                         parts.push(map_google_media_part(object, field, MediaModality::Video)?);
                     }
-                    "file" => {
-                        parts.push(map_google_media_part(object, "file", MediaModality::File)?);
+                    kind if matches!(
+                        CoreContentPartType::parse(kind),
+                        Some(
+                            CoreContentPartType::File
+                                | CoreContentPartType::InputFile
+                                | CoreContentPartType::Document
+                        )
+                    ) =>
+                    {
+                        let field = ["file", "input_file", "document"]
+                            .into_iter()
+                            .find(|field| object.contains_key(*field))
+                            .unwrap_or("file");
+                        parts.push(map_google_media_part(object, field, MediaModality::File)?);
                     }
                     "tool_use" => {
                         parts.push(map_google_anthropic_tool_use_part(object)?);
@@ -268,7 +278,7 @@ fn map_google_media_part(
     let parsed_uri = validate_google_media_uri(uri)?;
 
     let mime_type = explicit_media_mime_type(media, field)?
-        .or_else(|| guess_mime_type(parsed_uri.path()))
+        .or_else(|| infer_media_type_from_path(parsed_uri.path()))
         .ok_or_else(|| {
             ProviderError::InvalidRequest(format!(
                 "could not infer MIME type for {field} URI; set {field}.mime_type"
@@ -306,6 +316,11 @@ fn validate_google_media_uri(uri: &str) -> Result<url::Url, ProviderError> {
             "google vertex media URI must include a host; expected gs:// or https://".to_string(),
         ));
     }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(ProviderError::InvalidRequest(
+            "google vertex media URI must not include user credentials".to_string(),
+        ));
+    }
 
     Ok(parsed)
 }
@@ -326,6 +341,11 @@ fn explicit_media_mime_type<'a>(
             .ok_or_else(|| {
                 ProviderError::InvalidRequest(format!("{field}.{key} must be a non-empty string"))
             })?;
+        if !is_valid_media_type(value) {
+            return Err(ProviderError::InvalidRequest(format!(
+                "{field}.{key} must be a valid MIME type"
+            )));
+        }
         if selected.is_some_and(|selected| selected != value) {
             return Err(ProviderError::InvalidRequest(format!(
                 "{field} MIME type fields conflict"
@@ -442,26 +462,4 @@ pub(super) fn merge_object_overrides(
             }
         }
     }
-}
-
-fn guess_mime_type(path: &str) -> Option<&'static str> {
-    let extension = path.rsplit_once('.')?.1.to_ascii_lowercase();
-    Some(match extension.as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "webp" => "image/webp",
-        "gif" => "image/gif",
-        "pdf" => "application/pdf",
-        "mp3" => "audio/mpeg",
-        "wav" => "audio/wav",
-        "mp4" => "video/mp4",
-        "mov" => "video/mov",
-        "mpeg" => "video/mpeg",
-        "mpg" => "video/mpg",
-        "avi" => "video/avi",
-        "wmv" => "video/wmv",
-        "mpegps" => "video/mpegps",
-        "flv" => "video/flv",
-        _ => return None,
-    })
 }

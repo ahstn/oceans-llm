@@ -123,13 +123,23 @@ fn maps_openai_tools_tool_calls_and_tool_results_to_anthropic_payload() {
 }
 
 #[test]
-fn omits_openai_none_tool_choice_for_anthropic_payload() {
+fn maps_openai_none_tool_choice_for_anthropic_payload() {
     let mut request = chat_request(vec![CoreChatMessage {
         role: "user".to_string(),
         content: Value::String("do not use tools".to_string()),
         name: None,
         extra: BTreeMap::new(),
     }]);
+    request.extra.insert(
+        "tools".to_string(),
+        json!([{
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }]),
+    );
     request
         .extra
         .insert("tool_choice".to_string(), json!("none"));
@@ -137,7 +147,31 @@ fn omits_openai_none_tool_choice_for_anthropic_payload() {
     let mapped = map_anthropic_request(&request, &context("anthropic/claude-sonnet-4-6"), false)
         .expect("mapped");
 
-    assert!(mapped.get("tool_choice").is_none());
+    assert_eq!(mapped["tool_choice"], json!({"type": "none"}));
+}
+
+#[test]
+fn route_override_cannot_replace_anthropic_messages_or_stream_mode() {
+    let request = chat_request(vec![CoreChatMessage {
+        role: "user".to_string(),
+        content: Value::String("mapped message".to_string()),
+        name: None,
+        extra: BTreeMap::new(),
+    }]);
+    let mut context = context("anthropic/claude-sonnet-4-6");
+    context.extra_body.insert(
+        "messages".to_string(),
+        json!([{"role": "assistant", "content": "route override"}]),
+    );
+    context
+        .extra_body
+        .insert("stream".to_string(), json!(false));
+
+    let mapped = map_anthropic_request(&request, &context, true).expect("mapped");
+
+    assert_eq!(mapped["messages"][0]["role"], "user");
+    assert_eq!(mapped["messages"][0]["content"], "mapped message");
+    assert_eq!(mapped["stream"], true);
 }
 
 #[test]

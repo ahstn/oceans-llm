@@ -164,6 +164,33 @@ fn rejects_conflicting_vertex_thinking_budget_aliases() {
 }
 
 #[test]
+fn rejects_conflicting_nested_and_top_level_reasoning_budgets() {
+    let mut request = chat_request(vec![CoreChatMessage {
+        role: "user".to_string(),
+        content: Value::String("think carefully".to_string()),
+        name: None,
+        extra: BTreeMap::new(),
+    }]);
+    request
+        .extra
+        .insert("reasoning_budget_tokens".to_string(), json!(1024));
+    request
+        .extra
+        .insert("reasoning".to_string(), json!({"budget_tokens": 2048}));
+
+    let error = map_anthropic_request(
+        &request,
+        &context("anthropic/claude-sonnet-4-5@20250929"),
+        false,
+    )
+    .expect_err("conflicting budgets rejected")
+    .to_string();
+
+    assert!(error.contains("reasoning.budget_tokens"));
+    assert!(error.contains("reasoning_budget_tokens"));
+}
+
+#[test]
 fn maps_vertex_opus_and_sonnet_4_6_reasoning_effort_to_adaptive_thinking() {
     for model in ["anthropic/claude-opus-4-6", "anthropic/claude-sonnet-4-6"] {
         let mut request = chat_request(vec![CoreChatMessage {

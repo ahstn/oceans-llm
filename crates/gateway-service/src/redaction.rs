@@ -472,8 +472,24 @@ fn redact_json_value_at_path(
 }
 
 fn redact_url_query(url: &str) -> String {
-    url.split_once('?')
-        .map_or_else(|| url.to_string(), |(base, _)| format!("{base}?<redacted>"))
+    let (base, has_query) = url
+        .split_once('?')
+        .map_or((url, false), |(base, _)| (base, true));
+    let sanitized_base = url::Url::parse(base)
+        .ok()
+        .filter(|parsed| !parsed.username().is_empty() || parsed.password().is_some())
+        .and_then(|mut parsed| {
+            parsed.set_username("").ok()?;
+            parsed.set_password(None).ok()?;
+            Some(parsed.to_string())
+        })
+        .unwrap_or_else(|| base.to_string());
+
+    if has_query {
+        format!("{sanitized_base}?<redacted>")
+    } else {
+        sanitized_base
+    }
 }
 
 fn redact_https_url_queries(text: &str) -> String {
@@ -799,6 +815,32 @@ mod tests {
         );
         let retained = redacted.to_string();
         for secret in ["image-secret", "video-secret", "file-secret"] {
+            assert!(!retained.contains(secret));
+        }
+    }
+
+    #[test]
+    fn redacts_media_url_userinfo_from_retained_payloads() {
+        let input = json!({
+            "body": {
+                "messages": [{
+                    "content": [{
+                        "type": "video_url",
+                        "video_url": {
+                            "url": "https://user:password@media.example.invalid/video.mp4?signature=secret"
+                        }
+                    }]
+                }]
+            }
+        });
+
+        let redacted = redact_json_value(&input);
+        assert_eq!(
+            redacted["body"]["messages"][0]["content"][0]["video_url"]["url"],
+            "https://media.example.invalid/video.mp4?<redacted>"
+        );
+        let retained = redacted.to_string();
+        for secret in ["user", "password", "secret"] {
             assert!(!retained.contains(secret));
         }
     }

@@ -5,10 +5,10 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
-    CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
-    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
-    SseEventParser, Utf8ChunkDecoder, VERTEX_TEXT_EMBEDDING_MODEL_IDS,
-    is_supported_vertex_text_embedding_model_id,
+    CoreChatMessage, CoreChatRequest, CoreContentPartType, CoreEmbeddingsRequest,
+    CoreResponsesRequest, ProviderCapabilities, ProviderClient, ProviderError,
+    ProviderRequestContext, ProviderStream, SseEventParser, Utf8ChunkDecoder,
+    VERTEX_TEXT_EMBEDDING_MODEL_IDS, is_supported_vertex_text_embedding_model_id,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use crate::{
     http::map_reqwest_error,
+    media::{infer_media_type_from_path, is_valid_media_type},
     streaming::{done_sse_chunk, openai_sse_error_chunk},
     token::{
         AccessTokenSource, AdcTokenSource, CLOUD_PLATFORM_SCOPE, CachedAccessTokenSource,
@@ -104,14 +105,12 @@ impl VertexProvider {
 
         request.build().map_err(map_reqwest_error)
     }
-
     fn model_endpoint(&self, publisher: &str, model_id: &str, method: &str) -> String {
-        let base = if self.config.api_host.starts_with("http://")
-            || self.config.api_host.starts_with("https://")
-        {
-            self.config.api_host.trim_end_matches('/').to_string()
+        let host = self.config.api_host.trim_end_matches('/');
+        let base = if host.starts_with("http://") || host.starts_with("https://") {
+            host.to_string()
         } else {
-            format!("https://{}", self.config.api_host)
+            format!("https://{host}")
         };
 
         format!(
@@ -406,8 +405,9 @@ use google_tools::{
 use response::{
     extract_google_candidate_text, extract_google_candidate_tool_calls,
     map_anthropic_finish_reason, map_anthropic_stream_usage, map_google_finish_reason,
-    merge_openai_stream_usage, normalize_anthropic_response, normalize_anthropic_thinking_delta,
-    normalize_anthropic_thinking_start, normalize_google_response, vertex_reasoning_metadata,
+    map_google_usage, merge_openai_stream_usage, normalize_anthropic_response,
+    normalize_anthropic_thinking_delta, normalize_anthropic_thinking_start,
+    normalize_google_response, vertex_reasoning_metadata,
 };
 use streaming::{normalize_anthropic_stream, normalize_google_stream};
 

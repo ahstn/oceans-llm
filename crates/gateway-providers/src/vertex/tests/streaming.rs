@@ -111,6 +111,38 @@ async fn google_stream_normalization_emits_done() {
 }
 
 #[tokio::test]
+async fn google_stream_emits_usage_and_one_terminal_finish_chunk() {
+    let upstream = stream::iter(vec![
+        Ok(Bytes::from(
+            r#"{"candidates":[{"content":{"parts":[{"text":"hello"}]}}]}"#,
+        )),
+        Ok(Bytes::from(
+            r#"{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":2,"totalTokenCount":6}}"#,
+        )),
+        Ok(Bytes::from(
+            r#"{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":2,"totalTokenCount":6}}"#,
+        )),
+    ]);
+    let stream = super::normalize_google_stream(
+        upstream,
+        "chatcmpl-test".to_string(),
+        1,
+        "fast".to_string(),
+    );
+    let rendered = stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+        .collect::<String>();
+
+    assert!(
+        rendered.contains(r#""usage":{"completion_tokens":2,"prompt_tokens":4,"total_tokens":6}"#)
+    );
+    assert_eq!(rendered.matches(r#""finish_reason":"stop""#).count(), 1);
+}
+
+#[tokio::test]
 async fn google_stream_normalization_stops_after_parse_error() {
     let upstream = stream::iter(vec![Ok(Bytes::from_static(&[0x80]))]);
     let stream = super::normalize_google_stream(

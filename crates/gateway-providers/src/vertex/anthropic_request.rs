@@ -48,8 +48,6 @@ pub(super) fn map_anthropic_request(
         ));
     }
 
-    body.insert("messages".to_string(), Value::Array(messages));
-    body.insert("stream".to_string(), Value::Bool(stream));
     if !body.contains_key("max_tokens") {
         body.insert("max_tokens".to_string(), Value::Number(1024.into()));
     }
@@ -72,6 +70,8 @@ pub(super) fn map_anthropic_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
+    body.insert("messages".to_string(), Value::Array(messages));
+    body.insert("stream".to_string(), Value::Bool(stream));
     convert_openai_tools_for_anthropic(&mut body)?;
     apply_vertex_anthropic_thinking_compatibility(&mut body, &context.upstream_model)?;
     validate_vertex_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
@@ -243,13 +243,7 @@ fn convert_openai_tools_for_anthropic(body: &mut Map<String, Value>) -> Result<(
     if let Some(tools) = body.get_mut("tools") {
         convert_openai_function_tools(tools)?;
     }
-    if body
-        .get("tool_choice")
-        .and_then(Value::as_str)
-        .is_some_and(|choice| choice == "none")
-    {
-        body.remove("tool_choice");
-    } else if let Some(tool_choice) = body.get_mut("tool_choice") {
+    if let Some(tool_choice) = body.get_mut("tool_choice") {
         convert_openai_tool_choice(tool_choice)?;
     }
     Ok(())
@@ -301,6 +295,9 @@ fn convert_openai_tool_choice(value: &mut Value) -> Result<(), ProviderError> {
             *value = json!({"type":"any"});
         }
         Value::String(choice) if choice == "auto" => {
+            *value = json!({"type":choice});
+        }
+        Value::String(choice) if choice == "none" => {
             *value = json!({"type":choice});
         }
         Value::Object(object) if object.get("type").and_then(Value::as_str) == Some("function") => {

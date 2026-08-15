@@ -170,6 +170,50 @@ fn infers_video_mime_from_signed_url_path_and_prefers_explicit_mime() {
 }
 
 #[test]
+fn infers_vertex_supported_video_mime_types() {
+    let request = chat_request(vec![CoreChatMessage {
+        role: "user".to_string(),
+        content: json!([
+            {"type": "video_url", "video_url": {"url": "https://media.example.invalid/clip.webm"}},
+            {"type": "video_url", "video_url": {"url": "https://media.example.invalid/clip.mov"}},
+            {"type": "video_url", "video_url": {"url": "https://media.example.invalid/clip.flv"}}
+        ]),
+        name: None,
+        extra: BTreeMap::new(),
+    }]);
+
+    let mapped =
+        map_google_request(&request, &context("google/gemini-2.0-flash"), false).expect("mapped");
+    let parts = mapped["contents"][0]["parts"].as_array().expect("parts");
+    assert_eq!(parts[0]["fileData"]["mimeType"], "video/webm");
+    assert_eq!(parts[1]["fileData"]["mimeType"], "video/quicktime");
+    assert_eq!(parts[2]["fileData"]["mimeType"], "video/x-flv");
+}
+
+#[test]
+fn maps_input_file_alias_to_google_file_data() {
+    let request = chat_request(vec![CoreChatMessage {
+        role: "user".to_string(),
+        content: json!([{
+            "type": "input_file",
+            "input_file": {"url": "https://media.example.invalid/report.pdf"}
+        }]),
+        name: None,
+        extra: BTreeMap::new(),
+    }]);
+
+    let mapped =
+        map_google_request(&request, &context("google/gemini-2.0-flash"), false).expect("mapped");
+    assert_eq!(
+        mapped["contents"][0]["parts"][0]["fileData"],
+        json!({
+            "fileUri": "https://media.example.invalid/report.pdf",
+            "mimeType": "application/pdf"
+        })
+    );
+}
+
+#[test]
 fn rejects_unsupported_media_uri_and_unknown_mime() {
     for (content, expected_error) in [
         (
@@ -191,6 +235,16 @@ fn rejects_unsupported_media_uri_and_unknown_mime() {
                 }
             }]),
             "must include a host",
+        ),
+        (
+            json!([{
+                "type": "video_url",
+                "video_url": {
+                    "url": "https://user:password@media.example.invalid/video.mp4",
+                    "mime_type": "video/mp4"
+                }
+            }]),
+            "must not include user credentials",
         ),
         (
             json!([{
@@ -237,6 +291,20 @@ fn rejects_video_image_mime_and_conflicting_mime_aliases() {
                 "mediaType": "video/mov"
             }),
             "MIME type fields conflict",
+        ),
+        (
+            json!({
+                "url": "https://media.example.invalid/video.mp4",
+                "mime_type": "video/"
+            }),
+            "must be a valid MIME type",
+        ),
+        (
+            json!({
+                "url": "https://media.example.invalid/video.mp4",
+                "mime_type": "video/not a type"
+            }),
+            "must be a valid MIME type",
         ),
     ] {
         let request = chat_request(vec![CoreChatMessage {
@@ -377,6 +445,22 @@ fn rejects_google_streaming_multiple_candidates_from_route_override() {
         }
         other => panic!("unexpected error: {other}"),
     }
+}
+
+#[test]
+fn route_override_cannot_add_google_stream_field() {
+    let request = chat_request(vec![CoreChatMessage {
+        role: "user".to_string(),
+        content: Value::String("ping".to_string()),
+        name: None,
+        extra: BTreeMap::new(),
+    }]);
+    let mut context = context("google/gemini-2.0-flash");
+    context.extra_body.insert("stream".to_string(), json!(true));
+
+    let mapped = map_google_request(&request, &context, true).expect("mapped");
+
+    assert!(mapped.get("stream").is_none());
 }
 
 #[test]

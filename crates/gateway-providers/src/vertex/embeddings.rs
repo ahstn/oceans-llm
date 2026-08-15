@@ -239,7 +239,7 @@ fn extract_vertex_embedding_output_dimensionality(
     let Some((field, dimension)) = selected else {
         return Ok(None);
     };
-    let max_dimension = vertex_embedding_max_dimensions(model_id);
+    let max_dimension = vertex_embedding_max_dimensions(model_id)?;
     if dimension > max_dimension {
         return Err(ProviderError::InvalidRequest(format!(
             "vertex embeddings {field} must be <= {max_dimension} for google/{model_id}"
@@ -262,14 +262,13 @@ fn positive_i64_field(field: &str, value: &Value) -> Result<i64, ProviderError> 
     Ok(value)
 }
 
-fn vertex_embedding_max_dimensions(model_id: &str) -> i64 {
+fn vertex_embedding_max_dimensions(model_id: &str) -> Result<i64, ProviderError> {
     match model_id {
-        "gemini-embedding-001" | "gemini-embedding-2" => 3072,
-        "text-embedding-005" | "text-multilingual-embedding-002" => 768,
-        _ => unreachable!(
-            "model_id is pre-validated by validate_vertex_embedding_model; \
-             add a new arm here whenever VERTEX_TEXT_EMBEDDING_MODEL_IDS is extended"
-        ),
+        "gemini-embedding-001" | "gemini-embedding-2" => Ok(3072),
+        "text-embedding-005" | "text-multilingual-embedding-002" => Ok(768),
+        _ => Err(ProviderError::InvalidRequest(format!(
+            "unsupported vertex embeddings model `google/{model_id}`"
+        ))),
     }
 }
 

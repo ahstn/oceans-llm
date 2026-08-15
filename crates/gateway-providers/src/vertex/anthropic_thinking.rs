@@ -127,7 +127,7 @@ fn extract_anthropic_reasoning_effort(
         (Some(effort), None) => Ok(Some(effort)),
         (None, Some(Value::Object(mut reasoning))) => {
             if let Some(budget_tokens) = reasoning.remove("budget_tokens") {
-                body.insert("reasoning_budget_tokens".to_string(), budget_tokens);
+                merge_reasoning_budget_tokens(body, budget_tokens)?;
             }
             Ok(reasoning.remove("effort").filter(|value| !value.is_null()))
         }
@@ -142,7 +142,7 @@ fn extract_anthropic_reasoning_effort(
                 ));
             }
             if let Some(budget_tokens) = reasoning.remove("budget_tokens") {
-                body.insert("reasoning_budget_tokens".to_string(), budget_tokens);
+                merge_reasoning_budget_tokens(body, budget_tokens)?;
             }
             Ok(Some(effort))
         }
@@ -153,6 +153,24 @@ fn extract_anthropic_reasoning_effort(
         )),
         (None, None) => Ok(None),
     }
+}
+
+fn merge_reasoning_budget_tokens(
+    body: &mut Map<String, Value>,
+    budget_tokens: Value,
+) -> Result<(), ProviderError> {
+    if let Some(existing) = body
+        .get("reasoning_budget_tokens")
+        .filter(|value| !value.is_null())
+        && existing != &budget_tokens
+    {
+        return Err(ProviderError::InvalidRequest(
+            "`reasoning.budget_tokens` conflicts with `reasoning_budget_tokens` for Anthropic Vertex mapping"
+                .to_string(),
+        ));
+    }
+    body.insert("reasoning_budget_tokens".to_string(), budget_tokens);
+    Ok(())
 }
 
 fn extract_existing_anthropic_output_effort(

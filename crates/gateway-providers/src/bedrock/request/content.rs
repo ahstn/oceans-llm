@@ -1,4 +1,5 @@
 use super::*;
+use crate::media::infer_media_type_from_path;
 
 pub(super) fn message_content_as_text(content: &Value) -> Result<String, ProviderError> {
     match content {
@@ -146,7 +147,7 @@ fn map_bedrock_file_block(object: &Map<String, Value>) -> Result<Value, Provider
         });
     let media_type = explicit_media_type
         .or(data_url_media_type)
-        .or_else(|| filename.and_then(infer_media_type_from_filename))
+        .or_else(|| filename.and_then(infer_media_type_from_path))
         .ok_or_else(|| {
             ProviderError::InvalidRequest(
                 "Bedrock file content must include a supported media type or filename extension"
@@ -204,26 +205,6 @@ fn bedrock_document_format(media_type: &str) -> Option<&'static str> {
         "text/html" => Some("html"),
         "text/plain" => Some("txt"),
         "text/markdown" | "text/x-markdown" => Some("md"),
-        _ => None,
-    }
-}
-
-fn infer_media_type_from_filename(filename: &str) -> Option<&'static str> {
-    let extension = filename.rsplit_once('.')?.1.to_ascii_lowercase();
-    match extension.as_str() {
-        "pdf" => Some("application/pdf"),
-        "csv" => Some("text/csv"),
-        "doc" => Some("application/msword"),
-        "docx" => Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
-        "xls" => Some("application/vnd.ms-excel"),
-        "xlsx" => Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-        "html" | "htm" => Some("text/html"),
-        "txt" => Some("text/plain"),
-        "md" | "markdown" => Some("text/markdown"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "png" => Some("image/png"),
-        "webp" => Some("image/webp"),
-        "gif" => Some("image/gif"),
         _ => None,
     }
 }

@@ -16,6 +16,7 @@ where
         let mut stream_failed = false;
         let mut stream_has_tool_calls = false;
         let mut next_tool_call_index = 0usize;
+        let mut latest_usage = None;
         futures_util::pin_mut!(upstream);
 
         while let Some(chunk) = upstream.next().await {
@@ -37,6 +38,9 @@ where
             };
 
             for object in objects {
+                if let Some(usage) = map_google_usage(&object) {
+                    merge_openai_stream_usage(&mut latest_usage, &usage);
+                }
                 let candidate = object
                     .get("candidates")
                     .and_then(Value::as_array)
@@ -102,14 +106,14 @@ where
                     yield Ok(openai_sse_chunk(&chunk));
                 }
 
-                if let Some(reason) = upstream_finish_reason {
+                if let Some(reason) = upstream_finish_reason.filter(|_| !finish_emitted) {
                     let finish_reason = if stream_has_tool_calls {
                         "tool_calls"
                     } else {
                         reason
                     };
                     // Emits the single terminal finish reason when upstream signals candidate completion.
-                    let finish = openai_chunk(
+                    let mut finish = openai_chunk(
                         &stream_id,
                         created,
                         &model,
@@ -117,6 +121,9 @@ where
                         None,
                         Some(finish_reason),
                     );
+                    if let Some(usage) = latest_usage.clone() {
+                        finish["usage"] = usage;
+                    }
                     yield Ok(openai_sse_chunk(&finish));
                     finish_emitted = true;
                 }
@@ -129,7 +136,7 @@ where
             } else {
                 "stop"
             };
-            let finish = openai_chunk(
+            let mut finish = openai_chunk(
                 &stream_id,
                 created,
                 &model,
@@ -137,6 +144,9 @@ where
                 None,
                 Some(finish_reason),
             );
+            if let Some(usage) = latest_usage {
+                finish["usage"] = usage;
+            }
             yield Ok(openai_sse_chunk(&finish));
         }
         if !stream_failed {

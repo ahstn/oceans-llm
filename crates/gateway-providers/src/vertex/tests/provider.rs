@@ -14,6 +14,11 @@ fn model_endpoint_defaults_to_https_but_honors_explicit_scheme() {
     let default_url = default_host.model_endpoint("google", "gemini-2.0-flash", "generateContent");
     assert!(default_url.starts_with("https://aiplatform.googleapis.com/"));
 
+    let bare_host_with_slash = vertex_provider_for_test("aiplatform.googleapis.com/".to_string());
+    let bare_host_url =
+        bare_host_with_slash.model_endpoint("google", "gemini-2.0-flash", "generateContent");
+    assert!(bare_host_url.starts_with("https://aiplatform.googleapis.com/v1/"));
+
     let explicit_host = vertex_provider_for_test("http://127.0.0.1:8080/".to_string());
     let explicit_url =
         explicit_host.model_endpoint("google", "gemini-2.0-flash", "generateContent");
