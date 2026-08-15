@@ -301,7 +301,7 @@ The MCP invocation admin UI consumes these generated admin API endpoints:
 - `GET /api/v1/admin/observability/mcp-invocations`
 - `GET /api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}`
 
-Validate documentation-only edits to this page with `mise run docs:check` before handoff.
+Validate documentation-only edits to this page with `mise run //docs:build` before handoff.
 
 ## Usage Leaderboard
 

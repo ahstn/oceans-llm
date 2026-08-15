@@ -677,6 +677,9 @@ pub(super) fn decode_usage_ledger_record(
         row.get(28).map_err(to_query_error)?;
     let computed_cost_10000: i64 = row.get(29).map_err(to_query_error)?;
     let occurred_at: i64 = row.get(30).map_err(to_query_error)?;
+    let uncached_input_tokens: Option<i64> = row.get(31).map_err(to_query_error)?;
+    let cache_read_tokens: Option<i64> = row.get(32).map_err(to_query_error)?;
+    let cache_write_tokens: Option<i64> = row.get(33).map_err(to_query_error)?;
 
     Ok(UsageLedgerRecord {
         usage_event_id: parse_uuid(&usage_event_id)?,
@@ -692,6 +695,9 @@ pub(super) fn decode_usage_ledger_record(
         provider_key: row.get(10).map_err(to_query_error)?,
         upstream_model: row.get(11).map_err(to_query_error)?,
         prompt_tokens: row.get(12).map_err(to_query_error)?,
+        uncached_input_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
         completion_tokens: row.get(13).map_err(to_query_error)?,
         total_tokens: row.get(14).map_err(to_query_error)?,
         provider_usage: serde_json::from_str(&provider_usage_json)

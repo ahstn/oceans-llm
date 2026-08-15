@@ -409,21 +409,40 @@ fn map_google_request(
     let mut body = Map::new();
     let mut contents = Vec::new();
     let mut system_lines = Vec::new();
+    let mut known_tool_names = BTreeMap::new();
+
+    let mut pending_tool_parts = Vec::new();
 
     for message in &request.messages {
+        if message.role == "tool" {
+            let part = map_google_tool_result_part(message, &known_tool_names)?;
+            pending_tool_parts.push(part);
+            continue;
+        }
+
+        if !pending_tool_parts.is_empty() {
+            contents.push(json!({
+                "role": "user",
+                "parts": std::mem::take(&mut pending_tool_parts)
+            }));
+        }
+
         match message.role.as_str() {
             "system" | "developer" => {
                 system_lines.push(message_content_as_text(&message.content)?);
             }
-            "user" | "assistant" => {
-                let role = if message.role == "assistant" {
-                    "model"
-                } else {
-                    "user"
-                };
-                let parts = map_google_parts(&message.content)?;
+            "user" => {
+                let parts = map_google_parts(&message.content, Some(&known_tool_names))?;
                 contents.push(json!({
-                    "role": role,
+                    "role": "user",
+                    "parts": parts
+                }));
+            }
+            "assistant" => {
+                let parts = map_google_assistant_parts(message)?;
+                record_google_tool_names(message, &mut known_tool_names);
+                contents.push(json!({
+                    "role": "model",
                     "parts": parts
                 }));
             }
@@ -433,6 +452,13 @@ fn map_google_request(
                 )));
             }
         }
+    }
+
+    if !pending_tool_parts.is_empty() {
+        contents.push(json!({
+            "role": "user",
+            "parts": pending_tool_parts
+        }));
     }
 
     if contents.is_empty() {
@@ -473,6 +499,8 @@ fn map_google_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
+    convert_openai_tools_for_google(&mut body)?;
+    reject_google_streamed_function_call_arguments(&body)?;
     validate_google_stream_candidate_count(&body, stream)?;
     Ok(Value::Object(body))
 }
@@ -1341,7 +1369,10 @@ fn message_content_as_text(content: &Value) -> Result<String, ProviderError> {
     }
 }
 
-fn map_google_parts(content: &Value) -> Result<Vec<Value>, ProviderError> {
+fn map_google_parts(
+    content: &Value,
+    known_tool_names: Option<&BTreeMap<String, String>>,
+) -> Result<Vec<Value>, ProviderError> {
     match content {
         Value::String(text) => Ok(vec![json!({ "text": text })]),
         Value::Array(items) => {
@@ -1449,6 +1480,20 @@ fn map_google_parts(content: &Value) -> Result<Vec<Value>, ProviderError> {
                             }
                         }));
                     }
+                    "tool_use" => {
+                        parts.push(map_google_anthropic_tool_use_part(object)?);
+                    }
+                    "tool_result" => {
+                        let known_tool_names = known_tool_names.ok_or_else(|| {
+                            ProviderError::InvalidRequest(
+                                "tool_result content is only valid in user messages".to_string(),
+                            )
+                        })?;
+                        parts.push(map_google_anthropic_tool_result_part(
+                            object,
+                            known_tool_names,
+                        )?);
+                    }
                     other => {
                         return Err(ProviderError::InvalidRequest(format!(
                             "unsupported content type `{other}` for google vertex mapping"
@@ -1462,6 +1507,195 @@ fn map_google_parts(content: &Value) -> Result<Vec<Value>, ProviderError> {
             "message content must be a string or typed content array".to_string(),
         )),
     }
+}
+
+fn map_google_anthropic_tool_use_part(object: &Map<String, Value>) -> Result<Value, ProviderError> {
+    let id = object.get("id").and_then(Value::as_str).ok_or_else(|| {
+        ProviderError::InvalidRequest("tool_use content must include `id`".to_string())
+    })?;
+    let name = object.get("name").and_then(Value::as_str).ok_or_else(|| {
+        ProviderError::InvalidRequest("tool_use content must include `name`".to_string())
+    })?;
+    let input = object
+        .get("input")
+        .cloned()
+        .unwrap_or_else(|| Value::Object(Map::new()));
+
+    Ok(json!({
+        "functionCall": {
+            "id": id,
+            "name": name,
+            "args": input
+        }
+    }))
+}
+
+fn map_google_anthropic_tool_result_part(
+    object: &Map<String, Value>,
+    known_tool_names: &BTreeMap<String, String>,
+) -> Result<Value, ProviderError> {
+    let tool_call_id = object
+        .get("tool_use_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "tool_result content must include `tool_use_id`".to_string(),
+            )
+        })?;
+    let tool_name = known_tool_names.get(tool_call_id).ok_or_else(|| {
+        ProviderError::InvalidRequest(format!(
+            "tool_result references unknown `tool_use_id` `{tool_call_id}`"
+        ))
+    })?;
+    let content = object.get("content").ok_or_else(|| {
+        ProviderError::InvalidRequest("tool_result content must include `content`".to_string())
+    })?;
+
+    map_google_function_response_part(tool_call_id, tool_name, content)
+}
+
+fn record_google_tool_names(
+    message: &CoreChatMessage,
+    known_tool_names: &mut BTreeMap<String, String>,
+) {
+    if let Some(tool_calls) = message.extra.get("tool_calls").and_then(Value::as_array) {
+        for call in tool_calls {
+            if let Some(call) = call.as_object()
+                && let (Some(id), Some(name)) = (
+                    call.get("id").and_then(Value::as_str),
+                    call.get("function")
+                        .and_then(Value::as_object)
+                        .and_then(|function| function.get("name"))
+                        .and_then(Value::as_str),
+                )
+            {
+                known_tool_names.insert(id.to_string(), name.to_string());
+            }
+        }
+    }
+
+    if let Value::Array(blocks) = &message.content {
+        for block in blocks {
+            if let Some(block) = block.as_object()
+                && block.get("type").and_then(Value::as_str) == Some("tool_use")
+                && let (Some(id), Some(name)) = (
+                    block.get("id").and_then(Value::as_str),
+                    block.get("name").and_then(Value::as_str),
+                )
+            {
+                known_tool_names.insert(id.to_string(), name.to_string());
+            }
+        }
+    }
+}
+
+fn map_google_assistant_parts(message: &CoreChatMessage) -> Result<Vec<Value>, ProviderError> {
+    let mut parts = match &message.content {
+        Value::Null => Vec::new(),
+        Value::String(text) if text.is_empty() => Vec::new(),
+        other => map_google_parts(other, None)?,
+    };
+
+    if let Some(tool_calls) = message.extra.get("tool_calls") {
+        let calls = tool_calls.as_array().ok_or_else(|| {
+            ProviderError::InvalidRequest("assistant tool_calls must be an array".to_string())
+        })?;
+        for call in calls {
+            let object = call.as_object().ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "assistant tool_calls entries must be objects".to_string(),
+                )
+            })?;
+            if object.get("type").and_then(Value::as_str) != Some("function") {
+                return Err(ProviderError::InvalidRequest(
+                    "only function tool_calls are supported for google vertex mapping".to_string(),
+                ));
+            }
+            let function = object
+                .get("function")
+                .and_then(Value::as_object)
+                .ok_or_else(|| {
+                    ProviderError::InvalidRequest(
+                        "assistant function tool_calls must include `function`".to_string(),
+                    )
+                })?;
+            let name = function
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    ProviderError::InvalidRequest(
+                        "assistant function tool_calls must include function.name".to_string(),
+                    )
+                })?;
+            let args = parse_openai_tool_arguments(function)?;
+            let mut function_call_part = json!({
+                "functionCall": {
+                    "name": name,
+                    "args": args
+                }
+            });
+            if let Some(id) = object.get("id").and_then(Value::as_str) {
+                function_call_part["functionCall"]["id"] = json!(id);
+            }
+            if let Some(signature) = object
+                .get("thought_signature")
+                .or_else(|| object.get("thoughtSignature"))
+            {
+                function_call_part["thoughtSignature"] = signature.clone();
+            }
+            parts.push(function_call_part);
+        }
+    }
+
+    if parts.is_empty() {
+        parts.push(json!({ "text": "" }));
+    }
+
+    Ok(parts)
+}
+
+fn map_google_tool_result_part(
+    message: &CoreChatMessage,
+    known_tool_names: &BTreeMap<String, String>,
+) -> Result<Value, ProviderError> {
+    let tool_call_id = message
+        .extra
+        .get("tool_call_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest("tool messages must include `tool_call_id`".to_string())
+        })?;
+    let tool_name = known_tool_names.get(tool_call_id).ok_or_else(|| {
+        ProviderError::InvalidRequest(format!(
+            "tool message references unknown `tool_call_id` `{tool_call_id}`"
+        ))
+    })?;
+
+    map_google_function_response_part(tool_call_id, tool_name, &message.content)
+}
+
+fn map_google_function_response_part(
+    tool_call_id: &str,
+    tool_name: &str,
+    content: &Value,
+) -> Result<Value, ProviderError> {
+    let raw_text = message_content_as_text(content)?;
+    let response_object = if let Ok(parsed_json) = serde_json::from_str::<Value>(&raw_text) {
+        match parsed_json {
+            Value::Object(map) => Value::Object(map),
+            other => json!({ "output": other }),
+        }
+    } else {
+        json!({ "output": raw_text })
+    };
+
+    Ok(json!({
+        "functionResponse": {
+            "id": tool_call_id,
+            "name": tool_name,
+            "response": response_object
+        }
+    }))
 }
 
 fn map_anthropic_message_content(message: &CoreChatMessage) -> Result<Value, ProviderError> {
@@ -1624,6 +1858,181 @@ fn map_openai_tool_result(message: &CoreChatMessage) -> Result<Value, ProviderEr
     }))
 }
 
+fn convert_openai_tools_for_google(body: &mut Map<String, Value>) -> Result<(), ProviderError> {
+    let has_tools = body
+        .get("tools")
+        .and_then(Value::as_array)
+        .is_some_and(|tools| !tools.is_empty());
+    if let Some(parallel_tool_calls) = body.remove("parallel_tool_calls") {
+        match parallel_tool_calls {
+            Value::Bool(true) => {}
+            Value::Bool(false) if has_tools => {
+                return Err(ProviderError::InvalidRequest(
+                    "`parallel_tool_calls: false` is not supported for google vertex chat"
+                        .to_string(),
+                ));
+            }
+            Value::Bool(false) => {}
+            _ => {
+                return Err(ProviderError::InvalidRequest(
+                    "`parallel_tool_calls` must be a boolean".to_string(),
+                ));
+            }
+        }
+    }
+    if let Some(tool_choice) = body.remove("tool_choice") {
+        let is_none = match &tool_choice {
+            Value::String(choice) => choice == "none",
+            _ => false,
+        };
+        let function_calling_config = match tool_choice {
+            Value::String(choice) if choice == "none" => {
+                body.remove("tools");
+                Some(json!({ "mode": "NONE" }))
+            }
+            Value::String(choice) if choice == "auto" => Some(json!({ "mode": "AUTO" })),
+            Value::String(choice) if choice == "required" || choice == "any" => {
+                Some(json!({ "mode": "ANY" }))
+            }
+            Value::Object(object) if object.get("type").and_then(Value::as_str) == Some("auto") => {
+                Some(json!({ "mode": "AUTO" }))
+            }
+            Value::Object(object) if object.get("type").and_then(Value::as_str) == Some("any") => {
+                Some(json!({ "mode": "ANY" }))
+            }
+            Value::Object(object) if object.get("type").and_then(Value::as_str) == Some("tool") => {
+                let name = object.get("name").and_then(Value::as_str).ok_or_else(|| {
+                    ProviderError::InvalidRequest(
+                        "tool tool_choice must include `name`".to_string(),
+                    )
+                })?;
+                Some(json!({
+                    "mode": "ANY",
+                    "allowedFunctionNames": [name]
+                }))
+            }
+            Value::Object(object)
+                if object.get("type").and_then(Value::as_str) == Some("function") =>
+            {
+                let name = object
+                    .get("function")
+                    .and_then(Value::as_object)
+                    .and_then(|function| function.get("name"))
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        ProviderError::InvalidRequest(
+                            "function tool_choice must include function.name".to_string(),
+                        )
+                    })?;
+                Some(json!({
+                    "mode": "ANY",
+                    "allowedFunctionNames": [name]
+                }))
+            }
+            Value::Null => None,
+            _ => {
+                return Err(ProviderError::InvalidRequest(
+                    "unsupported tool_choice for google vertex mapping".to_string(),
+                ));
+            }
+        };
+
+        if let Some(config) = function_calling_config {
+            let mut tool_config = body
+                .remove("toolConfig")
+                .and_then(|v| v.as_object().cloned())
+                .unwrap_or_default();
+            let mut function_calling_config = tool_config
+                .remove("functionCallingConfig")
+                .and_then(|value| value.as_object().cloned())
+                .unwrap_or_default();
+            if let Value::Object(config) = config {
+                function_calling_config.extend(config);
+            }
+            tool_config.insert(
+                "functionCallingConfig".to_string(),
+                Value::Object(function_calling_config),
+            );
+            body.insert("toolConfig".to_string(), Value::Object(tool_config));
+            if is_none {
+                return Ok(());
+            }
+        }
+    }
+
+    if let Some(tools) = body.remove("tools") {
+        let declarations = convert_openai_function_declarations(&tools)?;
+        if !declarations.is_empty() {
+            let vertex_tools = json!([{
+                "functionDeclarations": declarations
+            }]);
+            body.insert("tools".to_string(), vertex_tools);
+        }
+    }
+
+    Ok(())
+}
+
+fn convert_openai_function_declarations(value: &Value) -> Result<Vec<Value>, ProviderError> {
+    let Some(tools) = value.as_array() else {
+        return Err(ProviderError::InvalidRequest(
+            "tools must be an array for google vertex mapping".to_string(),
+        ));
+    };
+    let mut declarations = Vec::new();
+    for tool in tools {
+        let Some(object) = tool.as_object() else {
+            return Err(ProviderError::InvalidRequest(
+                "tools entries must be objects for google vertex mapping".to_string(),
+            ));
+        };
+        let (function, anthropic_shape) =
+            if object.get("type").and_then(Value::as_str) == Some("function") {
+                (
+                    object
+                        .get("function")
+                        .and_then(Value::as_object)
+                        .ok_or_else(|| {
+                            ProviderError::InvalidRequest(
+                                "function tools must include an object `function`".to_string(),
+                            )
+                        })?,
+                    false,
+                )
+            } else if object.get("name").is_some() {
+                (object, true)
+            } else {
+                continue;
+            };
+        let name = function
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest("function tools must include a name".to_string())
+            })?;
+        let mut declaration = Map::new();
+        declaration.insert("name".to_string(), Value::String(name.to_string()));
+        if let Some(description) = function.get("description").and_then(Value::as_str) {
+            declaration.insert(
+                "description".to_string(),
+                Value::String(description.to_string()),
+            );
+        }
+        if anthropic_shape {
+            let input_schema = function.get("input_schema").ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "anthropic function tools must include `input_schema`".to_string(),
+                )
+            })?;
+            declaration.insert("parameters".to_string(), input_schema.clone());
+        } else if let Some(parameters) = function.get("parameters") {
+            declaration.insert("parameters".to_string(), parameters.clone());
+        }
+        declarations.push(Value::Object(declaration));
+    }
+    Ok(declarations)
+}
+
 fn convert_openai_tools_for_anthropic(body: &mut Map<String, Value>) -> Result<(), ProviderError> {
     if let Some(tools) = body.get_mut("tools") {
         convert_openai_function_tools(tools)?;
@@ -1752,6 +2161,27 @@ fn extract_google_generation_config(extra: &mut BTreeMap<String, Value>) -> Map<
     generation_config
 }
 
+fn reject_google_streamed_function_call_arguments(
+    body: &Map<String, Value>,
+) -> Result<(), ProviderError> {
+    let enabled = body
+        .get("toolConfig")
+        .and_then(Value::as_object)
+        .and_then(|tool_config| tool_config.get("functionCallingConfig"))
+        .and_then(Value::as_object)
+        .and_then(|config| config.get("streamFunctionCallArguments"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    if enabled {
+        return Err(ProviderError::InvalidRequest(
+            "`streamFunctionCallArguments` is not supported for google vertex chat until partial argument accumulation is implemented".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 fn validate_google_stream_candidate_count(
     body: &Map<String, Value>,
     stream: bool,
@@ -1796,18 +2226,39 @@ fn normalize_google_response(value: &Value, context: &ProviderRequestContext) ->
         .enumerate()
     {
         let text = extract_google_candidate_text(candidate);
-        let finish_reason = candidate
-            .get("finishReason")
-            .and_then(Value::as_str)
-            .map(map_google_finish_reason)
-            .unwrap_or("stop");
+        let google_finish_reason = candidate.get("finishReason").and_then(Value::as_str);
+        let tool_calls = if google_finish_reason == Some("MALFORMED_FUNCTION_CALL") {
+            Vec::new()
+        } else {
+            extract_google_candidate_tool_calls(candidate)
+        };
+        let finish_reason = if !tool_calls.is_empty() {
+            "tool_calls"
+        } else {
+            google_finish_reason
+                .map(map_google_finish_reason)
+                .unwrap_or("stop")
+        };
+
+        let mut message = Map::new();
+        message.insert("role".to_string(), Value::String("assistant".to_string()));
+        if !tool_calls.is_empty() {
+            message.insert(
+                "content".to_string(),
+                if text.is_empty() {
+                    Value::Null
+                } else {
+                    Value::String(text)
+                },
+            );
+            message.insert("tool_calls".to_string(), Value::Array(tool_calls));
+        } else {
+            message.insert("content".to_string(), Value::String(text));
+        }
 
         choices.push(json!({
             "index": candidate.get("index").and_then(Value::as_i64).unwrap_or(index as i64),
-            "message": {
-                "role": "assistant",
-                "content": text
-            },
+            "message": Value::Object(message),
             "finish_reason": finish_reason
         }));
     }
@@ -2292,11 +2743,58 @@ fn extract_google_candidate_text(candidate: &Value) -> String {
         .unwrap_or_default()
 }
 
+fn extract_google_candidate_tool_calls(candidate: &Value) -> Vec<Value> {
+    let mut tool_calls = Vec::new();
+    let Some(parts) = candidate
+        .get("content")
+        .and_then(Value::as_object)
+        .and_then(|content| content.get("parts"))
+        .and_then(Value::as_array)
+    else {
+        return tool_calls;
+    };
+
+    for part in parts {
+        if let Some(function_call) = part.get("functionCall").and_then(Value::as_object) {
+            let name = function_call
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let args = function_call
+                .get("args")
+                .map(|args| serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string()))
+                .unwrap_or_else(|| "{}".to_string());
+            let id = function_call
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("call_{}", Uuid::new_v4().simple()));
+            let mut call_obj = json!({
+                "id": id,
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": args
+                }
+            });
+            if let Some(signature) = part
+                .get("thoughtSignature")
+                .or_else(|| part.get("thought_signature"))
+            {
+                call_obj["thought_signature"] = signature.clone();
+            }
+            tool_calls.push(call_obj);
+        }
+    }
+    tool_calls
+}
+
 fn map_google_finish_reason(reason: &str) -> &'static str {
     match reason {
         "STOP" => "stop",
         "MAX_TOKENS" => "length",
         "SAFETY" | "BLOCKLIST" | "PROHIBITED_CONTENT" => "content_filter",
+        "MALFORMED_FUNCTION_CALL" => "stop",
         _ => "stop",
     }
 }
@@ -2369,6 +2867,8 @@ where
         let mut role_emitted = false;
         let mut finish_emitted = false;
         let mut stream_failed = false;
+        let mut stream_has_tool_calls = false;
+        let mut next_tool_call_index = 0usize;
         futures_util::pin_mut!(upstream);
 
         while let Some(chunk) = upstream.next().await {
@@ -2380,7 +2880,6 @@ where
                     break;
                 }
             };
-
             let objects = match parser.push_bytes(&chunk) {
                 Ok(objects) => objects,
                 Err(error) => {
@@ -2391,20 +2890,27 @@ where
             };
 
             for object in objects {
-                let text = object
+                let candidate = object
                     .get("candidates")
                     .and_then(Value::as_array)
-                    .and_then(|candidates| candidates.first())
+                    .and_then(|candidates| candidates.first());
+                let text = candidate
                     .map(extract_google_candidate_text)
                     .unwrap_or_default();
-                let finish_reason = object
-                    .get("candidates")
-                    .and_then(Value::as_array)
-                    .and_then(|candidates| candidates.first())
+                let google_finish_reason = candidate
                     .and_then(|candidate| candidate.get("finishReason"))
-                    .and_then(Value::as_str)
-                    .map(map_google_finish_reason);
-
+                    .and_then(Value::as_str);
+                let tool_calls = if google_finish_reason == Some("MALFORMED_FUNCTION_CALL") {
+                    Vec::new()
+                } else {
+                    candidate
+                        .map(extract_google_candidate_tool_calls)
+                        .unwrap_or_default()
+                };
+                if !tool_calls.is_empty() {
+                    stream_has_tool_calls = true;
+                }
+                let upstream_finish_reason = google_finish_reason.map(map_google_finish_reason);
                 if !text.is_empty() {
                     let delta = openai_chunk(
                         &stream_id,
@@ -2418,7 +2924,44 @@ where
                     role_emitted = true;
                 }
 
-                if let Some(finish_reason) = finish_reason {
+                for tool_call in tool_calls {
+                    let mut delta = Map::new();
+                    if !role_emitted {
+                        delta.insert("role".to_string(), Value::String("assistant".to_string()));
+                        role_emitted = true;
+                    }
+                    let mut call_delta = Map::new();
+                    call_delta.insert("index".to_string(), json!(next_tool_call_index));
+                    next_tool_call_index += 1;
+                    if let Some(id) = tool_call.get("id").and_then(Value::as_str) {
+                        call_delta.insert("id".to_string(), json!(id));
+                    }
+                    call_delta.insert("type".to_string(), json!("function"));
+                    if let Some(function) = tool_call.get("function").and_then(Value::as_object) {
+                        call_delta.insert("function".to_string(), Value::Object(function.clone()));
+                    }
+                    if let Some(signature) = tool_call.get("thought_signature") {
+                        call_delta.insert("thought_signature".to_string(), signature.clone());
+                    }
+                    delta.insert("tool_calls".to_string(), Value::Array(vec![Value::Object(call_delta)]));
+
+                    let chunk = openai_delta_chunk(
+                        &stream_id,
+                        created,
+                        &model,
+                        Value::Object(delta),
+                        None,
+                    );
+                    yield Ok(openai_sse_chunk(&chunk));
+                }
+
+                if let Some(reason) = upstream_finish_reason {
+                    let finish_reason = if stream_has_tool_calls {
+                        "tool_calls"
+                    } else {
+                        reason
+                    };
+                    // Emits the single terminal finish reason when upstream signals candidate completion.
                     let finish = openai_chunk(
                         &stream_id,
                         created,
@@ -2434,13 +2977,18 @@ where
         }
 
         if !stream_failed && !finish_emitted {
+            let finish_reason = if stream_has_tool_calls {
+                "tool_calls"
+            } else {
+                "stop"
+            };
             let finish = openai_chunk(
                 &stream_id,
                 created,
                 &model,
                 None,
                 None,
-                Some("stop"),
+                Some(finish_reason),
             );
             yield Ok(openai_sse_chunk(&finish));
         }
@@ -3010,6 +3558,37 @@ mod tests {
     }
 
     #[test]
+    fn rejects_google_streamed_function_call_arguments() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("use a tool".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("tool_choice".to_string(), json!("auto"));
+        let mut context = context("google/gemini-3-flash");
+        context.extra_body.insert(
+            "toolConfig".to_string(),
+            json!({
+                "functionCallingConfig": {
+                    "streamFunctionCallArguments": true
+                }
+            }),
+        );
+
+        let error = map_google_request(&request, &context, true)
+            .expect_err("partial function argument streaming must be rejected");
+
+        assert!(matches!(
+            error,
+            ProviderError::InvalidRequest(message)
+                if message.contains("streamFunctionCallArguments")
+        ));
+    }
+
+    #[test]
     fn rejects_google_streaming_multiple_candidates_from_route_override() {
         let request = CoreChatRequest {
             model: "fast".to_string(),
@@ -3098,6 +3677,423 @@ mod tests {
         assert!(capabilities.stream);
         assert!(capabilities.tools);
         assert!(capabilities.developer_role);
+    }
+
+    #[test]
+    fn maps_openai_tools_tool_calls_and_tool_results_to_google_payload() {
+        let mut assistant_extra = BTreeMap::new();
+        assistant_extra.insert(
+            "tool_calls".to_string(),
+            json!([{
+                "id": "call_123",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{\"city\":\"London\"}"
+                }
+            }]),
+        );
+        let mut tool_extra = BTreeMap::new();
+        tool_extra.insert("tool_call_id".to_string(), json!("call_123"));
+        let mut request = chat_request(vec![
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("weather?".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            CoreChatMessage {
+                role: "assistant".to_string(),
+                content: Value::Null,
+                name: None,
+                extra: assistant_extra,
+            },
+            CoreChatMessage {
+                role: "tool".to_string(),
+                content: Value::String("{\"temp\": 20}".to_string()),
+                name: Some("lookup".to_string()),
+                extra: tool_extra,
+            },
+        ]);
+        request.extra.insert(
+            "tools".to_string(),
+            json!([{
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "description": "Look up weather",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"]
+                    }
+                }
+            }]),
+        );
+        request.extra.insert(
+            "tool_choice".to_string(),
+            json!({"type":"function","function":{"name":"lookup"}}),
+        );
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
+
+        assert_eq!(
+            mapped["tools"][0]["functionDeclarations"][0]["name"],
+            "lookup"
+        );
+        assert_eq!(
+            mapped["tools"][0]["functionDeclarations"][0]["description"],
+            "Look up weather"
+        );
+        assert_eq!(mapped["toolConfig"]["functionCallingConfig"]["mode"], "ANY");
+        assert_eq!(
+            mapped["toolConfig"]["functionCallingConfig"]["allowedFunctionNames"][0],
+            "lookup"
+        );
+        assert_eq!(
+            mapped["contents"][1]["parts"][0]["functionCall"]["name"],
+            "lookup"
+        );
+        assert_eq!(
+            mapped["contents"][1]["parts"][0]["functionCall"]["id"],
+            "call_123"
+        );
+        assert_eq!(
+            mapped["contents"][1]["parts"][0]["functionCall"]["args"]["city"],
+            "London"
+        );
+        assert_eq!(mapped["contents"][2]["role"], "user");
+        assert_eq!(
+            mapped["contents"][2]["parts"][0]["functionResponse"]["name"],
+            "lookup"
+        );
+        assert_eq!(
+            mapped["contents"][2]["parts"][0]["functionResponse"]["id"],
+            "call_123"
+        );
+        assert_eq!(
+            mapped["contents"][2]["parts"][0]["functionResponse"]["response"]["temp"],
+            20
+        );
+    }
+
+    #[test]
+    fn maps_anthropic_tools_calls_and_results_to_google_payload() {
+        let mut request = chat_request(vec![
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("weather?".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            CoreChatMessage {
+                role: "assistant".to_string(),
+                content: json!([{
+                    "type": "tool_use",
+                    "id": "toolu_123",
+                    "name": "lookup",
+                    "input": {"city": "London"}
+                }]),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: json!([{
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_123",
+                    "content": "{\"temp\":20}"
+                }]),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+        ]);
+        request.extra.insert(
+            "tools".to_string(),
+            json!([{
+                "name": "lookup",
+                "description": "Look up weather",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                    "required": ["city"]
+                }
+            }]),
+        );
+        request.extra.insert(
+            "tool_choice".to_string(),
+            json!({"type":"tool","name":"lookup"}),
+        );
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
+
+        assert_eq!(
+            mapped["tools"][0]["functionDeclarations"][0]["parameters"]["required"][0],
+            "city"
+        );
+        assert_eq!(
+            mapped["toolConfig"]["functionCallingConfig"]["allowedFunctionNames"][0],
+            "lookup"
+        );
+        assert_eq!(
+            mapped["contents"][1]["parts"][0]["functionCall"]["id"],
+            "toolu_123"
+        );
+        assert_eq!(
+            mapped["contents"][2]["parts"][0]["functionResponse"]["id"],
+            "toolu_123"
+        );
+        assert_eq!(
+            mapped["contents"][2]["parts"][0]["functionResponse"]["response"]["temp"],
+            20
+        );
+    }
+
+    #[test]
+    fn maps_openai_tool_results_without_name_and_coalesces_parallel_turns() {
+        let mut assistant_extra = BTreeMap::new();
+        assistant_extra.insert(
+            "tool_calls".to_string(),
+            json!([
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "lookup_weather",
+                        "arguments": "{\"city\":\"London\"}"
+                    }
+                },
+                {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {
+                        "name": "lookup_time",
+                        "arguments": "{\"city\":\"London\"}"
+                    }
+                }
+            ]),
+        );
+        let mut tool1_extra = BTreeMap::new();
+        tool1_extra.insert("tool_call_id".to_string(), json!("call_1"));
+        let mut tool2_extra = BTreeMap::new();
+        tool2_extra.insert("tool_call_id".to_string(), json!("call_2"));
+
+        let request = chat_request(vec![
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("check both".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            CoreChatMessage {
+                role: "assistant".to_string(),
+                content: Value::Null,
+                name: None,
+                extra: assistant_extra,
+            },
+            CoreChatMessage {
+                role: "tool".to_string(),
+                content: Value::String("{\"temp\": 20}".to_string()),
+                name: None,
+                extra: tool1_extra,
+            },
+            CoreChatMessage {
+                role: "tool".to_string(),
+                content: Value::String("{\"time\": \"12:00\"}".to_string()),
+                name: None,
+                extra: tool2_extra,
+            },
+        ]);
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
+
+        assert_eq!(mapped["contents"].as_array().expect("contents").len(), 3);
+        assert_eq!(mapped["contents"][2]["role"], "user");
+        let parts = mapped["contents"][2]["parts"].as_array().expect("parts");
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0]["functionResponse"]["name"], "lookup_weather");
+        assert_eq!(parts[0]["functionResponse"]["response"]["temp"], 20);
+        assert_eq!(parts[1]["functionResponse"]["name"], "lookup_time");
+        assert_eq!(parts[1]["functionResponse"]["response"]["time"], "12:00");
+    }
+
+    #[test]
+    fn rejects_google_tool_result_without_a_preceding_matching_call() {
+        let mut tool_extra = BTreeMap::new();
+        tool_extra.insert("tool_call_id".to_string(), json!("call_later"));
+        let mut assistant_extra = BTreeMap::new();
+        assistant_extra.insert(
+            "tool_calls".to_string(),
+            json!([{
+                "id": "call_later",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{}"
+                }
+            }]),
+        );
+        let request = chat_request(vec![
+            CoreChatMessage {
+                role: "tool".to_string(),
+                content: Value::String("result".to_string()),
+                name: Some("lookup".to_string()),
+                extra: tool_extra,
+            },
+            CoreChatMessage {
+                role: "assistant".to_string(),
+                content: Value::Null,
+                name: None,
+                extra: assistant_extra,
+            },
+        ]);
+
+        let error = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect_err("future tool calls must not resolve earlier tool results");
+
+        assert!(matches!(
+            error,
+            ProviderError::InvalidRequest(message)
+                if message.contains("unknown `tool_call_id` `call_later`")
+        ));
+    }
+
+    #[test]
+    fn omits_openai_none_tool_choice_for_google_payload() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("do not use tools".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("tool_choice".to_string(), json!("none"));
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
+
+        assert_eq!(
+            mapped["toolConfig"]["functionCallingConfig"]["mode"],
+            "NONE"
+        );
+        assert!(mapped.get("tools").is_none());
+    }
+
+    #[test]
+    fn maps_google_any_tool_choice_to_any_mode() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("use a tool".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("tool_choice".to_string(), json!("any"));
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
+
+        assert_eq!(mapped["toolConfig"]["functionCallingConfig"]["mode"], "ANY");
+    }
+
+    #[test]
+    fn handles_google_parallel_tool_calls_locally() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("use a tool".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request.extra.insert(
+            "tools".to_string(),
+            json!([{
+                "type": "function",
+                "function": {"name": "lookup", "parameters": {"type": "object"}}
+            }]),
+        );
+        request
+            .extra
+            .insert("parallel_tool_calls".to_string(), json!(false));
+
+        let error = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect_err("disabled parallel calls are not supported");
+        assert!(matches!(
+            error,
+            ProviderError::InvalidRequest(message)
+                if message.contains("parallel_tool_calls: false")
+        ));
+
+        request
+            .extra
+            .insert("parallel_tool_calls".to_string(), json!(true));
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("parallel calls are supported");
+        assert!(mapped.get("parallel_tool_calls").is_none());
+    }
+
+    #[test]
+    fn normalizes_google_function_call_response_into_openai_tool_calls() {
+        let response = json!({
+            "responseId":"resp_123",
+            "candidates":[{
+                "index": 0,
+                "content":{
+                    "parts":[{
+                        "functionCall":{
+                            "name":"lookup",
+                            "args":{"city":"London"},
+                            "id":"provider-call-123"
+                        }
+                    }]
+                },
+                "finishReason":"STOP"
+            }],
+            "usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":7,"totalTokenCount":12}
+        });
+        let normalized = normalize_google_response(&response, &context("google/gemini-2.0-flash"));
+
+        assert_eq!(normalized["choices"][0]["finish_reason"], "tool_calls");
+        let tool_calls = normalized["choices"][0]["message"]["tool_calls"]
+            .as_array()
+            .expect("tool_calls array");
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0]["id"], "provider-call-123");
+        assert_eq!(tool_calls[0]["function"]["name"], "lookup");
+        assert_eq!(
+            tool_calls[0]["function"]["arguments"],
+            "{\"city\":\"London\"}"
+        );
+    }
+
+    #[test]
+    fn does_not_expose_malformed_google_function_calls_as_tool_calls() {
+        let response = json!({
+            "candidates":[{
+                "content":{
+                    "parts":[{
+                        "functionCall":{
+                            "name":"lookup",
+                            "args":{"city":"London"}
+                        }
+                    }]
+                },
+                "finishReason":"MALFORMED_FUNCTION_CALL"
+            }]
+        });
+
+        let normalized = normalize_google_response(&response, &context("google/gemini-2.0-flash"));
+
+        assert_eq!(normalized["choices"][0]["finish_reason"], "stop");
+        assert!(
+            normalized["choices"][0]["message"]
+                .get("tool_calls")
+                .is_none()
+        );
     }
 
     #[test]
@@ -4422,6 +5418,86 @@ data: {"type":"vertex_event"}
         assert!(rendered.contains("google_stream_parse_error"));
         assert!(!rendered.contains(r#""finish_reason":"stop""#));
         assert!(!rendered.contains("data: [DONE]"));
+    }
+
+    #[tokio::test]
+    async fn google_stream_normalization_normalizes_tool_calls() {
+        let upstream = stream::iter(vec![
+            Ok(Bytes::from(
+                r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup","args":{"city":"London"}}}]}}]}"#,
+            )),
+            Ok(Bytes::from(r#"{"candidates":[{"finishReason":"STOP"}]}"#)),
+        ]);
+        let stream = super::normalize_google_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            1,
+            "fast".to_string(),
+        );
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+        assert!(rendered.contains("\"tool_calls\""));
+        assert!(rendered.contains("\"name\":\"lookup\""));
+        assert!(rendered.contains("\"arguments\":\"{\\\"city\\\":\\\"London\\\"}\""));
+        assert!(rendered.contains("\"finish_reason\":\"tool_calls\""));
+        assert!(rendered.contains("data: [DONE]"));
+    }
+
+    #[tokio::test]
+    async fn google_stream_preserves_tool_call_indexes_and_thought_signatures() {
+        let upstream = stream::iter(vec![
+            Ok(Bytes::from(
+                r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"weather","args":{"city":"London"}},"thoughtSignature":"sig-weather"}]}}]}"#,
+            )),
+            Ok(Bytes::from(
+                r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"time","args":{"city":"London"}},"thoughtSignature":"sig-time"}]}}]}"#,
+            )),
+            Ok(Bytes::from(r#"{"candidates":[{"finishReason":"STOP"}]}"#)),
+        ]);
+        let stream = super::normalize_google_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            1,
+            "fast".to_string(),
+        );
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+
+        assert!(rendered.contains("\"index\":0"));
+        assert!(rendered.contains("\"index\":1"));
+        assert!(rendered.contains("\"thought_signature\":\"sig-weather\""));
+        assert!(rendered.contains("\"thought_signature\":\"sig-time\""));
+        assert_eq!(
+            rendered.matches("\"finish_reason\":\"tool_calls\"").count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn google_stream_does_not_emit_malformed_function_calls() {
+        let upstream = stream::iter(vec![Ok(Bytes::from(
+            r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup","args":{"city":"London"}}}]},"finishReason":"MALFORMED_FUNCTION_CALL"}]}"#,
+        ))]);
+        let stream = super::normalize_google_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            1,
+            "fast".to_string(),
+        );
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+
+        assert!(!rendered.contains("\"tool_calls\""));
+        assert!(rendered.contains("\"finish_reason\":\"stop\""));
     }
 
     #[tokio::test]

@@ -2907,9 +2907,15 @@ export interface components {
         };
         SpendTotalsView: {
             /** Format: int64 */
+            cache_read_tokens?: number | null;
+            /** Format: int64 */
+            cache_write_tokens?: number | null;
+            /** Format: int64 */
             priced_cost_usd_10000: number;
             /** Format: int64 */
             priced_request_count: number;
+            /** Format: int64 */
+            uncached_input_tokens?: number | null;
             /** Format: int64 */
             unpriced_request_count: number;
             /** Format: int64 */

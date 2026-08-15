@@ -1,0 +1,5 @@
+ALTER TABLE usage_cost_events
+  VALIDATE CONSTRAINT usage_cost_events_uncached_input_tokens_check,
+  VALIDATE CONSTRAINT usage_cost_events_cache_read_tokens_check,
+  VALIDATE CONSTRAINT usage_cost_events_cache_write_tokens_check,
+  VALIDATE CONSTRAINT usage_cost_events_cache_input_buckets_check;

@@ -12,9 +12,9 @@ use crate::{
     domain::{
         ApiKeyModelGrantMode, ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
         BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord,
-        ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord, ExternalMcpToolRecord,
-        FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel,
-        HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
+        CacheUsageAggregateRecord, ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord,
+        ExternalMcpToolRecord, FocusExportAggregateRecord, FocusExportDiagnosticsRecord,
+        GatewayModel, HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
         McpAggregateSessionRecord, McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord,
         McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
         McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
@@ -438,6 +438,18 @@ pub trait BudgetRepository: Send + Sync {
         let _ = (window_start, window_end, owner_kind, owner_user_id);
         Err(StoreError::Unexpected(
             "list_usage_model_aggregates is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn get_cache_usage_aggregate(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<crate::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<CacheUsageAggregateRecord, StoreError> {
+        let _ = (window_start, window_end, owner_kind, owner_user_id);
+        Err(StoreError::Unexpected(
+            "get_cache_usage_aggregate is not implemented for this repository".to_string(),
         ))
     }
     async fn list_focus_export_aggregates(

@@ -24,8 +24,8 @@ These areas are backed by real gateway APIs today:
 - identity users and lifecycle management
 - identity teams and member transfer or removal workflows
 - team-owned service-account management
-- password invite and onboarding links
-- OIDC pre-provisioning flows
+- password invite and optional SSO sign-in links
+- OIDC and OAuth pre-provisioning flows
 - spend usage reporting
 - spend budget management for users, service accounts, and user model scopes
 - request-log list and detail inspection

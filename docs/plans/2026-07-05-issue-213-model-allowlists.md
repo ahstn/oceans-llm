@@ -267,7 +267,7 @@ cargo test -p gateway-service model_access
 cargo test -p gateway-service admin_models
 bun run --cwd crates/admin-ui/web test
 mise run admin-contract-check
-mise run docs-check
+mise run //docs:build
 ```
 
 Final required verifier for this mixed Rust/UI/docs change:

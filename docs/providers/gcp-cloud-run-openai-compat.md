@@ -145,7 +145,7 @@ cargo test -p gateway-providers id_token
 cargo test -p gateway-providers x_serverless
 cargo test -p gateway cloud_run_openai_compat
 mise run lint
-mise run docs:check
+mise run //docs:build
 ```
 
 [Kubernetes and Helm - Secrets]: ../setup/kubernetes-and-helm.md#secrets

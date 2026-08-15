@@ -15,11 +15,40 @@ The OIDC/OAuth flow includes:
 - `/api/v1/auth/oidc/callback` consumes one-time state, exchanges the authorization code, verifies the ID token and nonce, and issues the existing `ogw_session` cookie
 - `/api/v1/auth/oauth/start` redirects to the OAuth provider with one-time state and PKCE
 - `/api/v1/auth/oauth/callback/github` consumes one-time state, exchanges the code with GitHub, resolves numeric subject plus the selected primary email, and issues `ogw_session`
-- invited/config-declared OIDC users activate on first successful provider login
+- invited/config-declared OIDC and OAuth users activate on first successful provider login
 - provider-specific JIT user creation can assign explicit global role, team membership, and request logging defaults
 - direct GitHub OAuth requires a GitHub-verified primary email by default, can use `sso_email_verification_enabled: false` as an admin escape hatch, and can restrict sign-in and JIT provisioning to configured email domains
 - Google Auth Platform OAuth 2.0 clients work through the generic OIDC provider using issuer `https://accounts.google.com`; use an Internal Google audience when Google must restrict sign-in to one Workspace or Cloud Identity organization
 - local Authentik compose profiles provide a repeatable manual IdP fixture
+
+## Start SSO Sign-In
+
+Use the shared login page as the normal entry point for OIDC and OAuth users:
+
+```text
+https://<your-oceans-host>/admin/login
+```
+
+The page lists all enabled providers. A config-seeded or control-plane-created SSO user can complete onboarding without a generated per-user URL. The user selects the configured provider and signs in. On the first successful match, Oceans records the provider subject, changes the invited user to `active`, and creates the browser session.
+
+Before sharing the login page, apply and reconcile the provider and user config through the seed path for the deployment. See [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md#config-seeded-sso-users) for startup-seeded and Helm deployments.
+
+Use a provider-specific entry URL when a link must bypass provider selection:
+
+```text
+https://<your-oceans-host>/api/v1/auth/oidc/start?provider_key=<oidc-provider-key>&redirect_to=%2Fadmin
+https://<your-oceans-host>/api/v1/auth/oauth/start?provider_key=<oauth-provider-key>&redirect_to=%2Fadmin
+```
+
+The start URL is stable, but each request creates fresh state and PKCE values. Do not copy and distribute the temporary authorization URL returned by the provider redirect.
+
+The query parameters have these roles:
+
+- `provider_key` is required for a direct start URL and must identify an enabled provider.
+- `login_hint` is optional. It can help the provider preselect an account, but the provider may ignore it. Oceans does not use it as proof of identity or permission.
+- `redirect_to` is optional and must be a local `/admin` path. The login page uses `/admin` so the UI can select the correct page for the signed-in role.
+
+The control plane can generate a per-user SSO sign-in URL. That URL adds `login_hint` and sends the browser through the account-ready page, but it does not contain an invitation secret or grant more access than the shared login page. Password invite URLs are different: they contain a single-user token and remain required for password onboarding.
 
 ## Security Boundary
 
@@ -28,7 +57,7 @@ The current flow preserves the same-origin browser session cookie model. Success
 Account linking is intentionally conservative:
 
 - existing `(provider, sub)` links win
-- invited/config-declared OIDC users with matching normalized email and provider link are activated and linked
+- invited/config-declared OIDC and OAuth users with a matching accepted provider email and seeded provider association are activated and linked
 - unmatched identities use the provider's explicit JIT policy
 - GitHub OAuth `sso_email_verification_enabled` and `allowed_email_domains` are enforced before account linking, invite activation, JIT creation, or session issuance
 - existing password/local users with the same email are rejected instead of auto-linked

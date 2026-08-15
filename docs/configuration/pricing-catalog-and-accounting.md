@@ -134,7 +134,17 @@ Routes can opt into that request shape with `compatibility.openai_compat.support
 
 This compatibility option applies to Chat Completions streams. Responses streams use the Responses event model and read usage from completed response events.
 
-## Stored But Not Charged Yet
+## Cache-Aware Token Accounting
+
+Oceans normalizes cache usage when a supported response supplies enough evidence to form disjoint input buckets. The ledger retains the raw provider usage and stores:
+
+- uncached input tokens;
+- cache-read tokens;
+- cache-write tokens.
+
+OpenAI Responses `input_tokens_details` and equivalent root provider counters use inclusive input totals. Bedrock Converse and Anthropic counters use exclusive uncached-input totals, so Oceans adds cache-read and cache-write tokens when it derives the logical prompt total. Missing cache evidence remains `NULL`; reports show the aggregate as unavailable if any included row lacks all three normalized buckets.
+
+Cache-aware pricing requires the standard input and output rates and each positive cache bucket's route rate. Malformed counters use aggregate input/output pricing as a `legacy_estimated` safety fallback and retain an `invalid_cache_token_usage` reason. Unsupported mixed TTL write classes remain unpriced because one cache-write rate cannot price them without loss.
 
 The catalog and provider responses can contain more billing signals than Oceans charges today.
 
@@ -143,16 +153,14 @@ The catalog and provider responses can contain more billing signals than Oceans 
 | prompt/input tokens | charged from the effective input rate |
 | completion/output tokens | charged from the effective output rate |
 | total tokens | stored for reporting and validation context |
-| cache read/write rates | stored on spend events and propagated to generated client metadata |
-| cache read/write token counts | stored in raw provider usage when available, but not charged yet |
+| cache read/write rates | stored on spend events, propagated to generated client metadata, and used for positive normalized cache buckets |
+| cache read/write token counts | retained raw and normalized for supported response shapes |
 | reasoning tokens or traces | not charged separately yet |
 | image, audio, and file modality counters | not charged yet |
 
-The current cost calculation remains limited to normalized prompt/input tokens and completion/output tokens. Cache rates are durable metadata for auditability and clients, not additional ledger arithmetic until Oceans defines a canonical normalized cache-token contract.
+AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Oceans normalizes these totals when one write-price class is sufficient. Mixed 5-minute and 1-hour cache writes remain unpriced until the ledger and pricing catalog represent each class separately. Bedrock Claude thinking and Converse reasoning blocks are preserved as provider metadata on Chat Completions messages or stream deltas, but they are not priced as separate ledger dimensions.
 
-AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Bedrock Claude thinking and Converse reasoning blocks are preserved as provider metadata on Chat Completions messages or stream deltas, but they are not priced as separate ledger dimensions.
-
-Cache token accounting, hidden thinking costs, and reasoning-specific counters remain future accounting work tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
+TTL-specific cache-write accounting, hidden thinking costs, and reasoning-specific counters remain future work tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92) and [issue #266](https://github.com/ahstn/oceans-llm/issues/266).
 
 ## Budgets And Reporting
 

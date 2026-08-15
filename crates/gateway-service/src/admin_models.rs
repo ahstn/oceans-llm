@@ -970,7 +970,7 @@ mod tests {
         assert!(chat_capabilities.chat_completions);
         assert!(chat_capabilities.stream);
         assert!(!chat_capabilities.embeddings);
-        assert!(!chat_capabilities.tools);
+        assert!(chat_capabilities.tools);
 
         let anthropic_route = model_route(
             "anthropic/claude-sonnet-4-6",
@@ -1714,7 +1714,7 @@ mod tests {
     }
 
     #[test]
-    fn vertex_provider_capabilities_are_tool_capable_only_for_anthropic_routes() {
+    fn vertex_provider_capabilities_are_tool_capable_for_gemini_and_anthropic_routes() {
         let provider = ProviderConnection {
             provider_key: "vertex-prod".to_string(),
             provider_type: "gcp_vertex".to_string(),
@@ -1738,8 +1738,11 @@ mod tests {
         };
         let mut google_route = anthropic_route.clone();
         google_route.upstream_model = "google/gemini-2.0-flash".to_string();
+        let mut embedding_route = anthropic_route.clone();
+        embedding_route.upstream_model = "google/gemini-embedding-001".to_string();
 
         assert!(provider_capabilities(&provider, Some(&anthropic_route)).tools);
-        assert!(!provider_capabilities(&provider, Some(&google_route)).tools);
+        assert!(provider_capabilities(&provider, Some(&google_route)).tools);
+        assert!(!provider_capabilities(&provider, Some(&embedding_route)).tools);
     }
 }
