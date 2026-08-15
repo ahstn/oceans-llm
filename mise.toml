@@ -362,23 +362,7 @@ run = '''
 set -euo pipefail
 
 cog bump --auto --skip-untracked
-tag="$(cog get-version --tag)"
+tag="$(cog get-version --tag)" # TODO: prints over two lines
 git push --atomic origin main "$tag"
 gh release create "$tag" --title "$tag" --notes $(git-cliff --latest)
-'''
-
-[tasks.release-dry-run]
-description = "Preview the next version and validate release rendering without changing the repository"
-run = '''
-set -euo pipefail
-
-next_tag="$(cog bump --auto --dry-run --skip-untracked)"
-case "$next_tag" in
-  v[0-9]*) ;;
-  *) echo "$next_tag" >&2; exit 1 ;;
-esac
-next_version="${next_tag#v}"
-
-cargo release version "$next_version"
-git-cliff --unreleased --tag "$next_tag" --offline
 '''
