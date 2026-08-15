@@ -1,4 +1,4 @@
-experimental_monorepo_root = true
+min_version = "2026.8.2"
 
 [settings]
 experimental = true
@@ -19,7 +19,6 @@ opentofu = "latest"
 git-cliff = "latest"
 cocogitto = "latest"
 prek = "latest"
-"npm:agent-browser" = "latest"
 
 [env]
 CARGO_TARGET_DIR = "$HOME/.cache/cargo/target/"

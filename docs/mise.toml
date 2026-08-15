@@ -1,6 +1,4 @@
 [tools]
-node = "lts"
-gh = "latest"
 "npm:wrangler" = "latest"
 
 [env]
