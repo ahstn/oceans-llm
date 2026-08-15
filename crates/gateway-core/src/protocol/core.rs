@@ -252,7 +252,15 @@ fn content_part_has_vision_input(value: &Value) -> bool {
     // aliases accepted by provider adapters aligned with Responses `input_file` routing.
     matches!(
         object.get("type").and_then(Value::as_str),
-        Some("image_url" | "input_image" | "file" | "input_file" | "document")
+        Some(
+            "image_url"
+                | "input_image"
+                | "video_url"
+                | "input_video"
+                | "file"
+                | "input_file"
+                | "document"
+        )
     ) || object.contains_key("image_url")
 }
 
@@ -321,6 +329,28 @@ mod tests {
                             "filename": "document.pdf"
                         }
                     }]),
+                    name: None,
+                    extra: BTreeMap::new(),
+                }],
+                stream: false,
+                extra: BTreeMap::new(),
+            };
+
+            assert!(
+                request.requirements().vision,
+                "{content_type} must require a vision-capable route"
+            );
+        }
+    }
+
+    #[test]
+    fn chat_video_content_parts_require_vision_capability() {
+        for content_type in ["video_url", "input_video"] {
+            let request = ChatRequest {
+                model: "video-reader".to_string(),
+                messages: vec![ChatMessage {
+                    role: "user".to_string(),
+                    content: json!([{"type": content_type}]),
                     name: None,
                     extra: BTreeMap::new(),
                 }],

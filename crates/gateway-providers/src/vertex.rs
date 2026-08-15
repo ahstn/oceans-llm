@@ -1399,86 +1399,29 @@ fn map_google_parts(
                         parts.push(json!({ "text": text }));
                     }
                     "image_url" | "input_image" => {
-                        let image_url_object = object
-                            .get("image_url")
-                            .and_then(Value::as_object)
-                            .ok_or_else(|| {
-                            ProviderError::InvalidRequest(
-                                "image_url content entries must include an `image_url` object"
-                                    .to_string(),
-                            )
-                        })?;
-                        let uri = image_url_object
-                            .get("url")
-                            .and_then(Value::as_str)
-                            .ok_or_else(|| {
-                                ProviderError::InvalidRequest(
-                                    "image_url.url must be a string".to_string(),
-                                )
-                            })?;
-                        if !uri.starts_with("gs://") {
-                            return Err(ProviderError::InvalidRequest(
-                                "only gs:// image/file URIs are supported for google vertex in this slice"
-                                    .to_string(),
-                            ));
-                        }
-                        let mime_type = image_url_object
-                            .get("mime_type")
-                            .and_then(Value::as_str)
-                            .map(str::to_string)
-                            .or_else(|| guess_mime_type(uri))
-                            .ok_or_else(|| {
-                                ProviderError::InvalidRequest(
-                                    "could not infer MIME type for gs:// URI; set image_url.mime_type"
-                                        .to_string(),
-                                )
-                            })?;
-                        parts.push(json!({
-                            "fileData": {
-                                "fileUri": uri,
-                                "mimeType": mime_type
-                            }
-                        }));
+                        parts.push(map_google_media_part(
+                            object,
+                            "image_url",
+                            MediaModality::Image,
+                        )?);
+                    }
+                    "video_url" => {
+                        parts.push(map_google_media_part(
+                            object,
+                            "video_url",
+                            MediaModality::Video,
+                        )?);
+                    }
+                    "input_video" => {
+                        let field = if object.contains_key("input_video") {
+                            "input_video"
+                        } else {
+                            "video_url"
+                        };
+                        parts.push(map_google_media_part(object, field, MediaModality::Video)?);
                     }
                     "file" => {
-                        let file =
-                            object
-                                .get("file")
-                                .and_then(Value::as_object)
-                                .ok_or_else(|| {
-                                    ProviderError::InvalidRequest(
-                                        "file content entries must include a `file` object"
-                                            .to_string(),
-                                    )
-                                })?;
-                        let uri = file.get("url").and_then(Value::as_str).ok_or_else(|| {
-                            ProviderError::InvalidRequest(
-                                "file.url must be provided for file content".to_string(),
-                            )
-                        })?;
-                        if !uri.starts_with("gs://") {
-                            return Err(ProviderError::InvalidRequest(
-                                "only gs:// file URIs are supported for google vertex in this slice"
-                                    .to_string(),
-                            ));
-                        }
-                        let mime_type = file
-                            .get("mime_type")
-                            .and_then(Value::as_str)
-                            .map(str::to_string)
-                            .or_else(|| guess_mime_type(uri))
-                            .ok_or_else(|| {
-                                ProviderError::InvalidRequest(
-                                    "could not infer MIME type for file URI; set file.mime_type"
-                                        .to_string(),
-                                )
-                            })?;
-                        parts.push(json!({
-                            "fileData": {
-                                "fileUri": uri,
-                                "mimeType": mime_type
-                            }
-                        }));
+                        parts.push(map_google_media_part(object, "file", MediaModality::File)?);
                     }
                     "tool_use" => {
                         parts.push(map_google_anthropic_tool_use_part(object)?);
@@ -1507,6 +1450,115 @@ fn map_google_parts(
             "message content must be a string or typed content array".to_string(),
         )),
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum MediaModality {
+    Image,
+    Video,
+    File,
+}
+
+impl MediaModality {
+    const fn mime_prefix(self) -> Option<&'static str> {
+        match self {
+            Self::Image => Some("image/"),
+            Self::Video => Some("video/"),
+            Self::File => None,
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Image => "image",
+            Self::Video => "video",
+            Self::File => "file",
+        }
+    }
+}
+
+fn map_google_media_part(
+    content: &Map<String, Value>,
+    field: &str,
+    modality: MediaModality,
+) -> Result<Value, ProviderError> {
+    let media = content
+        .get(field)
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest(format!(
+                "{field} content entries must include a `{field}` object"
+            ))
+        })?;
+    let uri = media
+        .get("url")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ProviderError::InvalidRequest(format!("{field}.url must be a string")))?;
+    validate_google_media_uri(uri)?;
+
+    let mime_type = explicit_media_mime_type(media, field)?
+        .map(str::to_string)
+        .or_else(|| guess_mime_type(uri))
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest(format!(
+                "could not infer MIME type for {field} URI; set {field}.mime_type"
+            ))
+        })?;
+    if let Some(expected_prefix) = modality.mime_prefix()
+        && !mime_type.to_ascii_lowercase().starts_with(expected_prefix)
+    {
+        return Err(ProviderError::InvalidRequest(format!(
+            "{} content requires a {expected_prefix} MIME type, got `{mime_type}`",
+            modality.name()
+        )));
+    }
+
+    Ok(json!({
+        "fileData": {
+            "fileUri": uri,
+            "mimeType": mime_type
+        }
+    }))
+}
+
+fn validate_google_media_uri(uri: &str) -> Result<(), ProviderError> {
+    let parsed = url::Url::parse(uri).map_err(|error| {
+        ProviderError::InvalidRequest(format!("invalid google vertex media URI: {error}"))
+    })?;
+    if matches!(parsed.scheme(), "gs" | "https") {
+        return Ok(());
+    }
+
+    Err(ProviderError::InvalidRequest(format!(
+        "unsupported google vertex media URI scheme `{}`; expected gs:// or https://",
+        parsed.scheme()
+    )))
+}
+
+fn explicit_media_mime_type<'a>(
+    media: &'a Map<String, Value>,
+    field: &str,
+) -> Result<Option<&'a str>, ProviderError> {
+    const MIME_FIELDS: [&str; 3] = ["mime_type", "media_type", "mediaType"];
+    let mut selected = None;
+    for key in MIME_FIELDS {
+        let Some(value) = media.get(key) else {
+            continue;
+        };
+        let value = value
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest(format!("{field}.{key} must be a non-empty string"))
+            })?;
+        if selected.is_some_and(|selected| selected != value) {
+            return Err(ProviderError::InvalidRequest(format!(
+                "{field} MIME type fields conflict"
+            )));
+        }
+        selected = Some(value);
+    }
+    Ok(selected)
 }
 
 fn map_google_anthropic_tool_use_part(object: &Map<String, Value>) -> Result<Value, ProviderError> {
@@ -2831,26 +2883,41 @@ fn merge_object_overrides(base: &mut Map<String, Value>, overrides: &Map<String,
 }
 
 fn guess_mime_type(uri: &str) -> Option<String> {
-    let lowercase = uri.to_ascii_lowercase();
-    if lowercase.ends_with(".png") {
-        Some("image/png".to_string())
-    } else if lowercase.ends_with(".jpg") || lowercase.ends_with(".jpeg") {
-        Some("image/jpeg".to_string())
-    } else if lowercase.ends_with(".webp") {
-        Some("image/webp".to_string())
-    } else if lowercase.ends_with(".gif") {
-        Some("image/gif".to_string())
-    } else if lowercase.ends_with(".pdf") {
-        Some("application/pdf".to_string())
-    } else if lowercase.ends_with(".mp3") {
-        Some("audio/mpeg".to_string())
-    } else if lowercase.ends_with(".wav") {
-        Some("audio/wav".to_string())
-    } else if lowercase.ends_with(".mp4") {
-        Some("video/mp4".to_string())
+    let path = url::Url::parse(uri).ok()?.path().to_ascii_lowercase();
+    let mime_type = if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if path.ends_with(".webp") {
+        "image/webp"
+    } else if path.ends_with(".gif") {
+        "image/gif"
+    } else if path.ends_with(".pdf") {
+        "application/pdf"
+    } else if path.ends_with(".mp3") {
+        "audio/mpeg"
+    } else if path.ends_with(".wav") {
+        "audio/wav"
+    } else if path.ends_with(".mp4") {
+        "video/mp4"
+    } else if path.ends_with(".mov") {
+        "video/mov"
+    } else if path.ends_with(".mpeg") {
+        "video/mpeg"
+    } else if path.ends_with(".mpg") {
+        "video/mpg"
+    } else if path.ends_with(".avi") {
+        "video/avi"
+    } else if path.ends_with(".wmv") {
+        "video/wmv"
+    } else if path.ends_with(".mpegps") {
+        "video/mpegps"
+    } else if path.ends_with(".flv") {
+        "video/flv"
     } else {
-        None
-    }
+        return None;
+    };
+    Some(mime_type.to_string())
 }
 
 fn normalize_google_stream<S>(
@@ -3528,6 +3595,262 @@ mod tests {
         assert_eq!(
             mapped["contents"][0]["parts"][1]["fileData"]["fileUri"],
             "gs://bucket/pic.png"
+        );
+    }
+
+    #[test]
+    fn maps_image_only_https_request_to_google_file_data() {
+        let request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([{
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://media.example.invalid/image.png?version=1",
+                    "mime_type": "image/png"
+                }
+            }]),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
+        assert_eq!(
+            mapped["contents"][0]["parts"][0]["fileData"],
+            json!({
+                "fileUri": "https://media.example.invalid/image.png?version=1",
+                "mimeType": "image/png"
+            })
+        );
+    }
+
+    #[test]
+    fn preserves_existing_gs_file_mapping() {
+        let request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([{
+                "type": "file",
+                "file": {
+                    "url": "gs://bucket/document.pdf",
+                    "mime_type": "application/pdf"
+                }
+            }]),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
+        assert_eq!(
+            mapped["contents"][0]["parts"][0]["fileData"],
+            json!({
+                "fileUri": "gs://bucket/document.pdf",
+                "mimeType": "application/pdf"
+            })
+        );
+    }
+
+    #[test]
+    fn maps_signed_https_video_url_to_google_file_data() {
+        let signed_url =
+            "https://media.example.invalid/video.mp4?expires=1700000000&signature=%3Credacted%3E";
+        let request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([{
+                "type": "video_url",
+                "video_url": {
+                    "url": signed_url,
+                    "mime_type": "video/mp4"
+                }
+            }]),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
+        assert_eq!(
+            mapped["contents"][0]["parts"][0],
+            json!({
+                "fileData": {
+                    "fileUri": signed_url,
+                    "mimeType": "video/mp4"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn maps_generic_https_video_file_to_google_file_data() {
+        let request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([{
+                "type": "file",
+                "file": {
+                    "url": "https://media.example.invalid/video.mp4",
+                    "mediaType": "video/mp4"
+                }
+            }]),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
+        assert_eq!(
+            mapped["contents"][0]["parts"][0]["fileData"],
+            json!({
+                "fileUri": "https://media.example.invalid/video.mp4",
+                "mimeType": "video/mp4"
+            })
+        );
+    }
+
+    #[test]
+    fn infers_video_mime_from_signed_url_path_and_prefers_explicit_mime() {
+        let request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([
+                {
+                    "type": "video_url",
+                    "video_url": {
+                        "url": "https://media.example.invalid/inferred.mp4?token=secret"
+                    }
+                },
+                {
+                    "type": "video_url",
+                    "video_url": {
+                        "url": "https://media.example.invalid/explicit.mov?token=secret",
+                        "media_type": "video/mp4"
+                    }
+                }
+            ]),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
+        assert_eq!(
+            mapped["contents"][0]["parts"][0]["fileData"]["mimeType"],
+            "video/mp4"
+        );
+        assert_eq!(
+            mapped["contents"][0]["parts"][1]["fileData"]["mimeType"],
+            "video/mp4"
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_media_uri_and_unknown_mime() {
+        for (content, expected_error) in [
+            (
+                json!([{
+                    "type": "video_url",
+                    "video_url": {
+                        "url": "file:///tmp/video.mp4",
+                        "mime_type": "video/mp4"
+                    }
+                }]),
+                "URI scheme `file`",
+            ),
+            (
+                json!([{
+                    "type": "video_url",
+                    "video_url": {
+                        "url": "https://media.example.invalid/video"
+                    }
+                }]),
+                "could not infer MIME type",
+            ),
+        ] {
+            let request = chat_request(vec![CoreChatMessage {
+                role: "user".to_string(),
+                content,
+                name: None,
+                extra: BTreeMap::new(),
+            }]);
+            let error = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+                .expect_err("invalid media must be rejected");
+            assert!(
+                matches!(
+                    error,
+                    ProviderError::InvalidRequest(message) if message.contains(expected_error)
+                ),
+                "expected error containing {expected_error}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_video_image_mime_and_conflicting_mime_aliases() {
+        for (media, expected_error) in [
+            (
+                json!({
+                    "url": "https://media.example.invalid/video.mp4",
+                    "mime_type": "image/png"
+                }),
+                "requires a video/ MIME type",
+            ),
+            (
+                json!({
+                    "url": "https://media.example.invalid/video.mp4",
+                    "mime_type": "video/mp4",
+                    "mediaType": "video/mov"
+                }),
+                "MIME type fields conflict",
+            ),
+        ] {
+            let request = chat_request(vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: json!([{"type": "video_url", "video_url": media}]),
+                name: None,
+                extra: BTreeMap::new(),
+            }]);
+            let error = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+                .expect_err("invalid video MIME type must be rejected");
+            assert!(
+                matches!(
+                    error,
+                    ProviderError::InvalidRequest(message) if message.contains(expected_error)
+                ),
+                "expected error containing {expected_error}"
+            );
+        }
+    }
+
+    #[test]
+    fn preserves_mixed_text_image_and_video_part_order() {
+        let request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([
+                {"type": "text", "text": "Compare the media"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "gs://bucket/image.png",
+                        "mime_type": "image/png"
+                    }
+                },
+                {
+                    "type": "input_video",
+                    "input_video": {
+                        "url": "https://media.example.invalid/video.mp4?signature=secret"
+                    }
+                }
+            ]),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("mapped");
+        let parts = mapped["contents"][0]["parts"].as_array().expect("parts");
+        assert_eq!(parts[0]["text"], "Compare the media");
+        assert_eq!(parts[1]["fileData"]["fileUri"], "gs://bucket/image.png");
+        assert_eq!(
+            parts[2]["fileData"]["fileUri"],
+            "https://media.example.invalid/video.mp4?signature=secret"
         );
     }
 
@@ -5768,6 +6091,73 @@ data: {"type":"vertex_event"}
         assert_eq!(
             request_payload["generationConfig"]["temperature"],
             json!(0.2)
+        );
+    }
+
+    #[tokio::test]
+    async fn vertex_provider_google_video_executes_http_request_and_response_mapping() {
+        let captured = Arc::new(Mutex::new(None::<Value>));
+        let state = captured.clone();
+        let app = Router::new()
+            .route(
+                "/v1/{*path}",
+                post(
+                    |Path(path): Path<String>,
+                     State(captured): State<Arc<Mutex<Option<Value>>>>,
+                     Json(payload): Json<Value>| async move {
+                        assert!(path.ends_with(":generateContent"));
+                        *captured.lock().await = Some(payload);
+                        Json(json!({
+                            "responseId": "resp-google-video-1",
+                            "candidates": [{
+                                "index": 0,
+                                "content": {
+                                    "parts": [{
+                                        "text": "A red title card appears."
+                                    }]
+                                },
+                                "finishReason": "STOP"
+                            }]
+                        }))
+                    },
+                ),
+            )
+            .with_state(state);
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let signed_url = "https://media.example.invalid/known-event.mp4?expires=1&signature=secret";
+        let request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([
+                {"type": "text", "text": "What event occurs?"},
+                {
+                    "type": "video_url",
+                    "video_url": {
+                        "url": signed_url,
+                        "mime_type": "video/mp4"
+                    }
+                }
+            ]),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+
+        let response = provider
+            .chat_completions(&request, &context("google/gemini-2.0-flash"))
+            .await
+            .expect("chat completion");
+
+        assert_eq!(
+            response["choices"][0]["message"]["content"],
+            "A red title card appears."
+        );
+        let request_payload = captured.lock().await.clone().expect("captured request");
+        assert_eq!(
+            request_payload["contents"][0]["parts"][1]["fileData"],
+            json!({
+                "fileUri": signed_url,
+                "mimeType": "video/mp4"
+            })
         );
     }
 
