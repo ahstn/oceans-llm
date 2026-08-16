@@ -286,7 +286,7 @@ pub(super) fn agent_session_source_view(
 ) -> AgentSessionSourceView {
     AgentSessionSourceView {
         session_source_id: session.agent_session_source_id.to_string(),
-        external_session_id: session.normalized_session_id.clone(),
+        session_source_hash: session.normalized_session_id.clone(),
         adapter_namespace: session.adapter_namespace.clone(),
         adapter_version: session.adapter_version.clone(),
         source_provenance: session.source_provenance.clone(),
@@ -317,7 +317,7 @@ pub(super) fn agent_session_summary(
             .session
             .agent_session_source_id
             .map(|value| value.to_string()),
-        external_session_id: trace
+        session_source_hash: trace
             .session_source
             .as_ref()
             .map(|source| source.normalized_session_id.clone()),

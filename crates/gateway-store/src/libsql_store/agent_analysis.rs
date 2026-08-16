@@ -6,11 +6,12 @@ use crate::shared::{
 };
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueRepository,
-    AgentAnalysisQueueStatus, AgentObservationSetRecord, AgentRequestLogLinkRecord,
-    AgentSessionAnalysisRecord, AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord,
-    AgentSessionReportRepository, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
-    AgentSessionTraceRecord, AgentSessionTraceRepository, Confidence, InferredObservation,
-    MAX_AGENT_SESSION_PAGE_SIZE, SessionLifecycleState,
+    AgentAnalysisQueueStatus, AgentObservationSetAppendResult, AgentObservationSetRecord,
+    AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionListPage,
+    AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
+    AgentSessionTraceRepository, Confidence, InferredObservation, MAX_AGENT_SESSION_PAGE_SIZE,
+    SessionLifecycleState,
 };
 use serde::Serialize;
 
@@ -31,6 +32,15 @@ fn parse_confidence(value: &str) -> Result<Confidence, StoreError> {
 fn parse_lifecycle(value: &str) -> Result<SessionLifecycleState, StoreError> {
     serde_json::from_value(serde_json::Value::String(value.to_string()))
         .map_err(|error| StoreError::Serialization(error.to_string()))
+}
+
+fn nested_fact_count(set: &AgentObservationSetRecord) -> usize {
+    set.observations.iter().fold(0, |total, observation| {
+        total
+            .saturating_add(observation.facts.supplied_tools.len())
+            .saturating_add(observation.facts.supplied_skills.len())
+            .saturating_add(observation.facts.file_interactions.len())
+    })
 }
 
 fn parse_optional_uuid(value: Option<String>) -> Result<Option<Uuid>, StoreError> {

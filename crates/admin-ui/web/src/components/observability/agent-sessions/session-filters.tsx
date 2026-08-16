@@ -21,7 +21,7 @@ const textFields: Array<{ key: FilterKey; label: string }> = [
   { key: 'team_id', label: 'Team ID' },
   { key: 'service_account_id', label: 'Service account ID' },
   { key: 'session_source_id', label: 'Session source ID' },
-  { key: 'external_session_id', label: 'External session ID' },
+  { key: 'session_source_hash', label: 'Session source hash' },
   { key: 'request_tag_key', label: 'Request tag key' },
   { key: 'request_tag_value', label: 'Request tag value' },
   { key: 'minimum_coverage_percent', label: 'Minimum coverage' },

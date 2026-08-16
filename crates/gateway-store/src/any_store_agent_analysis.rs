@@ -1,9 +1,10 @@
 use async_trait::async_trait;
 use gateway_core::{
-    AgentAnalysisQueueRecord, AgentAnalysisQueueRepository, AgentRequestLogLinkRecord,
-    AgentSessionAnalysisRecord, AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord,
-    AgentSessionReportRepository, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
-    AgentSessionTraceRecord, AgentSessionTraceRepository, RequestAttemptRecord, StoreError,
+    AgentAnalysisQueueRecord, AgentAnalysisQueueRepository, AgentObservationSetAppendResult,
+    AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionListPage,
+    AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
+    AgentSessionTraceRepository, RequestAttemptRecord, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -134,6 +135,26 @@ impl AgentSessionTraceRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.append_agent_observation_set(set).await,
             Self::Postgres(store) => store.append_agent_observation_set(set).await,
+        }
+    }
+
+    async fn append_bounded_agent_observation_set(
+        &self,
+        set: &gateway_core::AgentObservationSetRecord,
+        truncated_set: &gateway_core::AgentObservationSetRecord,
+        maximum_nested_facts: usize,
+    ) -> Result<AgentObservationSetAppendResult, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .append_bounded_agent_observation_set(set, truncated_set, maximum_nested_facts)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .append_bounded_agent_observation_set(set, truncated_set, maximum_nested_facts)
+                    .await
+            }
         }
     }
 

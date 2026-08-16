@@ -1279,7 +1279,7 @@ pub struct AgentSessionListRequestQuery {
     pub score_maturity: Option<String>,
     pub minimum_coverage_percent: Option<u8>,
     pub session_source_id: Option<String>,
-    pub external_session_id: Option<String>,
+    pub session_source_hash: Option<String>,
     pub request_tag_key: Option<String>,
     pub request_tag_value: Option<String>,
     pub lifecycle: Option<String>,
@@ -1291,7 +1291,7 @@ pub struct AgentSessionListRequestQuery {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AgentSessionSourceView {
     pub session_source_id: String,
-    pub external_session_id: String,
+    pub session_source_hash: String,
     pub adapter_namespace: String,
     pub adapter_version: String,
     pub source_provenance: String,
@@ -1305,7 +1305,7 @@ pub struct AgentSessionSourceView {
 pub struct AgentSessionSummaryView {
     pub session_id: String,
     pub session_source_id: Option<String>,
-    pub external_session_id: Option<String>,
+    pub session_source_hash: Option<String>,
     pub ownership_scope_key: String,
     pub user_id: Option<String>,
     pub team_id: Option<String>,

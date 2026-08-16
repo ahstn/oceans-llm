@@ -54,7 +54,7 @@ const sessionFilterFields = [
   'team_id',
   'service_account_id',
   'session_source_id',
-  'external_session_id',
+  'session_source_hash',
   'request_tag_key',
   'request_tag_value',
 ] as const satisfies readonly (keyof AgentSessionFiltersInput)[]
@@ -245,7 +245,7 @@ function normalizeSearch(search: Record<string, unknown>): AgentSessionRouteSear
     'score_maturity',
     'score_confidence',
     'session_source_id',
-    'external_session_id',
+    'session_source_hash',
     'request_tag_key',
     'request_tag_value',
     'lifecycle',

@@ -112,22 +112,27 @@ where
         });
     let session_source = if input.metadata.external_session_id.is_some() {
         let now = input.completed_at;
+        let agent_session_source_id = stable_uuid(
+            SESSION_SOURCE_ID_NAMESPACE,
+            &json!({
+                "scope": ownership_scope_key,
+                "adapter": input.harness_key,
+                "session": normalized_session_id,
+            })
+            .to_string(),
+        );
+        let source_team_id = store
+            .load_agent_session_source(agent_session_source_id)
+            .await?
+            .map_or(analytics_team_id, |source| source.team_id);
         Some(
             store
                 .upsert_agent_session_source(&AgentSessionSourceRecord {
-                    agent_session_source_id: stable_uuid(
-                        SESSION_SOURCE_ID_NAMESPACE,
-                        &json!({
-                            "scope": ownership_scope_key,
-                            "adapter": input.harness_key,
-                            "session": normalized_session_id,
-                        })
-                        .to_string(),
-                    ),
+                    agent_session_source_id,
                     ownership_scope_key: ownership_scope_key.clone(),
                     api_key_id: input.auth.id,
                     user_id: input.auth.owner_user_id,
-                    team_id: analytics_team_id,
+                    team_id: source_team_id,
                     service_account_id: input.auth.owner_service_account_id,
                     actor_user_id: None,
                     adapter_namespace: input.harness_key.to_string(),
@@ -253,15 +258,13 @@ where
                 .await?;
         }
     }
-    let mut session = if let Some(session) = open_session {
-        session
-    } else {
+    let build_new_session = || {
         let confidence = if session_source_id.is_some() {
             Confidence::High
         } else {
             Confidence::Medium
         };
-        let session = AgentSessionRecord {
+        AgentSessionRecord {
             agent_session_id: stable_uuid(
                 SESSION_ID_NAMESPACE,
                 &json!({
@@ -295,7 +298,12 @@ where
             finalized_reason: None,
             created_at: input.completed_at,
             updated_at: input.completed_at,
-        };
+        }
+    };
+    let mut session = if let Some(session) = open_session {
+        session
+    } else {
+        let session = build_new_session();
         if store.insert_agent_session_if_absent(&session).await? {
             session
         } else {
@@ -341,47 +349,81 @@ where
         .map(|candidate| {
             hash_lineage_candidate(&ownership_scope_key, &input.harness_key, candidate)
         });
-    let request_inserted = store
-        .append_agent_session_request(&AgentSessionRequestLinkRecord {
-            agent_session_id: session.agent_session_id,
-            request_id: input.request_id.clone(),
-            request_log_id: input.request_log_id,
-            usage_event_id,
-            ordinal: 0,
-            execution_id,
-            parent_execution_id,
-            normalized_session_id,
-            correlation_confidence: session.boundary_confidence,
-            limitation_codes: limitations,
-            occurred_at: input.occurred_at,
-            completed_at: Some(input.completed_at),
-            terminal_success,
-        })
-        .await?;
-    let prior_nested_fact_count = store
-        .load_agent_observation_sets(session.agent_session_id)
-        .await?
-        .iter()
-        .flat_map(|set| &set.observations)
-        .filter(|observation| observation.source_request_id != input.request_id)
-        .fold(0_usize, |total, observation| {
-            total
-                .saturating_add(observation.facts.supplied_tools.len())
-                .saturating_add(observation.facts.supplied_skills.len())
-                .saturating_add(observation.facts.file_interactions.len())
-        });
-    let incoming_nested_fact_count =
-        input
-            .observations
-            .iter()
-            .fold(0_usize, |total, observation| {
-                total
-                    .saturating_add(observation.facts.supplied_tools.len())
-                    .saturating_add(observation.facts.supplied_skills.len())
-                    .saturating_add(observation.facts.file_interactions.len())
-            });
-    let nested_facts_truncated = prior_nested_fact_count.saturating_add(incoming_nested_fact_count)
-        > MAX_AGENT_SESSION_NESTED_FACTS;
+    let mut request_link = AgentSessionRequestLinkRecord {
+        agent_session_id: session.agent_session_id,
+        request_id: input.request_id.clone(),
+        request_log_id: input.request_log_id,
+        usage_event_id,
+        ordinal: 0,
+        execution_id,
+        parent_execution_id,
+        normalized_session_id,
+        correlation_confidence: session.boundary_confidence,
+        limitation_codes: limitations,
+        occurred_at: input.occurred_at,
+        completed_at: Some(input.completed_at),
+        terminal_success,
+    };
+    let mut append_attempts = 0_usize;
+    let request_inserted = loop {
+        match store.append_agent_session_request(&request_link).await {
+            Ok(inserted) => break inserted,
+            Err(StoreError::AgentSessionWindowClosed(closed_session_id))
+                if closed_session_id == session.agent_session_id.to_string()
+                    && append_attempts < MAX_SESSION_WINDOW_CAS_ATTEMPTS =>
+            {
+                append_attempts = append_attempts.saturating_add(1);
+                store
+                    .mark_agent_session_analyses_stale(session.agent_session_id, None)
+                    .await?;
+                enqueue_analysis_with_versions(
+                    store,
+                    session.agent_session_id,
+                    "session_finalized",
+                    &session
+                        .input_watermark_at
+                        .unix_timestamp_nanos()
+                        .to_string(),
+                    input.completed_at,
+                    desired_versions,
+                )
+                .await?;
+                session = if let Some(open_session) = store
+                    .get_open_agent_session(
+                        &ownership_scope_key,
+                        session_source_id,
+                        &input.harness_key,
+                        &input.boundary_group_key,
+                    )
+                    .await?
+                {
+                    open_session
+                } else {
+                    let candidate = build_new_session();
+                    if store.insert_agent_session_if_absent(&candidate).await? {
+                        candidate
+                    } else {
+                        store
+                            .get_open_agent_session(
+                                &ownership_scope_key,
+                                session_source_id,
+                                &input.harness_key,
+                                &input.boundary_group_key,
+                            )
+                            .await?
+                            .ok_or_else(|| {
+                                GatewayError::Internal(
+                                    "replacement agent session disappeared".to_string(),
+                                )
+                            })?
+                    }
+                };
+                request_link.agent_session_id = session.agent_session_id;
+                request_link.correlation_confidence = session.boundary_confidence;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    };
     if request_inserted && input.completed_at > session.input_watermark_at {
         session.input_watermark_at = input.completed_at;
         session.updated_at = input.completed_at;
@@ -401,8 +443,51 @@ where
         "session_correlation": session_correlation,
         "response_payload": input.response_payload_available,
         "response_payload_truncated": input.payload_truncated,
-        "nested_facts_truncated": nested_facts_truncated,
+        "nested_facts_truncated": false,
     });
+    let observation_set_id = stable_uuid(
+        OBSERVATION_SET_ID_NAMESPACE,
+        &json!({
+            "session": session.agent_session_id,
+            "request": input.request_id,
+            "parser": OBSERVATION_PARSER_VERSION,
+            "watermark": input.completed_at.unix_timestamp_nanos(),
+        })
+        .to_string(),
+    );
+    let mut observations = input.observations;
+    assign_observation_ids(session.agent_session_id, &mut observations);
+    let observation_set = AgentObservationSetRecord {
+        observation_set_id,
+        agent_session_id: session.agent_session_id,
+        parser_version: OBSERVATION_PARSER_VERSION.to_string(),
+        source_watermark_at: input.completed_at,
+        coverage: coverage.clone(),
+        created_at: input.completed_at,
+        observations,
+    };
+    let mut truncated_coverage = coverage;
+    truncated_coverage["nested_facts_truncated"] = Value::Bool(true);
+    let mut truncated_observations = observation_set.observations.clone();
+    truncate_nested_facts(&mut truncated_observations);
+    assign_observation_ids(session.agent_session_id, &mut truncated_observations);
+    let truncated_observation_set = AgentObservationSetRecord {
+        coverage: truncated_coverage,
+        observations: truncated_observations,
+        ..observation_set.clone()
+    };
+    let append_result = store
+        .append_bounded_agent_observation_set(
+            &observation_set,
+            &truncated_observation_set,
+            MAX_AGENT_SESSION_NESTED_FACTS,
+        )
+        .await?;
+    let stored_coverage = if append_result.nested_facts_truncated {
+        truncated_observation_set.coverage
+    } else {
+        observation_set.coverage
+    };
     if let Some(request_log_id) = input.request_log_id {
         store
             .link_request_log_to_agent_session(&AgentRequestLogLinkRecord {
@@ -410,60 +495,10 @@ where
                 agent_session_source_id: session_source_id,
                 agent_session_id: session.agent_session_id,
                 analysis_source: "passive".to_string(),
-                coverage: coverage.clone(),
+                coverage: stored_coverage,
             })
             .await?;
     }
-
-    let mut observations = input.observations;
-    if nested_facts_truncated {
-        for observation in &mut observations {
-            observation.facts.supplied_tools.clear();
-            observation.facts.supplied_skills.clear();
-            observation.facts.file_interactions.clear();
-            if !observation
-                .limitations
-                .contains(&LimitationCode::PayloadTruncated)
-            {
-                observation
-                    .limitations
-                    .push(LimitationCode::PayloadTruncated);
-            }
-        }
-    }
-    for (index, observation) in observations.iter_mut().enumerate() {
-        observation.observation_id = stable_uuid(
-            OBSERVATION_ID_NAMESPACE,
-            &json!({
-                "session": session.agent_session_id,
-                "request": observation.source_request_id,
-                "parser": OBSERVATION_PARSER_VERSION,
-                "index": index,
-                "kind": observation.kind,
-                "facts": observation.facts,
-            })
-            .to_string(),
-        );
-    }
-    let observation_set = AgentObservationSetRecord {
-        observation_set_id: stable_uuid(
-            OBSERVATION_SET_ID_NAMESPACE,
-            &json!({
-                "session": session.agent_session_id,
-                "request": input.request_id,
-                "parser": OBSERVATION_PARSER_VERSION,
-                "watermark": input.completed_at.unix_timestamp_nanos(),
-            })
-            .to_string(),
-        ),
-        agent_session_id: session.agent_session_id,
-        parser_version: OBSERVATION_PARSER_VERSION.to_string(),
-        source_watermark_at: input.completed_at,
-        coverage,
-        created_at: input.completed_at,
-        observations,
-    };
-    store.append_agent_observation_set(&observation_set).await?;
     store
         .mark_agent_session_analyses_stale(session.agent_session_id, None)
         .await?;
@@ -477,6 +512,39 @@ where
     )
     .await?;
     Ok(session.agent_session_id)
+}
+
+fn truncate_nested_facts(observations: &mut [InferredObservation]) {
+    for observation in observations {
+        observation.facts.supplied_tools.clear();
+        observation.facts.supplied_skills.clear();
+        observation.facts.file_interactions.clear();
+        if !observation
+            .limitations
+            .contains(&LimitationCode::PayloadTruncated)
+        {
+            observation
+                .limitations
+                .push(LimitationCode::PayloadTruncated);
+        }
+    }
+}
+
+fn assign_observation_ids(agent_session_id: Uuid, observations: &mut [InferredObservation]) {
+    for (index, observation) in observations.iter_mut().enumerate() {
+        observation.observation_id = stable_uuid(
+            OBSERVATION_ID_NAMESPACE,
+            &json!({
+                "session": agent_session_id,
+                "request": observation.source_request_id,
+                "parser": OBSERVATION_PARSER_VERSION,
+                "index": index,
+                "kind": observation.kind,
+                "facts": observation.facts,
+            })
+            .to_string(),
+        );
+    }
 }
 
 fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredObservation> {

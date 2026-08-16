@@ -178,10 +178,9 @@ impl AgentSessionTraceRepository for PostgresStore {
         .await
         .map_err(to_query_error)?;
         if lifecycle != "open" {
-            return Err(StoreError::Conflict(format!(
-                "agent session `{}` is already finalized",
-                link.agent_session_id
-            )));
+            return Err(StoreError::AgentSessionWindowClosed(
+                link.agent_session_id.to_string(),
+            ));
         }
         let (request_count, request_exists) = sqlx::query_as::<_, (i64, bool)>(
             "SELECT COUNT(*), EXISTS(SELECT 1 FROM agent_session_requests WHERE agent_session_id = $1 AND request_id = $2) FROM agent_session_requests WHERE agent_session_id = $1",
@@ -196,10 +195,18 @@ impl AgentSessionTraceRepository for PostgresStore {
                 >= i64::try_from(gateway_core::MAX_AGENT_SESSION_REQUESTS)
                     .expect("agent session request limit fits in i64")
         {
-            return Err(StoreError::Conflict(format!(
-                "agent session `{}` reached the request limit",
-                link.agent_session_id
-            )));
+            sqlx::query(
+                "UPDATE agent_sessions SET lifecycle = 'finalized', ended_at = input_watermark_at / 1000, finalized_reason = 'request_limit', updated_at = GREATEST(updated_at, $2) WHERE agent_session_id = $1",
+            )
+            .bind(link.agent_session_id.to_string())
+            .bind(activity_at.unix_timestamp())
+            .execute(&mut *transaction)
+            .await
+            .map_err(to_query_error)?;
+            transaction.commit().await.map_err(to_query_error)?;
+            return Err(StoreError::AgentSessionWindowClosed(
+                link.agent_session_id.to_string(),
+            ));
         }
         let result = sqlx::query("INSERT INTO agent_session_requests (agent_session_id, request_id, request_log_id, usage_event_id, ordinal, execution_id, parent_execution_id, normalized_session_id, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success) VALUES ($1, $2, $3, $4, (SELECT COALESCE(MAX(ordinal) + 1, 0) FROM agent_session_requests WHERE agent_session_id = $1), $5, $6, $7, $8, $9, $10, $11, $12) ON CONFLICT(agent_session_id, request_id) DO NOTHING")
             .bind(link.agent_session_id.to_string()).bind(&link.request_id).bind(link.request_log_id.map(|value| value.to_string())).bind(link.usage_event_id.map(|value| value.to_string())).bind(link.execution_id.as_deref()).bind(link.parent_execution_id.as_deref()).bind(link.normalized_session_id.as_deref()).bind(enum_name(link.correlation_confidence)?).bind(crate::shared::serialize_json(&link.limitation_codes)?).bind(datetime_to_unix_millis(link.occurred_at)?).bind(link.completed_at.map(datetime_to_unix_millis).transpose()?).bind(link.terminal_success).execute(&mut *transaction).await.map_err(to_query_error)?;
@@ -279,13 +286,90 @@ impl AgentSessionTraceRepository for PostgresStore {
         &self,
         set: &AgentObservationSetRecord,
     ) -> Result<bool, StoreError> {
+        Ok(self
+            .append_bounded_agent_observation_set(set, set, usize::MAX)
+            .await?
+            .inserted)
+    }
+
+    async fn append_bounded_agent_observation_set(
+        &self,
+        set: &AgentObservationSetRecord,
+        truncated_set: &AgentObservationSetRecord,
+        maximum_nested_facts: usize,
+    ) -> Result<AgentObservationSetAppendResult, StoreError> {
+        if set.observation_set_id != truncated_set.observation_set_id
+            || set.agent_session_id != truncated_set.agent_session_id
+        {
+            return Err(StoreError::Serialization(
+                "bounded observation sets must share their IDs".to_string(),
+            ));
+        }
         let mut transaction = self.pool.begin().await.map_err(to_query_error)?;
+        let locked = sqlx::query(
+            "SELECT agent_session_id FROM agent_sessions WHERE agent_session_id = $1 FOR UPDATE",
+        )
+        .bind(set.agent_session_id.to_string())
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(to_query_error)?;
+        if locked.is_none() {
+            return Err(StoreError::NotFound("agent session not found".to_string()));
+        }
+        let existing = sqlx::query(
+            "SELECT observation_set_id FROM agent_inferred_observation_sets WHERE observation_set_id = $1",
+        )
+        .bind(set.observation_set_id.to_string())
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(to_query_error)?;
+        if existing.is_some() {
+            transaction.commit().await.map_err(to_query_error)?;
+            let existing = self
+                .query_observation_set_by_id(set.observation_set_id)
+                .await?
+                .ok_or_else(|| {
+                    StoreError::Query("agent observation set conflict row disappeared".to_string())
+                })?;
+            if agent_observation_set_matches(&existing, set) {
+                return Ok(AgentObservationSetAppendResult {
+                    inserted: false,
+                    nested_facts_truncated: false,
+                });
+            }
+            if agent_observation_set_matches(&existing, truncated_set) {
+                return Ok(AgentObservationSetAppendResult {
+                    inserted: false,
+                    nested_facts_truncated: true,
+                });
+            }
+            return Err(StoreError::Conflict(format!(
+                "agent observation set `{}` conflicts with the existing record",
+                set.observation_set_id
+            )));
+        }
+        let prior_nested_facts: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(jsonb_array_length(COALESCE(facts_json::jsonb -> 'supplied_tools', '[]'::jsonb)) + jsonb_array_length(COALESCE(facts_json::jsonb -> 'supplied_skills', '[]'::jsonb)) + jsonb_array_length(COALESCE(facts_json::jsonb -> 'file_interactions', '[]'::jsonb))), 0) FROM agent_inferred_observations WHERE agent_session_id = $1",
+        )
+        .bind(set.agent_session_id.to_string())
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(to_query_error)?;
+        let maximum_nested_facts = i64::try_from(maximum_nested_facts).unwrap_or(i64::MAX);
+        let nested_facts_truncated = prior_nested_facts
+            .saturating_add(i64::try_from(nested_fact_count(set)).unwrap_or(i64::MAX))
+            > maximum_nested_facts;
+        let selected_set = if nested_facts_truncated {
+            truncated_set
+        } else {
+            set
+        };
         let result = sqlx::query("INSERT INTO agent_inferred_observation_sets (observation_set_id, agent_session_id, parser_version, source_watermark_at, coverage_json, created_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT(observation_set_id) DO NOTHING")
-            .bind(set.observation_set_id.to_string()).bind(set.agent_session_id.to_string()).bind(&set.parser_version).bind(datetime_to_unix_millis(set.source_watermark_at)?).bind(crate::shared::serialize_json(&set.coverage)?).bind(set.created_at.unix_timestamp()).execute(&mut *transaction).await.map_err(to_query_error)?;
+            .bind(selected_set.observation_set_id.to_string()).bind(selected_set.agent_session_id.to_string()).bind(&selected_set.parser_version).bind(datetime_to_unix_millis(selected_set.source_watermark_at)?).bind(crate::shared::serialize_json(&selected_set.coverage)?).bind(selected_set.created_at.unix_timestamp()).execute(&mut *transaction).await.map_err(to_query_error)?;
         if result.rows_affected() > 0 {
-            for observation in &set.observations {
+            for observation in &selected_set.observations {
                 let observation_result = sqlx::query("INSERT INTO agent_inferred_observations (observation_id, observation_set_id, agent_session_id, kind, source_request_id, evidence, occurred_at, facts_json, limitation_codes_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT(observation_id) DO NOTHING")
-                    .bind(observation.observation_id.to_string()).bind(set.observation_set_id.to_string()).bind(set.agent_session_id.to_string()).bind(enum_name(observation.kind)?).bind(&observation.source_request_id).bind(enum_name(observation.evidence)?).bind(observation.occurred_at.unix_timestamp()).bind(crate::shared::serialize_json(&observation.facts)?).bind(crate::shared::serialize_json(&observation.limitations)?).execute(&mut *transaction).await.map_err(to_query_error)?;
+                    .bind(observation.observation_id.to_string()).bind(selected_set.observation_set_id.to_string()).bind(selected_set.agent_session_id.to_string()).bind(enum_name(observation.kind)?).bind(&observation.source_request_id).bind(enum_name(observation.evidence)?).bind(observation.occurred_at.unix_timestamp()).bind(crate::shared::serialize_json(&observation.facts)?).bind(crate::shared::serialize_json(&observation.limitations)?).execute(&mut *transaction).await.map_err(to_query_error)?;
                 if observation_result.rows_affected() == 0 {
                     return Err(StoreError::Conflict(format!(
                         "agent observation `{}` conflicts with the existing record",
@@ -295,23 +379,10 @@ impl AgentSessionTraceRepository for PostgresStore {
             }
         }
         transaction.commit().await.map_err(to_query_error)?;
-        if result.rows_affected() > 0 {
-            return Ok(true);
-        }
-        let existing = self
-            .query_observation_set_by_id(set.observation_set_id)
-            .await?
-            .ok_or_else(|| {
-                StoreError::Query("agent observation set conflict row disappeared".to_string())
-            })?;
-        if agent_observation_set_matches(&existing, set) {
-            Ok(false)
-        } else {
-            Err(StoreError::Conflict(format!(
-                "agent observation set `{}` conflicts with the existing record",
-                set.observation_set_id
-            )))
-        }
+        Ok(AgentObservationSetAppendResult {
+            inserted: result.rows_affected() > 0,
+            nested_facts_truncated,
+        })
     }
 
     async fn load_agent_observation_sets(

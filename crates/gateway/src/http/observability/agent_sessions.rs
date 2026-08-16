@@ -125,7 +125,7 @@ pub async fn list_agent_sessions(
             gateway_outcome,
             score_maturity,
             minimum_coverage_percent: query.minimum_coverage_percent,
-            normalized_session_id: normalized_filter(query.external_session_id),
+            normalized_session_id: normalized_filter(query.session_source_hash),
             request_tag_key,
             request_tag_value,
             lifecycle,

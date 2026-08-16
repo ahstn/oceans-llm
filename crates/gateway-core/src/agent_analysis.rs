@@ -235,6 +235,12 @@ pub struct AgentSessionListPage {
 pub const MAX_AGENT_SESSION_PAGE_SIZE: u32 = 200;
 pub const MAX_AGENT_SESSION_REQUESTS: u64 = 1_000;
 pub const MAX_AGENT_SESSION_NESTED_FACTS: usize = 2_048;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AgentObservationSetAppendResult {
+    pub inserted: bool,
+    pub nested_facts_truncated: bool,
+}
 pub const MAX_AGENT_ANALYSIS_DISTINCT_ITEMS: usize = 512;
 
 #[async_trait]
@@ -294,6 +300,17 @@ pub trait AgentSessionTraceRepository {
         &self,
         set: &AgentObservationSetRecord,
     ) -> Result<bool, StoreError>;
+
+    /// Appends one of two equivalent sets while holding a session-scoped lock.
+    ///
+    /// The store selects `truncated_set` when `set` would exceed the session's combined nested
+    /// fact limit. Both values must describe the same request and use the same observation-set ID.
+    async fn append_bounded_agent_observation_set(
+        &self,
+        set: &AgentObservationSetRecord,
+        truncated_set: &AgentObservationSetRecord,
+        maximum_nested_facts: usize,
+    ) -> Result<AgentObservationSetAppendResult, StoreError>;
 
     async fn load_agent_observation_sets(
         &self,

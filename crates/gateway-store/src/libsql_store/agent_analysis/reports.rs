@@ -126,7 +126,8 @@ impl AgentSessionReportRepository for LibsqlStore {
                     query.started_before.map(OffsetDateTime::unix_timestamp),
                     query
                         .input_watermark_before
-                        .map(OffsetDateTime::unix_timestamp),
+                        .map(datetime_to_unix_millis)
+                        .transpose()?,
                     score_confidence.as_deref(),
                     query.agent_session_source_id.map(|value| value.to_string()),
                     query.requested_model_key.as_deref(),
@@ -170,7 +171,8 @@ impl AgentSessionReportRepository for LibsqlStore {
                     query.started_before.map(OffsetDateTime::unix_timestamp),
                     query
                         .input_watermark_before
-                        .map(OffsetDateTime::unix_timestamp),
+                        .map(datetime_to_unix_millis)
+                        .transpose()?,
                     score_confidence.as_deref(),
                     query.agent_session_source_id.map(|value| value.to_string()),
                     query.requested_model_key.as_deref(),

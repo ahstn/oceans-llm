@@ -180,11 +180,11 @@ impl AgentSessionTraceRepository for LibsqlStore {
             .ok_or_else(|| StoreError::NotFound("agent session window not found".to_string()))?
             .get::<String>(0)
             .map_err(to_query_error)?;
+        drop(lifecycle_rows);
         if lifecycle != "open" {
-            return Err(StoreError::Conflict(format!(
-                "agent session `{}` is already finalized",
-                link.agent_session_id
-            )));
+            return Err(StoreError::AgentSessionWindowClosed(
+                link.agent_session_id.to_string(),
+            ));
         }
         let mut request_count_rows = transaction
             .query(
@@ -202,15 +202,26 @@ impl AgentSessionTraceRepository for LibsqlStore {
             })?;
         let request_count: i64 = request_count_row.get(0).map_err(to_query_error)?;
         let request_exists: i64 = request_count_row.get(1).map_err(to_query_error)?;
+        drop(request_count_rows);
         if request_exists == 0
             && request_count
                 >= i64::try_from(gateway_core::MAX_AGENT_SESSION_REQUESTS)
                     .expect("agent session request limit fits in i64")
         {
-            return Err(StoreError::Conflict(format!(
-                "agent session `{}` reached the request limit",
-                link.agent_session_id
-            )));
+            transaction
+                .execute(
+                    "UPDATE agent_sessions SET lifecycle = 'finalized', ended_at = input_watermark_at / 1000, finalized_reason = 'request_limit', updated_at = MAX(updated_at, ?2) WHERE agent_session_id = ?1",
+                    libsql::params![
+                        link.agent_session_id.to_string(),
+                        activity_at.unix_timestamp()
+                    ],
+                )
+                .await
+                .map_err(to_query_error)?;
+            transaction.commit().await.map_err(to_query_error)?;
+            return Err(StoreError::AgentSessionWindowClosed(
+                link.agent_session_id.to_string(),
+            ));
         }
         let written = transaction.execute(
             "INSERT INTO agent_session_requests (agent_session_id, request_id, request_log_id, usage_event_id, ordinal, execution_id, parent_execution_id, normalized_session_id, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success) VALUES (?1, ?2, ?3, ?4, (SELECT COALESCE(MAX(ordinal) + 1, 0) FROM agent_session_requests WHERE agent_session_id = ?1), ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) ON CONFLICT(agent_session_id, request_id) DO NOTHING",
@@ -309,21 +320,109 @@ impl AgentSessionTraceRepository for LibsqlStore {
         &self,
         set: &AgentObservationSetRecord,
     ) -> Result<bool, StoreError> {
+        Ok(self
+            .append_bounded_agent_observation_set(set, set, usize::MAX)
+            .await?
+            .inserted)
+    }
+
+    async fn append_bounded_agent_observation_set(
+        &self,
+        set: &AgentObservationSetRecord,
+        truncated_set: &AgentObservationSetRecord,
+        maximum_nested_facts: usize,
+    ) -> Result<AgentObservationSetAppendResult, StoreError> {
+        if set.observation_set_id != truncated_set.observation_set_id
+            || set.agent_session_id != truncated_set.agent_session_id
+        {
+            return Err(StoreError::Serialization(
+                "bounded observation sets must share their IDs".to_string(),
+            ));
+        }
         let transaction = self
             .connection
             .transaction()
             .await
             .map_err(to_query_error)?;
-        let coverage_json = crate::shared::serialize_json(&set.coverage)?;
+        let locked = transaction
+            .execute(
+                "UPDATE agent_sessions SET updated_at = updated_at WHERE agent_session_id = ?1",
+                [set.agent_session_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        if locked == 0 {
+            return Err(StoreError::NotFound("agent session not found".to_string()));
+        }
+        let mut existing_rows = transaction
+            .query(
+                "SELECT observation_set_id FROM agent_inferred_observation_sets WHERE observation_set_id = ?1",
+                [set.observation_set_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let exists = existing_rows
+            .next()
+            .await
+            .map_err(to_query_error)?
+            .is_some();
+        drop(existing_rows);
+        if exists {
+            transaction.commit().await.map_err(to_query_error)?;
+            let existing = self
+                .query_observation_set_by_id(set.observation_set_id)
+                .await?
+                .ok_or_else(|| {
+                    StoreError::Query("agent observation set conflict row disappeared".to_string())
+                })?;
+            if agent_observation_set_matches(&existing, set) {
+                return Ok(AgentObservationSetAppendResult {
+                    inserted: false,
+                    nested_facts_truncated: false,
+                });
+            }
+            if agent_observation_set_matches(&existing, truncated_set) {
+                return Ok(AgentObservationSetAppendResult {
+                    inserted: false,
+                    nested_facts_truncated: true,
+                });
+            }
+            return Err(StoreError::Conflict(format!(
+                "agent observation set `{}` conflicts with the existing record",
+                set.observation_set_id
+            )));
+        }
+        let mut count_rows = transaction.query(
+            "SELECT COALESCE(SUM(json_array_length(COALESCE(json_extract(facts_json, '$.supplied_tools'), '[]')) + json_array_length(COALESCE(json_extract(facts_json, '$.supplied_skills'), '[]')) + json_array_length(COALESCE(json_extract(facts_json, '$.file_interactions'), '[]'))), 0) FROM agent_inferred_observations WHERE agent_session_id = ?1",
+            [set.agent_session_id.to_string()],
+        ).await.map_err(to_query_error)?;
+        let prior_nested_facts = count_rows
+            .next()
+            .await
+            .map_err(to_query_error)?
+            .ok_or_else(|| StoreError::Unexpected("nested fact count missing".to_string()))?
+            .get::<i64>(0)
+            .map_err(to_query_error)?;
+        drop(count_rows);
+        let maximum_nested_facts = i64::try_from(maximum_nested_facts).unwrap_or(i64::MAX);
+        let nested_facts_truncated = prior_nested_facts
+            .saturating_add(i64::try_from(nested_fact_count(set)).unwrap_or(i64::MAX))
+            > maximum_nested_facts;
+        let selected_set = if nested_facts_truncated {
+            truncated_set
+        } else {
+            set
+        };
+        let coverage_json = crate::shared::serialize_json(&selected_set.coverage)?;
         let written = transaction.execute(
             "INSERT INTO agent_inferred_observation_sets (observation_set_id, agent_session_id, parser_version, source_watermark_at, coverage_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(observation_set_id) DO NOTHING",
-            libsql::params![set.observation_set_id.to_string(), set.agent_session_id.to_string(), set.parser_version.as_str(), datetime_to_unix_millis(set.source_watermark_at)?, coverage_json, set.created_at.unix_timestamp()],
+            libsql::params![selected_set.observation_set_id.to_string(), selected_set.agent_session_id.to_string(), selected_set.parser_version.as_str(), datetime_to_unix_millis(selected_set.source_watermark_at)?, coverage_json, selected_set.created_at.unix_timestamp()],
         ).await.map_err(to_query_error)?;
         if written > 0 {
-            for observation in &set.observations {
+            for observation in &selected_set.observations {
                 let observation_written = transaction.execute(
                     "INSERT INTO agent_inferred_observations (observation_id, observation_set_id, agent_session_id, kind, source_request_id, evidence, occurred_at, facts_json, limitation_codes_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(observation_id) DO NOTHING",
-                    libsql::params![observation.observation_id.to_string(), set.observation_set_id.to_string(), set.agent_session_id.to_string(), enum_name(observation.kind)?, observation.source_request_id.as_str(), enum_name(observation.evidence)?, observation.occurred_at.unix_timestamp(), crate::shared::serialize_json(&observation.facts)?, crate::shared::serialize_json(&observation.limitations)?],
+                    libsql::params![observation.observation_id.to_string(), selected_set.observation_set_id.to_string(), selected_set.agent_session_id.to_string(), enum_name(observation.kind)?, observation.source_request_id.as_str(), enum_name(observation.evidence)?, observation.occurred_at.unix_timestamp(), crate::shared::serialize_json(&observation.facts)?, crate::shared::serialize_json(&observation.limitations)?],
                 ).await.map_err(to_query_error)?;
                 if observation_written == 0 {
                     return Err(StoreError::Conflict(format!(
@@ -334,23 +433,10 @@ impl AgentSessionTraceRepository for LibsqlStore {
             }
         }
         transaction.commit().await.map_err(to_query_error)?;
-        if written > 0 {
-            return Ok(true);
-        }
-        let existing = self
-            .query_observation_set_by_id(set.observation_set_id)
-            .await?
-            .ok_or_else(|| {
-                StoreError::Query("agent observation set conflict row disappeared".to_string())
-            })?;
-        if agent_observation_set_matches(&existing, set) {
-            Ok(false)
-        } else {
-            Err(StoreError::Conflict(format!(
-                "agent observation set `{}` conflicts with the existing record",
-                set.observation_set_id
-            )))
-        }
+        Ok(AgentObservationSetAppendResult {
+            inserted: written > 0,
+            nested_facts_truncated,
+        })
     }
 
     async fn load_agent_observation_sets(

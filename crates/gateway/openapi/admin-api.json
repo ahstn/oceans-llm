@@ -1830,7 +1830,7 @@
     "/api/v1/admin/observability/agent-sessions": {
       "get": {
         "tags": [
-          "crate::http::observability"
+          "crate::http::observability::agent_sessions"
         ],
         "operationId": "list_agent_sessions",
         "parameters": [
@@ -1945,7 +1945,7 @@
             }
           },
           {
-            "name": "external_session_id",
+            "name": "session_source_hash",
             "in": "query",
             "required": false,
             "schema": {
@@ -2053,7 +2053,7 @@
     "/api/v1/admin/observability/agent-sessions/{session_id}": {
       "get": {
         "tags": [
-          "crate::http::observability"
+          "crate::http::observability::agent_sessions"
         ],
         "operationId": "get_agent_session_detail",
         "parameters": [
@@ -6911,7 +6911,7 @@
         "type": "object",
         "required": [
           "session_source_id",
-          "external_session_id",
+          "session_source_hash",
           "adapter_namespace",
           "adapter_version",
           "source_provenance",
@@ -6927,9 +6927,6 @@
           "adapter_version": {
             "type": "string"
           },
-          "external_session_id": {
-            "type": "string"
-          },
           "first_seen_at": {
             "type": "string"
           },
@@ -6940,6 +6937,9 @@
             "type": "string"
           },
           "last_seen_at": {
+            "type": "string"
+          },
+          "session_source_hash": {
             "type": "string"
           },
           "session_source_id": {
@@ -7022,12 +7022,6 @@
             "minimum": 0
           },
           "ended_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "external_session_id": {
             "type": [
               "string",
               "null"
@@ -7127,6 +7121,12 @@
           },
           "session_id": {
             "type": "string"
+          },
+          "session_source_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "session_source_id": {
             "type": [

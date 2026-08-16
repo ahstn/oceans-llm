@@ -12,6 +12,7 @@ test('correlates a live agent request and exposes it through the admin session e
   const root = requireEnv('E2E_BASE_URL')
   const adminCookie = await ensureAdminSession(page, request, root)
   const externalSessionId = `e2e-agent-session-${Date.now()}`
+  const startedAfter = new Date(Date.now() - 1_000).toISOString()
 
   const completionResponse = await request.post(`${root}/v1/chat/completions`, {
     headers: {
@@ -39,7 +40,7 @@ test('correlates a live agent request and exposes it through the admin session e
   expect(completionResponse.status()).toBe(200)
 
   const listResponse = await request.get(
-    `${root}/api/v1/admin/observability/agent-sessions?external_session_id=${encodeURIComponent(externalSessionId)}`,
+    `${root}/api/v1/admin/observability/agent-sessions?harness_key=opencode&requested_model_key=fast&started_after=${encodeURIComponent(startedAfter)}`,
     { headers: { cookie: adminCookie } },
   )
   expect(listResponse.status()).toBe(200)
@@ -48,7 +49,7 @@ test('correlates a live agent request and exposes it through the admin session e
       total: number
       items: Array<{
         session_id: string
-        external_session_id: string | null
+        session_source_hash: string | null
         harness_key: string | null
         requested_model_key: string
         lifecycle: string
@@ -59,8 +60,9 @@ test('correlates a live agent request and exposes it through the admin session e
   }
   expect(listBody.data.total).toBe(1)
   const [session] = listBody.data.items
+  expect(session.session_source_hash).toMatch(/^sha256:[0-9a-f]{64}$/)
+  expect(session.session_source_hash).not.toBe(externalSessionId)
   expect(session).toMatchObject({
-    external_session_id: externalSessionId,
     harness_key: 'opencode',
     requested_model_key: 'fast',
     lifecycle: 'open',
@@ -75,7 +77,7 @@ test('correlates a live agent request and exposes it through the admin session e
   expect(detailResponse.status()).toBe(200)
   const detailBody = (await detailResponse.json()) as {
     data: {
-      session: { session_id: string; external_session_id: string | null }
+      session: { session_id: string; session_source_hash: string | null }
       requests: Array<{ request_id: string }>
       observations: unknown[]
       report: unknown | null
@@ -83,19 +85,19 @@ test('correlates a live agent request and exposes it through the admin session e
   }
   expect(detailBody.data.session).toMatchObject({
     session_id: session.session_id,
-    external_session_id: externalSessionId,
+    session_source_hash: session.session_source_hash,
   })
   expect(detailBody.data.requests).toHaveLength(1)
   expect(detailBody.data.report).toBeNull()
 
   await page.goto(
-    `/admin/observability/agent-sessions?external_session_id=${encodeURIComponent(externalSessionId)}`,
+    `/admin/observability/agent-sessions?session_source_hash=${encodeURIComponent(session.session_source_hash ?? '')}`,
   )
   await expect(page.getByRole('heading', { name: 'Agent sessions' })).toBeVisible()
   await expect(page.getByText('fast').first()).toBeVisible()
   await expect(page.getByText('Open').first()).toBeVisible()
   await page.getByText('fast').first().click()
   await expect(page.getByText('Agent session details')).toBeVisible()
-  await expect(page.getByText(externalSessionId)).toBeVisible()
+  await expect(page.getByText(externalSessionId)).toHaveCount(0)
   await expect(page.getByText('Calibration data')).toBeVisible()
 })

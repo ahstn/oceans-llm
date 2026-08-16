@@ -1848,11 +1848,11 @@ export interface components {
         AgentSessionSourceView: {
             adapter_namespace: string;
             adapter_version: string;
-            external_session_id: string;
             first_seen_at: string;
             harness_key: string;
             harness_label: string;
             last_seen_at: string;
+            session_source_hash: string;
             session_source_id: string;
             source_provenance: string;
         };
@@ -1870,7 +1870,6 @@ export interface components {
             /** Format: int32 */
             efficiency_score?: number | null;
             ended_at?: string | null;
-            external_session_id?: string | null;
             gateway_outcome?: string | null;
             harness_key?: string | null;
             harness_label?: string | null;
@@ -1892,6 +1891,7 @@ export interface components {
             score_policy_version?: string | null;
             service_account_id?: string | null;
             session_id: string;
+            session_source_hash?: string | null;
             session_source_id?: string | null;
             session_source_observed: boolean;
             started_at: string;
@@ -4725,7 +4725,7 @@ export interface operations {
                 score_maturity?: string;
                 minimum_coverage_percent?: number;
                 session_source_id?: string;
-                external_session_id?: string;
+                session_source_hash?: string;
                 request_tag_key?: string;
                 request_tag_value?: string;
                 lifecycle?: string;

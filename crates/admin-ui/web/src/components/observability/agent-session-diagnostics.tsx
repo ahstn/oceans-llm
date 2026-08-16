@@ -16,6 +16,8 @@ type AgentSessionDiagnosticsProps = {
   formatDuration: (value?: number | null) => string
 }
 
+const tokenCountFormatter = new Intl.NumberFormat('en-GB')
+
 export function AgentSessionDiagnostics({
   detail,
   formatCost,
@@ -322,9 +324,7 @@ function formatBasisPoints(value?: number | null) {
 }
 
 function formatTokenCount(value?: number | null) {
-  return value === null || value === undefined
-    ? 'Not available'
-    : new Intl.NumberFormat('en-GB').format(value)
+  return value === null || value === undefined ? 'Not available' : tokenCountFormatter.format(value)
 }
 
 function formatBytes(value?: number | null) {

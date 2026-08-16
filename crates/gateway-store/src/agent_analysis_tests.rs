@@ -3,9 +3,9 @@ use gateway_core::{
     AgentAnalysisQueueStatus, AgentObservationSetRecord, AgentRequestLogLinkRecord,
     AgentSessionAnalysisRecord, AgentSessionListQuery, AgentSessionRecord,
     AgentSessionReportRepository, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
-    AgentSessionTraceRepository, AuthMode, BoundedObservationFacts, Confidence, EvidenceQuality,
-    GlobalRole, InferredObservation, InferredObservationKind, LimitationCode, ScoreMaturity,
-    SessionLifecycleState, StoreError, UserStatus,
+    AgentSessionTraceRepository, AuthMode, BoundedObservationFacts, BoundedToolDefinitionFact,
+    Confidence, EvidenceQuality, GlobalRole, InferredObservation, InferredObservationKind,
+    LimitationCode, ScoreMaturity, SessionLifecycleState, StoreError, UserStatus,
 };
 use serial_test::serial;
 use tempfile::tempdir;
@@ -315,6 +315,46 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         Err(StoreError::Conflict(_))
     ));
 
+    let bounded_set = AgentObservationSetRecord {
+        observation_set_id: Uuid::new_v4(),
+        coverage: serde_json::json!({"nested_facts_truncated": false}),
+        observations: vec![InferredObservation {
+            observation_id: Uuid::new_v4(),
+            facts: BoundedObservationFacts {
+                supplied_tools: vec![BoundedToolDefinitionFact {
+                    name: "read".to_string(),
+                    server_key: None,
+                    token_estimate: 12,
+                }],
+                ..Default::default()
+            },
+            ..observation_set.observations[0].clone()
+        }],
+        ..observation_set.clone()
+    };
+    let truncated_set = AgentObservationSetRecord {
+        coverage: serde_json::json!({"nested_facts_truncated": true}),
+        observations: vec![InferredObservation {
+            observation_id: Uuid::new_v4(),
+            facts: BoundedObservationFacts::default(),
+            limitations: vec![LimitationCode::PayloadTruncated],
+            ..bounded_set.observations[0].clone()
+        }],
+        ..bounded_set.clone()
+    };
+    let bounded_result = store
+        .append_bounded_agent_observation_set(&bounded_set, &truncated_set, 0)
+        .await
+        .expect("bounded observation set");
+    assert!(bounded_result.inserted);
+    assert!(bounded_result.nested_facts_truncated);
+    let bounded_replay = store
+        .append_bounded_agent_observation_set(&bounded_set, &truncated_set, 0)
+        .await
+        .expect("bounded observation replay");
+    assert!(!bounded_replay.inserted);
+    assert!(bounded_replay.nested_facts_truncated);
+
     let second_observation_set = AgentObservationSetRecord {
         observation_set_id: Uuid::new_v4(),
         parser_version: "passive-observations-v1".to_string(),
@@ -502,7 +542,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .load_agent_observation_sets(session.agent_session_id)
         .await
         .expect("all observation sets");
-    assert_eq!(observation_sets.len(), 3);
+    assert_eq!(observation_sets.len(), 4);
     let trace = store
         .load_agent_session_trace(session.agent_session_id)
         .await
@@ -575,6 +615,22 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .await
         .expect("empty confidence page");
     assert_eq!(empty_confidence_page.total, 0);
+    let before_watermark_page = store
+        .list_agent_sessions(&AgentSessionListQuery {
+            input_watermark_before: Some(now + Duration::milliseconds(500)),
+            ..Default::default()
+        })
+        .await
+        .expect("before-watermark page");
+    assert_eq!(before_watermark_page.total, 0);
+    let after_watermark_page = store
+        .list_agent_sessions(&AgentSessionListQuery {
+            input_watermark_before: Some(now + Duration::milliseconds(2_500)),
+            ..Default::default()
+        })
+        .await
+        .expect("after-watermark page");
+    assert_eq!(after_watermark_page.total, 1);
     let dimension_page = store
         .list_agent_sessions(&AgentSessionListQuery {
             requested_model_key: Some(session.requested_model_key.clone()),
@@ -691,6 +747,68 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .complete_agent_analysis(queue.queue_item_id, "worker", now + Duration::seconds(2))
         .await
         .expect("complete");
+
+    let limit_session = AgentSessionRecord {
+        agent_session_id: Uuid::new_v4(),
+        agent_session_source_id: None,
+        boundary_group_key: "sha256:request-limit".to_string(),
+        ..session.clone()
+    };
+    assert!(
+        store
+            .insert_agent_session_if_absent(&limit_session)
+            .await
+            .expect("request-limit session")
+    );
+    store
+        .connection()
+        .execute(
+            "WITH RECURSIVE sequence(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM sequence WHERE value < 1000) INSERT INTO agent_session_requests (agent_session_id, request_id, ordinal, correlation_confidence, limitation_codes_json, occurred_at, completed_at) SELECT ?1, 'limit-' || value, value - 1, 'high', '[]', ?2, ?2 FROM sequence",
+            libsql::params![
+                limit_session.agent_session_id.to_string(),
+                i64::try_from(now.unix_timestamp_nanos() / 1_000_000)
+                    .expect("current timestamp fits in milliseconds")
+            ],
+        )
+        .await
+        .expect("request-limit fixtures");
+    let request_limit_error = store
+        .append_agent_session_request(&AgentSessionRequestLinkRecord {
+            agent_session_id: limit_session.agent_session_id,
+            request_id: "limit-overflow".to_string(),
+            request_log_id: None,
+            usage_event_id: None,
+            ordinal: 0,
+            execution_id: None,
+            parent_execution_id: None,
+            normalized_session_id: None,
+            correlation_confidence: Confidence::High,
+            limitation_codes: vec![],
+            occurred_at: now,
+            completed_at: Some(now),
+            terminal_success: Some(true),
+        })
+        .await
+        .expect_err("request limit must close the current window");
+    assert!(matches!(
+        request_limit_error,
+        StoreError::AgentSessionWindowClosed(id)
+            if id == limit_session.agent_session_id.to_string()
+    ));
+    let closed_limit_session = store
+        .load_agent_session_trace(limit_session.agent_session_id)
+        .await
+        .expect("closed request-limit session")
+        .expect("request-limit session trace");
+    assert_eq!(
+        closed_limit_session.session.lifecycle,
+        SessionLifecycleState::Finalized
+    );
+    assert_eq!(
+        closed_limit_session.session.finalized_reason.as_deref(),
+        Some("request_limit")
+    );
+
     let mut finalized_session = advanced_session.clone();
     finalized_session.lifecycle = SessionLifecycleState::Finalized;
     finalized_session.ended_at = Some(finalized_session.input_watermark_at);

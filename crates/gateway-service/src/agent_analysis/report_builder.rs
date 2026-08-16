@@ -240,7 +240,6 @@ where
     S: McpToolInvocationRepository + Sync,
 {
     let page_size = MAX_MCP_TOOL_INVOCATION_PAGE_SIZE;
-    let mut page = 1;
     let mut intervals = Vec::new();
     let mut snapshot = Vec::new();
     let request_ids = session_requests
@@ -248,54 +247,60 @@ where
         .map(|request| request.request_id.as_str())
         .collect::<BTreeSet<_>>();
     let mut invocations = Vec::new();
-    while page <= MAX_DIRECT_MCP_SCAN_PAGES {
-        let result = store
-            .list_mcp_tool_invocations(&McpToolInvocationQuery {
-                page,
-                page_size,
-                api_key_id: Some(session.api_key_id),
-                occurred_at_start: Some(session.started_at),
-                occurred_at_end: Some(session.ended_at.unwrap_or(session.input_watermark_at)),
-                ..McpToolInvocationQuery::default()
-            })
-            .await?;
-        for invocation in &result.items {
-            if !request_ids.contains(invocation.request_id.as_str()) {
-                continue;
+    for request_id in request_ids {
+        let mut page = 1;
+        while page <= MAX_DIRECT_MCP_SCAN_PAGES && invocations.len() < MAX_RELIABILITY_EVENTS {
+            let result = store
+                .list_mcp_tool_invocations(&McpToolInvocationQuery {
+                    page,
+                    page_size,
+                    request_id: Some(request_id.to_string()),
+                    user_id: session.user_id,
+                    team_id: session.team_id,
+                    occurred_at_start: Some(session.started_at),
+                    occurred_at_end: Some(session.ended_at.unwrap_or(session.input_watermark_at)),
+                    ..McpToolInvocationQuery::default()
+                })
+                .await?;
+            for invocation in &result.items {
+                if invocation.user_id != session.user_id || invocation.team_id != session.team_id {
+                    continue;
+                }
+                let latency_ms = invocation.latency_ms.unwrap_or_default().max(0);
+                let started_at = invocation.occurred_at - Duration::milliseconds(latency_ms);
+                if intervals.len() < MAX_RELIABILITY_EVENTS
+                    && let Some(interval) =
+                        ActivityInterval::new(started_at, invocation.occurred_at)
+                {
+                    intervals.push(interval);
+                }
+                if snapshot.len() < MAX_RELIABILITY_EVENTS {
+                    snapshot.push((
+                        invocation.mcp_tool_invocation_id,
+                        invocation.occurred_at.unix_timestamp_nanos(),
+                        invocation.latency_ms,
+                    ));
+                }
+                if invocations.len() < MAX_RELIABILITY_EVENTS {
+                    invocations.push(ToolInvocationFact {
+                        request_id: invocation.request_id.clone(),
+                        server_key: Some(invocation.server_display_key.clone()),
+                        tool_key: invocation.tool_display_key.clone(),
+                        status: invocation.status.as_str().to_string(),
+                        error_code: invocation.error_code.clone(),
+                        latency_ms: invocation.latency_ms,
+                        result_payload_truncated: invocation.result_payload_truncated,
+                        occurred_at_unix_ms: unix_timestamp_millis(invocation.occurred_at),
+                    });
+                }
             }
-            let latency_ms = invocation.latency_ms.unwrap_or_default().max(0);
-            let started_at = invocation.occurred_at - Duration::milliseconds(latency_ms);
-            if intervals.len() < MAX_RELIABILITY_EVENTS
-                && let Some(interval) = ActivityInterval::new(started_at, invocation.occurred_at)
-            {
-                intervals.push(interval);
+            if u64::from(page) * u64::from(page_size) >= result.total || result.items.is_empty() {
+                break;
             }
-            if snapshot.len() < MAX_RELIABILITY_EVENTS {
-                snapshot.push((
-                    invocation.mcp_tool_invocation_id,
-                    invocation.occurred_at.unix_timestamp_nanos(),
-                    invocation.latency_ms,
-                ));
-            }
-            if invocations.len() < MAX_RELIABILITY_EVENTS {
-                invocations.push(ToolInvocationFact {
-                    request_id: invocation.request_id.clone(),
-                    server_key: Some(invocation.server_display_key.clone()),
-                    tool_key: invocation.tool_display_key.clone(),
-                    status: invocation.status.as_str().to_string(),
-                    error_code: invocation.error_code.clone(),
-                    latency_ms: invocation.latency_ms,
-                    result_payload_truncated: invocation.result_payload_truncated,
-                    occurred_at_unix_ms: unix_timestamp_millis(invocation.occurred_at),
-                });
-            }
+            page = page.checked_add(1).ok_or_else(|| {
+                GatewayError::Internal("MCP invocation page overflow".to_string())
+            })?;
         }
-        if u64::from(page) * u64::from(page_size) >= result.total || result.items.is_empty() {
-            break;
-        }
-        page = page
-            .checked_add(1)
-            .ok_or_else(|| GatewayError::Internal("MCP invocation page overflow".to_string()))?;
     }
     snapshot.sort_unstable();
     Ok(DirectMcpEvidence {
@@ -327,6 +332,7 @@ fn observation_coverage_count(
 }
 fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
     let priced = record.pricing_status == UsagePricingStatus::Priced;
+    let reasoning_tokens = provider_reasoning_tokens(&record.provider_usage);
     let component_cost = |tokens: Option<i64>, rate: Option<Money4>| {
         tokens
             .zip(rate)
@@ -338,12 +344,12 @@ fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
         cache_read_tokens: record.cache_read_tokens,
         cache_creation_tokens: record.cache_write_tokens,
         output_tokens: record.completion_tokens,
-        reasoning_tokens: None,
+        reasoning_tokens,
         provider_total_tokens: record.total_tokens,
         cache_creation_5m_tokens: None,
         cache_creation_30m_tokens: None,
         cache_creation_1h_tokens: None,
-        output_includes_reasoning: None,
+        output_includes_reasoning: reasoning_tokens.map(|_| true),
         fresh_input_cost_10000: component_cost(
             record.uncached_input_tokens,
             record.input_cost_per_million_tokens,
@@ -371,6 +377,24 @@ fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
         upstream_model: Some(record.upstream_model.clone()),
         pricing_policy_version: Some(PRICING_POLICY_VERSION.to_string()),
     }
+}
+
+fn provider_reasoning_tokens(provider_usage: &Value) -> Option<i64> {
+    let usage = provider_usage.as_object()?;
+    let nested_usage = usage.get("provider_usage").and_then(Value::as_object);
+    std::iter::once(usage)
+        .chain(nested_usage)
+        .flat_map(|usage| {
+            ["completion_tokens_details", "output_tokens_details"]
+                .into_iter()
+                .filter_map(move |key| usage.get(key).and_then(Value::as_object))
+        })
+        .find_map(|details| {
+            details
+                .get("reasoning_tokens")
+                .and_then(Value::as_i64)
+                .filter(|tokens| *tokens >= 0)
+        })
 }
 
 struct LoadedCohort {
@@ -487,4 +511,38 @@ fn unix_timestamp_millis(value: OffsetDateTime) -> i64 {
             i64::MAX
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::provider_reasoning_tokens;
+
+    #[test]
+    fn reads_reasoning_tokens_from_openai_usage_shapes() {
+        assert_eq!(
+            provider_reasoning_tokens(&serde_json::json!({
+                "completion_tokens_details": { "reasoning_tokens": 21 }
+            })),
+            Some(21)
+        );
+        assert_eq!(
+            provider_reasoning_tokens(&serde_json::json!({
+                "provider_usage": {
+                    "output_tokens_details": { "reasoning_tokens": 34 }
+                }
+            })),
+            Some(34)
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_reasoning_token_counts() {
+        assert_eq!(
+            provider_reasoning_tokens(&serde_json::json!({
+                "completion_tokens_details": { "reasoning_tokens": -1 }
+            })),
+            None
+        );
+        assert_eq!(provider_reasoning_tokens(&serde_json::json!({})), None);
+    }
 }

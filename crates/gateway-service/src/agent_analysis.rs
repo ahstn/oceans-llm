@@ -15,7 +15,7 @@ use gateway_core::{
     Confidence, EvidenceQuality, GatewayError, GatewayOutcomeState, IdentityRepository,
     InferredObservation, InferredObservationKind, LimitationCode, MAX_AGENT_SESSION_NESTED_FACTS,
     MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationQuery, McpToolInvocationRepository, Money4,
-    RequestLogRepository, RequestTags, SessionLifecycleState, UsageLedgerRecord,
+    RequestLogRepository, RequestTags, SessionLifecycleState, StoreError, UsageLedgerRecord,
     UsagePricingStatus,
 };
 use serde_json::{Value, json};

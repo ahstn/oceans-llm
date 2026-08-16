@@ -117,7 +117,8 @@ impl AgentSessionReportRepository for PostgresStore {
             .bind(
                 query
                     .input_watermark_before
-                    .map(OffsetDateTime::unix_timestamp),
+                    .map(datetime_to_unix_millis)
+                    .transpose()?,
             )
             .bind(score_confidence.as_deref())
             .bind(query.agent_session_source_id.map(|value| value.to_string()))
@@ -150,7 +151,8 @@ impl AgentSessionReportRepository for PostgresStore {
             .bind(
                 query
                     .input_watermark_before
-                    .map(OffsetDateTime::unix_timestamp),
+                    .map(datetime_to_unix_millis)
+                    .transpose()?,
             )
             .bind(score_confidence.as_deref())
             .bind(query.agent_session_source_id.map(|value| value.to_string()))
