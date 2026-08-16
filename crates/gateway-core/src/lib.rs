@@ -9,11 +9,12 @@ pub mod streaming;
 pub mod traits;
 
 pub use agent_analysis::{
-    AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,
-    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
-    AgentSessionAnalysisRepository, AgentSessionListPage, AgentSessionListQuery,
-    AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
-    AgentSessionTraceRecord, MAX_AGENT_ANALYSIS_DISTINCT_ITEMS, MAX_AGENT_SESSION_NESTED_FACTS,
+    AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueRepository,
+    AgentAnalysisQueueStatus, AgentObservationSetRecord, AgentRequestLogLinkRecord,
+    AgentSessionAnalysisRecord, AgentSessionAnalysisRepository, AgentSessionListPage,
+    AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
+    AgentSessionTraceRepository, MAX_AGENT_ANALYSIS_DISTINCT_ITEMS, MAX_AGENT_SESSION_NESTED_FACTS,
     MAX_AGENT_SESSION_PAGE_SIZE, MAX_AGENT_SESSION_REQUESTS,
 };
 pub use agent_session_analysis::{

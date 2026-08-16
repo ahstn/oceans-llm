@@ -2294,14 +2294,9 @@ async fn build_auth_session_view(
     };
     let group = crate::config::AdminPermissionGroup::for_user(user.global_role, membership_role);
     let permissions = state.admin_permissions.for_group(group);
-    let agent_analysis = (platform_admin
-        && (state.agent_analysis.shadow_diagnostics_visible
-            || state.agent_analysis.calibrated_score_visible))
-        || (team_admin
-            && state.agent_analysis.team_admin_analytics_enabled
-            && state.agent_analysis.calibrated_score_visible);
+    let agent_analysis_access = state.agent_analysis.access_for(platform_admin, team_admin);
     let mut pages = permissions.pages.clone();
-    if !agent_analysis {
+    if !agent_analysis_access.allowed {
         pages.retain(|page| *page != crate::config::AdminPage::AgentSessions);
     }
     let default_page = permissions
@@ -2324,11 +2319,10 @@ async fn build_auth_session_view(
             .map(|membership| membership.role.as_str().to_string()),
         capabilities: AuthSessionCapabilitiesView {
             platform_admin,
-            agent_analysis,
+            agent_analysis: agent_analysis_access.allowed,
             passive_analysis_enabled: state.agent_analysis.passive_analysis_enabled,
-            shadow_diagnostics_visible: platform_admin
-                && state.agent_analysis.shadow_diagnostics_visible,
-            calibrated_score_visible: state.agent_analysis.calibrated_score_visible,
+            shadow_diagnostics_visible: agent_analysis_access.shadow_visible,
+            calibrated_score_visible: agent_analysis_access.score_visible,
             team_admin_analytics_enabled: state.agent_analysis.team_admin_analytics_enabled,
         },
         must_change_password: user.must_change_password,

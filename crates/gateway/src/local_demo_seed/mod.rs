@@ -866,7 +866,7 @@ fn pricing_provider_id_for_demo_provider(provider_key: &str) -> Option<&'static 
 
 #[cfg(test)]
 mod tests {
-    use gateway_core::AgentSessionAnalysisRepository;
+    use gateway_core::AgentSessionTraceRepository;
     use gateway_service::{GatewayService, WeightedRoutePlanner};
     use gateway_store::{AnyStore, StoreConnectionOptions};
     use std::sync::Arc;

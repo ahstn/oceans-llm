@@ -8,17 +8,12 @@ use crate::http::{
     admin_contract::{HarnessUsageView, LeaderboardView},
     response_cache::ResponseCache,
 };
-use crate::{config::ResolvedAdminPermissions, observability::GatewayMetrics};
+use crate::{
+    config::{AgentAnalysisRuntimeCapabilities, ResolvedAdminPermissions},
+    observability::GatewayMetrics,
+};
 
 pub type AppGatewayService = GatewayService<AnyStore, WeightedRoutePlanner>;
-
-#[derive(Debug, Clone, Copy)]
-pub struct AgentAnalysisRuntimeCapabilities {
-    pub passive_analysis_enabled: bool,
-    pub shadow_diagnostics_visible: bool,
-    pub calibrated_score_visible: bool,
-    pub team_admin_analytics_enabled: bool,
-}
 
 #[derive(Clone)]
 pub struct AppState {

@@ -24,6 +24,18 @@ Oceans derives operational agent session data from authenticated gateway request
 - Optional bounded metadata captures skill state and opaque file operations. Existing request-attempt and direct tool-invocation records provide retry, fallback, server-attribution, failure, truncation, and post-error token diagnostics.
 - Missing telemetry remains unknown. The analysis and admin contracts never turn an unmeasured retry, skill, file, cache, or finish-reason signal into zero.
 
+### Admin detail presentation update (2026-08-14)
+
+The agent-session detail sheet now presents a smaller operational subset. It retains the event stream and tool exposure, plus these diagnostic groups:
+
+- Session identity: model, harness, and session ID.
+- Score components: cost efficiency and elapsed time.
+- Token and cache use, except cache creation by lifetime.
+- Tools and changes.
+- Prompt context, except prompt token growth per active minute, P90 prompt tokens, peak input utilisation, requests above the input boundary, possible context resets, and answer verification.
+
+The sheet no longer presents the score-confidence and comparison, reliability and retries, skills, outcome evidence, finish reasons, or analysis-version groups. The removed values remain in the analysis and API contracts. This is a presentation decision to reduce detail-sheet density, not a change to collection, persistence, scoring, or report semantics. These fields can be reconsidered if operator research shows that the reduced view hides information needed for routine session review.
+
 ## Why
 
 Request-scoped observability cannot explain the operational cost and time of a multi-request agent session. Provider or harness conversation IDs are also not reliable user identity and cannot safely be joined globally. Dedicated session facts provide a bounded, auditable unit while preserving request-level lineage.

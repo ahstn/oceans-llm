@@ -1,10 +1,11 @@
 use gateway_core::{
-    AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,
-    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
-    AgentSessionAnalysisRepository, AgentSessionListQuery, AgentSessionRecord,
-    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AuthMode, BoundedObservationFacts,
-    Confidence, EvidenceQuality, GlobalRole, InferredObservation, InferredObservationKind,
-    LimitationCode, ScoreMaturity, SessionLifecycleState, StoreError, UserStatus,
+    AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueRepository,
+    AgentAnalysisQueueStatus, AgentObservationSetRecord, AgentRequestLogLinkRecord,
+    AgentSessionAnalysisRecord, AgentSessionListQuery, AgentSessionRecord,
+    AgentSessionReportRepository, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
+    AgentSessionTraceRepository, AuthMode, BoundedObservationFacts, Confidence, EvidenceQuality,
+    GlobalRole, InferredObservation, InferredObservationKind, LimitationCode, ScoreMaturity,
+    SessionLifecycleState, StoreError, UserStatus,
 };
 use serial_test::serial;
 use tempfile::tempdir;

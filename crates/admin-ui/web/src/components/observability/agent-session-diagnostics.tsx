@@ -14,22 +14,15 @@ type AgentSessionDiagnosticsProps = {
   detail: AgentSessionDetailView
   formatCost: (value?: number | null) => string
   formatDuration: (value?: number | null) => string
-  formatTimestamp: (value: string) => string
-  humanize: (value?: string | null) => string
 }
 
 export function AgentSessionDiagnostics({
   detail,
   formatCost,
   formatDuration,
-  formatTimestamp,
-  humanize,
 }: AgentSessionDiagnosticsProps) {
   const report = detail.report
   const components = report?.components
-  const outcome = components?.outcome
-  const coverage = detail.coverage
-  const telemetryCoverage = report?.coverage
   const diagnostics = report?.diagnostics
   const enabledMetrics = diagnostics?.enabled_metrics
   const tokenMetricsMeasured =
@@ -41,109 +34,21 @@ export function AgentSessionDiagnostics({
       diagnostics.token_and_cache.output_tokens,
     ].some((value) => value !== null)
   const toolAvailability = getAgentSessionToolMetricAvailability(detail)
-  const enabledMetricGroups = diagnostics
-    ? formatEnabledMetricGroups(diagnostics.enabled_metrics, humanize)
-    : 'Not available'
 
   return (
     <>
       <DiagnosticSection title="Session identity">
         <DiagnosticRow label="Model" value={detail.session.requested_model_key} />
-        <DiagnosticRow label="Operation" value={humanize(detail.session.operation)} />
-        <DiagnosticRow label="Caller class" value={humanize(detail.session.caller_class)} />
         <DiagnosticRow label="Harness" value={detail.session.harness_label ?? 'Unknown'} />
         <DiagnosticRow label="Session ID" value={detail.session.session_id} />
-        <DiagnosticRow
-          label="External session ID"
-          value={detail.session.external_session_id ?? 'Not observed'}
-        />
       </DiagnosticSection>
 
       <DiagnosticSection title="Score components">
         <DiagnosticRow
-          label="Outcome factor"
-          value={formatBasisPoints(outcome?.factor_basis_points)}
-        />
-        <DiagnosticRow
           label="Cost efficiency"
           value={formatBasisPoints(components?.cost_efficiency_basis_points)}
         />
-        <DiagnosticRow
-          label="Active-time efficiency"
-          value={formatBasisPoints(components?.active_time_efficiency_basis_points)}
-        />
-        <DiagnosticRow
-          label="Excluded long gaps"
-          value={formatDuration(components?.excluded_gap_time_ms)}
-        />
-        <DiagnosticRow
-          label="Total request and MCP time"
-          value={formatDuration(components?.summed_work_time_ms)}
-        />
         <DiagnosticRow label="Elapsed time" value={formatDuration(components?.wall_time_ms)} />
-        <DiagnosticRow
-          label="Overlapping work time"
-          value={formatDuration(components?.overlap_savings_ms)}
-        />
-        <DiagnosticRow
-          label="Unclassified wait time"
-          value={formatDuration(components?.unknown_wait_time_ms)}
-        />
-      </DiagnosticSection>
-
-      <DiagnosticSection title="Score confidence and comparison data">
-        <DiagnosticRow label="Confidence" value={humanize(detail.session.score_confidence)} />
-        <DiagnosticRow label="Score status" value={humanize(detail.session.score_maturity)} />
-        <DiagnosticRow
-          label="Comparison group"
-          value={formatNullable(components?.cohort_version, 'No comparison group')}
-        />
-        <DiagnosticRow
-          label="Comparison fallback level"
-          value={formatNullable(components?.cohort_fallback_level)}
-        />
-        <DiagnosticRow
-          label="Sessions in comparison"
-          value={formatNullable(components?.cohort_sample_size)}
-        />
-        <DiagnosticRow
-          label="Overall telemetry coverage"
-          value={formatPercent(telemetryCoverage?.overall_percent)}
-        />
-        <DiagnosticRow
-          label="Outcome coverage"
-          value={formatPercent(telemetryCoverage?.outcome_percent)}
-        />
-        <DiagnosticRow
-          label="Cost coverage"
-          value={formatPercent(telemetryCoverage?.cost_percent)}
-        />
-        <DiagnosticRow
-          label="Timing coverage"
-          value={formatPercent(telemetryCoverage?.timing_percent)}
-        />
-        <DiagnosticRow
-          label="Payload coverage"
-          value={formatPercent(telemetryCoverage?.payload_percent)}
-        />
-        <DiagnosticRow
-          label="Comparison coverage"
-          value={formatPercent(telemetryCoverage?.cohort_percent)}
-        />
-        <DiagnosticRow
-          label="Source data"
-          value={
-            coverage
-              ? [
-                  coverage.request_metadata ? 'Request metadata' : null,
-                  coverage.response_payload ? 'Response payload' : null,
-                  coverage.response_payload_truncated ? 'Response payload is incomplete' : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ') || 'Source data is not available'
-              : 'Source data is not available'
-          }
-        />
       </DiagnosticSection>
 
       <DiagnosticSection
@@ -168,18 +73,6 @@ export function AgentSessionDiagnostics({
         <DiagnosticRow
           label="Total input tokens"
           value={formatTokenCount(diagnostics?.token_and_cache.total_input_tokens)}
-        />
-        <DiagnosticRow
-          label="Cache creation by lifetime"
-          value={
-            diagnostics
-              ? [
-                  `${formatTokenCount(diagnostics.token_and_cache.cache_creation_5m_tokens)} at 5 minutes`,
-                  `${formatTokenCount(diagnostics.token_and_cache.cache_creation_30m_tokens)} at 30 minutes`,
-                  `${formatTokenCount(diagnostics.token_and_cache.cache_creation_1h_tokens)} at 1 hour`,
-                ].join(' · ')
-              : 'Not measured'
-          }
         />
         <DiagnosticRow
           label="Cache read cost"
@@ -309,161 +202,6 @@ export function AgentSessionDiagnostics({
       </DiagnosticSection>
 
       <DiagnosticSection
-        title="Reliability and retries"
-        availability={metricAvailability(
-          enabledMetrics?.reliability_metrics,
-          (diagnostics?.reliability.attempt_coverage_percent ?? 0) > 0 ||
-            (diagnostics?.reliability.tool_invocations ?? 0) > 0,
-        )}
-        deferredChildren={() =>
-          diagnostics?.reliability.tools.map((tool) => (
-            <DiagnosticRow
-              key={`${tool.server_key ?? 'local'}:${tool.tool_key}`}
-              label={`Tool · ${tool.server_key ? `${tool.server_key} / ` : ''}${tool.tool_key}`}
-              value={`${tool.failed_count} failed of ${tool.invocation_count} · ${formatDuration(tool.latency_ms)}${tool.post_error_input_tokens === null ? '' : ` · ${formatTokenCount(tool.post_error_input_tokens)} input tokens after errors`}`}
-            />
-          ))
-        }
-      >
-        <DiagnosticRow
-          label="Attempt coverage"
-          value={formatPercent(diagnostics?.reliability.attempt_coverage_percent)}
-        />
-        <DiagnosticRow
-          label="Wasted attempts"
-          value={
-            diagnostics
-              ? `${diagnostics.reliability.wasted_attempts} of ${diagnostics.reliability.total_attempts} attempts · ${formatDuration(diagnostics.reliability.wasted_attempt_latency_ms)}`
-              : 'Not measured'
-          }
-        />
-        <DiagnosticRow
-          label="Tool reliability"
-          value={
-            diagnostics
-              ? `${diagnostics.reliability.failed_tool_invocations} failures · ${diagnostics.reliability.truncated_tool_results} truncated results · ${diagnostics.reliability.tool_invocations} calls`
-              : 'Not measured'
-          }
-        />
-      </DiagnosticSection>
-
-      <DiagnosticSection
-        title="Skills"
-        availability={metricAvailability(
-          enabledMetrics?.skill_metrics,
-          (diagnostics?.skills.instrumented_request_count ?? 0) > 0,
-        )}
-        deferredChildren={() =>
-          diagnostics?.skills.items.map((skill) => (
-            <DiagnosticRow
-              key={skill.name}
-              label={`Skill · ${skill.name}`}
-              value={`${skill.used_request_count} used of ${skill.available_request_count} available requests · ${skill.abandoned_request_count} abandoned`}
-            />
-          ))
-        }
-      >
-        <DiagnosticRow
-          label="Skill use"
-          value={
-            diagnostics?.skills.available_skill_count === null
-              ? 'Not measured'
-              : `${diagnostics?.skills.used_skill_count ?? 0} used · ${diagnostics?.skills.unused_skill_count ?? 0} unused · ${diagnostics?.skills.available_skill_count ?? 0} available`
-          }
-        />
-        <DiagnosticRow
-          label="Skill token load"
-          value={
-            diagnostics
-              ? `${formatTokenCount(diagnostics.skills.description_tokens_per_request)} descriptions per request · ${formatTokenCount(diagnostics.skills.loaded_body_tokens)} bodies · ${formatTokenCount(diagnostics.skills.loaded_resource_tokens)} resources`
-              : 'Not measured'
-          }
-        />
-      </DiagnosticSection>
-
-      <DiagnosticSection
-        title="Outcome evidence"
-        availability={metricAvailability(
-          enabledMetrics?.outcome_metrics,
-          (diagnostics?.outcome.file_signal_coverage_percent ?? 0) > 0,
-        )}
-      >
-        <DiagnosticRow
-          label="File-signal coverage"
-          value={formatPercent(diagnostics?.outcome.file_signal_coverage_percent)}
-        />
-        <DiagnosticRow
-          label="Cost per file touched"
-          value={formatScaledCost(diagnostics?.outcome.cost_per_file_touched_10000, formatCost)}
-        />
-        <DiagnosticRow
-          label="Cost per successful session"
-          value={formatScaledCost(
-            diagnostics?.outcome.cost_per_successful_session_10000,
-            formatCost,
-          )}
-        />
-        <DiagnosticRow
-          label="Rework ratio"
-          value={formatBasisPoints(diagnostics?.outcome.rework_ratio_basis_points)}
-        />
-        <DiagnosticRow
-          label="Verification rate"
-          value={formatBasisPoints(diagnostics?.outcome.verification_rate_basis_points)}
-        />
-        <DiagnosticRow
-          label="Repeated file activity"
-          value={
-            diagnostics?.outcome.repeated_file_interactions_suspected === null
-              ? 'Not measured'
-              : `${diagnostics?.outcome.repeated_file_interactions_suspected ?? 0} repeated interactions across ${diagnostics?.outcome.files_with_repeated_interactions_suspected ?? 0} files`
-          }
-        />
-        <DiagnosticRow
-          label="Failed file operations"
-          value={formatNullable(diagnostics?.outcome.failed_file_interactions, 'Not measured')}
-        />
-        <DiagnosticRow
-          label="Zero detected outcome"
-          value={
-            diagnostics?.outcome.zero_outcome === null
-              ? 'Not measured'
-              : diagnostics?.outcome.zero_outcome
-                ? 'Yes'
-                : 'No'
-          }
-        />
-      </DiagnosticSection>
-
-      <DiagnosticSection
-        title="Finish reasons"
-        availability={metricAvailability(
-          enabledMetrics?.finish_reason_metrics,
-          (diagnostics?.finish_reasons.instrumented_request_count ?? 0) > 0,
-        )}
-      >
-        <DiagnosticRow
-          label="Finish-reason coverage"
-          value={
-            diagnostics
-              ? `${diagnostics.finish_reasons.instrumented_request_count} requests measured`
-              : 'Not measured'
-          }
-        />
-        <DiagnosticRow
-          label="Length-limited requests"
-          value={formatNullable(diagnostics?.finish_reasons.length_limited_requests)}
-        />
-        {diagnostics?.finish_reasons.items.map((item) => (
-          <DiagnosticRow
-            key={item.reason}
-            label={humanize(item.reason)}
-            value={formatTokenCount(item.count)}
-          />
-        ))}
-      </DiagnosticSection>
-
-      <DiagnosticSection
         title="Prompt context"
         availability={metricAvailability(
           enabledMetrics?.context_metrics,
@@ -480,16 +218,8 @@ export function AgentSessionDiagnostics({
           value={formatTokenCount(diagnostics?.context.median_prompt_tokens)}
         />
         <DiagnosticRow
-          label="P90 prompt tokens"
-          value={formatTokenCount(diagnostics?.context.p90_prompt_tokens)}
-        />
-        <DiagnosticRow
           label="Maximum prompt tokens"
           value={formatTokenCount(diagnostics?.context.maximum_prompt_tokens)}
-        />
-        <DiagnosticRow
-          label="Peak input utilisation"
-          value={formatBasisPoints(diagnostics?.context.peak_input_utilization_basis_points)}
         />
         <DiagnosticRow
           label="Configured input boundary"
@@ -498,10 +228,6 @@ export function AgentSessionDiagnostics({
         <DiagnosticRow
           label="Reserved output capacity"
           value={formatTokenCount(diagnostics?.context.reserved_output_tokens)}
-        />
-        <DiagnosticRow
-          label="Requests above the input boundary"
-          value={formatNullable(diagnostics?.context.requests_over_input_boundary)}
         />
         <DiagnosticRow
           label="Context score penalty"
@@ -514,58 +240,8 @@ export function AgentSessionDiagnostics({
           value={formatTokenCount(diagnostics?.context.prompt_growth_per_turn)}
         />
         <DiagnosticRow
-          label="Prompt token growth per active minute"
-          value={formatTokenCount(diagnostics?.context.prompt_growth_per_active_minute)}
-        />
-        <DiagnosticRow
           label="Possible context compactions"
           value={formatNullable(diagnostics?.context.suspected_compactions)}
-        />
-        <DiagnosticRow
-          label="Possible context resets"
-          value={formatNullable(diagnostics?.context.suspected_context_resets)}
-        />
-        <DiagnosticRow
-          label="Answer verification"
-          value={
-            diagnostics
-              ? diagnostics.semantic_verification_available
-                ? 'Available'
-                : 'Not available'
-              : 'Not available'
-          }
-        />
-      </DiagnosticSection>
-
-      <DiagnosticSection title="Analysis versions">
-        <DiagnosticRow label="Report schema" value={report?.report_schema_version ?? '—'} />
-        <DiagnosticRow label="Analyzer" value={report?.analyzer_version ?? '—'} />
-        <DiagnosticRow label="Score policy" value={report?.score_policy_version ?? '—'} />
-        <DiagnosticRow
-          label="Configuration"
-          value={report?.configuration_version || 'Default configuration'}
-        />
-        <DiagnosticRow label="Enabled metric groups" value={enabledMetricGroups} />
-        <DiagnosticRow
-          label="Boundary policy"
-          value={detail.analysis?.boundary_policy_version ?? '—'}
-        />
-        <DiagnosticRow
-          label="Observation parser"
-          value={detail.analysis?.observation_parser_version ?? '—'}
-        />
-        <DiagnosticRow
-          label="Pricing policy"
-          value={detail.analysis?.pricing_policy_version ?? '—'}
-        />
-        <DiagnosticRow
-          label="Comparison snapshot"
-          value={detail.analysis?.cohort_snapshot_digest ?? '—'}
-        />
-        <DiagnosticRow label="Analysis ID" value={detail.analysis?.analysis_id ?? '—'} />
-        <DiagnosticRow
-          label="Latest input time"
-          value={detail.analysis ? formatTimestamp(detail.analysis.input_watermark_at) : '—'}
         />
       </DiagnosticSection>
     </>
@@ -645,10 +321,6 @@ function formatBasisPoints(value?: number | null) {
   return value === null || value === undefined ? 'Not available' : `${(value / 100).toFixed(1)}%`
 }
 
-function formatPercent(value?: number | null) {
-  return value === null || value === undefined ? 'Not available' : `${value}%`
-}
-
 function formatTokenCount(value?: number | null) {
   return value === null || value === undefined
     ? 'Not available'
@@ -670,15 +342,4 @@ function formatScaledCost(
 
 function formatNullable(value: unknown, fallback = '—') {
   return value === null || value === undefined ? fallback : String(value)
-}
-
-function formatEnabledMetricGroups(
-  metrics: Record<string, boolean>,
-  humanize: (value?: string | null) => string,
-) {
-  const names = Object.entries(metrics).reduce<string[]>((enabled, [name, isEnabled]) => {
-    if (isEnabled) enabled.push(humanize(name))
-    return enabled
-  }, [])
-  return names.join(' · ') || 'None'
 }

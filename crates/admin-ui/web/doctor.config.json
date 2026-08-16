@@ -1,15 +1,3 @@
 {
-  "$schema": "https://react.doctor/schema/config.json",
-  "ignore": {
-    "files": ["src/components/reui/**"],
-    "overrides": [
-      {
-        "files": ["src/routes/observability/agent-sessions.tsx"],
-        "rules": [
-          "react-doctor/no-giant-component",
-          "react-doctor/tanstack-start-no-navigate-in-render"
-        ]
-      }
-    ]
-  }
+  "$schema": "https://react.doctor/schema/config.json"
 }

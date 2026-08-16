@@ -1,8 +1,8 @@
 use anyhow::{Context, bail};
 use gateway::{cli::RecomputeAgentAnalysisArgs, config::GatewayConfig};
 use gateway_core::{
-    AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AgentSessionListQuery,
-    AgentSessionTraceRecord, SessionLifecycleState,
+    AgentAnalysisDesiredVersions, AgentSessionListQuery, AgentSessionReportRepository,
+    AgentSessionTraceRecord, AgentSessionTraceRepository, SessionLifecycleState,
 };
 use gateway_service::{desired_versions_for_policy, enqueue_agent_analysis_with_versions};
 use gateway_store::AnyStore;
@@ -20,7 +20,7 @@ pub async fn run_command(
     let store = AnyStore::connect(&database_options)
         .await
         .context("failed to initialize gateway store")?;
-    let analysis_settings = crate::load_agent_analysis_settings(&config.agent_analysis)?;
+    let analysis_settings = config.agent_analysis.resolve()?;
     let desired = desired_versions_for_policy(&analysis_settings.policy);
 
     let sessions = if let Some(session_id) = args.session_id {

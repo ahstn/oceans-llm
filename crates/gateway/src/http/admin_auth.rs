@@ -49,16 +49,12 @@ pub(crate) async fn require_agent_analysis_scope(
 }
 
 fn agent_analysis_scope_enabled(
-    capabilities: crate::http::state::AgentAnalysisRuntimeCapabilities,
+    capabilities: crate::config::AgentAnalysisRuntimeCapabilities,
     scope: AdminDataScope,
 ) -> bool {
     match scope {
-        AdminDataScope::Platform => {
-            capabilities.shadow_diagnostics_visible || capabilities.calibrated_score_visible
-        }
-        AdminDataScope::Team(_) => {
-            capabilities.team_admin_analytics_enabled && capabilities.calibrated_score_visible
-        }
+        AdminDataScope::Platform => capabilities.access_for(true, false).allowed,
+        AdminDataScope::Team(_) => capabilities.access_for(false, true).allowed,
     }
 }
 
@@ -106,7 +102,7 @@ pub(crate) async fn require_authenticated_session(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::http::state::AgentAnalysisRuntimeCapabilities;
+    use crate::config::AgentAnalysisRuntimeCapabilities;
 
     fn capabilities() -> AgentAnalysisRuntimeCapabilities {
         AgentAnalysisRuntimeCapabilities {

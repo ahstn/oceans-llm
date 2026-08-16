@@ -1,4 +1,7 @@
-pub use crate::agent_analysis::AgentSessionAnalysisRepository;
+pub use crate::agent_analysis::{
+    AgentAnalysisQueueRepository, AgentSessionAnalysisRepository, AgentSessionReportRepository,
+    AgentSessionTraceRepository,
+};
 
 use std::{collections::HashMap, pin::Pin, sync::Arc};
 

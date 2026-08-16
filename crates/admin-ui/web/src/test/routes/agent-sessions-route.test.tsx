@@ -537,39 +537,52 @@ describe('AgentSessionsPage', () => {
     expect(within(neverCalledPanel!).getByText('write')).toBeInTheDocument()
 
     const identityTrigger = screen.getByRole('button', { name: 'Session identity' })
+    const detailSheet = screen.getByRole('dialog')
     expect(identityTrigger).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByText('External session ID')).not.toBeInTheDocument()
+    expect(within(detailSheet).queryByText('External session ID')).not.toBeInTheDocument()
     fireEvent.click(identityTrigger)
-    expect(screen.getByText('External session ID')).toBeInTheDocument()
+    expect(within(detailSheet).getByText('Model')).toBeInTheDocument()
+    expect(within(detailSheet).getByText('Harness')).toBeInTheDocument()
+    expect(within(detailSheet).getByText('Session ID')).toBeInTheDocument()
+    expect(within(detailSheet).queryByText('Operation')).not.toBeInTheDocument()
+    expect(within(detailSheet).queryByText('Caller class')).not.toBeInTheDocument()
+    expect(within(detailSheet).queryByText('External session ID')).not.toBeInTheDocument()
 
-    const comparisonTrigger = screen.getByRole('button', {
-      name: 'Score confidence and comparison data',
-    })
-    expect(comparisonTrigger).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByText('Comparison snapshot')).not.toBeInTheDocument()
-    fireEvent.click(comparisonTrigger)
-    expect(screen.getByText('Comparison group')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Score components' }))
+    expect(screen.getByText('Cost efficiency')).toBeInTheDocument()
+    expect(screen.getByText('Elapsed time')).toBeInTheDocument()
+    expect(screen.queryByText('Outcome factor')).not.toBeInTheDocument()
+    expect(screen.queryByText('Active-time efficiency')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Token and cache use' }))
     expect(screen.getByText('Cache read cost')).toBeInTheDocument()
     expect(screen.getByText('Cache write cost')).toBeInTheDocument()
+    expect(screen.queryByText('Cache creation by lifetime')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Tools and changes' }))
     expect(screen.getByText('Tool server · github')).toBeInTheDocument()
     expect(screen.getByText(/schema tokens per request.*without cache/)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reliability and retries' }))
-    expect(screen.getByText('Wasted attempts')).toBeInTheDocument()
-    expect(screen.getByText('1 of 2 attempts · 500 ms')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Prompt context' }))
+    expect(screen.getByText('Initial prompt tokens')).toBeInTheDocument()
+    expect(screen.getByText('Maximum prompt tokens')).toBeInTheDocument()
+    expect(screen.queryByText('P90 prompt tokens')).not.toBeInTheDocument()
+    expect(screen.queryByText('Peak input utilisation')).not.toBeInTheDocument()
+    expect(screen.queryByText('Requests above the input boundary')).not.toBeInTheDocument()
+    expect(screen.queryByText('Prompt token growth per active minute')).not.toBeInTheDocument()
+    expect(screen.queryByText('Possible context resets')).not.toBeInTheDocument()
+    expect(screen.queryByText('Answer verification')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Skills' }))
-    expect(screen.getByText('Skill · repository-review')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Outcome evidence' }))
-    expect(screen.getByText('Rework ratio')).toBeInTheDocument()
-    expect(screen.getAllByText('25.0%').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('93%').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('Failed file operations')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Score confidence and comparison data' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Reliability and retries' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Skills' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Outcome evidence' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Finish reasons' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Analysis versions' })).not.toBeInTheDocument()
   })
 
   it('does not link team admins to platform-only request logs', async () => {
@@ -615,18 +628,10 @@ describe('AgentSessionsPage', () => {
       screen.getByText('Unknown — the required telemetry was not measured for this session.'),
     ).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reliability and retries' }))
-    expect(
-      screen.getAllByText('Unknown — the required telemetry was not measured for this session.'),
-    ).toHaveLength(2)
-
     fireEvent.click(screen.getByRole('button', { name: 'Tools and changes' }))
     expect(
       screen.getAllByText('Unknown — the required telemetry was not measured for this session.'),
-    ).toHaveLength(3)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Skills' }))
-    expect(screen.getByText('Disabled by the analysis configuration.')).toBeInTheDocument()
+    ).toHaveLength(2)
   })
 
   it('warns when retained request or observation history exceeds the detail cap', async () => {

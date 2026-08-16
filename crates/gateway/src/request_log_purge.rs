@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{Context, bail};
 use chrono::{DateTime, Utc};
 use gateway_core::{
-    AgentSessionAnalysisRepository, RequestLogPurgeResult, RequestLogRetentionWindow,
+    AgentAnalysisQueueRepository, RequestLogPurgeResult, RequestLogRetentionWindow,
 };
 use gateway_service::{GatewayService, RequestLogging, WeightedRoutePlanner};
 use gateway_store::{AnyStore, check_migrations_with_options};

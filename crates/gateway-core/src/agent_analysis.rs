@@ -238,7 +238,7 @@ pub const MAX_AGENT_SESSION_NESTED_FACTS: usize = 2_048;
 pub const MAX_AGENT_ANALYSIS_DISTINCT_ITEMS: usize = 512;
 
 #[async_trait]
-pub trait AgentSessionAnalysisRepository {
+pub trait AgentSessionTraceRepository {
     async fn upsert_agent_session_source(
         &self,
         session: &AgentSessionSourceRecord,
@@ -309,7 +309,10 @@ pub trait AgentSessionAnalysisRepository {
         &self,
         agent_session_id: AgentSessionId,
     ) -> Result<Option<AgentSessionTraceRecord>, StoreError>;
+}
 
+#[async_trait]
+pub trait AgentSessionReportRepository {
     async fn append_agent_session_analysis(
         &self,
         analysis: &AgentSessionAnalysisRecord,
@@ -325,7 +328,10 @@ pub trait AgentSessionAnalysisRepository {
         agent_session_id: AgentSessionId,
         superseded_by: Option<AnalysisId>,
     ) -> Result<u64, StoreError>;
+}
 
+#[async_trait]
+pub trait AgentAnalysisQueueRepository {
     async fn enqueue_agent_analysis(
         &self,
         item: &AgentAnalysisQueueRecord,
@@ -377,4 +383,14 @@ pub trait AgentSessionAnalysisRepository {
         &self,
         ownership_scope_key: &str,
     ) -> Result<u64, StoreError>;
+}
+
+pub trait AgentSessionAnalysisRepository:
+    AgentSessionTraceRepository + AgentSessionReportRepository + AgentAnalysisQueueRepository
+{
+}
+
+impl<T> AgentSessionAnalysisRepository for T where
+    T: AgentSessionTraceRepository + AgentSessionReportRepository + AgentAnalysisQueueRepository
+{
 }

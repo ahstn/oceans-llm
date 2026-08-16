@@ -37,7 +37,7 @@ pub use agent_analysis::{
     enqueue_analysis_with_versions as enqueue_agent_analysis_with_versions,
 };
 pub use agent_session_analysis::{
-    AnalysisMetricPolicy, AnalysisPolicy, CacheProfileRule, CacheTtl, default_cache_profiles,
+    AnalysisMetricPolicy, AnalysisPolicy, CacheProfileRule, CacheTtl,
 };
 pub use authenticator::{Authenticator, verify_gateway_key_secret};
 pub use budget_alerts::{

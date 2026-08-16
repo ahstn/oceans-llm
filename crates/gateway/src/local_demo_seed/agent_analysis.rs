@@ -1,8 +1,8 @@
 use anyhow::Context;
 use gateway_core::{
-    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRepository,
-    AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord, ApiKeyRecord,
-    BoundedFileInteractionFact, BoundedObservationFacts, BoundedSkillFact,
+    AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionRecord,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRepository,
+    ApiKeyRecord, BoundedFileInteractionFact, BoundedObservationFacts, BoundedSkillFact,
     BoundedToolDefinitionFact, Confidence, EvidenceQuality, InferredObservation,
     InferredObservationKind, LimitationCode, McpToolInvocationRecord, McpToolInvocationRepository,
     McpToolInvocationStatus, McpToolPolicyResult, RequestTags, SessionLifecycleState,

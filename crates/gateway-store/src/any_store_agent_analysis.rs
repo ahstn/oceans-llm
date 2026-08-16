@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use gateway_core::{
-    AgentAnalysisQueueRecord, AgentRequestLogLinkRecord, AgentSessionAnalysisRecord,
-    AgentSessionAnalysisRepository, AgentSessionListPage, AgentSessionListQuery,
-    AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
-    AgentSessionTraceRecord, RequestAttemptRecord, StoreError,
+    AgentAnalysisQueueRecord, AgentAnalysisQueueRepository, AgentRequestLogLinkRecord,
+    AgentSessionAnalysisRecord, AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord,
+    AgentSessionReportRepository, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
+    AgentSessionTraceRecord, AgentSessionTraceRepository, RequestAttemptRecord, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::store::AnyStore;
 
 #[async_trait]
-impl AgentSessionAnalysisRepository for AnyStore {
+impl AgentSessionTraceRepository for AnyStore {
     async fn upsert_agent_session_source(
         &self,
         session: &AgentSessionSourceRecord,
@@ -166,7 +166,10 @@ impl AgentSessionAnalysisRepository for AnyStore {
             Self::Postgres(store) => store.load_agent_session_trace(session_id).await,
         }
     }
+}
 
+#[async_trait]
+impl AgentSessionReportRepository for AnyStore {
     async fn append_agent_session_analysis(
         &self,
         analysis: &AgentSessionAnalysisRecord,
@@ -205,7 +208,10 @@ impl AgentSessionAnalysisRepository for AnyStore {
             }
         }
     }
+}
 
+#[async_trait]
+impl AgentAnalysisQueueRepository for AnyStore {
     async fn enqueue_agent_analysis(
         &self,
         item: &AgentAnalysisQueueRecord,

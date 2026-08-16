@@ -39,7 +39,7 @@ pub(crate) mod tests {
 
     use gateway_core::domain::ModelAllowlistPolicy;
     use gateway_core::{
-        AgentSessionAnalysisRepository, AgentSessionRecord, AgentSessionRequestLinkRecord,
+        AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionTraceRepository,
         ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
         BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
         BudgetAlertHistoryQuery, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence,
