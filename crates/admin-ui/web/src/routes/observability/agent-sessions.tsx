@@ -100,7 +100,7 @@ export function AgentSessionsPage() {
     }
   }, [selectedSessionId, detailRetry])
 
-  function navigate(next: AgentSessionRouteSearch) {
+  function updateRouteSearch(next: AgentSessionRouteSearch) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/agent-sessions',
@@ -110,11 +110,11 @@ export function AgentSessionsPage() {
   }
 
   function updateFilter(key: keyof AgentSessionFiltersInput, value: string | undefined) {
-    navigate({ ...search, page: 1, [key]: value })
+    updateRouteSearch({ ...search, page: 1, [key]: value })
   }
 
   function openDetail(session: AgentSessionSummaryView) {
-    navigate({ ...search, session_id: session.session_id })
+    updateRouteSearch({ ...search, session_id: session.session_id })
   }
 
   const hasUnavailableCallMetrics = sessionPage.items.some(

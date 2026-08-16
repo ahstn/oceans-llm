@@ -98,16 +98,16 @@ pub(super) async fn seed_demo_agent_session(
                 .context("failed serializing demo agent session request tags")?,
             boundary_group_key: local_demo_uuid("agent_session_boundary", session_key).to_string(),
             boundary_policy_version: versions.boundary_policy_version.clone(),
-            lifecycle: SessionLifecycleState::Finalized,
+            lifecycle: SessionLifecycleState::Open,
             boundary_confidence: if session.is_some() {
                 Confidence::High
             } else {
                 Confidence::Medium
             },
             started_at,
-            ended_at: Some(ended_at),
+            ended_at: None,
             input_watermark_at: ended_at,
-            finalized_reason: Some("local_demo_seed".to_string()),
+            finalized_reason: None,
             created_at: ended_at,
             updated_at: ended_at,
         };
@@ -160,8 +160,16 @@ pub(super) async fn seed_demo_agent_session(
     if let Some(request) = session_request
         && let Some(mcp_tool_name) = request.mcp_tool_name
     {
-        seed_demo_mcp_invocation(store, fixture, api_key, request, mcp_tool_name, occurred_at)
-            .await?;
+        seed_demo_mcp_invocation(
+            store,
+            fixture,
+            api_key,
+            team_id,
+            request,
+            mcp_tool_name,
+            occurred_at,
+        )
+        .await?;
     }
 
     let should_finalize_observations = session_request
@@ -169,6 +177,25 @@ pub(super) async fn seed_demo_agent_session(
         .unwrap_or(true);
     if !should_finalize_observations {
         return Ok(());
+    }
+
+    let mut finalized_session = store
+        .load_agent_session_trace(agent_session_id)
+        .await
+        .context("failed loading demo agent session for finalization")?
+        .ok_or_else(|| anyhow::anyhow!("demo agent session disappeared before finalization"))?
+        .session;
+    let expected_input_watermark_at = finalized_session.input_watermark_at;
+    finalized_session.lifecycle = SessionLifecycleState::Finalized;
+    finalized_session.ended_at = Some(ended_at);
+    finalized_session.finalized_reason = Some("local_demo_seed".to_string());
+    finalized_session.updated_at = ended_at;
+    if !store
+        .finalize_agent_session_if_unchanged(&finalized_session, expected_input_watermark_at)
+        .await
+        .context("failed finalizing demo agent session")?
+    {
+        anyhow::bail!("demo agent session changed before finalization");
     }
 
     let observations = if let Some(session) = session {
@@ -216,6 +243,7 @@ async fn seed_demo_mcp_invocation(
     store: &AnyStore,
     fixture: &LocalDemoRequestFixture,
     api_key: &ApiKeyRecord,
+    team_id: Option<Uuid>,
     request: agent_session_fixtures::DemoAgentSessionRequest,
     tool_name: &str,
     request_completed_at: OffsetDateTime,
@@ -229,7 +257,7 @@ async fn seed_demo_mcp_invocation(
                 request_id: fixture.request_id.to_string(),
                 api_key_id: Some(api_key.id),
                 user_id: api_key.owner_user_id,
-                team_id: api_key.owner_team_id,
+                team_id,
                 owner_kind: api_key.owner_kind,
                 server_id: None,
                 server_display_key: "jira".to_string(),

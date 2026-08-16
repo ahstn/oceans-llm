@@ -866,12 +866,87 @@ fn pricing_provider_id_for_demo_provider(provider_key: &str) -> Option<&'static 
 
 #[cfg(test)]
 mod tests {
-    use gateway_core::AgentSessionTraceRepository;
+    use gateway_core::{
+        AgentSessionTraceRepository, AuthMode, GlobalRole, MembershipRole, SeedModel, SeedProvider,
+        SeedTeam, SeedUser, SeedUserMembership,
+    };
     use gateway_service::{GatewayService, WeightedRoutePlanner};
     use gateway_store::{AnyStore, StoreConnectionOptions};
     use std::sync::Arc;
 
     use super::*;
+
+    fn demo_seed_prerequisites() -> (
+        Vec<SeedProvider>,
+        Vec<SeedModel>,
+        Vec<SeedTeam>,
+        Vec<SeedUser>,
+    ) {
+        let providers = [
+            "openai-prod",
+            "openai-secondary",
+            "vertex-adc",
+            "vertex-claude",
+            "bedrock-us-east-1",
+        ]
+        .into_iter()
+        .map(|provider_key| SeedProvider {
+            provider_key: provider_key.to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({}),
+            secrets: None,
+        })
+        .collect();
+        let models = models::LOCAL_DEMO_MODEL_KEYS
+            .iter()
+            .map(|model_key| SeedModel {
+                model_key: (*model_key).to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 0,
+                routes: Vec::new(),
+                allowlist: None,
+            })
+            .collect();
+        let teams = teams::LOCAL_DEMO_TEAM_KEYS
+            .iter()
+            .map(|team_key| SeedTeam {
+                team_key: (*team_key).to_string(),
+                team_name: (*team_key).to_string(),
+                tags: None,
+            })
+            .collect();
+        let users = users::LOCAL_DEMO_USERS
+            .iter()
+            .map(|fixture| {
+                let team_key = match fixture.email.split_once('@').map(|(_, domain)| domain) {
+                    Some("platform.local") => "platform",
+                    Some("research.local") => "research",
+                    Some("applied.local") => "applied-ai",
+                    Some("operations.local") => "operations",
+                    _ => panic!("demo user has an unknown team domain"),
+                };
+                SeedUser {
+                    name: fixture.email.to_string(),
+                    email: fixture.email.to_string(),
+                    email_normalized: fixture.email.to_string(),
+                    global_role: GlobalRole::User,
+                    auth_mode: AuthMode::Password,
+                    request_logging_enabled: true,
+                    tags: None,
+                    oidc_provider_key: None,
+                    oauth_provider_key: None,
+                    membership: Some(SeedUserMembership {
+                        team_key: team_key.to_string(),
+                        role: MembershipRole::Member,
+                    }),
+                    budget: None,
+                }
+            })
+            .collect();
+        (providers, models, teams, users)
+    }
 
     #[tokio::test]
     async fn seeded_jira_session_reports_direct_mcp_calls() {
@@ -883,23 +958,17 @@ mod tests {
             .await
             .expect("migrations");
         let store = AnyStore::connect(&options).await.expect("store");
-        let config_path =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.yaml");
-        let config = gateway::config::GatewayConfig::from_path(&config_path).expect("config");
-        let mut providers = config.seed_providers().expect("providers");
-        for provider in &mut providers {
-            provider.secrets = None;
-        }
+        let (providers, models, teams, users) = demo_seed_prerequisites();
         store
             .seed_from_inputs(
                 &providers,
-                &config.seed_models().expect("models"),
+                &models,
                 &[],
                 &[],
                 &[],
                 &[],
-                &config.seed_teams().expect("teams"),
-                &config.seed_users().expect("users"),
+                &teams,
+                &users,
             )
             .await
             .expect("seed config");
