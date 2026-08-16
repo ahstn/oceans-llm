@@ -25,6 +25,7 @@ pub use migrate::{
     run_migrations_with_options, status_migrations_with_options,
 };
 pub use postgres_store::PostgresStore;
+pub use seed::seed_local_demo_batches;
 pub use store::{AnyStore, GatewayStore, StoreConnectionOptions};
 
 #[cfg(test)]
@@ -32,12 +33,14 @@ pub(crate) use migrate::{MigrationTestHook, run_migrations_with_options_for_test
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::env;
 
     use gateway_core::domain::ModelAllowlistPolicy;
     use gateway_core::{
         ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
-        BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
+        BatchAccessScope, BatchEndpoint, BatchJobRecord, BatchPricingStatus, BatchRepository,
+        BatchStatus, BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
         BudgetAlertHistoryQuery, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence,
         BudgetModelSelector, BudgetRepository, BudgetScope, BudgetSettings, BudgetSource,
         BudgetSourceKind, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
@@ -47,23 +50,24 @@ mod tests {
         McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult,
         McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
         McpUpstreamCredentialRepository, McpUpstreamSecretStorageKind, MembershipRole,
-        ModelPricingRecord, ModelRepository, Money4, NewExternalMcpServerRecord,
-        NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord, OauthJitPolicy,
-        OidcLoginStateRecord, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
+        ModelPricingRecord, ModelRepository, Money4, NewBatchItem, NewBatchJob,
+        NewExternalMcpServerRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
+        OauthJitPolicy, OidcLoginStateRecord, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, RefreshMcpOauthCredentialBindingRecord,
-        RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord, RequestLogQuery,
-        RequestLogRecord, RequestLogRepository, RequestTag, RequestTags, RequestToolCardinality,
-        ReviewAgentProvider, ReviewAgentPullRequestState, ReviewAgentRepository,
-        ReviewAgentRepositoryStatus, ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility,
-        RoutePricingOverride, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
-        SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
-        SeedOauthProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
-        SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError,
-        StoreHealth, UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord,
-        UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord,
-        UpsertReviewAgentPullRequestRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        PricingProvenance, ProviderCapabilities, ProviderRequestContext,
+        RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord, RequestAttemptStatus,
+        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+        RequestTag, RequestTags, RequestToolCardinality, ReviewAgentProvider,
+        ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryStatus,
+        ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, RoutePricingOverride,
+        SeedApiKey, SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
+        SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
+        SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
+        SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError, StoreHealth,
+        UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
+        UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -3336,6 +3340,80 @@ mod tests {
             .await
             .expect("seed #1");
 
+        let seeded_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("query seeded key")
+            .expect("seeded key");
+        let seeded_model = store
+            .list_models_for_api_key(seeded_key.id)
+            .await
+            .expect("query seeded model")
+            .into_iter()
+            .next()
+            .expect("seeded model");
+        let seeded_route = store
+            .list_routes_for_model(seeded_model.id)
+            .await
+            .expect("query seeded route")
+            .into_iter()
+            .next()
+            .expect("seeded route");
+        let batch_id = Uuid::new_v4();
+        let batch_created_at = OffsetDateTime::now_utc();
+        store
+            .insert_batch(&NewBatchJob {
+                job: BatchJobRecord {
+                    batch_id,
+                    idempotency_key: "seed-idempotency".to_string(),
+                    request_hash: "seed-request-hash".to_string(),
+                    api_key_id: seeded_key.id,
+                    user_id: seeded_key.owner_user_id,
+                    team_id: seeded_key.owner_team_id,
+                    service_account_id: seeded_key.owner_service_account_id,
+                    model_id: seeded_model.id,
+                    model_key: seeded_model.model_key.clone(),
+                    resolved_model_key: seeded_model.model_key.clone(),
+                    route_id: seeded_route.id,
+                    provider_key: seeded_route.provider_key.clone(),
+                    upstream_model: seeded_route.upstream_model.clone(),
+                    endpoint: BatchEndpoint::Responses,
+                    status: BatchStatus::Queued,
+                    provider_batch_id: None,
+                    request_count: 1,
+                    completed_count: 0,
+                    failed_count: 0,
+                    cost_usd: None,
+                    pricing_status: BatchPricingStatus::Pending,
+                    provider_usage: None,
+                    error: None,
+                    created_at: batch_created_at,
+                    submitted_at: None,
+                    completed_at: None,
+                    updated_at: batch_created_at,
+                    next_poll_at: None,
+                    lease_owner: None,
+                    lease_expires_at: None,
+                    provider_context: ProviderRequestContext {
+                        request_id: batch_id.to_string(),
+                        model_key: seeded_model.model_key.clone(),
+                        provider_key: seeded_route.provider_key.clone(),
+                        upstream_model: seeded_route.upstream_model.clone(),
+                        extra_headers: seeded_route.extra_headers.clone(),
+                        extra_body: seeded_route.extra_body.clone(),
+                        request_headers: BTreeMap::new(),
+                        compatibility: seeded_route.compatibility.clone(),
+                    },
+                },
+                items: vec![NewBatchItem {
+                    batch_item_id: Uuid::new_v4(),
+                    custom_id: "seed-item".to_string(),
+                    request_body: json!({"input": "keep route history"}),
+                }],
+            })
+            .await
+            .expect("insert batch before reseed");
+
         store
             .seed_from_inputs(
                 &providers,
@@ -3349,6 +3427,12 @@ mod tests {
             )
             .await
             .expect("seed #2 idempotent");
+
+        let batch_after_reseed = store
+            .get_batch(batch_id, BatchAccessScope::All)
+            .await
+            .expect("batch remains readable after reseed");
+        assert_eq!(batch_after_reseed.route_id, seeded_route.id);
 
         let api_key = store
             .get_api_key_by_public_id("dev123")

@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 
 import {
   addTeamMembers,
+  cancelBatch,
   generateModelClientConfigs,
   listApiKeys,
   listModels,
@@ -17,6 +18,7 @@ import {
   listBudgetAlertHistory,
   reactivateUser,
   getRequestLogDetail,
+  getBatchResults,
   getHarnessUsage,
   getMcpInvocationDetail,
   previewMcpEffectiveAccess,
@@ -27,6 +29,7 @@ import {
   getInvitation,
   getGatewayVersion,
   listRequestLogs,
+  listBatches,
   listMcpInvocations,
   listMcpOauthConnections,
   listMcpServers,
@@ -208,6 +211,24 @@ export const removeBudget = createServerFn({ method: 'POST' }).handler(
 export const getRequestLogs = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data?: Parameters<typeof listRequestLogs>[0] }) => {
     return listRequestLogs(data)
+  },
+)
+
+export const getBatches = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data?: Parameters<typeof listBatches>[0] }) => {
+    return listBatches(data)
+  },
+)
+
+export const getBatchResultPage = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data: { batchId: string } }) => {
+    return getBatchResults(data.batchId)
+  },
+)
+
+export const cancelGatewayBatch = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { batchId: string } }) => {
+    return cancelBatch(data.batchId)
   },
 )
 

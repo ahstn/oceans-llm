@@ -10,7 +10,7 @@ use gateway_core::{
 use gateway_service::{
     RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, hash_gateway_key_secret,
 };
-use gateway_store::{AnyStore, GatewayStore};
+use gateway_store::{AnyStore, GatewayStore, seed_local_demo_batches};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -488,6 +488,47 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                 )
             })?;
     }
+
+    let user_batch_key = api_keys
+        .get("locdemoalice1")
+        .ok_or_else(|| anyhow::anyhow!("missing Alice demo API key for batch seed"))?;
+    let service_account = store
+        .list_service_accounts()
+        .await
+        .context("failed loading service accounts for batch seed")?
+        .into_iter()
+        .find(|account| account.service_account_key == "local-ci-runner")
+        .ok_or_else(|| anyhow::anyhow!("local-ci-runner service account is missing"))?;
+    let service_batch_key = store
+        .list_api_keys()
+        .await
+        .context("failed loading API keys for batch seed")?
+        .into_iter()
+        .find(|key| key.owner_service_account_id == Some(service_account.service_account_id))
+        .ok_or_else(|| anyhow::anyhow!("local-ci-runner managed API key is missing"))?;
+    let execution_model = store
+        .get_model_by_key("gpt-5.6-sol")
+        .await
+        .context("failed loading batch seed execution model")?
+        .ok_or_else(|| anyhow::anyhow!("batch seed execution model is missing"))?;
+    let route = store
+        .list_routes_for_model(execution_model.id)
+        .await
+        .context("failed loading batch seed route")?
+        .into_iter()
+        .find(|route| route.enabled)
+        .ok_or_else(|| anyhow::anyhow!("batch seed execution model has no enabled route"))?;
+    seed_local_demo_batches(
+        store,
+        user_batch_key,
+        &service_batch_key,
+        "openai-fast",
+        &execution_model,
+        &route,
+        now,
+    )
+    .await
+    .context("failed seeding local demo batches")?;
 
     Ok(raw_keys)
 }

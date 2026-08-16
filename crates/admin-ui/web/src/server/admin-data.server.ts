@@ -4,6 +4,10 @@ import type {
   ApiKeysPayload,
   AuthSessionView,
   BudgetAlertHistoryView,
+  BatchFiltersInput,
+  BatchPageView,
+  BatchResultsView,
+  BatchView,
   ChangePasswordInput,
   CreateApiKeyInput,
   CreateApiKeyResult,
@@ -308,6 +312,29 @@ export async function listRequestLogs(
       },
     }),
   )
+}
+
+export async function listBatches(filters: BatchFiltersInput = {}): Promise<BatchPageView> {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== '') {
+      params.set(key, String(value))
+    }
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : ''
+  return fetchGatewayJson<BatchPageView>(`/api/v1/batches${query}`)
+}
+
+export async function getBatchResults(batchId: string): Promise<BatchResultsView> {
+  return fetchGatewayJson<BatchResultsView>(
+    `/api/v1/batches/${encodeURIComponent(batchId)}/results?page=1&page_size=1000`,
+  )
+}
+
+export async function cancelBatch(batchId: string): Promise<BatchView> {
+  return fetchGatewayJson<BatchView>(`/api/v1/batches/${encodeURIComponent(batchId)}/cancel`, {
+    method: 'POST',
+  })
 }
 
 export async function getRequestLogDetail(

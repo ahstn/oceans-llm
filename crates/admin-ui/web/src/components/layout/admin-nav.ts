@@ -6,6 +6,7 @@ import {
   SaveMoneyDollarIcon,
   SearchIcon,
   RoboticIcon,
+  TaskDaily01Icon,
   UserIcon,
   UserGroupIcon,
   WaterfallUp02Icon,
@@ -39,6 +40,12 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       { page: 'api_keys', label: 'API Keys', to: '/api-keys', icon: SearchIcon },
       { page: 'models', label: 'Models', to: '/models', icon: HomeIcon },
+      {
+        page: 'request_logs',
+        label: 'Batch Requests',
+        to: '/batches',
+        icon: TaskDaily01Icon,
+      },
       connectionsNavItem,
       { page: 'mcp', label: 'MCP', to: '/mcp', icon: McpServerIcon },
       {

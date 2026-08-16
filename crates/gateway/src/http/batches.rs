@@ -17,7 +17,10 @@ use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
-use crate::http::{admin_auth::require_active_session, error::AppError, state::AppState};
+use crate::http::{
+    admin_auth::require_active_session, admin_contract::format_timestamp, error::AppError,
+    state::AppState,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateBatchRequest {
@@ -83,10 +86,10 @@ pub struct BatchResponse {
     pub pricing_status: BatchPricingStatus,
     pub provider_usage: Option<Value>,
     pub error: Option<Value>,
-    pub created_at: OffsetDateTime,
-    pub submitted_at: Option<OffsetDateTime>,
-    pub completed_at: Option<OffsetDateTime>,
-    pub updated_at: OffsetDateTime,
+    pub created_at: String,
+    pub submitted_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -107,7 +110,7 @@ pub struct BatchResultResponse {
     pub provider_request_id: Option<String>,
     pub provider_usage: Option<Value>,
     pub cost_usd: Option<f64>,
-    pub completed_at: Option<OffsetDateTime>,
+    pub completed_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -385,10 +388,10 @@ async fn batch_response(state: &AppState, job: BatchJobRecord) -> Result<BatchRe
         pricing_status: job.pricing_status,
         provider_usage: job.provider_usage,
         error: job.error,
-        created_at: job.created_at,
-        submitted_at: job.submitted_at,
-        completed_at: job.completed_at,
-        updated_at: job.updated_at,
+        created_at: format_timestamp(job.created_at),
+        submitted_at: job.submitted_at.map(format_timestamp),
+        completed_at: job.completed_at.map(format_timestamp),
+        updated_at: format_timestamp(job.updated_at),
     })
 }
 
@@ -402,7 +405,7 @@ fn result_response(item: BatchItemRecord) -> BatchResultResponse {
         provider_request_id: item.provider_request_id,
         provider_usage: item.provider_usage,
         cost_usd: money(item.cost_usd),
-        completed_at: item.completed_at,
+        completed_at: item.completed_at.map(format_timestamp),
     }
 }
 
