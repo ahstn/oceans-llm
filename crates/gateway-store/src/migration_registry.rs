@@ -224,6 +224,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V43__validate_cache_usage_accounting.sql"
         ),
     },
+    MigrationManifest {
+        version: 44,
+        name: "batch_jobs",
+        checksum: "V44__batch_jobs.sql",
+        libsql_sql: include_str!("../migrations/V44__batch_jobs.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V44__batch_jobs.sql"),
+    },
 ];
 
 #[cfg(test)]

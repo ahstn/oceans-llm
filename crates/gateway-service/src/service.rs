@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    AuthenticatedApiKey, BudgetAlertRepository, BudgetRecord, BudgetRepository,
-    ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
+    AuthenticatedApiKey, BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetRecord,
+    BudgetRepository, ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
     McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
-    PricingResolution, PricingUnpricedReason, ProviderRepository, RequestLogDetail, RequestLogPage,
-    RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-    RequestLogRetentionWindow, RequestTags, ResolvedModelPricing, ResponsesRequest, RouteError,
-    RoutePlanner, RoutePricingOverride, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
+    PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
+    RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
+    RequestLogRepository, RequestLogRetentionWindow, RequestTags, ResolvedModelPricing,
+    ResponsesRequest, RouteError, RoutePlanner, RoutePricingOverride, StoreHealth,
+    UsageLedgerRecord, UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -37,6 +38,12 @@ pub struct RecordedChatUsage {
     pub completion_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
     pub cost_usd: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchPricingPolicy {
+    HalfAllTokenRates,
+    VertexHalfNonCachedRates,
 }
 
 #[derive(Debug)]
@@ -678,6 +685,233 @@ where
             cost_usd: money_to_f64(record.computed_cost_usd),
         })
     }
+
+    pub async fn price_batch_usage(
+        &self,
+        route: &ModelRoute,
+        provider_usage: Option<&Value>,
+        policy: BatchPricingPolicy,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Option<Money4>, GatewayError> {
+        let usage = usage_summary_from_value(provider_usage)?;
+        if !usage.has_usage()
+            || matches!(usage.cache_usage, CacheUsageNormalization::Unsupported(_))
+        {
+            return Ok(None);
+        }
+        let rates = match self.resolve_route_pricing(route, occurred_at).await? {
+            PricingResolution::Exact { pricing } => BatchRates {
+                input: pricing.input_cost_per_million_tokens,
+                output: pricing.output_cost_per_million_tokens,
+                cache_read: pricing.cache_read_cost_per_million_tokens,
+                cache_write: pricing.cache_write_cost_per_million_tokens,
+            },
+            PricingResolution::ConfiguredOverride { pricing } => BatchRates {
+                input: Some(pricing.input_cost_per_million_tokens),
+                output: Some(pricing.output_cost_per_million_tokens),
+                cache_read: pricing.cache_read_cost_per_million_tokens,
+                cache_write: pricing.cache_write_cost_per_million_tokens,
+            },
+            PricingResolution::Unpriced { .. } => return Ok(None),
+        };
+        compute_batch_usage_cost(&usage, rates, policy)
+    }
+
+    pub async fn record_batch_usage(
+        &self,
+        auth: &AuthenticatedApiKey,
+        job: &BatchJobRecord,
+        results: &[ProviderBatchResult],
+        pricing_status: BatchPricingStatus,
+        cost_usd: Option<Money4>,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        let request_id = format!("batch:{}", job.batch_id);
+        let ownership_scope_key = usage_ownership_scope_key(auth)?;
+        let cost_usd = cost_usd.unwrap_or(Money4::ZERO);
+        if let Some(existing) = self
+            .store
+            .get_usage_ledger_by_request_and_scope(&request_id, &ownership_scope_key)
+            .await?
+        {
+            if existing.computed_cost_usd == cost_usd {
+                return Ok(());
+            }
+            return Err(GatewayError::Internal(format!(
+                "batch `{}` already has a different recorded cost",
+                job.batch_id
+            )));
+        }
+        let usage = aggregate_batch_usage(results)?;
+        let (ledger_pricing_status, unpriced_reason) = match pricing_status {
+            BatchPricingStatus::Priced | BatchPricingStatus::ProviderReported => {
+                (UsagePricingStatus::Priced, None)
+            }
+            BatchPricingStatus::PartiallyPriced => (
+                UsagePricingStatus::LegacyEstimated,
+                Some("batch_partially_priced".to_string()),
+            ),
+            BatchPricingStatus::Unpriced | BatchPricingStatus::Pending => (
+                UsagePricingStatus::Unpriced,
+                Some("batch_pricing_unavailable".to_string()),
+            ),
+        };
+        let record = UsageLedgerRecord {
+            usage_event_id: Uuid::new_v4(),
+            request_id,
+            ownership_scope_key,
+            api_key_id: auth.id,
+            user_id: auth.owner_user_id,
+            team_id: auth.owner_team_id,
+            service_account_id: auth.owner_service_account_id,
+            actor_user_id: None,
+            model_id: Some(job.model_id),
+            model_route_id: Some(job.route_id),
+            provider_key: job.provider_key.clone(),
+            upstream_model: job.upstream_model.clone(),
+            prompt_tokens: usage.prompt_tokens,
+            uncached_input_tokens: usage.uncached_input_tokens,
+            cache_read_tokens: usage.cache_read_tokens,
+            cache_write_tokens: usage.cache_write_tokens,
+            completion_tokens: usage.completion_tokens,
+            total_tokens: usage.total_tokens,
+            provider_usage: json!({
+                "processing_mode": "batch",
+                "batch_id": job.batch_id,
+                "item_count": results.len(),
+                "provider_batch_usage": job.provider_usage.clone(),
+            }),
+            pricing_status: ledger_pricing_status,
+            unpriced_reason,
+            pricing_row_id: None,
+            pricing_provider_id: None,
+            pricing_model_id: None,
+            pricing_source: None,
+            pricing_source_etag: None,
+            pricing_source_fetched_at: None,
+            pricing_last_updated: None,
+            input_cost_per_million_tokens: None,
+            output_cost_per_million_tokens: None,
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+            computed_cost_usd: cost_usd,
+            occurred_at,
+        };
+        if !self.store.insert_usage_ledger_if_absent(&record).await? {
+            let existing = self
+                .store
+                .get_usage_ledger_by_request_and_scope(
+                    &record.request_id,
+                    &record.ownership_scope_key,
+                )
+                .await?
+                .ok_or_else(|| {
+                    GatewayError::Internal(
+                        "batch usage insert lost its idempotency race".to_string(),
+                    )
+                })?;
+            if existing.computed_cost_usd != cost_usd {
+                return Err(GatewayError::Internal(format!(
+                    "batch `{}` raced with a different recorded cost",
+                    job.batch_id
+                )));
+            }
+            return Ok(());
+        }
+        if let Err(error) = self.budget_alerts.evaluate_after_usage(auth, &record).await {
+            warn!(batch_id = %job.batch_id, error = %error, "budget alert evaluation failed after batch usage insert");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BatchRates {
+    input: Option<Money4>,
+    output: Option<Money4>,
+    cache_read: Option<Money4>,
+    cache_write: Option<Money4>,
+}
+
+fn compute_batch_usage_cost(
+    usage: &UsageSummary,
+    rates: BatchRates,
+    policy: BatchPricingPolicy,
+) -> Result<Option<Money4>, GatewayError> {
+    let mut components = Vec::new();
+    match &usage.cache_usage {
+        CacheUsageNormalization::Valid(_) => {
+            components.push((usage.uncached_input_tokens, rates.input, true));
+            components.push((
+                usage.cache_read_tokens,
+                rates.cache_read,
+                policy == BatchPricingPolicy::HalfAllTokenRates,
+            ));
+            components.push((usage.cache_write_tokens, rates.cache_write, true));
+        }
+        CacheUsageNormalization::Unavailable | CacheUsageNormalization::Invalid(_) => {
+            components.push((usage.prompt_tokens, rates.input, true));
+        }
+        CacheUsageNormalization::Unsupported(_) => return Ok(None),
+    }
+    components.push((usage.completion_tokens, rates.output, true));
+
+    let mut total = Money4::ZERO;
+    for (tokens, rate, discounted) in components {
+        let tokens = tokens.unwrap_or_default();
+        if tokens == 0 {
+            continue;
+        }
+        let Some(rate) = rate else {
+            return Ok(None);
+        };
+        let mut cost = scaled_cost_for_tokens(tokens, rate)?;
+        if discounted {
+            cost = Money4::from_scaled((cost.as_scaled_i64() + 1) / 2);
+        }
+        total = total
+            .checked_add(cost)
+            .ok_or_else(|| GatewayError::Internal("batch usage cost overflow".to_string()))?;
+    }
+    Ok(Some(total))
+}
+
+fn aggregate_batch_usage(results: &[ProviderBatchResult]) -> Result<UsageSummary, GatewayError> {
+    let mut aggregate = UsageSummary::default();
+    let mut complete = true;
+    for result in results {
+        if result.error.is_some() {
+            continue;
+        }
+        let usage = usage_summary_from_value(result.provider_usage.as_ref())?;
+        complete &= usage.has_usage();
+        aggregate.prompt_tokens = add_optional(aggregate.prompt_tokens, usage.prompt_tokens)?;
+        aggregate.uncached_input_tokens =
+            add_optional(aggregate.uncached_input_tokens, usage.uncached_input_tokens)?;
+        aggregate.cache_read_tokens =
+            add_optional(aggregate.cache_read_tokens, usage.cache_read_tokens)?;
+        aggregate.cache_write_tokens =
+            add_optional(aggregate.cache_write_tokens, usage.cache_write_tokens)?;
+        aggregate.completion_tokens =
+            add_optional(aggregate.completion_tokens, usage.completion_tokens)?;
+        aggregate.total_tokens = add_optional(aggregate.total_tokens, usage.total_tokens)?;
+    }
+    Ok(if complete {
+        aggregate
+    } else {
+        UsageSummary::default()
+    })
+}
+
+fn add_optional(left: Option<i64>, right: Option<i64>) -> Result<Option<i64>, GatewayError> {
+    match (left, right) {
+        (None, None) => Ok(None),
+        (left, right) => left
+            .unwrap_or_default()
+            .checked_add(right.unwrap_or_default())
+            .map(Some)
+            .ok_or_else(|| GatewayError::Internal("batch token total overflow".to_string())),
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1206,7 +1440,37 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{CacheUsageNormalization, GatewayService, usage_summary_from_value};
+    use super::{
+        BatchPricingPolicy, BatchRates, CacheUsageNormalization, GatewayService,
+        compute_batch_usage_cost, usage_summary_from_value,
+    };
+
+    #[test]
+    fn batch_pricing_halves_openai_cache_reads_but_not_vertex_cache_reads() {
+        let usage = usage_summary_from_value(Some(&json!({
+            "input_tokens": 100_000,
+            "output_tokens": 10_000,
+            "input_tokens_details": {"cached_tokens": 90_000}
+        })))
+        .expect("usage");
+        let rates = BatchRates {
+            input: Some(Money4::from_scaled(10_000)),
+            output: Some(Money4::from_scaled(20_000)),
+            cache_read: Some(Money4::from_scaled(1_000)),
+            cache_write: Some(Money4::from_scaled(12_500)),
+        };
+
+        assert_eq!(
+            compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::HalfAllTokenRates,)
+                .expect("OpenAI price"),
+            Some(Money4::from_scaled(195))
+        );
+        assert_eq!(
+            compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::VertexHalfNonCachedRates,)
+                .expect("Vertex price"),
+            Some(Money4::from_scaled(240))
+        );
+    }
 
     #[derive(Clone, Default)]
     struct UsageAccountingRepo {

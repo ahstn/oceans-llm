@@ -58,6 +58,7 @@ fn vertex_provider_for_test(api_host: String) -> VertexProvider {
         },
         default_headers: BTreeMap::new(),
         request_timeout_ms: 5_000,
+        batch: None,
     })
     .expect("provider")
 }

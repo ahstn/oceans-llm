@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod batch;
 pub mod budgets;
 pub mod domain;
 pub mod error;
@@ -9,6 +10,13 @@ pub mod traits;
 
 pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
+};
+pub use batch::{
+    BatchAccessScope, BatchCapabilities, BatchEndpoint, BatchItemPage, BatchItemQuery,
+    BatchItemRecord, BatchItemStatus, BatchJobRecord, BatchPage, BatchPollUpdate,
+    BatchPricingStatus, BatchQuery, BatchStatus, MAX_BATCH_PAGE_SIZE, MAX_BATCH_RESULT_PAGE_SIZE,
+    NewBatchItem, NewBatchJob, ProviderBatchRequest, ProviderBatchRequestItem, ProviderBatchResult,
+    ProviderBatchState,
 };
 pub use budgets::{
     BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource,
@@ -97,10 +105,11 @@ pub use protocol::translate::{
 };
 pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};
 pub use traits::{
-    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, BudgetAlertRepository,
-    BudgetRepository, IdentityRepository, McpAccessRepository, McpAggregateSessionRepository,
-    McpRegistryRepository, McpTokenOverheadRepository, McpToolInvocationRepository,
-    McpUpstreamCredentialRepository, ModelRepository, PricingCatalogRepository, ProviderClient,
-    ProviderRegistry, ProviderRepository, ProviderStream, RequestAttemptRepository,
-    RequestLogRepository, ReviewAgentRepository, RoutePlanner, StoreHealth,
+    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, BatchRepository,
+    BudgetAlertRepository, BudgetRepository, IdentityRepository, McpAccessRepository,
+    McpAggregateSessionRepository, McpRegistryRepository, McpTokenOverheadRepository,
+    McpToolInvocationRepository, McpUpstreamCredentialRepository, ModelRepository,
+    PricingCatalogRepository, ProviderClient, ProviderRegistry, ProviderRepository, ProviderStream,
+    RequestAttemptRepository, RequestLogRepository, ReviewAgentRepository, RoutePlanner,
+    StoreHealth,
 };

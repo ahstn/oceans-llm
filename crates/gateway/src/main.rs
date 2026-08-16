@@ -209,6 +209,7 @@ async fn run_serve_with_store(
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     request_log_purge::spawn_loop(service.clone(), &config.request_logging.purge);
     let providers = build_provider_registry(config)?;
+    gateway::batch_worker::spawn(service.clone(), providers.clone());
     McpCredentialService::<AnyStore>::validate_runtime_configuration(
         !config.mcp.oauth.providers.is_empty(),
     )

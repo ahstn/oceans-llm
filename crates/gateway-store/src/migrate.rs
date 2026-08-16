@@ -91,6 +91,8 @@ const ACTIVE_APPLICATION_TABLES: &[&str] = &[
     "budget_alert_deliveries",
     "usage_cost_event_duplicates_archive",
     "usage_cost_events",
+    "batch_jobs",
+    "batch_items",
 ];
 
 #[derive(Debug, Clone, Default)]

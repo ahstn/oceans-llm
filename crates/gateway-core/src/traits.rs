@@ -8,6 +8,11 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    batch::{
+        BatchAccessScope, BatchCapabilities, BatchItemPage, BatchItemQuery, BatchItemRecord,
+        BatchJobRecord, BatchPage, BatchPollUpdate, BatchQuery, BatchStatus, NewBatchJob,
+        ProviderBatchRequest, ProviderBatchResult, ProviderBatchState,
+    },
     budgets::{BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource},
     domain::{
         ApiKeyModelGrantMode, ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
@@ -659,6 +664,93 @@ pub trait RequestAttemptRepository: Send + Sync {
 }
 
 #[async_trait]
+pub trait BatchRepository: Send + Sync {
+    async fn insert_batch(&self, batch: &NewBatchJob) -> Result<BatchJobRecord, StoreError>;
+
+    async fn get_batch_by_idempotency_key(
+        &self,
+        api_key_id: Uuid,
+        idempotency_key: &str,
+    ) -> Result<Option<BatchJobRecord>, StoreError>;
+
+    async fn get_batch(
+        &self,
+        batch_id: Uuid,
+        scope: BatchAccessScope,
+    ) -> Result<BatchJobRecord, StoreError>;
+
+    async fn list_batches(
+        &self,
+        query: &BatchQuery,
+        scope: BatchAccessScope,
+    ) -> Result<BatchPage, StoreError>;
+
+    async fn list_batch_items(
+        &self,
+        batch_id: Uuid,
+        query: &BatchItemQuery,
+        scope: BatchAccessScope,
+    ) -> Result<BatchItemPage, StoreError>;
+
+    async fn claim_batch_jobs(
+        &self,
+        worker_id: &str,
+        now: OffsetDateTime,
+        lease_expires_at: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<BatchJobRecord>, StoreError>;
+
+    async fn mark_stale_batch_submissions_unknown(
+        &self,
+        now: OffsetDateTime,
+    ) -> Result<u64, StoreError>;
+
+    async fn mark_batch_submitted(
+        &self,
+        batch_id: Uuid,
+        worker_id: &str,
+        state: &ProviderBatchState,
+        next_poll_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+
+    async fn mark_batch_submission_failed(
+        &self,
+        batch_id: Uuid,
+        worker_id: &str,
+        status: BatchStatus,
+        error: &Value,
+        completed_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+
+    async fn apply_batch_poll_update(
+        &self,
+        batch_id: Uuid,
+        worker_id: &str,
+        update: &BatchPollUpdate,
+    ) -> Result<(), StoreError>;
+
+    async fn release_batch_lease_after_error(
+        &self,
+        batch_id: Uuid,
+        worker_id: &str,
+        error: &Value,
+        next_poll_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+
+    async fn request_batch_cancel(
+        &self,
+        batch_id: Uuid,
+        scope: BatchAccessScope,
+        requested_at: OffsetDateTime,
+    ) -> Result<BatchJobRecord, StoreError>;
+
+    async fn get_batch_items_for_worker(
+        &self,
+        batch_id: Uuid,
+    ) -> Result<Vec<BatchItemRecord>, StoreError>;
+}
+
+#[async_trait]
 pub trait McpToolInvocationRepository: Send + Sync {
     async fn insert_mcp_tool_invocation(
         &self,
@@ -969,6 +1061,50 @@ pub trait ProviderClient: Send + Sync {
     fn provider_key(&self) -> &str;
     fn provider_type(&self) -> &str;
     fn capabilities(&self) -> ProviderCapabilities;
+    fn batch_capabilities(&self) -> BatchCapabilities {
+        BatchCapabilities::NONE
+    }
+
+    async fn submit_batch(
+        &self,
+        _request: &ProviderBatchRequest,
+    ) -> Result<ProviderBatchState, ProviderError> {
+        Err(ProviderError::NotImplemented(format!(
+            "{} does not support batch submission",
+            self.provider_type()
+        )))
+    }
+
+    async fn inspect_batch(
+        &self,
+        _provider_batch_id: &str,
+    ) -> Result<ProviderBatchState, ProviderError> {
+        Err(ProviderError::NotImplemented(format!(
+            "{} does not support batch inspection",
+            self.provider_type()
+        )))
+    }
+
+    async fn cancel_batch(
+        &self,
+        _provider_batch_id: &str,
+    ) -> Result<ProviderBatchState, ProviderError> {
+        Err(ProviderError::NotImplemented(format!(
+            "{} does not support batch cancellation",
+            self.provider_type()
+        )))
+    }
+
+    async fn batch_results(
+        &self,
+        _state: &ProviderBatchState,
+        _context: &ProviderRequestContext,
+    ) -> Result<Vec<ProviderBatchResult>, ProviderError> {
+        Err(ProviderError::NotImplemented(format!(
+            "{} does not support batch result retrieval",
+            self.provider_type()
+        )))
+    }
 
     async fn chat_completions(
         &self,

@@ -2,9 +2,10 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use gateway_core::{
-    CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, OpenAiCompatDeveloperRole,
-    OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-    OpenAiCompatRouteCompatibility, ProviderCapabilities, ProviderClient, ProviderError,
+    BatchCapabilities, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
+    OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField,
+    OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, ProviderBatchRequest,
+    ProviderBatchResult, ProviderBatchState, ProviderCapabilities, ProviderClient, ProviderError,
     ProviderRequestContext, ProviderStream, core_chat_request_to_openai,
     core_embeddings_request_to_openai, core_responses_request_to_openai,
 };
@@ -13,6 +14,22 @@ use serde_json::{Map, Value, json};
 use crate::http::{join_base_url, map_reqwest_error};
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTokenSource};
+
+mod batch;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OpenAiBatchDialect {
+    #[default]
+    Disabled,
+    OpenAi,
+    OpenRouter,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct OpenAiBatchConfig {
+    pub dialect: OpenAiBatchDialect,
+    pub base_url: Option<String>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BearerAuthHeader {
@@ -55,6 +72,7 @@ pub struct OpenAiCompatConfig {
     pub identity_token_source: Option<CachedAccessTokenSource>,
     pub default_headers: BTreeMap<String, String>,
     pub request_timeout_ms: u64,
+    pub batch: OpenAiBatchConfig,
 }
 
 impl OpenAiCompatConfig {
@@ -69,6 +87,7 @@ impl OpenAiCompatConfig {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 120_000,
+            batch: OpenAiBatchConfig::default(),
         }
     }
 
@@ -342,12 +361,50 @@ impl OpenAiCompatProvider {
     fn build_request(
         &self,
         endpoint_suffix: &str,
-        mut body: Value,
+        body: Value,
         context: &ProviderRequestContext,
         enforce_stream: bool,
         apply_compatibility_profile: bool,
         bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
+        let body = self.prepare_request_body(
+            endpoint_suffix,
+            body,
+            context,
+            enforce_stream,
+            apply_compatibility_profile,
+        )?;
+
+        let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
+
+        let mut request = self.client.post(url).json(&body);
+
+        for (header_name, header_value) in &self.config.default_headers {
+            request = request.header(header_name, header_value);
+        }
+        for (header_name, value) in &context.extra_headers {
+            if let Some(value) = value.as_str() {
+                request = request.header(header_name, value);
+            }
+        }
+
+        request = request.header("x-request-id", &context.request_id);
+
+        if let Some(bearer_token) = bearer_token {
+            request = self.config.bearer_auth_header.apply(request, bearer_token);
+        }
+
+        request.build().map_err(map_reqwest_error)
+    }
+
+    fn prepare_request_body(
+        &self,
+        endpoint_suffix: &str,
+        mut body: Value,
+        context: &ProviderRequestContext,
+        enforce_stream: bool,
+        apply_compatibility_profile: bool,
+    ) -> Result<Value, ProviderError> {
         if let Some(object) = body.as_object_mut() {
             for (key, value) in &context.extra_body {
                 object.insert(key.clone(), value.clone());
@@ -375,27 +432,7 @@ impl OpenAiCompatProvider {
                 ensure_stream_usage_requested(object);
             }
         }
-
-        let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
-
-        let mut request = self.client.post(url).json(&body);
-
-        for (header_name, header_value) in &self.config.default_headers {
-            request = request.header(header_name, header_value);
-        }
-        for (header_name, value) in &context.extra_headers {
-            if let Some(value) = value.as_str() {
-                request = request.header(header_name, value);
-            }
-        }
-
-        request = request.header("x-request-id", &context.request_id);
-
-        if let Some(bearer_token) = bearer_token {
-            request = self.config.bearer_auth_header.apply(request, bearer_token);
-        }
-
-        request.build().map_err(map_reqwest_error)
+        Ok(body)
     }
 
     async fn execute_json_request(
@@ -678,6 +715,39 @@ impl ProviderClient for OpenAiCompatProvider {
         ProviderCapabilities::openai_compat_baseline()
     }
 
+    fn batch_capabilities(&self) -> BatchCapabilities {
+        self.batch_capabilities_impl()
+    }
+
+    async fn submit_batch(
+        &self,
+        request: &ProviderBatchRequest,
+    ) -> Result<ProviderBatchState, ProviderError> {
+        self.submit_batch_impl(request).await
+    }
+
+    async fn inspect_batch(
+        &self,
+        provider_batch_id: &str,
+    ) -> Result<ProviderBatchState, ProviderError> {
+        self.inspect_batch_impl(provider_batch_id).await
+    }
+
+    async fn cancel_batch(
+        &self,
+        provider_batch_id: &str,
+    ) -> Result<ProviderBatchState, ProviderError> {
+        self.cancel_batch_impl(provider_batch_id).await
+    }
+
+    async fn batch_results(
+        &self,
+        state: &ProviderBatchState,
+        _context: &ProviderRequestContext,
+    ) -> Result<Vec<ProviderBatchResult>, ProviderError> {
+        self.batch_results_impl(state).await
+    }
+
     async fn chat_completions(
         &self,
         request: &CoreChatRequest,
@@ -772,7 +842,7 @@ mod tests {
     use serde_json::{Map, Value, json};
     use tokio::net::TcpListener;
 
-    use super::{BearerAuthHeader, OpenAiCompatConfig, OpenAiCompatProvider};
+    use super::{BearerAuthHeader, OpenAiBatchConfig, OpenAiCompatConfig, OpenAiCompatProvider};
 
     fn provider() -> OpenAiCompatProvider {
         OpenAiCompatProvider::new(OpenAiCompatConfig {
@@ -784,6 +854,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider")
     }
@@ -834,6 +905,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider")
     }
@@ -1069,6 +1141,7 @@ mod tests {
             identity_token_source: None,
             default_headers,
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -1137,6 +1210,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -1262,6 +1336,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -1702,6 +1777,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -1766,6 +1842,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -1843,6 +1920,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -1908,6 +1986,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -1977,6 +2056,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -2045,6 +2125,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -2110,6 +2191,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -2173,6 +2255,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -2241,6 +2324,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -2305,6 +2389,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -2369,6 +2454,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 
@@ -2433,6 +2519,7 @@ mod tests {
             identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
         })
         .expect("provider");
 

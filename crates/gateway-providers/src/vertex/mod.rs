@@ -5,8 +5,9 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
-    CoreChatMessage, CoreChatRequest, CoreContentPartType, CoreEmbeddingsRequest,
-    CoreResponsesRequest, ProviderCapabilities, ProviderClient, ProviderError,
+    BatchCapabilities, CoreChatMessage, CoreChatRequest, CoreContentPartType,
+    CoreEmbeddingsRequest, CoreResponsesRequest, ProviderBatchRequest, ProviderBatchResult,
+    ProviderBatchState, ProviderCapabilities, ProviderClient, ProviderError,
     ProviderRequestContext, ProviderStream, SseEventParser, Utf8ChunkDecoder,
     VERTEX_TEXT_EMBEDDING_MODEL_IDS, is_supported_vertex_text_embedding_model_id,
 };
@@ -24,6 +25,8 @@ use crate::{
     },
 };
 
+mod batch;
+
 #[derive(Debug, Clone)]
 pub enum VertexAuthConfig {
     Adc,
@@ -40,6 +43,13 @@ pub struct VertexProviderConfig {
     pub auth: VertexAuthConfig,
     pub default_headers: BTreeMap<String, String>,
     pub request_timeout_ms: u64,
+    pub batch: Option<VertexBatchConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VertexBatchConfig {
+    pub bigquery_project_id: String,
+    pub dataset: String,
 }
 
 #[derive(Clone)]
@@ -189,6 +199,39 @@ impl ProviderClient for VertexProvider {
 
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true)
+    }
+
+    fn batch_capabilities(&self) -> BatchCapabilities {
+        self.batch_capabilities_impl()
+    }
+
+    async fn submit_batch(
+        &self,
+        request: &ProviderBatchRequest,
+    ) -> Result<ProviderBatchState, ProviderError> {
+        self.submit_batch_impl(request).await
+    }
+
+    async fn inspect_batch(
+        &self,
+        provider_batch_id: &str,
+    ) -> Result<ProviderBatchState, ProviderError> {
+        self.inspect_batch_impl(provider_batch_id).await
+    }
+
+    async fn cancel_batch(
+        &self,
+        provider_batch_id: &str,
+    ) -> Result<ProviderBatchState, ProviderError> {
+        self.cancel_batch_impl(provider_batch_id).await
+    }
+
+    async fn batch_results(
+        &self,
+        state: &ProviderBatchState,
+        context: &ProviderRequestContext,
+    ) -> Result<Vec<ProviderBatchResult>, ProviderError> {
+        self.batch_results_impl(state, context).await
     }
 
     async fn chat_completions(

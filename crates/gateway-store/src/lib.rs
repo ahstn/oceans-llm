@@ -3,6 +3,7 @@
 //! Split plan: keep this root as a narrow export surface and move the large
 //! backend integration test module into domain-focused files under
 //! `tests/` or private test submodules as store domains continue to grow.
+mod any_store_batches;
 mod any_store_mcp_access;
 mod any_store_mcp_aggregate_sessions;
 mod any_store_mcp_credentials;
