@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { generateKeyPairSync } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -125,6 +125,7 @@ test('rejects an App private key with group or other access before any request',
   await writeFile(privateKeyPath, privateKey.export({ type: 'pkcs1', format: 'pem' }), {
     mode: 0o644,
   })
+  await chmod(privateKeyPath, 0o644)
   let requestCount = 0
 
   try {
