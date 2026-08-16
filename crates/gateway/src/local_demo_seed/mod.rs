@@ -960,16 +960,7 @@ mod tests {
         let store = AnyStore::connect(&options).await.expect("store");
         let (providers, models, teams, users) = demo_seed_prerequisites();
         store
-            .seed_from_inputs(
-                &providers,
-                &models,
-                &[],
-                &[],
-                &[],
-                &[],
-                &teams,
-                &users,
-            )
+            .seed_from_inputs(&providers, &models, &[], &[], &[], &[], &teams, &users)
             .await
             .expect("seed config");
         seed_local_demo_data(&store).await.expect("seed demo data");
