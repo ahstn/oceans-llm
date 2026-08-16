@@ -250,11 +250,11 @@ function copilotHeaders(
   }
 }
 
-async function getInstallation(fetchImplementation, config, appJwt) {
+async function getInstallation(fetchImplementation, config) {
   const { body } = await requestJson(
     fetchImplementation,
     `${config.githubApiUrl}/app/installations/${config.installationId}`,
-    { headers: githubHeaders(appJwt) },
+    { headers: githubHeaders(createAppJwt(config.appId, config.privateKey)) },
   )
   return body
 }
@@ -277,13 +277,13 @@ function validateInstallation(installation, config) {
   return `Organization ${owner}; All repositories; copilot_requests: write; ${SERVER_TO_SERVER_DOC}`
 }
 
-async function mintInstallationToken(fetchImplementation, config, appJwt, tokens) {
+async function mintInstallationToken(fetchImplementation, config, tokens) {
   const { body } = await requestJson(
     fetchImplementation,
     `${config.githubApiUrl}/app/installations/${config.installationId}/access_tokens`,
     {
       method: 'POST',
-      headers: githubHeaders(appJwt),
+      headers: githubHeaders(createAppJwt(config.appId, config.privateKey)),
       body: JSON.stringify({
         repository_ids: [config.repositoryId],
         permissions: { copilot_requests: 'write' },
@@ -534,6 +534,10 @@ function utcDayQuery(now = new Date()) {
   })
 }
 
+export function isCurrentUtcBillingDay(billingDayQuery, now = new Date()) {
+  return utcDayQuery(now).toString() === billingDayQuery
+}
+
 export function summarizeBilling(body) {
   const items = Array.isArray(body.usageItems) ? body.usageItems : []
   return items.reduce(
@@ -586,16 +590,16 @@ function printReport(report, output) {
   return report.result === 'PASS' ? 0 : report.result === 'INCOMPLETE' ? 2 : 1
 }
 
-async function verifyInstallation(fetchImplementation, config, report, appJwt) {
+async function verifyInstallation(fetchImplementation, config, report) {
   return runCheck(report, 'installation_owner_and_scope', true, async () => {
-    const installation = await getInstallation(fetchImplementation, config, appJwt)
+    const installation = await getInstallation(fetchImplementation, config)
     return checked(installation, validateInstallation(installation, config))
   })
 }
 
-async function mintInitialToken(fetchImplementation, config, report, appJwt, tokens) {
+async function mintInitialToken(fetchImplementation, config, report, tokens) {
   return runCheck(report, 'initial_installation_token', true, async () => {
-    const token = await mintInstallationToken(fetchImplementation, config, appJwt, tokens)
+    const token = await mintInstallationToken(fetchImplementation, config, tokens)
     return checked(
       token,
       `Minted a repository-scoped ghs_ token that expires at ${new Date(token.expiresAt).toISOString()}`,
@@ -726,13 +730,13 @@ async function runMessagesChecks(fetchImplementation, config, report, token, mod
   )
 }
 
-async function verifyRefresh(fetchImplementation, config, report, appJwt, firstToken, tokens) {
+async function verifyRefresh(fetchImplementation, config, report, firstToken, tokens) {
   if (!firstToken) {
     unavailable(report, 'token_refresh', true, 'The initial installation token was not available')
     return
   }
   await runCheck(report, 'token_refresh', true, async () => {
-    const refreshed = await mintInstallationToken(fetchImplementation, config, appJwt, tokens)
+    const refreshed = await mintInstallationToken(fetchImplementation, config, tokens)
     if (refreshed.token === firstToken) throw new Error('The refreshed token was not distinct')
     const models = await getModels(fetchImplementation, config, refreshed.token)
     return `A distinct refreshed ghs_ token authenticated to /models and returned ${models.length} models`
@@ -756,36 +760,51 @@ async function verifyBilling(
       ? `GitHub documents attribution to the installation owner, verified as ${config.expectedOwner}; ${SERVER_TO_SERVER_DOC}`
       : 'The installation owner could not be verified',
   )
-  if (!before) {
-    unavailable(report, 'billing_usage_delta', true, 'No readable billing baseline was available')
-  } else {
-    if (config.billingWaitSeconds > 0) await sleep(config.billingWaitSeconds)
-    const after = await runAvailabilityCheck(report, 'billing_api_after', true, async () => {
-      const summary = await getBillingSnapshot(fetchImplementation, config, billingDayQuery)
-      return checked(summary, `Daily organization aggregate after the canary: ${JSON.stringify(summary)}`)
-    })
-    if (after) {
-      const quantityDelta = after.netQuantity - before.netQuantity
-      const amountDelta = after.netAmount - before.netAmount
-      const changed = quantityDelta > 0 || amountDelta > 0
-      addCheck(
-        report,
-        'billing_usage_delta',
-        changed ? Status.PASS : Status.UNAVAILABLE,
-        true,
-        changed
-          ? `The daily aggregate increased: netQuantity delta=${quantityDelta}, netAmount delta=${amountDelta}`
-          : 'No aggregate increase was visible; GitHub billing data can lag the canary',
-      )
-    } else {
-      unavailable(report, 'billing_usage_delta', true, 'The post-canary billing aggregate was unavailable')
-    }
-  }
   unavailable(
     report,
     'billing_request_attribution',
     false,
     'The public billing API is daily aggregate data without installation or request IDs; it cannot attribute this request in isolation',
+  )
+  if (!before) {
+    unavailable(report, 'billing_usage_delta', true, 'No readable billing baseline was available')
+    return
+  }
+  if (config.billingWaitSeconds > 0) await sleep(config.billingWaitSeconds)
+  if (!isCurrentUtcBillingDay(billingDayQuery)) {
+    unavailable(
+      report,
+      'billing_api_after',
+      true,
+      'The UTC day changed after the billing baseline; rerun the canary on one UTC day',
+    )
+    unavailable(
+      report,
+      'billing_usage_delta',
+      true,
+      'No same-day billing comparison was possible after the UTC day changed',
+    )
+    return
+  }
+  const after = await runAvailabilityCheck(report, 'billing_api_after', true, async () => {
+    const summary = await getBillingSnapshot(fetchImplementation, config, billingDayQuery)
+    return checked(summary, `Daily organization aggregate after the canary: ${JSON.stringify(summary)}`)
+  })
+  if (!after) {
+    unavailable(report, 'billing_usage_delta', true, 'The post-canary billing aggregate was unavailable')
+    return
+  }
+  const quantityDelta = after.netQuantity - before.netQuantity
+  const amountDelta = after.netAmount - before.netAmount
+  const changed = quantityDelta > 0 || amountDelta > 0
+  addCheck(
+    report,
+    'billing_usage_delta',
+    changed ? Status.PASS : Status.UNAVAILABLE,
+    true,
+    changed
+      ? `The daily aggregate increased: netQuantity delta=${quantityDelta}, netAmount delta=${amountDelta}`
+      : 'No aggregate increase was visible; GitHub billing data can lag the canary',
   )
 }
 
@@ -817,11 +836,10 @@ async function executeCanary(fetchImplementation, config, report, tokens) {
     true,
     `${COMPATIBILITY_PROFILE.name}; editor=${config.editorVersion}; plugin=${config.pluginVersion}; integration=${config.integrationId}; intent=${COMPATIBILITY_PROFILE.intent}; interaction=${COMPATIBILITY_PROFILE.interaction_type}`,
   )
-  const appJwt = createAppJwt(config.appId, config.privateKey)
-  const installation = await verifyInstallation(fetchImplementation, config, report, appJwt)
+  const installation = await verifyInstallation(fetchImplementation, config, report)
   if (!installation) return
   const billingDayQuery = utcDayQuery().toString()
-  const initialToken = await mintInitialToken(fetchImplementation, config, report, appJwt, tokens)
+  const initialToken = await mintInitialToken(fetchImplementation, config, report, tokens)
   const billingBefore = await captureBillingBaseline(
     fetchImplementation,
     config,
@@ -837,7 +855,6 @@ async function executeCanary(fetchImplementation, config, report, tokens) {
     fetchImplementation,
     config,
     report,
-    appJwt,
     initialToken?.token,
     tokens,
   )

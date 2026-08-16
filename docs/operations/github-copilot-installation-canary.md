@@ -112,6 +112,8 @@ mise run copilot-installation-canary >copilot-canary-report.json
 
 Each GitHub and Copilot HTTP request has a 60-second deadline. Set `COPILOT_CANARY_REQUEST_TIMEOUT_MS` to a value from `1` through `600000` only when the target installation needs a different per-request deadline. The same deadline applies to token revocation.
 
+The billing baseline and after snapshot must use the same UTC day. If the run crosses UTC midnight, the canary marks the comparison `UNAVAILABLE` and asks you to run it again. It does not compare two different daily aggregates.
+
 `billing_usage_delta` is required. It is `PASS` only when the daily aggregate increases during the observation window. It is `UNAVAILABLE` when the endpoint cannot be read or no increase is visible, which keeps the final result `INCOMPLETE`. A visible increase supports the billing check, but it is not request-level proof when the organization has concurrent Copilot traffic.
 
 GitHub's Copilot audit log does not include local prompt session data. Do not use the absence of an audit event as evidence that the request was not billed.

@@ -8,6 +8,7 @@ import test from 'node:test'
 
 import {
   createAppJwt,
+  isCurrentUtcBillingDay,
   parseSse,
   resultStatus,
   runCanary,
@@ -109,6 +110,13 @@ test('summarizes the public billing aggregate without copying response details',
     }),
     { items: 2, netQuantity: 4, netAmount: 7 },
   )
+})
+
+test('detects when a billing comparison crosses a UTC day boundary', () => {
+  const baseline = 'year=2026&month=8&day=16'
+
+  assert.equal(isCurrentUtcBillingDay(baseline, new Date('2026-08-16T23:59:59Z')), true)
+  assert.equal(isCurrentUtcBillingDay(baseline, new Date('2026-08-17T00:00:00Z')), false)
 })
 
 test('marks required failures and unavailable checks distinctly', () => {
