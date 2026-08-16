@@ -1,8 +1,8 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"38c46f27db899736408a1371f78d79a3\"",
-    "fetched_at": "2026-08-15T09:09:31.094641Z"
+    "etag": "\"7a7a53c1806fe2554ff791875d9c8651\"",
+    "fetched_at": "2026-08-16T17:57:01.342559Z"
   },
   "providers": {
     "amazon-bedrock": {
@@ -7753,9 +7753,9 @@
           "release_date": "2026-04-24",
           "last_updated": "2026-04-24",
           "cost": {
-            "input": "0.0699",
-            "output": "0.1397",
-            "cache_read": "0.0140",
+            "input": "0.0615",
+            "output": "0.1229",
+            "cache_read": "0.0123",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -10384,9 +10384,9 @@
           "release_date": "2026-04-21",
           "last_updated": "2026-04-21",
           "cost": {
-            "input": "0.6500",
-            "output": "3.4100",
-            "cache_read": "0.1500",
+            "input": "0.5415",
+            "output": "2.2800",
+            "cache_read": "0.0912",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -10907,9 +10907,9 @@
           "release_date": "2026-08-11",
           "last_updated": "2026-08-11",
           "cost": {
-            "input": "0.1000",
-            "output": "0.2500",
-            "cache_read": "0.0500",
+            "input": "0.0800",
+            "output": "0.2000",
+            "cache_read": "0.0400",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -10917,7 +10917,7 @@
           "limit": {
             "context": 1000000,
             "input": null,
-            "output": 262144
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -13256,10 +13256,10 @@
           "release_date": "2025-09-08",
           "last_updated": "2025-09-08",
           "cost": {
-            "input": "0.4000",
-            "output": "1.2000",
+            "input": "0.2600",
+            "output": "0.7800",
             "cache_read": null,
-            "cache_write": "0.5000",
+            "cache_write": null,
             "input_audio": null,
             "output_audio": null
           },
@@ -13419,8 +13419,8 @@
           "release_date": "2025-04-28",
           "last_updated": "2025-04-28",
           "cost": {
-            "input": "0.1200",
-            "output": "0.5000",
+            "input": "0.1300",
+            "output": "0.5200",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -13429,7 +13429,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 16384
+            "output": 8192
           },
           "modalities": {
             "input": [
@@ -14225,9 +14225,9 @@
           "release_date": "2026-04-22",
           "last_updated": "2026-04-22",
           "cost": {
-            "input": "0.6000",
-            "output": "3.6000",
-            "cache_read": "0.1200",
+            "input": "0.3000",
+            "output": "2.0000",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -14235,7 +14235,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 65536
           },
           "modalities": {
             "input": [
@@ -14481,7 +14481,7 @@
           "cost": {
             "input": "0.4500",
             "output": "3.2000",
-            "cache_read": null,
+            "cache_read": "0.0500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -15700,9 +15700,9 @@
           "release_date": "2026-06-13",
           "last_updated": "2026-06-13",
           "cost": {
-            "input": "0.4900",
-            "output": "1.5400",
-            "cache_read": "0.0910",
+            "input": "0.3080",
+            "output": "0.9680",
+            "cache_read": "0.0572",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -15710,7 +15710,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 131072
+            "output": 128000
           },
           "modalities": {
             "input": [
@@ -15872,9 +15872,9 @@
           "release_date": "2026-08-01",
           "last_updated": "2026-08-01",
           "cost": {
-            "input": "0.0699",
-            "output": "0.1397",
-            "cache_read": "0.0140",
+            "input": "0.0603",
+            "output": "0.1206",
+            "cache_read": "0.0121",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -15882,7 +15882,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 384000
+            "output": 262144
           },
           "modalities": {
             "input": [
