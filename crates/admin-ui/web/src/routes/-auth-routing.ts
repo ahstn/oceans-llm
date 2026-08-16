@@ -1,4 +1,4 @@
-import type { AuthSessionView } from '@/types/api'
+import type { AdminAction, AuthSessionView } from '@/types/api'
 import {
   canAccessPage,
   getAdminPageForPath,
@@ -38,6 +38,13 @@ export function defaultSignedInPath(session: AuthSessionView) {
 
 export function isPlatformAdminSession(session: AuthSessionView | null | undefined) {
   return session?.user.global_role === 'platform_admin'
+}
+
+export function canPerformAdminAction(
+  session: AuthSessionView | null | undefined,
+  action: AdminAction,
+) {
+  return session?.permissions.actions.includes(action) ?? false
 }
 
 export function canAccessSignedInPath(session: AuthSessionView, path: string) {

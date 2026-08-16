@@ -458,16 +458,16 @@ test('regular identity directory is redacted and identity mutations fail without
   const scopedKeysBody = (await scopedKeysResponse.json()) as {
     data: {
       items: Array<{ id: string }>
-      users: unknown[]
+      users: Array<{ id: string }>
       service_accounts: unknown[]
-      models: unknown[]
+      models: Array<{ key: string }>
     }
   }
   expect(scopedKeysBody.data.items.some((item) => item.id === personalKeyIds[0])).toBe(true)
   expect(scopedKeysBody.data.items.some((item) => item.id === personalKeyIds[1])).toBe(false)
-  expect(scopedKeysBody.data.users).toEqual([])
+  expect(scopedKeysBody.data.users.map((user) => user.id)).toEqual([actor.id])
   expect(scopedKeysBody.data.service_accounts).toEqual([])
-  expect(scopedKeysBody.data.models).toEqual([])
+  expect(scopedKeysBody.data.models.some((model) => model.key === 'fast')).toBe(true)
 
   const directoryUsersResponse = await request.get(`${root}/api/v1/identity/directory/users`, {
     headers: { cookie: actor.cookie },

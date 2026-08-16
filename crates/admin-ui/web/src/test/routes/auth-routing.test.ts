@@ -48,6 +48,7 @@ describe('signed-in route selection', () => {
       permissions: {
         group: 'users',
         pages: [],
+        actions: [],
         default_page: null,
       },
     }

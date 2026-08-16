@@ -1,4 +1,12 @@
-import type { AdminPage, AuthSessionView } from '@/types/api'
+import type { AdminAction, AdminPage, AuthSessionView } from '@/types/api'
+
+export const userAdminActions: AdminAction[] = [
+  'create_api_key',
+  'update_api_key',
+  'revoke_api_key',
+]
+
+export const allAdminActions: AdminAction[] = [...userAdminActions, 'reveal_api_key']
 
 export const sharedAdminPages: AdminPage[] = [
   'api_keys',
@@ -35,6 +43,7 @@ export function platformAdminSession(pages = allAdminPages): AuthSessionView {
     permissions: {
       group: 'platform_admins',
       pages,
+      actions: allAdminActions,
       default_page: pages.includes('api_keys') ? 'api_keys' : pages[0],
     },
     user: {
@@ -52,6 +61,7 @@ export function regularUserSession(pages = sharedAdminPages): AuthSessionView {
     permissions: {
       group: 'users',
       pages,
+      actions: userAdminActions,
       default_page: pages.includes('usage_costs') ? 'usage_costs' : pages[0],
     },
     user: {

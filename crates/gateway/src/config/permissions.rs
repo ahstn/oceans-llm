@@ -25,6 +25,28 @@ pub enum AdminPage {
     ServiceAccounts,
 }
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AdminAction {
+    CreateApiKey,
+    UpdateApiKey,
+    RevokeApiKey,
+    RevealApiKey,
+}
+
+impl fmt::Display for AdminAction {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::CreateApiKey => "create_api_key",
+            Self::UpdateApiKey => "update_api_key",
+            Self::RevokeApiKey => "revoke_api_key",
+            Self::RevealApiKey => "reveal_api_key",
+        })
+    }
+}
+
 impl fmt::Display for AdminPage {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
@@ -80,34 +102,36 @@ impl fmt::Display for AdminPermissionGroup {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct PermissionsConfig {
-    pub platform_admins: Option<PagePermissionSetConfig>,
-    pub team_admins: Option<PagePermissionSetConfig>,
-    pub users: Option<PagePermissionSetConfig>,
+    pub platform_admins: Option<PermissionSetConfig>,
+    pub team_admins: Option<PermissionSetConfig>,
+    pub users: Option<PermissionSetConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PagePermissionSetConfig {
+pub struct PermissionSetConfig {
     pub pages: Option<Vec<AdminPage>>,
+    pub actions: Option<Vec<AdminAction>>,
     pub default_page: Option<AdminPage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedPagePermissions {
+pub struct ResolvedPermissionSet {
     pub pages: Vec<AdminPage>,
+    pub actions: Vec<AdminAction>,
     pub default_page: Option<AdminPage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedAdminPermissions {
-    users: ResolvedPagePermissions,
-    team_admins: ResolvedPagePermissions,
-    platform_admins: ResolvedPagePermissions,
+    users: ResolvedPermissionSet,
+    team_admins: ResolvedPermissionSet,
+    platform_admins: ResolvedPermissionSet,
 }
 
 impl ResolvedAdminPermissions {
     #[must_use]
-    pub fn for_group(&self, group: AdminPermissionGroup) -> &ResolvedPagePermissions {
+    pub fn for_group(&self, group: AdminPermissionGroup) -> &ResolvedPermissionSet {
         match group {
             AdminPermissionGroup::PlatformAdmins => &self.platform_admins,
             AdminPermissionGroup::TeamAdmins => &self.team_admins,
@@ -133,16 +157,34 @@ impl PermissionsConfig {
             DEFAULT_PLATFORM_ADMIN_PAGES,
             AdminPermissionGroup::PlatformAdmins,
         )?;
+        let user_action_direct = direct_actions(
+            self.users.as_ref(),
+            DEFAULT_USER_ACTIONS,
+            AdminPermissionGroup::Users,
+        )?;
+        let team_admin_action_direct = direct_actions(
+            self.team_admins.as_ref(),
+            DEFAULT_TEAM_ADMIN_ACTIONS,
+            AdminPermissionGroup::TeamAdmins,
+        )?;
+        let platform_admin_action_direct = direct_actions(
+            self.platform_admins.as_ref(),
+            DEFAULT_PLATFORM_ADMIN_ACTIONS,
+            AdminPermissionGroup::PlatformAdmins,
+        )?;
 
         let users = resolve_group(
             &user_direct,
+            &user_action_direct,
             self.users.as_ref().and_then(|group| group.default_page),
             AdminPage::UsageCosts,
             AdminPermissionGroup::Users,
         )?;
         let team_admin_pages = union_pages(&[&user_direct, &team_admin_direct]);
+        let team_admin_actions = union_actions(&[&user_action_direct, &team_admin_action_direct]);
         let team_admins = resolve_group(
             &team_admin_pages,
+            &team_admin_actions,
             self.team_admins
                 .as_ref()
                 .and_then(|group| group.default_page),
@@ -151,8 +193,14 @@ impl PermissionsConfig {
         )?;
         let platform_admin_pages =
             union_pages(&[&user_direct, &team_admin_direct, &platform_admin_direct]);
+        let platform_admin_actions = union_actions(&[
+            &user_action_direct,
+            &team_admin_action_direct,
+            &platform_admin_action_direct,
+        ]);
         let platform_admins = resolve_group(
             &platform_admin_pages,
+            &platform_admin_actions,
             self.platform_admins
                 .as_ref()
                 .and_then(|group| group.default_page),
@@ -205,8 +253,25 @@ const DEFAULT_PLATFORM_ADMIN_PAGES: &[AdminPage] = &[
     AdminPage::SpendControls,
 ];
 
+const ADMIN_ACTION_ORDER: &[AdminAction] = &[
+    AdminAction::CreateApiKey,
+    AdminAction::UpdateApiKey,
+    AdminAction::RevokeApiKey,
+    AdminAction::RevealApiKey,
+];
+
+const USER_ACTIONS: &[AdminAction] = &[
+    AdminAction::CreateApiKey,
+    AdminAction::UpdateApiKey,
+    AdminAction::RevokeApiKey,
+];
+
+const DEFAULT_USER_ACTIONS: &[AdminAction] = USER_ACTIONS;
+const DEFAULT_TEAM_ADMIN_ACTIONS: &[AdminAction] = &[AdminAction::RevealApiKey];
+const DEFAULT_PLATFORM_ADMIN_ACTIONS: &[AdminAction] = &[];
+
 fn direct_pages(
-    config: Option<&PagePermissionSetConfig>,
+    config: Option<&PermissionSetConfig>,
     default_pages: &[AdminPage],
     group: AdminPermissionGroup,
 ) -> Result<Vec<AdminPage>> {
@@ -225,8 +290,41 @@ fn direct_pages(
     Ok(normalize_pages(pages.iter().copied()))
 }
 
+fn direct_actions(
+    config: Option<&PermissionSetConfig>,
+    default_actions: &[AdminAction],
+    group: AdminPermissionGroup,
+) -> Result<Vec<AdminAction>> {
+    let actions = config
+        .and_then(|group| group.actions.as_deref())
+        .unwrap_or(default_actions);
+    let capability_ceiling = match group {
+        AdminPermissionGroup::PlatformAdmins | AdminPermissionGroup::TeamAdmins => {
+            ADMIN_ACTION_ORDER
+        }
+        AdminPermissionGroup::Users => USER_ACTIONS,
+    };
+
+    if let Some(action) = actions
+        .iter()
+        .find(|action| !capability_ceiling.contains(action))
+    {
+        bail!("action `{action}` is not supported for permission group `{group}`");
+    }
+
+    Ok(normalize_actions(actions.iter().copied()))
+}
+
 fn union_pages(page_sets: &[&[AdminPage]]) -> Vec<AdminPage> {
     normalize_pages(page_sets.iter().flat_map(|pages| pages.iter().copied()))
+}
+
+fn union_actions(action_sets: &[&[AdminAction]]) -> Vec<AdminAction> {
+    normalize_actions(
+        action_sets
+            .iter()
+            .flat_map(|actions| actions.iter().copied()),
+    )
 }
 
 fn normalize_pages(pages: impl IntoIterator<Item = AdminPage>) -> Vec<AdminPage> {
@@ -238,12 +336,22 @@ fn normalize_pages(pages: impl IntoIterator<Item = AdminPage>) -> Vec<AdminPage>
         .collect()
 }
 
+fn normalize_actions(actions: impl IntoIterator<Item = AdminAction>) -> Vec<AdminAction> {
+    let actions = actions.into_iter().collect::<BTreeSet<_>>();
+    ADMIN_ACTION_ORDER
+        .iter()
+        .filter(|action| actions.contains(action))
+        .copied()
+        .collect()
+}
+
 fn resolve_group(
     pages: &[AdminPage],
+    actions: &[AdminAction],
     configured_default: Option<AdminPage>,
     preferred_default: AdminPage,
     group: AdminPermissionGroup,
-) -> Result<ResolvedPagePermissions> {
+) -> Result<ResolvedPermissionSet> {
     if let Some(default_page) = configured_default
         && !pages.contains(&default_page)
     {
@@ -258,8 +366,9 @@ fn resolve_group(
         })
         .or_else(|| pages.first().copied());
 
-    Ok(ResolvedPagePermissions {
+    Ok(ResolvedPermissionSet {
         pages: pages.to_vec(),
+        actions: actions.to_vec(),
         default_page,
     })
 }
@@ -279,6 +388,9 @@ mod tests {
         assert_eq!(resolved.users.pages, SHARED_PAGES);
         assert_eq!(resolved.team_admins.pages, SHARED_PAGES);
         assert_eq!(resolved.platform_admins.pages, ADMIN_PAGE_ORDER);
+        assert_eq!(resolved.users.actions, USER_ACTIONS);
+        assert_eq!(resolved.team_admins.actions, ADMIN_ACTION_ORDER);
+        assert_eq!(resolved.platform_admins.actions, ADMIN_ACTION_ORDER);
         assert_eq!(resolved.users.default_page, Some(AdminPage::UsageCosts));
         assert_eq!(
             resolved.platform_admins.default_page,
@@ -292,10 +404,13 @@ mod tests {
             r#"
 users:
   pages: [models, api_keys, api_keys]
+  actions: [update_api_key, create_api_key, create_api_key]
 team_admins:
   pages: [leaderboard, models]
+  actions: [reveal_api_key, update_api_key]
 platform_admins:
   pages: [mcp, leaderboard]
+  actions: [revoke_api_key, reveal_api_key]
 "#,
         );
         let resolved = config.resolve().expect("permissions");
@@ -321,6 +436,19 @@ platform_admins:
                 AdminPage::Leaderboard
             ]
         );
+        assert_eq!(
+            resolved.users.actions,
+            vec![AdminAction::CreateApiKey, AdminAction::UpdateApiKey]
+        );
+        assert_eq!(
+            resolved.team_admins.actions,
+            vec![
+                AdminAction::CreateApiKey,
+                AdminAction::UpdateApiKey,
+                AdminAction::RevealApiKey,
+            ]
+        );
+        assert_eq!(resolved.platform_admins.actions, ADMIN_ACTION_ORDER);
     }
 
     #[test]
@@ -329,10 +457,13 @@ platform_admins:
             r#"
 users:
   pages: []
+  actions: []
 team_admins:
   pages: []
+  actions: []
 platform_admins:
   pages: []
+  actions: []
 "#,
         );
         let resolved = config.resolve().expect("permissions");
@@ -340,6 +471,9 @@ platform_admins:
         assert!(resolved.users.pages.is_empty());
         assert!(resolved.team_admins.pages.is_empty());
         assert!(resolved.platform_admins.pages.is_empty());
+        assert!(resolved.users.actions.is_empty());
+        assert!(resolved.team_admins.actions.is_empty());
+        assert!(resolved.platform_admins.actions.is_empty());
         assert_eq!(resolved.users.default_page, None);
     }
 
@@ -378,6 +512,14 @@ users:
 "#,
         );
         assert!(unsupported_page.resolve().is_err());
+
+        let unsupported_action = parse(
+            r#"
+users:
+  actions: [reveal_api_key]
+"#,
+        );
+        assert!(unsupported_action.resolve().is_err());
     }
 
     #[test]
@@ -390,6 +532,10 @@ users:
             .is_err()
         );
         assert!(serde_yaml::from_str::<PermissionsConfig>("users:\n  pages: [new_page]").is_err());
+        assert!(
+            serde_yaml::from_str::<PermissionsConfig>("users:\n  actions: [delete_everything]")
+                .is_err()
+        );
     }
 
     #[test]

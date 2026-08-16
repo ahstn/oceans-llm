@@ -53,6 +53,21 @@ Service Accounts allows active users to list accounts for their own active team.
 
 Page grants are a console policy, not a general RBAC system. Handlers continue to enforce active sessions, platform roles, team scope, ownership, and mutation rules. Personal spend, request logs, MCP invocations, API keys, and identity directories keep their existing data scope.
 
+## Amendment: API-key action permissions
+
+On 2026-08-06, the permission sets gained an `actions` list. This first action catalog contains `create_api_key`, `update_api_key`, `revoke_api_key`, and `reveal_api_key`.
+
+Action grants use the same direct-grant and inheritance rules as page grants. Users can receive create, update, and revoke. Team admins and platform admins can also receive reveal. Unknown actions and grants above a group ceiling fail startup validation.
+
+Unlike page grants, action grants are authorization rules. The API checks the resolved action before it applies the existing resource scope. The UI uses the same session action set to show each control. An action grant cannot widen ownership:
+
+- users can create, update, and revoke only their personal API keys
+- team owners and team admins can also manage service-account keys for their team
+- only team owners, team admins, and platform admins can receive `reveal_api_key`; non-platform admins can reveal only their team's service-account keys
+- platform admins keep global API-key scope
+
+The default user actions are create, update, and revoke. The default direct team-admin action is reveal. Platform admins inherit all four actions. An explicit empty direct list still keeps lower-group actions through inheritance.
+
 ## Consequences
 
 Benefits:
@@ -62,17 +77,20 @@ Benefits:
 - SSR, client navigation, and direct URLs use one effective policy
 - session responses make the selected policy explicit and testable
 - default regular users can inspect global rankings, harness use, and their team's service accounts
+- users can manage their personal API-key lifecycle without a platform admin
+- action configuration and API authorization use one typed policy
 
 Trade-offs:
 
 - a config change needs a gateway restart
 - the global leaderboard exposes cross-team operational data to all active users
 - page hiding does not block direct API calls
+- each new action identifier needs an API check, UI check, capability ceiling, and resource-scope test
 - adding a new page requires a page identifier, UI registry entry, capability review, and config update
 
 ## Follow-up work
 
-- Add action-level permissions only if page-level control is too broad for future workflows.
+- Add action identifiers for other control-plane operations only when their API and resource-scope rules are part of the same change.
 - Widen a capability ceiling only after its API authorization and data scope support that audience.
 
 ## Attribution

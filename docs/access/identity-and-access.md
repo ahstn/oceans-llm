@@ -67,15 +67,15 @@ The gateway selects one page permission group for each browser session:
 - A regular user with an `owner` or `admin` team membership is in `team_admins`.
 - A regular team member or teamless user is in `users`.
 
-The gateway resolves the effective page set from config. Team admins inherit all user pages. Platform admins inherit all team-admin and user pages. A repeated grant is safe and appears once. The session response includes the selected group, effective pages, and default page. Membership changes affect the next session response.
+The gateway resolves the effective page and action sets from config. Team admins inherit all user grants. Platform admins inherit all team-admin and user grants. A repeated grant is safe and appears once. The session response includes the selected group, effective pages, effective actions, and default page. Membership changes affect the next session response.
 
-Page permissions control admin UI navigation, direct routes, and landing pages. They do not authorize API calls. Each API still checks the active session, role, ownership, and data scope that apply to that operation. See the [`permissions` config reference](../configuration/configuration-reference.md#permissions) for syntax and validation.
+Page permissions control admin UI navigation, direct routes, and landing pages. They do not authorize API calls. API-key action permissions control both the API operation and its UI control. Each allowed action still checks the active session, ownership, team scope, and resource state. See the [`permissions` config reference](../configuration/configuration-reference.md#permissions) for syntax and validation.
 
 The default UI policy is:
 
 - Platform admins can use all 13 signed-in pages.
 - Team admins and regular users can open API Keys, Models, Teams, Users, Usage Costs, Leaderboard, Agent Harnesses, Request Logs, MCP Invocations, and Service Accounts.
-- The API Keys page shows credentials owned by the signed-in user. Active team owners and team admins also see service-account credentials for their team. The regular-user view does not show mutation controls.
+- The API Keys page shows credentials owned by the signed-in user. By default, users can create, update, and revoke their own keys. Active team owners and team admins can also manage and reveal service-account credentials for their team. Personal key secrets are shown only once, at creation.
 - The Models page shows the full routed-model catalog and can generate client configuration. Model allowlist membership and pricing refresh stay platform-admin-only.
 - The Teams and Users pages show the full identity directory read-only. Onboarding links, provider setup data, assignable-user payloads, and all identity mutations stay platform-admin-only.
 - Regular-user spend queries are forced to the signed-in user and exclude service-account spend.

@@ -36,8 +36,10 @@ export function useApiKeysPageState({
   items,
   users,
   service_accounts,
+  defaultOwnerUserId,
   focusedApiKeyId,
 }: Pick<ApiKeysPayload, 'items' | 'users' | 'service_accounts'> & {
+  defaultOwnerUserId?: string
   focusedApiKeyId?: string
 }) {
   const router = useRouter()
@@ -80,7 +82,12 @@ export function useApiKeysPageState({
   }
 
   function openCreateDialog() {
-    setForm(initialForm)
+    setForm({
+      ...initialForm,
+      owner_user_id: users.some((user) => user.id === defaultOwnerUserId)
+        ? (defaultOwnerUserId ?? null)
+        : null,
+    })
     setIsCreateOpen(true)
   }
 

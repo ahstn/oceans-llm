@@ -17,6 +17,9 @@ const sharedPages = [
   'service_accounts',
 ]
 
+const userActions = ['create_api_key', 'update_api_key', 'revoke_api_key']
+const teamAdminActions = [...userActions, 'reveal_api_key']
+
 test('resolved groups support shared global reads and team-scoped service accounts', async ({
   request,
   page,
@@ -46,10 +49,84 @@ test('resolved groups support shared global reads and team-scoped service accoun
     primaryTeam.id,
     'Primary Automation',
   )
-  await createServiceAccount(request, root, adminCookie, otherTeam.id, 'Other Automation')
+  const otherAccount = await createServiceAccount(
+    request,
+    root,
+    adminCookie,
+    otherTeam.id,
+    'Other Automation',
+  )
+  await createServiceAccountBudget(request, root, adminCookie, primaryAccount.id)
+  await createServiceAccountBudget(request, root, adminCookie, otherAccount.id)
 
   await expectSessionPermissions(request, root, teamAdmin.cookie, 'team_admins')
   await expectSessionPermissions(request, root, member.cookie, 'users')
+
+  const personalKeyResponse = await request.post(`${root}/api/v1/admin/api-keys`, {
+    headers: { cookie: member.cookie, 'content-type': 'application/json' },
+    data: {
+      name: 'Member personal key',
+      owner_kind: 'user',
+      owner_user_id: member.id,
+      owner_team_id: null,
+      owner_service_account_id: null,
+      model_grant_mode: 'all',
+      model_keys: [],
+    },
+  })
+  expect(personalKeyResponse.status()).toBe(200)
+  const personalKeyBody = (await personalKeyResponse.json()) as {
+    data: { api_key: { id: string } }
+  }
+
+  const updatePersonalKey = await request.patch(
+    `${root}/api/v1/admin/api-keys/${personalKeyBody.data.api_key.id}`,
+    {
+      headers: { cookie: member.cookie, 'content-type': 'application/json' },
+      data: { model_grant_mode: 'explicit', model_keys: ['fast'] },
+    },
+  )
+  expect(updatePersonalKey.status()).toBe(200)
+
+  const revokePersonalKey = await request.post(
+    `${root}/api/v1/admin/api-keys/${personalKeyBody.data.api_key.id}/revoke`,
+    { headers: { cookie: member.cookie } },
+  )
+  expect(revokePersonalKey.status()).toBe(200)
+
+  const forbiddenPersonalKey = await request.post(`${root}/api/v1/admin/api-keys`, {
+    headers: { cookie: member.cookie, 'content-type': 'application/json' },
+    data: {
+      name: 'Forbidden cross-user key',
+      owner_kind: 'user',
+      owner_user_id: teamAdmin.id,
+      owner_team_id: null,
+      owner_service_account_id: null,
+      model_grant_mode: 'all',
+      model_keys: [],
+    },
+  })
+  expect(forbiddenPersonalKey.status()).toBe(403)
+
+  const teamServiceKey = await createApiKeyForServiceAccount(
+    request,
+    root,
+    teamAdmin.cookie,
+    primaryTeam.id,
+    primaryAccount.id,
+    'Managed team key',
+  )
+  expect(teamServiceKey.status()).toBe(200)
+
+  const forbiddenOtherTeamKey = await createApiKeyForServiceAccount(
+    request,
+    root,
+    teamAdmin.cookie,
+    otherTeam.id,
+    otherAccount.id,
+    'Forbidden other-team key',
+  )
+  expect(forbiddenOtherTeamKey.status()).toBe(403)
 
   const scopedAccounts = await request.get(`${root}/api/v1/admin/identity/service-accounts`, {
     headers: { cookie: member.cookie },
@@ -160,6 +237,47 @@ async function createServiceAccount(
   return body.data
 }
 
+async function createApiKeyForServiceAccount(
+  request: APIRequestContext,
+  root: string,
+  cookie: string,
+  teamId: string,
+  serviceAccountId: string,
+  name: string,
+) {
+  return request.post(`${root}/api/v1/admin/api-keys`, {
+    headers: { cookie, 'content-type': 'application/json' },
+    data: {
+      name,
+      owner_kind: 'service_account',
+      owner_user_id: null,
+      owner_team_id: teamId,
+      owner_service_account_id: serviceAccountId,
+      model_grant_mode: 'explicit',
+      model_keys: ['fast'],
+    },
+  })
+}
+
+async function createServiceAccountBudget(
+  request: APIRequestContext,
+  root: string,
+  adminCookie: string,
+  serviceAccountId: string,
+) {
+  const response = await request.put(`${root}/api/v1/admin/spend/budgets`, {
+    headers: { cookie: adminCookie, 'content-type': 'application/json' },
+    data: {
+      scope: { kind: 'service_account', service_account_id: serviceAccountId },
+      cadence: 'daily',
+      amount_usd: '100.0000',
+      hard_limit: true,
+      timezone: 'UTC',
+    },
+  })
+  expect(response.status()).toBe(200)
+}
+
 async function expectSessionPermissions(
   request: APIRequestContext,
   root: string,
@@ -169,11 +287,14 @@ async function expectSessionPermissions(
   const response = await request.get(`${root}/api/v1/auth/session`, { headers: { cookie } })
   expect(response.status()).toBe(200)
   const body = (await response.json()) as {
-    data: { permissions: { group: string; pages: string[]; default_page: string } }
+    data: {
+      permissions: { group: string; pages: string[]; actions: string[]; default_page: string }
+    }
   }
   expect(body.data.permissions).toEqual({
     group,
     pages: sharedPages,
+    actions: group === 'team_admins' ? teamAdminActions : userActions,
     default_page: 'usage_costs',
   })
 }

@@ -191,6 +191,17 @@ where
             ],
             None => Vec::new(),
         };
+        let active_service_accounts = match team_id {
+            Some(team_id) => {
+                self.repo
+                    .list_active_service_accounts_for_team(team_id)
+                    .await?
+            }
+            None => Vec::new(),
+        };
+        let service_account_owners =
+            build_service_account_owner_options(&active_service_accounts, &teams)?;
+        let models = self.repo.list_models().await?;
 
         let service_account_ids: BTreeSet<_> = api_keys
             .iter()
@@ -222,9 +233,24 @@ where
 
         Ok(AdminApiKeysPayload {
             items,
-            users: Vec::new(),
-            service_accounts: Vec::new(),
-            models: Vec::new(),
+            users: users
+                .iter()
+                .map(|user| AdminApiKeyUserOwner {
+                    id: user.user.user_id,
+                    name: user.user.name.clone(),
+                    email: user.user.email.clone(),
+                })
+                .collect(),
+            service_accounts: service_account_owners,
+            models: models
+                .into_iter()
+                .map(|model| AdminApiKeyModelOption {
+                    id: model.id,
+                    key: model.model_key,
+                    description: model.description,
+                    tags: model.tags,
+                })
+                .collect(),
         })
     }
 

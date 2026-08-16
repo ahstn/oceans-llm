@@ -42,6 +42,10 @@ The default `users` set will include Leaderboard, Agent Harnesses, and Service A
 - Do not persist page permissions in the database.
 - Do not hot-reload page permissions. A gateway restart will apply config changes.
 
+### Follow-up
+
+On 2026-08-06, a later change added enforced API-key actions to the same permission sets. The non-goal above records the scope of this original page-permission phase. See the [ADR amendment](../../adr/2026-08-05-configurable-admin-page-permissions.md#amendment-api-key-action-permissions) and the current [`permissions` config reference](../../configuration/configuration-reference.md#permissions).
+
 ## Current Behavior
 
 PR #261 added a hard-coded two-level UI policy:

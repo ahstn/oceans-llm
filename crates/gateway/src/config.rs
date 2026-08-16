@@ -32,8 +32,8 @@ mod permissions;
 mod providers;
 
 pub use permissions::{
-    AdminPage, AdminPermissionGroup, PagePermissionSetConfig, PermissionsConfig,
-    ResolvedAdminPermissions, ResolvedPagePermissions,
+    AdminAction, AdminPage, AdminPermissionGroup, PermissionSetConfig, PermissionsConfig,
+    ResolvedAdminPermissions, ResolvedPermissionSet,
 };
 
 pub use providers::{

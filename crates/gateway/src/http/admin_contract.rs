@@ -16,7 +16,7 @@ use utoipa::{
     },
 };
 
-use crate::config::{AdminPage, AdminPermissionGroup};
+use crate::config::{AdminAction, AdminPage, AdminPermissionGroup};
 
 pub const ADMIN_OPENAPI_PATH: &str = "crates/gateway/openapi/admin-api.json";
 const ADMIN_OPENAPI_DOCUMENT_VERSION: &str = "0.0.0";
@@ -426,6 +426,7 @@ pub struct AuthSessionView {
 pub struct AuthSessionPermissionsView {
     pub group: AdminPermissionGroup,
     pub pages: Vec<AdminPage>,
+    pub actions: Vec<AdminAction>,
     pub default_page: Option<AdminPage>,
 }
 

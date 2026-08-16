@@ -6,7 +6,7 @@ import {
   CreatedApiKeyAlert,
   ManageApiKeyDialog,
 } from '@/routes/api-keys/-components'
-import { isPlatformAdminSession } from '@/routes/-auth-routing'
+import { canPerformAdminAction } from '@/routes/-auth-routing'
 import { getApiKeys } from '@/server/admin-data.functions'
 import type { ApiKeysPayload } from '@/types/api'
 
@@ -25,18 +25,24 @@ export function ApiKeysPage() {
     data: { items, users, service_accounts, models },
   } = Route.useLoaderData() as { data: ApiKeysPayload }
   const { session } = Route.useRouteContext()
-  const isPlatformAdmin = isPlatformAdminSession(session)
+  const canCreate = canPerformAdminAction(session, 'create_api_key')
+  const canUpdate = canPerformAdminAction(session, 'update_api_key')
+  const canRevoke = canPerformAdminAction(session, 'revoke_api_key')
+  const canReveal = canPerformAdminAction(session, 'reveal_api_key')
+  const canManage = canUpdate || canRevoke || canReveal
   const search = Route.useSearch()
   const state = useApiKeysPageState({
     items,
     users,
     service_accounts,
-    focusedApiKeyId: isPlatformAdmin ? search.api_key_id : undefined,
+    defaultOwnerUserId:
+      session.permissions.group === 'platform_admins' ? undefined : session.user.id,
+    focusedApiKeyId: canManage ? search.api_key_id : undefined,
   })
 
   return (
     <div className="flex flex-col gap-4">
-      {isPlatformAdmin ? (
+      {canCreate ? (
         <CreatedApiKeyAlert
           result={state.createdResult}
           onCopy={state.actions.handleCopy}
@@ -46,11 +52,11 @@ export function ApiKeysPage() {
 
       <ApiKeysCard
         items={items}
-        onCreate={isPlatformAdmin ? state.actions.openCreateDialog : undefined}
-        onManage={isPlatformAdmin ? state.actions.openManageDialog : undefined}
+        onCreate={canCreate ? state.actions.openCreateDialog : undefined}
+        onManage={canManage ? state.actions.openManageDialog : undefined}
       />
 
-      {isPlatformAdmin ? (
+      {canCreate ? (
         <CreateApiKeyDialog
           form={state.form}
           isPending={state.isPending}
@@ -70,8 +76,11 @@ export function ApiKeysPage() {
         />
       ) : null}
 
-      {isPlatformAdmin ? (
+      {canManage ? (
         <ManageApiKeyDialog
+          canReveal={canReveal}
+          canRevoke={canRevoke}
+          canUpdate={canUpdate}
           form={state.manageForm}
           isPending={state.isPending}
           modelOptions={models}

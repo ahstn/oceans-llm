@@ -2297,6 +2297,7 @@ async fn build_auth_session_view(
         permissions: AuthSessionPermissionsView {
             group,
             pages: permissions.pages.clone(),
+            actions: permissions.actions.clone(),
             default_page: permissions.default_page,
         },
     })

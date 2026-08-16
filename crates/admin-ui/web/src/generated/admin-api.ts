@@ -1248,6 +1248,8 @@ export interface components {
         AddTeamMembersRequest: {
             user_ids: string[];
         };
+        /** @enum {string} */
+        AdminAction: "create_api_key" | "update_api_key" | "revoke_api_key" | "reveal_api_key";
         AdminApiKeyModelView: {
             description?: string | null;
             id: string;
@@ -1479,6 +1481,7 @@ export interface components {
         /** @enum {string} */
         ApiKeyModelGrantModeView: "all" | "explicit";
         AuthSessionPermissionsView: {
+            actions: components["schemas"]["AdminAction"][];
             default_page?: null | components["schemas"]["AdminPage"];
             group: components["schemas"]["AdminPermissionGroup"];
             pages: components["schemas"]["AdminPage"][];

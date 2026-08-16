@@ -173,6 +173,7 @@ export type PasswordInviteResult = components['schemas']['PasswordInviteResponse
 export type InvitationStateView = components['schemas']['InvitationView']
 export type AuthSessionUserView = components['schemas']['AuthSessionUserView']
 export type AuthSessionView = components['schemas']['AuthSessionView']
+export type AdminAction = components['schemas']['AdminAction']
 export type AdminPage = components['schemas']['AdminPage']
 export type AdminPermissionGroup = components['schemas']['AdminPermissionGroup']
 export type PasswordLoginInput = components['schemas']['PasswordLoginRequest']

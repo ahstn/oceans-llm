@@ -17,11 +17,14 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::http::{
-    admin_auth::require_authenticated_session,
-    admin_contract::{Envelope, envelope, format_timestamp},
-    error::AppError,
-    state::AppState,
+use crate::{
+    config::{AdminAction, AdminPermissionGroup},
+    http::{
+        admin_auth::require_authenticated_session,
+        admin_contract::{Envelope, envelope, format_timestamp},
+        error::AppError,
+        state::AppState,
+    },
 };
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -180,7 +183,7 @@ pub async fn create_api_key(
     headers: HeaderMap,
     Json(request): Json<CreateApiKeyRequest>,
 ) -> Result<Json<Envelope<CreateApiKeyResponse>>, AppError> {
-    let scope = require_api_key_admin_scope(&state, &headers).await?;
+    let scope = require_api_key_action_scope(&state, &headers, AdminAction::CreateApiKey).await?;
     authorize_create_api_key(&state, &scope, &request).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
@@ -213,7 +216,7 @@ pub async fn update_api_key(
     Path(api_key_id): Path<String>,
     Json(request): Json<UpdateApiKeyRequest>,
 ) -> Result<Json<Envelope<UpdateApiKeyResponse>>, AppError> {
-    let scope = require_api_key_admin_scope(&state, &headers).await?;
+    let scope = require_api_key_action_scope(&state, &headers, AdminAction::UpdateApiKey).await?;
     let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
     authorize_existing_api_key(&state, &scope, api_key_id).await?;
 
@@ -245,7 +248,7 @@ pub async fn revoke_api_key(
     headers: HeaderMap,
     Path(api_key_id): Path<String>,
 ) -> Result<Json<Envelope<RevokeApiKeyResponse>>, AppError> {
-    let scope = require_api_key_admin_scope(&state, &headers).await?;
+    let scope = require_api_key_action_scope(&state, &headers, AdminAction::RevokeApiKey).await?;
     let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
     authorize_existing_api_key(&state, &scope, api_key_id).await?;
 
@@ -269,8 +272,9 @@ pub async fn reveal_api_key_secret(
     headers: HeaderMap,
     Path(api_key_id): Path<String>,
 ) -> Result<Json<Envelope<RevealApiKeySecretResponse>>, AppError> {
+    let scope = require_api_key_action_scope(&state, &headers, AdminAction::RevealApiKey).await?;
     let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
-    authorize_reveal_api_key_secret(&state, &headers, api_key_id).await?;
+    authorize_reveal_api_key_secret(&state, &scope, api_key_id).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
     let result = service.reveal_api_key_secret(api_key_id).await?;
@@ -278,9 +282,12 @@ pub async fn reveal_api_key_secret(
     Ok(Json(envelope(map_reveal_result(result))))
 }
 
-enum ApiKeyAdminScope {
+enum ApiKeyActionScope {
     Platform,
-    Team(Uuid),
+    User {
+        user_id: Uuid,
+        managed_team_id: Option<Uuid>,
+    },
 }
 
 enum ApiKeyListScope {
@@ -320,102 +327,142 @@ async fn require_api_key_list_scope(
     Ok(ApiKeyListScope::User(actor.user_id))
 }
 
-async fn require_api_key_admin_scope(
+async fn require_api_key_action_scope(
     state: &AppState,
     headers: &HeaderMap,
-) -> Result<ApiKeyAdminScope, AppError> {
+    action: AdminAction,
+) -> Result<ApiKeyActionScope, AppError> {
     let actor = require_authenticated_session(state, headers).await?;
     if actor.status != UserStatus::Active {
         return Err(insufficient_privileges());
     }
     if actor.global_role == GlobalRole::PlatformAdmin {
-        return Ok(ApiKeyAdminScope::Platform);
+        let permissions = state
+            .admin_permissions
+            .for_group(AdminPermissionGroup::PlatformAdmins);
+        return permissions
+            .actions
+            .contains(&action)
+            .then_some(ApiKeyActionScope::Platform)
+            .ok_or_else(insufficient_privileges);
     }
 
     let membership = state
         .store
         .get_team_membership_for_user(actor.user_id)
-        .await?
-        .ok_or_else(insufficient_privileges)?;
-    if !matches!(
-        membership.role,
-        MembershipRole::Owner | MembershipRole::Admin
-    ) {
+        .await?;
+    let managed_team_id = membership.as_ref().and_then(|membership| {
+        matches!(
+            membership.role,
+            MembershipRole::Owner | MembershipRole::Admin
+        )
+        .then_some(membership.team_id)
+    });
+    let group = AdminPermissionGroup::for_user(
+        actor.global_role,
+        membership.as_ref().map(|membership| membership.role),
+    );
+    if !state
+        .admin_permissions
+        .for_group(group)
+        .actions
+        .contains(&action)
+    {
         return Err(insufficient_privileges());
     }
 
-    Ok(ApiKeyAdminScope::Team(membership.team_id))
+    Ok(ApiKeyActionScope::User {
+        user_id: actor.user_id,
+        managed_team_id,
+    })
 }
 
 async fn authorize_reveal_api_key_secret(
     state: &AppState,
-    headers: &HeaderMap,
+    scope: &ApiKeyActionScope,
     api_key_id: Uuid,
 ) -> Result<(), AppError> {
-    let actor = require_authenticated_session(state, headers).await?;
-    if actor.status != UserStatus::Active {
+    let ApiKeyActionScope::User {
+        managed_team_id: Some(team_id),
+        ..
+    } = scope
+    else {
+        if matches!(scope, ApiKeyActionScope::Platform) {
+            return Ok(());
+        }
         return Err(insufficient_privileges());
-    }
-    if actor.global_role == GlobalRole::PlatformAdmin {
-        return Ok(());
-    }
+    };
 
-    let membership = state
-        .store
-        .get_team_membership_for_user(actor.user_id)
-        .await?
-        .ok_or_else(insufficient_privileges)?;
-    if !matches!(
-        membership.role,
-        MembershipRole::Owner | MembershipRole::Admin
-    ) {
-        return Err(insufficient_privileges());
-    }
     let api_key = state
         .store
         .get_api_key_by_id(api_key_id)
         .await?
         .ok_or_else(insufficient_privileges)?;
-    if api_key.owner_kind != ApiKeyOwnerKind::ServiceAccount
-        || api_key.owner_team_id != Some(membership.team_id)
+    if api_key.owner_kind == ApiKeyOwnerKind::ServiceAccount
+        && api_key.owner_team_id == Some(*team_id)
     {
-        return Err(insufficient_privileges());
+        return Ok(());
     }
-    Ok(())
+    Err(insufficient_privileges())
 }
 
 async fn authorize_create_api_key(
     state: &AppState,
-    scope: &ApiKeyAdminScope,
+    scope: &ApiKeyActionScope,
     request: &CreateApiKeyRequest,
 ) -> Result<(), AppError> {
-    let ApiKeyAdminScope::Team(team_id) = scope else {
+    let ApiKeyActionScope::User {
+        user_id,
+        managed_team_id,
+    } = scope
+    else {
         return Ok(());
     };
-    if request.owner_kind.trim() != "service_account" {
-        return Err(insufficient_privileges());
-    }
-    let Some(raw_service_account_id) = request.owner_service_account_id.as_deref() else {
-        return Err(insufficient_privileges());
-    };
-    let service_account_id = parse_uuid(raw_service_account_id, "owner_service_account_id")?;
-    let service_account = state
-        .store
-        .get_service_account_by_id(service_account_id)
-        .await?
-        .ok_or_else(insufficient_privileges)?;
-    if service_account.team_id != *team_id {
-        return Err(insufficient_privileges());
+
+    match request.owner_kind.trim() {
+        "user" => {
+            let owner_user_id = request
+                .owner_user_id
+                .as_deref()
+                .map(|raw| parse_uuid(raw, "owner_user_id"))
+                .transpose()?;
+            if owner_user_id != Some(*user_id) {
+                return Err(insufficient_privileges());
+            }
+        }
+        "service_account" => {
+            let Some(team_id) = managed_team_id else {
+                return Err(insufficient_privileges());
+            };
+            let Some(raw_service_account_id) = request.owner_service_account_id.as_deref() else {
+                return Err(insufficient_privileges());
+            };
+            let service_account_id =
+                parse_uuid(raw_service_account_id, "owner_service_account_id")?;
+            let service_account = state
+                .store
+                .get_service_account_by_id(service_account_id)
+                .await?
+                .ok_or_else(insufficient_privileges)?;
+            if service_account.team_id != *team_id {
+                return Err(insufficient_privileges());
+            }
+        }
+        _ => return Err(insufficient_privileges()),
     }
     Ok(())
 }
 
 async fn authorize_existing_api_key(
     state: &AppState,
-    scope: &ApiKeyAdminScope,
+    scope: &ApiKeyActionScope,
     api_key_id: Uuid,
 ) -> Result<(), AppError> {
-    let ApiKeyAdminScope::Team(team_id) = scope else {
+    let ApiKeyActionScope::User {
+        user_id,
+        managed_team_id,
+    } = scope
+    else {
         return Ok(());
     };
     let api_key = state
@@ -427,12 +474,15 @@ async fn authorize_existing_api_key(
                 "api key not found".to_string(),
             ))
         })?;
-    if api_key.owner_kind != ApiKeyOwnerKind::ServiceAccount
-        || api_key.owner_team_id != Some(*team_id)
-    {
-        return Err(insufficient_privileges());
+    match api_key.owner_kind {
+        ApiKeyOwnerKind::User if api_key.owner_user_id == Some(*user_id) => Ok(()),
+        ApiKeyOwnerKind::ServiceAccount
+            if managed_team_id.is_some() && api_key.owner_team_id == *managed_team_id =>
+        {
+            Ok(())
+        }
+        ApiKeyOwnerKind::User | ApiKeyOwnerKind::ServiceAccount => Err(insufficient_privileges()),
     }
-    Ok(())
 }
 
 fn insufficient_privileges() -> AppError {
