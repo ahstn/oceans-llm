@@ -2328,6 +2328,20 @@ pub struct ProviderCapabilities {
 
 impl ProviderCapabilities {
     #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            chat_completions: false,
+            responses: false,
+            stream: false,
+            embeddings: false,
+            tools: false,
+            vision: false,
+            json_schema: false,
+            developer_role: false,
+        }
+    }
+
+    #[must_use]
     pub const fn new(chat_completions: bool, stream: bool, embeddings: bool) -> Self {
         Self::with_dimensions(
             chat_completions,
@@ -2478,19 +2492,27 @@ pub fn vertex_route_capabilities_for_upstream_model(
     ProviderCapabilities::chat_only_streaming()
 }
 #[must_use]
-pub fn github_copilot_route_capabilities_for_upstream_model(
-    upstream_model: Option<&str>,
+pub fn github_copilot_route_capabilities(
+    compatibility: Option<&GitHubCopilotRouteCompatibility>,
 ) -> ProviderCapabilities {
-    let mut capabilities = ProviderCapabilities::all_enabled();
-    let Some(upstream_model) = upstream_model else {
-        return capabilities;
+    let Some(compatibility) = compatibility else {
+        return ProviderCapabilities::none();
     };
-    let normalized = upstream_model.to_ascii_lowercase();
-    let model_name = normalized.rsplit('/').next().unwrap_or(&normalized);
-    if model_name.starts_with("claude-") {
-        capabilities.json_schema = false;
+
+    let supports_inference = compatibility.chat_api.is_some() || compatibility.supports_responses;
+    let upstream_supports = compatibility.upstream_supports;
+    ProviderCapabilities {
+        chat_completions: compatibility.chat_api.is_some(),
+        responses: compatibility.supports_responses,
+        stream: supports_inference && upstream_supports.streaming,
+        embeddings: compatibility.supports_embeddings,
+        tools: supports_inference && upstream_supports.tool_calls,
+        vision: supports_inference && upstream_supports.vision,
+        json_schema: upstream_supports.structured_outputs
+            && (compatibility.supports_responses
+                || compatibility.chat_api == Some(GitHubCopilotChatApi::ChatCompletions)),
+        developer_role: false,
     }
-    capabilities
 }
 
 const fn default_true() -> bool {
@@ -2505,6 +2527,42 @@ pub struct RouteCompatibility {
     pub openrouter: Option<OpenRouterRouteCompatibility>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aws_bedrock: Option<AwsBedrockRouteCompatibility>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_copilot: Option<GitHubCopilotRouteCompatibility>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct GitHubCopilotRouteCompatibility {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_api: Option<GitHubCopilotChatApi>,
+    #[serde(default)]
+    pub supports_responses: bool,
+    #[serde(default)]
+    pub supports_embeddings: bool,
+    /// Provider support verified from `/models` or a canary. Route capabilities are policy.
+    #[serde(default)]
+    pub upstream_supports: GitHubCopilotUpstreamSupports,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct GitHubCopilotUpstreamSupports {
+    #[serde(default)]
+    pub streaming: bool,
+    #[serde(default)]
+    pub tool_calls: bool,
+    #[serde(default)]
+    pub vision: bool,
+    #[serde(default)]
+    pub structured_outputs: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GitHubCopilotChatApi {
+    ChatCompletions,
+    AnthropicMessages,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -3206,7 +3264,8 @@ pub struct UpdateReviewAgentRunRecord {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_supported_vertex_google_chat_upstream_model,
+        GitHubCopilotChatApi, GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports,
+        github_copilot_route_capabilities, is_supported_vertex_google_chat_upstream_model,
         vertex_route_capabilities_for_upstream_model,
     };
 
@@ -3264,5 +3323,112 @@ mod tests {
         assert!(unconfigured.chat_completions);
         assert!(unconfigured.stream);
         assert!(!unconfigured.tools);
+    }
+
+    #[test]
+    fn copilot_route_capabilities_are_conservative_without_metadata() {
+        let capabilities = github_copilot_route_capabilities(None);
+
+        assert!(!capabilities.chat_completions);
+        assert!(!capabilities.stream);
+        assert!(!capabilities.responses);
+        assert!(!capabilities.embeddings);
+        assert!(!capabilities.tools);
+        assert!(!capabilities.vision);
+        assert!(!capabilities.json_schema);
+        assert!(!capabilities.developer_role);
+    }
+
+    #[test]
+    fn copilot_route_capabilities_follow_configured_chat_api() {
+        let minimal_chat =
+            github_copilot_route_capabilities(Some(&GitHubCopilotRouteCompatibility {
+                chat_api: Some(GitHubCopilotChatApi::ChatCompletions),
+                supports_responses: false,
+                supports_embeddings: false,
+                upstream_supports: GitHubCopilotUpstreamSupports::default(),
+            }));
+        assert!(minimal_chat.chat_completions);
+        assert!(!minimal_chat.stream);
+        assert!(!minimal_chat.tools);
+        assert!(!minimal_chat.vision);
+        assert!(!minimal_chat.json_schema);
+        assert!(!minimal_chat.developer_role);
+
+        let chat = github_copilot_route_capabilities(Some(&GitHubCopilotRouteCompatibility {
+            chat_api: Some(GitHubCopilotChatApi::ChatCompletions),
+            supports_responses: true,
+            supports_embeddings: false,
+            upstream_supports: GitHubCopilotUpstreamSupports {
+                streaming: true,
+                tool_calls: true,
+                vision: true,
+                structured_outputs: true,
+            },
+        }));
+        assert!(chat.chat_completions);
+        assert!(chat.responses);
+        assert!(chat.stream);
+        assert!(!chat.embeddings);
+        assert!(chat.tools);
+        assert!(chat.vision);
+        assert!(chat.json_schema);
+        assert!(!chat.developer_role);
+
+        let messages = github_copilot_route_capabilities(Some(&GitHubCopilotRouteCompatibility {
+            chat_api: Some(GitHubCopilotChatApi::AnthropicMessages),
+            supports_responses: false,
+            supports_embeddings: true,
+            upstream_supports: GitHubCopilotUpstreamSupports {
+                streaming: true,
+                tool_calls: true,
+                vision: true,
+                structured_outputs: true,
+            },
+        }));
+        assert!(messages.chat_completions);
+        assert!(!messages.responses);
+        assert!(messages.embeddings);
+        assert!(messages.tools);
+        assert!(messages.vision);
+        assert!(!messages.json_schema);
+        assert!(!messages.developer_role);
+
+        let messages_and_responses =
+            github_copilot_route_capabilities(Some(&GitHubCopilotRouteCompatibility {
+                chat_api: Some(GitHubCopilotChatApi::AnthropicMessages),
+                supports_responses: true,
+                supports_embeddings: false,
+                upstream_supports: GitHubCopilotUpstreamSupports {
+                    structured_outputs: true,
+                    ..Default::default()
+                },
+            }));
+        assert!(messages_and_responses.json_schema);
+
+        let responses = github_copilot_route_capabilities(Some(&GitHubCopilotRouteCompatibility {
+            chat_api: None,
+            supports_responses: true,
+            supports_embeddings: false,
+            upstream_supports: GitHubCopilotUpstreamSupports {
+                streaming: true,
+                ..Default::default()
+            },
+        }));
+        assert!(!responses.chat_completions);
+        assert!(responses.responses);
+        assert!(responses.stream);
+
+        let embeddings =
+            github_copilot_route_capabilities(Some(&GitHubCopilotRouteCompatibility {
+                chat_api: None,
+                supports_responses: false,
+                supports_embeddings: true,
+                upstream_supports: GitHubCopilotUpstreamSupports::default(),
+            }));
+        assert!(!embeddings.chat_completions);
+        assert!(!embeddings.responses);
+        assert!(!embeddings.stream);
+        assert!(embeddings.embeddings);
     }
 }

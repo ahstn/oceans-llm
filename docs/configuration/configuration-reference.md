@@ -97,6 +97,55 @@ models:
 
 `pricing_override` is optional. When present, `input_usd_per_million_tokens` and `output_usd_per_million_tokens` are required. Cache rates are optional and remain absent when omitted; they do not fall back to catalog cache rates. All rates use exact fixed-point decimal strings with at most four fractional digits. Zero is valid; negative, malformed, floating-point, and overflowing values are rejected.
 
+### GitHub Copilot provider and route evidence
+
+GitHub App authentication requires all four identity and scope fields. `repository_id` is the numeric ID of the one repository placed in each installation-token request. It is required and must be greater than zero. If it is absent, config parsing stops with `missing field repository_id`.
+
+`private_key` accepts a mounted file path. An `env.*` or `literal.*` value can resolve to either a PEM value or a file path. The gateway reads and parses the key when it builds the provider during startup.
+
+Copilot route compatibility is fail-closed. Copy support only from a current `/models` response for the exact `upstream_model`. The [GitHub Copilot Installation-Token Canary](../operations/github-copilot-installation-canary.md) produces the required safe projection.
+
+```yaml
+providers:
+  - id: copilot-org
+    type: github_copilot
+    auth:
+      mode: github_app
+      app_id: 123456
+      private_key: /run/secrets/copilot-app-private-key.pem
+      installation_id: 23456789
+      repository_id: 345678901
+
+models:
+  - id: copilot-chat
+    routes:
+      - provider: copilot-org
+        upstream_model: <exact-model-id-from-canary>
+        compatibility:
+          github_copilot:
+            chat_api: chat_completions
+            supports_responses: false
+            supports_embeddings: false
+            upstream_supports:
+              streaming: true
+              tool_calls: true
+              vision: true
+              structured_outputs: false
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+          stream: true
+          tools: true
+          vision: true
+          json_schema: false
+          developer_role: false
+```
+
+`chat_api` is optional for Responses-only or embeddings-only routes. For chat routes, set it to `chat_completions` only when `supported_endpoints` contains `/chat/completions`, or to `anthropic_messages` only when it contains `/v1/messages`. `supports_responses` and `supports_embeddings` default to `false`. Each `upstream_supports` field also defaults to `false`.
+
+The `compatibility.github_copilot` fields are upstream evidence. The route `capabilities` fields are admin policy. Runtime eligibility uses their conservative intersection, so policy cannot enable support that the upstream evidence does not declare. `developer_role` remains disabled because the current Copilot model inventory does not expose evidence for it.
+
 ## Production-Shaped Example
 
 ```yaml

@@ -44,15 +44,20 @@ pub fn anthropic_message_from_openai_chat(value: &Value, model_key: &str) -> Val
     let message = choice.and_then(|choice| choice.get("message"));
 
     let mut content = Vec::new();
-    if let Some(thinking_blocks) = message
-        .and_then(|message| message.get("provider_metadata"))
-        .and_then(|metadata| metadata.get("gcp_vertex"))
-        .and_then(|metadata| metadata.get("reasoning"))
-        .and_then(|reasoning| reasoning.get("blocks"))
-        .and_then(Value::as_array)
-    {
-        content.extend(thinking_blocks.iter().cloned());
-    }
+    content.extend(
+        anthropic_reasoning_blocks(
+            message.and_then(|message| message.get("provider_metadata")),
+            "anthropic_messages",
+        )
+        .into_iter()
+        .filter(|block| {
+            matches!(
+                block.get("type").and_then(Value::as_str),
+                Some("thinking" | "redacted_thinking")
+            )
+        })
+        .cloned(),
+    );
 
     if let Some(text) = message
         .and_then(|message| message.get("content"))
@@ -83,6 +88,26 @@ pub fn anthropic_message_from_openai_chat(value: &Value, model_key: &str) -> Val
         "stop_sequence": null,
         "usage": anthropic_usage_from_openai(value.get("usage"))
     })
+}
+
+pub fn anthropic_reasoning_blocks<'a>(
+    provider_metadata: Option<&'a Value>,
+    source: &str,
+) -> Vec<&'a Value> {
+    const NAMESPACES: [&str; 3] = ["gcp_vertex", "aws_bedrock", "github_copilot"];
+
+    let Some(provider_metadata) = provider_metadata else {
+        return Vec::new();
+    };
+
+    NAMESPACES
+        .iter()
+        .filter_map(|namespace| provider_metadata.get(namespace))
+        .filter_map(|metadata| metadata.get("reasoning"))
+        .filter(|reasoning| reasoning.get("source").and_then(Value::as_str) == Some(source))
+        .filter_map(|reasoning| reasoning.get("blocks").and_then(Value::as_array))
+        .flatten()
+        .collect()
 }
 
 fn anthropic_tool_use_from_openai(value: &Value) -> Option<Value> {
@@ -144,36 +169,68 @@ mod tests {
     use super::anthropic_message_from_openai_chat;
 
     #[test]
-    fn message_conversion_preserves_vertex_thinking_blocks() {
+    fn message_conversion_preserves_native_anthropic_thinking_blocks() {
+        for namespace in ["gcp_vertex", "aws_bedrock", "github_copilot"] {
+            let value = json!({
+                "id": "chatcmpl_1",
+                "choices": [{
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "visible",
+                        "provider_metadata": {
+                            namespace: {
+                                "reasoning": {
+                                    "source": "anthropic_messages",
+                                    "blocks": [
+                                        {"type": "thinking", "thinking": "hidden", "signature": "sig"},
+                                        {"type": "redacted_thinking", "data": "encrypted"}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 2}
+            });
+
+            let converted = anthropic_message_from_openai_chat(&value, "claude");
+
+            assert_eq!(
+                converted["content"],
+                json!([
+                    {"type": "thinking", "thinking": "hidden", "signature": "sig"},
+                    {"type": "redacted_thinking", "data": "encrypted"},
+                    {"type": "text", "text": "visible"}
+                ]),
+                "namespace {namespace}"
+            );
+        }
+    }
+
+    #[test]
+    fn message_conversion_ignores_non_native_reasoning_blocks() {
         let value = json!({
-            "id": "chatcmpl_1",
             "choices": [{
-                "finish_reason": "stop",
                 "message": {
-                    "role": "assistant",
                     "content": "visible",
                     "provider_metadata": {
-                        "gcp_vertex": {
+                        "aws_bedrock": {
                             "reasoning": {
-                                "blocks": [
-                                    {"type": "thinking", "thinking": "hidden", "signature": "sig"}
-                                ]
+                                "source": "bedrock_converse",
+                                "blocks": [{"type": "reasoning_text", "text": "hidden"}]
                             }
                         }
                     }
                 }
-            }],
-            "usage": {"prompt_tokens": 1, "completion_tokens": 2}
+            }]
         });
 
         let converted = anthropic_message_from_openai_chat(&value, "claude");
 
         assert_eq!(
             converted["content"],
-            json!([
-                {"type": "thinking", "thinking": "hidden", "signature": "sig"},
-                {"type": "text", "text": "visible"}
-            ])
+            json!([{"type": "text", "text": "visible"}])
         );
     }
 
