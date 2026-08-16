@@ -1,6 +1,6 @@
 # Agent Harness Usage
 
-`See also`: [Observability and Request Logs](observability-and-request-logs.md), [Data Relationships](../contributing/reference/data-relationships.md), [Admin Control Plane](../access/admin-control-plane.md)
+`See also`: [Agent Session Analysis](agent-session-analysis.md), [Observability and Request Logs](observability-and-request-logs.md), [Data Relationships](../contributing/reference/data-relationships.md), [Admin Control Plane](../access/admin-control-plane.md)
 
 Implementation references: [`request_logging.rs`](../../crates/gateway-service/src/request_logging.rs), [`observability.rs`](../../crates/gateway/src/http/observability.rs), [`agent-harnesses.tsx`](../../crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx)
 
@@ -15,6 +15,8 @@ For each persisted request-log row, the gateway stores:
 - `agent_harness_label`: the display label shown in admin surfaces
 
 The bounded raw `User-Agent` is preserved for request-log debugging and future reclassification. It is not used as a metric label and is not used for chart grouping.
+
+Agent task analysis may use the normalized harness key plus bounded, allowlisted request metadata as correlation evidence. `User-Agent` alone never establishes a session or identity. Raw `User-Agent` values remain request-log debugging data and are not copied into analysis observations or score reports.
 
 ## Classifier Contract
 

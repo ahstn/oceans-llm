@@ -27,6 +27,7 @@ This page owns config syntax and parse-time rules. It does not own the full runt
 - `budgets`
 - `budget_alerts`
 - `request_logging`
+- `agent_analysis`
 - `providers`
 - `models`
 - `teams`
@@ -98,6 +99,43 @@ models:
 
 `pricing_override` is optional. When present, `input_usd_per_million_tokens` and `output_usd_per_million_tokens` are required. Cache rates are optional and remain absent when omitted; they do not fall back to catalog cache rates. All rates use exact fixed-point decimal strings with at most four fractional digits. Zero is valid; negative, malformed, floating-point, and overflowing values are rejected.
 
+## Agent Session Analysis
+
+Use `agent_analysis` for passive collection and access gates. It also owns retention, metric groups, context limits, and cache rules:
+
+```yaml
+agent_analysis:
+  enabled: true
+  shadow_diagnostics_enabled: false
+  calibrated_score_enabled: false
+  calibration_approval_id: null
+  team_admin_enabled: false
+  report_retention_days: 90
+  queue_retention_days: 7
+  context_input_boundary_tokens: 220000
+  context_reserved_output_tokens: 128000
+  context_penalty_points_per_repeated_excess: 2
+  metrics:
+    tokens: true
+    cache: true
+    context: true
+    tools: true
+    skills: true
+    reliability: true
+    outcomes: true
+    finish_reasons: true
+  cache_profiles:
+    - provider_key_contains: anthropic
+      upstream_model_contains: claude-opus
+      minimum_cacheable_tokens: 4096
+      default_ttl: five_minutes
+```
+
+Unknown fields fail parsing. Retention can be at most 36,500 days. The input boundary must be positive. A cache minimum must also be positive. Reserved output can be zero. Each cache profile needs a provider key, model, or both. `default_ttl` accepts `five_minutes`, `thirty_minutes`, `one_hour`, or `unknown`.
+
+Calibrated scores need a trimmed `calibration_approval_id`. It can use at most 256 bytes. Team-admin access needs calibrated scores. Older `AGENT_ANALYSIS_*` environment variables can override some fields. They cover collection, access, approval, and retention. Use YAML while new metric settings roll out. Metric, context, and cache-profile changes create a new report version. Use `mise run gateway-recompute-agent-analysis` to queue retained reports.
+
+See [Agent Session Analysis](../operations/agent-session-analysis.md) for operator behavior. See [Agent Session Analysis Architecture](../contributing/reference/agent-session-analysis.md) for code ownership.
 ### GitHub Copilot provider and route evidence
 
 GitHub App authentication requires all four identity and scope fields. `repository_id` is the numeric ID of the one repository placed in each installation-token request. It is required and must be greater than zero. If it is absent, config parsing stops with `missing field repository_id`.

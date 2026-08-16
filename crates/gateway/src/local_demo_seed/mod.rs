@@ -15,6 +15,8 @@ use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+mod agent_analysis;
+mod agent_session_fixtures;
 mod api_keys;
 mod models;
 mod teams;
@@ -245,8 +247,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
     // Demo usage rows are re-anchored to the current clock on every run: any
     // previously seeded rows are removed by their fixed request ids, then
     // reinserted with deterministic ids and fresh relative timestamps.
-    let demo_request_ids = usage::LOCAL_DEMO_REQUESTS
-        .iter()
+    let demo_request_ids = local_demo_request_fixtures()
         .map(|fixture| fixture.request_id.to_string())
         .collect::<Vec<_>>();
     store
@@ -258,14 +259,11 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
         .await
         .context("failed deleting previously seeded demo usage events")?;
 
-    for fixture in usage::LOCAL_DEMO_REQUESTS {
+    for fixture in local_demo_request_fixtures() {
         let api_key = api_keys.get(fixture.api_key_public_id).ok_or_else(|| {
             anyhow::anyhow!("missing demo api key `{}`", fixture.api_key_public_id)
         })?;
-        let occurred_at = now
-            - time::Duration::days(fixture.days_ago)
-            - time::Duration::hours(fixture.hours_ago)
-            - time::Duration::minutes(fixture.minutes_ago);
+        let occurred_at = demo_fixture_occurred_at(now, fixture);
         let ownership_scope_key = match api_key.owner_kind {
             ApiKeyOwnerKind::User => format!(
                 "user:{}",
@@ -373,11 +371,11 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             has_payload: payload.is_some(),
             request_payload_truncated,
             response_payload_truncated,
-            request_tags,
+            request_tags: request_tags.clone(),
             tool_cardinality: usage::demo_tool_cardinality(fixture),
-            user_agent_raw: Some("opencode/1.0.0 (local demo)".to_string()),
-            agent_harness_key: "opencode".to_string(),
-            agent_harness_label: "Opencode".to_string(),
+            user_agent_raw: Some(demo_agent_harness(fixture).0.to_string()),
+            agent_harness_key: demo_agent_harness(fixture).1.to_string(),
+            agent_harness_label: demo_agent_harness(fixture).2.to_string(),
             metadata,
             occurred_at,
         };
@@ -419,9 +417,9 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             provider_key: fixture.provider_key.to_string(),
             upstream_model: fixture.upstream_model.to_string(),
             prompt_tokens: fixture.prompt_tokens,
-            uncached_input_tokens: None,
-            cache_read_tokens: None,
-            cache_write_tokens: None,
+            uncached_input_tokens: priced.then_some(fixture.prompt_tokens).flatten(),
+            cache_read_tokens: priced.then_some(0),
+            cache_write_tokens: priced.then_some(0),
             completion_tokens: fixture.completion_tokens,
             total_tokens,
             provider_usage: if priced {
@@ -487,6 +485,18 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                     fixture.api_key_public_id
                 )
             })?;
+        agent_analysis::seed_demo_agent_session(
+            store,
+            fixture,
+            api_key,
+            team_id,
+            &ledger.ownership_scope_key,
+            &request_tags,
+            occurred_at,
+            now,
+            response_payload_truncated,
+        )
+        .await?;
     }
 
     Ok(raw_keys)
@@ -494,6 +504,32 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
 
 fn normalize_demo_email(email: &str) -> String {
     email.trim().to_ascii_lowercase()
+}
+
+fn demo_fixture_occurred_at(
+    seeded_at: OffsetDateTime,
+    fixture: &LocalDemoRequestFixture,
+) -> OffsetDateTime {
+    seeded_at
+        - time::Duration::days(fixture.days_ago)
+        - time::Duration::hours(fixture.hours_ago)
+        - time::Duration::minutes(fixture.minutes_ago)
+}
+
+fn local_demo_request_fixtures() -> impl Iterator<Item = &'static LocalDemoRequestFixture> {
+    usage::LOCAL_DEMO_REQUESTS
+        .iter()
+        .chain(agent_session_fixtures::ADDITIONAL_SESSION_REQUESTS)
+}
+
+fn demo_agent_harness(
+    fixture: &LocalDemoRequestFixture,
+) -> (&'static str, &'static str, &'static str) {
+    if agent_session_fixtures::request_metadata(fixture).is_some() {
+        ("codex/1.0.0 (local demo)", "codex", "Codex")
+    } else {
+        ("opencode/1.0.0 (local demo)", "opencode", "Opencode")
+    }
 }
 
 /// Stable UUIDs keyed on the fixture request id, so reseeding replaces demo
@@ -552,14 +588,47 @@ fn demo_payload_record(
         ),
     };
 
+    let session_request = agent_session_fixtures::request_metadata(fixture);
+    let mut request_json = json!({
+        "model": fixture.model_key,
+        "messages": messages,
+        "stream": fixture.payload_profile == DemoPayloadProfile::Streamed,
+        "temperature": 0.2,
+    });
+    let mut response_message = json!({"role": "assistant", "content": completion});
+    if let Some(session_request) = session_request {
+        request_json["client_metadata"] =
+            json!({"session_id": session_request.session.normalized_session_id});
+        request_json["tools"] = json!([{
+            "type": "function",
+            "function": {
+                "name": session_request.tool_name,
+                "description": session_request.session.tool_description,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "repository": {"type": "string"},
+                        "path": {"type": "string"},
+                        "zone": {"type": "string"},
+                        "sample": {"type": "string"}
+                    },
+                    "additionalProperties": false
+                }
+            }
+        }]);
+        response_message["tool_calls"] = json!([{
+            "id": format!("call_{}_{}", fixture.request_id, session_request.step + 1),
+            "type": "function",
+            "function": {
+                "name": session_request.tool_name,
+                "arguments": agent_session_fixtures::tool_arguments(session_request).to_string()
+            }
+        }]);
+    }
+
     Some(RequestLogPayloadRecord {
         request_log_id,
-        request_json: json!({
-            "model": fixture.model_key,
-            "messages": messages,
-            "stream": fixture.payload_profile == DemoPayloadProfile::Streamed,
-            "temperature": 0.2,
-        }),
+        request_json,
         response_json: if priced {
             json!({
                 "id": format!("chatcmpl_{}", fixture.request_id),
@@ -569,7 +638,7 @@ fn demo_payload_record(
                     {
                         "index": 0,
                         "finish_reason": "stop",
-                        "message": {"role": "assistant", "content": completion}
+                        "message": response_message
                     }
                 ],
                 "usage": {
@@ -792,5 +861,128 @@ fn pricing_provider_id_for_demo_provider(provider_key: &str) -> Option<&'static 
         "vertex-adc" => Some("google-vertex"),
         "vertex-claude" => Some("google-vertex-anthropic"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gateway_core::{
+        AgentSessionTraceRepository, AuthMode, GlobalRole, MembershipRole, SeedModel, SeedProvider,
+        SeedTeam, SeedUser, SeedUserMembership,
+    };
+    use gateway_service::{GatewayService, WeightedRoutePlanner};
+    use gateway_store::{AnyStore, StoreConnectionOptions};
+    use std::sync::Arc;
+
+    use super::*;
+
+    fn demo_seed_prerequisites() -> (
+        Vec<SeedProvider>,
+        Vec<SeedModel>,
+        Vec<SeedTeam>,
+        Vec<SeedUser>,
+    ) {
+        let providers = [
+            "openai-prod",
+            "openai-secondary",
+            "vertex-adc",
+            "vertex-claude",
+            "bedrock-us-east-1",
+        ]
+        .into_iter()
+        .map(|provider_key| SeedProvider {
+            provider_key: provider_key.to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({}),
+            secrets: None,
+        })
+        .collect();
+        let models = models::LOCAL_DEMO_MODEL_KEYS
+            .iter()
+            .map(|model_key| SeedModel {
+                model_key: (*model_key).to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 0,
+                routes: Vec::new(),
+                allowlist: None,
+            })
+            .collect();
+        let teams = teams::LOCAL_DEMO_TEAM_KEYS
+            .iter()
+            .map(|team_key| SeedTeam {
+                team_key: (*team_key).to_string(),
+                team_name: (*team_key).to_string(),
+                tags: None,
+            })
+            .collect();
+        let users = users::LOCAL_DEMO_USERS
+            .iter()
+            .map(|fixture| {
+                let team_key = match fixture.email.split_once('@').map(|(_, domain)| domain) {
+                    Some("platform.local") => "platform",
+                    Some("research.local") => "research",
+                    Some("applied.local") => "applied-ai",
+                    Some("operations.local") => "operations",
+                    _ => panic!("demo user has an unknown team domain"),
+                };
+                SeedUser {
+                    name: fixture.email.to_string(),
+                    email: fixture.email.to_string(),
+                    email_normalized: fixture.email.to_string(),
+                    global_role: GlobalRole::User,
+                    auth_mode: AuthMode::Password,
+                    request_logging_enabled: true,
+                    tags: None,
+                    oidc_provider_key: None,
+                    oauth_provider_key: None,
+                    membership: Some(SeedUserMembership {
+                        team_key: team_key.to_string(),
+                        role: MembershipRole::Member,
+                    }),
+                    budget: None,
+                }
+            })
+            .collect();
+        (providers, models, teams, users)
+    }
+
+    #[tokio::test]
+    async fn seeded_jira_session_reports_direct_mcp_calls() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let options = StoreConnectionOptions::Libsql {
+            path: directory.path().join("gateway.db"),
+        };
+        crate::maybe_run_migrations(&options, true)
+            .await
+            .expect("migrations");
+        let store = AnyStore::connect(&options).await.expect("store");
+        let (providers, models, teams, users) = demo_seed_prerequisites();
+        store
+            .seed_from_inputs(&providers, &models, &[], &[], &[], &[], &teams, &users)
+            .await
+            .expect("seed config");
+        seed_local_demo_data(&store).await.expect("seed demo data");
+        let service = GatewayService::new(
+            Arc::new(store.clone()),
+            Arc::new(WeightedRoutePlanner::default()),
+        );
+        let now = OffsetDateTime::now_utc();
+        while service
+            .process_next_agent_analysis("demo-mcp-test", now)
+            .await
+            .expect("process analysis")
+        {}
+
+        let session_id = local_demo_uuid("agent_session", "jira-release-coordination");
+        let trace = store
+            .load_agent_session_trace(session_id)
+            .await
+            .expect("load session")
+            .expect("Jira session");
+        let report = &trace.latest_analysis.expect("Jira report").report;
+        assert_eq!(report.diagnostics.tools_and_changes.observed_tool_calls, 10);
+        assert_eq!(report.diagnostics.tools_and_changes.direct_mcp_calls, 2);
     }
 }

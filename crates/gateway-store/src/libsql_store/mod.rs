@@ -1,3 +1,4 @@
+mod agent_analysis;
 mod api_keys;
 mod budget_alerts;
 mod budgets;
@@ -88,6 +89,10 @@ impl LibsqlStore {
             .await
             .with_context(|| format!("failed building local libsql database at `{path}`"))?;
         let connection = db.connect().context("failed opening libsql connection")?;
+        connection
+            .execute("PRAGMA foreign_keys = ON", ())
+            .await
+            .context("failed enabling LibSQL foreign key enforcement")?;
 
         Ok(Self {
             connection: Arc::new(connection),

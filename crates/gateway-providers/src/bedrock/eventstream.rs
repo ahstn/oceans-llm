@@ -320,7 +320,7 @@ impl BedrockConverseStreamNormalizer {
                 self.saw_terminal = true;
             }
             "metadata" => {
-                if let Some(usage) = map_stream_usage(&payload) {
+                if let Some(usage) = map_usage(&payload) {
                     actions.push(BedrockStreamAction::Chunk(self.usage_chunk(usage)));
                 }
             }
@@ -373,35 +373,6 @@ pub(super) fn bedrock_event_payload_message(payload: &[u8]) -> Option<String> {
                 .map(str::to_string)
                 .or_else(|| value.as_str().map(str::to_string))
         })
-}
-
-pub(super) fn map_stream_usage(value: &Value) -> Option<Value> {
-    let usage = value.get("usage")?.as_object()?;
-    let prompt = usage
-        .get("inputTokens")
-        .or_else(|| usage.get("input_tokens"))
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    let completion = usage
-        .get("outputTokens")
-        .or_else(|| usage.get("output_tokens"))
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    let total = usage
-        .get("totalTokens")
-        .or_else(|| usage.get("total_tokens"))
-        .and_then(Value::as_i64)
-        .unwrap_or(prompt + completion);
-
-    let mut mapped = Map::new();
-    mapped.insert("prompt_tokens".to_string(), Value::Number(prompt.into()));
-    mapped.insert(
-        "completion_tokens".to_string(),
-        Value::Number(completion.into()),
-    );
-    mapped.insert("total_tokens".to_string(), Value::Number(total.into()));
-    mapped.insert("provider_usage".to_string(), Value::Object(usage.clone()));
-    Some(Value::Object(mapped))
 }
 
 pub(super) fn normalize_bedrock_converse_stream<S>(

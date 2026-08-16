@@ -20,9 +20,9 @@ use tokio::{net::TcpListener, sync::Mutex};
 use super::{
     JsonObjectParser, PublisherFamily, SseEventParser, VertexAuthConfig, VertexProvider,
     VertexProviderConfig, extract_google_candidate_text, map_anthropic_request,
-    map_google_embedding_request, map_google_request, normalize_anthropic_response,
-    normalize_anthropic_stream, normalize_google_response, normalize_google_stream,
-    parse_upstream_model,
+    map_google_embedding_request, map_google_request, map_google_usage,
+    normalize_anthropic_response, normalize_anthropic_stream, normalize_google_response,
+    normalize_google_stream, parse_upstream_model,
 };
 use gateway_core::ProviderError;
 

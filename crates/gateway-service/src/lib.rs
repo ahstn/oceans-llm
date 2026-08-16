@@ -1,5 +1,6 @@
 pub mod admin_api_keys;
 pub mod admin_models;
+mod agent_analysis;
 pub mod authenticator;
 pub mod budget_alerts;
 pub mod budget_guard;
@@ -31,6 +32,13 @@ pub use admin_api_keys::{
     RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput,
 };
 pub use admin_models::{AdminModelStatus, AdminModelSummary, AdminModelsService};
+pub use agent_analysis::{
+    desired_versions, desired_versions_for_policy, enqueue_analysis as enqueue_agent_analysis,
+    enqueue_analysis_with_versions as enqueue_agent_analysis_with_versions,
+};
+pub use agent_session_analysis::{
+    AnalysisMetricPolicy, AnalysisPolicy, CacheProfileRule, CacheTtl,
+};
 pub use authenticator::{Authenticator, verify_gateway_key_secret};
 pub use budget_alerts::{
     BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,

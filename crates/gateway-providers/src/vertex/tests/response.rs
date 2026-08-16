@@ -7,12 +7,47 @@ fn normalizes_google_response_into_openai_shape() {
         "candidates":[
             {"index":0, "content":{"parts":[{"text":"hello"}]}, "finishReason":"STOP"}
         ],
-        "usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":3,"totalTokenCount":13}
+        "usageMetadata":{
+            "promptTokenCount":10,
+            "cachedContentTokenCount":4,
+            "candidatesTokenCount":3,
+            "thoughtsTokenCount":2,
+            "totalTokenCount":15
+        }
     });
     let normalized = normalize_google_response(&response, &context("google/gemini-2.0-flash"));
     assert_eq!(normalized["object"], "chat.completion");
     assert_eq!(normalized["choices"][0]["message"]["content"], "hello");
-    assert_eq!(normalized["usage"]["total_tokens"], 13);
+    assert_eq!(normalized["usage"]["total_tokens"], 15);
+    assert_eq!(normalized["usage"]["usage_source"], "vertex_google");
+    assert_eq!(
+        normalized["usage"]["provider_usage"]["cachedContentTokenCount"],
+        4
+    );
+    assert_eq!(
+        normalized["usage"]["provider_usage"]["thoughtsTokenCount"],
+        2
+    );
+}
+
+#[test]
+fn google_usage_preserves_malformed_optional_fields_for_normalization() {
+    let response = json!({
+        "usageMetadata": {
+            "promptTokenCount": 10,
+            "candidatesTokenCount": 3,
+            "cachedContentTokenCount": "unknown"
+        }
+    });
+    let normalized = map_google_usage(&response).expect("usage metadata");
+
+    assert_eq!(normalized["prompt_tokens"], 10);
+    assert_eq!(normalized["completion_tokens"], 3);
+    assert!(normalized.get("total_tokens").is_none());
+    assert_eq!(
+        normalized["provider_usage"]["cachedContentTokenCount"],
+        "unknown"
+    );
 }
 
 #[test]
@@ -21,13 +56,28 @@ fn normalizes_anthropic_response_into_openai_shape() {
         "id":"msg_123",
         "content":[{"type":"text","text":"hello"}],
         "stop_reason":"end_turn",
-        "usage":{"input_tokens":5,"output_tokens":7}
+        "usage":{
+            "input_tokens":5,
+            "output_tokens":7,
+            "cache_read_input_tokens":3,
+            "cache_creation_input_tokens":2
+        }
     });
     let normalized =
         normalize_anthropic_response(&response, &context("anthropic/claude-sonnet-4-6"));
     assert_eq!(normalized["choices"][0]["message"]["content"], "hello");
     assert_eq!(normalized["usage"]["prompt_tokens"], 5);
     assert_eq!(normalized["usage"]["completion_tokens"], 7);
+    assert_eq!(normalized["usage"]["total_tokens"], 17);
+    assert_eq!(normalized["usage"]["usage_source"], "vertex_anthropic");
+    assert_eq!(
+        normalized["usage"]["provider_usage"]["cache_read_input_tokens"],
+        3
+    );
+    assert_eq!(
+        normalized["usage"]["provider_usage"]["cache_creation_input_tokens"],
+        2
+    );
 }
 
 #[test]

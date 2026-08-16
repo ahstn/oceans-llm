@@ -99,6 +99,14 @@ export type RequestTagView = components['schemas']['RequestTagView']
 export type RequestLogTagsView = components['schemas']['RequestTagsView']
 export type RequestLogView = components['schemas']['RequestLogSummaryView']
 export type RequestLogPayloadView = components['schemas']['RequestLogPayloadView']
+export type AgentSessionSummaryView = components['schemas']['AgentSessionSummaryView']
+export type AgentSessionPageView = components['schemas']['AgentSessionPageView']
+export type AgentSessionDetailView = components['schemas']['AgentSessionDetailView']
+export type AgentSessionRequestView = components['schemas']['AgentSessionRequestView']
+export type AgentObservationView = components['schemas']['AgentObservationView']
+export type AgentSessionFiltersInput = NonNullable<
+  operations['list_agent_sessions']['parameters']['query']
+>
 export type RequestLogDetailView = components['schemas']['RequestLogDetailView']
 export type RequestLogPageView = components['schemas']['RequestLogPageView']
 export type RequestLogFiltersInput = NonNullable<

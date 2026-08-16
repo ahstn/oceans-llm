@@ -11,15 +11,15 @@
     "prefix": ""
   },
   "iconLibrary": "hugeicons",
-  "aliases": {
-    "components": "@/components",
-    "ui": "@/components/ui",
-    "hooks": "@/hooks",
-    "lib": "@/lib",
-    "utils": "@/lib/utils"
-  },
   "rtl": false,
   "menuColor": "default",
   "menuAccent": "subtle",
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
   "registries": {}
 }

@@ -17,6 +17,7 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+agent-session-analysis.workspace = true
 tokio.workspace = true
 tempfile = "3"
 serial_test = "3"

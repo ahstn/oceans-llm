@@ -48,7 +48,7 @@ pub(super) const LOCAL_DEMO_API_KEYS: &[LocalDemoApiKeyFixture] = &[
         public_id: "locdemofaye1",
         secret: "faye-demo-secret",
         owner: LocalDemoOwnerFixture::User("faye@research.local"),
-        model_keys: &["claude-opus", "bedrock-claude-sonnet"],
+        model_keys: &["claude-opus", "claude-sonnet-4.6"],
     },
     LocalDemoApiKeyFixture {
         name: "Gina Tooling Key",
@@ -76,7 +76,7 @@ pub(super) const LOCAL_DEMO_API_KEYS: &[LocalDemoApiKeyFixture] = &[
         public_id: "locdemojules1",
         secret: "jules-demo-secret",
         owner: LocalDemoOwnerFixture::User("jules@research.local"),
-        model_keys: &["claude-sonnet", "bedrock-claude-sonnet"],
+        model_keys: &["claude-sonnet", "claude-sonnet-4.6"],
     },
     LocalDemoApiKeyFixture {
         name: "Frank Applied Key",
@@ -90,7 +90,7 @@ pub(super) const LOCAL_DEMO_API_KEYS: &[LocalDemoApiKeyFixture] = &[
         public_id: "locdemograce1",
         secret: "grace-demo-secret",
         owner: LocalDemoOwnerFixture::User("grace@applied.local"),
-        model_keys: &["bedrock-claude-sonnet", "gemini-pro-preview"],
+        model_keys: &["claude-sonnet-4.6", "gemini-pro-preview"],
     },
     LocalDemoApiKeyFixture {
         name: "Heidi Applied Key",
@@ -111,7 +111,7 @@ pub(super) const LOCAL_DEMO_API_KEYS: &[LocalDemoApiKeyFixture] = &[
         public_id: "locdemojudy1",
         secret: "judy-demo-secret",
         owner: LocalDemoOwnerFixture::User("judy@operations.local"),
-        model_keys: &["bedrock-claude-sonnet", "openai-fast-v2"],
+        model_keys: &["claude-sonnet-4.6", "openai-fast-v2"],
     },
     LocalDemoApiKeyFixture {
         name: "Mallory Operations Key",

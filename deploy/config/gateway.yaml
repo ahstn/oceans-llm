@@ -88,6 +88,28 @@ request_logging:
     stream_max_events: 128
     redaction_paths: []
 
+agent_analysis:
+  enabled: true
+  shadow_diagnostics_enabled: false
+  calibrated_score_enabled: false
+  calibration_approval_id: null
+  team_admin_enabled: false
+  report_retention_days: 90
+  queue_retention_days: 7
+  context_input_boundary_tokens: 220000
+  context_reserved_output_tokens: 128000
+  context_penalty_points_per_repeated_excess: 2
+  metrics:
+    tokens: true
+    cache: true
+    context: true
+    tools: true
+    skills: true
+    reliability: true
+    outcomes: true
+    finish_reasons: true
+  cache_profiles: []
+
 teams:
   - id: platform
     name: Platform

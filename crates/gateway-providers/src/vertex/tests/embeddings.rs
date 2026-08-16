@@ -264,10 +264,7 @@ async fn vertex_provider_google_embedding_string_executes_predict_mapping() {
     assert_eq!(response["data"][0]["object"], "embedding");
     assert_eq!(response["data"][0]["index"], 0);
     assert_eq!(response["data"][0]["embedding"], json!([0.25, 0.5]));
-    assert_eq!(
-        response["usage"],
-        json!({"prompt_tokens": 3, "total_tokens": 3})
-    );
+    assert_eq!(response["usage"], embedding_usage(3));
 
     let request_payload = captured.lock().await.clone().expect("captured request");
     assert_eq!(
@@ -334,10 +331,7 @@ async fn vertex_provider_google_embedding_array_fans_out_and_preserves_order() {
     assert_eq!(response["data"][0]["embedding"], json!([1.0, 1.5]));
     assert_eq!(response["data"][1]["index"], 1);
     assert_eq!(response["data"][1]["embedding"], json!([2.0, 2.5]));
-    assert_eq!(
-        response["usage"],
-        json!({"prompt_tokens": 7, "total_tokens": 7})
-    );
+    assert_eq!(response["usage"], embedding_usage(7));
 
     let request_payloads = captured.lock().await.clone();
     assert_eq!(request_payloads.len(), 2);
@@ -408,10 +402,7 @@ async fn vertex_provider_google_gemini_embedding_2_executes_embed_content_mappin
     assert_eq!(response["data"][0]["embedding"], json!([1.0, 1.5]));
     assert_eq!(response["data"][1]["index"], 1);
     assert_eq!(response["data"][1]["embedding"], json!([2.0, 2.5]));
-    assert_eq!(
-        response["usage"],
-        json!({"prompt_tokens": 7, "total_tokens": 7})
-    );
+    assert_eq!(response["usage"], embedding_usage(7));
 
     let request_payloads = captured.lock().await.clone();
     assert_eq!(request_payloads.len(), 2);
@@ -529,10 +520,7 @@ async fn vertex_provider_google_gemini_embedding_2_returns_partial_usage_after_f
             source,
             provider_usage,
         } => {
-            assert_eq!(
-                provider_usage,
-                Some(json!({"prompt_tokens": 4, "total_tokens": 4}))
-            );
+            assert_eq!(provider_usage, Some(embedding_usage(4)));
             match *source {
                 ProviderError::UpstreamHttp { status, body } => {
                     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS.as_u16());
@@ -548,4 +536,15 @@ async fn vertex_provider_google_gemini_embedding_2_returns_partial_usage_after_f
     assert_eq!(request_payloads.len(), 2);
     assert_eq!(request_payloads[0]["content"]["parts"][0]["text"], "first");
     assert_eq!(request_payloads[1]["content"]["parts"][0]["text"], "second");
+}
+
+fn embedding_usage(total_tokens: i64) -> Value {
+    json!({
+        "prompt_tokens": total_tokens,
+        "total_tokens": total_tokens,
+        "usage_source": "vertex_google_embeddings",
+        "provider_usage": {
+            "input_token_count_provenance": "provider_reported_aggregate"
+        }
+    })
 }

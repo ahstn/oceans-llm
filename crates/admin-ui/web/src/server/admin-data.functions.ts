@@ -16,6 +16,8 @@ import {
   disableMcpServer,
   listBudgetAlertHistory,
   reactivateUser,
+  getAgentSessionDetail,
+  listAgentSessions,
   getRequestLogDetail,
   getHarnessUsage,
   getMcpInvocationDetail,
@@ -76,6 +78,34 @@ import {
   revokeMcpGrant,
 } from '@/server/admin-data.server'
 import { resolveBrowserGatewayOrigin } from '@/server/gateway-client.server'
+
+type AgentSessionFilters = NonNullable<Parameters<typeof listAgentSessions>[0]>
+
+function validateAgentSessionFilters(data: unknown): AgentSessionFilters {
+  if (data === undefined) return {}
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Agent session filters must be an object')
+  }
+  if (
+    Object.values(data).some(
+      (value) => value !== undefined && typeof value !== 'string' && typeof value !== 'number',
+    )
+  ) {
+    throw new Error('Agent session filter values must be strings or numbers')
+  }
+  return data as AgentSessionFilters
+}
+
+function validateAgentSessionDetailInput(data: unknown): { sessionId: string } {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Agent session detail input must be an object')
+  }
+  const sessionId = Reflect.get(data, 'sessionId')
+  if (typeof sessionId !== 'string' || sessionId.trim() === '') {
+    throw new Error('sessionId is required')
+  }
+  return { sessionId }
+}
 
 export const getOceansVersion = createServerFn({ method: 'GET' }).handler(async () => {
   return getGatewayVersion()
@@ -204,6 +234,18 @@ export const removeBudget = createServerFn({ method: 'POST' }).handler(
     return deactivateBudget(data)
   },
 )
+
+export const getAgentSessions = createServerFn({ method: 'POST' })
+  .validator(validateAgentSessionFilters)
+  .handler(async ({ data }) => {
+    return listAgentSessions(data)
+  })
+
+export const getObservabilityAgentSessionDetail = createServerFn({ method: 'GET' })
+  .validator(validateAgentSessionDetailInput)
+  .handler(async ({ data }) => {
+    return getAgentSessionDetail(data.sessionId)
+  })
 
 export const getRequestLogs = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data?: Parameters<typeof listRequestLogs>[0] }) => {

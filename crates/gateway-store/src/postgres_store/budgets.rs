@@ -314,6 +314,41 @@ impl BudgetRepository for PostgresStore {
         row.as_ref().map(decode_usage_ledger_record).transpose()
     }
 
+    async fn get_usage_ledgers_by_request_ids_and_scope(
+        &self,
+        request_ids: &[String],
+        ownership_scope_key: &str,
+    ) -> Result<Vec<UsageLedgerRecord>, StoreError> {
+        if request_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                usage_event_id, request_id, ownership_scope_key, api_key_id, user_id,
+                team_id, service_account_id, actor_user_id, model_id, model_route_id,
+                provider_key, upstream_model, prompt_tokens, completion_tokens, total_tokens,
+                provider_usage_json, pricing_status, unpriced_reason, pricing_row_id,
+                pricing_provider_id, pricing_model_id, pricing_source, pricing_source_etag,
+                pricing_source_fetched_at, pricing_last_updated,
+                input_cost_per_million_tokens_10000,
+                output_cost_per_million_tokens_10000,
+                cache_read_cost_per_million_tokens_10000,
+                cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
+                uncached_input_tokens, cache_read_tokens, cache_write_tokens
+            FROM usage_cost_events
+            WHERE request_id = ANY($1)
+              AND ownership_scope_key = $2
+            "#,
+        )
+        .bind(request_ids)
+        .bind(ownership_scope_key)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.iter().map(decode_usage_ledger_record).collect()
+    }
+
     async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
         scope: &BudgetScope,
@@ -1137,7 +1172,6 @@ impl BudgetRepository for PostgresStore {
         event: &UsageLedgerRecord,
     ) -> Result<bool, StoreError> {
         let provider_usage_json = crate::shared::serialize_json(&event.provider_usage)?;
-
         let result = sqlx::query(
             r#"
             INSERT INTO usage_cost_events (

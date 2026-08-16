@@ -4,6 +4,7 @@ version = "0.23.0"
 edition = "2024"
 
 [dependencies]
+agent-session-analysis.workspace = true
 aes-gcm.workspace = true
 argon2.workspace = true
 async-trait.workspace = true

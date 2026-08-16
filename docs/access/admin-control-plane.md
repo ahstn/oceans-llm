@@ -1,6 +1,6 @@
 # Admin Control Plane
 
-`See also`: [Identity and Access](identity-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Service Accounts](service-accounts.md), [Budgets](budgets.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../contributing/reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../contributing/reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Service Accounts](service-accounts.md), [Budgets](budgets.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Agent Session Analysis](../operations/agent-session-analysis.md), [Admin API Contract Workflow](../contributing/reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../contributing/reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
 
 This page describes what platform admins can do and which self-service views regular users can open in the browser UI today.
 
@@ -32,6 +32,7 @@ These areas are backed by real gateway APIs today:
 - MCP invocation list and detail inspection
 - MCP server registry UI, recommended-server catalog, registry CRUD, soft-disable, tool list, and discovery refresh
 - generated client configuration snippets for supported model harnesses; see [Client Harness Configuration](../configuration/client-harness-configuration.md)
+- runtime-gated agent session list and diagnostic inspection; see [Agent Session Analysis](../operations/agent-session-analysis.md)
 
 ## Live But Still Maturing Surfaces
 
@@ -160,6 +161,7 @@ Regular users can:
 Additional platform-admin capabilities:
 
 - compare leaderboard users with average tool exposure and invocation counts
+- inspect grouped agent sessions, request outcomes, cost and time components, score confidence, data coverage, comparison groups, data limits, and formula versions when the runtime setting permits it
 - manage MCP servers from `/admin/mcp/servers`
 - inspect MCP discovery status as the current server health signal
 - refresh MCP discovery and see bounded failure feedback
@@ -167,6 +169,8 @@ Additional platform-admin capabilities:
 - manage MCP toolsets, grants, upstream credential bindings, and effective-access previews from the MCP workspace
 
 Request-log payload policy is read-only in the admin UI. Admins configure it through `gateway.yaml`; see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
+
+Agent session calibration data is disabled by default and requires an explicit gateway runtime setting. Only platform admins can access calibration data, and the system does not show the session score during calibration. Team Owners and Admins need both calibrated-score and team-admin access. Team members cannot access this page.
 
 Current limits:
 
