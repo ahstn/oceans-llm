@@ -134,10 +134,41 @@
     "auth_mode": "oauth_obo",
     "auth_config": {
       "token_exchange": "required",
-      "token_type": "bearer"
+      "token_type": "bearer",
+      "provider_key": "google",
+      "resource": "https://drivemcp.googleapis.com/mcp/v1",
+      "scopes": ["https://www.googleapis.com/auth/drive.readonly"],
+      "discovery_auth": "none",
+      "discovery_tool_allowlist": [
+        "download_file_content",
+        "get_file_metadata",
+        "get_file_permissions",
+        "list_recent_files",
+        "read_file_content",
+        "search_files"
+      ]
     },
     "documentation_url": "https://developers.google.com/workspace/drive/api/guides/configure-mcp-server",
     "tags": ["productivity", "storage", "google-workspace"]
+  },
+  {
+    "catalog_key": "google_docs",
+    "display_name": "Google Docs MCP Server",
+    "description": "Developer-preview Google Workspace MCP endpoint for reading Google Docs through user-scoped Google OAuth permissions.",
+    "transport": "streamable_http",
+    "server_url": "https://docsmcp.googleapis.com/mcp/v1",
+    "auth_mode": "oauth_obo",
+    "auth_config": {
+      "token_exchange": "required",
+      "token_type": "bearer",
+      "provider_key": "google",
+      "resource": "https://docsmcp.googleapis.com/mcp/v1",
+      "scopes": ["https://www.googleapis.com/auth/documents.readonly"],
+      "discovery_auth": "none",
+      "discovery_tool_allowlist": ["read_doc"]
+    },
+    "documentation_url": "https://developers.google.com/workspace/docs/api/guides/configure-mcp-server",
+    "tags": ["productivity", "documents", "google-workspace"]
   },
   {
     "catalog_key": "datadog",

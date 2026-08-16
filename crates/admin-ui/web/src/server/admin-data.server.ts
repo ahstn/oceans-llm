@@ -30,6 +30,8 @@ import type {
   McpInvocationDetailView,
   McpInvocationFiltersInput,
   McpInvocationPageView,
+  McpOauthConnectionView,
+  McpOauthStartResponse,
   McpDiscoveryRefreshPayload,
   McpCredentialBindingPayload,
   McpCredentialBindingsPayload,
@@ -548,6 +550,30 @@ export async function previewMcpEffectiveAccess(
   return unwrapGatewayResponse(
     await client.GET('/api/v1/admin/mcp/effective-access', {
       params: { query: params },
+    }),
+  )
+}
+
+export async function listMcpOauthConnections(): Promise<McpOauthConnectionView[]> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/mcp/oauth/connections'))
+}
+
+export async function startMcpOauthConnection(serverId: string): Promise<McpOauthStartResponse> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/mcp/servers/{server_id}/oauth/start', {
+      params: { path: { server_id: serverId } },
+      body: { redirect_to: '/admin/account/connections' },
+    }),
+  )
+}
+
+export async function revokeMcpOauthConnection(serverId: string): Promise<void> {
+  const client = createGatewayApiClient()
+  unwrapGatewayResponse(
+    await client.DELETE('/api/v1/mcp/servers/{server_id}/oauth/connection', {
+      params: { path: { server_id: serverId } },
     }),
   )
 }

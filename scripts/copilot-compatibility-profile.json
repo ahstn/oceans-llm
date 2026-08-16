@@ -1,0 +1,10 @@
+{
+  "name": "vscode_chat_2026_06_01",
+  "editor_version": "vscode/1.126.0",
+  "plugin_version": "copilot-chat/0.35.0",
+  "integration_id": "vscode-chat",
+  "intent": "conversation-agent",
+  "interaction_type": "conversation-agent",
+  "api_version": "2026-06-01",
+  "anthropic_version": "2023-06-01"
+}

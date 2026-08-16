@@ -1,10 +1,21 @@
-use std::{collections::BTreeMap, net::IpAddr};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    net::IpAddr,
+};
 
 use gateway_core::{ExternalMcpAuthMode, ExternalMcpServerRecord, GatewayError};
 use serde_json::{Map, Value};
 use url::Url;
 
 const DISCOVERY_SECRET_ENV_PREFIX: &str = "OCEANS_MCP_DISCOVERY_";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpOauthServerConfig {
+    pub provider_key: String,
+    pub resource: String,
+    pub scopes: Vec<String>,
+    pub discovery_tool_allowlist: Option<BTreeSet<String>>,
+}
 
 pub fn validate_mcp_auth_config(
     auth_mode: ExternalMcpAuthMode,
@@ -27,24 +38,163 @@ pub fn validate_mcp_auth_config(
             ensure_allowed_auth_fields(auth_config, &["header", "token_type"])
         }
         ExternalMcpAuthMode::OauthObo => {
-            ensure_allowed_auth_fields(auth_config, &["token_exchange", "token_type"])
+            ensure_allowed_auth_fields(
+                auth_config,
+                &[
+                    "token_exchange",
+                    "token_type",
+                    "provider_key",
+                    "resource",
+                    "scopes",
+                    "discovery_auth",
+                    "discovery_tool_allowlist",
+                ],
+            )?;
+            if let Some(discovery_auth) = auth_config.get("discovery_auth")
+                && discovery_auth.as_str() != Some("none")
+            {
+                return Err(GatewayError::InvalidRequest(
+                    "auth_config.discovery_auth must be `none` when set".to_string(),
+                ));
+            }
+            if auth_config.contains_key("provider_key")
+                || auth_config.contains_key("resource")
+                || auth_config.contains_key("scopes")
+            {
+                let _ = mcp_oauth_server_config(auth_config)?;
+            }
+            Ok(())
         }
     }
+}
+
+pub fn mcp_oauth_server_config(
+    auth_config: &Map<String, Value>,
+) -> Result<McpOauthServerConfig, GatewayError> {
+    let provider_key = required_string(auth_config, "provider_key")?;
+    let resource = required_string(auth_config, "resource")?;
+    let parsed_resource = Url::parse(resource).map_err(|error| {
+        GatewayError::InvalidRequest(format!("auth_config.resource is invalid: {error}"))
+    })?;
+    if parsed_resource.scheme() != "https" || parsed_resource.host().is_none() {
+        return Err(GatewayError::InvalidRequest(
+            "auth_config.resource must be an https URL with a host".to_string(),
+        ));
+    }
+    let scopes = auth_config
+        .get("scopes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| GatewayError::InvalidRequest("auth_config.scopes is required".to_string()))?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|scope| !scope.trim().is_empty() && !scope.chars().any(char::is_whitespace))
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    GatewayError::InvalidRequest(
+                        "auth_config.scopes must contain non-empty scope strings".to_string(),
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if scopes.is_empty() {
+        return Err(GatewayError::InvalidRequest(
+            "auth_config.scopes cannot be empty".to_string(),
+        ));
+    }
+    let discovery_tool_allowlist = auth_config
+        .get("discovery_tool_allowlist")
+        .map(parse_discovery_tool_allowlist)
+        .transpose()?;
+    Ok(McpOauthServerConfig {
+        provider_key: provider_key.to_string(),
+        resource: resource.to_string(),
+        scopes,
+        discovery_tool_allowlist,
+    })
+}
+
+fn parse_discovery_tool_allowlist(value: &Value) -> Result<BTreeSet<String>, GatewayError> {
+    let items = value.as_array().ok_or_else(|| {
+        GatewayError::InvalidRequest(
+            "auth_config.discovery_tool_allowlist must be an array".to_string(),
+        )
+    })?;
+    let mut allowlist = BTreeSet::new();
+    for value in items {
+        let tool = value
+            .as_str()
+            .filter(|tool| !tool.trim().is_empty() && tool.trim() == *tool)
+            .ok_or_else(|| {
+                GatewayError::InvalidRequest(
+                    "auth_config.discovery_tool_allowlist must contain non-empty tool names"
+                        .to_string(),
+                )
+            })?;
+        if !allowlist.insert(tool.to_string()) {
+            return Err(GatewayError::InvalidRequest(
+                "auth_config.discovery_tool_allowlist must not contain duplicates".to_string(),
+            ));
+        }
+    }
+    if allowlist.is_empty() {
+        return Err(GatewayError::InvalidRequest(
+            "auth_config.discovery_tool_allowlist cannot be empty".to_string(),
+        ));
+    }
+    Ok(allowlist)
+}
+
+#[must_use]
+pub fn supports_public_discovery(server: &ExternalMcpServerRecord) -> bool {
+    server.auth_mode.supports_gateway_discovery()
+        || (server.auth_mode == ExternalMcpAuthMode::OauthObo
+            && server
+                .auth_config
+                .get("discovery_auth")
+                .and_then(Value::as_str)
+                == Some("none"))
 }
 
 pub fn validate_gateway_managed_server_url(
     value: &str,
     auth_mode: ExternalMcpAuthMode,
 ) -> Result<(), GatewayError> {
-    if !auth_mode.supports_gateway_discovery() || auth_mode == ExternalMcpAuthMode::None {
+    let sends_gateway_credentials =
+        auth_mode.supports_gateway_discovery() || auth_mode == ExternalMcpAuthMode::OauthObo;
+    if !sends_gateway_credentials || auth_mode == ExternalMcpAuthMode::None {
         return Ok(());
     }
     let url = Url::parse(value)
         .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
     if url.scheme() != "https" && !is_loopback_http_url(&url) {
         return Err(GatewayError::InvalidRequest(
-            "gateway-managed MCP credentials require an https server_url unless the host is loopback"
-                .to_string(),
+            "MCP credentials require an https server_url unless the host is loopback".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_mcp_server_auth_destination(
+    server_url: &str,
+    auth_mode: ExternalMcpAuthMode,
+    auth_config: &Map<String, Value>,
+) -> Result<(), GatewayError> {
+    validate_gateway_managed_server_url(server_url, auth_mode)?;
+    if auth_mode != ExternalMcpAuthMode::OauthObo || !auth_config.contains_key("resource") {
+        return Ok(());
+    }
+
+    let server_url = Url::parse(server_url)
+        .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
+    let resource = mcp_oauth_server_config(auth_config)?;
+    let resource_url = Url::parse(&resource.resource).map_err(|error| {
+        GatewayError::InvalidRequest(format!("auth_config.resource is invalid: {error}"))
+    })?;
+    if server_url.origin() != resource_url.origin() {
+        return Err(GatewayError::InvalidRequest(
+            "OAuth server_url must use the same origin as auth_config.resource".to_string(),
         ));
     }
     Ok(())
@@ -65,7 +215,11 @@ fn is_loopback_http_url(url: &Url) -> bool {
 pub fn gateway_mcp_upstream_headers(
     server: &ExternalMcpServerRecord,
 ) -> Result<Option<BTreeMap<String, String>>, GatewayError> {
-    validate_gateway_managed_server_url(&server.server_url, server.auth_mode)?;
+    validate_mcp_server_auth_destination(
+        &server.server_url,
+        server.auth_mode,
+        &server.auth_config,
+    )?;
     match server.auth_mode {
         ExternalMcpAuthMode::None => Ok(None),
         ExternalMcpAuthMode::GatewayStaticHeader => {
@@ -309,6 +463,127 @@ mod tests {
 
         let error = gateway_mcp_upstream_headers(&server).expect_err("http must fail");
         assert_eq!(error.error_code(), "invalid_request");
+    }
+
+    #[test]
+    fn oauth_obo_accepts_complete_google_config_with_public_discovery() {
+        let config = Map::from_iter([
+            ("provider_key".to_string(), json!("google")),
+            (
+                "resource".to_string(),
+                json!("https://drivemcp.googleapis.com/mcp/v1"),
+            ),
+            (
+                "scopes".to_string(),
+                json!(["https://www.googleapis.com/auth/drive.readonly"]),
+            ),
+            ("discovery_auth".to_string(), json!("none")),
+            (
+                "discovery_tool_allowlist".to_string(),
+                json!(["get_file_metadata", "search_files"]),
+            ),
+        ]);
+        let mut server = server_record(ExternalMcpAuthMode::OauthObo, config.clone());
+        server.server_url = "https://drivemcp.googleapis.com/mcp/v1".to_string();
+
+        validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &config)
+            .expect("valid OAuth config");
+        validate_mcp_server_auth_destination(
+            &server.server_url,
+            server.auth_mode,
+            &server.auth_config,
+        )
+        .expect("matching OAuth resource origin");
+        assert!(supports_public_discovery(&server));
+        assert_eq!(
+            mcp_oauth_server_config(&config).expect("parsed config"),
+            McpOauthServerConfig {
+                provider_key: "google".to_string(),
+                resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
+                scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+                discovery_tool_allowlist: Some(BTreeSet::from([
+                    "get_file_metadata".to_string(),
+                    "search_files".to_string(),
+                ])),
+            }
+        );
+
+        let mut off_resource_server = server.clone();
+        off_resource_server.server_url = "https://attacker.example/mcp".to_string();
+        assert!(
+            validate_mcp_server_auth_destination(
+                &off_resource_server.server_url,
+                off_resource_server.auth_mode,
+                &off_resource_server.auth_config,
+            )
+            .is_err()
+        );
+        off_resource_server.server_url = "https://drivemcp.googleapis.com/another-path".to_string();
+        validate_mcp_server_auth_destination(
+            &off_resource_server.server_url,
+            off_resource_server.auth_mode,
+            &off_resource_server.auth_config,
+        )
+        .expect("same-origin OAuth destination");
+
+        let mut insecure_server = server;
+        insecure_server.server_url = "http://example.test/mcp".to_string();
+        assert!(
+            validate_gateway_managed_server_url(
+                &insecure_server.server_url,
+                insecure_server.auth_mode,
+            )
+            .is_err()
+        );
+        insecure_server.server_url = "http://127.0.0.1:8080/mcp".to_string();
+        validate_gateway_managed_server_url(&insecure_server.server_url, insecure_server.auth_mode)
+            .expect("loopback OAuth development endpoint");
+    }
+
+    #[test]
+    fn oauth_obo_rejects_incomplete_or_credentialed_discovery_config() {
+        let missing_scopes = Map::from_iter([
+            ("provider_key".to_string(), json!("google")),
+            (
+                "resource".to_string(),
+                json!("https://drivemcp.googleapis.com/mcp/v1"),
+            ),
+        ]);
+        assert!(validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &missing_scopes).is_err());
+
+        let invalid_discovery = Map::from_iter([("discovery_auth".to_string(), json!("user"))]);
+        assert!(
+            validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &invalid_discovery).is_err()
+        );
+
+        let insecure_resource = Map::from_iter([
+            ("provider_key".to_string(), json!("google")),
+            (
+                "resource".to_string(),
+                json!("http://drivemcp.googleapis.com/mcp/v1"),
+            ),
+            (
+                "scopes".to_string(),
+                json!(["https://www.googleapis.com/auth/drive.readonly"]),
+            ),
+        ]);
+        assert!(
+            validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &insecure_resource).is_err()
+        );
+
+        let default_discovery = Map::from_iter([
+            ("provider_key".to_string(), json!("google")),
+            (
+                "resource".to_string(),
+                json!("https://drivemcp.googleapis.com/mcp/v1"),
+            ),
+            (
+                "scopes".to_string(),
+                json!(["https://www.googleapis.com/auth/drive.readonly"]),
+            ),
+        ]);
+        let server = server_record(ExternalMcpAuthMode::OauthObo, default_discovery);
+        assert!(!supports_public_discovery(&server));
     }
 
     fn server_record(

@@ -2,8 +2,95 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+
+## [0.22.0] - 2026-08-15
+### :rocket: New features
+- *(observability)* Account for prompt cache usage by @ahstn in [#283](https://github.com/ahstn/oceans-llm/pull/283)
+
+### :bug: Bug fixes
+- *(release)* Simplify publication flow by @ahstn
+- *(release)* Address review findings by @ahstn
+- *(release)* Clean generated release notes by @ahstn in [#267](https://github.com/ahstn/oceans-llm/pull/267)
+- *(observability)* Address cache accounting review by @ahstn
+- *(store)* Separate cache constraint validation by @ahstn
+- *(vertex)* Address Gemini tool review findings by @ahstn
+- *(vertex)* Complete Gemini tool compatibility by @ahstn
+- *(vertex)* Support function tool calling for Google Gemini routes by @ahstn in [#286](https://github.com/ahstn/oceans-llm/pull/286)
+
+### Changed
+- *(release)* Move changelog generation into mise by @ahstn
+- *(access)* Document shared SSO onboarding by @ahstn
+- *(docs)* Remove custom docs validation by @ahstn
+- Address onboarding review feedback by @ahstn
+- Clarify SSO onboarding and simplify docs CI by @ahstn in [#287](https://github.com/ahstn/oceans-llm/pull/287)
+- *(vertex)* Harden tool result name mapping, parallel grouping, and stream completion by @ahstn
+- *(housekeeping)* Remove repo bloat and left over files by @ahstn
+- *(deps)* Minor mise and bun version updates by @ahstn
+- *(pricing)* Updating model catalog
+
+
+
+
+## [0.21.0] - 2026-08-07
+### :rocket: New features
+- *(observability)* Add configurable OTLP trace sampling by @ahstn in [#268](https://github.com/ahstn/oceans-llm/pull/268)
+
+### :bug: Bug fixes
+- *(observability)* Preserve remote trace context by @ahstn
+- *(admin-ui)* Render harness icon masks by @ahstn in [#269](https://github.com/ahstn/oceans-llm/pull/269)
+
+### Changed
+- *(version)* V0.21.0 by @ahstn
+
+
+
+
+## [0.20.1] - 2026-08-05
+### :bug: Bug fixes
+- *(gateway)* Validate server configuration by @ahstn
+- *(helm)* Validate gateway config before migration wait by @ahstn in [#265](https://github.com/ahstn/oceans-llm/pull/265)
+- *(admin-ui)* Address page header review feedback by @ahstn
+
+### Changed
+- *(deps)* Minor version upgrades by @ahstn
+- *(version)* V0.20.1 by @ahstn
+
+
+
+
+## [0.20.0] - 2026-08-05
+### :rocket: New features
+- *(admin-ui)* Add agent harness icons by @ahstn in [#258](https://github.com/ahstn/oceans-llm/pull/258)
+- *(identity)* Add read-only user directories by @ahstn
+- *(auth)* Add regular-user self-service access by @ahstn in [#261](https://github.com/ahstn/oceans-llm/pull/261)
+- *(mcp)* Add Google Workspace OAuth connections by @ahstn in [#260](https://github.com/ahstn/oceans-llm/pull/260)
+- *(admin-ui)* Redesign authentication flows by @ahstn in [#262](https://github.com/ahstn/oceans-llm/pull/262)
+
+### :bug: Bug fixes
+- *(admin-ui)* Tighten models table layout by @ahstn
+- *(admin-ui)* Polish models table controls by @ahstn
+- *(admin-ui)* Compact model allow list by @ahstn in [#257](https://github.com/ahstn/oceans-llm/pull/257)
+- *(mcp)* Harden OAuth connection lifecycle by @ahstn
+- *(ui)* Satisfy React Doctor checks by @ahstn
+- *(mcp)* Address security review findings by @ahstn
+- *(mcp)* Address OAuth review feedback by @ahstn
+- *(admin)* Harden regular-user access by @ahstn
+- *(admin-ui)* Simplify account ready guidance by @ahstn
+- *(admin-ui)* Address authentication review findings by @ahstn
+- *(admin-ui)* Complete SSO redirect feedback by @ahstn
+
+### Changed
+- Update skills by @ahstn
+- *(auth)* Link canonical access policy by @ahstn
+- Merge auth self-service changes by @ahstn
+- *(pricing)* Updating model catalog by @ahstn
+- Merge latest origin/main by @ahstn
+- *(version)* V0.20.0 by @ahstn
+
+
 
 
 ## [0.19.0] - 2026-07-20
@@ -17,42 +104,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(harness)* Address integration review findings by @ahstn
 - *(harness)* Address security and contract review by @ahstn
 - *(harness)* Disable Pi startup network checks by @ahstn
-- *(providers)* Harden upstream compatibility by @ahstn
 - *(providers)* Address compatibility review by @ahstn
 - *(providers)* Resolve automated review findings by @ahstn
 - *(bedrock)* Revalidate merged Converse controls by @ahstn
 - *(openai-compat)* Normalize empty tool choice by @ahstn
 - *(providers)* Harden upstream compatibility by @ahstn in [#252](https://github.com/ahstn/oceans-llm/pull/252)
-- *(gateway)* Gate chat file inputs by capability by @ahstn
 - *(gateway)* Gate chat file inputs by capability by @ahstn in [#254](https://github.com/ahstn/oceans-llm/pull/254)
 
-### Build
-- Post release tasks - v0.18.0 by @ahstn
-
-### Documentation
-- *(auth)* Add Google OIDC setup guide by @ahstn
+### Changed
+- *(deps)* Update age-qualified Rust dependencies by @ahstn in [#251](https://github.com/ahstn/oceans-llm/pull/251)
 - *(auth)* Address Google SSO review feedback by @ahstn
 - *(auth)* Add Google OIDC setup guide by @ahstn in [#253](https://github.com/ahstn/oceans-llm/pull/253)
-
-### Miscellaneous
-- *(deps)* Update age-qualified Rust dependencies by @ahstn
-- *(deps)* Update age-qualified Rust dependencies by @ahstn in [#251](https://github.com/ahstn/oceans-llm/pull/251)
-- *(pricing)* Updating model catalog
-- *(version)* V0.19.0
-
-### Testing
-- Add native harness integration coverage by @ahstn
-- *(harness)* Cover user model allowlists by @ahstn
-- *(gateway)* Add native harness integration coverage by @ahstn in [#249](https://github.com/ahstn/oceans-llm/pull/249)
-- *(harness)* Verify MCP tool completion by @ahstn
+- *(pricing)* Updating model catalog by @ahstn
+- *(version)* V0.19.0 by @ahstn
 
 
 
 
 ## [0.18.0] - 2026-07-17
 ### :rocket: New features
-- *(admin-ui)* Show running Oceans version by @ahstn
-- *(gateway)* Support route metadata overrides by @ahstn
 - *(gateway)* Support route metadata overrides by @ahstn in [#244](https://github.com/ahstn/oceans-llm/pull/244)
 - *(admin-ui)* Show running Oceans version by @ahstn in [#247](https://github.com/ahstn/oceans-llm/pull/247)
 
@@ -67,44 +137,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(ci)* Run contract verification with Bash by @ahstn
 - *(ci)* Address workflow review findings by @ahstn
 
-### Build
-- Post release tasks - v0.17.0 by @ahstn
-
-### CI
-- Standardize workflows and mise tasks by @ahstn
-- Standardize workflows and mise tasks by @ahstn in [#241](https://github.com/ahstn/oceans-llm/pull/241)
-
-### Miscellaneous
+### Changed
 - *(rust)* Satisfy current clippy by @ahstn
 - *(deps)* Update Rust dependencies by @ahstn
 - Merge origin/main by @ahstn
 - *(version)* V0.18.0 by @ahstn
-
-### Testing
-- *(gateway)* Close override coverage gaps by @ahstn
 
 
 
 
 ## [0.17.0] - 2026-07-14
 ### :rocket: New features
-- *(identity)* Seed config tags for identity entities by @ahstn
 - *(identity)* Seed config tags for identity entities by @ahstn in [#234](https://github.com/ahstn/oceans-llm/pull/234)
 - Update catalog pricing by @ahstn
 
 ### :bug: Bug fixes
-- *(gateway)* Refresh model pricing catalog by @ahstn
 - *(gateway)* Harden pricing refresh sync by @ahstn
 - *(gateway)* Refresh model pricing catalog by @ahstn in [#231](https://github.com/ahstn/oceans-llm/pull/231)
 - *(identity)* Share tag validation for config tags by @ahstn
 - *(identity)* Address config tag review feedback by @ahstn
-- Update client config generation and onboarding reset links by @ahstn
 - Narrow onboarding reset updates by @ahstn
 - Address client config review feedback by @ahstn
 - Address follow-up PR review comments by @ahstn
 - Address onboarding reset review feedback by @ahstn
 - Update client config generation and onboarding reset links by @ahstn in [#235](https://github.com/ahstn/oceans-llm/pull/235)
-- *(pricing)* Make catalog reconciliation race-safe by @ahstn
 - *(pricing)* Address reconciliation review findings by @ahstn
 - *(pricing)* Allocate catalog generations atomically by @ahstn
 - *(pricing)* Reject stale catalog insertions by @ahstn
@@ -112,24 +168,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(pricing)* Harden catalog refresh convergence by @ahstn
 - *(pricing)* Make catalog reconciliation race-safe by @ahstn in [#240](https://github.com/ahstn/oceans-llm/pull/240)
 
-### Build
-- Post release tasks - v0.16.0 by @ahstn
-
 ### Changed
-- *(pricing)* Simplify catalog test setup by @ahstn
-
-### Documentation
 - Refocus pricing catalog guide by @ahstn
 - Clarify client harness base URLs by @ahstn
-
-### Miscellaneous
+- *(pricing)* Simplify catalog test setup by @ahstn
 - *(version)* V0.17.0 by @ahstn
-
-### Testing
-- Avoid debug bound in identity tests by @ahstn
-- *(pricing)* Mirror monotonic cache touches by @ahstn
-- *(pricing)* Align reconciliation fixtures by @ahstn
-- *(ui)* Await onboarding reset state by @ahstn
 
 
 
@@ -143,9 +186,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(admin-ui)* Redirect bare root to admin app by @ahstn in [#229](https://github.com/ahstn/oceans-llm/pull/229)
 - *(config)* Preserve demo model access by @ahstn
 
-### Build
-- Post release tasks - v0.15.0 by @ahstn
-
 ### Changed
 - Add admin root redirect by @ahstn
 - Fix gateway root admin redirect by @ahstn
@@ -153,42 +193,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Widen model info dialog layout by @ahstn
 - Refine models table layout by @ahstn
 - Reposition model actions column by @ahstn
-
-### Documentation
-- Updating models screenshot by @ahstn
-
-### Miscellaneous
 - Adding deepseek and qwen to dev config by @ahstn
+- Updating models screenshot by @ahstn
 - *(version)* V0.16.0 by @ahstn
-
-### Testing
-- *(models)* Update table layout expectations by @ahstn
 
 
 
 
 ## [0.15.0] - 2026-07-06
 ### :rocket: New features
-- *(gateway)* Add declarative user budget defaults by @ahstn
 - *(gateway)* Add declarative user budget defaults by @ahstn in [#228](https://github.com/ahstn/oceans-llm/pull/228)
 
 ### :bug: Bug fixes
 - *(gateway)* Harden budget default reconciliation by @ahstn
 - *(gateway)* Preserve budget deactivation guards by @ahstn
 
-### Build
-- Post release tasks - v0.14.0 by @ahstn
-- Updating model pricing catalog by @ahstn
-
 ### Changed
-- Fix admin muted surface and API key dialog layout by @ahstn
-- Add service account API key reveal controls by @ahstn
-
-### Documentation
 - *(budgets)* Clearer docs with additional content by @ahstn
 - Clarify user model budget defaults by @ahstn
-
-### Miscellaneous
+- Fix admin muted surface and API key dialog layout by @ahstn
+- Add service account API key reveal controls by @ahstn
 - *(version)* V0.15.0 by @ahstn
 
 
@@ -196,43 +220,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.14.0] - 2026-07-06
 ### :rocket: New features
-- *(codex)* Add Bedrock-safe client config by @ahstn
 - *(codex)* Add Bedrock-safe client config by @ahstn in [#219](https://github.com/ahstn/oceans-llm/pull/219)
 - *(dev)* Adding impeccable artifacts by @ahstn
 - *(review)* Review agent first pass by @ahstn
 - *(ui)* Migrate to blue/ocean focus color palette by @ahstn
 - *(ui)* Initial service account draft by @ahstn
-- Add native Vertex embeddings by @ahstn
 - Add gemini embedding 2 support by @ahstn
 - *(gateway)* Add native Vertex embeddings by @ahstn in [#225](https://github.com/ahstn/oceans-llm/pull/225)
-- *(gateway)* Add model-level allowlists by @ahstn
 - *(gateway)* Add model-level allowlists by @ahstn in [#226](https://github.com/ahstn/oceans-llm/pull/226)
 
 ### :bug: Bug fixes
 - *(bedrock)* Reject forced image generation tools by @ahstn
 - *(codex)* Tighten generated config and tool guards by @ahstn
-- *(admin-ui)* Refine review agent dialog layout by @ahstn
 - *(admin-ui)* Address review agent PR feedback by @ahstn
 - *(admin-ui)* Refine review agent dialog layout by @ahstn in [#221](https://github.com/ahstn/oceans-llm/pull/221)
-- *(admin-ui)* Serve static assets before auth fallback by @ahstn
 - *(admin-ui)* Address static asset review findings by @ahstn
 - *(admin-ui)* Serve static assets before auth fallback by @ahstn in [#224](https://github.com/ahstn/oceans-llm/pull/224)
 - Address Vertex embeddings review feedback by @ahstn
 - Address embedding review comments by @ahstn
 - *(gateway)* Address model allowlist review comments by @ahstn
 
-### Build
-- Post release tasks - v0.13.0 by @ahstn
-- Adding local dev service accounts by @ahstn
-
 ### Changed
 - Add GNU Affero General Public License v3 by @ahstn
-
-### Documentation
-- *(identity)* Updating service account documentation by @ahstn
-
-### Miscellaneous
 - Update skills by @ahstn
+- *(identity)* Updating service account documentation by @ahstn
 - *(version)* V0.14.0 by @ahstn
 
 
@@ -240,103 +251,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.13.0] - 2026-07-03
 ### :rocket: New features
-- *(gateway)* Allow api keys to grant all models by @ahstn
-- *(gateway)* Add declarative service account config by @ahstn
 - *(gateway)* Add declarative service account config by @ahstn in [#209](https://github.com/ahstn/oceans-llm/pull/209)
 - *(gateway)* Allow api keys to grant all models by @ahstn in [#210](https://github.com/ahstn/oceans-llm/pull/210)
-- *(admin)* Add client config setup context by @ahstn
 - *(admin)* Add client config setup context by @ahstn in [#212](https://github.com/ahstn/oceans-llm/pull/212)
 
 ### :bug: Bug fixes
-- *(test)* Repair api key all-model ci coverage by @ahstn
 - *(test)* Repair api key all-model ci coverage by @ahstn in [#211](https://github.com/ahstn/oceans-llm/pull/211)
 - *(gateway)* Address api key grant review feedback by @ahstn
-- *(admin)* Refresh pricing before releases by @ahstn
 - *(admin)* Refresh pricing before releases by @ahstn in [#207](https://github.com/ahstn/oceans-llm/pull/207)
 - *(gateway)* Harden service account key handling by @ahstn
 - *(e2e)* Seed service account config with new shape by @ahstn
 
-### Build
-- Post release tasks - v0.12.0 by @ahstn
-
 ### Changed
+- Changes as per pr by @ahstn
+- Updating client config docs screenshot by @ahstn
 - Merge origin/main into api key all-model branch by @ahstn
 - Align docs navigation with admin UI by @ahstn
-- Merge remote-tracking branch 'origin/codex/docs-cohesion' into docs/split-docs-navigation by @ahstn
-- Polish docs sidebar layout by @ahstn
-- Split docs navigation surfaces by @ahstn
-- Refine docs getting started index by @ahstn
-- Simplify getting started docs index by @ahstn
-
-### Documentation
 - Slight rewording of Cloud Run docs by @ahstn
 - Moving mcp docs to a common folder by @ahstn
 - Refactoring styling by @ahstn
 - Updating aws provider guidance by @ahstn
 - Updating tagging docs by @ahstn
+- Merge remote-tracking branch 'origin/codex/docs-cohesion' into docs/split-docs-navigation by @ahstn
 - Clarify docs audience guidance by @ahstn
+- Polish docs sidebar layout by @ahstn
+- Refine docs getting started index by @ahstn
+- Simplify getting started docs index by @ahstn
 - Split docs navigation surfaces by @ahstn in [#215](https://github.com/ahstn/oceans-llm/pull/215)
 - Updating docs by @ahstn
-
-### Miscellaneous
-- Changes as per pr by @ahstn
-- Updating client config docs screenshot by @ahstn
 - Merge 'docs/split-docs-navigation' by @ahstn
 - *(version)* V0.13.0 by @ahstn
-
-### Testing
-- *(admin)* Cover codex setup rows by @ahstn
 
 
 
 
 ## [0.12.0] - 2026-07-01
 ### :rocket: New features
-- *(gateway)* Implement oidc sso by @ahstn
-- *(auth)* Add direct GitHub OAuth SSO by @ahstn
-- *(auth)* Add direct GitHub OAuth SSO by @ahstn
 - *(gateway)* Implement OIDC SSO by @ahstn in [#157](https://github.com/ahstn/oceans-llm/pull/157)
 - *(auth)* Add direct GitHub OAuth SSO by @ahstn in [#158](https://github.com/ahstn/oceans-llm/pull/158)
-- *(gateway)* Export spend as FOCUS CSV by @ahstn
 - *(gateway)* Include owner tags in FOCUS export by @ahstn
 - *(gateway)* Export spend as FOCUS CSV by @ahstn in [#160](https://github.com/ahstn/oceans-llm/pull/160)
-- *(gateway)* Add external MCP registry by @ahstn
 - *(gateway)* Add external MCP registry by @ahstn in [#161](https://github.com/ahstn/oceans-llm/pull/161)
-- *(gateway)* Add MCP gateway auth and diagnostics by @ahstn
 - *(gateway)* Add MCP gateway auth and diagnostics by @ahstn in [#162](https://github.com/ahstn/oceans-llm/pull/162)
-- *(gateway)* Implement budget principal taxonomy by @ahstn
 - *(gateway)* Implement budget principal taxonomy by @ahstn in [#163](https://github.com/ahstn/oceans-llm/pull/163)
-- *(gateway)* Add bedrock mantle support by @ahstn
 - *(gateway)* Add bedrock mantle support by @ahstn in [#164](https://github.com/ahstn/oceans-llm/pull/164)
 - *(mcp)* Add grants and token overhead telemetry by @ahstn in [#165](https://github.com/ahstn/oceans-llm/pull/165)
-- *(gateway)* Track additional agent harness user agents by @ahstn
 - *(gateway)* Track additional agent harness user agents by @ahstn in [#174](https://github.com/ahstn/oceans-llm/pull/174)
 - *(gateway)* Add aggregate MCP discovery endpoint by @ahstn
 - *(gateway)* Add MCP credential execution by @ahstn
 - *(gateway)* Add aggregate MCP discovery and execution by @ahstn in [#171](https://github.com/ahstn/oceans-llm/pull/171)
-- *(admin-ui)* Add Claude Code client config snippets by @ahstn
 - *(admin-ui)* Add Claude Code client config snippets by @ahstn in [#176](https://github.com/ahstn/oceans-llm/pull/176)
 - Use central cargo build dirs by @ahstn
 - *(admin-ui)* Redesign request log detail as wide inspect drawer by @ahstn
 - *(gateway)* Re-anchor local demo seed on every run with richer fixtures by @ahstn
-- *(gateway)* Add OpenRouter routing policy controls by @ahstn
 - *(admin-ui)* Surface api key and caller in the request logs table by @ahstn
 - *(admin-ui)* Surface api key and caller in request logs table by @ahstn in [#177](https://github.com/ahstn/oceans-llm/pull/177)
-- *(gateway)* Support Cloud Run OpenAI-compatible providers by @ahstn
 - *(gateway)* Support Cloud Run OpenAI-compatible providers by @ahstn in [#181](https://github.com/ahstn/oceans-llm/pull/181)
 - *(gateway)* Add OpenRouter routing policy controls by @ahstn in [#180](https://github.com/ahstn/oceans-llm/pull/180)
-- *(gateway)* Restrict github oauth email domains by @ahstn
 - *(gateway)* Restrict github oauth email domains by @ahstn in [#183](https://github.com/ahstn/oceans-llm/pull/183)
 - *(admin-ui)* Polish MCP management UI by @ahstn in [#184](https://github.com/ahstn/oceans-llm/pull/184)
-- *(gateway)* Add Codex client config by @ahstn
 - *(gateway)* Add Codex client config by @ahstn in [#185](https://github.com/ahstn/oceans-llm/pull/185)
-- *(gateway)* Add Anthropic messages for Vertex Claude tools by @ahstn
 - *(gateway)* Add Anthropic messages for Vertex Claude tools by @ahstn in [#186](https://github.com/ahstn/oceans-llm/pull/186)
 - Add multi-model client config generation by @ahstn
 - *(gateway)* Add multi-model client configs by @ahstn in [#189](https://github.com/ahstn/oceans-llm/pull/189)
-- *(review-agent)* Add GitHub review agent foundation by @ahstn
 - *(review-agent)* Add GitHub review agent foundation by @ahstn in [#200](https://github.com/ahstn/oceans-llm/pull/200)
-- *(client-config)* Add Fable 5 adaptive config by @ahstn
 - *(client-config)* Add Fable 5 adaptive config by @ahstn in [#202](https://github.com/ahstn/oceans-llm/pull/202)
 
 ### :bug: Bug fixes
@@ -375,10 +353,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(client-config)* Use Anthropic APIs for Claude models by @ahstn
 - *(gateway)* Address Anthropic messages PR review findings by @ahstn
 - *(gateway)* Align Messages errors and config API inference by @ahstn
-- *(gateway)* Include usage in Anthropic stream deltas by @ahstn
 - *(gateway)* Harden Anthropic stream usage accounting by @ahstn
 - *(gateway)* Include usage in Anthropic stream deltas by @ahstn in [#187](https://github.com/ahstn/oceans-llm/pull/187)
-- *(auth)* Improve github oauth email verification handling by @ahstn
 - *(auth)* Address github oauth review feedback by @ahstn
 - *(auth)* Improve github oauth email verification handling by @ahstn in [#191](https://github.com/ahstn/oceans-llm/pull/191)
 - Address client config review findings by @ahstn
@@ -386,22 +362,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(providers)* Align adaptive Claude policy by @ahstn
 - *(providers)* Address adaptive Claude review by @ahstn
 
-### Build
-- Post release tasks - v0.8.0 by @ahstn
-- Post release tasks - v0.9.0 by @ahstn
-- Post release tasks - v0.10.0 by @ahstn
-- Post release tasks - v0.10.1 by @ahstn
-- Post release tasks - v0.11.0 by @ahstn
-- Post release tasks - v0.11.1 by @ahstn
-- Post release tasks - v0.11.2 by @ahstn
-- Bump web-ui dependencies by @ahstn
-
 ### Changed
+- Upgrade bun deps by @ahstn
+- Adding more screenshots by @ahstn
+- Address FOCUS export review notes by @ahstn
 - Add hosted MCP recommendations by @ahstn
 - Record MCP gateway auth alignment interview by @ahstn
+- Updating screenshots by @ahstn
 - *(providers)* Share openai stream normalization by @ahstn
+- *(bedrock)* Make projects snippet loadable by @ahstn
 - Implement MCP grants and token overhead telemetry by @ahstn
-- Address MCP PR review findings by @ahstn
+- Refresh shadcn skill lock hash by @ahstn
 - Merge remote-tracking branch 'origin/main' into codex/openrouter-routing-policy by @ahstn
 - *(gateway)* Simplify oauth domain policy helpers by @ahstn
 - Polish admin MCP workspace UI by @ahstn
@@ -409,54 +380,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Align admin identity and MCP tables by @ahstn
 - Polish MCP tools dialog by @ahstn
 - Document MCP admin workflows by @ahstn
-- *(client-config)* Split client renderers by concern by @ahstn
-
-### Documentation
-- Adding more screenshots by @ahstn
-- Adding more screenshots by @ahstn
-- Address FOCUS export review notes by @ahstn
-- Updating screenshots by @ahstn
-- *(bedrock)* Make projects snippet loadable by @ahstn
 - *(client-config)* Note mixed API provider split by @ahstn
-
-### Miscellaneous
-- Upgrade bun deps by @ahstn
-- Refresh shadcn skill lock hash by @ahstn
+- *(client-config)* Split client renderers by concern by @ahstn
 - *(version)* V0.12.0 by @ahstn
-
-### Testing
-- *(gateway)* Preserve env vars in MCP guards by @ahstn
-- *(gateway)* Address oauth domain review feedback by @ahstn
 
 
 
 
 ## [0.8.0] - 2026-05-15
 ### :rocket: New features
-- *(deploy)* Add Helm OCI chart by @ahstn
 - *(deploy)* Add Helm OCI chart by @ahstn in [#120](https://github.com/ahstn/oceans-llm/pull/120)
-- *(gateway)* Add request-attempt observability by @ahstn
 - *(gateway)* Add request-attempt observability by @ahstn in [#119](https://github.com/ahstn/oceans-llm/pull/119)
 - *(gateway)* Add bedrock streaming and claude support by @ahstn
 - *(gateway)* Support bedrock aws credential chain by @ahstn
 - *(gateway)* Add AWS Bedrock streaming and Claude support by @ahstn in [#130](https://github.com/ahstn/oceans-llm/pull/130)
-- *(providers)* Add claude thinking compatibility by @ahstn
 - *(providers)* Add claude thinking compatibility by @ahstn in [#135](https://github.com/ahstn/oceans-llm/pull/135)
-- *(admin)* Add Anthropic client config snippets by @ahstn
 - *(admin)* Add Anthropic client config snippets by @ahstn in [#142](https://github.com/ahstn/oceans-llm/pull/142)
-- *(observability)* Add tool cardinality request logs by @ahstn
 - *(observability)* Add tool cardinality request logs by @ahstn in [#123](https://github.com/ahstn/oceans-llm/pull/123)
-- *(observability)* Add agent harness usage by @ahstn
-- *(admin-ui)* Show request operations in logs by @ahstn
 - *(admin-ui)* Show request operations in logs by @ahstn in [#150](https://github.com/ahstn/oceans-llm/pull/150)
 - *(observability)* Add agent harness usage by @ahstn in [#149](https://github.com/ahstn/oceans-llm/pull/149)
-- *(observability)* Add MCP invocation audit logs by @ahstn
 - *(observability)* Add MCP invocation audit logs by @ahstn in [#151](https://github.com/ahstn/oceans-llm/pull/151)
-- *(gateway)* Add request log retention purge by @ahstn
 - *(gateway)* Add request log retention purge by @ahstn in [#153](https://github.com/ahstn/oceans-llm/pull/153)
-- *(gateway)* Add team service accounts by @ahstn
 - *(gateway)* Add team service accounts by @ahstn in [#152](https://github.com/ahstn/oceans-llm/pull/152)
-- *(gateway)* Add identity entity tags by @ahstn
 - *(gateway)* Add identity entity tags by @ahstn in [#155](https://github.com/ahstn/oceans-llm/pull/155)
 - *(admin-ui)* Add expandable team rows by @ahstn
 - Updating icons and sidebar nav by @ahstn
@@ -465,11 +410,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### :bug: Bug fixes
 - *(deploy)* Address Helm review feedback by @ahstn
 - *(gateway)* Sanitize request-attempt error details by @ahstn
-- *(gateway)* Stabilize admin contract checks by @ahstn
-- *(gateway)* Satisfy vertex stream clippy by @ahstn
 - *(gateway)* Satisfy vertex stream clippy by @ahstn in [#125](https://github.com/ahstn/oceans-llm/pull/125)
 - *(gateway)* Stabilize admin contract checks by @ahstn in [#124](https://github.com/ahstn/oceans-llm/pull/124)
-- *(gateway)* Address bedrock review feedback by @ahstn
 - *(gateway)* Address bedrock review feedback by @ahstn
 - *(providers)* Validate native claude effort fields by @ahstn
 - *(providers)* Require bedrock converse thinking budgets by @ahstn
@@ -489,22 +431,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(gateway-store)* Address service account review feedback by @ahstn
 - *(gateway)* Integrate service accounts with main by @ahstn
 - *(gateway)* Reconcile service accounts with latest main by @ahstn
-- *(gateway)* Surface models.dev pricing metadata by @ahstn
 - *(gateway)* Address pricing catalog review feedback by @ahstn
 - *(gateway)* Surface models.dev pricing metadata by @ahstn in [#154](https://github.com/ahstn/oceans-llm/pull/154)
 - Address identity tag review comments by @ahstn
 
-### Build
-- Post release tasks - v0.6.0 by @ahstn
-- Post release tasks - v0.7.0 by @ahstn
-- *(ui)* Updating ui dependencies by @ahstn
-- Post release tasks - v0.7.1 by @ahstn
-
 ### Changed
+- Various docs updates by @ahstn
 - *(deploy)* Split Helm hook jobs by @ahstn
+- Adding docs deploy by @ahstn
+- Overhauling theme by @ahstn
 - Merge remote-tracking branch 'origin/main' into codex/helm-oci-chart by @ahstn
 - Merge branch 'main' into issue-chain-17-18-19 by @ahstn
 - Add AWS Bedrock provider and Converse chat support by @ahstn
+- *(providers)* Split anthropic parity follow-ups by @ahstn
 - Improve container runtime hardening and admin errors by @ahstn
 - Polish admin UI shell by @ahstn
 - Refine admin sidebar navigation by @ahstn
@@ -512,62 +451,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Theme native admin scrollbars by @ahstn
 - Render OpenAI brand icon inline by @ahstn
 - Expand local demo seed data by @ahstn
-- *(gateway)* Split local demo seed fixtures by @ahstn
-- *(gateway)* Split local demo seed fixtures by @ahstn in [#145](https://github.com/ahstn/oceans-llm/pull/145)
-- Address harness usage PR review findings by @ahstn
-- *(admin-ui)* Simplify request operation label rendering by @ahstn
-- Merge branch 'main' into codex/agent-harness-usage by @ahstn
-- Polish teams member toggle by @ahstn
-- Add generated avatars and user detail dialog by @ahstn
-- Polish user details dialog by @ahstn
-
-### Documentation
-- Various docs updates by @ahstn
-- Adding docs deploy by @ahstn
-- Overhauling theme by @ahstn
-- *(providers)* Split anthropic parity follow-ups by @ahstn
-- Updating favicon and adding images by @ahstn
 - Updating favicon and adding images by @ahstn in [#146](https://github.com/ahstn/oceans-llm/pull/146)
 - Refresh favicon and hero branding by @ahstn
 - Adding reference screenshots page by @ahstn
 - Refresh docs branding and screenshots by @ahstn in [#147](https://github.com/ahstn/oceans-llm/pull/147)
+- *(gateway)* Split local demo seed fixtures by @ahstn in [#145](https://github.com/ahstn/oceans-llm/pull/145)
+- Consolidate mise monorepo tasks by @ahstn
+- Address harness usage PR review findings by @ahstn
+- *(admin-ui)* Simplify request operation label rendering by @ahstn
 - Add request log validation note by @ahstn
+- Merge branch 'main' into codex/agent-harness-usage by @ahstn
 - Align audience taxonomy wording by @ahstn
 - Split tagging guidance into dedicated page by @ahstn
-
-### Miscellaneous
-- Consolidate mise monorepo tasks by @ahstn
+- Polish teams member toggle by @ahstn
+- Add generated avatars and user detail dialog by @ahstn
+- Polish user details dialog by @ahstn
 - *(version)* V0.8.0 by @ahstn
-
-### Testing
-- *(gateway)* Close request-attempt observability gaps by @ahstn
 
 
 
 
 ## [0.6.0] - 2026-04-24
 ### :rocket: New features
-- *(docs)* Publish docs site with vitepress by @ahstn
 - *(docs)* Publish docs site with vitepress by @ahstn in [#75](https://github.com/ahstn/oceans-llm/pull/75)
-- *(gateway)* Add declarative config seeding for teams and users by @ahstn
 - *(gateway)* Add declarative config seeding for teams and users by @ahstn in [#79](https://github.com/ahstn/oceans-llm/pull/79)
 - *(admin-ui)* Adopt shadcn sidebar preset layout by @ahstn
-- *(gateway)* Seed richer local demo data by @ahstn
-- *(admin-ui)* Add provider and model brand icons by @ahstn
 - *(admin)* Improve provider branding and lookup efficiency by @ahstn
 - *(admin-ui)* Add provider and model brand icons by @ahstn in [#81](https://github.com/ahstn/oceans-llm/pull/81)
-- *(gateway)* Seed richer local demo data by @ahstn
 - *(admin-ui)* Polish preset layout and harden admin models by @ahstn in [#83](https://github.com/ahstn/oceans-llm/pull/83)
 - *(gateway)* Seed richer local demo data by @ahstn in [#82](https://github.com/ahstn/oceans-llm/pull/82)
-- *(admin-ui)* Improve models page table scrolling by @ahstn
 - *(admin)* Add observability usage leaderboard by @ahstn in [#85](https://github.com/ahstn/oceans-llm/pull/85)
 - *(models)* Updating models api by @ahstn
 - *(admin-ui)* Improve models page table scrolling by @ahstn in [#86](https://github.com/ahstn/oceans-llm/pull/86)
-- *(gateway)* Add provider compatibility profiles by @ahstn
 - *(gateway)* Add provider compatibility profiles by @ahstn in [#94](https://github.com/ahstn/oceans-llm/pull/94)
-- *(admin)* Add current-session logout by @ahstn
 - *(admin)* Add current-session logout by @ahstn in [#104](https://github.com/ahstn/oceans-llm/pull/104)
-- *(gateway)* Add OpenAI Responses API support by @ahstn
 - *(gateway)* Add OpenAI Responses API support by @ahstn in [#95](https://github.com/ahstn/oceans-llm/pull/95)
 - *(gateway)* Harden request log payload policy by @ahstn in [#117](https://github.com/ahstn/oceans-llm/pull/117)
 
@@ -577,43 +494,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(gateway-store)* Guard seeded identity auth mutations by @ahstn
 - *(admin)* Paginate models and redact provider cache by @ahstn
 - *(gateway)* Keep local demo bootstrap-safe by @ahstn
-- *(admin-ui)* Restore upstream model column layout by @ahstn
 - *(admin-ui)* Restore upstream model column layout by @ahstn in [#87](https://github.com/ahstn/oceans-llm/pull/87)
 - *(ui)* Fixing overscroll on main body content by @ahstn
 
-### Build
-- Post release tasks - v0.5.0 by @ahstn
-
 ### Changed
 - Implement live admin API key management by @ahstn
-- *(api-keys)* Harden admin lifecycle architecture by @ahstn
 - *(api-keys)* Harden admin lifecycle architecture by @ahstn in [#73](https://github.com/ahstn/oceans-llm/pull/73)
-- *(gateway-store)* Rebaseline pre-v1 migrations by @ahstn
+- Harden documentation graph and workflows by @ahstn in [#74](https://github.com/ahstn/oceans-llm/pull/74)
+- Simplify canonical page metadata by @ahstn
+- *(observability)* Codify issue-54 runtime contract by @ahstn in [#76](https://github.com/ahstn/oceans-llm/pull/76)
 - Fix declarative seed validation ordering by @ahstn
 - *(main)* Resolve conflicts and harden migration reset detection by @ahstn
 - *(gateway-store)* Rebaseline pre-v1 migrations by @ahstn in [#77](https://github.com/ahstn/oceans-llm/pull/77)
 - Simplify local runtime setup with mise by @ahstn
+- Updating gitignore by @ahstn
 - Merge remote-tracking branch 'origin/codex/seed-local-demo-data' into codex/ui-preset-polish-sync by @ahstn
 - Polish API key management flows by @ahstn
-- Add observability usage leaderboard by @ahstn
 - Normalize generated admin API typings by @ahstn
 - Merge branch 'main' into codex/models-page-scroll-refresh by @ahstn
 - Fix admin UI localhost SSR auth flow by @ahstn
-- Harden request log payload policy by @ahstn
-- Merge origin/main into request log payload policy by @ahstn
-- Align payload policy OpenAPI limits by @ahstn
-
-### Documentation
-- Harden documentation graph and workflows by @ahstn
-- Harden documentation graph and workflows by @ahstn in [#74](https://github.com/ahstn/oceans-llm/pull/74)
-- Simplify canonical page metadata by @ahstn
-- *(observability)* Codify issue-54 runtime contract by @ahstn
-- *(observability)* Codify issue-54 runtime contract by @ahstn in [#76](https://github.com/ahstn/oceans-llm/pull/76)
 - Adding images/screenshots by @ahstn
 - *(adr)* Record admin logout decision by @ahstn
-
-### Miscellaneous
-- Updating gitignore by @ahstn
+- Merge origin/main into request log payload policy by @ahstn
+- Align payload policy OpenAPI limits by @ahstn
 
 
 
@@ -621,76 +524,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.0] - 2026-03-29
 ### :rocket: New features
 - *(ops)* Harden migrations and adopt pitchfork-first local postgres by @ahstn
-- *(gateway)* Tighten accounting and request-log contracts by @ahstn
 - *(gateway)* Tighten accounting and request-log contracts by @ahstn in [#55](https://github.com/ahstn/oceans-llm/pull/55)
-- *(gateway)* Add budget threshold alerting by @ahstn
 - *(gateway)* Add budget threshold alerting by @ahstn in [#58](https://github.com/ahstn/oceans-llm/pull/58)
 - *(identity)* Harden admin lifecycle and team membership workflows by @ahstn in [#63](https://github.com/ahstn/oceans-llm/pull/63)
 - *(gateway)* Add caller tags to request logs by @ahstn in [#62](https://github.com/ahstn/oceans-llm/pull/62)
-- *(admin)* Generate live control-plane API contract by @ahstn
 - *(admin)* Generate live control-plane API contract by @ahstn in [#72](https://github.com/ahstn/oceans-llm/pull/72)
 
 ### :bug: Bug fixes
-- *(ci)* Skip postgres install in ci by @ahstn
 - *(ci)* Skip postgres install in ci by @ahstn
 - *(gateway)* Include budget id in alert dedupe by @ahstn
 - *(identity)* Address review feedback after rebase by @ahstn
 - *(admin)* Stabilize generated admin contract artifacts by @ahstn
 - *(gateway)* Expose test metrics in debug builds by @ahstn
-- *(observability)* Harden chat metrics and streamed request logging by @ahstn
 - *(observability)* Harden chat metrics and streamed request logging by @ahstn in [#70](https://github.com/ahstn/oceans-llm/pull/70)
-- *(observability)* Remove fallback-era request metadata by @ahstn
 - *(gateway)* Drop duplicate stream error parsing by @ahstn
 - *(gateway)* Finalize stream collector before success path by @ahstn
 - *(store)* Guard postgres metadata cleanup migration by @ahstn
 - *(observability)* Remove fallback-era request metadata by @ahstn in [#71](https://github.com/ahstn/oceans-llm/pull/71)
 
-### Build
-- Post release tasks - v0.4.0 by @ahstn
-
 ### Changed
 - Refactor migration hook exposure and simplify local postgres guidance by @ahstn
+- Add contributing guide by @ahstn
+- Expand canonical operator references by @ahstn
+- Harden documentation graph by @ahstn in [#56](https://github.com/ahstn/oceans-llm/pull/56)
 - Merge branch 'main' into codex/post-success-accounting-request-log-contracts by @ahstn
 - Merge branch 'main' into codex/issues-3-14-hardening-pitchfork by @ahstn
 - *(gateway-store)* Harden migrations and simplify local postgres workflow by @ahstn in [#57](https://github.com/ahstn/oceans-llm/pull/57)
 - Implement admin identity lifecycle hardening by @ahstn
+- *(adr)* Record identity lifecycle hardening by @ahstn
 - *(identity)* Tighten lifecycle boundaries by @ahstn
 - Add request caller tags to observability by @ahstn
+- *(adr)* Expand request log caller tag decision record by @ahstn
 - *(observability)* Tighten request log tag filters by @ahstn
 - *(main)* Integrate latest observability changes by @ahstn
 - *(main)* Absorb latest observability cleanup by @ahstn
-
-### Documentation
-- Harden documentation graph by @ahstn
-- Add contributing guide by @ahstn
-- Expand canonical operator references by @ahstn
-- Harden documentation graph by @ahstn in [#56](https://github.com/ahstn/oceans-llm/pull/56)
-- *(adr)* Record identity lifecycle hardening by @ahstn
-- *(adr)* Expand request log caller tag decision record by @ahstn
-
-### Miscellaneous
 - *(version)* V0.5.0 by @ahstn
-
-### Testing
-- *(admin-ui)* Cover trimmed request log tag filters by @ahstn
 
 
 
 
 ## [0.4.0] - 2026-03-17
 ### :rocket: New features
-- *(admin-ui)* Add team management flow by @ahstn
 - *(auth)* Add bootstrap admin login flow by @ahstn
 - *(identity)* Add user signup and onboarding flow by @ahstn in [#12](https://github.com/ahstn/oceans-llm/pull/12)
 - *(admin-ui)* Add team management flow by @ahstn in [#13](https://github.com/ahstn/oceans-llm/pull/13)
-- *(deploy)* Add local and GHCR compose stacks by @ahstn
 - *(deploy)* Add local and GHCR compose stacks by @ahstn in [#15](https://github.com/ahstn/oceans-llm/pull/15)
 - *(gateway)* Add postgres runtime backend by @ahstn
 - *(gateway)* Harden store migrations and runtime cli by @ahstn
-- *(gateway)* Harden store migrations and runtime cli by @ahstn
-- *(gateway)* Support model aliases by @ahstn
 - *(gateway)* Harden model alias resolution by @ahstn
-- *(gateway)* Add durable usage ledger accounting by @ahstn
 - *(gateway)* Add durable usage ledger accounting by @ahstn in [#41](https://github.com/ahstn/oceans-llm/pull/41)
 - *(admin-ui)* Refresh theme shell and auth surfaces by @ahstn
 - *(admin-ui)* Add identity empty states and share flows by @ahstn
@@ -701,7 +582,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(gateway)* Complete provider-neutral core boundary and capability-aware routing by @ahstn in [#43](https://github.com/ahstn/oceans-llm/pull/43)
 - *(gateway)* Support model aliases by @ahstn in [#40](https://github.com/ahstn/oceans-llm/pull/40)
 - *(gateway)* Close embeddings and openai-compat streaming runtime gaps by @ahstn
-- *(gateway)* Simplify v1 runtime routing and streaming by @ahstn
 - *(gateway)* Simplify v1 runtime routing and streaming by @ahstn in [#47](https://github.com/ahstn/oceans-llm/pull/47)
 - *(spend)* Ship spend reporting and team budget controls by @ahstn
 - *(spend)* Deliver live spend reporting and team budget controls by @ahstn in [#48](https://github.com/ahstn/oceans-llm/pull/48)
@@ -709,7 +589,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(observability)* Complete runtime metrics and request-log evolution by @ahstn in [#51](https://github.com/ahstn/oceans-llm/pull/51)
 
 ### :bug: Bug fixes
-- *(gateway)* Restore lint and test green by @ahstn
 - *(gateway)* Restore lint and test green by @ahstn in [#36](https://github.com/ahstn/oceans-llm/pull/36)
 - *(e2e)* Resolve mise from environment by @ahstn
 - *(gateway)* Default maintenance task config by @ahstn
@@ -727,36 +606,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(ci)* Satisfy lint and harden request logging by @ahstn
 - *(ci)* Restore chat log metadata and migration assertions by @ahstn
 
-### Build
-- Disable ARM builds until we have better gha runners by @ahstn
-- Post release tasks - v0.2.0 by @ahstn
-- Post release tasks - v0.3.0 by @ahstn
-- Adding worktrunk config by @ahstn
-- Add pre-commit for linting and file hygiene by @ahstn
-
 ### Changed
+- Post release tasks by @ahstn
+- Removing old semantic release setup by @ahstn
 - Implement user signup and onboarding flow by @ahstn
 - Fix local admin UI gateway routing by @ahstn
 - Merge origin/main into feat/team-creation by @ahstn
+- Adding adr by @ahstn
 - *(ui)* Request log table padding fixes by @ahstn
 - *(gateway)* Decouple provider execution from OpenAI DTOs by @ahstn
+- *(adr)* Record capability-aware route gating decision by @ahstn
 - Merge origin/main into codex/model-aliases by @ahstn
 - Preserve observability response metadata by @ahstn
-
-### Documentation
-- Adding adr by @ahstn
-- *(adr)* Record capability-aware route gating decision by @ahstn
-
-### Miscellaneous
-- Post release tasks by @ahstn
-- Removing old semantic release setup by @ahstn
 - Update mise config by @ahstn
 - Resolve conflicts by @ahstn
 - *(version)* V0.4.0 by @ahstn
-
-### Testing
-- *(admin-ui)* Add end-to-end contract harness by @ahstn
-- *(admin-ui)* Add end-to-end contract harness by @ahstn in [#37](https://github.com/ahstn/oceans-llm/pull/37)
 
 
 
@@ -770,42 +634,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(gateway)* Implement vertex-first chat provider foundation by @ahstn
 - *(gateway)* Add Vertex-first chat execution foundation by @ahstn in [#10](https://github.com/ahstn/oceans-llm/pull/10)
 
-### Build
-- *(release)* Simplify release pipeline around cocogitto and git-cliff by @ahstn in [#11](https://github.com/ahstn/oceans-llm/pull/11)
-
-### CI
-- Add rust workflow and ui-check task by @ahstn
-- Add rust workflow and enforce ui-install via mise by @ahstn in [#6](https://github.com/ahstn/oceans-llm/pull/6)
-
 ### Changed
+- Add pull request template by @ahstn
 - Fix admin UI upstream loopback and restore Tailwind styling by @ahstn
 - Fix admin UI local proxy reliability and Tailwind rendering by @ahstn in [#2](https://github.com/ahstn/oceans-llm/pull/2)
-- Implement identity and user management foundation by @ahstn
-- Harden budget accounting precision and policy docs by @ahstn
-- Identity foundation and budget accounting hardening by @ahstn in [#5](https://github.com/ahstn/oceans-llm/pull/5)
-- Implement request logging and Vertex stream guards by @ahstn
-- Add hybrid pricing catalog support by @ahstn
-- Fix Vertex stream decoding and terminal state by @ahstn
-
-### Documentation
 - Add issue template and gh workflow reminders by @ahstn
 - Split issue templates into feature and bug forms by @ahstn
 - Add dedicated feature/bug issue templates by @ahstn in [#9](https://github.com/ahstn/oceans-llm/pull/9)
+- Implement identity and user management foundation by @ahstn
+- Harden budget accounting precision and policy docs by @ahstn
+- Identity foundation and budget accounting hardening by @ahstn in [#5](https://github.com/ahstn/oceans-llm/pull/5)
 - *(adr)* Add attribution note to vertex foundation ADR by @ahstn
-- Updating documentation by @ahstn
-- Updating documentation by @ahstn
-
-### Miscellaneous
-- Add pull request template by @ahstn
+- Implement request logging and Vertex stream guards by @ahstn
+- Add hybrid pricing catalog support by @ahstn
 - Adding fallback pricing data by @ahstn
+- Fix Vertex stream decoding and terminal state by @ahstn
+- Updating documentation by @ahstn
 - *(version)* V0.1.0 by @ahstn
 
-### Testing
-- *(vertex)* Harden stream parsing and add adapter HTTP tests by @ahstn
 
 
 
-
+[0.22.0]: https://github.com/ahstn/oceans-llm/compare/v0.21.0...v0.22.0
+[0.21.0]: https://github.com/ahstn/oceans-llm/compare/v0.20.1...v0.21.0
+[0.20.1]: https://github.com/ahstn/oceans-llm/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/ahstn/oceans-llm/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/ahstn/oceans-llm/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/ahstn/oceans-llm/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/ahstn/oceans-llm/compare/v0.16.0...v0.17.0

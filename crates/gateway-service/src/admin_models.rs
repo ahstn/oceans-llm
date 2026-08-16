@@ -11,7 +11,8 @@ use gateway_client_config::{
 use gateway_core::{
     GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
     PricingCatalogRepository, PricingLimits, PricingModalities, ProviderCapabilities,
-    ProviderConnection, ProviderRepository, vertex_route_capabilities_for_upstream_model,
+    ProviderConnection, ProviderRepository, github_copilot_route_capabilities,
+    vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
 
@@ -441,6 +442,9 @@ fn provider_capabilities(
             ProviderCapabilities::openai_compat_baseline()
         }
         "gcp_vertex" => vertex_route_capabilities(route),
+        "github_copilot" => github_copilot_route_capabilities(
+            route.and_then(|route| route.compatibility.github_copilot.as_ref()),
+        ),
         "aws_bedrock" => ProviderCapabilities {
             chat_completions: true,
             responses: true,
@@ -596,7 +600,8 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        GatewayError, GatewayModel, ModelAllowlistPolicy, ModelPricingRecord,
+        GatewayError, GatewayModel, GitHubCopilotChatApi, GitHubCopilotRouteCompatibility,
+        GitHubCopilotUpstreamSupports, ModelAllowlistPolicy, ModelPricingRecord,
         ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, PricingCatalogCacheRecord,
         PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
         ProviderCapabilities, ProviderConnection, ProviderRepository, StoreError,
@@ -966,7 +971,7 @@ mod tests {
         assert!(chat_capabilities.chat_completions);
         assert!(chat_capabilities.stream);
         assert!(!chat_capabilities.embeddings);
-        assert!(!chat_capabilities.tools);
+        assert!(chat_capabilities.tools);
 
         let anthropic_route = model_route(
             "anthropic/claude-sonnet-4-6",
@@ -976,6 +981,49 @@ mod tests {
         assert!(anthropic_capabilities.chat_completions);
         assert!(!anthropic_capabilities.embeddings);
         assert!(anthropic_capabilities.tools);
+    }
+    #[test]
+    fn copilot_provider_uses_upstream_evidence_and_operator_policy() {
+        let provider = provider_connection("github_copilot");
+        let mut claude_route = model_route(
+            "anthropic/claude-sonnet-4-6",
+            ProviderCapabilities {
+                tools: false,
+                ..ProviderCapabilities::all_enabled()
+            },
+        );
+        claude_route.compatibility.github_copilot = Some(GitHubCopilotRouteCompatibility {
+            chat_api: Some(GitHubCopilotChatApi::AnthropicMessages),
+            supports_responses: false,
+            supports_embeddings: false,
+            upstream_supports: GitHubCopilotUpstreamSupports {
+                streaming: true,
+                tool_calls: true,
+                vision: true,
+                structured_outputs: true,
+            },
+        });
+        let claude_capabilities = provider_capabilities(&provider, Some(&claude_route));
+        assert!(claude_capabilities.chat_completions);
+        assert!(claude_capabilities.stream);
+        assert!(claude_capabilities.tools);
+        assert!(claude_capabilities.vision);
+        assert!(!claude_capabilities.json_schema);
+        assert!(!claude_capabilities.developer_role);
+
+        let effective = effective_provider_route_capabilities(
+            Some(claude_route.capabilities),
+            Some(&provider),
+            Some(&claude_route),
+        );
+        assert!(!effective.tools);
+        assert!(effective.vision);
+
+        let unknown_route = model_route("unknown", ProviderCapabilities::all_enabled());
+        assert_eq!(
+            provider_capabilities(&provider, Some(&unknown_route)),
+            ProviderCapabilities::none()
+        );
     }
 
     #[test]
@@ -1696,7 +1744,7 @@ mod tests {
     }
 
     #[test]
-    fn vertex_provider_capabilities_are_tool_capable_only_for_anthropic_routes() {
+    fn vertex_provider_capabilities_are_tool_capable_for_gemini_and_anthropic_routes() {
         let provider = ProviderConnection {
             provider_key: "vertex-prod".to_string(),
             provider_type: "gcp_vertex".to_string(),
@@ -1720,8 +1768,11 @@ mod tests {
         };
         let mut google_route = anthropic_route.clone();
         google_route.upstream_model = "google/gemini-2.0-flash".to_string();
+        let mut embedding_route = anthropic_route.clone();
+        embedding_route.upstream_model = "google/gemini-embedding-001".to_string();
 
         assert!(provider_capabilities(&provider, Some(&anthropic_route)).tools);
-        assert!(!provider_capabilities(&provider, Some(&google_route)).tools);
+        assert!(provider_capabilities(&provider, Some(&google_route)).tools);
+        assert!(!provider_capabilities(&provider, Some(&embedding_route)).tools);
     }
 }

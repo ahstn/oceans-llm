@@ -4,13 +4,13 @@ use super::*;
 async fn normalizes_mantle_anthropic_messages_sse() {
     let chunks: Vec<Result<Bytes, reqwest::Error>> = vec![
         Ok(Bytes::from_static(
-            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\"}}\n\n",
+            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\",\"usage\":{\"input_tokens\":3,\"output_tokens\":0,\"cache_read_input_tokens\":2,\"cache_creation_input_tokens\":1,\"cache_creation\":{\"ephemeral_5m_input_tokens\":1}}}}\n\n",
         )),
         Ok(Bytes::from_static(
             b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n",
         )),
         Ok(Bytes::from_static(
-            b"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"input_tokens\":3,\"output_tokens\":1}}\n\n",
+            b"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n",
         )),
     ];
     let mut stream = normalize_anthropic_messages_stream(
@@ -20,6 +20,7 @@ async fn normalizes_mantle_anthropic_messages_sse() {
             AwsBedrockApiStyle::MantleAnthropicMessages,
             None,
         ),
+        "aws_bedrock",
     );
     let mut transcript = String::new();
 
@@ -32,6 +33,25 @@ async fn normalizes_mantle_anthropic_messages_sse() {
     assert!(transcript.contains(r#""delta":{"role":"assistant"}"#));
     assert!(transcript.contains(r#""delta":{"content":"Hello"}"#));
     assert!(transcript.contains(r#""finish_reason":"stop""#));
+    assert!(transcript.contains(r#""prompt_tokens":3"#));
+    assert!(transcript.contains(r#""completion_tokens":1"#));
+    assert!(transcript.contains(r#""total_tokens":4"#));
+    let final_usage = transcript
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .filter_map(|data| serde_json::from_str::<Value>(data).ok())
+        .find(|chunk| chunk["choices"][0]["finish_reason"] == "stop")
+        .expect("final usage chunk");
+    assert_eq!(
+        final_usage["usage"]["provider_usage"],
+        json!({
+            "input_tokens": 3,
+            "output_tokens": 1,
+            "cache_read_input_tokens": 2,
+            "cache_creation_input_tokens": 1,
+            "cache_creation": {"ephemeral_5m_input_tokens": 1}
+        })
+    );
     assert!(transcript.ends_with("data: [DONE]\n\n"));
 }
 
@@ -69,6 +89,19 @@ async fn normalizes_mantle_anthropic_messages_streamed_tool_call_metadata() {
     assert!(transcript.contains(r#""id":"toolu_123""#));
     assert!(transcript.contains(r#""type":"function""#));
     assert!(transcript.contains(r#""name":"get_weather""#));
+    let tool_indexes = transcript
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .filter_map(|data| serde_json::from_str::<Value>(data).ok())
+        .flat_map(|event| {
+            event["choices"][0]["delta"]["tool_calls"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+        })
+        .filter_map(|call| call["index"].as_u64())
+        .collect::<Vec<_>>();
+    assert_eq!(tool_indexes, vec![0, 0]);
     assert!(transcript.contains(r#""arguments":"{\"city\":\"London\"}""#));
     assert!(transcript.contains(r#""finish_reason":"tool_calls""#));
     assert!(transcript.ends_with("data: [DONE]\n\n"));
@@ -222,6 +255,13 @@ fn normalizes_tool_use_response() {
 }
 
 async fn collect_anthropic_messages_stream(chunks: Vec<Result<Bytes, reqwest::Error>>) -> String {
+    collect_anthropic_messages_stream_for_namespace(chunks, "aws_bedrock").await
+}
+
+async fn collect_anthropic_messages_stream_for_namespace(
+    chunks: Vec<Result<Bytes, reqwest::Error>>,
+    provider_namespace: &'static str,
+) -> String {
     let mut stream = normalize_anthropic_messages_stream(
         futures_util::stream::iter(chunks),
         context_with_api_style(
@@ -229,6 +269,7 @@ async fn collect_anthropic_messages_stream(chunks: Vec<Result<Bytes, reqwest::Er
             AwsBedrockApiStyle::MantleAnthropicMessages,
             None,
         ),
+        provider_namespace,
     );
     let mut transcript = String::new();
 
@@ -238,6 +279,26 @@ async fn collect_anthropic_messages_stream(chunks: Vec<Result<Bytes, reqwest::Er
     }
 
     transcript
+}
+
+#[tokio::test]
+async fn normalizes_anthropic_stream_reasoning_for_copilot() {
+    let transcript = collect_anthropic_messages_stream_for_namespace(
+        vec![Ok(Bytes::from_static(
+            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\"}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"hidden\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"sig-stream\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"redacted_thinking\",\"data\":\"encrypted\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"text_delta\",\"text\":\"visible\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n",
+        ))],
+        "github_copilot",
+    )
+    .await;
+
+    assert!(transcript.contains(r#""github_copilot""#));
+    assert!(transcript.contains(r#""type":"thinking""#));
+    assert!(transcript.contains(r#""type":"thinking_delta""#));
+    assert!(transcript.contains(r#""type":"signature_delta""#));
+    assert!(transcript.contains(r#""signature":"sig-stream""#));
+    assert!(transcript.contains(r#""type":"redacted_thinking""#));
+    assert!(transcript.contains(r#""data":"encrypted""#));
+    assert!(transcript.contains(r#""content":"visible""#));
 }
 
 #[test]
@@ -260,6 +321,7 @@ fn normalizes_anthropic_messages_response_with_usage_and_cache_tokens() {
     let normalized = normalize_anthropic_messages_response(
         &response,
         &context("us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
+        "aws_bedrock",
     );
 
     assert_eq!(normalized["id"], "msg_123");
@@ -315,8 +377,11 @@ fn normalizes_anthropic_thinking_metadata_without_leaking_into_content() {
         }
     });
 
-    let normalized =
-        normalize_anthropic_messages_response(&response, &context("anthropic.claude-opus-4-7"));
+    let normalized = normalize_anthropic_messages_response(
+        &response,
+        &context("anthropic.claude-opus-4-7"),
+        "aws_bedrock",
+    );
     let message = &normalized["choices"][0]["message"];
 
     assert_eq!(message["content"], "I will check.");
@@ -373,6 +438,7 @@ fn normalizes_anthropic_tool_use_response() {
     let normalized = normalize_anthropic_messages_response(
         &response,
         &context("anthropic.claude-3-haiku-20240307-v1:0"),
+        "aws_bedrock",
     );
 
     assert_eq!(normalized["choices"][0]["finish_reason"], "tool_calls");

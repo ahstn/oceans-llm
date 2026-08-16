@@ -1,27 +1,29 @@
-use std::{collections::BTreeMap, env, fs, path::Path};
+use std::{collections::BTreeMap, env, fs, net::SocketAddr, path::Path};
 
 use anyhow::{Context, bail};
 use gateway_core::{
     ApiKeySecretStorageKind, AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility,
-    BudgetCadence, GlobalRole, ManagedApiKeySource, MembershipRole, ModelAllowlistPolicy, Money4,
-    OauthJitMembership, OauthJitPolicy, OidcJitMembership, OidcJitPolicy,
-    OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField,
-    OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, OpenRouterMaxPrice,
-    OpenRouterPercentileCutoffs, OpenRouterPercentilePreference, OpenRouterProviderRouting,
-    OpenRouterRouteCompatibility, ProviderCapabilities, RequestLogRetentionWindow, RequestTag,
-    RouteCompatibility, RoutePricingOverride, SeedApiKeySecretMaterial, SeedBudget,
-    SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
-    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
-    SeedUserMembership, SeedUserModelBudgetDefault, hash_gateway_key_secret, parse_gateway_api_key,
-    validate_entity_tags,
+    BudgetCadence, GitHubCopilotRouteCompatibility, GlobalRole, ManagedApiKeySource,
+    MembershipRole, ModelAllowlistPolicy, Money4, OauthJitMembership, OauthJitPolicy,
+    OidcJitMembership, OidcJitPolicy, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
+    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+    OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
+    OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities,
+    RequestLogRetentionWindow, RequestTag, RouteCompatibility, RoutePricingOverride,
+    SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
+    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
+    SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
+    hash_gateway_key_secret, parse_gateway_api_key, validate_entity_tags,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
-    OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig,
+    CopilotAuthConfig, CopilotProviderConfig, OpenAiCompatConfig, VertexAuthConfig,
+    VertexProviderConfig,
 };
 use gateway_service::{
-    PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
-    encrypt_gateway_api_key_secret, is_supported_pricing_provider_id, parse_payload_path,
+    McpOauthProvider, McpOauthRuntime, PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode,
+    RequestLogPayloadPolicy, encrypt_gateway_api_key_secret, is_supported_pricing_provider_id,
+    parse_payload_path,
 };
 use gateway_store::StoreConnectionOptions;
 use serde::{Deserialize, Deserializer, de};
@@ -39,8 +41,9 @@ pub use permissions::{
 pub use providers::{
     AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
     GcpCloudRunOpenAiCompatAuthHeaderConfig, GcpCloudRunOpenAiCompatProviderConfig,
-    GcpVertexAuthConfig, GcpVertexProviderConfig, OpenAiCompatAuthConfig,
-    OpenAiCompatProviderConfig, ProviderConfig, ProviderDisplayConfig, ProviderTimeouts,
+    GcpVertexAuthConfig, GcpVertexProviderConfig, GitHubCopilotAuthConfig,
+    GitHubCopilotProviderConfig, OpenAiCompatAuthConfig, OpenAiCompatProviderConfig,
+    ProviderConfig, ProviderDisplayConfig, ProviderTimeouts,
 };
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -51,6 +54,8 @@ pub struct GatewayConfig {
     pub database: DatabaseConfig,
     #[serde(default)]
     pub auth: AuthConfig,
+    #[serde(default)]
+    pub mcp: McpConfig,
     #[serde(default)]
     pub budget_alerts: BudgetAlertConfig,
     #[serde(default)]
@@ -90,12 +95,14 @@ impl GatewayConfig {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
+        self.server.validate()?;
         let _ = self.database.connection_options()?;
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
         let _ = self.permissions.resolve()?;
         self.auth.oidc.validate(&self.teams)?;
         self.auth.oauth.validate(&self.teams)?;
+        self.mcp.oauth.validate()?;
 
         let provider_by_id = self
             .providers
@@ -326,6 +333,112 @@ impl GatewayConfig {
                         provider.display.as_ref(),
                     )?;
                 }
+                ProviderConfig::GitHubCopilot(provider) => {
+                    if provider.id.trim().is_empty() {
+                        bail!("github_copilot provider id cannot be empty");
+                    }
+                    if provider.base_url.trim().is_empty() {
+                        bail!(
+                            "github_copilot provider `{}` base_url cannot be empty",
+                            provider.id
+                        );
+                    }
+                    let _ = url::Url::parse(&provider.base_url).with_context(|| {
+                        format!(
+                            "github_copilot provider `{}` base_url is invalid",
+                            provider.id
+                        )
+                    })?;
+                    if let Some(github_api_url) = provider.github_api_url.as_deref() {
+                        let _ = url::Url::parse(github_api_url).with_context(|| {
+                            format!(
+                                "github_copilot provider `{}` github_api_url is invalid",
+                                provider.id
+                            )
+                        })?;
+                    }
+                    if provider.editor_version.trim().is_empty() {
+                        bail!(
+                            "github_copilot provider `{}` editor_version cannot be empty",
+                            provider.id
+                        );
+                    }
+                    if provider.integration_id.trim().is_empty() {
+                        bail!(
+                            "github_copilot provider `{}` integration_id cannot be empty",
+                            provider.id
+                        );
+                    }
+                    if let Some(pricing_provider_id) = provider.pricing_provider_id.as_deref() {
+                        if pricing_provider_id.trim().is_empty() {
+                            bail!(
+                                "github_copilot provider `{}` pricing_provider_id cannot be empty",
+                                provider.id
+                            );
+                        }
+                        if !is_supported_pricing_provider_id(pricing_provider_id) {
+                            bail!(
+                                "github_copilot provider `{}` specifies unsupported pricing_provider_id `{pricing_provider_id}`",
+                                provider.id
+                            );
+                        }
+                    }
+                    match &provider.auth {
+                        GitHubCopilotAuthConfig::GitHubApp {
+                            app_id,
+                            private_key,
+                            installation_id,
+                            repository_id,
+                        } => {
+                            if *app_id == 0 {
+                                bail!(
+                                    "github_copilot provider `{}` auth.app_id cannot be 0",
+                                    provider.id
+                                );
+                            }
+                            if *installation_id == 0 {
+                                bail!(
+                                    "github_copilot provider `{}` auth.installation_id cannot be 0",
+                                    provider.id
+                                );
+                            }
+                            if *repository_id == 0 {
+                                bail!(
+                                    "github_copilot provider `{}` auth.repository_id cannot be 0",
+                                    provider.id
+                                );
+                            }
+                            if private_key.trim().is_empty() {
+                                bail!(
+                                    "github_copilot provider `{}` auth.private_key cannot be empty",
+                                    provider.id
+                                );
+                            }
+                            let _ =
+                                resolve_copilot_private_key(private_key).with_context(|| {
+                                    format!(
+                                        "github_copilot provider `{}` auth.private_key",
+                                        provider.id
+                                    )
+                                })?;
+                        }
+                        GitHubCopilotAuthConfig::Bearer { token } => {
+                            if token.trim().is_empty() {
+                                bail!(
+                                    "github_copilot provider `{}` bearer.token cannot be empty",
+                                    provider.id
+                                );
+                            }
+                            let _ = resolve_secret_reference(token).with_context(|| {
+                                format!("github_copilot provider `{}` bearer.token", provider.id)
+                            })?;
+                        }
+                    }
+                    validate_provider_display_config(
+                        provider.id.as_str(),
+                        provider.display.as_ref(),
+                    )?;
+                }
             }
         }
 
@@ -389,6 +502,17 @@ impl GatewayConfig {
                     validate_openrouter_route_compatibility(
                         &model.id, route, provider, openrouter,
                     )?;
+                }
+                if route.compatibility.github_copilot.is_some()
+                    && !provider.is_some_and(|provider| {
+                        matches!(provider, ProviderConfig::GitHubCopilot(_))
+                    })
+                {
+                    bail!(
+                        "model `{}` route for provider `{}` uses compatibility.github_copilot but requires a github_copilot provider",
+                        model.id,
+                        route.provider
+                    );
                 }
                 if let Some(ProviderConfig::AwsBedrock(provider)) = provider {
                     validate_aws_bedrock_route_compatibility(&model.id, route, provider)?;
@@ -805,6 +929,53 @@ impl GatewayConfig {
                         secrets,
                     });
                 }
+                ProviderConfig::GitHubCopilot(provider) => {
+                    match &provider.auth {
+                        GitHubCopilotAuthConfig::GitHubApp { private_key, .. } => {
+                            validate_env_reference_if_needed(private_key)?;
+                        }
+                        GitHubCopilotAuthConfig::Bearer { token } => {
+                            validate_env_reference_if_needed(token)?;
+                        }
+                    }
+
+                    let config = json!({
+                        "base_url": provider.base_url.trim_end_matches('/'),
+                        "github_api_url": provider.github_api_url.as_deref().map(|url| url.trim_end_matches('/')),
+                        "pricing_provider_id": provider.pricing_provider_id,
+                        "editor_version": provider.editor_version,
+                        "integration_id": provider.integration_id,
+                        "default_headers": provider.default_headers,
+                        "timeouts": provider.timeouts,
+                        "display": provider.display,
+                    });
+
+                    let secrets = Some(match &provider.auth {
+                        GitHubCopilotAuthConfig::GitHubApp {
+                            app_id,
+                            private_key,
+                            installation_id,
+                            repository_id,
+                        } => json!({
+                            "mode": "github_app",
+                            "app_id": app_id,
+                            "private_key": private_key,
+                            "installation_id": installation_id,
+                            "repository_id": repository_id,
+                        }),
+                        GitHubCopilotAuthConfig::Bearer { token } => json!({
+                            "mode": "bearer",
+                            "token": token,
+                        }),
+                    });
+
+                    providers.push(SeedProvider {
+                        provider_key: provider.id.clone(),
+                        provider_type: "github_copilot".to_string(),
+                        config,
+                        secrets,
+                    });
+                }
             }
         }
 
@@ -1122,7 +1293,9 @@ impl GatewayConfig {
 
                     configs.push(config);
                 }
-                ProviderConfig::GcpVertex(_) | ProviderConfig::AwsBedrock(_) => {}
+                ProviderConfig::GcpVertex(_)
+                | ProviderConfig::AwsBedrock(_)
+                | ProviderConfig::GitHubCopilot(_) => {}
             }
         }
 
@@ -1223,6 +1396,63 @@ impl GatewayConfig {
 
         Ok(configs)
     }
+    pub fn copilot_provider_configs(&self) -> anyhow::Result<Vec<CopilotProviderConfig>> {
+        let mut configs = Vec::new();
+
+        for provider in &self.providers {
+            let ProviderConfig::GitHubCopilot(provider) = provider else {
+                continue;
+            };
+
+            let auth = match &provider.auth {
+                GitHubCopilotAuthConfig::GitHubApp {
+                    app_id,
+                    private_key,
+                    installation_id,
+                    repository_id,
+                } => match resolve_copilot_private_key(private_key)? {
+                    ResolvedCopilotPrivateKey::Pem(private_key_pem) => {
+                        CopilotAuthConfig::GitHubApp {
+                            app_id: *app_id,
+                            private_key_pem,
+                            installation_id: *installation_id,
+                            repository_id: *repository_id,
+                        }
+                    }
+                    ResolvedCopilotPrivateKey::Path(private_key_path) => {
+                        CopilotAuthConfig::GitHubAppKeyFile {
+                            app_id: *app_id,
+                            private_key_path: private_key_path.into(),
+                            installation_id: *installation_id,
+                            repository_id: *repository_id,
+                        }
+                    }
+                },
+                GitHubCopilotAuthConfig::Bearer { token } => CopilotAuthConfig::Bearer {
+                    token: resolve_secret_reference(token)?,
+                },
+            };
+
+            let mut config = CopilotProviderConfig::new(provider.id.clone(), auth);
+            config.base_url = provider.base_url.trim_end_matches('/').to_string();
+            config.github_api_url = provider
+                .github_api_url
+                .as_deref()
+                .map(|url| url.trim_end_matches('/').to_string());
+            config.editor_version = provider.editor_version.clone();
+            config.integration_id = provider.integration_id.clone();
+            config.default_headers = provider.default_headers.clone();
+            config.request_timeout_ms = provider
+                .timeouts
+                .as_ref()
+                .map(|timeouts| timeouts.total_ms)
+                .unwrap_or(120_000);
+
+            configs.push(config);
+        }
+
+        Ok(configs)
+    }
 
     pub fn database_options(&self) -> anyhow::Result<StoreConnectionOptions> {
         self.database.connection_options()
@@ -1243,6 +1473,8 @@ pub struct ServerConfig {
     pub otel_endpoint: Option<String>,
     #[serde(default)]
     pub otel_metrics_endpoint: Option<String>,
+    #[serde(default = "default_otel_trace_sample_ratio")]
+    pub otel_trace_sample_ratio: f64,
     #[serde(default = "default_otel_export_interval_secs")]
     pub otel_export_interval_secs: u64,
 }
@@ -1254,9 +1486,41 @@ impl Default for ServerConfig {
             log_format: default_log_format(),
             otel_endpoint: None,
             otel_metrics_endpoint: None,
+            otel_trace_sample_ratio: default_otel_trace_sample_ratio(),
             otel_export_interval_secs: default_otel_export_interval_secs(),
         }
     }
+}
+
+impl ServerConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        let _ = self.bind_address()?;
+        validate_otel_endpoint("server.otel_endpoint", self.otel_endpoint.as_deref())?;
+        validate_otel_endpoint(
+            "server.otel_metrics_endpoint",
+            self.otel_metrics_endpoint.as_deref(),
+        )?;
+        if !(0.0..=1.0).contains(&self.otel_trace_sample_ratio) {
+            bail!("server.otel_trace_sample_ratio must be between 0.0 and 1.0 inclusive");
+        }
+        Ok(())
+    }
+
+    pub fn bind_address(&self) -> anyhow::Result<SocketAddr> {
+        self.bind
+            .parse()
+            .with_context(|| format!("server.bind `{}` is not a valid socket address", self.bind))
+    }
+}
+
+fn validate_otel_endpoint(field: &str, endpoint: Option<&str>) -> anyhow::Result<()> {
+    let Some(endpoint) = endpoint else {
+        return Ok(());
+    };
+    let _: http::Uri = endpoint
+        .parse()
+        .with_context(|| format!("{field} `{endpoint}` is not a valid URI"))?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1310,6 +1574,158 @@ impl DatabaseConfig {
             other => bail!("unsupported database.kind `{other}`; use libsql or postgres"),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct McpConfig {
+    #[serde(default)]
+    pub oauth: McpOauthConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct McpOauthConfig {
+    #[serde(default)]
+    pub public_base_url: Option<String>,
+    #[serde(default)]
+    pub providers: Vec<McpOauthProviderConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpOauthProviderConfig {
+    pub key: String,
+    #[serde(default = "default_google_mcp_oauth_provider_type")]
+    pub provider_type: String,
+    pub client_id: String,
+    pub client_secret: String,
+    #[serde(default = "default_google_authorization_url")]
+    pub authorization_url: String,
+    #[serde(default = "default_google_token_url")]
+    pub token_url: String,
+}
+
+impl McpOauthConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        let public_base_url = self.resolved_public_base_url()?;
+        if public_base_url.is_none() && !self.providers.is_empty() {
+            bail!("mcp.oauth.public_base_url is required when a provider is configured");
+        }
+        let mut keys = std::collections::BTreeSet::new();
+        for provider in &self.providers {
+            let key = normalize_config_oauth_provider_key(&provider.key)
+                .context("mcp.oauth.providers[].key")?;
+            if !keys.insert(key.clone()) {
+                bail!("duplicate MCP OAuth provider key `{key}`");
+            }
+            if provider.provider_type.trim() != "google" {
+                bail!(
+                    "MCP OAuth provider `{key}` has unsupported provider_type `{}`",
+                    provider.provider_type
+                );
+            }
+            if resolve_secret_reference(&provider.client_id)?
+                .trim()
+                .is_empty()
+            {
+                bail!("MCP OAuth provider `{key}` client_id cannot be empty");
+            }
+            if resolve_secret_reference(&provider.client_secret)?
+                .trim()
+                .is_empty()
+            {
+                bail!("MCP OAuth provider `{key}` client_secret cannot be empty");
+            }
+            validate_google_oauth_endpoint(
+                &provider.authorization_url,
+                &format!("MCP OAuth provider `{key}` authorization_url"),
+                &default_google_authorization_url(),
+            )?;
+            validate_google_oauth_endpoint(
+                &provider.token_url,
+                &format!("MCP OAuth provider `{key}` token_url"),
+                &default_google_token_url(),
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn resolved_public_base_url(&self) -> anyhow::Result<Option<String>> {
+        let Some(value) = self.public_base_url.as_deref() else {
+            return Ok(None);
+        };
+        let value = resolve_path_reference(value)?;
+        normalize_https_origin(value.trim(), "mcp.oauth.public_base_url").map(Some)
+    }
+
+    pub fn runtime(&self) -> anyhow::Result<McpOauthRuntime> {
+        let providers = self
+            .providers
+            .iter()
+            .map(|provider| {
+                Ok(McpOauthProvider {
+                    key: normalize_config_oauth_provider_key(&provider.key)?,
+                    client_id: resolve_secret_reference(&provider.client_id)?
+                        .trim()
+                        .to_string(),
+                    client_secret: resolve_secret_reference(&provider.client_secret)?
+                        .trim()
+                        .to_string(),
+                    authorization_url: provider.authorization_url.trim().to_string(),
+                    token_url: provider.token_url.trim().to_string(),
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(McpOauthRuntime::new(
+            self.resolved_public_base_url()?,
+            providers,
+        ))
+    }
+}
+
+fn validate_https_url(value: &str, field: &str) -> anyhow::Result<()> {
+    let parsed = url::Url::parse(value).with_context(|| format!("{field} is invalid"))?;
+    if parsed.scheme() != "https" || parsed.host().is_none() {
+        bail!("{field} must be an https URL with a host");
+    }
+    Ok(())
+}
+
+fn normalize_https_origin(value: &str, field: &str) -> anyhow::Result<String> {
+    let parsed = url::Url::parse(value).with_context(|| format!("{field} is invalid"))?;
+    if parsed.scheme() != "https" || parsed.host().is_none() {
+        bail!("{field} must be an https URL with a host");
+    }
+    if !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        bail!("{field} must be an origin without user information, path, query, or fragment");
+    }
+    Ok(parsed.origin().ascii_serialization())
+}
+
+fn validate_google_oauth_endpoint(value: &str, field: &str, expected: &str) -> anyhow::Result<()> {
+    validate_https_url(value, field)?;
+    if value != expected {
+        bail!("{field} must be `{expected}` for the Google OAuth provider");
+    }
+    Ok(())
+}
+
+fn default_google_mcp_oauth_provider_type() -> String {
+    "google".to_string()
+}
+
+fn default_google_authorization_url() -> String {
+    "https://accounts.google.com/o/oauth2/v2/auth".to_string()
+}
+
+fn default_google_token_url() -> String {
+    "https://oauth2.googleapis.com/token".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -2287,6 +2703,8 @@ pub struct RouteCompatibilityConfig {
     pub openrouter: Option<OpenRouterRouteCompatibility>,
     #[serde(default)]
     pub aws_bedrock: Option<AwsBedrockRouteCompatibilityConfig>,
+    #[serde(default)]
+    pub github_copilot: Option<GitHubCopilotRouteCompatibility>,
 }
 
 impl RouteCompatibilityConfig {
@@ -2299,6 +2717,7 @@ impl RouteCompatibilityConfig {
             aws_bedrock: self
                 .aws_bedrock
                 .map(AwsBedrockRouteCompatibilityConfig::into_compatibility),
+            github_copilot: self.github_copilot,
         }
     }
 }
@@ -2379,6 +2798,22 @@ fn resolve_path_reference(value: &str) -> anyhow::Result<String> {
         Ok(literal.to_string())
     } else {
         Ok(value.to_string())
+    }
+}
+
+enum ResolvedCopilotPrivateKey {
+    Pem(String),
+    Path(String),
+}
+
+fn resolve_copilot_private_key(value: &str) -> anyhow::Result<ResolvedCopilotPrivateKey> {
+    let is_secret_reference = value.starts_with("env.") || value.starts_with("literal.");
+    let resolved = resolve_path_reference(value)?;
+
+    if is_secret_reference && resolved.contains("BEGIN ") {
+        Ok(ResolvedCopilotPrivateKey::Pem(resolved))
+    } else {
+        Ok(ResolvedCopilotPrivateKey::Path(resolved))
     }
 }
 
@@ -2961,6 +3396,10 @@ const fn default_otel_export_interval_secs() -> u64 {
     30
 }
 
+const fn default_otel_trace_sample_ratio() -> f64 {
+    1.0
+}
+
 fn default_db_path() -> String {
     "./gateway.db".to_string()
 }
@@ -3107,19 +3546,92 @@ mod tests {
     use std::{env, path::Path};
 
     use gateway_core::{
-        AuthMode, AwsBedrockApiStyle, BudgetCadence, GlobalRole, ManagedApiKeySource,
-        MembershipRole, Money4, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
-        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenRouterPercentilePreference,
-        RequestLogRetentionWindow,
+        AuthMode, AwsBedrockApiStyle, BudgetCadence, GitHubCopilotChatApi, GlobalRole,
+        ManagedApiKeySource, MembershipRole, Money4, OpenAiCompatDeveloperRole,
+        OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+        OpenRouterPercentilePreference, RequestLogRetentionWindow,
     };
-    use gateway_providers::{BearerAuthHeader, BedrockAuthConfig};
+    use gateway_providers::{BearerAuthHeader, BedrockAuthConfig, CopilotAuthConfig};
     use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
 
-    use super::{AwsBedrockRouteCompatibilityConfig, GatewayConfig};
+    use super::{
+        AwsBedrockRouteCompatibilityConfig, GatewayConfig, McpOauthConfig, McpOauthProviderConfig,
+        default_google_authorization_url, default_google_token_url,
+    };
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
+    }
+
+    #[test]
+    fn rejects_invalid_server_bind_address() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(&config_path, "server:\n  bind: not-a-socket-address\n");
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+
+        assert!(format!("{error:#}").contains("server.bind"));
+    }
+
+    #[test]
+    fn rejects_invalid_otel_endpoints() {
+        for field in ["otel_endpoint", "otel_metrics_endpoint"] {
+            let tmp = tempdir().expect("tempdir");
+            let config_path = tmp.path().join("gateway.yaml");
+            write_config(
+                &config_path,
+                &format!("server:\n  {field}: 'not a valid URI'\n"),
+            );
+
+            let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+
+            assert!(format!("{error:#}").contains(&format!("server.{field}")));
+        }
+    }
+
+    #[test]
+    fn otel_trace_sample_ratio_defaults_to_one() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(&config_path, "server: {}\n");
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+
+        assert_eq!(config.server.otel_trace_sample_ratio, 1.0);
+    }
+
+    #[test]
+    fn accepts_inclusive_otel_trace_sample_ratio_boundaries() {
+        for ratio in [0.0, 1.0] {
+            let tmp = tempdir().expect("tempdir");
+            let config_path = tmp.path().join("gateway.yaml");
+            write_config(
+                &config_path,
+                &format!("server:\n  otel_trace_sample_ratio: {ratio}\n"),
+            );
+
+            let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+
+            assert_eq!(config.server.otel_trace_sample_ratio, ratio);
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_otel_trace_sample_ratio() {
+        for ratio in ["-0.1", "1.1", ".nan"] {
+            let tmp = tempdir().expect("tempdir");
+            let config_path = tmp.path().join("gateway.yaml");
+            write_config(
+                &config_path,
+                &format!("server:\n  otel_trace_sample_ratio: {ratio}\n"),
+            );
+
+            let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+
+            assert!(format!("{error:#}").contains("server.otel_trace_sample_ratio"));
+        }
     }
 
     #[test]
@@ -5813,5 +6325,335 @@ users:
                 .contains("user email `ops-admin@example.com` is reserved for bootstrap admin"),
             "unexpected error: {error_text}"
         );
+    }
+
+    #[test]
+    fn parses_google_mcp_oauth_runtime_with_literal_public_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+mcp:
+  oauth:
+    public_base_url: https://gateway.example.com/
+    providers:
+      - key: google
+        client_id: literal.google-client-id
+        client_secret: literal.google-client-secret
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("valid MCP OAuth config");
+        let runtime = config.mcp.oauth.runtime().expect("MCP OAuth runtime");
+        assert_eq!(
+            runtime.callback_url("google").expect("callback URL"),
+            "https://gateway.example.com/api/v1/mcp/oauth/google/callback"
+        );
+        assert_eq!(
+            runtime
+                .provider("google")
+                .expect("Google provider")
+                .token_url,
+            "https://oauth2.googleapis.com/token"
+        );
+    }
+
+    #[test]
+    fn mcp_oauth_public_base_url_must_be_an_https_origin() {
+        let config = McpOauthConfig {
+            public_base_url: Some("https://gateway.example.com:8443/".to_string()),
+            providers: Vec::new(),
+        };
+        assert_eq!(
+            config
+                .resolved_public_base_url()
+                .expect("valid public origin")
+                .as_deref(),
+            Some("https://gateway.example.com:8443")
+        );
+
+        for invalid in [
+            "https://user@gateway.example.com",
+            "https://gateway.example.com/path",
+            "https://gateway.example.com?tenant=x",
+            "https://gateway.example.com#fragment",
+        ] {
+            let config = McpOauthConfig {
+                public_base_url: Some(invalid.to_string()),
+                providers: Vec::new(),
+            };
+            assert!(
+                config.resolved_public_base_url().is_err(),
+                "accepted {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn google_mcp_oauth_endpoints_are_pinned() {
+        let provider = McpOauthProviderConfig {
+            key: "google".to_string(),
+            provider_type: "google".to_string(),
+            client_id: "literal.google-client-id".to_string(),
+            client_secret: "literal.google-client-secret".to_string(),
+            authorization_url: default_google_authorization_url(),
+            token_url: default_google_token_url(),
+        };
+        let config = McpOauthConfig {
+            public_base_url: Some("https://gateway.example.com".to_string()),
+            providers: vec![provider.clone()],
+        };
+        config.validate().expect("official Google endpoints");
+
+        for invalid in [
+            "https://oauth2.googleapis.com.evil.example/token",
+            "https://user@oauth2.googleapis.com/token",
+            "https://oauth2.googleapis.com:8443/token",
+            "https://oauth2.googleapis.com/other",
+            "https://oauth2.googleapis.com/token?tenant=x",
+            "https://oauth2.googleapis.com/token#fragment",
+        ] {
+            let mut provider = provider.clone();
+            provider.token_url = invalid.to_string();
+            let config = McpOauthConfig {
+                public_base_url: Some("https://gateway.example.com".to_string()),
+                providers: vec![provider],
+            };
+            assert!(config.validate().is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn parses_github_copilot_provider_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: copilot-org
+    type: github_copilot
+    base_url: https://api.githubcopilot.com
+    pricing_provider_id: openai
+    auth:
+      mode: github_app
+      app_id: 12345
+      installation_id: 67890
+      private_key: literal.test-private-key-content
+      repository_id: 112233
+    editor_version: vscode/1.126.0
+    integration_id: vscode-chat
+models:
+  - id: copilot-gpt-4o
+    routes:
+      - provider: copilot-org
+        upstream_model: gpt-4o
+        compatibility:
+          github_copilot:
+            chat_api: chat_completions
+            supports_responses: true
+            upstream_supports:
+              streaming: true
+              tool_calls: true
+              vision: true
+              structured_outputs: true
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let providers = config.seed_providers().expect("seed providers");
+        assert_eq!(providers[0].provider_type, "github_copilot");
+        assert_eq!(
+            providers[0].config["base_url"],
+            "https://api.githubcopilot.com"
+        );
+        assert_eq!(providers[0].config["editor_version"], "vscode/1.126.0");
+        assert_eq!(providers[0].config["integration_id"], "vscode-chat");
+        assert_eq!(providers[0].config["pricing_provider_id"], "openai");
+
+        let runtime_configs = config
+            .copilot_provider_configs()
+            .expect("copilot runtime provider configs");
+        assert_eq!(runtime_configs.len(), 1);
+        assert_eq!(runtime_configs[0].provider_key, "copilot-org");
+        assert_eq!(runtime_configs[0].base_url, "https://api.githubcopilot.com");
+        assert_eq!(runtime_configs[0].editor_version, "vscode/1.126.0");
+        assert_eq!(runtime_configs[0].integration_id, "vscode-chat");
+
+        let models = config.seed_models().expect("seed models");
+        let compatibility = models[0].routes[0]
+            .compatibility
+            .github_copilot
+            .as_ref()
+            .expect("Copilot route compatibility");
+        assert_eq!(
+            compatibility.chat_api,
+            Some(GitHubCopilotChatApi::ChatCompletions)
+        );
+        assert!(compatibility.supports_responses);
+        assert!(!compatibility.supports_embeddings);
+        assert!(compatibility.upstream_supports.streaming);
+        assert!(compatibility.upstream_supports.tool_calls);
+        assert!(compatibility.upstream_supports.vision);
+        assert!(compatibility.upstream_supports.structured_outputs);
+    }
+
+    #[test]
+    fn rejects_github_copilot_route_compatibility_for_other_providers() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: gpt-4o
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-4o
+        compatibility:
+          github_copilot:
+            chat_api: chat_completions
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path)
+            .expect_err("Copilot compatibility on another provider should fail");
+        assert!(
+            format!("{error:#}")
+                .contains("compatibility.github_copilot but requires a github_copilot provider")
+        );
+    }
+
+    #[test]
+    fn github_copilot_github_app_requires_repository_id() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: copilot-org
+    type: github_copilot
+    auth:
+      mode: github_app
+      app_id: 12345
+      installation_id: 67890
+      private_key: literal.test-private-key-content
+"#,
+        );
+
+        let error =
+            GatewayConfig::from_path(&config_path).expect_err("missing repository ID should fail");
+
+        assert!(format!("{error:#}").contains("missing field `repository_id`"));
+    }
+
+    #[test]
+    fn github_copilot_github_app_rejects_zero_repository_id() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: copilot-org
+    type: github_copilot
+    auth:
+      mode: github_app
+      app_id: 12345
+      installation_id: 67890
+      private_key: literal.test-private-key-content
+      repository_id: 0
+"#,
+        );
+
+        let error =
+            GatewayConfig::from_path(&config_path).expect_err("zero repository ID should fail");
+
+        assert!(format!("{error:#}").contains("auth.repository_id cannot be 0"));
+    }
+
+    #[test]
+    fn github_copilot_github_app_accepts_mounted_private_key_path() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        let private_key_path = tmp.path().join("copilot-private-key.pem");
+        write_config(&private_key_path, "test-private-key-content");
+        write_config(
+            &config_path,
+            &format!(
+                r#"
+providers:
+  - id: copilot-org
+    type: github_copilot
+    auth:
+      mode: github_app
+      app_id: 12345
+      installation_id: 67890
+      private_key: {}
+      repository_id: 112233
+"#,
+                private_key_path.display()
+            ),
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let runtime_configs = config
+            .copilot_provider_configs()
+            .expect("Copilot runtime provider configs");
+
+        match &runtime_configs[0].auth {
+            CopilotAuthConfig::GitHubAppKeyFile {
+                private_key_path: configured_path,
+                repository_id,
+                ..
+            } => {
+                assert_eq!(configured_path, &private_key_path);
+                assert_eq!(*repository_id, 112233);
+            }
+            other => panic!("expected GitHub App key file auth, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_github_copilot_bearer_auth_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: copilot-bearer
+    type: github_copilot
+    auth:
+      mode: bearer
+      token: literal.ghs_test_token
+models:
+  - id: copilot-claude
+    routes:
+      - provider: copilot-bearer
+        upstream_model: claude-3-7-sonnet
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let runtime_configs = config
+            .copilot_provider_configs()
+            .expect("copilot runtime provider configs");
+        assert_eq!(runtime_configs.len(), 1);
+        assert_eq!(runtime_configs[0].provider_key, "copilot-bearer");
+        assert_eq!(runtime_configs[0].base_url, "https://api.githubcopilot.com");
     }
 }

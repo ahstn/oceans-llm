@@ -33,7 +33,7 @@ export class PiAdapter implements HarnessAdapter {
         JSON.stringify({
           providers: {
             oceans: {
-              api: "openai-completions",
+              api: "openai-responses",
               apiKey: "$OCEANS_API_KEY",
               baseUrl: `${this.#runtime.baseUrl}/v1`,
               headers: { "x-oceans-tags": `harness_run=${requestTag}` },

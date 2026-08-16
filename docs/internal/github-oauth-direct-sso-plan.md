@@ -311,7 +311,7 @@ Run the repo checks that match the final change scope before handing implementat
 
 ```shell
 mise run lint
-mise //docs:verify
+mise run //docs:build
 ```
 
 When migrations, Postgres store behavior, or runtime auth paths change, also run the Postgres-focused checks from the pull request template when credentials are available.

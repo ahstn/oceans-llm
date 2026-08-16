@@ -79,8 +79,7 @@ service_accounts:
         auto_create: true
         allowed_models:
           - openai-fast
-          - openai-fast-v2
-          - gemini-fast
+          - gpt-5.6-sol
 
   - id: local-eval-worker
     name: Local Eval Worker
@@ -276,25 +275,19 @@ providers:
       icon_key: aws
 
 models:
-  - id: openai-fast-v2
+  - id: gpt-5.6-sol
     description: OpenAI via compatible adapter with weighted route selection
     routes:
       - provider: openai-prod
-        upstream_model: gpt-5
+        upstream_model: gpt-5.6-sol
         weight: 9.0
       - provider: openai-secondary
-        upstream_model: gpt-5
+        upstream_model: gpt-5.6-sol
         weight: 1.0
 
   - id: openai-fast
     description: Alias kept for backward compatibility
-    alias_of: openai-fast-v2
-
-  - id: gemini-fast
-    description: Gemini on Vertex
-    routes:
-      - provider: vertex-adc
-        upstream_model: google/gemini-2.0-flash
+    alias_of: gpt-5.6-sol
 
   - id: deepseek-v4-pro
     routes:
@@ -312,11 +305,17 @@ models:
       - provider: vertex-claude
         upstream_model: anthropic/claude-sonnet-4-6
 
-  - id: claude-opus
+  - id: claude-opus-4-7
     description: Claude Opus on Vertex
     routes:
       - provider: vertex-claude
         upstream_model: anthropic/claude-opus-4-7
+
+  - id: claude-fable-5
+    description: Claude Fable on Vertex
+    routes:
+      - provider: vertex-claude
+        upstream_model: anthropic/claude-fable-5
 
   - id: claude-sonnet-4.6
     description: Claude Sonnet on AWS Bedrock

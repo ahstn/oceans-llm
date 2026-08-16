@@ -223,6 +223,8 @@ pub struct McpCredentialBindingView {
     updated_at: String,
     last_used_at: Option<String>,
     revoked_at: Option<String>,
+    oauth_provider_key: Option<String>,
+    granted_scopes: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -360,6 +362,8 @@ pub(super) fn map_credential_binding(
         updated_at: format_timestamp(binding.updated_at),
         last_used_at: binding.last_used_at.map(format_timestamp),
         revoked_at: binding.revoked_at.map(format_timestamp),
+        oauth_provider_key: binding.oauth_provider_key,
+        granted_scopes: binding.granted_scopes,
     }
 }
 

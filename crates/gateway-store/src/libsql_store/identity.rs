@@ -733,6 +733,80 @@ impl LibsqlStore {
         decode_oauth_login_state_record(&row).map(Some)
     }
 
+    pub async fn create_mcp_oauth_state(
+        &self,
+        state: &McpOauthStateRecord,
+    ) -> Result<(), StoreError> {
+        let scopes_json = crate::shared::serialize_json(&state.scopes)?;
+        self.connection
+            .execute(
+                "DELETE FROM mcp_oauth_states WHERE expires_at <= ?1",
+                [state.created_at.unix_timestamp()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO mcp_oauth_states (
+                    state_hash, user_id, mcp_server_id, provider_key, pkce_verifier,
+                    redirect_to, resource, scopes_json, expires_at, consumed_at, created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                "#,
+                libsql::params![
+                    state.state_hash.as_str(),
+                    state.user_id.to_string(),
+                    state.mcp_server_id.to_string(),
+                    state.provider_key.as_str(),
+                    state.pkce_verifier.as_str(),
+                    state.redirect_to.as_str(),
+                    state.resource.as_str(),
+                    scopes_json,
+                    state.expires_at.unix_timestamp(),
+                    state.consumed_at.map(|value| value.unix_timestamp()),
+                    state.created_at.unix_timestamp(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn consume_mcp_oauth_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<McpOauthStateRecord>, StoreError> {
+        let updated = self
+            .connection
+            .execute(
+                "UPDATE mcp_oauth_states SET consumed_at = ?1 WHERE state_hash = ?2 AND consumed_at IS NULL AND expires_at > ?1",
+                libsql::params![consumed_at.unix_timestamp(), state_hash],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if updated == 0 {
+            return Ok(None);
+        }
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT state_hash, user_id, mcp_server_id, provider_key, pkce_verifier,
+                       redirect_to, resource, scopes_json, expires_at, consumed_at, created_at
+                FROM mcp_oauth_states WHERE state_hash = ?1 LIMIT 1
+                "#,
+                [state_hash],
+            )
+            .await
+            .map_err(to_query_error)?;
+        rows.next()
+            .await
+            .map_err(to_query_error)?
+            .map(|row| decode_mcp_oauth_state_record(&row))
+            .transpose()
+    }
+
     pub async fn get_user_by_email_normalized(
         &self,
         email_normalized: &str,

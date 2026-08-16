@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -62,16 +63,22 @@ export function UsageCostsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Budget & Spending"
+        title="Usage costs"
+        description={
+          isPlatformAdmin
+            ? 'Review costs over time and see how each account and model affects the total.'
+            : 'Review your costs over time and see how each model affects the total.'
+        }
+      />
+
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <CardTitle>Usage Costs</CardTitle>
-            <CardDescription>
-              {isPlatformAdmin
-                ? 'Live spend from the durable usage ledger with owner and model breakdowns.'
-                : 'Your spend and request pricing details from the durable usage ledger.'}
-            </CardDescription>
+            <CardTitle>Cost history</CardTitle>
+            <CardDescription>Choose a date range and review daily costs.</CardDescription>
           </div>
           <div className="flex items-center gap-2">
             <Select
@@ -162,6 +169,21 @@ export function UsageCostsPage() {
             <MetricCard
               label="Usage-missing requests"
               value={String(report.totals.usage_missing_request_count)}
+            />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <MetricCard
+              label="Uncached input tokens"
+              value={report.totals.uncached_input_tokens?.toLocaleString() ?? 'Unavailable'}
+            />
+            <MetricCard
+              label="Cache-read tokens"
+              value={report.totals.cache_read_tokens?.toLocaleString() ?? 'Unavailable'}
+            />
+            <MetricCard
+              label="Cache-write tokens"
+              value={report.totals.cache_write_tokens?.toLocaleString() ?? 'Unavailable'}
             />
           </div>
 

@@ -12,9 +12,9 @@ use crate::{
     domain::{
         ApiKeyModelGrantMode, ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
         BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord,
-        ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord, ExternalMcpToolRecord,
-        FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel,
-        HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
+        CacheUsageAggregateRecord, ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord,
+        ExternalMcpToolRecord, FocusExportAggregateRecord, FocusExportDiagnosticsRecord,
+        GatewayModel, HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
         McpAggregateSessionRecord, McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord,
         McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
         McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
@@ -24,16 +24,17 @@ use crate::{
         ModelPricingSyncChanges, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
         NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
         NewReviewAgentRunRecord, PricingCatalogCacheRecord, ProviderCapabilities,
-        ProviderConnection, ProviderRequestContext, RequestAttemptRecord, RequestLogDetail,
-        RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
-        RequestLogRecord, RequestMcpTokenOverheadRecord, ReviewAgentProvider,
-        ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
-        ReviewAgentRunRecord, ServiceAccountRecord, SpendDailyAggregateRecord,
-        SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord,
-        UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
-        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
-        UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
+        ProviderConnection, ProviderRequestContext, RefreshMcpOauthCredentialBindingRecord,
+        RequestAttemptRecord, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+        RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord,
+        ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord,
+        ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ServiceAccountRecord,
+        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
+        TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
+        UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+        UpsertMcpToolGrantRecord, UpsertMcpUpstreamCredentialBindingRecord,
+        UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord,
+        UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
@@ -443,6 +444,18 @@ pub trait BudgetRepository: Send + Sync {
             "list_usage_model_aggregates is not implemented for this repository".to_string(),
         ))
     }
+    async fn get_cache_usage_aggregate(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<crate::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<CacheUsageAggregateRecord, StoreError> {
+        let _ = (window_start, window_end, owner_kind, owner_user_id);
+        Err(StoreError::Unexpected(
+            "get_cache_usage_aggregate is not implemented for this repository".to_string(),
+        ))
+    }
     async fn list_focus_export_aggregates(
         &self,
         window_start: OffsetDateTime,
@@ -836,6 +849,18 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         owner_scope_key: &str,
     ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError>;
 
+    async fn compare_and_swap_mcp_oauth_credential_refresh(
+        &self,
+        input: &RefreshMcpOauthCredentialBindingRecord,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError>;
+
+    async fn revoke_mcp_oauth_credential_if_unchanged(
+        &self,
+        credential_binding_id: Uuid,
+        expected_secret_ciphertext: &str,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+
     async fn list_mcp_upstream_credential_bindings(
         &self,
         mcp_server_id: Option<Uuid>,
@@ -854,6 +879,20 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         &self,
         credential_binding_id: Uuid,
         last_used_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+
+    async fn try_acquire_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
+        now: OffsetDateTime,
+        expires_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+
+    async fn release_mcp_oauth_refresh_lease(
+        &self,
+        credential_binding_id: Uuid,
+        lease_token: Uuid,
     ) -> Result<bool, StoreError>;
 }
 

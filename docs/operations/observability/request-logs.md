@@ -70,4 +70,4 @@ Missing detail rows return `404 not_found`.
 
 ## Validation
 
-Run `mise run docs:check` before handing off documentation changes.
+Run `mise run //docs:build` before handing off documentation changes.

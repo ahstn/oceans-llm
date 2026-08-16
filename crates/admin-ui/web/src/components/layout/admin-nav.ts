@@ -14,7 +14,7 @@ import {
 import type { AdminPage, AuthSessionView } from '@/types/api'
 
 export interface AdminNavItem {
-  page: AdminPage
+  page?: AdminPage
   label: string
   to: string
   icon: unknown
@@ -26,6 +26,12 @@ export interface AdminNavSection {
   items: AdminNavItem[]
 }
 
+export const connectionsNavItem: AdminNavItem = {
+  label: 'Connections',
+  to: '/account/connections',
+  icon: McpServerIcon,
+}
+
 export const adminNavSections: AdminNavSection[] = [
   {
     label: 'Control Plane',
@@ -33,6 +39,7 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       { page: 'api_keys', label: 'API Keys', to: '/api-keys', icon: SearchIcon },
       { page: 'models', label: 'Models', to: '/models', icon: HomeIcon },
+      connectionsNavItem,
       { page: 'mcp', label: 'MCP', to: '/mcp', icon: McpServerIcon },
       {
         page: 'review_agent',
@@ -115,7 +122,7 @@ export function getAdminNavSections(pages: AdminPage[]) {
   return adminNavSections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => allowedPages.has(item.page)),
+      items: section.items.filter((item) => !item.page || allowedPages.has(item.page)),
     }))
     .filter((section) => section.items.length > 0)
 }

@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { toast } from 'sonner'
 
+import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   ChartContainer,
@@ -106,13 +107,19 @@ export function ObservabilityLeaderboardPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Budget & Spending"
+        title="Leaderboard"
+        description="Compare user costs over time and see which users have the highest total cost."
+      />
+
       <Card>
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex flex-col gap-1">
-            <CardTitle>Leaderboard</CardTitle>
+            <CardTitle>User costs over time</CardTitle>
             <CardDescription>
-              Compare the top five users by spend over time, bucketed into UTC 12-hour windows.
+              Compare 12-hour costs for the five users with the highest total cost.
             </CardDescription>
           </div>
           <ToggleGroup

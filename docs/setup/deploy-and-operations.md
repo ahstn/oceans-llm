@@ -94,6 +94,7 @@ Relevant config knobs:
 
 - `server.otel_endpoint`
 - `server.otel_metrics_endpoint`
+- `server.otel_trace_sample_ratio`
 - `server.otel_export_interval_secs`
 
 The checked-in deploy path does not ship a collector by default.

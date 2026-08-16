@@ -40,7 +40,7 @@ We also needed to account for current repo reality:
 
 ### 1. Create releases locally from `main`, then publish from the tag workflow
 
-Releases are created locally from `main` with `mise run release`. That task computes the next version, creates the release commit and tag, regenerates `CHANGELOG.md`, and prepares the release metadata. Maintainers then push the release commit and tag to GitHub, which triggers the GitHub Actions release workflow.
+Releases are created locally from `main` with `mise run release`. That task computes the next version, updates `CHANGELOG.md`, creates the release commit and tag, pushes both refs, and creates the GitHub release. The pushed tag triggers the GitHub Actions release workflow.
 
 Why:
 - every merge to `main` should not automatically become a public release,
@@ -144,11 +144,13 @@ The release flow is intentionally split into a small local step and a tag-driven
 ### Local release step
 
 1. A maintainer updates `main` locally and runs `mise run release`.
-2. `cog bump --auto` determines the next version from Conventional Commit history, creates the release commit, and creates the `vX.Y.Z` tag.
-3. `git-cliff` regenerates `CHANGELOG.md` for the new release.
-4. The maintainer pushes the release commit and tag to GitHub.
+2. `cog bump --auto` determines the next version from Conventional Commit history.
+3. The pre-bump hooks update Cargo versions and regenerate `CHANGELOG.md`.
+4. Cocogitto creates the release commit and the `vX.Y.Z` tag.
+5. The release task generates notes from the same commit range as `CHANGELOG.md`.
+6. The release task pushes the commit and tag as one atomic operation, then creates the GitHub release.
 
-This keeps versioning and changelog generation explicit and easy to inspect before the release is published.
+This keeps versioning, changelog generation, and publication in one command.
 
 ### GitHub Actions release step
 
@@ -239,10 +241,10 @@ Tradeoffs:
 
 ## Current Implementation Status
 
-The live workflow is slightly narrower than the original ADR language:
+The release flow was tightened after the first implementation exposed an ordering problem. The tag previously moved before Cargo versions and `CHANGELOG.md` were updated. The current flow preserves the single release command while correcting that order:
 
-- `mise run release` creates the GitHub release before the tag workflow publishes artifacts
-- `mise run release` does not push automatically
+- `mise run release` updates Cargo versions and `CHANGELOG.md` before it creates the release tag
+- the same command pushes the release commit and tag, then creates the published GitHub release
 - the current workflow publishes `vX.Y.Z`, `sha-<sha>`, and `latest`
 - the gateway image is currently `linux/amd64` only
 - the admin UI image is currently `linux/amd64` and `linux/arm64`

@@ -17,4 +17,4 @@ For docs changes:
 - Keep `docs/internal/` for rough notes and research that should not publish as contract pages. Use a published internal/contributor docs path only when maintainers need the page in the VitePress site.
 - Do not link user-facing navigation to maintainer-only pages unless the user workflow genuinely depends on that context. Internal/contributor pages may link back to user-facing canonical pages.
 - When adding or moving pages, update VitePress nav/sidebar ownership and `See also` links together so labels match destination titles.
-- State validation commands before handoff: from the repo root use `mise run docs:check` for docs checks and `mise run docs:verify` for checks plus build; from `docs/`, use `mise run check` or `mise run verify`.
+- State validation commands before handoff: from the repo root use `mise run //docs:build`; from `docs/`, use `mise run build`.

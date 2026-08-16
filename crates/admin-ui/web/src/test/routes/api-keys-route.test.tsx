@@ -543,6 +543,9 @@ describe('ApiKeysPage', () => {
     render(<ApiKeysPage />)
 
     expect(screen.getAllByText('gwk_prod_liv****').length).toBeGreaterThan(0)
+    expect(
+      screen.getByText('Create and manage API keys within your access scope.'),
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create API key' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Manage' }).length).toBeGreaterThan(0)
 

@@ -6,6 +6,8 @@ import {
   CreatedApiKeyAlert,
   ManageApiKeyDialog,
 } from '@/routes/api-keys/-components'
+import { PageHeader } from '@/components/layout/page-header'
+import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { canPerformAdminAction } from '@/routes/-auth-routing'
 import { getApiKeys } from '@/server/admin-data.functions'
 import type { ApiKeysPayload } from '@/types/api'
@@ -16,6 +18,7 @@ export const Route = createFileRoute('/api-keys')({
   validateSearch: (search: Record<string, unknown>) => ({
     api_key_id: typeof search.api_key_id === 'string' ? search.api_key_id : undefined,
   }),
+  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: () => getApiKeys(),
   component: ApiKeysPage,
 })
@@ -41,7 +44,17 @@ export function ApiKeysPage() {
   })
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Control Plane"
+        title="API keys"
+        description={
+          canCreate || canManage
+            ? 'Create and manage API keys within your access scope.'
+            : 'Review the API keys within your access scope.'
+        }
+      />
+
       {canCreate ? (
         <CreatedApiKeyAlert
           result={state.createdResult}

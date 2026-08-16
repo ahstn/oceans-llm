@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
@@ -213,15 +214,12 @@ export function SpendControlsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Spend Controls</CardTitle>
-          <CardDescription>
-            Configure budgets for human users, service accounts, and user-specific model scopes.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+    <div className="flex min-w-0 flex-1 flex-col gap-6">
+      <PageHeader
+        section="Budget & Spending"
+        title="Spend controls"
+        description="Set spending limits for users, automated accounts, and each user's model use. Review recent alerts."
+      />
 
       <BudgetTable
         title="User Budgets"

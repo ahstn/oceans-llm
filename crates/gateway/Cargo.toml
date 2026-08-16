@@ -1,11 +1,12 @@
 [package]
 name = "gateway"
-version = "0.19.0"
+version = "0.22.0"
 edition = "2024"
 
 [dependencies]
 admin-ui.workspace = true
 anyhow.workspace = true
+base64.workspace = true
 async-stream = "0.3"
 async-trait.workspace = true
 axum.workspace = true
@@ -22,6 +23,7 @@ http.workspace = true
 lettre.workspace = true
 openidconnect.workspace = true
 opentelemetry.workspace = true
+opentelemetry-http.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
 reqwest.workspace = true

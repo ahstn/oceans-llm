@@ -23,6 +23,7 @@ This page owns config syntax and parse-time rules. It does not own the full runt
 - `database`
 - `auth`
 - `permissions`
+- `mcp`
 - `budgets`
 - `budget_alerts`
 - `request_logging`
@@ -96,6 +97,55 @@ models:
 `context_window_tokens` is an optional positive integer. It caps the effective route context but cannot raise a known catalog context limit. Startup rejects a configured cap above a known catalog limit; when catalog context is unknown, the configured value is accepted as admin policy.
 
 `pricing_override` is optional. When present, `input_usd_per_million_tokens` and `output_usd_per_million_tokens` are required. Cache rates are optional and remain absent when omitted; they do not fall back to catalog cache rates. All rates use exact fixed-point decimal strings with at most four fractional digits. Zero is valid; negative, malformed, floating-point, and overflowing values are rejected.
+
+### GitHub Copilot provider and route evidence
+
+GitHub App authentication requires all four identity and scope fields. `repository_id` is the numeric ID of the one repository placed in each installation-token request. It is required and must be greater than zero. If it is absent, config parsing stops with `missing field repository_id`.
+
+`private_key` accepts a mounted file path. An `env.*` or `literal.*` value can resolve to either a PEM value or a file path. The gateway reads and parses the key when it builds the provider during startup.
+
+Copilot route compatibility is fail-closed. Copy support only from a current `/models` response for the exact `upstream_model`. The [GitHub Copilot Installation-Token Canary](../operations/github-copilot-installation-canary.md) produces the required safe projection.
+
+```yaml
+providers:
+  - id: copilot-org
+    type: github_copilot
+    auth:
+      mode: github_app
+      app_id: 123456
+      private_key: /run/secrets/copilot-app-private-key.pem
+      installation_id: 23456789
+      repository_id: 345678901
+
+models:
+  - id: copilot-chat
+    routes:
+      - provider: copilot-org
+        upstream_model: <exact-model-id-from-canary>
+        compatibility:
+          github_copilot:
+            chat_api: chat_completions
+            supports_responses: false
+            supports_embeddings: false
+            upstream_supports:
+              streaming: true
+              tool_calls: true
+              vision: true
+              structured_outputs: false
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+          stream: true
+          tools: true
+          vision: true
+          json_schema: false
+          developer_role: false
+```
+
+`chat_api` is optional for Responses-only or embeddings-only routes. For chat routes, set it to `chat_completions` only when `supported_endpoints` contains `/chat/completions`, or to `anthropic_messages` only when it contains `/v1/messages`. `supports_responses` and `supports_embeddings` default to `false`. Each `upstream_supports` field also defaults to `false`.
+
+The `compatibility.github_copilot` fields are upstream evidence. The route `capabilities` fields are admin policy. Runtime eligibility uses their conservative intersection, so policy cannot enable support that the upstream evidence does not declare. `developer_role` remains disabled because the current Copilot model inventory does not expose evidence for it.
 
 ## Production-Shaped Example
 
@@ -271,9 +321,10 @@ Important fields:
 - `log_format`
 - `otel_endpoint`
 - `otel_metrics_endpoint`
+- `otel_trace_sample_ratio` (`0.0` through `1.0`, default `1.0`)
 - `otel_export_interval_secs`
 
-For collector assumptions and request-log implications, see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
+For collector and Datadog setup, see [Export Traces and Metrics](../operations/observability/export-traces-and-metrics.md). For request-log storage, see [Observability and Request Logs](../operations/observability-and-request-logs.md).
 
 ## `request_logging`
 
@@ -483,6 +534,23 @@ Important GitHub OAuth provider fields:
 
 For GitHub setup steps and callback URL rules, see [GitHub OAuth SSO Setup for Admins](../access/github-oauth-admin-setup.md).
 
+Upstream MCP OAuth is separate from login OAuth and OIDC. Configure it under top-level `mcp.oauth`:
+
+```yaml
+mcp:
+  oauth:
+    public_base_url: https://gateway.example.com
+    providers:
+      - key: google
+        provider_type: google
+        client_id: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_ID
+        client_secret: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_SECRET
+```
+
+`public_base_url` is required when an MCP OAuth provider is configured. It must be the external HTTPS origin used for callbacks, without a path, query, fragment, or user information. Google is the first supported provider type. Its authorization and token endpoints are fixed to the official Google endpoints. The optional endpoint fields accept only those fixed values. The server registry, not provider configuration, owns each server's OAuth resource and scopes.
+
+`OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` is also required when this provider list is not empty. It must contain a base64-encoded 32-byte key.
+
 For startup behavior and first access after boot, use [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 
 ## Declarative Teams And Users
@@ -576,6 +644,8 @@ Seed semantics that matter:
 - unlisted teams, service accounts, keys, and users are left untouched
 
 OIDC and OAuth provider existence is validated at seed time against enabled runtime providers, not YAML parse time.
+
+For OIDC and OAuth users, config seeding creates the invited identity and its provider association. It does not generate an onboarding URL. Config-seeded OIDC and OAuth users can sign in through the shared `/admin/login` page after deployment. A per-user SSO link from the control plane is optional. Config-seeded password users still require a unique password invite URL from the control plane. See [OIDC and SSO](../access/oidc-and-sso-status.md#start-sso-sign-in) for the complete sign-in contract.
 
 ## `budget_alerts`
 
@@ -776,7 +846,7 @@ Routing caveats:
 - every `aws_bedrock` route requires `compatibility.aws_bedrock.api_style`.
 - OpenAI-shaped API styles require `compatibility.aws_bedrock.openai_base_path`, for example `/openai/v1`.
 - Route `extra_headers` is the supported way to proxy provider headers such as `OpenAI-Project`; arbitrary inbound caller headers are not forwarded to providers.
-- Validate documentation-only updates with `mise run docs-check`.
+- Validate documentation-only updates with `mise run //docs:build`.
 
 ## Model Config
 

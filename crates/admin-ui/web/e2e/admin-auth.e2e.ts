@@ -13,7 +13,7 @@ test('bootstrap admin must rotate the password before accessing the control plan
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
 
   await page.getByLabel('Email').fill(adminEmail)
-  await page.getByLabel('Password').fill(adminPassword)
+  await page.getByLabel('Password', { exact: true }).fill(adminPassword)
 
   await Promise.all([
     page.waitForURL(/\/admin\/change-password(?:\?|$)/),

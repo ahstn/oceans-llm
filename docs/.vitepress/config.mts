@@ -79,6 +79,10 @@ const primarySidebar = [
         link: "/operations/observability-and-request-logs",
         items: [
           {
+            text: "Export Traces and Metrics",
+            link: "/operations/observability/export-traces-and-metrics",
+          },
+          {
             text: "Request Logs",
             link: "/operations/observability/request-logs",
           },
@@ -89,6 +93,10 @@ const primarySidebar = [
         link: "/operations/agent-harness-usage",
       },
       { text: "Admin Runbooks", link: "/operations/operator-runbooks" },
+      {
+        text: "GitHub Copilot Installation-Token Canary",
+        link: "/operations/github-copilot-installation-canary",
+      },
     ],
   },
   {

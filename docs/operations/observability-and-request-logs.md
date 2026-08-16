@@ -1,6 +1,6 @@
 # Observability and Request Logs
 
-`See also`: [Request Logs](observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Tagging](tagging.md), [Agent Harness Usage](agent-harness-usage.md), [Data Relationships](../contributing/reference/data-relationships.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md), [ADR: External MCP Registry and Discovery Boundary](../adr/2026-05-26-external-mcp-registry-and-discovery.md)
+`See also`: [Export Traces and Metrics](observability/export-traces-and-metrics.md), [Request Logs](observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Tagging](tagging.md), [Agent Harness Usage](agent-harness-usage.md), [Data Relationships](../contributing/reference/data-relationships.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md), [ADR: External MCP Registry and Discovery Boundary](../adr/2026-05-26-external-mcp-registry-and-discovery.md)
 
 This document describes the live observability contract for the gateway.
 
@@ -34,62 +34,12 @@ Current config knobs:
 
 - `server.otel_endpoint`
 - `server.otel_metrics_endpoint`
+- `server.otel_trace_sample_ratio`
 - `server.otel_export_interval_secs`
 
-The intended deploy path is collector-friendly OTLP export rather than an in-process Prometheus endpoint.
+`server.otel_trace_sample_ratio` defaults to `1.0` and accepts values from `0.0` through `1.0`. It uses parent-based sampling for traces and does not sample exported metrics. The intended deploy path is collector-friendly OTLP export rather than an in-process Prometheus endpoint.
 
-## Kubernetes Helm Wiring
-
-The Helm chart keeps observability generic. It does not install an OpenTelemetry Collector, Datadog Agent, or any other collector.
-
-Kubernetes installs can use:
-
-- `gateway.config.server.otel_endpoint`
-- `gateway.config.server.otel_metrics_endpoint`
-- `gateway.config.server.otel_export_interval_secs`
-- `observability.env`
-- `observability.podLabels`
-- `observability.podAnnotations`
-- `observability.volumes`
-- `observability.volumeMounts`
-- `observability.sidecars`
-
-Common shapes:
-
-- existing in-cluster collector `Service`: set OTLP endpoints in `gateway.config.server.*`
-- DaemonSet collector or vendor agent: point OTLP endpoints at the node-local or service DNS address documented by that deployment
-- sidecar collector: add the collector container with `observability.sidecars` and point OTLP endpoints at `localhost`
-- annotation-driven scraping or injection: set the required labels and annotations through `observability.podLabels` and `observability.podAnnotations`
-
-Use [Kubernetes and Helm](../setup/kubernetes-and-helm.md) for chart-level values and examples.
-
-OpenTelemetry Collector service example:
-
-```yaml
-gateway:
-  config:
-    server:
-      otel_endpoint: http://otel-collector.observability.svc:4317
-      otel_metrics_endpoint: http://otel-collector.observability.svc:4317
-observability:
-  env:
-    - name: OTEL_SERVICE_NAME
-      value: oceans-llm-gateway
-```
-
-Datadog Agent OTLP example:
-
-```yaml
-gateway:
-  config:
-    server:
-      otel_endpoint: http://datadog-agent.datadog.svc:4317
-      otel_metrics_endpoint: http://datadog-agent.datadog.svc:4317
-observability:
-  podLabels:
-    tags.datadoghq.com/service: oceans-llm-gateway
-    tags.datadoghq.com/env: production
-```
+Use [Export Traces and Metrics](observability/export-traces-and-metrics.md) to configure an OpenTelemetry Collector or Datadog Agent. The guide covers Helm wiring, shared-Agent sampling, and export checks.
 
 ## What Gets Recorded
 
@@ -272,7 +222,7 @@ Each request-log row persists lightweight policy metadata in `request_logs.metad
     "request_max_bytes": 65536,
     "response_max_bytes": 65536,
     "stream_max_events": 128,
-    "version": "builtin:v1"
+    "version": "builtin:v2"
   }
 }
 ```
@@ -308,6 +258,8 @@ Sensitive built-in JSON keys include:
 - `private_key`
 - `secret`
 - `password`
+
+Built-in URL query redaction preserves the scheme, authority, and path while replacing query components in retained media URL fields and HTTPS URLs echoed in retained error messages.
 
 Known bulky provider fields are shape-preserving truncated before the whole-payload byte budget is applied. Built-ins cover OpenAI-compatible image/audio/file payloads, Vertex Gemini inline data, and Vertex Anthropic base64 source data.
 
@@ -351,7 +303,7 @@ The MCP invocation admin UI consumes these generated admin API endpoints:
 - `GET /api/v1/admin/observability/mcp-invocations`
 - `GET /api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}`
 
-Validate documentation-only edits to this page with `mise run docs:check` before handoff.
+Validate documentation-only edits to this page with `mise run //docs:build` before handoff.
 
 ## Usage Leaderboard
 

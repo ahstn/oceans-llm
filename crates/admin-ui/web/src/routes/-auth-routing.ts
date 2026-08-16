@@ -8,6 +8,8 @@ import {
 
 export { normalizeAdminPath }
 
+const PERSONAL_ACCOUNT_PATHS = new Set(['/account/connections'])
+
 export function isPublicAdminRoute(currentPath: string) {
   return (
     currentPath.startsWith('/invite/') ||
@@ -48,8 +50,9 @@ export function canPerformAdminAction(
 }
 
 export function canAccessSignedInPath(session: AuthSessionView, path: string) {
-  const pathname = path.split(/[?#]/, 1)[0]
+  const pathname = normalizeAdminPath(path.split(/[?#]/, 1)[0])
   if (pathname === '/') return true
+  if (PERSONAL_ACCOUNT_PATHS.has(pathname)) return true
   if (pathname === '/no-access') return session.permissions.pages.length === 0
   const page = getAdminPageForPath(pathname)
   return page ? canAccessPage(session, page) : false

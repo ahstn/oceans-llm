@@ -113,7 +113,7 @@ describe('RequestLogsPage', () => {
     })
     expect(
       screen.getByText(
-        'Inspect single-route request execution, latency, and sanitized payloads without dropping into raw traces.',
+        'Review each request, how long it took, and the data that the system stored.',
       ),
     ).toBeInTheDocument()
     expect(screen.getAllByText('gpt-4.1-mini')).toHaveLength(2)

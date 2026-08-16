@@ -3500,6 +3500,249 @@
         ]
       }
     },
+    "/api/v1/mcp/oauth/connections": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_oauth"
+        ],
+        "operationId": "list_mcp_oauth_connections",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/McpOauthConnectionView"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/mcp/oauth/{provider_key}/callback": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_oauth"
+        ],
+        "operationId": "mcp_oauth_callback",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "description": "OAuth provider key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirect to the connection page"
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_id}/oauth/connection": {
+      "delete": {
+        "tags": [
+          "crate::http::mcp_oauth"
+        ],
+        "operationId": "revoke_mcp_oauth_connection",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpOauthRevokeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_id}/oauth/start": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_oauth"
+        ],
+        "operationId": "start_mcp_oauth_connection",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpOauthStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpOauthStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/me/spend/focus.csv": {
       "get": {
         "tags": [
@@ -8584,7 +8827,8 @@
           "material_kind",
           "storage_kind",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "granted_scopes"
         ],
         "properties": {
           "created_at": {
@@ -8595,6 +8839,12 @@
               "string",
               "null"
             ]
+          },
+          "granted_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "header_name": {
             "type": [
@@ -8613,6 +8863,12 @@
           },
           "material_kind": {
             "type": "string"
+          },
+          "oauth_provider_key": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "owner_scope_key": {
             "type": "string"
@@ -8799,6 +9055,102 @@
             "items": {
               "$ref": "#/components/schemas/McpGrantView"
             }
+          }
+        }
+      },
+      "McpOauthConnectionStatus": {
+        "type": "string",
+        "enum": [
+          "connected",
+          "expired",
+          "disconnected",
+          "unavailable"
+        ]
+      },
+      "McpOauthConnectionView": {
+        "type": "object",
+        "required": [
+          "server_id",
+          "server_key",
+          "display_name",
+          "provider_key",
+          "required_scopes",
+          "granted_scopes",
+          "status"
+        ],
+        "properties": {
+          "availability_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "granted_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "provider_key": {
+            "type": "string"
+          },
+          "required_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "server_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "server_key": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/McpOauthConnectionStatus"
+          }
+        }
+      },
+      "McpOauthRevokeResponse": {
+        "type": "object",
+        "required": [
+          "revoked"
+        ],
+        "properties": {
+          "revoked": {
+            "type": "boolean"
+          }
+        }
+      },
+      "McpOauthStartRequest": {
+        "type": "object",
+        "properties": {
+          "redirect_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "McpOauthStartResponse": {
+        "type": "object",
+        "required": [
+          "authorization_url"
+        ],
+        "properties": {
+          "authorization_url": {
+            "type": "string"
           }
         }
       },
@@ -10881,12 +11233,33 @@
           "usage_missing_request_count"
         ],
         "properties": {
+          "cache_read_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cache_write_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "priced_cost_usd_10000": {
             "type": "integer",
             "format": "int64"
           },
           "priced_request_count": {
             "type": "integer",
+            "format": "int64"
+          },
+          "uncached_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "unpriced_request_count": {

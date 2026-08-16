@@ -9,6 +9,7 @@ pub mod identity;
 pub mod identity_lifecycle;
 pub mod identity_views;
 pub mod mcp_gateway;
+pub mod mcp_oauth;
 pub mod mcp_registry;
 pub mod models;
 pub mod observability;
@@ -24,14 +25,17 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use http::HeaderName;
+use opentelemetry::global;
+use opentelemetry_http::HeaderExtractor;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
 };
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use self::{
-    api_keys::*, handlers::*, identity::*, mcp_gateway::*, mcp_registry::*, models::*,
-    observability::*, review_agent::*, spend::*, state::AppState,
+    api_keys::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*, mcp_registry::*,
+    models::*, observability::*, review_agent::*, spend::*, state::AppState,
 };
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
@@ -265,6 +269,22 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/mcp/effective-access",
             get(preview_mcp_effective_access),
         )
+        .route(
+            "/api/v1/mcp/oauth/connections",
+            get(list_mcp_oauth_connections),
+        )
+        .route(
+            "/api/v1/mcp/servers/{server_id}/oauth/start",
+            post(start_mcp_oauth_connection),
+        )
+        .route(
+            "/api/v1/mcp/servers/{server_id}/oauth/connection",
+            delete(revoke_mcp_oauth_connection),
+        )
+        .route(
+            "/api/v1/mcp/oauth/{provider_key}/callback",
+            get(mcp_oauth_callback),
+        )
         .route("/api/v1/auth/session", get(get_auth_session))
         .route("/api/v1/auth/login/password", post(login_with_password))
         .route("/api/v1/auth/logout", post(logout_current_session))
@@ -315,30 +335,96 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             identity_guard_state,
             enforce_identity_mutation_admin,
         ))
-        .layer(
-            TraceLayer::new_for_http().make_span_with(|request: &http::Request<_>| {
-                let request_id = request
-                    .headers()
-                    .get("x-request-id")
-                    .and_then(|value| value.to_str().ok())
-                    .unwrap_or("missing");
-
-                tracing::info_span!(
-                    "http_request",
-                    method = %request.method(),
-                    uri = %request.uri().path(),
-                    request_id = %request_id,
-                    http.route = tracing::field::Empty,
-                    requested_model = tracing::field::Empty,
-                    resolved_model = tracing::field::Empty,
-                    provider = tracing::field::Empty,
-                    stream = tracing::field::Empty,
-                    ownership_kind = tracing::field::Empty
-                )
-            }),
-        )
+        .layer(TraceLayer::new_for_http().make_span_with(make_http_request_span))
         .layer(PropagateRequestIdLayer::new(request_id_header.clone()))
         .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid));
 
     mount_admin_ui(api_router, admin_ui)
+}
+
+fn make_http_request_span<B>(request: &http::Request<B>) -> tracing::Span {
+    let request_id = request
+        .headers()
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("missing");
+
+    let span = tracing::info_span!(
+        "http_request",
+        method = %request.method(),
+        uri = %request.uri().path(),
+        request_id = %request_id,
+        http.route = tracing::field::Empty,
+        requested_model = tracing::field::Empty,
+        resolved_model = tracing::field::Empty,
+        provider = tracing::field::Empty,
+        stream = tracing::field::Empty,
+        ownership_kind = tracing::field::Empty
+    );
+    let parent_context = global::get_text_map_propagator(|propagator| {
+        propagator.extract(&HeaderExtractor(request.headers()))
+    });
+    let _ = span.set_parent(parent_context);
+
+    span
+}
+
+#[cfg(test)]
+mod tests {
+    use opentelemetry::trace::{TraceContextExt, TracerProvider as _};
+    use opentelemetry_sdk::{
+        propagation::TraceContextPropagator,
+        trace::{Sampler, SdkTracerProvider},
+    };
+    use tracing_subscriber::{Registry, layer::SubscriberExt};
+
+    use super::*;
+
+    fn assert_remote_parent_sampling(
+        trace_flags: &str,
+        root_sample_ratio: f64,
+        expected_sampled: bool,
+    ) {
+        global::set_text_map_propagator(TraceContextPropagator::new());
+        let tracer_provider = SdkTracerProvider::builder()
+            .with_sampler(Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(
+                root_sample_ratio,
+            ))))
+            .build();
+        let tracer = tracer_provider.tracer("http-parent-test");
+        let subscriber =
+            Registry::default().with(tracing_opentelemetry::layer().with_tracer(tracer));
+
+        tracing::subscriber::with_default(subscriber, || {
+            let request = http::Request::builder()
+                .header(
+                    "traceparent",
+                    format!("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-{trace_flags}"),
+                )
+                .body(())
+                .expect("request");
+            let span = make_http_request_span(&request);
+            let context = span.context();
+            let otel_span = context.span();
+            let span_context = otel_span.span_context();
+
+            assert_eq!(span_context.is_sampled(), expected_sampled);
+            assert_eq!(
+                span_context.trace_id().to_string(),
+                "4bf92f3577b34da6a3ce929d0e0e4736"
+            );
+        });
+
+        tracer_provider.shutdown().expect("tracer shutdown");
+    }
+
+    #[test]
+    fn sampled_remote_parent_overrides_zero_root_sample_ratio() {
+        assert_remote_parent_sampling("01", 0.0, true);
+    }
+
+    #[test]
+    fn unsampled_remote_parent_overrides_full_root_sample_ratio() {
+        assert_remote_parent_sampling("00", 1.0, false);
+    }
 }

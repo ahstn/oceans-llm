@@ -6,9 +6,12 @@ import { AppShell } from '@/components/layout/app-shell'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 
+let routerPath = '/admin/api-keys'
+
 vi.mock('@tanstack/react-router', async () => ({
-  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
-  useRouterState: () => '/admin/api-keys',
+  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
+    select({ location: { pathname: routerPath } }),
 }))
 
 const logoutAdminSession = vi.fn()
@@ -21,6 +24,7 @@ describe('AppShell', () => {
   const originalLocation = window.location
 
   beforeEach(() => {
+    routerPath = '/admin/api-keys'
     logoutAdminSession.mockReset()
     logoutAdminSession.mockResolvedValue({ data: { status: 'ok' } })
     Object.defineProperty(window, 'location', {
@@ -74,6 +78,22 @@ describe('AppShell', () => {
     expect(screen.queryByText(/^Oceans v/)).not.toBeInTheDocument()
   })
 
+  it('shows the connection page within regular-user navigation', () => {
+    routerPath = '/admin/account/connections'
+    render(
+      <TooltipProvider>
+        <AppShell oceansVersion="0.17.0" session={regularUserSession()}>
+          content
+        </AppShell>
+      </TooltipProvider>,
+    )
+
+    expect(screen.getAllByText('Connections').length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: 'Control Plane' })).toHaveAttribute('href', '/api-keys')
+    expect(screen.getAllByText('Models').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Identity').length).toBeGreaterThan(0)
+  })
+
   it('signs out from the account menu', async () => {
     render(
       <TooltipProvider>
@@ -107,6 +127,7 @@ describe('AppShell', () => {
     expect(screen.getByText('Usage Costs')).toBeVisible()
     expect(screen.getByText('Request Logs')).toBeVisible()
     expect(screen.getByText('MCP Invocations')).toBeVisible()
+    expect(screen.getByText('Connections')).toBeVisible()
     expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Models').length).toBeGreaterThan(0)
     expect(screen.getByText('Teams')).toBeVisible()

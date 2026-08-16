@@ -97,7 +97,7 @@ describe('TeamsPage', () => {
     expect(screen.queryByRole('button', { name: 'Add members' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
     expect(screen.queryByText('research')).not.toBeInTheDocument()
-    expect(screen.getByText(/Only platform administrators can change teams/)).toBeInTheDocument()
+    expect(screen.getByText(/Only administrators can make changes/)).toBeInTheDocument()
   })
 
   it('teaches the next step when no teams exist', async () => {

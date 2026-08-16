@@ -21,3 +21,4 @@ gateway.db*
 .codex/config.toml
 .claude/*
 .agents/skills/
+.claude/settings.local.json

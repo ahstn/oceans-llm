@@ -92,7 +92,7 @@ describe('AgentHarnessesPage', () => {
     const view = render(<AgentHarnessesPage />)
     const scope = within(view.container)
 
-    expect(scope.getByText('Agent Harnesses')).toBeInTheDocument()
+    expect(scope.getByRole('heading', { level: 1, name: 'Agent harnesses' })).toBeInTheDocument()
     expect(scope.getByRole('radio', { name: 'Last 7 days' })).toBeInTheDocument()
     expect(scope.getByRole('radio', { name: 'Last 31 days' })).toBeInTheDocument()
     expect(scope.getByTestId('harness-usage-table')).toBeInTheDocument()

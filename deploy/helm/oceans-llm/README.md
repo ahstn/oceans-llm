@@ -71,8 +71,10 @@ Bootstrap-admin and seed-config Jobs are opt-in through:
 - `bootstrapAdminJob.enabled`
 - `seedConfigJob.enabled`
 
-Gateway pods wait for `gateway migrate --check` when migrations run in a
-post-install or post-upgrade hook phase. Tune that wait with:
+Gateway pods validate the gateway configuration once, then wait for
+`gateway migrate --check` when migrations run in a post-install or post-upgrade
+hook phase. Invalid configuration stops the init container before migration
+polling starts. Tune the migration wait with:
 
 - `gateway.migrationWaiter.enabled`
 - `gateway.migrationWaiter.intervalSeconds`
@@ -100,6 +102,7 @@ Example values live in [examples](examples):
 - ingress with TLS and HPA behavior
 - CloudNativePG
 - observability sidecar wiring
+- direct OpenTelemetry export to an existing Datadog Agent DaemonSet
 
 ## Publishing
 

@@ -50,6 +50,9 @@ describe('UsageCostsPage', () => {
           priced_request_count: 42,
           unpriced_request_count: 3,
           usage_missing_request_count: 1,
+          uncached_input_tokens: 12_345,
+          cache_read_tokens: 234_567,
+          cache_write_tokens: 6_789,
         },
         daily: [
           {
@@ -86,10 +89,11 @@ describe('UsageCostsPage', () => {
     const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
     render(<UsageCostsPage />)
 
-    expect(screen.getByText('Usage Costs')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Usage costs' })).toBeInTheDocument()
     expect(screen.getByText('CI Indexer')).toBeInTheDocument()
     expect(screen.getByText('fast')).toBeInTheDocument()
     expect(screen.getByText('Priced requests')).toBeInTheDocument()
+    expect(screen.getByText('234,567')).toBeInTheDocument()
   })
 
   it('shows a self-service view without cross-owner controls to regular users', async () => {
@@ -115,6 +119,9 @@ describe('UsageCostsPage', () => {
           priced_request_count: 2,
           unpriced_request_count: 0,
           usage_missing_request_count: 0,
+          uncached_input_tokens: 10,
+          cache_read_tokens: 20,
+          cache_write_tokens: 30,
         },
         daily: [],
         owners: [],
@@ -126,7 +133,7 @@ describe('UsageCostsPage', () => {
     render(<UsageCostsPage />)
 
     expect(
-      screen.getByText('Your spend and request pricing details from the durable usage ledger.'),
+      screen.getByText('Review your costs over time and see how each model affects the total.'),
     ).toBeVisible()
     expect(screen.getByText('Spend attributed to your user account.')).toBeVisible()
     expect(screen.queryByText('All owners')).not.toBeInTheDocument()

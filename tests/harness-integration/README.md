@@ -32,6 +32,7 @@ Optional external-mode variables:
 
 - `OCEANS_TEST_MODEL`: Oceans model key used by the shared Pi/OpenCode contracts. Defaults to `harness-openrouter`.
 - `OCEANS_ALLOWLISTED_USER_API_KEY` and `OCEANS_ALLOWLISTED_TEST_MODEL`: human-user key and allowlisted Oceans model used by the Pi user-allowlist contract. Configure both or neither.
+- `OCEANS_CACHE_CANARY_MODEL`: enables the Responses prompt-cache canary for this Oceans model key. Use a cache-capable model on one pinned provider route. Request payload capture must use `redacted_payloads` with `prompt_cache_key` retained. The canary requires a positive first-request cache-write counter, a positive second-request cache-read counter, and the same provider, route, and upstream model for both requests.
 
 The external gateway must already expose the selected model and an aggregate MCP endpoint with callable Context7 tools. The administrator account must be able to read request logs so the suite can correlate each harness invocation with its Oceans request-log entry.
 
@@ -48,6 +49,8 @@ mise run harness-integration-test
 The install task is cached from `package.json` and `package-lock.json`; lint and typechecking do not reinstall the dependency tree when the lockfile and installed output are unchanged.
 
 For CI, provide `OPENROUTER_API_KEY` for managed mode, or the external-mode variables above from the CI secret store. Do not expose those secrets to untrusted pull requests. The live test requires outbound access to OpenRouter and Context7.
+
+The cache canary is separate from the default OpenRouter contract because it makes two large paid requests and requires a provider that reports both cache-write and cache-read counters. Run it only against an external test deployment. Its route check proves Oceans route affinity. The deployment configuration must pin the same endpoint, region, project, and account because these values are not all present in the request-log API.
 
 ## Adding another harness
 

@@ -90,6 +90,7 @@ spec:
             - /bin/sh
             - -ec
             - |
+              gateway config validate
               deadline=$(( $(date +%s) + {{ .Values.gateway.migrationWaiter.timeoutSeconds }} ))
               until gateway migrate --check; do
                 if [ "$(date +%s)" -ge "$deadline" ]; then

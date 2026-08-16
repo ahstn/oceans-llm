@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, AuthMode,
     BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository, IdentityUserRecord,
-    McpAccessRepository, McpAggregateSessionRepository, McpRegistryRepository,
+    McpAccessRepository, McpAggregateSessionRepository, McpOauthStateRecord, McpRegistryRepository,
     McpTokenOverheadRepository, McpToolInvocationRepository, McpUpstreamCredentialRepository,
     MembershipRole, ModelRepository, OauthLoginStateRecord, OauthProviderRecord,
     OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogRepository,
@@ -146,6 +146,12 @@ pub trait GatewayStore:
         state_hash: &str,
         consumed_at: OffsetDateTime,
     ) -> Result<Option<OauthLoginStateRecord>, StoreError>;
+    async fn create_mcp_oauth_state(&self, state: &McpOauthStateRecord) -> Result<(), StoreError>;
+    async fn consume_mcp_oauth_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<McpOauthStateRecord>, StoreError>;
     async fn get_user_by_email_normalized(
         &self,
         email_normalized: &str,
@@ -857,6 +863,19 @@ impl BudgetRepository for AnyStore {
         )
     }
 
+    async fn get_cache_usage_aggregate(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<gateway_core::CacheUsageAggregateRecord, StoreError> {
+        dispatch_store!(
+            self,
+            get_cache_usage_aggregate(window_start, window_end, owner_kind, owner_user_id)
+        )
+    }
+
     async fn list_focus_export_aggregates(
         &self,
         window_start: OffsetDateTime,
@@ -1258,6 +1277,18 @@ impl GatewayStore for AnyStore {
         consumed_at: OffsetDateTime,
     ) -> Result<Option<OauthLoginStateRecord>, StoreError> {
         dispatch_store!(self, consume_oauth_login_state(state_hash, consumed_at))
+    }
+
+    async fn create_mcp_oauth_state(&self, state: &McpOauthStateRecord) -> Result<(), StoreError> {
+        dispatch_store!(self, create_mcp_oauth_state(state))
+    }
+
+    async fn consume_mcp_oauth_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<McpOauthStateRecord>, StoreError> {
+        dispatch_store!(self, consume_mcp_oauth_state(state_hash, consumed_at))
     }
 
     async fn get_user_by_email_normalized(
