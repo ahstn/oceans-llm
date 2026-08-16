@@ -35,7 +35,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { requireAdminSession } from '@/routes/-admin-guard'
+import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import {
   BatchDetailSheet,
   BatchList,
@@ -79,23 +79,24 @@ type BatchFilterValue = string | DateSelectorValue
 export const Route = createFileRoute('/batches')({
   validateSearch: (search: Record<string, unknown>) => normalizeBatchSearch(search),
   loaderDeps: ({ search }) => search,
-  beforeLoad: ({ location }) => requireAdminSession(location),
-  loader: async ({ deps }) => {
+  loader: async ({ context, deps }) => {
+    const canFilterAcrossUsers = isPlatformAdminSession(context.session)
     const [batchPage, users, serviceAccounts] = await Promise.all([
       getBatches({ data: deps }),
-      getUsers(),
-      getServiceAccounts(),
+      canFilterAcrossUsers ? getUsers() : null,
+      canFilterAcrossUsers ? getServiceAccounts() : null,
     ])
     return {
       batchPage,
-      users: users.data.users,
-      serviceAccounts: serviceAccounts.data.service_accounts,
+      users: users?.data.users ?? [],
+      serviceAccounts: serviceAccounts?.data.service_accounts ?? [],
     }
   },
   component: BatchesPage,
 })
 
 export function BatchesPage() {
+  const { session } = Route.useRouteContext()
   const { batchPage, users, serviceAccounts } = Route.useLoaderData() as {
     batchPage: Awaited<ReturnType<typeof getBatches>>
     users: UserView[]
@@ -123,8 +124,8 @@ export function BatchesPage() {
     return () => window.clearInterval(intervalId)
   }, [hasActiveBatches, router])
 
-  const fields = useMemo<FilterFieldConfig<BatchFilterValue>[]>(
-    () => [
+  const fields = useMemo<FilterFieldConfig<BatchFilterValue>[]>(() => {
+    const fields: FilterFieldConfig<BatchFilterValue>[] = [
       {
         key: 'created_at',
         label: 'Created',
@@ -137,28 +138,6 @@ export function BatchesPage() {
         ),
       },
       {
-        key: 'user_id',
-        label: 'User',
-        icon: <HugeiconsIcon icon={UserIcon} />,
-        type: 'select',
-        searchable: true,
-        options: users.map((user) => ({
-          value: user.id,
-          label: `${user.name} (${user.email})`,
-        })),
-      },
-      {
-        key: 'service_account_id',
-        label: 'Service account',
-        icon: <HugeiconsIcon icon={RoboticIcon} />,
-        type: 'select',
-        searchable: true,
-        options: serviceAccounts.map((account) => ({
-          value: account.id,
-          label: account.name,
-        })),
-      },
-      {
         key: 'status',
         label: 'Status',
         icon: <HugeiconsIcon icon={TaskDaily01Icon} />,
@@ -169,9 +148,39 @@ export function BatchesPage() {
           label: formatStatus(status),
         })),
       },
-    ],
-    [serviceAccounts, users],
-  )
+    ]
+
+    if (isPlatformAdminSession(session)) {
+      fields.splice(
+        1,
+        0,
+        {
+          key: 'user_id',
+          label: 'User',
+          icon: <HugeiconsIcon icon={UserIcon} />,
+          type: 'select',
+          searchable: true,
+          options: users.map((user) => ({
+            value: user.id,
+            label: `${user.name} (${user.email})`,
+          })),
+        },
+        {
+          key: 'service_account_id',
+          label: 'Service account',
+          icon: <HugeiconsIcon icon={RoboticIcon} />,
+          type: 'select',
+          searchable: true,
+          options: serviceAccounts.map((account) => ({
+            value: account.id,
+            label: account.name,
+          })),
+        },
+      )
+    }
+
+    return fields
+  }, [serviceAccounts, session, users])
 
   const urlFilters = useMemo(
     () => batchFiltersFromSearch(search),

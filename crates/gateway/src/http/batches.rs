@@ -171,6 +171,7 @@ pub async fn list_batches(
     Query(query): Query<ListBatchesQuery>,
 ) -> Result<Json<BatchListResponse>, AppError> {
     let scope = access_scope(&state, &headers).await?;
+    let user_id = scoped_user_filter(scope, query.user_id);
     let page = state
         .store
         .list_batches(
@@ -180,7 +181,7 @@ pub async fn list_batches(
                 status: query.status,
                 model_key: query.model,
                 provider_key: query.provider,
-                user_id: query.user_id,
+                user_id,
                 service_account_id: query.service_account_id,
                 created_at_start: parse_time(query.created_at_start.as_deref())?,
                 created_at_end: parse_time(query.created_at_end.as_deref())?,
@@ -291,11 +292,22 @@ async fn access_scope(state: &AppState, headers: &HeaderMap) -> Result<BatchAcce
         return Ok(BatchAccessScope::ApiKey(auth.id));
     }
     let user = require_active_session(state, headers).await?;
-    Ok(if user.global_role == GlobalRole::PlatformAdmin {
+    Ok(session_access_scope(user.user_id, user.global_role))
+}
+
+fn session_access_scope(user_id: Uuid, global_role: GlobalRole) -> BatchAccessScope {
+    if global_role == GlobalRole::PlatformAdmin {
         BatchAccessScope::All
     } else {
-        BatchAccessScope::User(user.user_id)
-    })
+        BatchAccessScope::User(user_id)
+    }
+}
+
+fn scoped_user_filter(scope: BatchAccessScope, requested_user_id: Option<Uuid>) -> Option<Uuid> {
+    match scope {
+        BatchAccessScope::User(user_id) => Some(user_id),
+        BatchAccessScope::All | BatchAccessScope::ApiKey(_) => requested_user_id,
+    }
 }
 
 async fn require_api_key(
@@ -422,4 +434,39 @@ fn parse_time(raw: Option<&str>) -> Result<Option<OffsetDateTime>, AppError> {
 
 fn money(value: Option<Money4>) -> Option<f64> {
     value.map(|money| money.as_scaled_i64() as f64 / Money4::SCALE as f64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{scoped_user_filter, session_access_scope};
+    use gateway_core::{BatchAccessScope, GlobalRole};
+    use uuid::Uuid;
+
+    #[test]
+    fn platform_admin_session_can_access_all_batches() {
+        assert_eq!(
+            session_access_scope(Uuid::new_v4(), GlobalRole::PlatformAdmin),
+            BatchAccessScope::All
+        );
+    }
+
+    #[test]
+    fn non_platform_session_is_limited_to_its_user() {
+        let user_id = Uuid::new_v4();
+
+        assert_eq!(
+            session_access_scope(user_id, GlobalRole::User),
+            BatchAccessScope::User(user_id)
+        );
+    }
+
+    #[test]
+    fn non_platform_session_cannot_select_another_user() {
+        let user_id = Uuid::new_v4();
+
+        assert_eq!(
+            scoped_user_filter(BatchAccessScope::User(user_id), Some(Uuid::new_v4()),),
+            Some(user_id)
+        );
+    }
 }

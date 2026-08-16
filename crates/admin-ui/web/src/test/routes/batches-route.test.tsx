@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 import type { BatchResultsView, BatchView } from '@/types/api'
 
 const cancelGatewayBatchMock = vi.fn()
@@ -10,6 +11,7 @@ const navigateMock = vi.fn()
 
 const routeMock = {
   useLoaderData: vi.fn(),
+  useRouteContext: vi.fn(),
   useSearch: vi.fn(),
 }
 
@@ -28,22 +30,31 @@ vi.mock('@/components/reui/filters', () => ({
     operator,
     values,
   }),
-  Filters: ({ onChange }: { onChange: (filters: unknown[]) => void }) => (
-    <button
-      type="button"
-      onClick={() =>
-        onChange([
-          {
-            id: 'status-is',
-            field: 'status',
-            operator: 'is',
-            values: ['completed'],
-          },
-        ])
-      }
-    >
-      Apply completed filter
-    </button>
+  Filters: ({
+    fields,
+    onChange,
+  }: {
+    fields: Array<{ label: string }>
+    onChange: (filters: unknown[]) => void
+  }) => (
+    <div>
+      <span data-testid="batch-filter-fields">{fields.map((field) => field.label).join(',')}</span>
+      <button
+        type="button"
+        onClick={() =>
+          onChange([
+            {
+              id: 'status-is',
+              field: 'status',
+              operator: 'is',
+              values: ['completed'],
+            },
+          ])
+        }
+      >
+        Apply completed filter
+      </button>
+    </div>
   ),
 }))
 
@@ -141,12 +152,14 @@ describe('BatchesPage', () => {
 
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
+    routeMock.useRouteContext.mockReset()
     routeMock.useSearch.mockReset()
     cancelGatewayBatchMock.mockReset()
     getBatchResultPageMock.mockReset()
     invalidateMock.mockReset()
     navigateMock.mockReset()
     routeMock.useSearch.mockReturnValue({ page: 1, page_size: 30 })
+    routeMock.useRouteContext.mockReturnValue({ session: platformAdminSession() })
     routeMock.useLoaderData.mockReturnValue({
       batchPage: {
         items: [completedBatch, queuedBatch],
@@ -182,6 +195,9 @@ describe('BatchesPage', () => {
     expect(screen.getAllByText('Local CI Runner').length).toBeGreaterThan(0)
     expect(screen.getAllByText('2 of 2').length).toBeGreaterThan(0)
     expect(screen.getAllByText('0 of 3').length).toBeGreaterThan(0)
+    expect(screen.getByTestId('batch-filter-fields')).toHaveTextContent(
+      'Created,User,Service account,Status',
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply completed filter' }))
 
@@ -191,6 +207,15 @@ describe('BatchesPage', () => {
         search: { page: 1, page_size: 30, status: 'completed' },
       })
     })
+  })
+
+  it('does not offer cross-user filters to a non-platform session', async () => {
+    routeMock.useRouteContext.mockReturnValue({ session: regularUserSession() })
+    const { BatchesPage } = await import('@/routes/batches')
+
+    render(<BatchesPage />)
+
+    expect(screen.getByTestId('batch-filter-fields')).toHaveTextContent('Created,Status')
   })
 
   it('loads normalized response details in the batch sheet', async () => {

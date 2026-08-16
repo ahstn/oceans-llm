@@ -28,6 +28,7 @@ describe('signed-in route selection', () => {
     expect(canAccessSignedInPath(userSession, '/observability/request-logs?status=failed')).toBe(
       true,
     )
+    expect(canAccessSignedInPath(userSession, '/batches?status=completed')).toBe(true)
     expect(postLoginAdminHref(userSession, '/observability/mcp-invocations')).toBe(
       '/admin/observability/mcp-invocations',
     )
@@ -37,9 +38,17 @@ describe('signed-in route selection', () => {
     const modelsOnlySession = regularUserSession(['models'])
 
     expect(canAccessSignedInPath(modelsOnlySession, '/identity/service-accounts')).toBe(false)
+    expect(canAccessSignedInPath(modelsOnlySession, '/batches')).toBe(false)
     expect(postLoginAdminHref(modelsOnlySession, '/identity/service-accounts')).toBe(
       '/admin/models',
     )
+  })
+
+  it('keeps request logs as the default route for their shared page grant', () => {
+    const requestLogsOnlySession = regularUserSession(['request_logs'])
+
+    expect(defaultSignedInPath(requestLogsOnlySession)).toBe('/observability/request-logs')
+    expect(canAccessSignedInPath(requestLogsOnlySession, '/batches')).toBe(true)
   })
 
   it('uses the no-access route when the resolved set is empty', () => {
