@@ -376,7 +376,7 @@ run = '''
 set -euo pipefail
 
 cog bump --auto --skip-untracked
-tag="$(cog --verbose get-version --tag)" # TODO: prints over two lines
+tag="$(cog --verbose get-version --tag)"
 git push --atomic origin main "$tag"
-gh release create "$tag" --title "$tag" --notes $(git-cliff --latest)
+gh release create "$tag" --title "$tag" --notes "$(git-cliff --latest)"
 '''
