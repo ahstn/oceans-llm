@@ -11,11 +11,13 @@ import {
   WaterfallUp02Icon,
 } from '@hugeicons/core-free-icons'
 
+import type { AdminPage, AuthSessionView } from '@/types/api'
+
 export interface AdminNavItem {
+  page?: AdminPage
   label: string
   to: string
   icon: unknown
-  adminOnly?: boolean
 }
 
 export interface AdminNavSection {
@@ -35,15 +37,15 @@ export const adminNavSections: AdminNavSection[] = [
     label: 'Control Plane',
     icon: SearchIcon,
     items: [
-      { label: 'API Keys', to: '/api-keys', icon: SearchIcon },
-      { label: 'Models', to: '/models', icon: HomeIcon },
+      { page: 'api_keys', label: 'API Keys', to: '/api-keys', icon: SearchIcon },
+      { page: 'models', label: 'Models', to: '/models', icon: HomeIcon },
       connectionsNavItem,
-      { label: 'MCP', to: '/mcp', icon: McpServerIcon, adminOnly: true },
+      { page: 'mcp', label: 'MCP', to: '/mcp', icon: McpServerIcon },
       {
+        page: 'review_agent',
         label: 'Review Agent',
         to: '/review-agent',
         icon: GitPullRequestIcon,
-        adminOnly: true,
       },
     ],
   },
@@ -52,21 +54,22 @@ export const adminNavSections: AdminNavSection[] = [
     icon: SaveMoneyDollarIcon,
     items: [
       {
+        page: 'usage_costs',
         label: 'Usage Costs',
         to: '/observability/usage-costs',
         icon: SaveMoneyDollarIcon,
       },
       {
+        page: 'spend_controls',
         label: 'Spend Controls',
         to: '/spend-controls',
         icon: Notification03Icon,
-        adminOnly: true,
       },
       {
+        page: 'leaderboard',
         label: 'Leaderboard',
         to: '/observability/leaderboard',
         icon: WaterfallUp02Icon,
-        adminOnly: true,
       },
     ],
   },
@@ -75,17 +78,19 @@ export const adminNavSections: AdminNavSection[] = [
     icon: Notification03Icon,
     items: [
       {
+        page: 'agent_harnesses',
         label: 'Agent Harnesses',
         to: '/observability/agent-harnesses',
         icon: RoboticIcon,
-        adminOnly: true,
       },
       {
+        page: 'request_logs',
         label: 'Request Logs',
         to: '/observability/request-logs',
         icon: SearchIcon,
       },
       {
+        page: 'mcp_invocations',
         label: 'MCP Invocations',
         to: '/observability/mcp-invocations',
         icon: McpServerIcon,
@@ -96,13 +101,13 @@ export const adminNavSections: AdminNavSection[] = [
     label: 'Identity',
     icon: UserIcon,
     items: [
-      { label: 'Teams', to: '/identity/teams', icon: UserGroupIcon },
-      { label: 'Users', to: '/identity/users', icon: UserIcon },
+      { page: 'teams', label: 'Teams', to: '/identity/teams', icon: UserGroupIcon },
+      { page: 'users', label: 'Users', to: '/identity/users', icon: UserIcon },
       {
+        page: 'service_accounts',
         label: 'Service Accounts',
         to: '/identity/service-accounts',
         icon: RoboticIcon,
-        adminOnly: true,
       },
     ],
   },
@@ -112,17 +117,27 @@ export function normalizeAdminPath(pathname: string) {
   return pathname.replace(/^\/admin(?=\/|$)/, '') || '/'
 }
 
-export function getAdminNavSections(globalRole: string) {
-  if (globalRole === 'platform_admin') {
-    return adminNavSections
-  }
-
+export function getAdminNavSections(pages: AdminPage[]) {
+  const allowedPages = new Set(pages)
   return adminNavSections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => !item.adminOnly),
+      items: section.items.filter((item) => !item.page || allowedPages.has(item.page)),
     }))
     .filter((section) => section.items.length > 0)
+}
+
+export function getAdminPagePath(page: AdminPage) {
+  return adminNavItems().find((item) => item.page === page)?.to
+}
+
+export function getAdminPageForPath(path: string) {
+  const currentPath = normalizeAdminPath(path.split(/[?#]/, 1)[0])
+  return adminNavItems().find((item) => matchesAdminPath(currentPath, item.to))?.page
+}
+
+export function canAccessPage(session: AuthSessionView, page: AdminPage) {
+  return session.permissions.pages.includes(page)
 }
 
 export function getActiveNavSection(
@@ -152,4 +167,8 @@ export function matchesAdminPath(currentPath: string, to: string) {
 
 function stripTrailingSlash(path: string) {
   return path.length > 1 ? path.replace(/\/+$/, '') : path
+}
+
+function adminNavItems() {
+  return adminNavSections.flatMap((section) => section.items)
 }

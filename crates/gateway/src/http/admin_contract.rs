@@ -16,6 +16,8 @@ use utoipa::{
     },
 };
 
+use crate::config::{AdminAction, AdminPage, AdminPermissionGroup};
+
 pub const ADMIN_OPENAPI_PATH: &str = "crates/gateway/openapi/admin-api.json";
 const ADMIN_OPENAPI_DOCUMENT_VERSION: &str = "0.0.0";
 
@@ -417,6 +419,15 @@ pub struct AuthSessionUserView {
 pub struct AuthSessionView {
     pub user: AuthSessionUserView,
     pub must_change_password: bool,
+    pub permissions: AuthSessionPermissionsView,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AuthSessionPermissionsView {
+    pub group: AdminPermissionGroup,
+    pub pages: Vec<AdminPage>,
+    pub actions: Vec<AdminAction>,
+    pub default_page: Option<AdminPage>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -704,7 +715,7 @@ pub struct SpendReportView {
     pub models: Vec<SpendModelBreakdownView>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct LeaderboardChartUserView {
     pub rank: u32,
     pub user_id: String,
@@ -712,19 +723,19 @@ pub struct LeaderboardChartUserView {
     pub total_spend_usd_10000: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct LeaderboardSeriesValueView {
     pub user_id: String,
     pub spend_usd_10000: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct LeaderboardSeriesPointView {
     pub bucket_start: String,
     pub values: Vec<LeaderboardSeriesValueView>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct LeaderboardLeaderView {
     pub rank: u32,
     pub user_id: String,
@@ -735,7 +746,7 @@ pub struct LeaderboardLeaderView {
     pub tool_cardinality_averages: RequestToolCardinalityAveragesView,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct LeaderboardView {
     pub range: String,
     pub bucket_hours: u8,
@@ -746,7 +757,7 @@ pub struct LeaderboardView {
     pub leaders: Vec<LeaderboardLeaderView>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct HarnessUsageChartHarnessView {
     pub rank: u32,
     pub agent_harness_key: String,
@@ -754,19 +765,19 @@ pub struct HarnessUsageChartHarnessView {
     pub total_requests: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct HarnessUsageSeriesValueView {
     pub agent_harness_key: String,
     pub request_count: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct HarnessUsageSeriesPointView {
     pub bucket_start: String,
     pub values: Vec<HarnessUsageSeriesValueView>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct HarnessUsageLeaderView {
     pub rank: u32,
     pub agent_harness_key: String,
@@ -774,7 +785,7 @@ pub struct HarnessUsageLeaderView {
     pub total_requests: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct HarnessUsageView {
     pub range: String,
     pub bucket_hours: u8,
@@ -1140,7 +1151,7 @@ pub struct RequestToolCardinalityView {
     pub filtered_tool_count: Option<i64>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct RequestToolCardinalityAveragesView {
     pub referenced_mcp_server_count: Option<f64>,
     pub exposed_tool_count: Option<f64>,

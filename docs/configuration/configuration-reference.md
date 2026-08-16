@@ -1,6 +1,6 @@
 # Configuration Reference
 
-`See also`: [Oceans LLM Gateway](../../README.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [OIDC and SSO](../access/oidc-and-sso-status.md)
+`See also`: [Oceans LLM Gateway](../../README.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [OIDC and SSO](../access/oidc-and-sso-status.md), [ADR: Configurable Admin Page Permissions](../adr/2026-08-05-configurable-admin-page-permissions.md)
 
 This page owns config syntax and parse-time rules. It does not own the full runtime story after a request starts moving.
 
@@ -22,6 +22,7 @@ This page owns config syntax and parse-time rules. It does not own the full runt
 - `server`
 - `database`
 - `auth`
+- `permissions`
 - `mcp`
 - `budgets`
 - `budget_alerts`
@@ -240,8 +241,77 @@ Important defaults from config parsing and domain deserialization:
 - `request_logging.purge.retention` defaults to `7d`
 - `budgets.users.default` is absent by default; when present, it creates inherited user budgets for all human users
 - `budgets.users.model_defaults` is empty by default; entries create inherited user model budgets for all human users for selected gateway models
+- `permissions.users.pages` defaults to the 10 shared console pages
+- `permissions.team_admins.pages` has no direct default grants and inherits the user pages
+- `permissions.platform_admins.pages` defaults to `mcp`, `review_agent`, and `spend_controls`, then inherits both lower groups
+- `permissions.users.actions` defaults to create, update, and revoke for personal API keys
+- `permissions.team_admins.actions` defaults to reveal for team service-account keys, then inherits the user actions
+- `permissions.platform_admins.actions` has no direct default grants and inherits both lower groups
 
 The startup meaning of bootstrap-admin lives in [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md). Non-human data-plane access is managed through [service accounts](../access/service-accounts.md), not config-seeded legacy runtime keys.
+
+## `permissions`
+
+`permissions` controls which signed-in admin UI pages each group can open and which configured admin actions each group can use. Page grants control UI visibility only. Action grants are enforced by the API and the UI. An action grant does not remove ownership, team scope, active-session, or resource-state checks.
+
+```yaml
+permissions:
+  users:
+    pages:
+      - api_keys
+      - models
+      - usage_costs
+      - leaderboard
+      - agent_harnesses
+      - request_logs
+      - mcp_invocations
+      - teams
+      - users
+      - service_accounts
+    actions:
+      - create_api_key
+      - update_api_key
+      - revoke_api_key
+    default_page: usage_costs
+  team_admins:
+    pages: []
+    actions:
+      - reveal_api_key
+    default_page: usage_costs
+  platform_admins:
+    pages:
+      - mcp
+      - review_agent
+      - spend_controls
+    actions: []
+    default_page: api_keys
+```
+
+Each `pages` list contains direct grants for that group. The gateway forms effective sets with these unions:
+
+- `users`: `users.pages`
+- `team_admins`: `users.pages` plus `team_admins.pages`
+- `platform_admins`: all three `pages` lists
+
+Each `actions` list uses the same direct-grant and inheritance rules:
+
+- `users`: `users.actions`
+- `team_admins`: `users.actions` plus `team_admins.actions`
+- `platform_admins`: all three `actions` lists
+
+Repeated page or action names are valid and appear once in the effective set. An explicit empty list removes that group's direct grants, but inherited grants still apply. If a group, `pages`, or `actions` field is absent, the gateway uses the direct defaults shown above.
+
+The valid page names are `api_keys`, `models`, `mcp`, `review_agent`, `usage_costs`, `spend_controls`, `leaderboard`, `agent_harnesses`, `request_logs`, `mcp_invocations`, `teams`, `users`, and `service_accounts`.
+
+The first action catalog contains `create_api_key`, `update_api_key`, `revoke_api_key`, and `reveal_api_key`. Users can receive the first three actions. Team admins and platform admins can receive all four. Other admin operations keep their existing authorization rules until they have a typed action and resource-scope policy.
+
+The `users` and `team_admins` groups can receive only the 10 shared page names in the example. Only `platform_admins` can receive `mcp`, `review_agent`, or `spend_controls`. Users cannot receive `reveal_api_key` because personal key secrets are shown only at creation. Startup fails for an unknown field, unknown page or action, unsupported group grant, or `default_page` that is not in the final effective page set.
+
+If `default_page` is absent, the gateway uses the normal group default when that page is available. Otherwise, it uses the first effective page in a stable order. A group with no effective pages uses the signed-in `/admin/no-access` page.
+
+By default, a user can create, update, and revoke only keys owned by that user. A team owner or team admin can also create, update, revoke, and reveal service-account keys for that team. A platform admin keeps global key scope. Removing an action hides its UI control and makes the matching API return `403`.
+
+Config changes take effect after a gateway restart. See [Identity and Access](../access/identity-and-access.md#admin-page-permission-groups) for group selection and data-scope rules.
 
 ## `server`
 

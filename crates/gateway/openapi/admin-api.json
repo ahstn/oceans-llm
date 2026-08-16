@@ -4465,6 +4465,15 @@
           }
         }
       },
+      "AdminAction": {
+        "type": "string",
+        "enum": [
+          "create_api_key",
+          "update_api_key",
+          "revoke_api_key",
+          "reveal_api_key"
+        ]
+      },
       "AdminApiKeyModelView": {
         "type": "object",
         "required": [
@@ -5257,6 +5266,32 @@
           }
         ]
       },
+      "AdminPage": {
+        "type": "string",
+        "enum": [
+          "api_keys",
+          "models",
+          "mcp",
+          "review_agent",
+          "usage_costs",
+          "spend_controls",
+          "leaderboard",
+          "agent_harnesses",
+          "request_logs",
+          "mcp_invocations",
+          "teams",
+          "users",
+          "service_accounts"
+        ]
+      },
+      "AdminPermissionGroup": {
+        "type": "string",
+        "enum": [
+          "platform_admins",
+          "team_admins",
+          "users"
+        ]
+      },
       "AdminServiceAccountView": {
         "type": "object",
         "required": [
@@ -5517,6 +5552,41 @@
           "explicit"
         ]
       },
+      "AuthSessionPermissionsView": {
+        "type": "object",
+        "required": [
+          "group",
+          "pages",
+          "actions"
+        ],
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAction"
+            }
+          },
+          "default_page": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminPage"
+              }
+            ]
+          },
+          "group": {
+            "$ref": "#/components/schemas/AdminPermissionGroup"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminPage"
+            }
+          }
+        }
+      },
       "AuthSessionUserView": {
         "type": "object",
         "required": [
@@ -5544,11 +5614,15 @@
         "type": "object",
         "required": [
           "user",
-          "must_change_password"
+          "must_change_password",
+          "permissions"
         ],
         "properties": {
           "must_change_password": {
             "type": "boolean"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/AuthSessionPermissionsView"
           },
           "user": {
             "$ref": "#/components/schemas/AuthSessionUserView"
@@ -6779,11 +6853,15 @@
             "type": "object",
             "required": [
               "user",
-              "must_change_password"
+              "must_change_password",
+              "permissions"
             ],
             "properties": {
               "must_change_password": {
                 "type": "boolean"
+              },
+              "permissions": {
+                "$ref": "#/components/schemas/AuthSessionPermissionsView"
               },
               "user": {
                 "$ref": "#/components/schemas/AuthSessionUserView"
@@ -7694,11 +7772,15 @@
                 "type": "object",
                 "required": [
                   "user",
-                  "must_change_password"
+                  "must_change_password",
+                  "permissions"
                 ],
                 "properties": {
                   "must_change_password": {
                     "type": "boolean"
+                  },
+                  "permissions": {
+                    "$ref": "#/components/schemas/AuthSessionPermissionsView"
                   },
                   "user": {
                     "$ref": "#/components/schemas/AuthSessionUserView"

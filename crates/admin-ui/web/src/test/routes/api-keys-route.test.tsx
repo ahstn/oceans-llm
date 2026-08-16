@@ -116,6 +116,12 @@ describe('ApiKeysPage', () => {
     routeMock.useRouteContext.mockReturnValue({
       session: {
         must_change_password: false,
+        permissions: {
+          group: 'platform_admins',
+          pages: ['api_keys'],
+          actions: ['create_api_key', 'update_api_key', 'revoke_api_key', 'reveal_api_key'],
+          default_page: 'api_keys',
+        },
         user: {
           id: 'admin_1',
           name: 'Admin User',
@@ -514,10 +520,16 @@ describe('ApiKeysPage', () => {
     expect(routerMock.invalidate).toHaveBeenCalledTimes(1)
   })
 
-  it('shows regular users their masked keys without mutation controls', async () => {
+  it('lets regular users create and manage their own keys', async () => {
     routeMock.useRouteContext.mockReturnValue({
       session: {
         must_change_password: false,
+        permissions: {
+          group: 'users',
+          pages: ['api_keys'],
+          actions: ['create_api_key', 'update_api_key', 'revoke_api_key'],
+          default_page: 'api_keys',
+        },
         user: {
           id: 'user_1',
           name: 'Jane User',
@@ -532,10 +544,24 @@ describe('ApiKeysPage', () => {
 
     expect(screen.getAllByText('gwk_prod_liv****').length).toBeGreaterThan(0)
     expect(
-      screen.getByText('Review the keys that you and your team use to send requests.'),
+      screen.getByText('Create and manage API keys within your access scope.'),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Create API key' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create API key' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Manage' }).length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create API key' }))
+    const createDialog = screen.getByRole('dialog', { name: 'Create API key' })
+    expect(within(createDialog).getByRole('combobox', { name: 'Owner user' })).toHaveTextContent(
+      'Jane Admin',
+    )
+    expect(within(createDialog).queryByRole('option', { name: 'Service account' })).toBeNull()
+
+    fireEvent.click(within(createDialog).getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
+    const manageDialog = screen.getByRole('dialog', { name: 'Manage API key' })
+    expect(within(manageDialog).getByRole('button', { name: 'Save access' })).toBeInTheDocument()
+    expect(within(manageDialog).getByRole('button', { name: 'Revoke key' })).toBeInTheDocument()
+    expect(within(manageDialog).queryByRole('button', { name: 'Reveal API key' })).toBeNull()
   })
 })
 

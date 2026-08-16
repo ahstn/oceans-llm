@@ -2,6 +2,7 @@ import type * as React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 import type { IdentityDirectoryTeamsPayload, IdentityTeamsPayload } from '@/types/api'
 
 const routeMock = {
@@ -56,32 +57,12 @@ describe('TeamsPage', () => {
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
     routeMock.useRouteContext.mockReset()
-    routeMock.useRouteContext.mockReturnValue({
-      session: {
-        must_change_password: false,
-        user: {
-          id: 'admin_1',
-          name: 'Admin User',
-          email: 'admin@example.com',
-          global_role: 'platform_admin',
-        },
-      },
-    })
+    routeMock.useRouteContext.mockReturnValue({ session: platformAdminSession() })
     routerMock.invalidate.mockClear()
   })
 
   it('shows all team membership without mutation controls to regular users', async () => {
-    routeMock.useRouteContext.mockReturnValue({
-      session: {
-        must_change_password: false,
-        user: {
-          id: 'user_1',
-          name: 'Regular User',
-          email: 'regular@example.com',
-          global_role: 'user',
-        },
-      },
-    })
+    routeMock.useRouteContext.mockReturnValue({ session: regularUserSession() })
     routeMock.useLoaderData.mockReturnValue({
       data: {
         ...basePayload,

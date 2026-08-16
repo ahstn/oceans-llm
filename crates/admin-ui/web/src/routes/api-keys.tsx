@@ -7,8 +7,7 @@ import {
   ManageApiKeyDialog,
 } from '@/routes/api-keys/-components'
 import { PageHeader } from '@/components/layout/page-header'
-import { requireAuthenticatedSession } from '@/routes/-admin-guard'
-import { isPlatformAdminSession } from '@/routes/-auth-routing'
+import { canPerformAdminAction } from '@/routes/-auth-routing'
 import { getApiKeys } from '@/server/admin-data.functions'
 import type { ApiKeysPayload } from '@/types/api'
 
@@ -18,7 +17,6 @@ export const Route = createFileRoute('/api-keys')({
   validateSearch: (search: Record<string, unknown>) => ({
     api_key_id: typeof search.api_key_id === 'string' ? search.api_key_id : undefined,
   }),
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: () => getApiKeys(),
   component: ApiKeysPage,
 })
@@ -28,13 +26,19 @@ export function ApiKeysPage() {
     data: { items, users, service_accounts, models },
   } = Route.useLoaderData() as { data: ApiKeysPayload }
   const { session } = Route.useRouteContext()
-  const isPlatformAdmin = isPlatformAdminSession(session)
+  const canCreate = canPerformAdminAction(session, 'create_api_key')
+  const canUpdate = canPerformAdminAction(session, 'update_api_key')
+  const canRevoke = canPerformAdminAction(session, 'revoke_api_key')
+  const canReveal = canPerformAdminAction(session, 'reveal_api_key')
+  const canManage = canUpdate || canRevoke || canReveal
   const search = Route.useSearch()
   const state = useApiKeysPageState({
     items,
     users,
     service_accounts,
-    focusedApiKeyId: isPlatformAdmin ? search.api_key_id : undefined,
+    defaultOwnerUserId:
+      session.permissions.group === 'platform_admins' ? undefined : session.user.id,
+    focusedApiKeyId: canManage ? search.api_key_id : undefined,
   })
 
   return (
@@ -43,13 +47,13 @@ export function ApiKeysPage() {
         section="Control Plane"
         title="API keys"
         description={
-          isPlatformAdmin
-            ? 'Create and manage keys that identities use to send requests.'
-            : 'Review the keys that you and your team use to send requests.'
+          canCreate || canManage
+            ? 'Create and manage API keys within your access scope.'
+            : 'Review the API keys within your access scope.'
         }
       />
 
-      {isPlatformAdmin ? (
+      {canCreate ? (
         <CreatedApiKeyAlert
           result={state.createdResult}
           onCopy={state.actions.handleCopy}
@@ -59,11 +63,11 @@ export function ApiKeysPage() {
 
       <ApiKeysCard
         items={items}
-        onCreate={isPlatformAdmin ? state.actions.openCreateDialog : undefined}
-        onManage={isPlatformAdmin ? state.actions.openManageDialog : undefined}
+        onCreate={canCreate ? state.actions.openCreateDialog : undefined}
+        onManage={canManage ? state.actions.openManageDialog : undefined}
       />
 
-      {isPlatformAdmin ? (
+      {canCreate ? (
         <CreateApiKeyDialog
           form={state.form}
           isPending={state.isPending}
@@ -83,8 +87,9 @@ export function ApiKeysPage() {
         />
       ) : null}
 
-      {isPlatformAdmin ? (
+      {canManage ? (
         <ManageApiKeyDialog
+          actions={session.permissions.actions}
           form={state.manageForm}
           isPending={state.isPending}
           modelOptions={models}

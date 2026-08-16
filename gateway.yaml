@@ -12,6 +12,37 @@ auth:
     password: literal.admin
     require_password_change: false
 
+permissions:
+  users:
+    pages:
+      - api_keys
+      - models
+      - usage_costs
+      - leaderboard
+      - agent_harnesses
+      - request_logs
+      - mcp_invocations
+      - teams
+      - users
+      - service_accounts
+    actions:
+      - create_api_key
+      - update_api_key
+      - revoke_api_key
+    default_page: usage_costs
+  team_admins:
+    pages: []
+    actions:
+      - reveal_api_key
+    default_page: usage_costs
+  platform_admins:
+    pages:
+      - mcp
+      - review_agent
+      - spend_controls
+    actions: []
+    default_page: api_keys
+
 request_logging:
   payloads:
     capture_mode: redacted_payloads
@@ -244,7 +275,7 @@ providers:
       icon_key: aws
 
 models:
-  - id: gpt-5.6-sol 
+  - id: gpt-5.6-sol
     description: OpenAI via compatible adapter with weighted route selection
     routes:
       - provider: openai-prod
@@ -256,7 +287,7 @@ models:
 
   - id: openai-fast
     description: Alias kept for backward compatibility
-    alias_of: gpt-5.6-sol 
+    alias_of: gpt-5.6-sol
 
   - id: deepseek-v4-pro
     routes:

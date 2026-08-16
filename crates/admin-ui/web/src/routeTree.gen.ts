@@ -9,56 +9,32 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SpendControlsRouteImport } from './routes/spend-controls'
-import { Route as ReviewAgentRouteImport } from './routes/review-agent'
-import { Route as ModelsRouteImport } from './routes/models'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as ChangePasswordRouteImport } from './routes/change-password'
-import { Route as ApiKeysRouteImport } from './routes/api-keys'
-import { Route as AccountReadyRouteImport } from './routes/account-ready'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as McpIndexRouteImport } from './routes/mcp/index'
-import { Route as ObservabilityUsageCostsRouteImport } from './routes/observability/usage-costs'
-import { Route as ObservabilityRequestLogsRouteImport } from './routes/observability/request-logs'
-import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observability/mcp-invocations'
-import { Route as ObservabilityLeaderboardRouteImport } from './routes/observability/leaderboard'
-import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
-import { Route as McpServersRouteImport } from './routes/mcp/servers'
-import { Route as McpAccessRouteImport } from './routes/mcp/access'
-import { Route as InviteTokenRouteImport } from './routes/invite.$token'
-import { Route as IdentityUsersRouteImport } from './routes/identity/users'
-import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
-import { Route as IdentityServiceAccountsRouteImport } from './routes/identity/service-accounts'
+import { Route as AccountReadyRouteImport } from './routes/account-ready'
+import { Route as ApiKeysRouteImport } from './routes/api-keys'
+import { Route as ChangePasswordRouteImport } from './routes/change-password'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ModelsRouteImport } from './routes/models'
+import { Route as NoAccessRouteImport } from './routes/no-access'
+import { Route as ReviewAgentRouteImport } from './routes/review-agent'
+import { Route as SpendControlsRouteImport } from './routes/spend-controls'
 import { Route as AccountConnectionsRouteImport } from './routes/account/connections'
+import { Route as IdentityServiceAccountsRouteImport } from './routes/identity/service-accounts'
+import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
+import { Route as IdentityUsersRouteImport } from './routes/identity/users'
+import { Route as InviteTokenRouteImport } from './routes/invite.$token'
+import { Route as McpIndexRouteImport } from './routes/mcp/index'
+import { Route as McpAccessRouteImport } from './routes/mcp/access'
+import { Route as McpServersRouteImport } from './routes/mcp/servers'
+import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
+import { Route as ObservabilityLeaderboardRouteImport } from './routes/observability/leaderboard'
+import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observability/mcp-invocations'
+import { Route as ObservabilityRequestLogsRouteImport } from './routes/observability/request-logs'
+import { Route as ObservabilityUsageCostsRouteImport } from './routes/observability/usage-costs'
 
-const SpendControlsRoute = SpendControlsRouteImport.update({
-  id: '/spend-controls',
-  path: '/spend-controls',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReviewAgentRoute = ReviewAgentRouteImport.update({
-  id: '/review-agent',
-  path: '/review-agent',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ModelsRoute = ModelsRouteImport.update({
-  id: '/models',
-  path: '/models',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChangePasswordRoute = ChangePasswordRouteImport.update({
-  id: '/change-password',
-  path: '/change-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiKeysRoute = ApiKeysRouteImport.update({
-  id: '/api-keys',
-  path: '/api-keys',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountReadyRoute = AccountReadyRouteImport.update({
@@ -66,9 +42,64 @@ const AccountReadyRoute = AccountReadyRouteImport.update({
   path: '/account-ready',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ApiKeysRoute = ApiKeysRouteImport.update({
+  id: '/api-keys',
+  path: '/api-keys',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChangePasswordRoute = ChangePasswordRouteImport.update({
+  id: '/change-password',
+  path: '/change-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModelsRoute = ModelsRouteImport.update({
+  id: '/models',
+  path: '/models',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NoAccessRoute = NoAccessRouteImport.update({
+  id: '/no-access',
+  path: '/no-access',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewAgentRoute = ReviewAgentRouteImport.update({
+  id: '/review-agent',
+  path: '/review-agent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpendControlsRoute = SpendControlsRouteImport.update({
+  id: '/spend-controls',
+  path: '/spend-controls',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountConnectionsRoute = AccountConnectionsRouteImport.update({
+  id: '/account/connections',
+  path: '/account/connections',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IdentityServiceAccountsRoute = IdentityServiceAccountsRouteImport.update({
+  id: '/identity/service-accounts',
+  path: '/identity/service-accounts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IdentityTeamsRoute = IdentityTeamsRouteImport.update({
+  id: '/identity/teams',
+  path: '/identity/teams',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IdentityUsersRoute = IdentityUsersRouteImport.update({
+  id: '/identity/users',
+  path: '/identity/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const McpIndexRoute = McpIndexRouteImport.update({
@@ -76,21 +107,20 @@ const McpIndexRoute = McpIndexRouteImport.update({
   path: '/mcp/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ObservabilityUsageCostsRoute = ObservabilityUsageCostsRouteImport.update({
-  id: '/observability/usage-costs',
-  path: '/observability/usage-costs',
+const McpAccessRoute = McpAccessRouteImport.update({
+  id: '/mcp/access',
+  path: '/mcp/access',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ObservabilityRequestLogsRoute =
-  ObservabilityRequestLogsRouteImport.update({
-    id: '/observability/request-logs',
-    path: '/observability/request-logs',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ObservabilityMcpInvocationsRoute =
-  ObservabilityMcpInvocationsRouteImport.update({
-    id: '/observability/mcp-invocations',
-    path: '/observability/mcp-invocations',
+const McpServersRoute = McpServersRouteImport.update({
+  id: '/mcp/servers',
+  path: '/mcp/servers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ObservabilityAgentHarnessesRoute =
+  ObservabilityAgentHarnessesRouteImport.update({
+    id: '/observability/agent-harnesses',
+    path: '/observability/agent-harnesses',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ObservabilityLeaderboardRoute =
@@ -99,45 +129,21 @@ const ObservabilityLeaderboardRoute =
     path: '/observability/leaderboard',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ObservabilityAgentHarnessesRoute =
-  ObservabilityAgentHarnessesRouteImport.update({
-    id: '/observability/agent-harnesses',
-    path: '/observability/agent-harnesses',
+const ObservabilityMcpInvocationsRoute =
+  ObservabilityMcpInvocationsRouteImport.update({
+    id: '/observability/mcp-invocations',
+    path: '/observability/mcp-invocations',
     getParentRoute: () => rootRouteImport,
   } as any)
-const McpServersRoute = McpServersRouteImport.update({
-  id: '/mcp/servers',
-  path: '/mcp/servers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const McpAccessRoute = McpAccessRouteImport.update({
-  id: '/mcp/access',
-  path: '/mcp/access',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InviteTokenRoute = InviteTokenRouteImport.update({
-  id: '/invite/$token',
-  path: '/invite/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IdentityUsersRoute = IdentityUsersRouteImport.update({
-  id: '/identity/users',
-  path: '/identity/users',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IdentityTeamsRoute = IdentityTeamsRouteImport.update({
-  id: '/identity/teams',
-  path: '/identity/teams',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IdentityServiceAccountsRoute = IdentityServiceAccountsRouteImport.update({
-  id: '/identity/service-accounts',
-  path: '/identity/service-accounts',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AccountConnectionsRoute = AccountConnectionsRouteImport.update({
-  id: '/account/connections',
-  path: '/account/connections',
+const ObservabilityRequestLogsRoute =
+  ObservabilityRequestLogsRouteImport.update({
+    id: '/observability/request-logs',
+    path: '/observability/request-logs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ObservabilityUsageCostsRoute = ObservabilityUsageCostsRouteImport.update({
+  id: '/observability/usage-costs',
+  path: '/observability/usage-costs',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/no-access': typeof NoAccessRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/account/connections': typeof AccountConnectionsRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByTo {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/no-access': typeof NoAccessRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/account/connections': typeof AccountConnectionsRoute
@@ -195,6 +203,7 @@ export interface FileRoutesById {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/no-access': typeof NoAccessRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/account/connections': typeof AccountConnectionsRoute
@@ -220,6 +229,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/no-access'
     | '/review-agent'
     | '/spend-controls'
     | '/account/connections'
@@ -243,6 +253,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/no-access'
     | '/review-agent'
     | '/spend-controls'
     | '/account/connections'
@@ -266,6 +277,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/no-access'
     | '/review-agent'
     | '/spend-controls'
     | '/account/connections'
@@ -290,6 +302,7 @@ export interface RootRouteChildren {
   ChangePasswordRoute: typeof ChangePasswordRoute
   LoginRoute: typeof LoginRoute
   ModelsRoute: typeof ModelsRoute
+  NoAccessRoute: typeof NoAccessRoute
   ReviewAgentRoute: typeof ReviewAgentRoute
   SpendControlsRoute: typeof SpendControlsRoute
   AccountConnectionsRoute: typeof AccountConnectionsRoute
@@ -309,46 +322,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/spend-controls': {
-      id: '/spend-controls'
-      path: '/spend-controls'
-      fullPath: '/spend-controls'
-      preLoaderRoute: typeof SpendControlsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/review-agent': {
-      id: '/review-agent'
-      path: '/review-agent'
-      fullPath: '/review-agent'
-      preLoaderRoute: typeof ReviewAgentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/models': {
-      id: '/models'
-      path: '/models'
-      fullPath: '/models'
-      preLoaderRoute: typeof ModelsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/change-password': {
-      id: '/change-password'
-      path: '/change-password'
-      fullPath: '/change-password'
-      preLoaderRoute: typeof ChangePasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api-keys': {
-      id: '/api-keys'
-      path: '/api-keys'
-      fullPath: '/api-keys'
-      preLoaderRoute: typeof ApiKeysRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/account-ready': {
@@ -358,88 +336,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountReadyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/api-keys': {
+      id: '/api-keys'
+      path: '/api-keys'
+      fullPath: '/api-keys'
+      preLoaderRoute: typeof ApiKeysRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/mcp/': {
-      id: '/mcp/'
-      path: '/mcp'
-      fullPath: '/mcp/'
-      preLoaderRoute: typeof McpIndexRouteImport
+    '/change-password': {
+      id: '/change-password'
+      path: '/change-password'
+      fullPath: '/change-password'
+      preLoaderRoute: typeof ChangePasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/observability/usage-costs': {
-      id: '/observability/usage-costs'
-      path: '/observability/usage-costs'
-      fullPath: '/observability/usage-costs'
-      preLoaderRoute: typeof ObservabilityUsageCostsRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/observability/request-logs': {
-      id: '/observability/request-logs'
-      path: '/observability/request-logs'
-      fullPath: '/observability/request-logs'
-      preLoaderRoute: typeof ObservabilityRequestLogsRouteImport
+    '/models': {
+      id: '/models'
+      path: '/models'
+      fullPath: '/models'
+      preLoaderRoute: typeof ModelsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/observability/mcp-invocations': {
-      id: '/observability/mcp-invocations'
-      path: '/observability/mcp-invocations'
-      fullPath: '/observability/mcp-invocations'
-      preLoaderRoute: typeof ObservabilityMcpInvocationsRouteImport
+    '/no-access': {
+      id: '/no-access'
+      path: '/no-access'
+      fullPath: '/no-access'
+      preLoaderRoute: typeof NoAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/observability/leaderboard': {
-      id: '/observability/leaderboard'
-      path: '/observability/leaderboard'
-      fullPath: '/observability/leaderboard'
-      preLoaderRoute: typeof ObservabilityLeaderboardRouteImport
+    '/review-agent': {
+      id: '/review-agent'
+      path: '/review-agent'
+      fullPath: '/review-agent'
+      preLoaderRoute: typeof ReviewAgentRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/observability/agent-harnesses': {
-      id: '/observability/agent-harnesses'
-      path: '/observability/agent-harnesses'
-      fullPath: '/observability/agent-harnesses'
-      preLoaderRoute: typeof ObservabilityAgentHarnessesRouteImport
+    '/spend-controls': {
+      id: '/spend-controls'
+      path: '/spend-controls'
+      fullPath: '/spend-controls'
+      preLoaderRoute: typeof SpendControlsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/mcp/servers': {
-      id: '/mcp/servers'
-      path: '/mcp/servers'
-      fullPath: '/mcp/servers'
-      preLoaderRoute: typeof McpServersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mcp/access': {
-      id: '/mcp/access'
-      path: '/mcp/access'
-      fullPath: '/mcp/access'
-      preLoaderRoute: typeof McpAccessRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/invite/$token': {
-      id: '/invite/$token'
-      path: '/invite/$token'
-      fullPath: '/invite/$token'
-      preLoaderRoute: typeof InviteTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/identity/users': {
-      id: '/identity/users'
-      path: '/identity/users'
-      fullPath: '/identity/users'
-      preLoaderRoute: typeof IdentityUsersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/identity/teams': {
-      id: '/identity/teams'
-      path: '/identity/teams'
-      fullPath: '/identity/teams'
-      preLoaderRoute: typeof IdentityTeamsRouteImport
+    '/account/connections': {
+      id: '/account/connections'
+      path: '/account/connections'
+      fullPath: '/account/connections'
+      preLoaderRoute: typeof AccountConnectionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/identity/service-accounts': {
@@ -449,11 +399,81 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IdentityServiceAccountsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/account/connections': {
-      id: '/account/connections'
-      path: '/account/connections'
-      fullPath: '/account/connections'
-      preLoaderRoute: typeof AccountConnectionsRouteImport
+    '/identity/teams': {
+      id: '/identity/teams'
+      path: '/identity/teams'
+      fullPath: '/identity/teams'
+      preLoaderRoute: typeof IdentityTeamsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/identity/users': {
+      id: '/identity/users'
+      path: '/identity/users'
+      fullPath: '/identity/users'
+      preLoaderRoute: typeof IdentityUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite/$token': {
+      id: '/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof InviteTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp/': {
+      id: '/mcp/'
+      path: '/mcp'
+      fullPath: '/mcp/'
+      preLoaderRoute: typeof McpIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp/access': {
+      id: '/mcp/access'
+      path: '/mcp/access'
+      fullPath: '/mcp/access'
+      preLoaderRoute: typeof McpAccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp/servers': {
+      id: '/mcp/servers'
+      path: '/mcp/servers'
+      fullPath: '/mcp/servers'
+      preLoaderRoute: typeof McpServersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/observability/agent-harnesses': {
+      id: '/observability/agent-harnesses'
+      path: '/observability/agent-harnesses'
+      fullPath: '/observability/agent-harnesses'
+      preLoaderRoute: typeof ObservabilityAgentHarnessesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/observability/leaderboard': {
+      id: '/observability/leaderboard'
+      path: '/observability/leaderboard'
+      fullPath: '/observability/leaderboard'
+      preLoaderRoute: typeof ObservabilityLeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/observability/mcp-invocations': {
+      id: '/observability/mcp-invocations'
+      path: '/observability/mcp-invocations'
+      fullPath: '/observability/mcp-invocations'
+      preLoaderRoute: typeof ObservabilityMcpInvocationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/observability/request-logs': {
+      id: '/observability/request-logs'
+      path: '/observability/request-logs'
+      fullPath: '/observability/request-logs'
+      preLoaderRoute: typeof ObservabilityRequestLogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/observability/usage-costs': {
+      id: '/observability/usage-costs'
+      path: '/observability/usage-costs'
+      fullPath: '/observability/usage-costs'
+      preLoaderRoute: typeof ObservabilityUsageCostsRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -466,6 +486,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChangePasswordRoute: ChangePasswordRoute,
   LoginRoute: LoginRoute,
   ModelsRoute: ModelsRoute,
+  NoAccessRoute: NoAccessRoute,
   ReviewAgentRoute: ReviewAgentRoute,
   SpendControlsRoute: SpendControlsRoute,
   AccountConnectionsRoute: AccountConnectionsRoute,

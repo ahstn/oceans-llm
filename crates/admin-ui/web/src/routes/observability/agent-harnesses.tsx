@@ -25,7 +25,6 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   getObservabilityHarnessUsage,
   refreshObservabilityHarnessUsage,
@@ -33,7 +32,6 @@ import {
 import type { HarnessUsageRange, HarnessUsageView } from '@/types/api'
 
 export const Route = createFileRoute('/observability/agent-harnesses')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
   loader: () => getObservabilityHarnessUsage({ data: { range: '7d' } }),
   component: AgentHarnessesPage,
 })

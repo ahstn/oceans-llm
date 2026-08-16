@@ -50,7 +50,6 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
-import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import {
   getModelClientConfigs,
@@ -81,7 +80,6 @@ type ModelInfoSectionKey = 'overview' | 'routing' | 'economics' | 'access'
 export const Route = createFileRoute('/models')({
   validateSearch: (search: Record<string, unknown>) => normalizeModelsSearch(search),
   loaderDeps: ({ search }) => search,
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: ({ deps }) => getModels({ data: deps }),
   component: ModelsPage,
 })

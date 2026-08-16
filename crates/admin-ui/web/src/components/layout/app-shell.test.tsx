@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppShell } from '@/components/layout/app-shell'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 
 let routerPath = '/admin/api-keys'
 
@@ -39,18 +40,7 @@ describe('AppShell', () => {
   it('renders all required menu sections and items', () => {
     render(
       <TooltipProvider>
-        <AppShell
-          oceansVersion="0.17.0"
-          session={{
-            must_change_password: false,
-            user: {
-              id: 'user_1',
-              name: 'Admin User',
-              email: 'admin@example.com',
-              global_role: 'platform_admin',
-            },
-          }}
-        >
+        <AppShell oceansVersion="0.17.0" session={platformAdminSession()}>
           content
         </AppShell>
       </TooltipProvider>,
@@ -78,18 +68,7 @@ describe('AppShell', () => {
   it('renders an unversioned fallback when gateway version is unavailable', () => {
     render(
       <TooltipProvider>
-        <AppShell
-          oceansVersion={null}
-          session={{
-            must_change_password: false,
-            user: {
-              id: 'user_1',
-              name: 'Admin User',
-              email: 'admin@example.com',
-              global_role: 'platform_admin',
-            },
-          }}
-        >
+        <AppShell oceansVersion={null} session={platformAdminSession()}>
           content
         </AppShell>
       </TooltipProvider>,
@@ -103,18 +82,7 @@ describe('AppShell', () => {
     routerPath = '/admin/account/connections'
     render(
       <TooltipProvider>
-        <AppShell
-          oceansVersion="0.17.0"
-          session={{
-            must_change_password: false,
-            user: {
-              id: 'user_2',
-              name: 'Workspace User',
-              email: 'user@example.com',
-              global_role: 'user',
-            },
-          }}
-        >
+        <AppShell oceansVersion="0.17.0" session={regularUserSession()}>
           content
         </AppShell>
       </TooltipProvider>,
@@ -129,18 +97,7 @@ describe('AppShell', () => {
   it('signs out from the account menu', async () => {
     render(
       <TooltipProvider>
-        <AppShell
-          oceansVersion="0.17.0"
-          session={{
-            must_change_password: false,
-            user: {
-              id: 'user_1',
-              name: 'Admin User',
-              email: 'admin@example.com',
-              global_role: 'platform_admin',
-            },
-          }}
-        >
+        <AppShell oceansVersion="0.17.0" session={platformAdminSession()}>
           content
         </AppShell>
       </TooltipProvider>,
@@ -161,18 +118,7 @@ describe('AppShell', () => {
   it('shows self-service credentials, models, and observability links to regular users', () => {
     render(
       <TooltipProvider>
-        <AppShell
-          oceansVersion="0.17.0"
-          session={{
-            must_change_password: false,
-            user: {
-              id: 'user_2',
-              name: 'Regular User',
-              email: 'user@example.com',
-              global_role: 'user',
-            },
-          }}
-        >
+        <AppShell oceansVersion="0.17.0" session={regularUserSession()}>
           content
         </AppShell>
       </TooltipProvider>,
@@ -187,8 +133,22 @@ describe('AppShell', () => {
     expect(screen.getByText('Teams')).toBeVisible()
     expect(screen.getByText('Users')).toBeVisible()
     expect(screen.getByText('Identity')).toBeVisible()
-    expect(screen.queryByText('Leaderboard')).not.toBeInTheDocument()
-    expect(screen.queryByText('Agent Harnesses')).not.toBeInTheDocument()
-    expect(screen.queryByText('Service Accounts')).not.toBeInTheDocument()
+    expect(screen.getByText('Leaderboard')).toBeVisible()
+    expect(screen.getByText('Agent Harnesses')).toBeVisible()
+    expect(screen.getByText('Service Accounts')).toBeVisible()
+  })
+
+  it('hides pages that are absent from the resolved permission set', () => {
+    render(
+      <TooltipProvider>
+        <AppShell oceansVersion="0.17.0" session={regularUserSession(['models'])}>
+          content
+        </AppShell>
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByText('Models')).toBeVisible()
+    expect(screen.queryByText('API Keys')).not.toBeInTheDocument()
+    expect(screen.queryByText('Identity')).not.toBeInTheDocument()
   })
 })

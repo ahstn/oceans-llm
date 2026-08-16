@@ -3,6 +3,7 @@ import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { BrandIcon } from '@/components/icons/brand-icon'
+import { canAccessPage } from '@/components/layout/admin-nav'
 import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -35,7 +36,6 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
-import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
 import type {
   RequestAttemptView,
@@ -47,7 +47,6 @@ import type {
 export const Route = createFileRoute('/observability/request-logs')({
   validateSearch: (search: Record<string, unknown>) => normalizeFilterSearch(search),
   loaderDeps: ({ search }) => search,
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: ({ deps }) => getRequestLogs({ data: deps }),
   component: RequestLogsPage,
 })
@@ -648,18 +647,22 @@ function ToolCardinalityInline({ item }: { item: RequestLogView }) {
 
 function ToolCardinalityCard({ item }: { item: RequestLogView }) {
   const counts = item.tool_cardinality
+  const { session } = Route.useRouteContext()
+  const canOpenInvocations = session && canAccessPage(session, 'mcp_invocations')
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>MCP &amp; Tools</CardTitle>
-        <CardAction>
-          <Button type="button" variant="outline" size="sm" asChild>
-            <Link to="/observability/mcp-invocations" search={{ request_id: item.request_id }}>
-              View MCP Invocations
-            </Link>
-          </Button>
-        </CardAction>
+        {canOpenInvocations ? (
+          <CardAction>
+            <Button type="button" variant="outline" size="sm" asChild>
+              <Link to="/observability/mcp-invocations" search={{ request_id: item.request_id }}>
+                View MCP Invocations
+              </Link>
+            </Button>
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent>
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">

@@ -114,17 +114,37 @@ function RootErrorComponent(props: Parameters<typeof GlobalErrorPage>[0]) {
 }
 
 function RootComponent() {
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
+  const location = useRouterState({
+    select: (state) => state.location,
   })
-  const currentPath = normalizeAdminPath(pathname)
+  const currentPath = normalizeAdminPath(location.pathname)
   const isPublicRoute = isPublicAdminRoute(currentPath)
   const { session, oceansVersion } = Route.useRouteContext()
+
+  if (!isPublicRoute && !session) {
+    return (
+      <RootDocument>
+        <Navigate
+          to="/login"
+          search={{ redirect: buildRedirectTarget(location.pathname, location.search) }}
+          replace
+        />
+      </RootDocument>
+    )
+  }
 
   if (!isPublicRoute && session?.must_change_password) {
     return (
       <RootDocument>
         <Navigate to="/change-password" />
+      </RootDocument>
+    )
+  }
+
+  if (!isPublicRoute && session && !canAccessSignedInPath(session, currentPath)) {
+    return (
+      <RootDocument>
+        <Navigate to={defaultSignedInPath(session)} replace />
       </RootDocument>
     )
   }

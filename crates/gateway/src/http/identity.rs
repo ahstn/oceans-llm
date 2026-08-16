@@ -36,15 +36,15 @@ use crate::{
             AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload,
             AdminOauthProviderView, AdminOidcProviderView, AdminServiceAccountView,
             AdminServiceAccountsPayload, AdminTeamManagementView, AdminTeamView, AdminTeamsPayload,
-            AuthSessionUserView, AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
-            CompleteInvitationResponse, CreateServiceAccountRequest, CreateTeamRequest,
-            CreateUserRequest, CreateUserResponse, Envelope, IdentityActionStatus,
-            IdentityDirectoryTeamsPayload, IdentityDirectoryUsersPayload, InvitationView,
-            OauthCallbackQuery, OauthStartQuery, OidcCallbackQuery, OidcStartQuery,
-            PasswordInviteResponse, PasswordLoginRequest, PublicOauthProviderView,
-            PublicOauthProvidersPayload, PublicOidcProviderView, PublicOidcProvidersPayload,
-            TransferTeamMemberRequest, UpdateServiceAccountRequest, UpdateTeamRequest,
-            UpdateUserRequest, envelope, format_timestamp,
+            AuthSessionPermissionsView, AuthSessionUserView, AuthSessionView,
+            ChangePasswordRequest, CompleteInvitationRequest, CompleteInvitationResponse,
+            CreateServiceAccountRequest, CreateTeamRequest, CreateUserRequest, CreateUserResponse,
+            Envelope, IdentityActionStatus, IdentityDirectoryTeamsPayload,
+            IdentityDirectoryUsersPayload, InvitationView, OauthCallbackQuery, OauthStartQuery,
+            OidcCallbackQuery, OidcStartQuery, PasswordInviteResponse, PasswordLoginRequest,
+            PublicOauthProviderView, PublicOauthProvidersPayload, PublicOidcProviderView,
+            PublicOidcProvidersPayload, TransferTeamMemberRequest, UpdateServiceAccountRequest,
+            UpdateTeamRequest, UpdateUserRequest, envelope, format_timestamp,
         },
         error::AppError,
         identity_lifecycle::{
@@ -247,21 +247,37 @@ pub async fn list_identity_service_accounts(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<AdminServiceAccountsPayload>>, AppError> {
-    let actor = require_active_admin_or_team_manager(&state, &headers, None).await?;
-    let mut teams = state.store.list_active_teams().await?;
-    let mut service_accounts = state.store.list_active_service_accounts().await?;
-
-    if actor.global_role != GlobalRole::PlatformAdmin {
-        let membership = state
+    let actor = require_active_session(&state, &headers).await?;
+    let (teams, service_accounts) = if actor.global_role == GlobalRole::PlatformAdmin {
+        (
+            state.store.list_active_teams().await?,
+            state.store.list_active_service_accounts().await?,
+        )
+    } else if let Some(membership) = state
+        .store
+        .get_team_membership_for_user(actor.user_id)
+        .await?
+    {
+        match state
             .store
-            .get_team_membership_for_user(actor.user_id)
+            .get_team_by_id(membership.team_id)
             .await?
-            .ok_or(AppError(GatewayError::Auth(
-                AuthError::InsufficientPrivileges,
-            )))?;
-        service_accounts.retain(|account| account.team_id == membership.team_id);
-        teams.retain(|team| team.team_id == membership.team_id);
-    }
+            .filter(|team| team.status == "active")
+        {
+            Some(team) => {
+                let service_accounts =
+                    gateway_core::AdminIdentityRepository::list_active_service_accounts_for_team(
+                        state.store.as_ref(),
+                        membership.team_id,
+                    )
+                    .await?;
+                (vec![team], service_accounts)
+            }
+            None => (Vec::new(), Vec::new()),
+        }
+    } else {
+        (Vec::new(), Vec::new())
+    };
 
     Ok(Json(envelope(AdminServiceAccountsPayload {
         service_accounts: build_service_account_views(&service_accounts, &teams)?,
@@ -590,9 +606,10 @@ pub async fn get_auth_session(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<Option<AuthSessionView>>>, AppError> {
-    let session = resolve_session_user(&state, &headers)
-        .await?
-        .map(build_auth_session_view);
+    let session = match resolve_session_user(&state, &headers).await? {
+        Some(user) => Some(build_auth_session_view(&state, user).await?),
+        None => None,
+    };
 
     Ok(Json(envelope(session)))
 }
@@ -637,7 +654,8 @@ pub async fn login_with_password(
     let now = OffsetDateTime::now_utc();
     let session_cookie =
         issue_session_cookie(&state, user.user_id, now, session_cookie_secure(&headers)).await?;
-    let mut response = Json(envelope(build_auth_session_view(user))).into_response();
+    let session = build_auth_session_view(&state, user).await?;
+    let mut response = Json(envelope(session)).into_response();
     response.headers_mut().append(SET_COOKIE, session_cookie);
     Ok(response)
 }
@@ -734,7 +752,9 @@ pub async fn change_password(
         .await?
         .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
 
-    Ok(Json(envelope(build_auth_session_view(refreshed_user))))
+    Ok(Json(envelope(
+        build_auth_session_view(&state, refreshed_user).await?,
+    )))
 }
 
 #[utoipa::path(
@@ -2250,8 +2270,23 @@ async fn resolve_session_cookie(
     Ok(Some(ResolvedSessionCookie { raw_token, session }))
 }
 
-fn build_auth_session_view(user: UserRecord) -> AuthSessionView {
-    AuthSessionView {
+async fn build_auth_session_view(
+    state: &AppState,
+    user: UserRecord,
+) -> Result<AuthSessionView, AppError> {
+    let membership_role = if user.global_role == GlobalRole::PlatformAdmin {
+        None
+    } else {
+        state
+            .store
+            .get_team_membership_for_user(user.user_id)
+            .await?
+            .map(|membership| membership.role)
+    };
+    let group = crate::config::AdminPermissionGroup::for_user(user.global_role, membership_role);
+    let permissions = state.admin_permissions.for_group(group);
+
+    Ok(AuthSessionView {
         user: AuthSessionUserView {
             id: user.user_id.to_string(),
             name: user.name,
@@ -2259,7 +2294,13 @@ fn build_auth_session_view(user: UserRecord) -> AuthSessionView {
             global_role: user.global_role.as_str().to_string(),
         },
         must_change_password: user.must_change_password,
-    }
+        permissions: AuthSessionPermissionsView {
+            group,
+            pages: permissions.pages.clone(),
+            actions: permissions.actions.clone(),
+            default_page: permissions.default_page,
+        },
+    })
 }
 
 async fn generate_unique_team_key(store: &AnyStore, name: &str) -> Result<String, AppError> {

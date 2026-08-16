@@ -78,6 +78,7 @@ const sidebarIcons: Record<string, readonly HugeIconNode[]> = {
   "/contributing/reference/e2e-contract-tests": TestTube01Icon,
   "/contributing/reference/screenshots": Image01Icon,
   "/contributing/reference/release-process": Calendar03Icon,
+  "/contributing/implementation-plans/2026-08-05-configurable-admin-page-permissions": CodeFolderIcon,
   "/contributing/implementation-plans/issue-206-service-account-config": CodeFolderIcon,
   "/contributing/interviews/2026-04-24-request-id-and-request-attempt-observability": FileSearchIcon,
   "/contributing/interviews/2026-05-11-budget-hierarchy-owner-taxonomy": FileSearchIcon,

@@ -7,7 +7,7 @@ use gateway::{
     cli::{Cli, Command, ConfigCommand, MigrateAction, ServeArgs},
     config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
     email::build_budget_alert_sender,
-    http::{build_router, state::AppState},
+    http::{build_router, response_cache::ResponseCache, state::AppState},
     observability,
 };
 use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
@@ -26,6 +26,8 @@ mod local_demo_seed;
 mod request_log_purge;
 
 use local_demo_seed::{LOCAL_DEMO_USER_PASSWORD, seed_local_demo_data};
+
+const ADMIN_VIEW_CACHE_TTL: Duration = Duration::from_secs(30);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -178,6 +180,7 @@ async fn run_serve_with_store(
     args: ServeArgs,
 ) -> anyhow::Result<()> {
     let human_budget_defaults = Arc::new(config.seed_human_budget_defaults()?);
+    let admin_permissions = Arc::new(config.resolved_admin_permissions()?);
 
     if args.seed_config {
         seed_config(store.as_ref(), config).await?;
@@ -250,6 +253,9 @@ async fn run_serve_with_store(
                     .context("failed resolving client config gateway base URL")?,
             ),
             budget_defaults: human_budget_defaults,
+            admin_permissions,
+            leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
+            harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         },
         load_admin_ui_config(),
     );
