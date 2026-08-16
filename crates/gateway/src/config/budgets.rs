@@ -1,4 +1,19 @@
-use super::*;
+use std::collections::BTreeMap;
+
+use anyhow::{Context, bail};
+use gateway_core::{BudgetCadence, Money4, SeedBudget};
+use serde::Deserialize;
+
+use super::models::ModelConfig;
+use super::models::normalize_config_model_key;
+
+const fn default_enabled() -> bool {
+    true
+}
+
+fn default_budget_timezone() -> String {
+    "UTC".to_string()
+}
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]

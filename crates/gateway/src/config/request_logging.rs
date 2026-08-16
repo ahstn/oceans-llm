@@ -1,4 +1,54 @@
-use super::*;
+use anyhow::{Context, bail};
+use gateway_core::RequestLogRetentionWindow;
+use gateway_service::{
+    PayloadPath, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, parse_payload_path,
+};
+use serde::Deserialize;
+
+const fn default_request_log_request_max_bytes() -> usize {
+    64 * 1024
+}
+
+const fn default_request_log_response_max_bytes() -> usize {
+    64 * 1024
+}
+
+const fn default_request_log_stream_max_events() -> usize {
+    128
+}
+
+const fn default_request_log_purge_retention() -> RequestLogRetentionWindow {
+    RequestLogRetentionWindow::SevenDays
+}
+
+fn default_request_log_purge_schedule() -> String {
+    "0 0 * * *".to_string()
+}
+
+fn validate_daily_cron_schedule(field_name: &str, schedule: &str) -> anyhow::Result<()> {
+    let schedule = schedule.trim();
+    let fields = schedule.split_whitespace().count();
+    if fields != 5 {
+        bail!("{field_name} must use standard 5-field cron syntax");
+    }
+
+    let parsed: cron::Schedule = format!("0 {schedule}")
+        .parse()
+        .with_context(|| format!("{field_name} `{schedule}` is invalid"))?;
+    let mut upcoming = parsed.upcoming(chrono::Utc);
+    let first = upcoming
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("{field_name} `{schedule}` has no upcoming run"))?;
+    let second = upcoming
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("{field_name} `{schedule}` has fewer than two runs"))?;
+
+    if second - first < chrono::Duration::days(1) {
+        bail!("{field_name} must not run more frequently than once per day");
+    }
+
+    Ok(())
+}
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct RequestLoggingConfig {

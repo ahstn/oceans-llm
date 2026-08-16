@@ -1,4 +1,60 @@
-use super::*;
+use std::collections::BTreeMap;
+
+use anyhow::bail;
+use gateway_core::ModelAllowlistPolicy;
+use serde::Deserialize;
+use uuid::Uuid;
+
+use super::normalization::{normalize_config_email, normalize_config_team_key};
+use super::{
+    providers::ProviderConfig,
+    routes::{self, ModelRouteConfig},
+};
+
+pub(super) fn normalize_model_allowlist(
+    model_id: &str,
+    allowlist: &ModelAllowlistConfig,
+) -> anyhow::Result<ModelAllowlistPolicy> {
+    let users = allowlist
+        .users
+        .iter()
+        .map(|email| normalize_config_email(email))
+        .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?
+        .into_iter()
+        .collect::<Vec<_>>();
+    let teams = allowlist
+        .teams
+        .iter()
+        .map(|team_key| normalize_config_team_key(team_key))
+        .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    if users.is_empty() && teams.is_empty() {
+        bail!("model `{model_id}` allowlist must include at least one user or team");
+    }
+
+    Ok(ModelAllowlistPolicy { users, teams })
+}
+
+pub(super) fn normalize_config_model_key(model_key: &str) -> anyhow::Result<String> {
+    let normalized = model_key.trim().to_string();
+    if normalized.is_empty() {
+        bail!("model key cannot be empty");
+    }
+    Ok(normalized)
+}
+
+pub(super) fn config_model_uuid(model_key: &str) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("model:{model_key}").as_bytes(),
+    )
+}
+
+const fn default_model_rank() -> i32 {
+    100
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

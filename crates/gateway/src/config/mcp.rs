@@ -1,4 +1,9 @@
-use super::*;
+use anyhow::{Context, bail};
+use gateway_service::{McpOauthProvider, McpOauthRuntime};
+use serde::Deserialize;
+
+use super::auth::normalize_config_oauth_provider_key;
+use super::references::{resolve_path_reference, resolve_secret_reference};
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]

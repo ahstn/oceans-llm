@@ -1,4 +1,134 @@
-use super::*;
+use anyhow::{Context, bail};
+use gateway_core::{
+    GlobalRole, MembershipRole, OauthJitMembership, OauthJitPolicy, OidcJitMembership,
+    OidcJitPolicy, SeedOauthProvider, SeedOidcProvider,
+};
+use serde::Deserialize;
+
+use super::identity::TeamConfig;
+use super::normalization::normalize_config_team_key;
+use super::references::{resolve_path_reference, resolve_secret_reference};
+
+pub(super) fn normalize_config_oidc_provider_key(provider_key: &str) -> anyhow::Result<String> {
+    normalize_provider_key(provider_key)
+}
+
+pub(super) fn normalize_config_oauth_provider_key(provider_key: &str) -> anyhow::Result<String> {
+    normalize_provider_key(provider_key)
+}
+
+fn normalize_provider_key(provider_key: &str) -> anyhow::Result<String> {
+    let normalized = provider_key.trim().to_string();
+    if normalized.is_empty() {
+        bail!("cannot be empty");
+    }
+    Ok(normalized)
+}
+
+fn normalize_allowed_email_domains(
+    domains: &[String],
+    context: &str,
+) -> anyhow::Result<Vec<String>> {
+    let mut normalized_domains = Vec::with_capacity(domains.len());
+    let mut seen = std::collections::BTreeSet::new();
+
+    for domain in domains {
+        let normalized = normalize_allowed_email_domain(domain)
+            .with_context(|| format!("{context} entry `{domain}`"))?;
+        if !seen.insert(normalized.clone()) {
+            bail!("{context} contains duplicate domain `{normalized}`");
+        }
+        normalized_domains.push(normalized);
+    }
+
+    Ok(normalized_domains)
+}
+
+fn validate_allowed_email_domains(domains: &[String], context: &str) -> anyhow::Result<()> {
+    normalize_allowed_email_domains(domains, context).map(|_| ())
+}
+
+fn normalize_allowed_email_domain(domain: &str) -> anyhow::Result<String> {
+    let normalized = domain.trim().trim_end_matches('.').to_ascii_lowercase();
+    if normalized.is_empty() {
+        bail!("cannot be empty");
+    }
+    if normalized.contains('@')
+        || normalized.contains('/')
+        || normalized.contains(':')
+        || normalized.contains('*')
+        || normalized.chars().any(char::is_whitespace)
+    {
+        bail!("must be a domain name, not an email address, URL, or wildcard");
+    }
+    if normalized.starts_with('.') || normalized.ends_with('.') || normalized.contains("..") {
+        bail!("must be a valid domain name");
+    }
+
+    let mut label_count = 0;
+    for label in normalized.split('.') {
+        label_count += 1;
+        if label.is_empty() || label.starts_with('-') || label.ends_with('-') {
+            bail!("must be a valid domain name");
+        }
+        if !label
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+        {
+            bail!("must be a valid domain name");
+        }
+    }
+
+    if label_count < 2 {
+        bail!("must be a valid domain name");
+    }
+
+    Ok(normalized)
+}
+
+const fn default_enabled() -> bool {
+    true
+}
+
+const fn default_request_logging_enabled() -> bool {
+    true
+}
+
+fn default_oidc_scopes() -> Vec<String> {
+    vec![
+        "openid".to_string(),
+        "email".to_string(),
+        "profile".to_string(),
+    ]
+}
+
+fn default_oauth_provider_type() -> String {
+    "github".to_string()
+}
+
+fn default_sso_email_verification_enabled() -> bool {
+    true
+}
+
+fn default_github_oauth_scopes() -> Vec<String> {
+    vec!["read:user".to_string(), "user:email".to_string()]
+}
+
+const fn default_user_global_role() -> GlobalRole {
+    GlobalRole::User
+}
+
+const fn default_bootstrap_admin_enabled() -> bool {
+    true
+}
+
+fn default_bootstrap_admin_email() -> String {
+    "admin@local".to_string()
+}
+
+fn default_bootstrap_admin_password() -> String {
+    "literal.admin".to_string()
+}
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]

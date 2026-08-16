@@ -1,4 +1,27 @@
-use super::*;
+use anyhow::bail;
+use serde::Deserialize;
+
+use super::references::{resolve_secret_reference, validate_env_reference_if_needed};
+
+fn default_budget_alert_from_email() -> String {
+    "alerts@local".to_string()
+}
+
+const fn default_budget_alert_poll_interval_secs() -> u64 {
+    30
+}
+
+const fn default_budget_alert_batch_size() -> u32 {
+    25
+}
+
+const fn default_budget_alert_smtp_port() -> u16 {
+    587
+}
+
+const fn default_budget_alert_smtp_starttls() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct BudgetAlertConfig {

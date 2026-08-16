@@ -1,4 +1,51 @@
-use super::*;
+use std::collections::BTreeMap;
+
+use anyhow::{Context, bail};
+use gateway_core::{AuthMode, GlobalRole, MembershipRole, RequestTag};
+use serde::Deserialize;
+
+use super::{
+    auth::{AuthConfig, normalize_config_oauth_provider_key, normalize_config_oidc_provider_key},
+    budgets::BudgetConfig,
+    models::ModelConfig,
+    normalization::{
+        normalize_config_email, normalize_config_team_key, normalize_optional_config_entity_tags,
+    },
+};
+
+pub(super) fn normalize_config_service_account_key(
+    service_account_key: &str,
+) -> anyhow::Result<String> {
+    let normalized = service_account_key.trim().to_string();
+    if normalized.is_empty() {
+        bail!("service account key cannot be empty");
+    }
+    Ok(normalized)
+}
+
+pub(super) fn normalize_config_managed_api_key(config_key: &str) -> anyhow::Result<String> {
+    let normalized = config_key.trim().to_string();
+    if normalized.is_empty() {
+        bail!("managed api key id cannot be empty");
+    }
+    Ok(normalized)
+}
+
+const fn default_enabled() -> bool {
+    true
+}
+
+const fn default_request_logging_enabled() -> bool {
+    true
+}
+
+const fn default_user_global_role() -> GlobalRole {
+    GlobalRole::User
+}
+
+const fn default_membership_role() -> MembershipRole {
+    MembershipRole::Member
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

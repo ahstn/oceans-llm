@@ -1,4 +1,30 @@
-use super::*;
+use std::collections::BTreeMap;
+
+use anyhow::bail;
+use gateway_core::{
+    AwsBedrockApiStyle, AwsBedrockRouteCompatibility, GitHubCopilotRouteCompatibility, Money4,
+    OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField,
+    OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, OpenRouterMaxPrice,
+    OpenRouterPercentileCutoffs, OpenRouterPercentilePreference, OpenRouterProviderRouting,
+    OpenRouterRouteCompatibility, ProviderCapabilities, RouteCompatibility, RoutePricingOverride,
+};
+use gateway_providers::BedrockEndpointKind;
+use serde::{Deserialize, Deserializer, de};
+use serde_json::{Map, Value};
+
+use super::providers::{AwsBedrockProviderConfig, ProviderConfig};
+
+const fn default_route_priority() -> i32 {
+    100
+}
+
+const fn default_route_weight() -> f64 {
+    1.0
+}
+
+const fn default_enabled() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModelRouteConfig {

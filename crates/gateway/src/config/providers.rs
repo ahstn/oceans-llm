@@ -5,7 +5,7 @@ use gateway_providers::{BearerAuthHeader, BedrockEndpointKind, BedrockProviderCo
 use gateway_service::{ProviderIconKey, is_supported_pricing_provider_id};
 use serde::{Deserialize, Serialize};
 
-use super::{resolve_copilot_private_key, resolve_secret_reference};
+use super::references::{resolve_copilot_private_key, resolve_secret_reference};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

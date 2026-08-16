@@ -1,4 +1,8 @@
-use super::*;
+use anyhow::bail;
+use gateway_store::StoreConnectionOptions;
+use serde::Deserialize;
+
+use super::references::resolve_secret_reference;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DatabaseConfig {

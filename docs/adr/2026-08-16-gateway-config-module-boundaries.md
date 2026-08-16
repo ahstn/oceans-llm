@@ -20,7 +20,10 @@ Implementation files follow configuration responsibilities:
 - providers, models, and routes own provider and routing rules;
 - identity owns teams, users, and service accounts;
 - seeding and runtime own projections from configuration into downstream types;
-- references owns environment, path, and secret reference resolution.
+- references owns environment, path, and secret reference resolution;
+- normalization owns the email, team-key, and entity-tag rules shared by more than one domain.
+
+Implementation files import their dependencies explicitly. The facade does not act as a shared prelude for child modules.
 
 Tests use the same behavior-based boundaries. A repository task measures line coverage for production files in the config module and requires at least 90 percent.
 

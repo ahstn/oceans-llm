@@ -1,4 +1,20 @@
-use super::*;
+use anyhow::Context;
+use gateway_providers::{
+    BedrockAuthConfig, BedrockProviderConfig, CloudRunOpenAiCompatAuth, CopilotAuthConfig,
+    CopilotProviderConfig, OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig,
+};
+
+use super::{
+    GatewayConfig,
+    providers::{
+        self, AwsBedrockAuthConfig, GcpCloudRunOpenAiCompatAuthConfig, GcpVertexAuthConfig,
+        GitHubCopilotAuthConfig, ProviderConfig,
+    },
+    references::{
+        ResolvedCopilotPrivateKey, resolve_copilot_private_key, resolve_path_reference,
+        resolve_secret_reference,
+    },
+};
 
 impl GatewayConfig {
     pub fn openai_compatible_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {

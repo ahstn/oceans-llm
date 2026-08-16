@@ -1,4 +1,29 @@
-use super::*;
+use anyhow::Context;
+use gateway_core::{
+    ApiKeySecretStorageKind, ManagedApiKeySource, SeedApiKeySecretMaterial,
+    SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
+    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+    SeedUserMembership, SeedUserModelBudgetDefault, hash_gateway_key_secret, parse_gateway_api_key,
+};
+use gateway_providers::BedrockProviderConfig;
+use gateway_service::encrypt_gateway_api_key_secret;
+use serde_json::{Map, Value, json};
+
+use super::{
+    GatewayConfig,
+    auth::{normalize_config_oauth_provider_key, normalize_config_oidc_provider_key},
+    budgets::BudgetConfig,
+    identity::{normalize_config_managed_api_key, normalize_config_service_account_key},
+    models::{config_model_uuid, normalize_config_model_key, normalize_model_allowlist},
+    normalization::{
+        normalize_config_email, normalize_config_team_key, normalize_optional_config_entity_tags,
+    },
+    providers::{
+        self, AwsBedrockAuthConfig, GcpCloudRunOpenAiCompatAuthConfig, GcpVertexAuthConfig,
+        GitHubCopilotAuthConfig, ProviderConfig,
+    },
+    references::{resolve_secret_reference, validate_env_reference_if_needed},
+};
 
 impl GatewayConfig {
     pub fn seed_providers(&self) -> anyhow::Result<Vec<SeedProvider>> {
