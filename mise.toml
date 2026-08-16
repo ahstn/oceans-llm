@@ -1,4 +1,5 @@
 min_version = "2026.8.2"
+monorepo_root = true
 
 [settings]
 experimental = true

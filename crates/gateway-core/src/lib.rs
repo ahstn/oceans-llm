@@ -81,8 +81,8 @@ pub use gateway_keys::{
 pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{
     ChatMessage as CoreChatMessage, ChatRequest as CoreChatRequest,
-    EmbeddingsRequest as CoreEmbeddingsRequest, RequestRequirements as CoreRequestRequirements,
-    ResponsesRequest as CoreResponsesRequest,
+    ContentPartType as CoreContentPartType, EmbeddingsRequest as CoreEmbeddingsRequest,
+    RequestRequirements as CoreRequestRequirements, ResponsesRequest as CoreResponsesRequest,
 };
 pub use protocol::openai::{
     ChatCompletionsRequest, EmbeddingsRequest, ModelsListResponse, OpenAiErrorBody,
