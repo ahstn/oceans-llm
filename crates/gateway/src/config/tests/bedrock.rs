@@ -168,7 +168,15 @@ providers:
     let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
     let error_text = format!("{error:#}");
     assert!(
-        error_text.contains("unsupported secret reference `raw-token`"),
+        error_text.contains("aws_bedrock provider `bedrock` bearer.token"),
+        "unexpected error: {error_text}"
+    );
+    assert!(
+        error_text.contains("unsupported secret reference; use env.* or literal.* for this phase"),
+        "unexpected error: {error_text}"
+    );
+    assert!(
+        !error_text.contains("raw-token"),
         "unexpected error: {error_text}"
     );
 }

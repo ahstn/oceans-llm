@@ -19,7 +19,7 @@ pub(crate) fn resolve_secret_reference(value: &str) -> anyhow::Result<String> {
     } else if let Some(literal) = value.strip_prefix("literal.") {
         Ok(literal.to_string())
     } else {
-        bail!("unsupported secret reference `{value}`; use env.* or literal.* for this phase")
+        bail!("unsupported secret reference; use env.* or literal.* for this phase")
     }
 }
 
