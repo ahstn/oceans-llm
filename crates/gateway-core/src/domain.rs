@@ -2508,9 +2508,9 @@ pub fn github_copilot_route_capabilities(
         embeddings: compatibility.supports_embeddings,
         tools: supports_inference && upstream_supports.tool_calls,
         vision: supports_inference && upstream_supports.vision,
-        json_schema: supports_inference
-            && upstream_supports.structured_outputs
-            && compatibility.chat_api != Some(GitHubCopilotChatApi::AnthropicMessages),
+        json_schema: upstream_supports.structured_outputs
+            && (compatibility.supports_responses
+                || compatibility.chat_api == Some(GitHubCopilotChatApi::ChatCompletions)),
         developer_role: false,
     }
 }
@@ -3393,6 +3393,18 @@ mod tests {
         assert!(messages.vision);
         assert!(!messages.json_schema);
         assert!(!messages.developer_role);
+
+        let messages_and_responses =
+            github_copilot_route_capabilities(Some(&GitHubCopilotRouteCompatibility {
+                chat_api: Some(GitHubCopilotChatApi::AnthropicMessages),
+                supports_responses: true,
+                supports_embeddings: false,
+                upstream_supports: GitHubCopilotUpstreamSupports {
+                    structured_outputs: true,
+                    ..Default::default()
+                },
+            }));
+        assert!(messages_and_responses.json_schema);
 
         let responses = github_copilot_route_capabilities(Some(&GitHubCopilotRouteCompatibility {
             chat_api: None,

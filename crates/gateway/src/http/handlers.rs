@@ -1154,7 +1154,7 @@ fn select_first_eligible_route(
             continue;
         };
         let effective_capabilities =
-            route_effective_provider_capabilities(provider.as_ref(), route)
+            route_capabilities_for_request(provider.as_ref(), route, requirements)
                 .intersect(route.capabilities);
         if supports_requirements(effective_capabilities, requirements) {
             eligible_route_count += 1;
@@ -1165,6 +1165,28 @@ fn select_first_eligible_route(
     }
 
     (eligible_route_count, selected)
+}
+
+fn route_capabilities_for_request(
+    provider: &dyn ProviderClient,
+    route: &gateway_core::ModelRoute,
+    requirements: CoreRequestRequirements,
+) -> ProviderCapabilities {
+    let mut capabilities = route_effective_provider_capabilities(provider, route);
+    if provider.provider_type() == "github_copilot"
+        && requirements.chat_completions
+        && route
+            .compatibility
+            .github_copilot
+            .as_ref()
+            .is_some_and(|compatibility| {
+                compatibility.chat_api
+                    == Some(gateway_core::GitHubCopilotChatApi::AnthropicMessages)
+            })
+    {
+        capabilities.json_schema = false;
+    }
+    capabilities
 }
 
 fn route_effective_provider_capabilities(
@@ -1963,8 +1985,9 @@ mod tests {
 
     use super::{
         anthropic_error_response, api_health, canonical_request_id,
-        extract_anthropic_authorization_header, route_effective_provider_capabilities,
-        select_first_eligible_route, split_partial_provider_error,
+        extract_anthropic_authorization_header, route_capabilities_for_request,
+        route_effective_provider_capabilities, select_first_eligible_route,
+        split_partial_provider_error,
     };
 
     #[tokio::test]
@@ -2146,6 +2169,38 @@ mod tests {
                 .intersect(responses_route.capabilities);
         assert!(!responses_capabilities.chat_completions);
         assert!(responses_capabilities.responses);
+
+        let mut mixed_route = route("claude-with-responses", ProviderCapabilities::all_enabled());
+        mixed_route.compatibility.github_copilot = Some(GitHubCopilotRouteCompatibility {
+            chat_api: Some(GitHubCopilotChatApi::AnthropicMessages),
+            supports_responses: true,
+            supports_embeddings: false,
+            upstream_supports: GitHubCopilotUpstreamSupports {
+                structured_outputs: true,
+                ..Default::default()
+            },
+        });
+        let response_capabilities = route_capabilities_for_request(
+            &provider,
+            &mixed_route,
+            CoreRequestRequirements {
+                responses: true,
+                json_schema: true,
+                ..Default::default()
+            },
+        );
+        assert!(response_capabilities.json_schema);
+
+        let chat_capabilities = route_capabilities_for_request(
+            &provider,
+            &mixed_route,
+            CoreRequestRequirements {
+                chat_completions: true,
+                json_schema: true,
+                ..Default::default()
+            },
+        );
+        assert!(!chat_capabilities.json_schema);
     }
 
     #[test]

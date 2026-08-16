@@ -53,12 +53,12 @@ function requiredEnvironment(environment, name) {
   return value
 }
 
-function optionalInteger(environment, name, defaultValue, maximum) {
+function optionalInteger(environment, name, defaultValue, minimum, maximum) {
   const raw = environment[name]?.trim()
   if (!raw) return defaultValue
   const value = Number(raw)
-  if (!Number.isInteger(value) || value < 0 || value > maximum) {
-    throw new Error(`${name} must be an integer from 0 through ${maximum}`)
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} must be an integer from ${minimum} through ${maximum}`)
   }
   return value
 }
@@ -98,7 +98,15 @@ async function loadConfiguration(environment) {
       environment,
       'COPILOT_CANARY_BILLING_WAIT_SECONDS',
       0,
+      0,
       3_600,
+    ),
+    requestTimeoutMs: optionalInteger(
+      environment,
+      'COPILOT_CANARY_REQUEST_TIMEOUT_MS',
+      60_000,
+      1,
+      600_000,
     ),
     githubApiUrl: (environment.COPILOT_CANARY_GITHUB_API_URL || 'https://api.github.com').replace(
       /\/+$/u,
@@ -200,6 +208,14 @@ async function requestText(fetchImplementation, url, options) {
     body: await responseBody(response),
     contentType: response.headers.get('content-type') || '',
   }
+}
+
+function withRequestTimeout(fetchImplementation, timeoutMs) {
+  return (url, options = {}) =>
+    fetchImplementation(url, {
+      ...options,
+      signal: AbortSignal.timeout(timeoutMs),
+    })
 }
 
 function githubHeaders(token) {
@@ -510,8 +526,7 @@ async function checkTools(fetchImplementation, config, token, modelId) {
   return `HTTP 2xx for the forced ${toolName} call and agent-initiated tool-result continuation from ${modelId}`
 }
 
-function utcDayQuery() {
-  const now = new Date()
+function utcDayQuery(now = new Date()) {
   return new URLSearchParams({
     year: String(now.getUTCFullYear()),
     month: String(now.getUTCMonth() + 1),
@@ -531,9 +546,8 @@ export function summarizeBilling(body) {
   )
 }
 
-async function getBillingSnapshot(fetchImplementation, config) {
-  const query = utcDayQuery()
-  const url = `${config.githubApiUrl}/organizations/${encodeURIComponent(config.expectedOwner)}/settings/billing/ai_credit/usage?${query}`
+async function getBillingSnapshot(fetchImplementation, config, billingDayQuery) {
+  const url = `${config.githubApiUrl}/organizations/${encodeURIComponent(config.expectedOwner)}/settings/billing/ai_credit/usage?${billingDayQuery}`
   const { body } = await requestJson(fetchImplementation, url, {
     headers: githubHeaders(config.billingToken),
   })
@@ -589,7 +603,7 @@ async function mintInitialToken(fetchImplementation, config, report, appJwt, tok
   })
 }
 
-async function captureBillingBaseline(fetchImplementation, config, report) {
+async function captureBillingBaseline(fetchImplementation, config, report, billingDayQuery) {
   if (!config.billingToken) {
     unavailable(
       report,
@@ -600,7 +614,7 @@ async function captureBillingBaseline(fetchImplementation, config, report) {
     return null
   }
   return runAvailabilityCheck(report, 'billing_api_baseline', true, async () => {
-    const summary = await getBillingSnapshot(fetchImplementation, config)
+    const summary = await getBillingSnapshot(fetchImplementation, config, billingDayQuery)
     return checked(
       summary,
       `Daily organization aggregate was available before the canary: ${JSON.stringify(summary)}; ${BILLING_API_DOC}`,
@@ -725,7 +739,14 @@ async function verifyRefresh(fetchImplementation, config, report, appJwt, firstT
   })
 }
 
-async function verifyBilling(fetchImplementation, config, report, installation, before) {
+async function verifyBilling(
+  fetchImplementation,
+  config,
+  report,
+  installation,
+  before,
+  billingDayQuery,
+) {
   addCheck(
     report,
     'billing_owner_contract',
@@ -740,7 +761,7 @@ async function verifyBilling(fetchImplementation, config, report, installation, 
   } else {
     if (config.billingWaitSeconds > 0) await sleep(config.billingWaitSeconds)
     const after = await runAvailabilityCheck(report, 'billing_api_after', true, async () => {
-      const summary = await getBillingSnapshot(fetchImplementation, config)
+      const summary = await getBillingSnapshot(fetchImplementation, config, billingDayQuery)
       return checked(summary, `Daily organization aggregate after the canary: ${JSON.stringify(summary)}`)
     })
     if (after) {
@@ -798,8 +819,15 @@ async function executeCanary(fetchImplementation, config, report, tokens) {
   )
   const appJwt = createAppJwt(config.appId, config.privateKey)
   const installation = await verifyInstallation(fetchImplementation, config, report, appJwt)
+  if (!installation) return
+  const billingDayQuery = utcDayQuery().toString()
   const initialToken = await mintInitialToken(fetchImplementation, config, report, appJwt, tokens)
-  const billingBefore = await captureBillingBaseline(fetchImplementation, config, report)
+  const billingBefore = await captureBillingBaseline(
+    fetchImplementation,
+    config,
+    report,
+    billingDayQuery,
+  )
   const models = await loadModels(fetchImplementation, config, report, initialToken?.token)
   const chatModel = models ? await selectChatModel(models, config, report) : null
   const messagesModel = models ? await selectMessagesModel(models, config, report) : null
@@ -813,7 +841,14 @@ async function executeCanary(fetchImplementation, config, report, tokens) {
     initialToken?.token,
     tokens,
   )
-  await verifyBilling(fetchImplementation, config, report, installation, billingBefore)
+  await verifyBilling(
+    fetchImplementation,
+    config,
+    report,
+    installation,
+    billingBefore,
+    billingDayQuery,
+  )
 }
 
 export async function runCanary(
@@ -841,12 +876,13 @@ export async function runCanary(
   if (insecureKey) return printReport(report, output)
 
   const tokens = []
+  const timedFetch = withRequestTimeout(fetchImplementation, config.requestTimeoutMs)
   try {
-    await executeCanary(fetchImplementation, config, report, tokens)
+    await executeCanary(timedFetch, config, report, tokens)
   } catch (error) {
     addCheck(report, 'canary_workflow', Status.FAIL, true, error.message)
   } finally {
-    await cleanupTokens(fetchImplementation, config, report, tokens)
+    await cleanupTokens(timedFetch, config, report, tokens)
   }
   return printReport(report, output)
 }

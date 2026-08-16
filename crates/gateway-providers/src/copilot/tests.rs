@@ -173,6 +173,22 @@ fn initiator_follows_the_last_conversation_item() {
         CopilotInitiator::for_responses(&responses),
         CopilotInitiator::Agent
     );
+
+    responses.input = json!([{"type": "message", "role": "user", "content": "hello"}]);
+    assert_eq!(
+        CopilotInitiator::for_responses(&responses),
+        CopilotInitiator::User
+    );
+
+    responses.input = json!([{
+        "type": "message",
+        "role": "user",
+        "content": [{"type": "tool_result", "tool_use_id": "call-1"}]
+    }]);
+    assert_eq!(
+        CopilotInitiator::for_responses(&responses),
+        CopilotInitiator::Agent
+    );
 }
 
 #[test]
@@ -759,7 +775,27 @@ async fn github_app_installation_token_source_rejects_wrong_permission() {
         .await
         .expect_err("wrong Copilot permission should fail");
 
+    assert!(matches!(&error, ProviderError::Transport(_)));
     assert!(error.to_string().contains("copilot_requests: write"));
+}
+
+#[tokio::test]
+async fn github_app_installation_token_source_rejects_all_repository_selection() {
+    let mut response = installation_token_response();
+    response["repository_selection"] = json!("all");
+    let source = token_source_with_response(response).await;
+
+    let error = source
+        .fetch_token()
+        .await
+        .expect_err("all-repository token selection should fail");
+
+    assert!(matches!(&error, ProviderError::Transport(_)));
+    assert!(
+        error
+            .to_string()
+            .contains("unexpected repository selection")
+    );
 }
 
 #[tokio::test]
@@ -792,6 +828,7 @@ async fn github_app_installation_token_source_rejects_wrong_repository_scope() {
         .await
         .expect_err("wrong repository scope should fail");
 
+    assert!(matches!(&error, ProviderError::Transport(_)));
     assert!(
         error
             .to_string()

@@ -118,6 +118,91 @@ test('marks required failures and unavailable checks distinctly', () => {
   assert.equal(resultStatus([{ required: false, status: 'UNAVAILABLE' }]), 'PASS')
 })
 
+test('rejects an App private key with group or other access before any request', async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), 'oceans-copilot-canary-mode-'))
+  const privateKeyPath = join(temporaryDirectory, 'app.pem')
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  await writeFile(privateKeyPath, privateKey.export({ type: 'pkcs1', format: 'pem' }), {
+    mode: 0o644,
+  })
+  let requestCount = 0
+
+  try {
+    let output = ''
+    const exitCode = await runCanary(
+      {
+        COPILOT_CANARY_APP_ID: '123',
+        COPILOT_CANARY_INSTALLATION_ID: '456',
+        COPILOT_CANARY_REPOSITORY_ID: '789',
+        COPILOT_CANARY_EXPECTED_OWNER: 'example-org',
+        COPILOT_CANARY_PRIVATE_KEY_PATH: privateKeyPath,
+      },
+      async () => {
+        requestCount += 1
+        throw new Error('fetch must not run')
+      },
+      {
+        write(chunk) {
+          output += chunk
+        },
+      },
+    )
+
+    const report = JSON.parse(output)
+    assert.equal(exitCode, 1, output)
+    assert.equal(
+      report.checks.find((check) => check.name === 'private_key_file_permissions').status,
+      'FAIL',
+    )
+    assert.equal(requestCount, 0)
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true })
+  }
+})
+
+test('aborts a stalled request at the configured deadline', async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), 'oceans-copilot-canary-timeout-'))
+  const privateKeyPath = join(temporaryDirectory, 'app.pem')
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  await writeFile(privateKeyPath, privateKey.export({ type: 'pkcs1', format: 'pem' }), {
+    mode: 0o600,
+  })
+
+  try {
+    let output = ''
+    const exitCode = await runCanary(
+      {
+        COPILOT_CANARY_APP_ID: '123',
+        COPILOT_CANARY_INSTALLATION_ID: '456',
+        COPILOT_CANARY_REPOSITORY_ID: '789',
+        COPILOT_CANARY_EXPECTED_OWNER: 'example-org',
+        COPILOT_CANARY_PRIVATE_KEY_PATH: privateKeyPath,
+        COPILOT_CANARY_REQUEST_TIMEOUT_MS: '1',
+      },
+      async (_url, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(options.signal.reason), {
+            once: true,
+          })
+        }),
+      {
+        write(chunk) {
+          output += chunk
+        },
+      },
+    )
+
+    const report = JSON.parse(output)
+    assert.equal(exitCode, 1, output)
+    assert.equal(
+      report.checks.find((check) => check.name === 'installation_owner_and_scope').status,
+      'FAIL',
+    )
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true })
+  }
+})
+
 test('runs the complete mocked canary without writing tokens to its report', async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), 'oceans-copilot-canary-'))
   const privateKeyPath = join(temporaryDirectory, 'app.pem')
@@ -139,7 +224,14 @@ test('runs the complete mocked canary without writing tokens to its report', asy
     const method = options.method || 'GET'
     const headers = new Headers(options.headers)
     const body = options.body ? JSON.parse(options.body) : null
-    requests.push({ path: parsed.pathname, method, headers, body })
+    requests.push({
+      path: parsed.pathname,
+      search: parsed.search,
+      method,
+      headers,
+      body,
+      signal: options.signal,
+    })
 
     if (parsed.pathname === '/app/installations/456' && method === 'GET') {
       return jsonResponse({
@@ -265,6 +357,20 @@ test('runs the complete mocked canary without writing tokens to its report', asy
       report.checks.find((check) => check.name === 'billing_usage_delta').status,
       'PASS',
     )
+    const mintRequests = requests.filter(
+      (request) => request.path === '/app/installations/456/access_tokens',
+    )
+    assert.ok(mintRequests.length > 0, 'expected at least one token mint')
+    for (const request of mintRequests) {
+      assert.deepEqual(request.body.repository_ids, [789])
+      assert.deepEqual(request.body.permissions, { copilot_requests: 'write' })
+    }
+    const billingRequests = requests.filter((request) =>
+      request.path.includes('/settings/billing/ai_credit/usage'),
+    )
+    assert.equal(billingRequests.length, 2)
+    assert.equal(billingRequests[0].search, billingRequests[1].search)
+    assert.ok(requests.every((request) => request.signal instanceof AbortSignal))
     assert.equal(
       requests.some(
         (request) =>
@@ -283,12 +389,9 @@ test('runs the complete mocked canary without writing tokens to its report', asy
         ),
       true,
     )
-    assert.equal(
-      requests
-        .filter((request) => request.path === '/installation/token')
-        .every((request) => request.method === 'DELETE'),
-      true,
-    )
+    const revocations = requests.filter((request) => request.path === '/installation/token')
+    assert.ok(revocations.length > 0, 'expected at least one token revocation')
+    assert.ok(revocations.every((request) => request.method === 'DELETE'))
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true })
   }
@@ -355,6 +458,61 @@ test('revokes a minted token when scope validation fails', async () => {
     assert.equal(exitCode, 1, output)
     assert.deepEqual(revokedTokens, ['Bearer ghs_invalid_scope_secret'])
     assert.equal(output.includes('ghs_invalid_scope_secret'), false)
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true })
+  }
+})
+
+test('stops before minting when installation validation fails', async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), 'oceans-copilot-canary-owner-'))
+  const privateKeyPath = join(temporaryDirectory, 'app.pem')
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  await writeFile(privateKeyPath, privateKey.export({ type: 'pkcs1', format: 'pem' }), {
+    mode: 0o600,
+  })
+
+  const requests = []
+  const fetchImplementation = async (url, options = {}) => {
+    const path = new URL(url).pathname
+    requests.push({ path, method: options.method || 'GET' })
+    if (path === '/app/installations/456') {
+      return new Response(
+        JSON.stringify({
+          account: { login: 'wrong-org', type: 'Organization' },
+          repository_selection: 'all',
+          permissions: { copilot_requests: 'write' },
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      )
+    }
+    throw new Error(`Unexpected request: ${path}`)
+  }
+
+  try {
+    let output = ''
+    const exitCode = await runCanary(
+      {
+        COPILOT_CANARY_APP_ID: '123',
+        COPILOT_CANARY_INSTALLATION_ID: '456',
+        COPILOT_CANARY_REPOSITORY_ID: '789',
+        COPILOT_CANARY_EXPECTED_OWNER: 'example-org',
+        COPILOT_CANARY_PRIVATE_KEY_PATH: privateKeyPath,
+        COPILOT_CANARY_GITHUB_API_URL: 'https://github.test',
+        COPILOT_CANARY_API_URL: 'https://copilot.test',
+      },
+      fetchImplementation,
+      {
+        write(chunk) {
+          output += chunk
+        },
+      },
+    )
+
+    assert.equal(exitCode, 1, output)
+    assert.equal(
+      requests.some((request) => request.path.endsWith('/access_tokens')),
+      false,
+    )
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true })
   }

@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted for implementation. Production use of GitHub App authentication requires the live installation-token canary in [GitHub Copilot Installation-Token Canary](../operations/github-copilot-installation-canary.md).
+Accepted.
+
+> **Supersession note (2026-08-16):** [GitHub Copilot Compatibility Evidence and Production Acceptance](2026-08-16-github-copilot-compatibility-and-acceptance.md) supersedes the model-family routing, fixed request-header profile, and direct-token production-acceptance parts of this decision. The original decision remains below as history.
 
 ## Context
 
@@ -16,7 +18,7 @@ Authentication for organization workloads is supported via **GitHub App Installa
 - The GitHub App has the repository permission **Copilot Requests: Read & write** (`copilot_requests: write`).
 - The App is installed on the organization with **All repositories** access.
 - The gateway signs a short-lived RS256 JWT using the App ID and private key, then requests an installation access token (`ghs_...`) scoped to repository IDs and `copilot_requests: write`.
-- The provider sends the minted `ghs_` token directly as a `Bearer` token to `https://api.githubcopilot.com` without calling legacy user-token exchange endpoints (`/copilot_internal/v2/token`). This direct installation-token contract remains a production gate until the live canary passes for the target organization.
+- The minted `ghs_` token is sent directly as a `Bearer` token to `https://api.githubcopilot.com` without calling legacy user-token exchange endpoints (`/copilot_internal/v2/token`).
 - Tokens expire after one hour and are rotated automatically before expiry.
 
 ## Decision
@@ -25,16 +27,17 @@ Add a first-class provider type named `github_copilot` in `gateway-providers` an
 
 ### Provider Architecture & Transport
 1. **Direct HTTP Integration:** The provider executes requests directly against `https://api.githubcopilot.com` (or configurable base URL / Enterprise hosts).
-2. **Endpoint Routing by Explicit Compatibility Metadata:**
-   - Each route declares `compatibility.github_copilot.chat_api` as `chat_completions` or `anthropic_messages` from tested `/models` metadata.
-   - The provider fails closed when chat endpoint metadata is absent. It does not infer an endpoint from a model-name prefix.
-   - Responses and embeddings are enabled only when the route metadata declares that support.
+2. **Endpoint Routing by Model Family:**
+   - OpenAI Chat Models (`gpt-4o`, `gpt-4.1`, `gemini-*`, `gpt-5*`): Route to `/chat/completions`.
+   - Anthropic Claude Models (`claude-*`): Route to `/v1/messages` using the Anthropic Messages wire format with automatic translation.
+   - OpenAI Responses Models (via `ProviderClient::responses`): Route to `/responses`.
+   - Embeddings Models (via `ProviderClient::embeddings`): Route to `/embeddings`.
    Every request sends:
    - `Authorization: Bearer <token>`
    - `Editor-Version: <configured | default vscode/1.126.0>`
    - `Copilot-Integration-Id: <configured | default vscode-chat>`
-   - the named `vscode_chat_2026_06_01` compatibility profile, including `OpenAI-Intent: conversation-agent` and `X-Interaction-Type: conversation-agent`
-   - `X-Initiator: user` for a user turn, or `X-Initiator: agent` for an assistant or tool-result continuation
+   - `OpenAI-Intent: conversation-panel`
+   - `X-Initiator: agent`
    - `X-GitHub-Api-Version: 2026-06-01`
 
 ### Authentication Modes
@@ -58,9 +61,9 @@ Add a first-class provider type named `github_copilot` in `gateway-providers` an
 ## Trade-Offs
 
 - **Direct HTTP vs. Official SDK:** Direct HTTP avoids subprocess overhead and provides lower latency, but requires maintaining the header identity and endpoint contracts if GitHub updates its API surface.
-- **Server-to-Server Attribution:** GitHub documents attribution to the App installation owner. Production enablement still requires the canary to verify the expected organization and observe the available organization billing aggregate. The public billing API does not provide request-level or installation-level attribution.
+- **Server-to-Server Attribution:** Organization GitHub App tokens attribute all gateway traffic to the organization's Copilot subscription, avoiding per-user seat pooling.
 
 ## Follow-Ups
 
-- Consider dynamic `/models` discovery in a later decision. Until then, operators must derive explicit route metadata from a current canary result.
+- Add dynamic `/models` discovery refresh to update supported endpoints per model family automatically.
 - Support multi-tenant GitHub App installation resolution per request if dynamic credential routing is required in the future.

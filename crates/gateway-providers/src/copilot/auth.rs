@@ -44,7 +44,7 @@ impl GitHubInstallationTokenResponse {
         if let Some(permissions) = &self.permissions
             && permissions.get("copilot_requests").map(String::as_str) != Some("write")
         {
-            return Err(ProviderError::InvalidRequest(
+            return Err(ProviderError::Transport(
                 "GitHub installation token response does not grant copilot_requests: write"
                     .to_string(),
             ));
@@ -53,7 +53,7 @@ impl GitHubInstallationTokenResponse {
         if let Some(repository_selection) = &self.repository_selection
             && repository_selection != "selected"
         {
-            return Err(ProviderError::InvalidRequest(format!(
+            return Err(ProviderError::Transport(format!(
                 "GitHub installation token response has unexpected repository selection `{repository_selection}`"
             )));
         }
@@ -61,7 +61,7 @@ impl GitHubInstallationTokenResponse {
         if let Some(repositories) = &self.repositories
             && (repositories.len() != 1 || repositories[0].id != repository_id)
         {
-            return Err(ProviderError::InvalidRequest(format!(
+            return Err(ProviderError::Transport(format!(
                 "GitHub installation token response does not match requested repository `{repository_id}`"
             )));
         }
