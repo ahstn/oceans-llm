@@ -36,15 +36,16 @@ use crate::{
             AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload,
             AdminOauthProviderView, AdminOidcProviderView, AdminServiceAccountView,
             AdminServiceAccountsPayload, AdminTeamManagementView, AdminTeamView, AdminTeamsPayload,
-            AuthSessionCapabilitiesView, AuthSessionUserView, AuthSessionView,
-            ChangePasswordRequest, CompleteInvitationRequest, CompleteInvitationResponse,
-            CreateServiceAccountRequest, CreateTeamRequest, CreateUserRequest, CreateUserResponse,
-            Envelope, IdentityActionStatus, IdentityDirectoryTeamsPayload,
-            IdentityDirectoryUsersPayload, InvitationView, OauthCallbackQuery, OauthStartQuery,
-            OidcCallbackQuery, OidcStartQuery, PasswordInviteResponse, PasswordLoginRequest,
-            PublicOauthProviderView, PublicOauthProvidersPayload, PublicOidcProviderView,
-            PublicOidcProvidersPayload, TransferTeamMemberRequest, UpdateServiceAccountRequest,
-            UpdateTeamRequest, UpdateUserRequest, envelope, format_timestamp,
+            AuthSessionCapabilitiesView, AuthSessionPermissionsView, AuthSessionUserView,
+            AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
+            CompleteInvitationResponse, CreateServiceAccountRequest, CreateTeamRequest,
+            CreateUserRequest, CreateUserResponse, Envelope, IdentityActionStatus,
+            IdentityDirectoryTeamsPayload, IdentityDirectoryUsersPayload, InvitationView,
+            OauthCallbackQuery, OauthStartQuery, OidcCallbackQuery, OidcStartQuery,
+            PasswordInviteResponse, PasswordLoginRequest, PublicOauthProviderView,
+            PublicOauthProvidersPayload, PublicOidcProviderView, PublicOidcProvidersPayload,
+            TransferTeamMemberRequest, UpdateServiceAccountRequest, UpdateTeamRequest,
+            UpdateUserRequest, envelope, format_timestamp,
         },
         error::AppError,
         identity_lifecycle::{
@@ -247,21 +248,37 @@ pub async fn list_identity_service_accounts(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<AdminServiceAccountsPayload>>, AppError> {
-    let actor = require_active_admin_or_team_manager(&state, &headers, None).await?;
-    let mut teams = state.store.list_active_teams().await?;
-    let mut service_accounts = state.store.list_active_service_accounts().await?;
-
-    if actor.global_role != GlobalRole::PlatformAdmin {
-        let membership = state
+    let actor = require_active_session(&state, &headers).await?;
+    let (teams, service_accounts) = if actor.global_role == GlobalRole::PlatformAdmin {
+        (
+            state.store.list_active_teams().await?,
+            state.store.list_active_service_accounts().await?,
+        )
+    } else if let Some(membership) = state
+        .store
+        .get_team_membership_for_user(actor.user_id)
+        .await?
+    {
+        match state
             .store
-            .get_team_membership_for_user(actor.user_id)
+            .get_team_by_id(membership.team_id)
             .await?
-            .ok_or(AppError(GatewayError::Auth(
-                AuthError::InsufficientPrivileges,
-            )))?;
-        service_accounts.retain(|account| account.team_id == membership.team_id);
-        teams.retain(|team| team.team_id == membership.team_id);
-    }
+            .filter(|team| team.status == "active")
+        {
+            Some(team) => {
+                let service_accounts =
+                    gateway_core::AdminIdentityRepository::list_active_service_accounts_for_team(
+                        state.store.as_ref(),
+                        membership.team_id,
+                    )
+                    .await?;
+                (vec![team], service_accounts)
+            }
+            None => (Vec::new(), Vec::new()),
+        }
+    } else {
+        (Vec::new(), Vec::new())
+    };
 
     Ok(Json(envelope(AdminServiceAccountsPayload {
         service_accounts: build_service_account_views(&service_accounts, &teams)?,
@@ -2270,6 +2287,27 @@ async fn build_auth_session_view(
             MembershipRole::Owner | MembershipRole::Admin
         )
     });
+    let membership_role = if platform_admin {
+        None
+    } else {
+        membership.as_ref().map(|membership| membership.role)
+    };
+    let group = crate::config::AdminPermissionGroup::for_user(user.global_role, membership_role);
+    let permissions = state.admin_permissions.for_group(group);
+    let agent_analysis = (platform_admin
+        && (state.agent_analysis.shadow_diagnostics_visible
+            || state.agent_analysis.calibrated_score_visible))
+        || (team_admin
+            && state.agent_analysis.team_admin_analytics_enabled
+            && state.agent_analysis.calibrated_score_visible);
+    let mut pages = permissions.pages.clone();
+    if !agent_analysis {
+        pages.retain(|page| *page != crate::config::AdminPage::AgentSessions);
+    }
+    let default_page = permissions
+        .default_page
+        .filter(|page| pages.contains(page))
+        .or_else(|| pages.first().copied());
 
     Ok(AuthSessionView {
         user: AuthSessionUserView {
@@ -2286,12 +2324,7 @@ async fn build_auth_session_view(
             .map(|membership| membership.role.as_str().to_string()),
         capabilities: AuthSessionCapabilitiesView {
             platform_admin,
-            agent_analysis: (platform_admin
-                && (state.agent_analysis.shadow_diagnostics_visible
-                    || state.agent_analysis.calibrated_score_visible))
-                || (team_admin
-                    && state.agent_analysis.team_admin_analytics_enabled
-                    && state.agent_analysis.calibrated_score_visible),
+            agent_analysis,
             passive_analysis_enabled: state.agent_analysis.passive_analysis_enabled,
             shadow_diagnostics_visible: platform_admin
                 && state.agent_analysis.shadow_diagnostics_visible,
@@ -2299,6 +2332,12 @@ async fn build_auth_session_view(
             team_admin_analytics_enabled: state.agent_analysis.team_admin_analytics_enabled,
         },
         must_change_password: user.must_change_password,
+        permissions: AuthSessionPermissionsView {
+            group,
+            pages,
+            actions: permissions.actions.clone(),
+            default_page,
+        },
     })
 }
 

@@ -43,6 +43,7 @@ import {
 } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type {
+  AdminAction,
   ApiKeyModelOptionView,
   ApiKeyOwnerServiceAccountView,
   ApiKeyOwnerUserView,
@@ -335,7 +336,9 @@ export function CreateApiKeyDialog({
                   <SelectContent>
                     <SelectGroup>
                       <SelectItem value="user">User</SelectItem>
-                      <SelectItem value="service_account">Service account</SelectItem>
+                      {serviceAccountOptions.length > 0 ? (
+                        <SelectItem value="service_account">Service account</SelectItem>
+                      ) : null}
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -423,6 +426,7 @@ export function CreateApiKeyDialog({
 }
 
 export function ManageApiKeyDialog({
+  actions,
   form,
   isPending,
   modelOptions,
@@ -438,6 +442,7 @@ export function ManageApiKeyDialog({
   onCopy,
   onSubmit,
 }: {
+  actions: AdminAction[]
   form: UpdateApiKeyInput
   isPending: boolean
   modelOptions: ApiKeyModelOptionView[]
@@ -453,6 +458,10 @@ export function ManageApiKeyDialog({
   onCopy: (value: string, successMessage: string) => void | Promise<void>
   onSubmit: (event: FormEvent<HTMLFormElement>) => void | Promise<void>
 }) {
+  const canReveal = actions.includes('reveal_api_key')
+  const canRevoke = actions.includes('revoke_api_key')
+  const canUpdate = actions.includes('update_api_key')
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={apiKeyDialogContentClassName}>
@@ -465,7 +474,10 @@ export function ManageApiKeyDialog({
         </DialogHeader>
 
         {target ? (
-          <form className="flex min-h-0 flex-1 flex-col gap-6" onSubmit={onSubmit}>
+          <form
+            className="flex min-h-0 flex-1 flex-col gap-6"
+            onSubmit={canUpdate ? onSubmit : (event) => event.preventDefault()}
+          >
             <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1">
               <section
                 data-testid="manage-api-key-summary"
@@ -506,7 +518,9 @@ export function ManageApiKeyDialog({
                 </dl>
               </section>
 
-              {target.owner_kind === 'service_account' && target.status === 'active' ? (
+              {canReveal &&
+              target.owner_kind === 'service_account' &&
+              target.status === 'active' ? (
                 <section
                   data-testid="manage-api-key-secret"
                   className="flex flex-col gap-3 border-b border-[color:var(--color-border)] pb-4"
@@ -566,7 +580,11 @@ export function ManageApiKeyDialog({
               ) : null}
 
               <ModelGrantModeField
-                disabled={target.status !== 'active' || target.owner_kind === 'service_account'}
+                disabled={
+                  !canUpdate ||
+                  target.status !== 'active' ||
+                  target.owner_kind === 'service_account'
+                }
                 mode={form.model_grant_mode}
                 onChange={onModelGrantModeChange}
               />
@@ -578,7 +596,7 @@ export function ManageApiKeyDialog({
                       ? 'Save model access changes to apply them immediately.'
                       : 'Current model access is shown for reference only.'
                   }
-                  disabled={target.status !== 'active'}
+                  disabled={!canUpdate || target.status !== 'active'}
                   label="Granted models"
                   modelOptions={modelOptions}
                   placeholder="Select models"
@@ -595,42 +613,46 @@ export function ManageApiKeyDialog({
                 </Field>
               )}
 
-              <section className="flex flex-col gap-3 rounded-lg border border-[color:var(--color-border)] p-4">
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-sm font-semibold text-[var(--color-text)]">
-                    Lifecycle actions
-                  </h3>
-                  <p className="text-sm text-[var(--color-text-muted)]">
-                    Revocation takes effect immediately and cannot be undone in this slice.
-                  </p>
-                </div>
-
-                {target.status === 'active' ? (
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      onClick={onRevoke}
-                      disabled={isPending}
-                    >
-                      {isPending ? 'Revoking...' : 'Revoke key'}
-                    </Button>
+              {canRevoke ? (
+                <section className="flex flex-col gap-3 rounded-lg border border-[color:var(--color-border)] p-4">
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                      Lifecycle actions
+                    </h3>
+                    <p className="text-sm text-[var(--color-text-muted)]">
+                      Revocation takes effect immediately and cannot be undone in this slice.
+                    </p>
                   </div>
-                ) : (
-                  <p className="text-sm text-[var(--color-text-muted)]">
-                    This key has already been revoked.
-                  </p>
-                )}
-              </section>
+
+                  {target.status === 'active' ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={onRevoke}
+                        disabled={isPending}
+                      >
+                        {isPending ? 'Revoking...' : 'Revoke key'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-[var(--color-text-muted)]">
+                      This key has already been revoked.
+                    </p>
+                  )}
+                </section>
+              ) : null}
             </div>
 
             <DialogFooter>
               <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={submitDisabled}>
-                {isPending ? 'Saving...' : 'Save access'}
-              </Button>
+              {canUpdate ? (
+                <Button type="submit" disabled={submitDisabled}>
+                  {isPending ? 'Saving...' : 'Save access'}
+                </Button>
+              ) : null}
             </DialogFooter>
           </form>
         ) : null}

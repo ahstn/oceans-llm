@@ -38,7 +38,6 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui
 import { Input } from '@/components/ui/input'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
-import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import {
   Select,
@@ -93,7 +92,6 @@ import type {
 
 export const Route = createFileRoute('/identity/users')({
   validateSearch: (search: Record<string, unknown>) => normalizeUserSearch(search),
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: ({ context }) =>
     isPlatformAdminSession(context.session) ? getUsers() : getUserDirectory(),
   component: UsersPage,

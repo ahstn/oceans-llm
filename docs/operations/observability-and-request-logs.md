@@ -222,7 +222,7 @@ Each request-log row persists lightweight policy metadata in `request_logs.metad
     "request_max_bytes": 65536,
     "response_max_bytes": 65536,
     "stream_max_events": 128,
-    "version": "builtin:v1"
+    "version": "builtin:v2"
   }
 }
 ```
@@ -258,6 +258,8 @@ Sensitive built-in JSON keys include:
 - `private_key`
 - `secret`
 - `password`
+
+Built-in URL query redaction preserves the scheme, authority, and path while replacing query components in retained media URL fields and HTTPS URLs echoed in retained error messages.
 
 Known bulky provider fields are shape-preserving truncated before the whole-payload byte budget is applied. Built-ins cover OpenAI-compatible image/audio/file payloads, Vertex Gemini inline data, and Vertex Anthropic base64 source data.
 

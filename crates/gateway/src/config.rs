@@ -3,17 +3,17 @@ use std::{collections::BTreeMap, env, fs, net::SocketAddr, path::Path};
 use anyhow::{Context, bail};
 use gateway_core::{
     ApiKeySecretStorageKind, AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility,
-    BudgetCadence, GlobalRole, ManagedApiKeySource, MembershipRole, ModelAllowlistPolicy, Money4,
-    OauthJitMembership, OauthJitPolicy, OidcJitMembership, OidcJitPolicy,
-    OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField,
-    OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, OpenRouterMaxPrice,
-    OpenRouterPercentileCutoffs, OpenRouterPercentilePreference, OpenRouterProviderRouting,
-    OpenRouterRouteCompatibility, ProviderCapabilities, RequestLogRetentionWindow, RequestTag,
-    RouteCompatibility, RoutePricingOverride, SeedApiKeySecretMaterial, SeedBudget,
-    SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
-    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
-    SeedUserMembership, SeedUserModelBudgetDefault, hash_gateway_key_secret, parse_gateway_api_key,
-    validate_entity_tags,
+    BudgetCadence, GitHubCopilotRouteCompatibility, GlobalRole, ManagedApiKeySource,
+    MembershipRole, ModelAllowlistPolicy, Money4, OauthJitMembership, OauthJitPolicy,
+    OidcJitMembership, OidcJitPolicy, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
+    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+    OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
+    OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities,
+    RequestLogRetentionWindow, RequestTag, RouteCompatibility, RoutePricingOverride,
+    SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
+    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
+    SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
+    hash_gateway_key_secret, parse_gateway_api_key, validate_entity_tags,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
@@ -30,7 +30,13 @@ use serde::{Deserialize, Deserializer, de};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
+mod permissions;
 mod providers;
+
+pub use permissions::{
+    AdminAction, AdminPage, AdminPermissionGroup, PermissionSetConfig, PermissionsConfig,
+    ResolvedAdminPermissions, ResolvedPermissionSet,
+};
 
 pub use providers::{
     AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
@@ -58,6 +64,8 @@ pub struct GatewayConfig {
     pub request_logging: RequestLoggingConfig,
     #[serde(default)]
     pub agent_analysis: AgentAnalysisConfig,
+    #[serde(default)]
+    pub permissions: PermissionsConfig,
     #[serde(default)]
     pub providers: Vec<ProviderConfig>,
     #[serde(default)]
@@ -94,6 +102,7 @@ impl GatewayConfig {
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
         self.agent_analysis.validate()?;
+        let _ = self.permissions.resolve()?;
         self.auth.oidc.validate(&self.teams)?;
         self.auth.oauth.validate(&self.teams)?;
         self.mcp.oauth.validate()?;
@@ -382,7 +391,7 @@ impl GatewayConfig {
                             app_id,
                             private_key,
                             installation_id,
-                            ..
+                            repository_id,
                         } => {
                             if *app_id == 0 {
                                 bail!(
@@ -396,18 +405,25 @@ impl GatewayConfig {
                                     provider.id
                                 );
                             }
+                            if *repository_id == 0 {
+                                bail!(
+                                    "github_copilot provider `{}` auth.repository_id cannot be 0",
+                                    provider.id
+                                );
+                            }
                             if private_key.trim().is_empty() {
                                 bail!(
                                     "github_copilot provider `{}` auth.private_key cannot be empty",
                                     provider.id
                                 );
                             }
-                            let _ = resolve_secret_reference(private_key).with_context(|| {
-                                format!(
-                                    "github_copilot provider `{}` auth.private_key",
-                                    provider.id
-                                )
-                            })?;
+                            let _ =
+                                resolve_copilot_private_key(private_key).with_context(|| {
+                                    format!(
+                                        "github_copilot provider `{}` auth.private_key",
+                                        provider.id
+                                    )
+                                })?;
                         }
                         GitHubCopilotAuthConfig::Bearer { token } => {
                             if token.trim().is_empty() {
@@ -489,6 +505,17 @@ impl GatewayConfig {
                     validate_openrouter_route_compatibility(
                         &model.id, route, provider, openrouter,
                     )?;
+                }
+                if route.compatibility.github_copilot.is_some()
+                    && !provider.is_some_and(|provider| {
+                        matches!(provider, ProviderConfig::GitHubCopilot(_))
+                    })
+                {
+                    bail!(
+                        "model `{}` route for provider `{}` uses compatibility.github_copilot but requires a github_copilot provider",
+                        model.id,
+                        route.provider
+                    );
                 }
                 if let Some(ProviderConfig::AwsBedrock(provider)) = provider {
                     validate_aws_bedrock_route_compatibility(&model.id, route, provider)?;
@@ -692,6 +719,10 @@ impl GatewayConfig {
         }
 
         Ok(())
+    }
+
+    pub fn resolved_admin_permissions(&self) -> anyhow::Result<ResolvedAdminPermissions> {
+        self.permissions.resolve()
     }
 
     fn validate_budget_defaults(
@@ -1382,25 +1413,24 @@ impl GatewayConfig {
                     private_key,
                     installation_id,
                     repository_id,
-                } => {
-                    let private_key_resolved = resolve_secret_reference(private_key)?;
-                    if private_key_resolved.contains("BEGIN ") {
+                } => match resolve_copilot_private_key(private_key)? {
+                    ResolvedCopilotPrivateKey::Pem(private_key_pem) => {
                         CopilotAuthConfig::GitHubApp {
                             app_id: *app_id,
-                            private_key_pem: private_key_resolved,
-                            installation_id: *installation_id,
-                            repository_id: *repository_id,
-                        }
-                    } else {
-                        let path = resolve_path_reference(private_key)?;
-                        CopilotAuthConfig::GitHubAppKeyFile {
-                            app_id: *app_id,
-                            private_key_path: path.into(),
+                            private_key_pem,
                             installation_id: *installation_id,
                             repository_id: *repository_id,
                         }
                     }
-                }
+                    ResolvedCopilotPrivateKey::Path(private_key_path) => {
+                        CopilotAuthConfig::GitHubAppKeyFile {
+                            app_id: *app_id,
+                            private_key_path: private_key_path.into(),
+                            installation_id: *installation_id,
+                            repository_id: *repository_id,
+                        }
+                    }
+                },
                 GitHubCopilotAuthConfig::Bearer { token } => CopilotAuthConfig::Bearer {
                     token: resolve_secret_reference(token)?,
                 },
@@ -2830,6 +2860,8 @@ pub struct RouteCompatibilityConfig {
     pub openrouter: Option<OpenRouterRouteCompatibility>,
     #[serde(default)]
     pub aws_bedrock: Option<AwsBedrockRouteCompatibilityConfig>,
+    #[serde(default)]
+    pub github_copilot: Option<GitHubCopilotRouteCompatibility>,
 }
 
 impl RouteCompatibilityConfig {
@@ -2842,6 +2874,7 @@ impl RouteCompatibilityConfig {
             aws_bedrock: self
                 .aws_bedrock
                 .map(AwsBedrockRouteCompatibilityConfig::into_compatibility),
+            github_copilot: self.github_copilot,
         }
     }
 }
@@ -2922,6 +2955,22 @@ fn resolve_path_reference(value: &str) -> anyhow::Result<String> {
         Ok(literal.to_string())
     } else {
         Ok(value.to_string())
+    }
+}
+
+enum ResolvedCopilotPrivateKey {
+    Pem(String),
+    Path(String),
+}
+
+fn resolve_copilot_private_key(value: &str) -> anyhow::Result<ResolvedCopilotPrivateKey> {
+    let is_secret_reference = value.starts_with("env.") || value.starts_with("literal.");
+    let resolved = resolve_path_reference(value)?;
+
+    if is_secret_reference && resolved.contains("BEGIN ") {
+        Ok(ResolvedCopilotPrivateKey::Pem(resolved))
+    } else {
+        Ok(ResolvedCopilotPrivateKey::Path(resolved))
     }
 }
 
@@ -3674,12 +3723,12 @@ mod tests {
     use std::{env, path::Path};
 
     use gateway_core::{
-        AuthMode, AwsBedrockApiStyle, BudgetCadence, GlobalRole, ManagedApiKeySource,
-        MembershipRole, Money4, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
-        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenRouterPercentilePreference,
-        RequestLogRetentionWindow,
+        AuthMode, AwsBedrockApiStyle, BudgetCadence, GitHubCopilotChatApi, GlobalRole,
+        ManagedApiKeySource, MembershipRole, Money4, OpenAiCompatDeveloperRole,
+        OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+        OpenRouterPercentilePreference, RequestLogRetentionWindow,
     };
-    use gateway_providers::{BearerAuthHeader, BedrockAuthConfig};
+    use gateway_providers::{BearerAuthHeader, BedrockAuthConfig, CopilotAuthConfig};
     use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
 
@@ -6649,6 +6698,15 @@ models:
     routes:
       - provider: copilot-org
         upstream_model: gpt-4o
+        compatibility:
+          github_copilot:
+            chat_api: chat_completions
+            supports_responses: true
+            upstream_supports:
+              streaming: true
+              tool_calls: true
+              vision: true
+              structured_outputs: true
 "#,
         );
 
@@ -6671,6 +6729,148 @@ models:
         assert_eq!(runtime_configs[0].base_url, "https://api.githubcopilot.com");
         assert_eq!(runtime_configs[0].editor_version, "vscode/1.126.0");
         assert_eq!(runtime_configs[0].integration_id, "vscode-chat");
+
+        let models = config.seed_models().expect("seed models");
+        let compatibility = models[0].routes[0]
+            .compatibility
+            .github_copilot
+            .as_ref()
+            .expect("Copilot route compatibility");
+        assert_eq!(
+            compatibility.chat_api,
+            Some(GitHubCopilotChatApi::ChatCompletions)
+        );
+        assert!(compatibility.supports_responses);
+        assert!(!compatibility.supports_embeddings);
+        assert!(compatibility.upstream_supports.streaming);
+        assert!(compatibility.upstream_supports.tool_calls);
+        assert!(compatibility.upstream_supports.vision);
+        assert!(compatibility.upstream_supports.structured_outputs);
+    }
+
+    #[test]
+    fn rejects_github_copilot_route_compatibility_for_other_providers() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: gpt-4o
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-4o
+        compatibility:
+          github_copilot:
+            chat_api: chat_completions
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path)
+            .expect_err("Copilot compatibility on another provider should fail");
+        assert!(
+            format!("{error:#}")
+                .contains("compatibility.github_copilot but requires a github_copilot provider")
+        );
+    }
+
+    #[test]
+    fn github_copilot_github_app_requires_repository_id() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: copilot-org
+    type: github_copilot
+    auth:
+      mode: github_app
+      app_id: 12345
+      installation_id: 67890
+      private_key: literal.test-private-key-content
+"#,
+        );
+
+        let error =
+            GatewayConfig::from_path(&config_path).expect_err("missing repository ID should fail");
+
+        assert!(format!("{error:#}").contains("missing field `repository_id`"));
+    }
+
+    #[test]
+    fn github_copilot_github_app_rejects_zero_repository_id() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: copilot-org
+    type: github_copilot
+    auth:
+      mode: github_app
+      app_id: 12345
+      installation_id: 67890
+      private_key: literal.test-private-key-content
+      repository_id: 0
+"#,
+        );
+
+        let error =
+            GatewayConfig::from_path(&config_path).expect_err("zero repository ID should fail");
+
+        assert!(format!("{error:#}").contains("auth.repository_id cannot be 0"));
+    }
+
+    #[test]
+    fn github_copilot_github_app_accepts_mounted_private_key_path() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        let private_key_path = tmp.path().join("copilot-private-key.pem");
+        write_config(&private_key_path, "test-private-key-content");
+        write_config(
+            &config_path,
+            &format!(
+                r#"
+providers:
+  - id: copilot-org
+    type: github_copilot
+    auth:
+      mode: github_app
+      app_id: 12345
+      installation_id: 67890
+      private_key: {}
+      repository_id: 112233
+"#,
+                private_key_path.display()
+            ),
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let runtime_configs = config
+            .copilot_provider_configs()
+            .expect("Copilot runtime provider configs");
+
+        match &runtime_configs[0].auth {
+            CopilotAuthConfig::GitHubAppKeyFile {
+                private_key_path: configured_path,
+                repository_id,
+                ..
+            } => {
+                assert_eq!(configured_path, &private_key_path);
+                assert_eq!(*repository_id, 112233);
+            }
+            other => panic!("expected GitHub App key file auth, got {other:?}"),
+        }
     }
 
     #[test]

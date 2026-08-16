@@ -37,33 +37,53 @@ async function reservePort(explicitPort) {
   return port
 }
 
-const gatewayPort = await reservePort(process.env.E2E_GATEWAY_PORT)
-const uiPort = await reservePort(process.env.E2E_UI_PORT)
-const upstreamPort = await reservePort(process.env.E2E_UPSTREAM_PORT)
-const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${gatewayPort}`
 const playwrightRoot = path.dirname(require.resolve('playwright/package.json'))
 const playwrightCli = path.join(playwrightRoot, 'cli.js')
 
-const child = spawn(process.execPath, [playwrightCli, 'test'], {
-  stdio: 'inherit',
-  env: {
-    ...process.env,
-    E2E_GATEWAY_PORT: gatewayPort,
-    E2E_UI_PORT: uiPort,
-    E2E_UPSTREAM_PORT: upstreamPort,
-    E2E_BASE_URL: baseURL,
-    E2E_GATEWAY_API_KEY: process.env.E2E_GATEWAY_API_KEY ?? 'gwk_e2e.secret-value',
-    E2E_ADMIN_EMAIL: process.env.E2E_ADMIN_EMAIL ?? 'admin@local',
-    E2E_ADMIN_PASSWORD: process.env.E2E_ADMIN_PASSWORD ?? 'admin',
-    E2E_ADMIN_NEW_PASSWORD: process.env.E2E_ADMIN_NEW_PASSWORD ?? 's3cur3-passw0rd',
+async function runPlaywright(testArgs, extraEnv, requested = {}) {
+  const gatewayPort = await reservePort(requested.gatewayPort)
+  const uiPort = await reservePort(requested.uiPort)
+  const upstreamPort = await reservePort(requested.upstreamPort)
+  const baseURL = requested.baseURL ?? `http://127.0.0.1:${gatewayPort}`
+  const child = spawn(process.execPath, [playwrightCli, 'test', ...testArgs], {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      E2E_GATEWAY_PORT: gatewayPort,
+      E2E_UI_PORT: uiPort,
+      E2E_UPSTREAM_PORT: upstreamPort,
+      E2E_BASE_URL: baseURL,
+      E2E_GATEWAY_API_KEY: process.env.E2E_GATEWAY_API_KEY ?? 'gwk_e2e.secret-value',
+      E2E_ADMIN_EMAIL: process.env.E2E_ADMIN_EMAIL ?? 'admin@local',
+      E2E_ADMIN_PASSWORD: process.env.E2E_ADMIN_PASSWORD ?? 'admin',
+      E2E_ADMIN_NEW_PASSWORD: process.env.E2E_ADMIN_NEW_PASSWORD ?? 's3cur3-passw0rd',
+      ...extraEnv,
+    },
+  })
+
+  await new Promise((resolve, reject) => {
+    child.on('exit', (code, signal) => {
+      if (signal) {
+        reject(new Error(`Playwright exited after signal ${signal}`))
+      } else if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`Playwright exited with status ${code ?? 1}`))
+      }
+    })
+  })
+}
+
+await runPlaywright(
+  [],
+  { E2E_PERMISSION_SCENARIO: 'default' },
+  {
+    gatewayPort: process.env.E2E_GATEWAY_PORT,
+    uiPort: process.env.E2E_UI_PORT,
+    upstreamPort: process.env.E2E_UPSTREAM_PORT,
+    baseURL: process.env.E2E_BASE_URL,
   },
-})
-
-child.on('exit', (code, signal) => {
-  if (signal) {
-    process.kill(process.pid, signal)
-    return
-  }
-
-  process.exit(code ?? 1)
+)
+await runPlaywright(['admin-permission-overrides.e2e.ts'], {
+  E2E_PERMISSION_SCENARIO: 'overrides',
 })

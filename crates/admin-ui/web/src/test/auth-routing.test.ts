@@ -4,6 +4,10 @@ import { canAccessSignedInPath, defaultSignedInPath } from '@/routes/-auth-routi
 import type { AuthSessionView } from '@/types/api'
 
 function session(overrides: Partial<AuthSessionView['capabilities']>): AuthSessionView {
+  const pages: AuthSessionView['permissions']['pages'] = [
+    'api_keys',
+    ...(overrides.agent_analysis ? (['agent_sessions'] as const) : []),
+  ]
   return {
     user: {
       id: 'user-1',
@@ -23,6 +27,12 @@ function session(overrides: Partial<AuthSessionView['capabilities']>): AuthSessi
       ...overrides,
     },
     must_change_password: false,
+    permissions: {
+      group: overrides.platform_admin ? 'platform_admins' : 'team_admins',
+      pages,
+      actions: [],
+      default_page: overrides.agent_analysis ? 'agent_sessions' : 'api_keys',
+    },
   }
 }
 

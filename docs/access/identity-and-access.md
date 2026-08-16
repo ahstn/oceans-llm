@@ -1,6 +1,6 @@
 # Identity and Access
 
-`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](../mcp/mcp-client-setup.md), [Data Relationships](../contributing/reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets](budgets.md), [Tagging](../operations/tagging.md), [MCP Invocations](../mcp/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](../mcp/mcp-client-setup.md), [Configuration Reference](../configuration/configuration-reference.md), [Data Relationships](../contributing/reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets](budgets.md), [Tagging](../operations/tagging.md), [MCP Invocations](../mcp/mcp-invocations.md), [ADR: Configurable Admin Page Permissions](../adr/2026-08-05-configurable-admin-page-permissions.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 This page describes the live identity model across the gateway and admin control plane.
 
@@ -59,16 +59,30 @@ Browser sessions are durable server-side records referenced by the `ogw_session`
 - user lifecycle actions such as deactivation can revoke every active session for that user
 - expired, revoked, missing, or disabled-user sessions resolve as unauthenticated and return the user to sign-in
 
-The UI applies these role boundaries after authentication:
+## Admin Page Permission Groups
 
-- `platform_admin` users can use the global control-plane pages.
-- `user` users can open API Keys, Models, Teams, Users, Usage Costs, Request Logs, and MCP Invocations.
-- The API Keys page shows credentials owned by the signed-in user. Active team owners and team admins also see service-account credentials for their team. The regular-user view does not show mutation controls.
+The gateway selects one page permission group for each browser session:
+
+- A user with `global_role: platform_admin` is in `platform_admins`, even if the user also has a team membership.
+- A regular user with an `owner` or `admin` team membership is in `team_admins`.
+- A regular team member or teamless user is in `users`.
+
+The gateway resolves the effective page and action sets from config. Team admins inherit all user grants. Platform admins inherit all team-admin and user grants. A repeated grant is safe and appears once. The session response includes the selected group, effective pages, effective actions, and default page. Membership changes affect the next session response.
+
+Page permissions control admin UI navigation, direct routes, and landing pages. They do not authorize API calls. API-key action permissions control both the API operation and its UI control. Each allowed action still checks the active session, ownership, team scope, and resource state. See the [`permissions` config reference](../configuration/configuration-reference.md#permissions) for syntax and validation.
+
+The default UI policy is:
+
+- Platform admins can use all 13 signed-in pages.
+- Team admins and regular users can open API Keys, Models, Teams, Users, Usage Costs, Leaderboard, Agent Harnesses, Request Logs, MCP Invocations, and Service Accounts.
+- The API Keys page shows credentials owned by the signed-in user. By default, users can create, update, and revoke their own keys. Active team owners and team admins can also manage and reveal service-account credentials for their team. Personal key secrets are shown only once, at creation.
 - The Models page shows the full routed-model catalog and can generate client configuration. Model allowlist membership and pricing refresh stay platform-admin-only.
 - The Teams and Users pages show the full identity directory read-only. Onboarding links, provider setup data, assignable-user payloads, and all identity mutations stay platform-admin-only.
 - Regular-user spend queries are forced to the signed-in user and exclude service-account spend.
 - Regular-user request-log and MCP-invocation queries are forced to the signed-in user. Detail endpoints reject records that do not belong to that user.
-- Leaderboards, harness-wide usage, identity changes, service accounts, budgets, and configuration remain platform-admin-only.
+- Leaderboard and Agent Harnesses are global read views. Every active user can see cross-team names, identifiers, request counts, model use, tool counts, and exact spend in the leaderboard.
+- Service Accounts lists active accounts for the signed-in user's team. A teamless user receives an empty list. Ordinary members cannot see service-account credential metadata or use service-account write APIs.
+- Identity changes, budget controls, MCP management, Review Agent, and other platform writes keep their current platform-admin checks.
 
 ## Bootstrap Admin
 

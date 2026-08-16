@@ -327,6 +327,10 @@ pub trait AdminIdentityRepository: Send + Sync {
             "list_active_service_accounts is not implemented for this repository".to_string(),
         ))
     }
+    async fn list_active_service_accounts_for_team(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<ServiceAccountRecord>, StoreError>;
     async fn list_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
         Err(StoreError::Unexpected(
             "list_service_accounts is not implemented for this repository".to_string(),

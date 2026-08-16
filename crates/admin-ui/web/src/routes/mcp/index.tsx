@@ -10,7 +10,6 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { PageHeader } from '@/components/layout/page-header'
-import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   getApiKeys,
   getMcpGrants,
@@ -39,7 +38,6 @@ const workspaceTabs = [
 ]
 
 export const Route = createFileRoute('/mcp/')({
-  beforeLoad: ({ location }) => requireAdminSession(location),
   validateSearch: (search: Record<string, unknown>) => normalizeMcpSearch(search),
   loader: async () => {
     const [servers, recommended, toolsets, grants, apiKeys, identity] = await Promise.all([

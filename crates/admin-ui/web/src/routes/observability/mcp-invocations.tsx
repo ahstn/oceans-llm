@@ -26,7 +26,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import {
   getMcpInvocations,
   getObservabilityMcpInvocationDetail,
@@ -41,7 +40,6 @@ import type {
 export const Route = createFileRoute('/observability/mcp-invocations')({
   validateSearch: (search: Record<string, unknown>) => normalizeFilterSearch(search),
   loaderDeps: ({ search }) => search,
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: ({ deps }) => getMcpInvocations({ data: deps }),
   component: McpInvocationsPage,
 })

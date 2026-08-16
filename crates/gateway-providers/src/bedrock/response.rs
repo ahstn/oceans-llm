@@ -266,6 +266,27 @@ where
                     else {
                         continue;
                     };
+
+                    let thinking_blocks = extract_anthropic_thinking_blocks(std::slice::from_ref(
+                        &Value::Object(content_block.clone()),
+                    ));
+                    if !thinking_blocks.is_empty() {
+                        let metadata = provider_reasoning_metadata(
+                            provider_namespace,
+                            "anthropic_messages_stream",
+                            thinking_blocks,
+                        );
+                        yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
+                            &id,
+                            created,
+                            &context,
+                            json!({"provider_metadata": metadata}),
+                            None,
+                            None,
+                        )).unwrap_or_else(|_| "{}".to_string())));
+                        continue;
+                    }
+
                     if content_block.get("type").and_then(Value::as_str) != Some("tool_use") {
                         continue;
                     }
@@ -677,6 +698,9 @@ fn map_anthropic_stream_usage(value: &Value) -> Option<Value> {
             Value::Number(completion.into()),
         );
     }
+    if !usage.is_empty() {
+        mapped.insert("provider_usage".to_string(), Value::Object(usage.clone()));
+    }
     if mapped.is_empty() {
         None
     } else {
@@ -697,7 +721,19 @@ fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Value) -> Value
                 .and_then(|usage| usage.get("completion_tokens"))
         })
         .and_then(Value::as_i64);
-    let mut merged = Map::new();
+    let mut merged = usage.as_object().cloned().unwrap_or_default();
+    let mut provider_usage = latest
+        .as_ref()
+        .and_then(|usage| usage.get("provider_usage"))
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(incoming) = usage.get("provider_usage").and_then(Value::as_object) {
+        provider_usage.extend(incoming.clone());
+    }
+    if !provider_usage.is_empty() {
+        merged.insert("provider_usage".to_string(), Value::Object(provider_usage));
+    }
     if let Some(prompt) = prompt {
         merged.insert("prompt_tokens".to_string(), Value::Number(prompt.into()));
     }

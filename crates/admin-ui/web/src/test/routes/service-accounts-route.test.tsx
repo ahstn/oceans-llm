@@ -2,10 +2,12 @@ import type * as React from 'react'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 import type { ApiKeysPayload, ServiceAccountsPayload } from '@/types/api'
 
 const routeMock = {
   useLoaderData: vi.fn(),
+  useRouteContext: vi.fn(),
 }
 
 vi.mock('@tanstack/react-router', () => ({
@@ -117,6 +119,8 @@ const apiKeysPayload: ApiKeysPayload = {
 describe('ServiceAccountsPage', () => {
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
+    routeMock.useRouteContext.mockReset()
+    routeMock.useRouteContext.mockReturnValue({ session: platformAdminSession() })
     routeMock.useLoaderData.mockReturnValue({
       serviceAccounts: serviceAccountsPayload.service_accounts,
       apiKeys: apiKeysPayload.items,
@@ -170,5 +174,18 @@ describe('ServiceAccountsPage', () => {
       screen.getByText(/No service accounts are visible for the current scope/),
     ).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('does not imply that scoped credential data is missing for regular users', async () => {
+    routeMock.useRouteContext.mockReturnValue({ session: regularUserSession() })
+    routeMock.useLoaderData.mockReturnValue({
+      serviceAccounts: serviceAccountsPayload.service_accounts,
+      apiKeys: [],
+    })
+
+    const { ServiceAccountsPage } = await import('@/routes/identity/service-accounts')
+    render(<ServiceAccountsPage />)
+
+    expect(screen.getAllByText('Credential details restricted').length).toBeGreaterThan(0)
   })
 })

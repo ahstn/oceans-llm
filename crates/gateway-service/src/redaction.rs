@@ -31,6 +31,75 @@ const SENSITIVE_JSON_KEYS: &[&str] = &[
     "password",
 ];
 
+const MEDIA_URL_PATHS: &[BuiltInPayloadPath] = &[
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("messages"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("image_url"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("messages"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("video_url"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("messages"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("input_video"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("messages"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("file"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("messages"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("input_file"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("messages"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("document"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+];
+
+const ERROR_TEXT_PATHS: &[BuiltInPayloadPath] = &[
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("error"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("error"),
+        BuiltInPathSegment::Key("message"),
+    ]),
+];
+
 const LARGE_FIELD_PATHS: &[BuiltInPayloadPath] = &[
     BuiltInPayloadPath::new(&[
         BuiltInPathSegment::Key("body"),
@@ -132,7 +201,7 @@ const LARGE_FIELD_PATHS: &[BuiltInPayloadPath] = &[
 const DEFAULT_REQUEST_MAX_BYTES: usize = 64 * 1024;
 const DEFAULT_RESPONSE_MAX_BYTES: usize = 64 * 1024;
 const DEFAULT_STREAM_MAX_EVENTS: usize = 128;
-const PAYLOAD_POLICY_VERSION: &str = "builtin:v1";
+const PAYLOAD_POLICY_VERSION: &str = "builtin:v2";
 const SECRET_MASK: &str = "********";
 pub(crate) const REDACTED_VALUE: &str = "[REDACTED]";
 const LARGE_FIELD_PREVIEW_BYTES: usize = 96;
@@ -377,6 +446,22 @@ fn redact_json_value_at_path(
         return Value::String(REDACTED_VALUE.to_string());
     }
 
+    if MEDIA_URL_PATHS
+        .iter()
+        .any(|candidate| candidate.matches(path))
+        && let Some(url) = value.as_str()
+    {
+        return Value::String(redact_url_query(url));
+    }
+
+    if ERROR_TEXT_PATHS
+        .iter()
+        .any(|candidate| candidate.matches(path))
+        && let Some(message) = value.as_str()
+    {
+        return Value::String(redact_https_url_queries(message));
+    }
+
     match value {
         Value::Array(values) => {
             path.push(PathSegment::Wildcard);
@@ -402,6 +487,48 @@ fn redact_json_value_at_path(
         }
         _ => value.clone(),
     }
+}
+
+fn redact_url_query(url: &str) -> String {
+    let (base, has_query) = url
+        .split_once('?')
+        .map_or((url, false), |(base, _)| (base, true));
+    let sanitized_base = url::Url::parse(base)
+        .ok()
+        .filter(|parsed| !parsed.username().is_empty() || parsed.password().is_some())
+        .and_then(|mut parsed| {
+            parsed.set_username("").ok()?;
+            parsed.set_password(None).ok()?;
+            Some(parsed.to_string())
+        })
+        .unwrap_or_else(|| base.to_string());
+
+    if has_query {
+        format!("{sanitized_base}?<redacted>")
+    } else {
+        sanitized_base
+    }
+}
+
+fn redact_https_url_queries(text: &str) -> String {
+    let lowercase = text.to_ascii_lowercase();
+    let mut redacted = String::with_capacity(text.len());
+    let mut cursor = 0;
+
+    while let Some(relative_start) = lowercase[cursor..].find("https://") {
+        let start = cursor + relative_start;
+        let end = text[start..]
+            .find(|character: char| {
+                character.is_ascii_whitespace() || matches!(character, '"' | '\'' | '`' | '<' | '>')
+            })
+            .map_or(text.len(), |relative_end| start + relative_end);
+        redacted.push_str(&text[cursor..start]);
+        redacted.push_str(&redact_url_query(&text[start..end]));
+        cursor = end;
+    }
+
+    redacted.push_str(&text[cursor..]);
+    redacted
 }
 
 #[must_use]
@@ -651,12 +778,134 @@ mod tests {
             }
         });
 
-        let truncated = truncate_large_payload_fields(&input);
+        let truncated = truncate_large_payload_fields(&redact_json_value(&input));
 
         assert_eq!(
             truncated["body"]["messages"][0]["content"][0]["image_url"]["url"],
             "https://example.com/image.png"
         );
+    }
+
+    #[test]
+    fn redacts_signed_media_url_queries_from_retained_payloads() {
+        let input = json!({
+            "body": {
+                "messages": [{
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "https://media.example.invalid/image.png?token=image-secret"
+                            }
+                        },
+                        {
+                            "type": "video_url",
+                            "video_url": {
+                                "url": "https://media.example.invalid/video.mp4?expires=1&signature=video-secret"
+                            }
+                        },
+                        {
+                            "type": "file",
+                            "file": {
+                                "url": "https://media.example.invalid/file.pdf?credential=file-secret"
+                            }
+                        },
+                        {
+                            "type": "input_file",
+                            "input_file": {
+                                "url": "https://media.example.invalid/input.pdf?signature=input-secret"
+                            }
+                        },
+                        {
+                            "type": "document",
+                            "document": {
+                                "url": "https://media.example.invalid/document.pdf?signature=document-secret"
+                            }
+                        }
+                    ]
+                }]
+            }
+        });
+
+        let redacted = redact_json_value(&input);
+        let content = redacted["body"]["messages"][0]["content"]
+            .as_array()
+            .expect("content");
+        assert_eq!(
+            content[0]["image_url"]["url"],
+            "https://media.example.invalid/image.png?<redacted>"
+        );
+        assert_eq!(
+            content[1]["video_url"]["url"],
+            "https://media.example.invalid/video.mp4?<redacted>"
+        );
+        assert_eq!(
+            content[2]["file"]["url"],
+            "https://media.example.invalid/file.pdf?<redacted>"
+        );
+        assert_eq!(
+            content[3]["input_file"]["url"],
+            "https://media.example.invalid/input.pdf?<redacted>"
+        );
+        assert_eq!(
+            content[4]["document"]["url"],
+            "https://media.example.invalid/document.pdf?<redacted>"
+        );
+        let retained = redacted.to_string();
+        for secret in [
+            "image-secret",
+            "video-secret",
+            "file-secret",
+            "input-secret",
+            "document-secret",
+        ] {
+            assert!(!retained.contains(secret));
+        }
+    }
+
+    #[test]
+    fn redacts_media_url_userinfo_from_retained_payloads() {
+        let input = json!({
+            "body": {
+                "messages": [{
+                    "content": [{
+                        "type": "video_url",
+                        "video_url": {
+                            "url": "https://user:password@media.example.invalid/video.mp4?signature=secret"
+                        }
+                    }]
+                }]
+            }
+        });
+
+        let redacted = redact_json_value(&input);
+        assert_eq!(
+            redacted["body"]["messages"][0]["content"][0]["video_url"]["url"],
+            "https://media.example.invalid/video.mp4?<redacted>"
+        );
+        let retained = redacted.to_string();
+        for secret in ["user", "password", "secret"] {
+            assert!(!retained.contains(secret));
+        }
+    }
+
+    #[test]
+    fn redacts_signed_media_urls_echoed_in_error_messages() {
+        let input = json!({
+            "body": {
+                "error": {
+                    "message": "Vertex rejected HTTPS://media.example.invalid/video.mp4?signature=error-secret while processing the request"
+                }
+            }
+        });
+
+        let redacted = redact_json_value(&input);
+
+        assert_eq!(
+            redacted["body"]["error"]["message"],
+            "Vertex rejected HTTPS://media.example.invalid/video.mp4?<redacted> while processing the request"
+        );
+        assert!(!redacted.to_string().contains("error-secret"));
     }
 
     #[test]

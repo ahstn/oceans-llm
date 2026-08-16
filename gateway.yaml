@@ -12,6 +12,37 @@ auth:
     password: literal.admin
     require_password_change: false
 
+permissions:
+  users:
+    pages:
+      - api_keys
+      - models
+      - usage_costs
+      - leaderboard
+      - agent_harnesses
+      - request_logs
+      - mcp_invocations
+      - teams
+      - users
+      - service_accounts
+    actions:
+      - create_api_key
+      - update_api_key
+      - revoke_api_key
+    default_page: usage_costs
+  team_admins:
+    pages: []
+    actions:
+      - reveal_api_key
+    default_page: usage_costs
+  platform_admins:
+    pages:
+      - mcp
+      - review_agent
+      - spend_controls
+    actions: []
+    default_page: api_keys
+
 request_logging:
   payloads:
     capture_mode: redacted_payloads

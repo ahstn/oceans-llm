@@ -1,67 +1,14 @@
 import { type APIRequestContext, expect, test } from 'playwright/test'
 
-import { ensureAdminSession, loginWithPasswordSession } from './admin-session'
+import { ensureAdminSession } from './admin-session'
 import { requireEnv, stubAdminUrl } from './env'
+import { createActiveRegularUser, invitationToken } from './identity-fixtures'
 
 const gatewayApiKey = process.env.E2E_GATEWAY_API_KEY ?? 'gwk_e2e.secret-value'
 
 type ApiKeysCatalog = {
   users: Array<{ id: string }>
   models: Array<{ key: string }>
-}
-
-function invitationToken(inviteUrl: string, root: string): string {
-  const token = new URL(inviteUrl, root).pathname.split('/').filter(Boolean).pop()
-  if (!token) {
-    throw new Error(`expected password invite URL to include a token: ${inviteUrl}`)
-  }
-  return token
-}
-
-async function createActiveRegularUser(
-  request: APIRequestContext,
-  root: string,
-  adminCookie: string,
-  label: string,
-): Promise<{ id: string; cookie: string }> {
-  const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  const email = `${label}-${unique}@example.com`
-  const password = `${label}-passw0rd`
-  const createResponse = await request.post(`${root}/api/v1/admin/identity/users`, {
-    headers: {
-      cookie: adminCookie,
-      'content-type': 'application/json',
-    },
-    data: {
-      name: `${label} User`,
-      email,
-      auth_mode: 'password',
-      global_role: 'user',
-      tags: [{ key: 'department', value: 'security' }],
-    },
-  })
-  expect(createResponse.status()).toBe(200)
-  const createBody = (await createResponse.json()) as {
-    data: { kind: 'password_invite'; user: { id: string }; invite_url: string } | { kind: string }
-  }
-  expect(createBody.data.kind).toBe('password_invite')
-  if (createBody.data.kind !== 'password_invite') {
-    throw new Error(`expected password invite onboarding, received ${createBody.data.kind}`)
-  }
-
-  const completeResponse = await request.post(
-    `${root}/api/v1/auth/invitations/${invitationToken(createBody.data.invite_url, root)}/password`,
-    {
-      headers: { 'content-type': 'application/json' },
-      data: { password },
-    },
-  )
-  expect(completeResponse.status()).toBe(200)
-
-  return {
-    id: createBody.data.user.id,
-    cookie: await loginWithPasswordSession(request, root, email, password),
-  }
 }
 
 async function createActiveApiKeyOwner(
@@ -511,16 +458,16 @@ test('regular identity directory is redacted and identity mutations fail without
   const scopedKeysBody = (await scopedKeysResponse.json()) as {
     data: {
       items: Array<{ id: string }>
-      users: unknown[]
+      users: Array<{ id: string }>
       service_accounts: unknown[]
-      models: unknown[]
+      models: Array<{ key: string }>
     }
   }
   expect(scopedKeysBody.data.items.some((item) => item.id === personalKeyIds[0])).toBe(true)
   expect(scopedKeysBody.data.items.some((item) => item.id === personalKeyIds[1])).toBe(false)
-  expect(scopedKeysBody.data.users).toEqual([])
+  expect(scopedKeysBody.data.users.map((user) => user.id)).toEqual([actor.id])
   expect(scopedKeysBody.data.service_accounts).toEqual([])
-  expect(scopedKeysBody.data.models).toEqual([])
+  expect(scopedKeysBody.data.models.some((model) => model.key === 'fast')).toBe(true)
 
   const directoryUsersResponse = await request.get(`${root}/api/v1/identity/directory/users`, {
     headers: { cookie: actor.cookie },

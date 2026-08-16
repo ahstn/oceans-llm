@@ -56,6 +56,30 @@ auth:
           global_role: user
           request_logging_enabled: true
 
+permissions:
+  users:
+    pages:
+      - api_keys
+      - models
+      - usage_costs
+      - leaderboard
+      - agent_harnesses
+      - request_logs
+      - mcp_invocations
+      - teams
+      - users
+      - service_accounts
+    default_page: usage_costs
+  team_admins:
+    pages: []
+    default_page: usage_costs
+  platform_admins:
+    pages:
+      - mcp
+      - review_agent
+      - spend_controls
+    default_page: api_keys
+
 request_logging:
   payloads:
     capture_mode: redacted_payloads

@@ -4,7 +4,8 @@ use async_stream::stream;
 use axum::body::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
-    ProviderStream, SseEventParser, protocol::anthropic::openai_finish_reason_to_anthropic,
+    ProviderStream, SseEventParser,
+    protocol::anthropic::{anthropic_reasoning_blocks, openai_finish_reason_to_anthropic},
 };
 use serde_json::{Value, json};
 
@@ -12,6 +13,7 @@ use serde_json::{Value, json};
 struct AnthropicStreamState {
     message_started: bool,
     next_block_index: i64,
+    thinking_block_index: Option<i64>,
     text_block_index: Option<i64>,
     tool_block_indexes: BTreeMap<i64, i64>,
     latest_usage: Option<Value>,
@@ -129,11 +131,16 @@ fn anthropic_events_from_openai_chunk(
     }
     let delta = choice.get("delta").and_then(Value::as_object);
 
+    if let Some(provider_metadata) = delta.and_then(|delta| delta.get("provider_metadata")) {
+        append_anthropic_reasoning_events(provider_metadata, state, &mut events);
+    }
+
     if let Some(content) = delta
         .and_then(|delta| delta.get("content"))
         .and_then(Value::as_str)
         .filter(|content| !content.is_empty())
     {
+        stop_open_thinking_block(state, &mut events);
         let index = *state.text_block_index.get_or_insert_with(|| {
             let index = state.next_block_index;
             state.next_block_index += 1;
@@ -235,6 +242,9 @@ fn anthropic_stream_usage_from_openai(value: Option<&Value>) -> Option<Value> {
     if let Some(output_tokens) = usage.get("completion_tokens").and_then(Value::as_i64) {
         anthropic_usage.insert("output_tokens".to_string(), json!(output_tokens));
     }
+    if let Some(provider_usage) = usage.get("provider_usage") {
+        anthropic_usage.insert("provider_usage".to_string(), provider_usage.clone());
+    }
     if anthropic_usage.is_empty() {
         None
     } else {
@@ -250,9 +260,20 @@ fn merge_anthropic_stream_usage(latest: &mut Option<Value>, usage: &Value) {
 fn usage_with_known_fields(usage: Value, latest: Option<&Value>) -> Value {
     let input_tokens = merged_counter(&usage, latest, "input_tokens");
     let output_tokens = merged_counter(&usage, latest, "output_tokens");
+    let mut provider_usage = latest
+        .and_then(|latest| latest.get("provider_usage"))
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(incoming) = usage.get("provider_usage").and_then(Value::as_object) {
+        provider_usage.extend(incoming.clone());
+    }
     let mut object = usage.as_object().cloned().unwrap_or_default();
     object.insert("input_tokens".to_string(), json!(input_tokens));
     object.insert("output_tokens".to_string(), json!(output_tokens));
+    if !provider_usage.is_empty() {
+        object.insert("provider_usage".to_string(), Value::Object(provider_usage));
+    }
     Value::Object(object)
 }
 
@@ -292,6 +313,98 @@ fn pending_anthropic_message_delta(state: &mut AnthropicStreamState) -> Option<B
     ))
 }
 
+fn append_anthropic_reasoning_events(
+    provider_metadata: &Value,
+    state: &mut AnthropicStreamState,
+    events: &mut Vec<Bytes>,
+) {
+    for block in anthropic_reasoning_blocks(Some(provider_metadata), "anthropic_messages_stream") {
+        match block.get("type").and_then(Value::as_str) {
+            Some("thinking") => {
+                start_anthropic_thinking_block(state, events);
+            }
+            Some("thinking_delta") => {
+                let index = start_anthropic_thinking_block(state, events);
+                let thinking = block
+                    .get("thinking")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                events.push(anthropic_sse_chunk(
+                    "content_block_delta",
+                    json!({
+                        "type": "content_block_delta",
+                        "index": index,
+                        "delta": {"type": "thinking_delta", "thinking": thinking}
+                    }),
+                ));
+            }
+            Some("signature_delta") => {
+                let index = start_anthropic_thinking_block(state, events);
+                let signature = block
+                    .get("signature")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                events.push(anthropic_sse_chunk(
+                    "content_block_delta",
+                    json!({
+                        "type": "content_block_delta",
+                        "index": index,
+                        "delta": {"type": "signature_delta", "signature": signature}
+                    }),
+                ));
+            }
+            Some("redacted_thinking") => {
+                events.extend(finish_anthropic_stream_blocks(state));
+                let index = state.next_block_index;
+                state.next_block_index += 1;
+                let data = block
+                    .get("data")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                events.push(anthropic_sse_chunk(
+                    "content_block_start",
+                    json!({
+                        "type": "content_block_start",
+                        "index": index,
+                        "content_block": {"type": "redacted_thinking", "data": data}
+                    }),
+                ));
+                events.push(content_block_stop(index));
+            }
+            _ => {}
+        }
+    }
+}
+
+fn start_anthropic_thinking_block(
+    state: &mut AnthropicStreamState,
+    events: &mut Vec<Bytes>,
+) -> i64 {
+    if let Some(index) = state.thinking_block_index {
+        return index;
+    }
+
+    events.extend(finish_anthropic_stream_blocks(state));
+    let index = state.next_block_index;
+    state.next_block_index += 1;
+    state.thinking_block_index = Some(index);
+    events.push(anthropic_sse_chunk(
+        "content_block_start",
+        json!({
+            "type": "content_block_start",
+            "index": index,
+            "content_block": {"type": "thinking", "thinking": ""}
+        }),
+    ));
+    index
+}
+
+fn stop_open_thinking_block(state: &mut AnthropicStreamState, events: &mut Vec<Bytes>) {
+    if let Some(index) = state.thinking_block_index.take() {
+        events.push(content_block_stop(index));
+    }
+}
+
 fn append_anthropic_tool_delta(
     tool_call: &Value,
     state: &mut AnthropicStreamState,
@@ -300,6 +413,7 @@ fn append_anthropic_tool_delta(
     let openai_index = tool_call.get("index").and_then(Value::as_i64).unwrap_or(0);
     if !state.tool_block_indexes.contains_key(&openai_index) {
         stop_open_text_block(state, events);
+        stop_open_thinking_block(state, events);
         let index = state.next_block_index;
         state.next_block_index += 1;
         state.tool_block_indexes.insert(openai_index, index);
@@ -351,6 +465,9 @@ fn stop_open_text_block(state: &mut AnthropicStreamState, events: &mut Vec<Bytes
 
 fn finish_anthropic_stream_blocks(state: &mut AnthropicStreamState) -> Vec<Bytes> {
     let mut indexes = Vec::new();
+    if let Some(index) = state.thinking_block_index.take() {
+        indexes.push(index);
+    }
     if let Some(index) = state.text_block_index.take() {
         indexes.push(index);
     }
@@ -457,9 +574,9 @@ mod tests {
     #[tokio::test]
     async fn anthropic_messages_stream_adapter_preserves_usage_for_collector() {
         let upstream: ProviderStream = Box::pin(stream::iter(vec![Ok(Bytes::from(concat!(
-            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":0,\"provider_usage\":{\"input_tokens\":3,\"output_tokens\":0,\"cache_read_input_tokens\":2,\"cache_creation_input_tokens\":1}}}\n\n",
             "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
-            "data: {\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4,\"total_tokens\":7}}\n\n",
+            "data: {\"usage\":{\"completion_tokens\":4,\"total_tokens\":7,\"provider_usage\":{\"output_tokens\":4}}}\n\n",
             "data: [DONE]\n\n"
         )))]));
 
@@ -472,8 +589,65 @@ mod tests {
         assert!(rendered.contains("\"output_tokens\":4"));
         assert_eq!(
             collector.usage(),
-            Some(&json!({"input_tokens": 3, "output_tokens": 4}))
+            Some(&json!({
+                "input_tokens": 3,
+                "output_tokens": 4,
+                "provider_usage": {
+                    "input_tokens": 3,
+                    "output_tokens": 4,
+                    "cache_read_input_tokens": 2,
+                    "cache_creation_input_tokens": 1
+                }
+            }))
         );
+    }
+
+    #[tokio::test]
+    async fn anthropic_messages_stream_adapter_preserves_copilot_reasoning() {
+        let upstream: ProviderStream = Box::pin(stream::iter(vec![Ok(Bytes::from(concat!(
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"provider_metadata\":{\"github_copilot\":{\"reasoning\":{\"source\":\"anthropic_messages_stream\",\"blocks\":[{\"type\":\"thinking\",\"thinking\":\"\"}]}}}},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"provider_metadata\":{\"github_copilot\":{\"reasoning\":{\"source\":\"anthropic_messages_stream\",\"blocks\":[{\"type\":\"thinking_delta\",\"thinking\":\"hidden\"}]}}}},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"provider_metadata\":{\"github_copilot\":{\"reasoning\":{\"source\":\"anthropic_messages_stream\",\"blocks\":[{\"type\":\"signature_delta\",\"signature\":\"sig-stream\"}]}}}},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"provider_metadata\":{\"github_copilot\":{\"reasoning\":{\"source\":\"anthropic_messages_stream\",\"blocks\":[{\"type\":\"redacted_thinking\",\"data\":\"encrypted\"}]}}}},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"visible\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n"
+        )))]));
+        let rendered = render_stream(upstream).await;
+
+        let thinking_start = rendered
+            .find(r#""content_block":{"thinking":"","type":"thinking"},"index":0"#)
+            .expect("thinking block start");
+        let thinking_delta = rendered
+            .find(r#""delta":{"thinking":"hidden","type":"thinking_delta"},"index":0"#)
+            .expect("thinking delta");
+        let signature_delta = rendered
+            .find(r#""delta":{"signature":"sig-stream","type":"signature_delta"},"index":0"#)
+            .expect("signature delta");
+        let thinking_stop = rendered[signature_delta..]
+            .find(r#""index":0,"type":"content_block_stop"#)
+            .map(|offset| signature_delta + offset)
+            .expect("thinking block stop");
+        let redacted_start = rendered
+            .find(r#""content_block":{"data":"encrypted","type":"redacted_thinking"},"index":1"#)
+            .expect("redacted thinking block start");
+        let redacted_stop = rendered[redacted_start..]
+            .find(r#""index":1,"type":"content_block_stop"#)
+            .map(|offset| redacted_start + offset)
+            .expect("redacted thinking block stop");
+        let text_start = rendered
+            .find(r#""content_block":{"text":"","type":"text"},"index":2"#)
+            .expect("text block start");
+
+        assert!(thinking_start < thinking_delta);
+        assert!(thinking_delta < signature_delta);
+        assert!(signature_delta < thinking_stop);
+        assert!(thinking_stop < redacted_start);
+        assert!(redacted_start < redacted_stop);
+        assert!(redacted_stop < text_start);
+        assert!(rendered.contains(r#""delta":{"text":"visible","type":"text_delta"},"index":2"#));
+        assert!(!rendered.contains("provider_metadata"));
     }
 
     #[tokio::test]

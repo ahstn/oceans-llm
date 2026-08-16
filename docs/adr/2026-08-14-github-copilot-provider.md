@@ -4,6 +4,8 @@
 
 Accepted.
 
+> **Supersession note (2026-08-16):** [GitHub Copilot Compatibility Evidence and Production Acceptance](2026-08-16-github-copilot-compatibility-and-acceptance.md) supersedes the model-family routing, fixed request-header profile, and direct-token production-acceptance parts of this decision. The original decision remains below as history.
+
 ## Context
 
 Organizations use GitHub Copilot for model access, but cannot currently route Copilot requests through `oceans-llm` with centralized policy, observability, spend control, and provider routing.

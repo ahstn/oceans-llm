@@ -1344,6 +1344,8 @@ export interface components {
         AddTeamMembersRequest: {
             user_ids: string[];
         };
+        /** @enum {string} */
+        AdminAction: "create_api_key" | "update_api_key" | "revoke_api_key" | "reveal_api_key";
         AdminApiKeyModelView: {
             description?: string | null;
             id: string;
@@ -1512,6 +1514,10 @@ export interface components {
             provider_label: string;
             sign_in_url: string;
         };
+        /** @enum {string} */
+        AdminPage: "api_keys" | "models" | "mcp" | "review_agent" | "usage_costs" | "spend_controls" | "leaderboard" | "agent_harnesses" | "agent_sessions" | "request_logs" | "mcp_invocations" | "teams" | "users" | "service_accounts";
+        /** @enum {string} */
+        AdminPermissionGroup: "platform_admins" | "team_admins" | "users";
         AdminServiceAccountView: {
             id: string;
             key: string;
@@ -2080,6 +2086,12 @@ export interface components {
             shadow_diagnostics_visible: boolean;
             team_admin_analytics_enabled: boolean;
         };
+        AuthSessionPermissionsView: {
+            actions: components["schemas"]["AdminAction"][];
+            default_page?: null | components["schemas"]["AdminPage"];
+            group: components["schemas"]["AdminPermissionGroup"];
+            pages: components["schemas"]["AdminPage"][];
+        };
         AuthSessionUserView: {
             email: string;
             global_role: string;
@@ -2089,6 +2101,7 @@ export interface components {
         AuthSessionView: {
             capabilities: components["schemas"]["AuthSessionCapabilitiesView"];
             must_change_password: boolean;
+            permissions: components["schemas"]["AuthSessionPermissionsView"];
             team_id?: string | null;
             team_role?: string | null;
             user: components["schemas"]["AuthSessionUserView"];
@@ -2409,6 +2422,7 @@ export interface components {
             data: {
                 capabilities: components["schemas"]["AuthSessionCapabilitiesView"];
                 must_change_password: boolean;
+                permissions: components["schemas"]["AuthSessionPermissionsView"];
                 team_id?: string | null;
                 team_role?: string | null;
                 user: components["schemas"]["AuthSessionUserView"];
@@ -2633,6 +2647,7 @@ export interface components {
             data: null | {
                 capabilities: components["schemas"]["AuthSessionCapabilitiesView"];
                 must_change_password: boolean;
+                permissions: components["schemas"]["AuthSessionPermissionsView"];
                 team_id?: string | null;
                 team_role?: string | null;
                 user: components["schemas"]["AuthSessionUserView"];

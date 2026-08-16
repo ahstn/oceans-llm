@@ -1,4 +1,5 @@
 min_version = "2026.8.2"
+monorepo_root = true
 
 [settings]
 experimental = true
@@ -121,7 +122,12 @@ run = "cargo run -p gateway --bin gateway -- serve"
 
 [tasks.test]
 description = "Run repository unit tests"
-depends = ["rust-test", "ui-test", "review-agent-action-test"]
+depends = [
+  "rust-test",
+  "ui-test",
+  "review-agent-action-test",
+  "copilot-installation-canary-test",
+]
 
 [tasks.gateway-serve]
 description = "Run local `gateway serve` against `gateway.yaml`"
@@ -360,6 +366,14 @@ description = "Run Pi and OpenCode live integration tests through Oceans LLM Gat
 depends = ["harness-integration-install"]
 run = "npm test --prefix tests/harness-integration"
 
+[tasks.copilot-installation-canary-test]
+description = "Test the GitHub Copilot installation-token canary without external credentials"
+run = "node --test scripts/copilot-installation-canary.test.mjs"
+
+[tasks.copilot-installation-canary]
+description = "Run the opt-in live GitHub Copilot installation-token canary"
+run = "node scripts/copilot-installation-canary.mjs"
+
 [tasks.release]
 description = "Create and publish a release"
 depends = ["sync-pricing-catalog"]
@@ -368,7 +382,7 @@ run = '''
 set -euo pipefail
 
 cog bump --auto --skip-untracked
-tag="$(cog get-version --tag)" # TODO: prints over two lines
+tag="$(cog --verbose get-version --tag)" # TODO: prints over two lines
 git push --atomic origin main "$tag"
 gh release create "$tag" --title "$tag" --notes $(git-cliff --latest)
 '''

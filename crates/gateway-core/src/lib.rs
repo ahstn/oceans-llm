@@ -42,8 +42,9 @@ pub use domain::{
     BudgetWindow, CacheUsageAggregateRecord, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
     ExternalMcpDiscoveryStatus, ExternalMcpServerRecord, ExternalMcpServerStatus,
     ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
-    FocusExportDiagnosticsRecord, GatewayModel, GlobalRole, HarnessUsageBucketRecord,
-    HarnessUsageLeaderRecord, IdentityUserRecord, MAX_ENTITY_TAGS,
+    FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
+    GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, GlobalRole,
+    HarnessUsageBucketRecord, HarnessUsageLeaderRecord, IdentityUserRecord, MAX_ENTITY_TAGS,
     MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, MAX_REQUEST_LOG_PAGE_SIZE, MAX_TAG_KEY_LEN,
     MAX_TAG_VALUE_LEN, ManagedApiKeySource, McpAccessResolution, McpAggregateSessionRecord,
     McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject, McpOauthStateRecord,
@@ -84,8 +85,7 @@ pub use domain::{
     UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
     UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord,
     UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
-    VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc,
-    github_copilot_route_capabilities_for_upstream_model,
+    VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc, github_copilot_route_capabilities,
     is_supported_vertex_google_chat_upstream_model, is_supported_vertex_text_embedding_model_id,
     is_supported_vertex_text_embedding_upstream_model, validate_entity_tags, validate_tag_key,
     validate_tag_value, vertex_route_capabilities_for_upstream_model,
@@ -101,8 +101,8 @@ pub use gateway_keys::{
 pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{
     ChatMessage as CoreChatMessage, ChatRequest as CoreChatRequest,
-    EmbeddingsRequest as CoreEmbeddingsRequest, RequestRequirements as CoreRequestRequirements,
-    ResponsesRequest as CoreResponsesRequest,
+    ContentPartType as CoreContentPartType, EmbeddingsRequest as CoreEmbeddingsRequest,
+    RequestRequirements as CoreRequestRequirements, ResponsesRequest as CoreResponsesRequest,
 };
 pub use protocol::openai::{
     ChatCompletionsRequest, EmbeddingsRequest, ModelsListResponse, OpenAiErrorBody,

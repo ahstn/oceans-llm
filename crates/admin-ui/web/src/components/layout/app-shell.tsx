@@ -32,10 +32,7 @@ export function AppShell({ children, session, oceansVersion }: AppShellProps) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [isSigningOut, startSignOut] = useTransition()
   const currentPath = normalizeAdminPath(pathname)
-  const navSections = getAdminNavSections(
-    session.user.global_role,
-    session.capabilities.agent_analysis,
-  )
+  const navSections = getAdminNavSections(session.permissions.pages)
   const activeSection = getActiveNavSection(currentPath, navSections)
   const activeItem = getActiveNavItem(currentPath, navSections)
 

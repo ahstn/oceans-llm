@@ -1,4 +1,8 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    future::Future,
+    time::Instant,
+};
 
 use axum::{
     Json,
@@ -28,8 +32,8 @@ use uuid::Uuid;
 
 use crate::http::{
     admin_auth::{
-        AdminDataScope, require_agent_analysis_scope, require_authenticated_session,
-        require_platform_admin,
+        AdminDataScope, require_active_session, require_agent_analysis_scope,
+        require_authenticated_session,
     },
     admin_contract::{
         AgentAnalysisMetricPolicyView, AgentContextDiagnosticsView, AgentFileInteractionFactView,
@@ -56,6 +60,7 @@ use crate::http::{
     },
     error::AppError,
     request_tags::build_bespoke_tag_filter,
+    response_cache::{CacheStatus, ResponseCache},
     state::AppState,
 };
 
@@ -79,9 +84,25 @@ pub async fn get_usage_leaderboard(
     headers: HeaderMap,
     Query(query): Query<LeaderboardQuery>,
 ) -> Result<Json<Envelope<LeaderboardView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    require_active_session(&state, &headers).await?;
 
     let range = parse_leaderboard_range(query.range.as_deref())?;
+    let view = load_cached_admin_view(
+        &state,
+        &state.leaderboard_cache,
+        range.as_str().to_string(),
+        "leaderboard",
+        || build_usage_leaderboard(&state, range),
+    )
+    .await?;
+
+    Ok(Json(envelope(view)))
+}
+
+async fn build_usage_leaderboard(
+    state: &AppState,
+    range: LeaderboardRange,
+) -> Result<LeaderboardView, AppError> {
     let (window_start, window_end) = leaderboard_window_bounds_utc(range.days())?;
     let leaders = state
         .store
@@ -164,7 +185,7 @@ pub async fn get_usage_leaderboard(
         })
         .collect();
 
-    Ok(Json(envelope(LeaderboardView {
+    Ok(LeaderboardView {
         range: range.as_str().to_string(),
         bucket_hours: LEADERBOARD_BUCKET_HOURS,
         window_start: format_timestamp(window_start),
@@ -172,7 +193,7 @@ pub async fn get_usage_leaderboard(
         chart_users,
         series,
         leaders,
-    })))
+    })
 }
 
 #[utoipa::path(
@@ -187,9 +208,25 @@ pub async fn get_harness_usage(
     headers: HeaderMap,
     Query(query): Query<HarnessUsageQuery>,
 ) -> Result<Json<Envelope<HarnessUsageView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    require_active_session(&state, &headers).await?;
 
     let range = parse_leaderboard_range(query.range.as_deref())?;
+    let view = load_cached_admin_view(
+        &state,
+        &state.harness_usage_cache,
+        range.as_str().to_string(),
+        "agent_harnesses",
+        || build_harness_usage(&state, range),
+    )
+    .await?;
+
+    Ok(Json(envelope(view)))
+}
+
+async fn build_harness_usage(
+    state: &AppState,
+    range: LeaderboardRange,
+) -> Result<HarnessUsageView, AppError> {
     let (window_start, window_end) = leaderboard_window_bounds_utc(range.days())?;
     let leaders = state
         .store
@@ -268,7 +305,7 @@ pub async fn get_harness_usage(
         })
         .collect();
 
-    Ok(Json(envelope(HarnessUsageView {
+    Ok(HarnessUsageView {
         range: range.as_str().to_string(),
         bucket_hours: LEADERBOARD_BUCKET_HOURS,
         window_start: format_timestamp(window_start),
@@ -276,7 +313,50 @@ pub async fn get_harness_usage(
         chart_harnesses,
         series,
         leaders,
-    })))
+    })
+}
+
+async fn load_cached_admin_view<V, F, Fut>(
+    state: &AppState,
+    cache: &ResponseCache<String, V>,
+    cache_key: String,
+    view: &'static str,
+    loader: F,
+) -> Result<V, AppError>
+where
+    V: Clone,
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<V, AppError>>,
+{
+    let cached = cache
+        .get_or_load(cache_key, || async {
+            let started_at = Instant::now();
+            let result = loader().await;
+            state.metrics.record_admin_view_cache_load(
+                view,
+                if result.is_ok() { "success" } else { "error" },
+                started_at.elapsed(),
+            );
+            result
+        })
+        .await;
+    let (result, status) = match cached {
+        Ok(cached) => cached,
+        Err((error, status)) => {
+            record_cache_request(state, view, status);
+            return Err(error);
+        }
+    };
+    record_cache_request(state, view, status);
+    Ok(result)
+}
+
+fn record_cache_request(state: &AppState, view: &str, status: CacheStatus) {
+    let result = match status {
+        CacheStatus::Hit => "hit",
+        CacheStatus::Miss => "miss",
+    };
+    state.metrics.record_admin_view_cache_request(view, result);
 }
 
 #[utoipa::path(

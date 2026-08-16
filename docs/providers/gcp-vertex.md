@@ -219,9 +219,25 @@ models:
           json_schema: false
 ```
 
-Vertex Google multimodal inputs currently accept `gs://` image and file URIs through OpenAI-compatible typed content. Inline/base64 data and remote HTTP URLs are not supported in this gateway slice.
+Vertex Google multimodal inputs map remote media to Vertex `fileData`; the gateway does not download or probe the media.
 
 Google Gemini routes support OpenAI Chat Completions function tools, assistant `tool_calls`, tool-result continuations (`role: tool`), and streaming function-call deltas. Named tool choice (`tool_choice: {"type": "function", "function": {"name": "..."}}`), `tool_choice: "required"` / `"any"`, `tool_choice: "none"`, and `tool_choice: "auto"` map to Gemini `toolConfig.functionCallingConfig.mode` and `allowedFunctionNames`. Thought signatures returned by Gemini 3 / thinking-capable models are preserved and relayed across tool continuations.
+
+### Gemini Remote Media
+
+Chat Completions accepts these typed content shapes:
+
+- `image_url` and `input_image` for images
+- `video_url` and `input_video` for videos
+- `file` for generic Vertex-supported media, including video
+
+Media URLs can use `gs://` or `https://`. An HTTPS URL must be publicly readable by Vertex. Plain HTTP and local schemes such as `file://` are rejected. The gateway forwards an accepted URI unchanged, including its signed query string.
+
+Use `mime_type` as the canonical MIME field. The compatibility aliases `media_type` and `mediaType` are also accepted. If more than one field is present, all values must match. Image content requires an `image/*` value, and video content requires a `video/*` value. Generic `file` content can use any MIME type that the selected Gemini model supports. When no MIME field is present, the gateway infers common image, audio, document, and video types from the parsed URL path, without its query string. A missing or unknown MIME type causes a local validation error.
+
+Request logging keeps the media scheme, host, and path but replaces any image, video, or generic-file query string with `?<redacted>`. This protects signed URL credentials in retained request payloads. Redaction does not change the URI sent to Vertex.
+
+Vertex media limits depend on the selected Gemini model and endpoint. Confirm the supported formats, file sizes, media counts, video duration, and VPC Service Controls restrictions in the current [Vertex Gemini inference reference](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/inference) and [video understanding documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/video-understanding). The gateway does not fetch media or preflight these upstream limits.
 
 ## Text Embeddings Example
 

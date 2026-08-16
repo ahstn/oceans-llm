@@ -207,6 +207,27 @@ impl PostgresStore {
         rows.iter().map(decode_service_account_record).collect()
     }
 
+    pub async fn list_active_service_accounts_for_team(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<ServiceAccountRecord>, StoreError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT service_account_id, team_id, service_account_key, service_account_name,
+                   status, model_access_mode, metadata_json, tags_json, created_at, updated_at, disabled_at
+            FROM service_accounts
+            WHERE status = 'active' AND team_id = $1
+            ORDER BY service_account_name ASC
+            "#,
+        )
+        .bind(team_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        rows.iter().map(decode_service_account_record).collect()
+    }
+
     pub async fn list_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
         let rows = sqlx::query(
             r#"

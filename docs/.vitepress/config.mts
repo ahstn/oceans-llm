@@ -97,6 +97,10 @@ const primarySidebar = [
         link: "/operations/agent-harness-usage",
       },
       { text: "Admin Runbooks", link: "/operations/operator-runbooks" },
+      {
+        text: "GitHub Copilot Installation-Token Canary",
+        link: "/operations/github-copilot-installation-canary",
+      },
     ],
   },
   {
@@ -194,6 +198,10 @@ const contributingSidebar = [
   {
     text: "Plans and Research",
     items: [
+      {
+        text: "Configurable Admin Page Permissions",
+        link: "/contributing/implementation-plans/2026-08-05-configurable-admin-page-permissions",
+      },
       {
         text: "Issue 206 Service Account Config",
         link: "/contributing/implementation-plans/issue-206-service-account-config",

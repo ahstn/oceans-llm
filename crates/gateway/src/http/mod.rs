@@ -14,6 +14,7 @@ pub mod mcp_registry;
 pub mod models;
 pub mod observability;
 pub mod request_tags;
+pub mod response_cache;
 pub mod review_agent;
 pub mod spend;
 pub mod state;

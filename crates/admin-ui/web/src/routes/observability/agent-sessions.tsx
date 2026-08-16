@@ -47,7 +47,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { requireAdminSession } from '@/routes/-admin-guard'
 import { getAgentSessions, getObservabilityAgentSessionDetail } from '@/server/admin-data.functions'
 import type {
   AgentObservationView,
@@ -85,7 +84,6 @@ const currencyFormatters = {
 export const Route = createFileRoute('/observability/agent-sessions')({
   validateSearch: (search: Record<string, unknown>) => normalizeSearch(search),
   loaderDeps: ({ search }) => search,
-  beforeLoad: ({ location }) => requireAdminSession(location),
   loader: ({ deps }) => {
     const { session_id: _sessionId, ...filters } = deps
     return getAgentSessions({ data: filters })
