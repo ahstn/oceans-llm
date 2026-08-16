@@ -469,11 +469,7 @@ async fn authorize_existing_api_key(
         .store
         .get_api_key_by_id(api_key_id)
         .await?
-        .ok_or_else(|| {
-            AppError(GatewayError::InvalidRequest(
-                "api key not found".to_string(),
-            ))
-        })?;
+        .ok_or_else(insufficient_privileges)?;
     match api_key.owner_kind {
         ApiKeyOwnerKind::User if api_key.owner_user_id == Some(*user_id) => Ok(()),
         ApiKeyOwnerKind::ServiceAccount

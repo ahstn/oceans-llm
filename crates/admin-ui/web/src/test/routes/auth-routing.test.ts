@@ -6,7 +6,6 @@ import {
   postLoginAdminHref,
 } from '@/routes/-auth-routing'
 import { platformAdminSession, regularUserSession } from '@/test/auth-session'
-import type { AuthSessionView } from '@/types/api'
 
 const adminSession = platformAdminSession()
 const userSession = regularUserSession()
@@ -44,16 +43,9 @@ describe('signed-in route selection', () => {
   })
 
   it('uses the no-access route when the resolved set is empty', () => {
-    const noAccessSession: AuthSessionView = {
-      ...regularUserSession([]),
-      permissions: {
-        group: 'users',
-        pages: [],
-        actions: [],
-        default_page: null,
-      },
-    }
+    const noAccessSession = regularUserSession([])
 
+    expect(noAccessSession.permissions.default_page).toBeNull()
     expect(defaultSignedInPath(noAccessSession)).toBe('/no-access')
     expect(canAccessSignedInPath(noAccessSession, '/no-access')).toBe(true)
   })

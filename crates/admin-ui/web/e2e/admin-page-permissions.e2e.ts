@@ -128,6 +128,37 @@ test('resolved groups support shared global reads and team-scoped service accoun
   )
   expect(forbiddenOtherTeamKey.status()).toBe(403)
 
+  const otherTeamKeyResponse = await createApiKeyForServiceAccount(
+    request,
+    root,
+    otherAdmin.cookie,
+    otherTeam.id,
+    otherAccount.id,
+    'Other team key',
+  )
+  expect(otherTeamKeyResponse.status()).toBe(200)
+  const otherTeamKeyBody = (await otherTeamKeyResponse.json()) as {
+    data: { api_key: { id: string } }
+  }
+  const updateBody = { model_grant_mode: 'explicit', model_keys: ['fast'] }
+  const forbiddenExistingKey = await request.patch(
+    `${root}/api/v1/admin/api-keys/${otherTeamKeyBody.data.api_key.id}`,
+    {
+      headers: { cookie: teamAdmin.cookie, 'content-type': 'application/json' },
+      data: updateBody,
+    },
+  )
+  const forbiddenMissingKey = await request.patch(
+    `${root}/api/v1/admin/api-keys/00000000-0000-0000-0000-000000000000`,
+    {
+      headers: { cookie: teamAdmin.cookie, 'content-type': 'application/json' },
+      data: updateBody,
+    },
+  )
+  expect(forbiddenExistingKey.status()).toBe(403)
+  expect(forbiddenMissingKey.status()).toBe(403)
+  expect(await forbiddenMissingKey.json()).toEqual(await forbiddenExistingKey.json())
+
   const scopedAccounts = await request.get(`${root}/api/v1/admin/identity/service-accounts`, {
     headers: { cookie: member.cookie },
   })

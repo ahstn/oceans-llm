@@ -120,6 +120,28 @@ models:
         upstream_model: gpt-4.1
 EOF
 
+case "${E2E_PERMISSION_SCENARIO:-default}" in
+  default)
+    ;;
+  overrides)
+    cat >>"$CONFIG_PATH" <<'EOF'
+
+permissions:
+  users:
+    pages: []
+  team_admins:
+    pages: [api_keys, api_keys, models]
+    default_page: api_keys
+  platform_admins:
+    pages: [mcp]
+EOF
+    ;;
+  *)
+    echo "Unknown E2E permission scenario: ${E2E_PERMISSION_SCENARIO}" >&2
+    exit 1
+    ;;
+esac
+
 if [[ ! -x "$E2E_GATEWAY_BIN" ]]; then
   echo "Gateway binary not found at $E2E_GATEWAY_BIN; building it before starting the E2E stack."
   (

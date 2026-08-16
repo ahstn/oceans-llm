@@ -44,7 +44,7 @@ export function platformAdminSession(pages = allAdminPages): AuthSessionView {
       group: 'platform_admins',
       pages,
       actions: allAdminActions,
-      default_page: pages.includes('api_keys') ? 'api_keys' : pages[0],
+      default_page: pages.includes('api_keys') ? 'api_keys' : (pages[0] ?? null),
     },
     user: {
       id: 'admin_1',
@@ -62,7 +62,7 @@ export function regularUserSession(pages = sharedAdminPages): AuthSessionView {
       group: 'users',
       pages,
       actions: userAdminActions,
-      default_page: pages.includes('usage_costs') ? 'usage_costs' : pages[0],
+      default_page: pages.includes('usage_costs') ? 'usage_costs' : (pages[0] ?? null),
     },
     user: {
       id: 'user_1',

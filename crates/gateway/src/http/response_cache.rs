@@ -194,9 +194,7 @@ mod tests {
             Arc::clone(&active),
             Arc::clone(&max_active),
         ));
-        for _ in 0..100 {
-            tokio::task::yield_now().await;
-        }
+        wait_for_gate_holders(&cache, 3).await;
 
         assert_eq!(active.load(Ordering::SeqCst), 1);
         release.add_permits(2);

@@ -7,7 +7,6 @@ import {
   ManageApiKeyDialog,
 } from '@/routes/api-keys/-components'
 import { PageHeader } from '@/components/layout/page-header'
-import { requireAuthenticatedSession } from '@/routes/-admin-guard'
 import { canPerformAdminAction } from '@/routes/-auth-routing'
 import { getApiKeys } from '@/server/admin-data.functions'
 import type { ApiKeysPayload } from '@/types/api'
@@ -18,7 +17,6 @@ export const Route = createFileRoute('/api-keys')({
   validateSearch: (search: Record<string, unknown>) => ({
     api_key_id: typeof search.api_key_id === 'string' ? search.api_key_id : undefined,
   }),
-  beforeLoad: ({ location }) => requireAuthenticatedSession(location),
   loader: () => getApiKeys(),
   component: ApiKeysPage,
 })
@@ -91,9 +89,7 @@ export function ApiKeysPage() {
 
       {canManage ? (
         <ManageApiKeyDialog
-          canReveal={canReveal}
-          canRevoke={canRevoke}
-          canUpdate={canUpdate}
+          actions={session.permissions.actions}
           form={state.manageForm}
           isPending={state.isPending}
           modelOptions={models}

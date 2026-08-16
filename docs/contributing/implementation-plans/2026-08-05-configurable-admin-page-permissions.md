@@ -418,7 +418,6 @@ Performance tests:
 Run all repo commands through `mise`:
 
 ```bash
-eval "$(/Users/ahstn/.local/bin/mise activate zsh)"
 mise run admin-contract-generate
 mise run admin-contract-check
 mise run ui-check

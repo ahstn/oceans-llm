@@ -43,6 +43,7 @@ import {
 } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type {
+  AdminAction,
   ApiKeyModelOptionView,
   ApiKeyOwnerServiceAccountView,
   ApiKeyOwnerUserView,
@@ -425,9 +426,7 @@ export function CreateApiKeyDialog({
 }
 
 export function ManageApiKeyDialog({
-  canReveal,
-  canRevoke,
-  canUpdate,
+  actions,
   form,
   isPending,
   modelOptions,
@@ -443,9 +442,7 @@ export function ManageApiKeyDialog({
   onCopy,
   onSubmit,
 }: {
-  canReveal: boolean
-  canRevoke: boolean
-  canUpdate: boolean
+  actions: AdminAction[]
   form: UpdateApiKeyInput
   isPending: boolean
   modelOptions: ApiKeyModelOptionView[]
@@ -461,6 +458,10 @@ export function ManageApiKeyDialog({
   onCopy: (value: string, successMessage: string) => void | Promise<void>
   onSubmit: (event: FormEvent<HTMLFormElement>) => void | Promise<void>
 }) {
+  const canReveal = actions.includes('reveal_api_key')
+  const canRevoke = actions.includes('revoke_api_key')
+  const canUpdate = actions.includes('update_api_key')
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={apiKeyDialogContentClassName}>
