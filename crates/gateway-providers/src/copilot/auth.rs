@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,6 +26,48 @@ struct GitHubInstallationTokenResponse {
     token: String,
     #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
+    #[serde(default)]
+    permissions: Option<BTreeMap<String, String>>,
+    #[serde(default)]
+    repository_selection: Option<String>,
+    #[serde(default)]
+    repositories: Option<Vec<GitHubRepository>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubRepository {
+    id: u64,
+}
+
+impl GitHubInstallationTokenResponse {
+    fn validate_scope(&self, repository_id: u64) -> Result<(), ProviderError> {
+        if let Some(permissions) = &self.permissions
+            && permissions.get("copilot_requests").map(String::as_str) != Some("write")
+        {
+            return Err(ProviderError::InvalidRequest(
+                "GitHub installation token response does not grant copilot_requests: write"
+                    .to_string(),
+            ));
+        }
+
+        if let Some(repository_selection) = &self.repository_selection
+            && repository_selection != "selected"
+        {
+            return Err(ProviderError::InvalidRequest(format!(
+                "GitHub installation token response has unexpected repository selection `{repository_selection}`"
+            )));
+        }
+
+        if let Some(repositories) = &self.repositories
+            && (repositories.len() != 1 || repositories[0].id != repository_id)
+        {
+            return Err(ProviderError::InvalidRequest(format!(
+                "GitHub installation token response does not match requested repository `{repository_id}`"
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -33,7 +76,7 @@ pub struct GitHubAppInstallationTokenSource {
     app_id: u64,
     private_key: EncodingKey,
     installation_id: u64,
-    repository_id: Option<u64>,
+    repository_id: u64,
     api_url: String,
 }
 
@@ -42,8 +85,14 @@ impl GitHubAppInstallationTokenSource {
         app_id: u64,
         private_key_pem: &str,
         installation_id: u64,
-        repository_id: Option<u64>,
+        repository_id: u64,
     ) -> Result<Self, ProviderError> {
+        if repository_id == 0 {
+            return Err(ProviderError::InvalidRequest(
+                "GitHub App repository ID cannot be 0".to_string(),
+            ));
+        }
+
         let key = EncodingKey::from_rsa_pem(private_key_pem.as_bytes()).map_err(|error| {
             ProviderError::InvalidRequest(format!(
                 "invalid GitHub App RSA private key PEM: {error}"
@@ -69,7 +118,7 @@ impl GitHubAppInstallationTokenSource {
         app_id: u64,
         private_key_path: &Path,
         installation_id: u64,
-        repository_id: Option<u64>,
+        repository_id: u64,
     ) -> Result<Self, ProviderError> {
         let pem = std::fs::read_to_string(private_key_path).map_err(|error| {
             ProviderError::InvalidRequest(format!(
@@ -111,20 +160,12 @@ impl AccessTokenSource for GitHubAppInstallationTokenSource {
             self.api_url, self.installation_id
         );
 
-        let mut body = serde_json::json!({
+        let body = serde_json::json!({
+            "repository_ids": [self.repository_id],
             "permissions": {
                 "copilot_requests": "write"
             }
         });
-
-        if let Some(repo_id) = self.repository_id
-            && let Some(map) = body.as_object_mut()
-        {
-            map.insert(
-                "repository_ids".to_string(),
-                serde_json::Value::Array(vec![serde_json::Value::Number(repo_id.into())]),
-            );
-        }
 
         let response = self
             .client
@@ -154,6 +195,7 @@ impl AccessTokenSource for GitHubAppInstallationTokenSource {
                     "invalid GitHub App installation token response: {error}"
                 ))
             })?;
+        parsed.validate_scope(self.repository_id)?;
 
         Ok(AccessToken {
             token: parsed.token,
@@ -168,13 +210,13 @@ pub enum CopilotAuthConfig {
         app_id: u64,
         private_key_pem: String,
         installation_id: u64,
-        repository_id: Option<u64>,
+        repository_id: u64,
     },
     GitHubAppKeyFile {
         app_id: u64,
         private_key_path: PathBuf,
         installation_id: u64,
-        repository_id: Option<u64>,
+        repository_id: u64,
     },
     Bearer {
         token: String,

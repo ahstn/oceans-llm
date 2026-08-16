@@ -4,9 +4,10 @@ use axum::Router;
 use axum::extract::Json;
 use axum::routing::post;
 use gateway_core::{
-    CoreChatMessage, CoreChatRequest, CoreResponsesRequest, OpenAiCompatDeveloperRole,
-    OpenAiCompatMaxTokensField, OpenAiCompatRouteCompatibility, ProviderClient,
-    ProviderRequestContext,
+    CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
+    GitHubCopilotChatApi, GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports,
+    OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatRouteCompatibility,
+    ProviderClient, ProviderRequestContext,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -49,7 +50,7 @@ UQ2sSTSfuLHz2F1jr5+pRNL2
 -----END PRIVATE KEY-----"#;
 
 fn dummy_context(upstream_model: &str) -> ProviderRequestContext {
-    ProviderRequestContext {
+    let mut context = ProviderRequestContext {
         request_id: "test-req-123".to_string(),
         model_key: "test-model".to_string(),
         provider_key: "github_copilot".to_string(),
@@ -58,47 +59,181 @@ fn dummy_context(upstream_model: &str) -> ProviderRequestContext {
         extra_body: Map::new(),
         request_headers: BTreeMap::new(),
         compatibility: Default::default(),
-    }
+    };
+    context.compatibility.github_copilot = Some(GitHubCopilotRouteCompatibility {
+        chat_api: Some(GitHubCopilotChatApi::ChatCompletions),
+        supports_responses: true,
+        supports_embeddings: true,
+        upstream_supports: GitHubCopilotUpstreamSupports {
+            streaming: true,
+            tool_calls: true,
+            vision: true,
+            structured_outputs: true,
+        },
+    });
+    context
+}
+
+fn messages_context(upstream_model: &str) -> ProviderRequestContext {
+    let mut context = dummy_context(upstream_model);
+    context
+        .compatibility
+        .github_copilot
+        .as_mut()
+        .expect("Copilot compatibility")
+        .chat_api = Some(GitHubCopilotChatApi::AnthropicMessages);
+    context
 }
 
 #[test]
 fn endpoint_routing_rules() {
+    let chat_context = dummy_context("claude-3-7-sonnet");
     assert_eq!(
-        CopilotProvider::resolve_chat_endpoint_suffix("gpt-4o"),
-        "chat/completions"
+        CopilotProvider::resolve_chat_api(&chat_context).unwrap(),
+        GitHubCopilotChatApi::ChatCompletions,
     );
+    let messages_context = messages_context("gpt-4o");
     assert_eq!(
-        CopilotProvider::resolve_chat_endpoint_suffix("gemini-2.5-flash"),
-        "chat/completions"
+        CopilotProvider::resolve_chat_api(&messages_context).unwrap(),
+        GitHubCopilotChatApi::AnthropicMessages,
     );
+
+    let mut unknown_context = dummy_context("claude-3-7-sonnet");
+    unknown_context.compatibility.github_copilot = None;
+    let error = CopilotProvider::resolve_chat_api(&unknown_context).unwrap_err();
+    assert!(error.to_string().contains("does not configure a chat API"));
+}
+
+#[test]
+fn compatibility_profile_matches_canary_contract() {
+    let contract: Value = serde_json::from_str(include_str!(
+        "../../../../scripts/copilot-compatibility-profile.json"
+    ))
+    .expect("valid canary compatibility profile");
+    let config = CopilotProviderConfig::new(
+        "github_copilot".to_string(),
+        CopilotAuthConfig::Bearer {
+            token: "test-token".to_string(),
+        },
+    );
+    let profile = VSCODE_CHAT_2026_06_01_PROFILE;
+
+    assert_eq!(contract["name"], "vscode_chat_2026_06_01");
+    assert_eq!(contract["editor_version"], config.editor_version);
+    assert_eq!(contract["plugin_version"], profile.plugin_version);
+    assert_eq!(contract["integration_id"], config.integration_id);
+    assert_eq!(contract["intent"], profile.openai_intent);
+    assert_eq!(contract["interaction_type"], profile.interaction_type);
+    assert_eq!(contract["api_version"], profile.github_api_version);
+    assert_eq!(contract["anthropic_version"], profile.anthropic_version);
+}
+
+#[test]
+fn initiator_follows_the_last_conversation_item() {
+    let mut chat = CoreChatRequest {
+        model: "test".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!("new turn"),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra: BTreeMap::new(),
+    };
+    assert_eq!(CopilotInitiator::for_chat(&chat), CopilotInitiator::User);
+
+    chat.messages[0].role = "assistant".to_string();
+    assert_eq!(CopilotInitiator::for_chat(&chat), CopilotInitiator::Agent);
+
+    chat.messages[0].role = "tool".to_string();
+    assert_eq!(CopilotInitiator::for_chat(&chat), CopilotInitiator::Agent);
+
+    chat.messages[0].role = "user".to_string();
+    chat.messages[0].content = json!([{"type": "tool_result", "tool_use_id": "call-1"}]);
+    assert_eq!(CopilotInitiator::for_chat(&chat), CopilotInitiator::Agent);
+
+    let mut responses = CoreResponsesRequest {
+        model: "test".to_string(),
+        input: json!("new turn"),
+        stream: false,
+        instructions: None,
+        tools: None,
+        tool_choice: None,
+        reasoning: None,
+        text: None,
+        extra: BTreeMap::new(),
+    };
     assert_eq!(
-        CopilotProvider::resolve_chat_endpoint_suffix("claude-3-7-sonnet"),
-        "v1/messages"
+        CopilotInitiator::for_responses(&responses),
+        CopilotInitiator::User
     );
+    responses.input = json!([{"type": "function_call_output", "call_id": "call-1"}]);
     assert_eq!(
-        CopilotProvider::resolve_chat_endpoint_suffix("claude-opus-4-5"),
-        "v1/messages"
+        CopilotInitiator::for_responses(&responses),
+        CopilotInitiator::Agent
     );
-    assert_eq!(
-        CopilotProvider::resolve_chat_endpoint_suffix("anthropic/claude-3-7-sonnet"),
-        "v1/messages"
+}
+
+#[test]
+fn embedding_response_normalization_preserves_upstream_metadata() {
+    let response = normalize_embeddings_response(
+        json!({
+            "object": "custom.list",
+            "model": "upstream-model",
+            "data": []
+        }),
+        "requested-model",
     );
-    assert_eq!(
-        CopilotProvider::resolve_chat_endpoint_suffix("anthropic/claude-opus-4-5"),
-        "v1/messages"
+
+    assert_eq!(response["object"], "custom.list");
+    assert_eq!(response["model"], "upstream-model");
+}
+
+#[tokio::test]
+async fn embeddings_add_missing_openai_response_metadata() {
+    let app = Router::new().route(
+        "/embeddings",
+        post(|| async {
+            Json(json!({
+                "data": [{
+                    "object": "embedding",
+                    "embedding": [0.25, 0.75],
+                    "index": 0
+                }],
+                "usage": { "prompt_tokens": 1, "total_tokens": 1 }
+            }))
+        }),
     );
-    assert_eq!(
-        CopilotProvider::resolve_chat_endpoint_suffix("gpt-5.4"),
-        "chat/completions"
+
+    let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let mut config = CopilotProviderConfig::new(
+        "github_copilot".to_string(),
+        CopilotAuthConfig::Bearer {
+            token: "test-token".to_string(),
+        },
     );
-    assert_eq!(
-        CopilotProvider::resolve_chat_endpoint_suffix("gpt-5-mini"),
-        "chat/completions"
-    );
-    assert_eq!(
-        CopilotProvider::resolve_chat_endpoint_suffix("gpt-5-codex"),
-        "chat/completions"
-    );
+    config.base_url = format!("http://{addr}");
+    let provider = CopilotProvider::new(config).unwrap();
+    let request = CoreEmbeddingsRequest {
+        model: "public-model-key".to_string(),
+        input: json!("hello"),
+        extra: BTreeMap::new(),
+    };
+
+    let response = provider
+        .embeddings(&request, &dummy_context("copilot-embedding-model"))
+        .await
+        .unwrap();
+
+    assert_eq!(response["object"], "list");
+    assert_eq!(response["model"], "copilot-embedding-model");
+    assert_eq!(response["data"][0]["embedding"], json!([0.25, 0.75]));
 }
 
 #[tokio::test]
@@ -136,6 +271,19 @@ async fn builds_chat_completions_with_copilot_headers() {
                         .and_then(|v| v.to_str().ok())
                         .unwrap_or_default()
                         .to_string();
+                    let profile_headers = [
+                        "editor-plugin-version",
+                        "openai-intent",
+                        "x-interaction-type",
+                        "x-initiator",
+                    ]
+                    .map(|name| {
+                        headers
+                            .get(name)
+                            .and_then(|value| value.to_str().ok())
+                            .unwrap_or_default()
+                            .to_string()
+                    });
 
                     tx.send((
                         editor_version,
@@ -143,6 +291,7 @@ async fn builds_chat_completions_with_copilot_headers() {
                         auth,
                         api_version,
                         req_id,
+                        profile_headers,
                         body,
                     ))
                     .await
@@ -195,18 +344,25 @@ async fn builds_chat_completions_with_copilot_headers() {
         extra: BTreeMap::new(),
     };
 
-    let context = dummy_context("gpt-4o");
+    let mut context = dummy_context("gpt-4o");
+    context
+        .extra_headers
+        .insert("x-initiator".to_string(), json!("agent"));
     let response = provider.chat_completions(&request, &context).await.unwrap();
 
     assert_eq!(response["choices"][0]["message"]["content"], "Hello world");
 
-    let (editor_version, integration_id, auth, api_version, req_id, body) =
+    let (editor_version, integration_id, auth, api_version, req_id, profile_headers, body) =
         rx.recv().await.unwrap();
     assert_eq!(editor_version, "vscode/1.126.0");
     assert_eq!(integration_id, "vscode-chat");
     assert_eq!(auth, "Bearer test-ghs-token");
     assert_eq!(api_version, "2026-06-01");
     assert_eq!(req_id, "test-req-123");
+    assert_eq!(profile_headers[0], DEFAULT_COPILOT_PLUGIN_VERSION);
+    assert_eq!(profile_headers[1], "conversation-agent");
+    assert_eq!(profile_headers[2], "conversation-agent");
+    assert_eq!(profile_headers[3], "user");
     assert_eq!(body["model"], "gpt-4o");
 }
 
@@ -297,7 +453,7 @@ async fn builds_claude_messages_request() {
         extra: BTreeMap::new(),
     };
 
-    let context = dummy_context("claude-3-7-sonnet");
+    let context = messages_context("claude-3-7-sonnet");
     let response = provider.chat_completions(&request, &context).await.unwrap();
 
     assert_eq!(
@@ -350,7 +506,12 @@ async fn applies_openai_compatibility_to_chat_requests() {
     });
 
     let built = provider
-        .build_chat_request(&request, &context, false)
+        .build_chat_request(
+            &request,
+            &context,
+            GitHubCopilotChatApi::ChatCompletions,
+            false,
+        )
         .await
         .unwrap();
     let body: Value = serde_json::from_slice(
@@ -421,6 +582,71 @@ async fn normalizes_responses_replay_ids() {
 }
 
 #[tokio::test]
+async fn rejects_operations_missing_from_route_metadata() {
+    let provider = CopilotProvider::new(CopilotProviderConfig::new(
+        "github_copilot".to_string(),
+        CopilotAuthConfig::Bearer {
+            token: "test-token".to_string(),
+        },
+    ))
+    .unwrap();
+    let mut context = dummy_context("gpt-5");
+    let compatibility = context
+        .compatibility
+        .github_copilot
+        .as_mut()
+        .expect("Copilot compatibility");
+    compatibility.supports_responses = false;
+    compatibility.supports_embeddings = false;
+    compatibility.upstream_supports.streaming = false;
+
+    let chat = CoreChatRequest {
+        model: "gpt-5".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!("hello"),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: true,
+        extra: BTreeMap::new(),
+    };
+    let error = provider
+        .build_chat_request(&chat, &context, GitHubCopilotChatApi::ChatCompletions, true)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("does not support streaming"));
+
+    let responses = CoreResponsesRequest {
+        model: "gpt-5".to_string(),
+        input: json!("hello"),
+        stream: false,
+        instructions: None,
+        tools: None,
+        tool_choice: None,
+        reasoning: None,
+        text: None,
+        extra: BTreeMap::new(),
+    };
+    let error = provider
+        .build_responses_request(&responses, &context, false)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("does not support responses"));
+
+    let embeddings = CoreEmbeddingsRequest {
+        model: "embedding".to_string(),
+        input: json!("hello"),
+        extra: BTreeMap::new(),
+    };
+    let error = provider
+        .build_embeddings_request(&embeddings, &context)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("does not support embeddings"));
+}
+
+#[tokio::test]
 async fn github_app_installation_token_source_mints_token() {
     let (tx, mut rx) = mpsc::channel(1);
 
@@ -445,7 +671,12 @@ async fn github_app_installation_token_source_mints_token() {
 
                     Json(json!({
                         "token": "ghs_installation_token_abc",
-                        "expires_at": expires_at
+                        "expires_at": expires_at,
+                        "permissions": {
+                            "copilot_requests": "write"
+                        },
+                        "repository_selection": "selected",
+                        "repositories": [{ "id": 67890 }]
                     }))
                 }
             },
@@ -458,10 +689,9 @@ async fn github_app_installation_token_source_mints_token() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let source =
-        GitHubAppInstallationTokenSource::new(99999, TEST_RSA_PRIVATE_KEY, 12345, Some(67890))
-            .unwrap()
-            .with_api_url(format!("http://{addr}"));
+    let source = GitHubAppInstallationTokenSource::new(99999, TEST_RSA_PRIVATE_KEY, 12345, 67890)
+        .unwrap()
+        .with_api_url(format!("http://{addr}"));
 
     let token = source.fetch_token().await.unwrap();
     assert_eq!(token.token, "ghs_installation_token_abc");
@@ -470,4 +700,101 @@ async fn github_app_installation_token_source_mints_token() {
     assert!(auth.starts_with("Bearer ey"));
     assert_eq!(body["permissions"]["copilot_requests"], "write");
     assert_eq!(body["repository_ids"][0], 67890);
+}
+
+async fn token_source_with_response(response: Value) -> GitHubAppInstallationTokenSource {
+    let app = Router::new().route(
+        "/app/installations/12345/access_tokens",
+        post(move || {
+            let response = response.clone();
+            async move { Json(response) }
+        }),
+    );
+
+    let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    GitHubAppInstallationTokenSource::new(99999, TEST_RSA_PRIVATE_KEY, 12345, 67890)
+        .unwrap()
+        .with_api_url(format!("http://{addr}"))
+}
+
+fn installation_token_response() -> Value {
+    let expires_at = (OffsetDateTime::now_utc() + time::Duration::hours(1))
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+
+    json!({
+        "token": "ghs_installation_token_abc",
+        "expires_at": expires_at,
+        "permissions": {
+            "copilot_requests": "write"
+        },
+        "repository_selection": "selected",
+        "repositories": [{ "id": 67890 }]
+    })
+}
+
+#[test]
+fn github_app_installation_token_source_rejects_zero_repository_id() {
+    let error = match GitHubAppInstallationTokenSource::new(99999, TEST_RSA_PRIVATE_KEY, 12345, 0) {
+        Ok(_) => panic!("zero repository ID should fail"),
+        Err(error) => error,
+    };
+
+    assert!(error.to_string().contains("repository ID cannot be 0"));
+}
+
+#[tokio::test]
+async fn github_app_installation_token_source_rejects_wrong_permission() {
+    let mut response = installation_token_response();
+    response["permissions"]["copilot_requests"] = json!("read");
+    let source = token_source_with_response(response).await;
+
+    let error = source
+        .fetch_token()
+        .await
+        .expect_err("wrong Copilot permission should fail");
+
+    assert!(error.to_string().contains("copilot_requests: write"));
+}
+
+#[tokio::test]
+async fn github_app_installation_token_source_accepts_lightweight_response() {
+    let expires_at = (OffsetDateTime::now_utc() + time::Duration::hours(1))
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    let source = token_source_with_response(json!({
+        "token": "ghs_installation_token_abc",
+        "expires_at": expires_at
+    }))
+    .await;
+
+    let token = source
+        .fetch_token()
+        .await
+        .expect("GitHub can omit optional scope metadata from the response");
+
+    assert_eq!(token.token, "ghs_installation_token_abc");
+}
+
+#[tokio::test]
+async fn github_app_installation_token_source_rejects_wrong_repository_scope() {
+    let mut response = installation_token_response();
+    response["repositories"][0]["id"] = json!(98765);
+    let source = token_source_with_response(response).await;
+
+    let error = source
+        .fetch_token()
+        .await
+        .expect_err("wrong repository scope should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("does not match requested repository `67890`")
+    );
 }

@@ -1175,9 +1175,9 @@ fn route_effective_provider_capabilities(
         return vertex_route_capabilities_for_upstream_model(Some(&route.upstream_model));
     }
     if provider.provider_type() == "github_copilot" {
-        return gateway_core::github_copilot_route_capabilities_for_upstream_model(Some(
-            &route.upstream_model,
-        ));
+        return gateway_core::github_copilot_route_capabilities(
+            route.compatibility.github_copilot.as_ref(),
+        );
     }
 
     provider.capabilities()
@@ -1954,7 +1954,8 @@ mod tests {
     use axum::http::{HeaderMap, HeaderValue};
     use gateway_core::{
         CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, CoreRequestRequirements,
-        CoreResponsesRequest, GatewayError, ModelRoute, ProviderCapabilities, ProviderClient,
+        CoreResponsesRequest, GatewayError, GitHubCopilotChatApi, GitHubCopilotRouteCompatibility,
+        GitHubCopilotUpstreamSupports, ModelRoute, ProviderCapabilities, ProviderClient,
         ProviderError, ProviderRegistry, ProviderRequestContext, ProviderStream,
     };
     use serde_json::{Value, json};
@@ -2096,21 +2097,55 @@ mod tests {
         assert!(anthropic_capabilities.tools);
     }
     #[test]
-    fn copilot_claude_route_is_not_eligible_for_json_schema() {
+    fn copilot_capabilities_follow_route_endpoint_metadata() {
         let provider = StaticProvider {
             provider_type: "github_copilot",
             capabilities: ProviderCapabilities::all_enabled(),
         };
-        let claude_route = route(
+        let mut claude_route = route(
             "anthropic/claude-sonnet-4-6",
             ProviderCapabilities::all_enabled(),
         );
+        claude_route.compatibility.github_copilot = Some(GitHubCopilotRouteCompatibility {
+            chat_api: Some(GitHubCopilotChatApi::AnthropicMessages),
+            supports_responses: false,
+            supports_embeddings: false,
+            upstream_supports: GitHubCopilotUpstreamSupports {
+                streaming: true,
+                tool_calls: true,
+                vision: true,
+                ..Default::default()
+            },
+        });
         let capabilities = route_effective_provider_capabilities(&provider, &claude_route)
             .intersect(claude_route.capabilities);
 
         assert!(!capabilities.json_schema);
         assert!(capabilities.chat_completions);
         assert!(capabilities.tools);
+
+        let unknown_route = route("unknown", ProviderCapabilities::all_enabled());
+        let unknown_capabilities = route_effective_provider_capabilities(&provider, &unknown_route)
+            .intersect(unknown_route.capabilities);
+        assert!(!unknown_capabilities.chat_completions);
+        assert!(!unknown_capabilities.responses);
+        assert!(!unknown_capabilities.embeddings);
+
+        let mut responses_route = route("gpt-5", ProviderCapabilities::all_enabled());
+        responses_route.compatibility.github_copilot = Some(GitHubCopilotRouteCompatibility {
+            chat_api: None,
+            supports_responses: true,
+            supports_embeddings: false,
+            upstream_supports: GitHubCopilotUpstreamSupports {
+                streaming: true,
+                ..Default::default()
+            },
+        });
+        let responses_capabilities =
+            route_effective_provider_capabilities(&provider, &responses_route)
+                .intersect(responses_route.capabilities);
+        assert!(!responses_capabilities.chat_completions);
+        assert!(responses_capabilities.responses);
     }
 
     #[test]

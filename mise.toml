@@ -122,7 +122,12 @@ run = "cargo run -p gateway --bin gateway -- serve"
 
 [tasks.test]
 description = "Run repository unit tests"
-depends = ["rust-test", "ui-test", "review-agent-action-test"]
+depends = [
+  "rust-test",
+  "ui-test",
+  "review-agent-action-test",
+  "copilot-installation-canary-test",
+]
 
 [tasks.gateway-serve]
 description = "Run local `gateway serve` against `gateway.yaml`"
@@ -354,6 +359,14 @@ run = "npm run typecheck --prefix tests/harness-integration"
 description = "Run Pi and OpenCode live integration tests through Oceans LLM Gateway"
 depends = ["harness-integration-install"]
 run = "npm test --prefix tests/harness-integration"
+
+[tasks.copilot-installation-canary-test]
+description = "Test the GitHub Copilot installation-token canary without external credentials"
+run = "node --test scripts/copilot-installation-canary.test.mjs"
+
+[tasks.copilot-installation-canary]
+description = "Run the opt-in live GitHub Copilot installation-token canary"
+run = "node scripts/copilot-installation-canary.mjs"
 
 [tasks.release]
 description = "Create and publish a release"

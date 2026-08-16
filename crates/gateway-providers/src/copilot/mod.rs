@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use gateway_core::{
-    CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ProviderCapabilities,
-    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, GitHubCopilotChatApi,
+    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
     core_chat_request_to_openai, core_embeddings_request_to_openai,
     core_responses_request_to_openai,
 };
@@ -32,6 +32,105 @@ pub const DEFAULT_COPILOT_EDITOR_VERSION: &str = "vscode/1.126.0";
 pub const DEFAULT_COPILOT_PLUGIN_VERSION: &str = "copilot-chat/0.35.0";
 pub const DEFAULT_COPILOT_INTEGRATION_ID: &str = "vscode-chat";
 pub const DEFAULT_COPILOT_API_VERSION: &str = "2026-06-01";
+#[derive(Debug, Clone, Copy)]
+struct CopilotCompatibilityProfile {
+    plugin_version: &'static str,
+    openai_intent: &'static str,
+    interaction_type: &'static str,
+    github_api_version: &'static str,
+    anthropic_version: &'static str,
+}
+
+const VSCODE_CHAT_2026_06_01_PROFILE: CopilotCompatibilityProfile = CopilotCompatibilityProfile {
+    plugin_version: DEFAULT_COPILOT_PLUGIN_VERSION,
+    openai_intent: "conversation-agent",
+    interaction_type: "conversation-agent",
+    github_api_version: DEFAULT_COPILOT_API_VERSION,
+    anthropic_version: "2023-06-01",
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CopilotInitiator {
+    User,
+    Agent,
+}
+
+impl CopilotInitiator {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Agent => "agent",
+        }
+    }
+
+    fn for_chat(request: &CoreChatRequest) -> Self {
+        let Some(message) = request.messages.last() else {
+            return Self::Agent;
+        };
+
+        match message.role.to_ascii_lowercase().as_str() {
+            "user" if !content_is_only_tool_results(&message.content) => Self::User,
+            _ => Self::Agent,
+        }
+    }
+
+    fn for_responses(request: &CoreResponsesRequest) -> Self {
+        let last_input = match &request.input {
+            Value::Array(items) => items.last(),
+            value => Some(value),
+        };
+
+        match last_input {
+            Some(Value::String(_)) => Self::User,
+            Some(value) if response_input_is_user_turn(value) => Self::User,
+            _ => Self::Agent,
+        }
+    }
+}
+
+fn content_is_only_tool_results(content: &Value) -> bool {
+    let Value::Array(parts) = content else {
+        return false;
+    };
+    !parts.is_empty()
+        && parts.iter().all(|part| {
+            part.get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| kind == "tool_result" || kind.ends_with("_call_output"))
+        })
+}
+
+fn response_input_is_user_turn(input: &Value) -> bool {
+    let Some(object) = input.as_object() else {
+        return false;
+    };
+    if object
+        .get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|kind| kind.ends_with("_call_output"))
+    {
+        return false;
+    }
+    object
+        .get("role")
+        .and_then(Value::as_str)
+        .is_some_and(|role| role.eq_ignore_ascii_case("user"))
+        && !object
+            .get("content")
+            .is_some_and(content_is_only_tool_results)
+}
+
+fn normalize_embeddings_response(mut response: Value, requested_model: &str) -> Value {
+    if let Some(object) = response.as_object_mut() {
+        object
+            .entry("object")
+            .or_insert_with(|| Value::String("list".to_string()));
+        object
+            .entry("model")
+            .or_insert_with(|| Value::String(requested_model.to_string()));
+    }
+    response
+}
 
 #[derive(Debug, Clone)]
 pub struct CopilotProviderConfig {
@@ -89,15 +188,26 @@ impl CopilotProvider {
         self.access_token_source.token().await
     }
 
-    /// Selects the appropriate endpoint suffix based on the upstream model ID and format.
-    #[must_use]
-    pub fn resolve_chat_endpoint_suffix(model: &str) -> &'static str {
-        let normalized = model.to_ascii_lowercase();
-        let model_name = normalized.rsplit('/').next().unwrap_or(&normalized);
-        if model_name.starts_with("claude-") {
-            "v1/messages"
-        } else {
-            "chat/completions"
+    /// Selects the configured chat API and fails closed when metadata is absent.
+    fn resolve_chat_api(
+        context: &ProviderRequestContext,
+    ) -> Result<GitHubCopilotChatApi, ProviderError> {
+        context
+            .compatibility
+            .github_copilot
+            .as_ref()
+            .and_then(|compatibility| compatibility.chat_api)
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "github_copilot route does not configure a chat API".to_string(),
+                )
+            })
+    }
+
+    const fn chat_endpoint_suffix(chat_api: GitHubCopilotChatApi) -> &'static str {
+        match chat_api {
+            GitHubCopilotChatApi::AnthropicMessages => "v1/messages",
+            GitHubCopilotChatApi::ChatCompletions => "chat/completions",
         }
     }
 
@@ -106,20 +216,21 @@ impl CopilotProvider {
         mut request: reqwest::RequestBuilder,
         token: &str,
         context: &ProviderRequestContext,
-        endpoint_suffix: &str,
+        chat_api: Option<GitHubCopilotChatApi>,
     ) -> reqwest::RequestBuilder {
+        let profile = VSCODE_CHAT_2026_06_01_PROFILE;
         request = request
             .bearer_auth(token)
             .header("editor-version", &self.config.editor_version)
-            .header("editor-plugin-version", DEFAULT_COPILOT_PLUGIN_VERSION)
+            .header("editor-plugin-version", profile.plugin_version)
             .header("copilot-integration-id", &self.config.integration_id)
-            .header("openai-intent", "conversation-panel")
-            .header("x-initiator", "agent")
-            .header("x-github-api-version", DEFAULT_COPILOT_API_VERSION)
+            .header("openai-intent", profile.openai_intent)
+            .header("x-interaction-type", profile.interaction_type)
+            .header("x-github-api-version", profile.github_api_version)
             .header("x-request-id", &context.request_id);
 
-        if endpoint_suffix == "v1/messages" {
-            request = request.header("anthropic-version", "2023-06-01");
+        if chat_api == Some(GitHubCopilotChatApi::AnthropicMessages) {
+            request = request.header("anthropic-version", profile.anthropic_version);
         }
 
         for (name, value) in &self.config.default_headers {
@@ -140,23 +251,42 @@ impl CopilotProvider {
         endpoint_suffix: &str,
         body: Value,
         context: &ProviderRequestContext,
+        chat_api: Option<GitHubCopilotChatApi>,
+        initiator: CopilotInitiator,
     ) -> Result<reqwest::Request, ProviderError> {
         let token = self.token().await?;
         let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
         let req_builder = self.client.post(url).json(&body);
-        let req_builder = self.apply_copilot_headers(req_builder, &token, context, endpoint_suffix);
-        req_builder.build().map_err(map_reqwest_error)
+        let req_builder = self.apply_copilot_headers(req_builder, &token, context, chat_api);
+        let mut request = req_builder.build().map_err(map_reqwest_error)?;
+        request.headers_mut().insert(
+            "x-initiator",
+            reqwest::header::HeaderValue::from_static(initiator.as_str()),
+        );
+        Ok(request)
     }
 
     async fn build_chat_request(
         &self,
         request: &CoreChatRequest,
         context: &ProviderRequestContext,
+        chat_api: GitHubCopilotChatApi,
         stream: bool,
     ) -> Result<reqwest::Request, ProviderError> {
-        let endpoint_suffix = Self::resolve_chat_endpoint_suffix(&context.upstream_model);
+        let endpoint_suffix = Self::chat_endpoint_suffix(chat_api);
+        if stream
+            && !context
+                .compatibility
+                .github_copilot
+                .as_ref()
+                .is_some_and(|compatibility| compatibility.upstream_supports.streaming)
+        {
+            return Err(ProviderError::InvalidRequest(
+                "github_copilot route does not support streaming".to_string(),
+            ));
+        }
 
-        let body = if endpoint_suffix == "v1/messages" {
+        let body = if chat_api == GitHubCopilotChatApi::AnthropicMessages {
             let mut stream_request = request.clone();
             stream_request.stream = stream;
             // Anthropic Messages API requires `max_tokens`; inject a sensible default if unspecified.
@@ -191,8 +321,14 @@ impl CopilotProvider {
             body
         };
 
-        self.build_copilot_request(endpoint_suffix, body, context)
-            .await
+        self.build_copilot_request(
+            endpoint_suffix,
+            body,
+            context,
+            Some(chat_api),
+            CopilotInitiator::for_chat(request),
+        )
+        .await
     }
 
     async fn build_embeddings_request(
@@ -212,7 +348,17 @@ impl CopilotProvider {
             merge_object_overrides(object, &context.extra_body);
         }
 
-        self.build_copilot_request("embeddings", body, context)
+        if !context
+            .compatibility
+            .github_copilot
+            .as_ref()
+            .is_some_and(|compatibility| compatibility.supports_embeddings)
+        {
+            return Err(ProviderError::InvalidRequest(
+                "github_copilot route does not support embeddings".to_string(),
+            ));
+        }
+        self.build_copilot_request("embeddings", body, context, None, CopilotInitiator::Agent)
             .await
     }
 
@@ -222,6 +368,28 @@ impl CopilotProvider {
         context: &ProviderRequestContext,
         stream: bool,
     ) -> Result<reqwest::Request, ProviderError> {
+        if !context
+            .compatibility
+            .github_copilot
+            .as_ref()
+            .is_some_and(|compatibility| compatibility.supports_responses)
+        {
+            return Err(ProviderError::InvalidRequest(
+                "github_copilot route does not support responses".to_string(),
+            ));
+        }
+        if stream
+            && !context
+                .compatibility
+                .github_copilot
+                .as_ref()
+                .is_some_and(|compatibility| compatibility.upstream_supports.streaming)
+        {
+            return Err(ProviderError::InvalidRequest(
+                "github_copilot route does not support streaming".to_string(),
+            ));
+        }
+
         let mut stream_request = request.clone();
         stream_request.stream = stream;
         let wire_request = core_responses_request_to_openai(&stream_request);
@@ -237,7 +405,14 @@ impl CopilotProvider {
         }
         crate::replay_id::normalize_openai_responses_replay_ids(&mut body)?;
 
-        self.build_copilot_request("responses", body, context).await
+        self.build_copilot_request(
+            "responses",
+            body,
+            context,
+            None,
+            CopilotInitiator::for_responses(request),
+        )
+        .await
     }
     async fn execute_request(
         &self,
@@ -287,7 +462,7 @@ impl ProviderClient for CopilotProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::all_enabled()
+        ProviderCapabilities::none()
     }
 
     async fn chat_completions(
@@ -295,10 +470,12 @@ impl ProviderClient for CopilotProvider {
         request: &CoreChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        let endpoint_suffix = Self::resolve_chat_endpoint_suffix(&context.upstream_model);
-        let request = self.build_chat_request(request, context, false).await?;
+        let chat_api = Self::resolve_chat_api(context)?;
+        let request = self
+            .build_chat_request(request, context, chat_api, false)
+            .await?;
         let value = self.execute_json_request(request).await?;
-        if endpoint_suffix == "v1/messages" {
+        if chat_api == GitHubCopilotChatApi::AnthropicMessages {
             Ok(normalize_anthropic_messages_response(
                 &value,
                 context,
@@ -314,11 +491,13 @@ impl ProviderClient for CopilotProvider {
         request: &CoreChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError> {
-        let endpoint_suffix = Self::resolve_chat_endpoint_suffix(&context.upstream_model);
-        let request = self.build_chat_request(request, context, true).await?;
+        let chat_api = Self::resolve_chat_api(context)?;
+        let request = self
+            .build_chat_request(request, context, chat_api, true)
+            .await?;
         let response = self.execute_stream_request(request).await?;
 
-        if endpoint_suffix == "v1/messages" {
+        if chat_api == GitHubCopilotChatApi::AnthropicMessages {
             Ok(normalize_anthropic_messages_stream(
                 response.bytes_stream(),
                 context.clone(),
@@ -335,7 +514,11 @@ impl ProviderClient for CopilotProvider {
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         let request = self.build_embeddings_request(request, context).await?;
-        self.execute_json_request(request).await
+        let response = self.execute_json_request(request).await?;
+        Ok(normalize_embeddings_response(
+            response,
+            &context.upstream_model,
+        ))
     }
 
     async fn responses(

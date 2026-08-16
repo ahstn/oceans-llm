@@ -174,8 +174,7 @@ pub enum GitHubCopilotAuthConfig {
         app_id: u64,
         private_key: String,
         installation_id: u64,
-        #[serde(default)]
-        repository_id: Option<u64>,
+        repository_id: u64,
     },
     Bearer {
         token: String,
