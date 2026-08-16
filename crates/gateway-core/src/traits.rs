@@ -11,7 +11,7 @@ use crate::{
     batch::{
         BatchAccessScope, BatchCapabilities, BatchItemPage, BatchItemQuery, BatchItemRecord,
         BatchJobRecord, BatchPage, BatchPollUpdate, BatchQuery, BatchStatus, NewBatchJob,
-        ProviderBatchRequest, ProviderBatchResult, ProviderBatchState,
+        ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderBatchSubmission,
     },
     budgets::{BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource},
     domain::{
@@ -705,6 +705,14 @@ pub trait BatchRepository: Send + Sync {
         now: OffsetDateTime,
     ) -> Result<u64, StoreError>;
 
+    async fn renew_batch_lease(
+        &self,
+        batch_id: Uuid,
+        lease_owner: &str,
+        now: OffsetDateTime,
+        lease_expires_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+
     async fn mark_batch_submitted(
         &self,
         batch_id: Uuid,
@@ -1065,11 +1073,8 @@ pub trait ProviderClient: Send + Sync {
         BatchCapabilities::NONE
     }
 
-    async fn submit_batch(
-        &self,
-        _request: &ProviderBatchRequest,
-    ) -> Result<ProviderBatchState, ProviderError> {
-        Err(ProviderError::NotImplemented(format!(
+    async fn submit_batch(&self, _request: &ProviderBatchRequest) -> ProviderBatchSubmission {
+        ProviderBatchSubmission::NotSubmitted(ProviderError::NotImplemented(format!(
             "{} does not support batch submission",
             self.provider_type()
         )))

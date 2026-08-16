@@ -1,6 +1,6 @@
 use gateway_core::{
     BatchCapabilities, BatchStatus, Money4, ProviderBatchRequest, ProviderBatchResult,
-    ProviderBatchState, ProviderError,
+    ProviderBatchState, ProviderBatchSubmission, ProviderError,
 };
 use reqwest::multipart::{Form, Part};
 use serde::Serialize;
@@ -47,9 +47,9 @@ impl OpenAiCompatProvider {
     pub(super) async fn submit_batch_impl(
         &self,
         request: &ProviderBatchRequest,
-    ) -> Result<ProviderBatchState, ProviderError> {
+    ) -> ProviderBatchSubmission {
         match self.config.batch.dialect {
-            OpenAiBatchDialect::Disabled => Err(batch_disabled()),
+            OpenAiBatchDialect::Disabled => ProviderBatchSubmission::NotSubmitted(batch_disabled()),
             OpenAiBatchDialect::OpenAi => self.submit_openai_batch(request).await,
             OpenAiBatchDialect::OpenRouter => self.submit_openrouter_batch(request).await,
         }
@@ -109,45 +109,67 @@ impl OpenAiCompatProvider {
         }
     }
 
-    async fn submit_openai_batch(
-        &self,
-        request: &ProviderBatchRequest,
-    ) -> Result<ProviderBatchState, ProviderError> {
+    async fn submit_openai_batch(&self, request: &ProviderBatchRequest) -> ProviderBatchSubmission {
         let mut jsonl = String::new();
         for item in &request.items {
-            let body = self.prepare_batch_item_body(request, item)?;
+            let body = match self.prepare_batch_item_body(request, item) {
+                Ok(body) => body,
+                Err(error) => return ProviderBatchSubmission::NotSubmitted(error),
+            };
             let line = json!({
                 "custom_id": item.custom_id,
                 "method": "POST",
                 "url": request.endpoint.provider_path(),
                 "body": body,
             });
-            jsonl.push_str(&serde_json::to_string(&line).map_err(|error| {
-                ProviderError::Transport(format!("failed encoding OpenAI batch JSONL: {error}"))
-            })?);
+            let encoded = match serde_json::to_string(&line) {
+                Ok(encoded) => encoded,
+                Err(error) => {
+                    return ProviderBatchSubmission::NotSubmitted(ProviderError::Transport(
+                        format!("failed encoding OpenAI batch JSONL: {error}"),
+                    ));
+                }
+            };
+            jsonl.push_str(&encoded);
             jsonl.push('\n');
         }
-        let file_id = self.upload_openai_batch_file(jsonl).await?;
-        let value = self
+        let file_id = match self.upload_openai_batch_file(jsonl).await {
+            Ok(file_id) => file_id,
+            Err(error) => return ProviderBatchSubmission::NotSubmitted(error),
+        };
+        let result = self
             .batch_json(
                 reqwest::Method::POST,
                 "batches",
                 Some(json!({
-                    "input_file_id": file_id,
+                    "input_file_id": &file_id,
                     "endpoint": request.endpoint.provider_path(),
                     "completion_window": "24h",
                     "metadata": {"oceans_batch_id": request.batch_id.to_string()},
                 })),
             )
-            .await?;
-        parse_state(&value)
+            .await
+            .and_then(|value| parse_state(&value));
+        match result {
+            Ok(state) => ProviderBatchSubmission::Submitted(state),
+            Err(error) if submission_is_unknown(&error) => {
+                match self.reconcile_openai_batch(request.batch_id).await {
+                    Some(state) => ProviderBatchSubmission::Submitted(state),
+                    None => ProviderBatchSubmission::SubmissionUnknown(error),
+                }
+            }
+            Err(error) => {
+                self.delete_openai_batch_file(&file_id).await;
+                ProviderBatchSubmission::NotSubmitted(error)
+            }
+        }
     }
 
     async fn submit_openrouter_batch(
         &self,
         request: &ProviderBatchRequest,
-    ) -> Result<ProviderBatchState, ProviderError> {
-        let requests = request
+    ) -> ProviderBatchSubmission {
+        let requests = match request
             .items
             .iter()
             .map(|item| {
@@ -156,18 +178,32 @@ impl OpenAiCompatProvider {
                     body: self.prepare_batch_item_body(request, item)?,
                 })
             })
-            .collect::<Result<Vec<_>, ProviderError>>()?;
-        let payload = serde_json::to_value(OpenRouterCreate {
+            .collect::<Result<Vec<_>, ProviderError>>()
+        {
+            Ok(requests) => requests,
+            Err(error) => return ProviderBatchSubmission::NotSubmitted(error),
+        };
+        let payload = match serde_json::to_value(OpenRouterCreate {
             endpoint: request.endpoint.provider_path(),
             model: &request.upstream_model,
             requests,
         })
-        .map_err(|error| ProviderError::Transport(error.to_string()))?;
-        parse_state(
-            &self
-                .batch_json(reqwest::Method::POST, "batches", Some(payload))
-                .await?,
-        )
+        .map_err(|error| ProviderError::Transport(error.to_string()))
+        {
+            Ok(payload) => payload,
+            Err(error) => return ProviderBatchSubmission::NotSubmitted(error),
+        };
+        match self
+            .batch_json(reqwest::Method::POST, "batches", Some(payload))
+            .await
+            .and_then(|value| parse_state(&value))
+        {
+            Ok(state) => ProviderBatchSubmission::Submitted(state),
+            Err(error) if submission_is_unknown(&error) => {
+                ProviderBatchSubmission::SubmissionUnknown(error)
+            }
+            Err(error) => ProviderBatchSubmission::NotSubmitted(error),
+        }
     }
 
     fn prepare_batch_item_body(
@@ -226,6 +262,31 @@ impl OpenAiCompatProvider {
             .and_then(Value::as_str)
             .map(str::to_string)
             .ok_or_else(|| ProviderError::Transport("OpenAI file upload omitted id".to_string()))
+    }
+
+    async fn delete_openai_batch_file(&self, file_id: &str) {
+        let _ = self
+            .batch_json(reqwest::Method::DELETE, &format!("files/{file_id}"), None)
+            .await;
+    }
+
+    async fn reconcile_openai_batch(&self, batch_id: uuid::Uuid) -> Option<ProviderBatchState> {
+        let batch_id = batch_id.to_string();
+        let value = self
+            .batch_json(reqwest::Method::GET, "batches?limit=100", None)
+            .await
+            .ok()?;
+        value
+            .get("data")?
+            .as_array()?
+            .iter()
+            .find(|batch| {
+                batch
+                    .pointer("/metadata/oceans_batch_id")
+                    .and_then(Value::as_str)
+                    == Some(batch_id.as_str())
+            })
+            .and_then(|batch| parse_state(batch).ok())
     }
 
     async fn openai_results(
@@ -298,6 +359,18 @@ impl OpenAiCompatProvider {
 
 fn batch_disabled() -> ProviderError {
     ProviderError::NotImplemented("batch mode is not enabled for this provider".to_string())
+}
+
+fn submission_is_unknown(error: &ProviderError) -> bool {
+    matches!(
+        error,
+        ProviderError::Timeout
+            | ProviderError::Transport(_)
+            | ProviderError::UpstreamHttp {
+                status: 500..=599,
+                ..
+            }
+    )
 }
 
 async fn response_text(response: reqwest::Response) -> Result<String, ProviderError> {
@@ -451,10 +524,28 @@ fn parse_openrouter_results(value: &Value) -> Vec<ProviderBatchResult> {
 
 #[cfg(test)]
 mod tests {
-    use gateway_core::{BatchStatus, Money4};
+    use gateway_core::{BatchStatus, Money4, ProviderError};
     use serde_json::json;
 
-    use super::{parse_openai_result, parse_openrouter_results, parse_state};
+    use super::{
+        parse_openai_result, parse_openrouter_results, parse_state, submission_is_unknown,
+    };
+
+    #[test]
+    fn only_uncertain_create_failures_require_reconciliation() {
+        assert!(submission_is_unknown(&ProviderError::Timeout));
+        assert!(submission_is_unknown(&ProviderError::Transport(
+            "reset".to_string()
+        )));
+        assert!(submission_is_unknown(&ProviderError::UpstreamHttp {
+            status: 503,
+            body: "unavailable".to_string(),
+        }));
+        assert!(!submission_is_unknown(&ProviderError::UpstreamHttp {
+            status: 400,
+            body: "invalid".to_string(),
+        }));
+    }
 
     #[test]
     fn openai_state_and_jsonl_result_preserve_counts_usage_and_cost() {

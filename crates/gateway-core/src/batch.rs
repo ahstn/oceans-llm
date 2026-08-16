@@ -341,6 +341,13 @@ pub struct ProviderBatchState {
     pub completed_at: Option<OffsetDateTime>,
 }
 
+#[derive(Debug)]
+pub enum ProviderBatchSubmission {
+    Submitted(ProviderBatchState),
+    NotSubmitted(crate::ProviderError),
+    SubmissionUnknown(crate::ProviderError),
+}
+
 #[derive(Debug, Clone)]
 pub struct ProviderBatchResult {
     pub custom_id: String,

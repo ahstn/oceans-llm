@@ -314,6 +314,32 @@ impl BatchRepository for PostgresStore {
         Ok(sqlx::query("UPDATE batch_jobs SET status='submission_unknown', error_json='{\"message\":\"submission lease expired before the provider ID was stored; manual reconciliation is required\"}', completed_at=$1, updated_at=$1, lease_owner=NULL, lease_expires_at=NULL WHERE status='submitting' AND lease_expires_at <= $1").bind(now.unix_timestamp()).execute(&self.pool).await.map_err(to_query_error)?.rows_affected())
     }
 
+    async fn renew_batch_lease(
+        &self,
+        batch_id: Uuid,
+        lease_owner: &str,
+        now: OffsetDateTime,
+        lease_expires_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let changed = sqlx::query(
+            "UPDATE batch_jobs SET lease_expires_at=$1,updated_at=$2 WHERE batch_id=$3 AND lease_owner=$4 AND lease_expires_at>$2",
+        )
+        .bind(lease_expires_at.unix_timestamp())
+        .bind(now.unix_timestamp())
+        .bind(batch_id.to_string())
+        .bind(lease_owner)
+        .execute(&self.pool)
+        .await
+        .map_err(to_query_error)?
+        .rows_affected();
+        if changed == 0 {
+            return Err(StoreError::Conflict(format!(
+                "batch `{batch_id}` lease was lost"
+            )));
+        }
+        Ok(())
+    }
+
     async fn mark_batch_submitted(
         &self,
         batch_id: Uuid,

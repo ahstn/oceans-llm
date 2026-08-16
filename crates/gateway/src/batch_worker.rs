@@ -1,9 +1,11 @@
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
+use futures_util::{StreamExt, stream};
 use gateway_core::{
     AdminApiKeyRepository, AuthenticatedApiKey, BatchPollUpdate, BatchPricingStatus,
     BatchRepository, BatchStatus, ModelRepository, Money4, ProviderBatchRequest,
-    ProviderBatchRequestItem, ProviderBatchResult, ProviderError, ProviderRegistry,
+    ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchSubmission, ProviderError,
+    ProviderRegistry,
 };
 use gateway_service::BatchPricingPolicy;
 use serde_json::json;
@@ -15,6 +17,8 @@ use crate::http::state::AppGatewayService;
 
 const WORKER_INTERVAL: Duration = Duration::from_secs(5);
 const LEASE_DURATION: time::Duration = time::Duration::minutes(2);
+const LEASE_RENEW_INTERVAL: Duration = Duration::from_secs(30);
+const MAX_IN_FLIGHT_JOBS: usize = 8;
 const POLL_INTERVAL: time::Duration = time::Duration::seconds(30);
 const ERROR_RETRY_INTERVAL: time::Duration = time::Duration::minutes(2);
 
@@ -44,16 +48,61 @@ async fn run_once(
     if stale > 0 {
         warn!(count = stale, "marked stale batch submissions as unknown");
     }
+    let lease_owner = format!("{worker_id}:{}", Uuid::new_v4());
     let jobs = service
         .store()
-        .claim_batch_jobs(worker_id, now, now + LEASE_DURATION, 8)
+        .claim_batch_jobs(
+            &lease_owner,
+            now,
+            now + LEASE_DURATION,
+            MAX_IN_FLIGHT_JOBS as u32,
+        )
         .await?;
-    for job in jobs {
-        if let Err(error) = process_job(service, providers, worker_id, &job).await {
-            warn!(batch_id = %job.batch_id, error = %error, "batch job processing failed");
+    let results = stream::iter(jobs.into_iter().map(|job| {
+        let service = Arc::clone(service);
+        let providers = providers.clone();
+        let lease_owner = lease_owner.clone();
+        async move {
+            (
+                job.batch_id,
+                process_job_with_lease(&service, &providers, &lease_owner, &job).await,
+            )
+        }
+    }))
+    .buffer_unordered(MAX_IN_FLIGHT_JOBS)
+    .collect::<Vec<_>>()
+    .await;
+    for (batch_id, result) in results {
+        if let Err(error) = result {
+            warn!(batch_id = %batch_id, error = %error, "batch job processing failed");
         }
     }
     Ok(())
+}
+
+async fn process_job_with_lease(
+    service: &Arc<AppGatewayService>,
+    providers: &ProviderRegistry,
+    lease_owner: &str,
+    job: &gateway_core::BatchJobRecord,
+) -> Result<(), gateway_core::GatewayError> {
+    let work = process_job(service, providers, lease_owner, job);
+    tokio::pin!(work);
+    let mut renewals = tokio::time::interval(LEASE_RENEW_INTERVAL);
+    renewals.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    renewals.tick().await;
+    loop {
+        tokio::select! {
+            result = &mut work => return result,
+            _ = renewals.tick() => {
+                let now = OffsetDateTime::now_utc();
+                service
+                    .store()
+                    .renew_batch_lease(job.batch_id, lease_owner, now, now + LEASE_DURATION)
+                    .await?;
+            }
+        }
+    }
 }
 
 async fn process_job(
@@ -137,7 +186,7 @@ async fn submit_job(
         context: job.provider_context.clone(),
     };
     match provider.submit_batch(&request).await {
-        Ok(mut state) => {
+        ProviderBatchSubmission::Submitted(mut state) => {
             if state.status == BatchStatus::Completed {
                 state.status = BatchStatus::Finalizing;
                 state.completed_at = None;
@@ -154,7 +203,7 @@ async fn submit_job(
             info!(batch_id = %job.batch_id, provider_batch_id = %state.provider_batch_id, "batch submitted");
             Ok(())
         }
-        Err(error) if submission_outcome_is_unknown(&error) => {
+        ProviderBatchSubmission::SubmissionUnknown(error) => {
             fail_claimed_job(
                 service,
                 worker_id,
@@ -164,15 +213,19 @@ async fn submit_job(
             )
             .await
         }
-        Err(error) => {
-            fail_claimed_job(
-                service,
-                worker_id,
-                job,
-                BatchStatus::Failed,
-                &error.to_string(),
-            )
-            .await
+        ProviderBatchSubmission::NotSubmitted(error) => {
+            if error.is_retryable() {
+                release_after_provider_error(service, worker_id, job, error).await
+            } else {
+                fail_claimed_job(
+                    service,
+                    worker_id,
+                    job,
+                    BatchStatus::Failed,
+                    &error.to_string(),
+                )
+                .await
+            }
         }
     }
 }
@@ -332,17 +385,17 @@ async fn price_results(
     } else {
         BatchPricingPolicy::HalfAllTokenRates
     };
+    let pricer = service
+        .batch_pricer(
+            &route,
+            policy,
+            state.completed_at.unwrap_or_else(OffsetDateTime::now_utc),
+        )
+        .await?;
     let mut priced = 0_usize;
     for result in results.iter_mut() {
         if result.cost_usd.is_none() && result.error.is_none() {
-            result.cost_usd = service
-                .price_batch_usage(
-                    &route,
-                    result.provider_usage.as_ref(),
-                    policy,
-                    state.completed_at.unwrap_or_else(OffsetDateTime::now_utc),
-                )
-                .await?;
+            result.cost_usd = pricer.price_usage(result.provider_usage.as_ref())?;
         }
         if result.cost_usd.is_some() || result.error.is_some() {
             priced += 1;
@@ -408,8 +461,4 @@ async fn release_after_provider_error(
         )
         .await?;
     Ok(())
-}
-
-fn submission_outcome_is_unknown(error: &ProviderError) -> bool {
-    matches!(error, ProviderError::Timeout | ProviderError::Transport(_))
 }

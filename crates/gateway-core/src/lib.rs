@@ -16,7 +16,7 @@ pub use batch::{
     BatchItemRecord, BatchItemStatus, BatchJobRecord, BatchPage, BatchPollUpdate,
     BatchPricingStatus, BatchQuery, BatchStatus, MAX_BATCH_PAGE_SIZE, MAX_BATCH_RESULT_PAGE_SIZE,
     NewBatchItem, NewBatchJob, ProviderBatchRequest, ProviderBatchRequestItem, ProviderBatchResult,
-    ProviderBatchState,
+    ProviderBatchState, ProviderBatchSubmission,
 };
 pub use budgets::{
     BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource,

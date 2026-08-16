@@ -1,26 +1,9 @@
-import { useEffect, useMemo, useState, useTransition } from 'react'
-import {
-  Calendar04Icon,
-  RefreshIcon,
-  RoboticIcon,
-  TaskDaily01Icon,
-  UserIcon,
-} from '@hugeicons/core-free-icons'
+import { useEffect, useState, useTransition } from 'react'
+import { RefreshIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
-import {
-  DateSelector,
-  formatDateValue,
-  type DateSelectorValue,
-} from '@/components/reui/date-selector'
-import {
-  createFilter,
-  Filters,
-  type Filter,
-  type FilterFieldConfig,
-} from '@/components/reui/filters'
 import { PageHeader } from '@/components/layout/page-header'
 import {
   AlertDialog,
@@ -34,14 +17,9 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
-import {
-  BatchDetailSheet,
-  BatchList,
-  formatStatus,
-  isBatchActive,
-} from '@/routes/batches/-components'
+import { BatchFilterBar } from '@/routes/batches/-filter-bar'
+import { BatchDetailSheet, BatchList, isBatchActive } from '@/routes/batches/-components'
 import {
   cancelGatewayBatch,
   getBatchResultPage,
@@ -59,6 +37,7 @@ import type {
 } from '@/types/api'
 
 const defaultPageSize = 30
+const resultPageSize = 100
 const batchStatuses: BatchStatus[] = [
   'queued',
   'submitting',
@@ -73,8 +52,6 @@ const batchStatuses: BatchStatus[] = [
   'cancelling',
   'cancelled',
 ]
-
-type BatchFilterValue = string | DateSelectorValue
 
 export const Route = createFileRoute('/batches')({
   validateSearch: (search: Record<string, unknown>) => normalizeBatchSearch(search),
@@ -124,89 +101,11 @@ export function BatchesPage() {
     return () => window.clearInterval(intervalId)
   }, [hasActiveBatches, router])
 
-  const fields = useMemo<FilterFieldConfig<BatchFilterValue>[]>(() => {
-    const fields: FilterFieldConfig<BatchFilterValue>[] = [
-      {
-        key: 'created_at',
-        label: 'Created',
-        icon: <HugeiconsIcon icon={Calendar04Icon} />,
-        type: 'custom',
-        defaultOperator: 'between',
-        operators: [{ value: 'between', label: 'between' }],
-        customRenderer: ({ values, onChange }) => (
-          <DateRangeFilter values={values} onChange={onChange} />
-        ),
-      },
-      {
-        key: 'status',
-        label: 'Status',
-        icon: <HugeiconsIcon icon={TaskDaily01Icon} />,
-        type: 'select',
-        searchable: false,
-        options: batchStatuses.map((status) => ({
-          value: status,
-          label: formatStatus(status),
-        })),
-      },
-    ]
-
-    if (isPlatformAdminSession(session)) {
-      fields.splice(
-        1,
-        0,
-        {
-          key: 'user_id',
-          label: 'User',
-          icon: <HugeiconsIcon icon={UserIcon} />,
-          type: 'select',
-          searchable: true,
-          options: users.map((user) => ({
-            value: user.id,
-            label: `${user.name} (${user.email})`,
-          })),
-        },
-        {
-          key: 'service_account_id',
-          label: 'Service account',
-          icon: <HugeiconsIcon icon={RoboticIcon} />,
-          type: 'select',
-          searchable: true,
-          options: serviceAccounts.map((account) => ({
-            value: account.id,
-            label: account.name,
-          })),
-        },
-      )
-    }
-
-    return fields
-  }, [serviceAccounts, session, users])
-
-  const urlFilters = useMemo(
-    () => batchFiltersFromSearch(search),
-    [
-      search.created_at_end,
-      search.created_at_start,
-      search.service_account_id,
-      search.status,
-      search.user_id,
-    ],
-  )
-  const [filters, setFilters] = useState(urlFilters)
-
-  useEffect(() => setFilters(urlFilters), [urlFilters])
-
-  function applyFilters(nextFilters: Filter<BatchFilterValue>[]) {
-    setFilters(nextFilters)
-    const hasIncompleteDate = nextFilters.some(
-      (filter) => filter.field === 'created_at' && !isDateSelectorValue(filter.values[0]),
-    )
-    if (hasIncompleteDate) return
-
+  function applyFilters(nextFilters: BatchFiltersInput) {
     startListTransition(async () => {
       await router.navigate({
         to: '/batches',
-        search: filtersToSearch(nextFilters),
+        search: nextFilters,
       })
     })
   }
@@ -222,11 +121,17 @@ export function BatchesPage() {
 
   async function inspectBatch(batch: BatchView) {
     setSelectedBatch(batch)
+    await loadBatchResults(batch, 1)
+  }
+
+  async function loadBatchResults(batch: BatchView, page: number) {
     setBatchDetail(null)
     setDetailError(null)
     setDetailPending(true)
     try {
-      const detail = await getBatchResultPage({ data: { batchId: batch.batch_id } })
+      const detail = await getBatchResultPage({
+        data: { batchId: batch.batch_id, page, pageSize: resultPageSize },
+      })
       setBatchDetail(detail)
     } catch (error: unknown) {
       setDetailError(error instanceof Error ? error.message : 'Failed to load batch responses')
@@ -278,20 +183,15 @@ export function BatchesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="flex min-h-9 flex-wrap items-center gap-2" aria-busy={isListPending}>
-            <Filters
-              filters={filters}
-              fields={fields}
-              onChange={applyFilters}
-              allowMultiple={false}
-              size="sm"
-            />
-            {filters.length > 0 ? (
-              <Button type="button" variant="ghost" size="sm" onClick={() => applyFilters([])}>
-                Clear all
-              </Button>
-            ) : null}
-          </div>
+          <BatchFilterBar
+            key={filterStateKey(search)}
+            initialFilters={search}
+            users={users}
+            serviceAccounts={serviceAccounts}
+            canFilterAcrossUsers={isPlatformAdminSession(session)}
+            pending={isListPending}
+            onApply={applyFilters}
+          />
           <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-3 text-sm">
             <span>
               {batchPage.total} {batchPage.total === 1 ? 'batch' : 'batches'} in the current scope
@@ -342,6 +242,9 @@ export function BatchesPage() {
         detail={batchDetail}
         pending={detailPending}
         error={detailError}
+        onPageChange={(page) => {
+          if (selectedBatch) void loadBatchResults(selectedBatch, page)
+        }}
         onOpenChange={(open) => {
           if (!open) {
             setSelectedBatch(null)
@@ -382,87 +285,6 @@ export function BatchesPage() {
   )
 }
 
-function DateRangeFilter({
-  values,
-  onChange,
-}: {
-  values: BatchFilterValue[]
-  onChange: (values: BatchFilterValue[]) => void
-}) {
-  const current = values.find(isDateSelectorValue)
-  const [draft, setDraft] = useState<DateSelectorValue | undefined>(current)
-  const [open, setOpen] = useState(false)
-  const label = current ? formatDateValue(current, undefined, 'MMM dd, yyyy') : 'Select dates'
-
-  return (
-    <Popover
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen)
-        if (nextOpen) setDraft(current)
-      }}
-    >
-      <PopoverTrigger className="cursor-pointer text-sm">{label}</PopoverTrigger>
-      <PopoverContent align="start" className="w-auto max-w-[calc(100vw-2rem)] p-4">
-        <DateSelector
-          value={draft}
-          onChange={setDraft}
-          periodTypes={['day']}
-          presetMode="between"
-          showInput={false}
-          showTwoMonths
-          minYear={2020}
-          maxYear={new Date().getFullYear() + 1}
-        />
-        <div className="mt-4 flex items-center justify-end gap-2 border-t pt-3">
-          <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={!draft?.startDate}
-            onClick={() => {
-              if (draft?.startDate) onChange([draft])
-              setOpen(false)
-            }}
-          >
-            Apply
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-function batchFiltersFromSearch(search: BatchFiltersInput): Filter<BatchFilterValue>[] {
-  const filters: Filter<BatchFilterValue>[] = []
-  const dateValue = dateValueFromSearch(search)
-  if (dateValue) filters.push(createFilter('created_at', 'between', [dateValue]))
-  if (search.user_id) filters.push(createFilter('user_id', 'is', [search.user_id]))
-  if (search.service_account_id) {
-    filters.push(createFilter('service_account_id', 'is', [search.service_account_id]))
-  }
-  if (search.status) filters.push(createFilter('status', 'is', [search.status]))
-  return filters
-}
-
-function filtersToSearch(filters: Filter<BatchFilterValue>[]): BatchFiltersInput {
-  const search: BatchFiltersInput = { page: 1, page_size: defaultPageSize }
-  for (const filter of filters) {
-    const value = filter.values[0]
-    if (filter.field === 'created_at' && isDateSelectorValue(value) && value.startDate) {
-      search.created_at_start = startOfDayIso(value.startDate)
-      search.created_at_end = exclusiveEndIso(value.endDate ?? value.startDate)
-    } else if (typeof value === 'string') {
-      if (filter.field === 'user_id') search.user_id = value
-      if (filter.field === 'service_account_id') search.service_account_id = value
-      if (filter.field === 'status' && isBatchStatus(value)) search.status = value
-    }
-  }
-  return search
-}
-
 function normalizeBatchSearch(search: Record<string, unknown>): BatchFiltersInput {
   const page = positiveInteger(search.page, 1)
   const normalized: BatchFiltersInput = { page, page_size: defaultPageSize }
@@ -480,19 +302,6 @@ function normalizeBatchSearch(search: Record<string, unknown>): BatchFiltersInpu
   return normalized
 }
 
-function dateValueFromSearch(search: BatchFiltersInput): DateSelectorValue | undefined {
-  if (!search.created_at_start) return undefined
-  const startDate = new Date(search.created_at_start)
-  const endDate = search.created_at_end
-    ? new Date(new Date(search.created_at_end).getTime() - 1)
-    : startDate
-  return { period: 'day', operator: 'between', startDate, endDate }
-}
-
-function isDateSelectorValue(value: BatchFilterValue | undefined): value is DateSelectorValue {
-  return typeof value === 'object' && value !== null && 'period' in value
-}
-
 function isBatchStatus(value: string): value is BatchStatus {
   return batchStatuses.includes(value as BatchStatus)
 }
@@ -506,10 +315,12 @@ function isValidDateString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && !Number.isNaN(new Date(value).getTime())
 }
 
-function startOfDayIso(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString()
-}
-
-function exclusiveEndIso(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).toISOString()
+function filterStateKey(search: BatchFiltersInput) {
+  return [
+    search.status,
+    search.user_id,
+    search.service_account_id,
+    search.created_at_start,
+    search.created_at_end,
+  ].join('|')
 }

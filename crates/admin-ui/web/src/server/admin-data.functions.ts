@@ -221,8 +221,8 @@ export const getBatches = createServerFn({ method: 'POST' }).handler(
 )
 
 export const getBatchResultPage = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data: { batchId: string } }) => {
-    return getBatchResults(data.batchId)
+  async ({ data }: { data: { batchId: string; page: number; pageSize: number } }) => {
+    return getBatchResults(data.batchId, { page: data.page, page_size: data.pageSize })
   },
 )
 

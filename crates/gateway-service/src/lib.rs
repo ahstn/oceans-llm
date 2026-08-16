@@ -33,7 +33,9 @@ pub use admin_api_keys::{
 };
 pub use admin_models::{AdminModelStatus, AdminModelSummary, AdminModelsService};
 pub use authenticator::{Authenticator, verify_gateway_key_secret};
-pub use batches::{CreateBatchInput, CreateBatchItemInput, create_batch};
+pub use batches::{
+    BatchPricer, BatchPricingPolicy, CreateBatchInput, CreateBatchItemInput, create_batch,
+};
 pub use budget_alerts::{
     BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,
     BudgetAlertService, SinkBudgetAlertSender,
@@ -104,4 +106,4 @@ pub use secret_storage::{
     GATEWAY_API_KEY_SECRET_KEY_ENV, GATEWAY_API_KEY_SECRET_KEY_ID, decrypt_gateway_api_key_secret,
     encrypt_gateway_api_key_secret,
 };
-pub use service::{BatchPricingPolicy, GatewayService, RecordedChatUsage};
+pub use service::{GatewayService, RecordedChatUsage};

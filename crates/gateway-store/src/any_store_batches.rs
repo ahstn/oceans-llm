@@ -81,6 +81,19 @@ impl BatchRepository for AnyStore {
         dispatch_store!(self, mark_stale_batch_submissions_unknown(now))
     }
 
+    async fn renew_batch_lease(
+        &self,
+        batch_id: Uuid,
+        lease_owner: &str,
+        now: OffsetDateTime,
+        lease_expires_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            renew_batch_lease(batch_id, lease_owner, now, lease_expires_at)
+        )
+    }
+
     async fn mark_batch_submitted(
         &self,
         batch_id: Uuid,

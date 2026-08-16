@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import type { BatchResultView, BatchResultsView, BatchStatus, BatchView } from '@/types/api'
+import type { BatchResultsView, BatchStatus, BatchView } from '@/types/api'
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -183,12 +183,14 @@ export function BatchDetailSheet({
   detail,
   pending,
   error,
+  onPageChange,
   onOpenChange,
 }: {
   batch: BatchView | null
   detail: BatchResultsView | null
   pending: boolean
   error: string | null
+  onPageChange: (page: number) => void
   onOpenChange: (open: boolean) => void
 }) {
   return (
@@ -209,7 +211,9 @@ export function BatchDetailSheet({
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : null}
-          {detail ? <BatchResults results={detail.items} total={detail.total} /> : null}
+          {detail ? (
+            <BatchResults detail={detail} pending={pending} onPageChange={onPageChange} />
+          ) : null}
         </div>
       </SheetContent>
     </Sheet>
@@ -234,7 +238,16 @@ function BatchSummary({ batch }: { batch: BatchView }) {
   )
 }
 
-function BatchResults({ results, total }: { results: BatchResultView[]; total: number }) {
+function BatchResults({
+  detail,
+  pending,
+  onPageChange,
+}: {
+  detail: BatchResultsView
+  pending: boolean
+  onPageChange: (page: number) => void
+}) {
+  const { items: results, total, page, page_size: pageSize } = detail
   if (results.length === 0) {
     return (
       <Empty className="mt-4 border">
@@ -249,12 +262,16 @@ function BatchResults({ results, total }: { results: BatchResultView[]; total: n
     )
   }
 
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const firstResult = (page - 1) * pageSize + 1
+  const lastResult = Math.min(total, firstResult + results.length - 1)
+
   return (
     <section className="mt-6 flex min-w-0 flex-col gap-3">
       <div>
         <h2 className="font-semibold">Results</h2>
         <p className="text-muted-foreground text-sm">
-          Showing {results.length} of {total} responses.
+          Showing {firstResult}-{lastResult} of {total} responses.
         </p>
       </div>
       {results.map((result) => (
@@ -279,6 +296,33 @@ function BatchResults({ results, total }: { results: BatchResultView[]; total: n
           </div>
         </article>
       ))}
+      {totalPages > 1 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+          <p className="text-muted-foreground text-sm">
+            Page {page} of {totalPages}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pending || page <= 1}
+              onClick={() => onPageChange(page - 1)}
+            >
+              Previous
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pending || page >= totalPages}
+              onClick={() => onPageChange(page + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }

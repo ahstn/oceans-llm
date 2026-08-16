@@ -105,101 +105,17 @@ export type RequestLogFiltersInput = NonNullable<
   operations['list_request_logs']['parameters']['query']
 >
 
-export type BatchStatus =
-  | 'queued'
-  | 'submitting'
-  | 'submission_unknown'
-  | 'validating'
-  | 'in_progress'
-  | 'finalizing'
-  | 'completed'
-  | 'failed'
-  | 'expired'
-  | 'cancel_requested'
-  | 'cancelling'
-  | 'cancelled'
-
-export type BatchItemStatus = 'pending' | 'succeeded' | 'failed'
-export type BatchEndpoint = 'chat_completions' | 'responses' | 'embeddings'
-export type BatchPricingStatus =
-  | 'pending'
-  | 'priced'
-  | 'partially_priced'
-  | 'unpriced'
-  | 'provider_reported'
-
-export interface BatchCallerView {
-  api_key_id: string
-  api_key_name: string | null
-  user_id: string | null
-  user_name: string | null
-  team_id: string | null
-  service_account_id: string | null
-  service_account_name: string | null
-}
-
-export interface BatchView {
-  batch_id: string
-  status: BatchStatus
-  endpoint: BatchEndpoint
-  model: string
-  resolved_model: string
-  upstream_model: string
-  provider: string
-  route_id: string
-  provider_batch_id: string | null
-  caller: BatchCallerView
-  request_count: number
-  completed_count: number
-  failed_count: number
-  cost_usd: number | null
-  pricing_status: BatchPricingStatus
-  provider_usage: unknown | null
-  error: unknown | null
-  created_at: string
-  submitted_at: string | null
-  completed_at: string | null
-  updated_at: string
-}
-
-export interface BatchPageView {
-  items: BatchView[]
-  page: number
-  page_size: number
-  total: number
-}
-
-export interface BatchResultView {
-  custom_id: string
-  status: BatchItemStatus
-  request: unknown
-  response: unknown | null
-  error: unknown | null
-  provider_request_id: string | null
-  provider_usage: unknown | null
-  cost_usd: number | null
-  completed_at: string | null
-}
-
-export interface BatchResultsView {
-  batch: BatchView
-  items: BatchResultView[]
-  page: number
-  page_size: number
-  total: number
-}
-
-export interface BatchFiltersInput {
-  page?: number
-  page_size?: number
-  status?: BatchStatus
-  model?: string
-  provider?: string
-  user_id?: string
-  service_account_id?: string
-  created_at_start?: string
-  created_at_end?: string
-}
+export type BatchStatus = components['schemas']['BatchStatusSchema']
+export type BatchItemStatus = components['schemas']['BatchItemStatusSchema']
+export type BatchEndpoint = components['schemas']['BatchEndpointSchema']
+export type BatchPricingStatus = components['schemas']['BatchPricingStatusSchema']
+export type BatchCallerView = components['schemas']['BatchCallerResponse']
+export type BatchView = components['schemas']['BatchResponse']
+export type BatchPageView = components['schemas']['BatchListResponse']
+export type BatchResultView = components['schemas']['BatchResultResponse']
+export type BatchResultsView = components['schemas']['BatchResultsResponse']
+export type BatchFiltersInput = NonNullable<operations['list_batches']['parameters']['query']>
+export type BatchResultsInput = NonNullable<operations['get_batch_results']['parameters']['query']>
 export type McpInvocationView = components['schemas']['McpToolInvocationSummaryView']
 export type McpInvocationPayloadView = components['schemas']['McpToolInvocationPayloadView']
 export type McpInvocationDetailView = components['schemas']['McpToolInvocationDetailView']

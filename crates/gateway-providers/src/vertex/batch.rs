@@ -1,7 +1,7 @@
 use gateway_core::{
     BatchCapabilities, BatchEndpoint, BatchStatus, ChatCompletionsRequest, ProviderBatchRequest,
-    ProviderBatchResult, ProviderBatchState, ProviderError, ProviderRequestContext,
-    openai_chat_request_to_core,
+    ProviderBatchResult, ProviderBatchState, ProviderBatchSubmission, ProviderError,
+    ProviderRequestContext, openai_chat_request_to_core,
 };
 use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -26,7 +26,38 @@ impl VertexProvider {
     pub(super) async fn submit_batch_impl(
         &self,
         request: &ProviderBatchRequest,
-    ) -> Result<ProviderBatchState, ProviderError> {
+    ) -> ProviderBatchSubmission {
+        let plan = match self.prepare_vertex_batch(request).await {
+            Ok(plan) => plan,
+            Err(error) => return ProviderBatchSubmission::NotSubmitted(error),
+        };
+        let result = self
+            .vertex_batch_json(
+                reqwest::Method::POST,
+                &self.batch_jobs_url(),
+                Some(plan.request_body.clone()),
+            )
+            .await
+            .and_then(|value| parse_vertex_state(&value));
+        match result {
+            Ok(state) => ProviderBatchSubmission::Submitted(state),
+            Err(error) if submission_is_unknown(&error) => {
+                match self.reconcile_vertex_batch(request.batch_id).await {
+                    Some(state) => ProviderBatchSubmission::Submitted(state),
+                    None => ProviderBatchSubmission::SubmissionUnknown(error),
+                }
+            }
+            Err(error) => {
+                self.delete_input_table(&plan).await;
+                ProviderBatchSubmission::NotSubmitted(error)
+            }
+        }
+    }
+
+    async fn prepare_vertex_batch(
+        &self,
+        request: &ProviderBatchRequest,
+    ) -> Result<VertexBatchPlan, ProviderError> {
         if request.endpoint != BatchEndpoint::ChatCompletions {
             return Err(ProviderError::InvalidRequest(
                 "Vertex batch mode currently supports chat completions only".to_string(),
@@ -40,38 +71,75 @@ impl VertexProvider {
         }
         let config = self.batch_config()?;
         validate_bigquery_identifier(&config.dataset, "dataset")?;
+        let project = config.bigquery_project_id.clone();
+        let dataset = config.dataset.clone();
         let table = format!("oceans_batch_{}", request.batch_id.simple());
         let output_table = format!("{table}_output");
-        self.create_input_table(&config.bigquery_project_id, &config.dataset, &table)
-            .await?;
-        self.insert_input_rows(
-            &config.bigquery_project_id,
-            &config.dataset,
-            &table,
-            request,
-        )
-        .await?;
+        let plan = VertexBatchPlan {
+            project,
+            dataset,
+            input_table: table.clone(),
+            request_body: json!({
+                "displayName": format!("oceans-batch-{}", request.batch_id),
+                "model": format!("publishers/google/models/{model_id}"),
+                "inputConfig": {
+                    "instancesFormat": "bigquery",
+                    "bigquerySource": {
+                        "inputUri": format!("bq://{}.{}.{}", config.bigquery_project_id, config.dataset, table)
+                    }
+                },
+                "outputConfig": {
+                    "predictionsFormat": "bigquery",
+                    "bigqueryDestination": {
+                        "outputUri": format!("bq://{}.{}.{}", config.bigquery_project_id, config.dataset, output_table)
+                    }
+                }
+            }),
+        };
+        if let Err(error) = self
+            .create_input_table(&plan.project, &plan.dataset, &plan.input_table)
+            .await
+        {
+            self.delete_input_table(&plan).await;
+            return Err(error);
+        }
+        if let Err(error) = self
+            .insert_input_rows(&plan.project, &plan.dataset, &plan.input_table, request)
+            .await
+        {
+            self.delete_input_table(&plan).await;
+            return Err(error);
+        }
+        Ok(plan)
+    }
 
-        let body = json!({
-            "displayName": format!("oceans-batch-{}", request.batch_id),
-            "model": format!("publishers/google/models/{model_id}"),
-            "inputConfig": {
-                "instancesFormat": "bigquery",
-                "bigquerySource": {
-                    "inputUri": format!("bq://{}.{}.{}", config.bigquery_project_id, config.dataset, table)
-                }
-            },
-            "outputConfig": {
-                "predictionsFormat": "bigquery",
-                "bigqueryDestination": {
-                    "outputUri": format!("bq://{}.{}.{}", config.bigquery_project_id, config.dataset, output_table)
-                }
-            }
-        });
+    async fn delete_input_table(&self, plan: &VertexBatchPlan) {
+        let _ = self
+            .bigquery_json(
+                reqwest::Method::DELETE,
+                &format!(
+                    "projects/{}/datasets/{}/tables/{}",
+                    plan.project, plan.dataset, plan.input_table
+                ),
+                None,
+            )
+            .await;
+    }
+
+    async fn reconcile_vertex_batch(&self, batch_id: uuid::Uuid) -> Option<ProviderBatchState> {
         let value = self
-            .vertex_batch_json(reqwest::Method::POST, &self.batch_jobs_url(), Some(body))
-            .await?;
-        parse_vertex_state(&value)
+            .vertex_batch_json(reqwest::Method::GET, &self.batch_jobs_url(), None)
+            .await
+            .ok()?;
+        let display_name = format!("oceans-batch-{batch_id}");
+        value
+            .get("batchPredictionJobs")?
+            .as_array()?
+            .iter()
+            .find(|job| {
+                job.get("displayName").and_then(Value::as_str) == Some(display_name.as_str())
+            })
+            .and_then(|job| parse_vertex_state(job).ok())
     }
 
     pub(super) async fn inspect_batch_impl(
@@ -395,6 +463,25 @@ impl VertexProvider {
     }
 }
 
+struct VertexBatchPlan {
+    project: String,
+    dataset: String,
+    input_table: String,
+    request_body: Value,
+}
+
+fn submission_is_unknown(error: &ProviderError) -> bool {
+    matches!(
+        error,
+        ProviderError::Timeout
+            | ProviderError::Transport(_)
+            | ProviderError::UpstreamHttp {
+                status: 500..=599,
+                ..
+            }
+    )
+}
+
 fn api_base(host: &str) -> String {
     let host = host.trim_end_matches('/');
     if host.starts_with("http://") || host.starts_with("https://") {
@@ -557,10 +644,22 @@ fn parse_json_field(value: Option<&Value>) -> Result<Option<Value>, ProviderErro
 mod tests {
     use std::collections::BTreeMap;
 
-    use gateway_core::{BatchStatus, ProviderRequestContext, RouteCompatibility};
+    use gateway_core::{BatchStatus, ProviderError, ProviderRequestContext, RouteCompatibility};
     use serde_json::{Map, json};
 
-    use super::{parse_bigquery_results, parse_bigquery_table, parse_vertex_state};
+    use super::{
+        parse_bigquery_results, parse_bigquery_table, parse_vertex_state, submission_is_unknown,
+    };
+
+    #[test]
+    fn vertex_submission_certainty_changes_at_the_job_create_boundary() {
+        assert!(submission_is_unknown(&ProviderError::Transport(
+            "connection closed".to_string(),
+        )));
+        assert!(!submission_is_unknown(&ProviderError::InvalidRequest(
+            "unsupported model".to_string(),
+        )));
+    }
 
     #[test]
     fn vertex_state_maps_terminal_counts_and_resource_name() {

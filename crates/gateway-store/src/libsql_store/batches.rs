@@ -361,6 +361,34 @@ impl BatchRepository for LibsqlStore {
         self.connection.execute("UPDATE batch_jobs SET status = 'submission_unknown', error_json = '{\"message\":\"submission lease expired before the provider ID was stored; manual reconciliation is required\"}', completed_at = ?1, updated_at = ?1, lease_owner = NULL, lease_expires_at = NULL WHERE status = 'submitting' AND lease_expires_at <= ?1", [now.unix_timestamp()]).await.map_err(to_query_error)
     }
 
+    async fn renew_batch_lease(
+        &self,
+        batch_id: Uuid,
+        lease_owner: &str,
+        now: OffsetDateTime,
+        lease_expires_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE batch_jobs SET lease_expires_at=?1,updated_at=?2 WHERE batch_id=?3 AND lease_owner=?4 AND lease_expires_at>?2",
+                libsql::params![
+                    lease_expires_at.unix_timestamp(),
+                    now.unix_timestamp(),
+                    batch_id.to_string(),
+                    lease_owner
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        if changed == 0 {
+            return Err(StoreError::Conflict(format!(
+                "batch `{batch_id}` lease was lost"
+            )));
+        }
+        Ok(())
+    }
+
     async fn mark_batch_submitted(
         &self,
         batch_id: Uuid,
@@ -602,6 +630,26 @@ mod tests {
             .await
             .expect("claim submission");
         assert_eq!(claimed[0].status, BatchStatus::Submitting);
+        assert!(matches!(
+            store
+                .renew_batch_lease(
+                    batch_id,
+                    "stale-worker",
+                    now + Duration::seconds(10),
+                    now + Duration::minutes(4),
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        store
+            .renew_batch_lease(
+                batch_id,
+                "worker-1",
+                now + Duration::seconds(10),
+                now + Duration::minutes(4),
+            )
+            .await
+            .expect("renew submission lease");
         store
             .mark_batch_submitted(
                 batch_id,

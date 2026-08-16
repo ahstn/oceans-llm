@@ -23,46 +23,6 @@ vi.mock('@tanstack/react-router', () => ({
   }),
 }))
 
-vi.mock('@/components/reui/filters', () => ({
-  createFilter: (field: string, operator: string, values: unknown[]) => ({
-    id: `${field}-${operator}`,
-    field,
-    operator,
-    values,
-  }),
-  Filters: ({
-    fields,
-    onChange,
-  }: {
-    fields: Array<{ label: string }>
-    onChange: (filters: unknown[]) => void
-  }) => (
-    <div>
-      <span data-testid="batch-filter-fields">{fields.map((field) => field.label).join(',')}</span>
-      <button
-        type="button"
-        onClick={() =>
-          onChange([
-            {
-              id: 'status-is',
-              field: 'status',
-              operator: 'is',
-              values: ['completed'],
-            },
-          ])
-        }
-      >
-        Apply completed filter
-      </button>
-    </div>
-  ),
-}))
-
-vi.mock('@/components/reui/date-selector', () => ({
-  DateSelector: () => null,
-  formatDateValue: () => 'Selected dates',
-}))
-
 vi.mock('@/server/admin-data.functions', () => ({
   cancelGatewayBatch: (...args: unknown[]) => cancelGatewayBatchMock(...args),
   getBatchResultPage: (...args: unknown[]) => getBatchResultPageMock(...args),
@@ -195,16 +155,25 @@ describe('BatchesPage', () => {
     expect(screen.getAllByText('Local CI Runner').length).toBeGreaterThan(0)
     expect(screen.getAllByText('2 of 2').length).toBeGreaterThan(0)
     expect(screen.getAllByText('0 of 3').length).toBeGreaterThan(0)
-    expect(screen.getByTestId('batch-filter-fields')).toHaveTextContent(
-      'Created,User,Service account,Status',
-    )
+    expect(screen.getByLabelText('Created from')).toBeInTheDocument()
+    expect(screen.getByLabelText('Created through')).toBeInTheDocument()
+    expect(screen.getByTestId('batch-filter-status')).toBeInTheDocument()
+    expect(screen.getByTestId('batch-filter-user')).toBeInTheDocument()
+    expect(screen.getByTestId('batch-filter-service-account')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Apply completed filter' }))
+    fireEvent.change(screen.getByLabelText('Created from'), { target: { value: '2026-08-01' } })
+    fireEvent.change(screen.getByLabelText('Created through'), { target: { value: '2026-08-16' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }))
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
         to: '/batches',
-        search: { page: 1, page_size: 30, status: 'completed' },
+        search: {
+          page: 1,
+          page_size: 30,
+          created_at_start: expect.any(String),
+          created_at_end: expect.any(String),
+        },
       })
     })
   })
@@ -215,7 +184,10 @@ describe('BatchesPage', () => {
 
     render(<BatchesPage />)
 
-    expect(screen.getByTestId('batch-filter-fields')).toHaveTextContent('Created,Status')
+    expect(screen.getByLabelText('Created from')).toBeInTheDocument()
+    expect(screen.getByTestId('batch-filter-status')).toBeInTheDocument()
+    expect(screen.queryByTestId('batch-filter-user')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('batch-filter-service-account')).not.toBeInTheDocument()
   })
 
   it('loads normalized response details in the batch sheet', async () => {
@@ -227,7 +199,7 @@ describe('BatchesPage', () => {
 
     await waitFor(() => {
       expect(getBatchResultPageMock).toHaveBeenCalledWith({
-        data: { batchId: 'batch_completed' },
+        data: { batchId: 'batch_completed', page: 1, pageSize: 100 },
       })
     })
     expect(await screen.findByRole('heading', { name: 'Batch responses' })).toBeInTheDocument()
@@ -236,6 +208,30 @@ describe('BatchesPage', () => {
       screen.getByText(/Activation and repeat use are the strongest signals/),
     ).toBeInTheDocument()
     expect(screen.getByText('Request payload')).toBeInTheDocument()
+  })
+
+  it('loads later result pages from the gateway', async () => {
+    getBatchResultPageMock
+      .mockResolvedValueOnce({ ...completedDetail, page_size: 100, total: 201 })
+      .mockResolvedValueOnce({
+        ...completedDetail,
+        items: [{ ...completedDetail.items[0], custom_id: 'page-two-result' }],
+        page: 2,
+        page_size: 100,
+        total: 201,
+      })
+    const { BatchesPage } = await import('@/routes/batches')
+
+    render(<BatchesPage />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'View' })[0])
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }))
+
+    await waitFor(() => {
+      expect(getBatchResultPageMock).toHaveBeenLastCalledWith({
+        data: { batchId: 'batch_completed', page: 2, pageSize: 100 },
+      })
+    })
+    expect(await screen.findByText('page-two-result')).toBeInTheDocument()
   })
 
   it('confirms cancellation before invalidating the list', async () => {

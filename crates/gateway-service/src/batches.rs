@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use gateway_core::{
     AuthenticatedApiKey, BatchEndpoint, BatchJobRecord, BatchPricingStatus, BatchRepository,
     BatchStatus, BudgetAlertRepository, BudgetRepository, GatewayError, IdentityRepository,
-    McpToolInvocationRepository, ModelRepository, NewBatchItem, NewBatchJob,
-    PricingCatalogRepository, ProviderRegistry, ProviderRepository, ProviderRequestContext,
-    RequestLogRepository, RoutePlanner, StoreHealth,
+    McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, NewBatchItem, NewBatchJob,
+    PricingCatalogRepository, PricingResolution, ProviderRegistry, ProviderRepository,
+    ProviderRequestContext, RequestLogRepository, RoutePlanner, StoreHealth,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -13,9 +13,135 @@ use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::GatewayService;
+use crate::{
+    GatewayService,
+    service::{
+        CacheUsageNormalization, UsageSummary, scaled_cost_for_tokens, usage_summary_from_value,
+    },
+};
 
 pub const MAX_BATCH_ITEMS: usize = 50_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchPricingPolicy {
+    HalfAllTokenRates,
+    VertexHalfNonCachedRates,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BatchPricer {
+    rates: Option<BatchRates>,
+    policy: BatchPricingPolicy,
+}
+
+impl BatchPricer {
+    pub fn price_usage(
+        &self,
+        provider_usage: Option<&Value>,
+    ) -> Result<Option<Money4>, GatewayError> {
+        let Some(rates) = self.rates else {
+            return Ok(None);
+        };
+        let usage = usage_summary_from_value(provider_usage)?;
+        if !usage.has_usage() {
+            return Ok(None);
+        }
+        compute_batch_usage_cost(&usage, rates, self.policy)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BatchRates {
+    pub(crate) input: Option<Money4>,
+    pub(crate) output: Option<Money4>,
+    pub(crate) cache_read: Option<Money4>,
+    pub(crate) cache_write: Option<Money4>,
+}
+
+impl<S, P> GatewayService<S, P>
+where
+    S: gateway_core::ApiKeyRepository
+        + BudgetAlertRepository
+        + BudgetRepository
+        + ModelRepository
+        + IdentityRepository
+        + PricingCatalogRepository
+        + RequestLogRepository
+        + McpToolInvocationRepository
+        + ProviderRepository
+        + StoreHealth
+        + Send
+        + Sync
+        + 'static,
+    P: RoutePlanner + Send + Sync + 'static,
+{
+    pub async fn batch_pricer(
+        &self,
+        route: &ModelRoute,
+        policy: BatchPricingPolicy,
+        occurred_at: OffsetDateTime,
+    ) -> Result<BatchPricer, GatewayError> {
+        let rates = match self.resolve_route_pricing(route, occurred_at).await? {
+            PricingResolution::Exact { pricing } => Some(BatchRates {
+                input: pricing.input_cost_per_million_tokens,
+                output: pricing.output_cost_per_million_tokens,
+                cache_read: pricing.cache_read_cost_per_million_tokens,
+                cache_write: pricing.cache_write_cost_per_million_tokens,
+            }),
+            PricingResolution::ConfiguredOverride { pricing } => Some(BatchRates {
+                input: Some(pricing.input_cost_per_million_tokens),
+                output: Some(pricing.output_cost_per_million_tokens),
+                cache_read: pricing.cache_read_cost_per_million_tokens,
+                cache_write: pricing.cache_write_cost_per_million_tokens,
+            }),
+            PricingResolution::Unpriced { .. } => None,
+        };
+        Ok(BatchPricer { rates, policy })
+    }
+}
+
+pub(crate) fn compute_batch_usage_cost(
+    usage: &UsageSummary,
+    rates: BatchRates,
+    policy: BatchPricingPolicy,
+) -> Result<Option<Money4>, GatewayError> {
+    let mut components = Vec::new();
+    match &usage.cache_usage {
+        CacheUsageNormalization::Valid(_) => {
+            components.push((usage.uncached_input_tokens, rates.input, true));
+            components.push((
+                usage.cache_read_tokens,
+                rates.cache_read,
+                policy == BatchPricingPolicy::HalfAllTokenRates,
+            ));
+            components.push((usage.cache_write_tokens, rates.cache_write, true));
+        }
+        CacheUsageNormalization::Unavailable | CacheUsageNormalization::Invalid(_) => {
+            components.push((usage.prompt_tokens, rates.input, true));
+        }
+        CacheUsageNormalization::Unsupported(_) => return Ok(None),
+    }
+    components.push((usage.completion_tokens, rates.output, true));
+
+    let mut total = Money4::ZERO;
+    for (tokens, rate, discounted) in components {
+        let tokens = tokens.unwrap_or_default();
+        if tokens == 0 {
+            continue;
+        }
+        let Some(rate) = rate else {
+            return Ok(None);
+        };
+        let mut cost = scaled_cost_for_tokens(tokens, rate)?;
+        if discounted {
+            cost = Money4::from_scaled((cost.as_scaled_i64() + 1) / 2);
+        }
+        total = total
+            .checked_add(cost)
+            .ok_or_else(|| GatewayError::Internal("batch usage cost overflow".to_string()))?;
+    }
+    Ok(Some(total))
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateBatchInput {

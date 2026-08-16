@@ -1,3 +1,5 @@
+use std::collections::{BTreeSet, HashMap};
+
 use axum::{
     Json,
     body::Body,
@@ -5,6 +7,7 @@ use axum::{
     http::{HeaderMap, StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
 };
+use futures_util::{StreamExt, TryStreamExt, stream};
 use gateway_core::{
     AdminApiKeyRepository, AuthError, AuthenticatedApiKey, BatchAccessScope, BatchEndpoint,
     BatchItemQuery, BatchItemRecord, BatchItemStatus, BatchJobRecord, BatchPricingStatus,
@@ -15,6 +18,7 @@ use gateway_service::{CreateBatchInput, CreateBatchItemInput};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::http::{
@@ -22,23 +26,26 @@ use crate::http::{
     state::AppState,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateBatchRequest {
+    #[schema(value_type = BatchEndpointSchema)]
     pub endpoint: BatchEndpoint,
     pub model: String,
     pub items: Vec<CreateBatchRequestItem>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateBatchRequestItem {
     pub custom_id: String,
     pub body: Value,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ListBatchesQuery {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
+    #[param(value_type = Option<BatchStatusSchema>)]
     pub status: Option<BatchStatus>,
     pub model: Option<String>,
     pub provider: Option<String>,
@@ -48,15 +55,17 @@ pub struct ListBatchesQuery {
     pub created_at_end: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct BatchResultsQuery {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
+    #[param(value_type = Option<BatchItemStatusSchema>)]
     pub status: Option<BatchItemStatus>,
     pub format: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BatchCallerResponse {
     pub api_key_id: Uuid,
     pub api_key_name: Option<String>,
@@ -67,10 +76,12 @@ pub struct BatchCallerResponse {
     pub service_account_name: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BatchResponse {
     pub batch_id: Uuid,
+    #[schema(value_type = BatchStatusSchema)]
     pub status: BatchStatus,
+    #[schema(value_type = BatchEndpointSchema)]
     pub endpoint: BatchEndpoint,
     pub model: String,
     pub resolved_model: String,
@@ -83,6 +94,7 @@ pub struct BatchResponse {
     pub completed_count: i64,
     pub failed_count: i64,
     pub cost_usd: Option<f64>,
+    #[schema(value_type = BatchPricingStatusSchema)]
     pub pricing_status: BatchPricingStatus,
     pub provider_usage: Option<Value>,
     pub error: Option<Value>,
@@ -92,7 +104,7 @@ pub struct BatchResponse {
     pub updated_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BatchListResponse {
     pub items: Vec<BatchResponse>,
     pub page: u32,
@@ -100,9 +112,10 @@ pub struct BatchListResponse {
     pub total: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BatchResultResponse {
     pub custom_id: String,
+    #[schema(value_type = BatchItemStatusSchema)]
     pub status: BatchItemStatus,
     pub request: Value,
     pub response: Option<Value>,
@@ -113,7 +126,7 @@ pub struct BatchResultResponse {
     pub completed_at: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BatchResultsResponse {
     pub batch: BatchResponse,
     pub items: Vec<BatchResultResponse>,
@@ -122,6 +135,62 @@ pub struct BatchResultsResponse {
     pub total: u64,
 }
 
+#[derive(ToSchema)]
+#[schema(rename_all = "snake_case")]
+#[allow(dead_code)]
+enum BatchEndpointSchema {
+    ChatCompletions,
+    Responses,
+    Embeddings,
+}
+
+#[derive(ToSchema)]
+#[schema(rename_all = "snake_case")]
+#[allow(dead_code)]
+enum BatchStatusSchema {
+    Queued,
+    Submitting,
+    SubmissionUnknown,
+    Validating,
+    InProgress,
+    Finalizing,
+    Completed,
+    Failed,
+    Expired,
+    CancelRequested,
+    Cancelling,
+    Cancelled,
+}
+
+#[derive(ToSchema)]
+#[schema(rename_all = "snake_case")]
+#[allow(dead_code)]
+enum BatchItemStatusSchema {
+    Pending,
+    Succeeded,
+    Failed,
+}
+
+#[derive(ToSchema)]
+#[schema(rename_all = "snake_case")]
+#[allow(dead_code)]
+enum BatchPricingStatusSchema {
+    Pending,
+    Priced,
+    PartiallyPriced,
+    Unpriced,
+    ProviderReported,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/batches",
+    request_body = CreateBatchRequest,
+    params(("Idempotency-Key" = String, Header, description = "Caller supplied idempotency key")),
+    responses((status = 202, description = "Batch accepted", body = BatchResponse)),
+    security(("gateway_api_key" = [])),
+    tag = "batches"
+)]
 pub async fn create_batch(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -161,10 +230,19 @@ pub async fn create_batch(
         },
     )
     .await?;
-    let response = batch_response(&state, job).await?;
+    let caller_names = load_caller_names(&state, std::slice::from_ref(&job)).await?;
+    let response = batch_response(job, &caller_names);
     Ok((StatusCode::ACCEPTED, Json(response)).into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/batches",
+    params(ListBatchesQuery),
+    responses((status = 200, description = "Visible batch requests", body = BatchListResponse)),
+    security(("session_cookie" = []), ("gateway_api_key" = [])),
+    tag = "batches"
+)]
 pub async fn list_batches(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -189,10 +267,12 @@ pub async fn list_batches(
             scope,
         )
         .await?;
-    let mut items = Vec::with_capacity(page.items.len());
-    for job in page.items {
-        items.push(batch_response(&state, job).await?);
-    }
+    let caller_names = load_caller_names(&state, &page.items).await?;
+    let items = page
+        .items
+        .into_iter()
+        .map(|job| batch_response(job, &caller_names))
+        .collect();
     Ok(Json(BatchListResponse {
         items,
         page: page.page,
@@ -201,6 +281,14 @@ pub async fn list_batches(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/batches/{batch_id}",
+    params(("batch_id" = Uuid, Path, description = "Batch identifier")),
+    responses((status = 200, description = "Batch request", body = BatchResponse)),
+    security(("session_cookie" = []), ("gateway_api_key" = [])),
+    tag = "batches"
+)]
 pub async fn get_batch(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -208,9 +296,18 @@ pub async fn get_batch(
 ) -> Result<Json<BatchResponse>, AppError> {
     let scope = access_scope(&state, &headers).await?;
     let job = state.store.get_batch(batch_id, scope).await?;
-    Ok(Json(batch_response(&state, job).await?))
+    let caller_names = load_caller_names(&state, std::slice::from_ref(&job)).await?;
+    Ok(Json(batch_response(job, &caller_names)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/batches/{batch_id}/results",
+    params(("batch_id" = Uuid, Path, description = "Batch identifier"), BatchResultsQuery),
+    responses((status = 200, description = "Paged batch results", body = BatchResultsResponse)),
+    security(("session_cookie" = []), ("gateway_api_key" = [])),
+    tag = "batches"
+)]
 pub async fn get_batch_results(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -246,8 +343,9 @@ pub async fn get_batch_results(
         }
         return Ok(([(CONTENT_TYPE, "application/x-ndjson")], Body::from(body)).into_response());
     }
+    let caller_names = load_caller_names(&state, std::slice::from_ref(&job)).await?;
     Ok(Json(BatchResultsResponse {
-        batch: batch_response(&state, job).await?,
+        batch: batch_response(job, &caller_names),
         items,
         page: page.page,
         page_size: page.page_size,
@@ -256,6 +354,14 @@ pub async fn get_batch_results(
     .into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/batches/{batch_id}/cancel",
+    params(("batch_id" = Uuid, Path, description = "Batch identifier")),
+    responses((status = 200, description = "Updated batch request", body = BatchResponse)),
+    security(("session_cookie" = []), ("gateway_api_key" = [])),
+    tag = "batches"
+)]
 pub async fn cancel_batch(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -284,7 +390,8 @@ pub async fn cancel_batch(
         .store
         .request_batch_cancel(batch_id, scope, OffsetDateTime::now_utc())
         .await?;
-    Ok(Json(batch_response(&state, job).await?))
+    let caller_names = load_caller_names(&state, std::slice::from_ref(&job)).await?;
+    Ok(Json(batch_response(job, &caller_names)))
 }
 
 async fn access_scope(state: &AppState, headers: &HeaderMap) -> Result<BatchAccessScope, AppError> {
@@ -352,29 +459,95 @@ async fn optional_api_key(
     }
 }
 
-async fn batch_response(state: &AppState, job: BatchJobRecord) -> Result<BatchResponse, AppError> {
-    let api_key_name = state
-        .store
-        .get_api_key_by_id(job.api_key_id)
-        .await?
-        .map(|key| key.name);
-    let user_name = match job.user_id {
-        Some(user_id) => state
-            .store
-            .get_user_by_id(user_id)
-            .await?
-            .map(|user| user.name),
-        None => None,
-    };
-    let service_account_name = match job.service_account_id {
-        Some(id) => state
-            .store
-            .get_service_account_by_id(id)
-            .await?
-            .map(|account| account.service_account_name),
-        None => None,
-    };
-    Ok(BatchResponse {
+#[derive(Default)]
+struct CallerNames {
+    api_keys: HashMap<Uuid, String>,
+    users: HashMap<Uuid, String>,
+    service_accounts: HashMap<Uuid, String>,
+}
+
+async fn load_caller_names(
+    state: &AppState,
+    jobs: &[BatchJobRecord],
+) -> Result<CallerNames, AppError> {
+    let api_key_ids = jobs
+        .iter()
+        .map(|job| job.api_key_id)
+        .collect::<BTreeSet<_>>();
+    let user_ids = jobs
+        .iter()
+        .filter_map(|job| job.user_id)
+        .collect::<BTreeSet<_>>();
+    let service_account_ids = jobs
+        .iter()
+        .filter_map(|job| job.service_account_id)
+        .collect::<BTreeSet<_>>();
+    let (api_keys, users, service_accounts) = tokio::try_join!(
+        stream::iter(api_key_ids)
+            .map(|id| async move {
+                Ok::<_, gateway_core::StoreError>((
+                    id,
+                    state
+                        .store
+                        .get_api_key_by_id(id)
+                        .await?
+                        .map(|record| record.name),
+                ))
+            })
+            .buffer_unordered(32)
+            .try_collect::<Vec<_>>(),
+        stream::iter(user_ids)
+            .map(|id| async move {
+                Ok::<_, gateway_core::StoreError>((
+                    id,
+                    state
+                        .store
+                        .get_user_by_id(id)
+                        .await?
+                        .map(|record| record.name),
+                ))
+            })
+            .buffer_unordered(32)
+            .try_collect::<Vec<_>>(),
+        stream::iter(service_account_ids)
+            .map(|id| async move {
+                Ok::<_, gateway_core::StoreError>((
+                    id,
+                    state
+                        .store
+                        .get_service_account_by_id(id)
+                        .await?
+                        .map(|record| record.service_account_name),
+                ))
+            })
+            .buffer_unordered(32)
+            .try_collect::<Vec<_>>(),
+    )?;
+    Ok(CallerNames {
+        api_keys: api_keys
+            .into_iter()
+            .filter_map(|(id, name)| name.map(|name| (id, name)))
+            .collect(),
+        users: users
+            .into_iter()
+            .filter_map(|(id, name)| name.map(|name| (id, name)))
+            .collect(),
+        service_accounts: service_accounts
+            .into_iter()
+            .filter_map(|(id, name)| name.map(|name| (id, name)))
+            .collect(),
+    })
+}
+
+fn batch_response(job: BatchJobRecord, caller_names: &CallerNames) -> BatchResponse {
+    let api_key_name = caller_names.api_keys.get(&job.api_key_id).cloned();
+    let user_name = job
+        .user_id
+        .and_then(|id| caller_names.users.get(&id).cloned());
+    let service_account_name = job
+        .service_account_id
+        .and_then(|id| caller_names.service_accounts.get(&id).cloned());
+    BatchResponse {
         batch_id: job.batch_id,
         status: job.status,
         endpoint: job.endpoint,
@@ -404,7 +577,7 @@ async fn batch_response(state: &AppState, job: BatchJobRecord) -> Result<BatchRe
         submitted_at: job.submitted_at.map(format_timestamp),
         completed_at: job.completed_at.map(format_timestamp),
         updated_at: format_timestamp(job.updated_at),
-    })
+    }
 }
 
 fn result_response(item: BatchItemRecord) -> BatchResultResponse {

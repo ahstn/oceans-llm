@@ -722,7 +722,7 @@ impl ProviderClient for OpenAiCompatProvider {
     async fn submit_batch(
         &self,
         request: &ProviderBatchRequest,
-    ) -> Result<ProviderBatchState, ProviderError> {
+    ) -> gateway_core::ProviderBatchSubmission {
         self.submit_batch_impl(request).await
     }
 

@@ -44,7 +44,7 @@ describe('signed-in route selection', () => {
     )
   })
 
-  it('keeps request logs as the default route for their shared page grant', () => {
+  it('uses the canonical request-log route while granting access to batches', () => {
     const requestLogsOnlySession = regularUserSession(['request_logs'])
 
     expect(defaultSignedInPath(requestLogsOnlySession)).toBe('/observability/request-logs')

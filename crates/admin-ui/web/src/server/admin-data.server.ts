@@ -6,6 +6,7 @@ import type {
   BudgetAlertHistoryView,
   BatchFiltersInput,
   BatchPageView,
+  BatchResultsInput,
   BatchResultsView,
   BatchView,
   ChangePasswordInput,
@@ -315,26 +316,33 @@ export async function listRequestLogs(
 }
 
 export async function listBatches(filters: BatchFiltersInput = {}): Promise<BatchPageView> {
-  const params = new URLSearchParams()
-  for (const [key, value] of Object.entries(filters)) {
-    if (value !== undefined && value !== '') {
-      params.set(key, String(value))
-    }
-  }
-  const query = params.size > 0 ? `?${params.toString()}` : ''
-  return fetchGatewayJson<BatchPageView>(`/api/v1/batches${query}`)
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/batches', {
+      params: { query: filters },
+    }),
+  )
 }
 
-export async function getBatchResults(batchId: string): Promise<BatchResultsView> {
-  return fetchGatewayJson<BatchResultsView>(
-    `/api/v1/batches/${encodeURIComponent(batchId)}/results?page=1&page_size=1000`,
+export async function getBatchResults(
+  batchId: string,
+  query: BatchResultsInput = {},
+): Promise<BatchResultsView> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/batches/{batch_id}/results', {
+      params: { path: { batch_id: batchId }, query },
+    }),
   )
 }
 
 export async function cancelBatch(batchId: string): Promise<BatchView> {
-  return fetchGatewayJson<BatchView>(`/api/v1/batches/${encodeURIComponent(batchId)}/cancel`, {
-    method: 'POST',
-  })
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/batches/{batch_id}/cancel', {
+      params: { path: { batch_id: batchId } },
+    }),
+  )
 }
 
 export async function getRequestLogDetail(

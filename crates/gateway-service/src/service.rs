@@ -40,12 +40,6 @@ pub struct RecordedChatUsage {
     pub cost_usd: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BatchPricingPolicy {
-    HalfAllTokenRates,
-    VertexHalfNonCachedRates,
-}
-
 #[derive(Debug)]
 struct RouteContextOverrideConflict {
     route_id: Uuid,
@@ -686,37 +680,6 @@ where
         })
     }
 
-    pub async fn price_batch_usage(
-        &self,
-        route: &ModelRoute,
-        provider_usage: Option<&Value>,
-        policy: BatchPricingPolicy,
-        occurred_at: OffsetDateTime,
-    ) -> Result<Option<Money4>, GatewayError> {
-        let usage = usage_summary_from_value(provider_usage)?;
-        if !usage.has_usage()
-            || matches!(usage.cache_usage, CacheUsageNormalization::Unsupported(_))
-        {
-            return Ok(None);
-        }
-        let rates = match self.resolve_route_pricing(route, occurred_at).await? {
-            PricingResolution::Exact { pricing } => BatchRates {
-                input: pricing.input_cost_per_million_tokens,
-                output: pricing.output_cost_per_million_tokens,
-                cache_read: pricing.cache_read_cost_per_million_tokens,
-                cache_write: pricing.cache_write_cost_per_million_tokens,
-            },
-            PricingResolution::ConfiguredOverride { pricing } => BatchRates {
-                input: Some(pricing.input_cost_per_million_tokens),
-                output: Some(pricing.output_cost_per_million_tokens),
-                cache_read: pricing.cache_read_cost_per_million_tokens,
-                cache_write: pricing.cache_write_cost_per_million_tokens,
-            },
-            PricingResolution::Unpriced { .. } => return Ok(None),
-        };
-        compute_batch_usage_cost(&usage, rates, policy)
-    }
-
     pub async fn record_batch_usage(
         &self,
         auth: &AuthenticatedApiKey,
@@ -825,57 +788,6 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct BatchRates {
-    input: Option<Money4>,
-    output: Option<Money4>,
-    cache_read: Option<Money4>,
-    cache_write: Option<Money4>,
-}
-
-fn compute_batch_usage_cost(
-    usage: &UsageSummary,
-    rates: BatchRates,
-    policy: BatchPricingPolicy,
-) -> Result<Option<Money4>, GatewayError> {
-    let mut components = Vec::new();
-    match &usage.cache_usage {
-        CacheUsageNormalization::Valid(_) => {
-            components.push((usage.uncached_input_tokens, rates.input, true));
-            components.push((
-                usage.cache_read_tokens,
-                rates.cache_read,
-                policy == BatchPricingPolicy::HalfAllTokenRates,
-            ));
-            components.push((usage.cache_write_tokens, rates.cache_write, true));
-        }
-        CacheUsageNormalization::Unavailable | CacheUsageNormalization::Invalid(_) => {
-            components.push((usage.prompt_tokens, rates.input, true));
-        }
-        CacheUsageNormalization::Unsupported(_) => return Ok(None),
-    }
-    components.push((usage.completion_tokens, rates.output, true));
-
-    let mut total = Money4::ZERO;
-    for (tokens, rate, discounted) in components {
-        let tokens = tokens.unwrap_or_default();
-        if tokens == 0 {
-            continue;
-        }
-        let Some(rate) = rate else {
-            return Ok(None);
-        };
-        let mut cost = scaled_cost_for_tokens(tokens, rate)?;
-        if discounted {
-            cost = Money4::from_scaled((cost.as_scaled_i64() + 1) / 2);
-        }
-        total = total
-            .checked_add(cost)
-            .ok_or_else(|| GatewayError::Internal("batch usage cost overflow".to_string()))?;
-    }
-    Ok(Some(total))
-}
-
 fn aggregate_batch_usage(results: &[ProviderBatchResult]) -> Result<UsageSummary, GatewayError> {
     let mut aggregate = UsageSummary::default();
     let mut complete = true;
@@ -915,25 +827,27 @@ fn add_optional(left: Option<i64>, right: Option<i64>) -> Result<Option<i64>, Ga
 }
 
 #[derive(Debug, Clone, Default)]
-struct UsageSummary {
-    prompt_tokens: Option<i64>,
-    uncached_input_tokens: Option<i64>,
-    cache_read_tokens: Option<i64>,
-    cache_write_tokens: Option<i64>,
-    completion_tokens: Option<i64>,
-    total_tokens: Option<i64>,
-    cache_usage: CacheUsageNormalization,
+pub(crate) struct UsageSummary {
+    pub(crate) prompt_tokens: Option<i64>,
+    pub(crate) uncached_input_tokens: Option<i64>,
+    pub(crate) cache_read_tokens: Option<i64>,
+    pub(crate) cache_write_tokens: Option<i64>,
+    pub(crate) completion_tokens: Option<i64>,
+    pub(crate) total_tokens: Option<i64>,
+    pub(crate) cache_usage: CacheUsageNormalization,
 }
 
 impl UsageSummary {
-    fn has_usage(&self) -> bool {
+    pub(crate) fn has_usage(&self) -> bool {
         self.prompt_tokens.is_some()
             || self.completion_tokens.is_some()
             || self.total_tokens.is_some()
     }
 }
 
-fn usage_summary_from_value(value: Option<&Value>) -> Result<UsageSummary, GatewayError> {
+pub(crate) fn usage_summary_from_value(
+    value: Option<&Value>,
+) -> Result<UsageSummary, GatewayError> {
     let Some(usage) = value.and_then(Value::as_object) else {
         return Ok(UsageSummary::default());
     };
@@ -993,7 +907,7 @@ fn usage_summary_from_value(value: Option<&Value>) -> Result<UsageSummary, Gatew
 }
 
 #[derive(Debug, Clone, Default)]
-enum CacheUsageNormalization {
+pub(crate) enum CacheUsageNormalization {
     #[default]
     Unavailable,
     Valid(CacheTokenSummary),
@@ -1019,7 +933,7 @@ impl CacheUsageNormalization {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CacheTokenSummary {
+pub(crate) struct CacheTokenSummary {
     total_input_tokens: i64,
     uncached_input_tokens: i64,
     cache_read_tokens: i64,
@@ -1377,7 +1291,10 @@ fn compute_usage_cost(
         .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))
 }
 
-fn scaled_cost_for_tokens(tokens: i64, rate_per_million: Money4) -> Result<Money4, GatewayError> {
+pub(crate) fn scaled_cost_for_tokens(
+    tokens: i64,
+    rate_per_million: Money4,
+) -> Result<Money4, GatewayError> {
     if tokens < 0 {
         return Err(GatewayError::Internal(
             "token count cannot be negative".to_string(),
@@ -1440,10 +1357,9 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{
-        BatchPricingPolicy, BatchRates, CacheUsageNormalization, GatewayService,
-        compute_batch_usage_cost, usage_summary_from_value,
-    };
+    use crate::batches::{BatchPricingPolicy, BatchRates, compute_batch_usage_cost};
+
+    use super::{CacheUsageNormalization, GatewayService, usage_summary_from_value};
 
     #[test]
     fn batch_pricing_halves_openai_cache_reads_but_not_vertex_cache_reads() {
