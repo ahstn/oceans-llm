@@ -1086,7 +1086,35 @@ where
                     job.batch_id
                 )));
             }
-            return Err(error);
+            if !matches!(error, GatewayError::BudgetExceeded { .. }) {
+                return Err(error);
+            }
+            if !self.store.insert_usage_ledger_if_absent(&record).await? {
+                let existing = self
+                    .store
+                    .get_usage_ledger_by_request_and_scope(
+                        &record.request_id,
+                        &record.ownership_scope_key,
+                    )
+                    .await?
+                    .ok_or_else(|| {
+                        GatewayError::Internal(
+                            "batch usage insert lost its idempotency race".to_string(),
+                        )
+                    })?;
+                if existing.computed_cost_usd == cost_usd {
+                    return Ok(());
+                }
+                return Err(GatewayError::Internal(format!(
+                    "batch `{}` raced with a different recorded cost",
+                    job.batch_id
+                )));
+            }
+            warn!(
+                batch_id = %job.batch_id,
+                error = %error,
+                "recorded incurred batch spend after a hard-budget overrun"
+            );
         }
         if let Err(error) = self.budget_alerts.evaluate_after_usage(auth, &record).await {
             warn!(batch_id = %job.batch_id, error = %error, "budget alert evaluation failed after batch usage insert");
@@ -1760,7 +1788,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn batch_usage_respects_projected_hard_budget() {
+    async fn batch_usage_records_incurred_cost_after_hard_budget() {
         let auth = auth();
         let occurred_at = OffsetDateTime::now_utc();
         let scope = BudgetScope::User {
@@ -1829,7 +1857,7 @@ mod tests {
             },
         };
 
-        let error = service
+        service
             .record_batch_usage(
                 &auth,
                 &job,
@@ -1842,8 +1870,23 @@ mod tests {
                 },
             )
             .await
-            .expect_err("projected batch cost must exceed the hard budget");
+            .expect("incurred provider spend must be recorded");
 
+        {
+            let events = repo.events.lock().expect("events lock");
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].computed_cost_usd, Money4::from_scaled(200));
+        }
+        let error = service
+            .enforce_pre_provider_budget(
+                &auth,
+                "next-batch-request",
+                Some(model_id),
+                Some("gpt-5.6-sol"),
+                occurred_at,
+            )
+            .await
+            .expect_err("recorded overrun must block later traffic");
         assert!(matches!(
             error,
             GatewayError::BudgetExceeded {
@@ -1853,7 +1896,6 @@ mod tests {
             } if projected_cost_usd == Money4::from_scaled(200)
                 && limit_usd == Money4::from_scaled(100)
         ));
-        assert!(repo.events.lock().expect("events lock").is_empty());
     }
 
     #[derive(Clone, Default)]

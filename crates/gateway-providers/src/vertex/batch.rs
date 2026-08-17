@@ -54,7 +54,7 @@ impl VertexProvider {
                 }
             }
             Err(error) => {
-                self.delete_input_table(&plan, &request.context).await;
+                let _ = self.delete_input_table(&plan, &request.context).await;
                 ProviderBatchSubmission::NotSubmitted(error)
             }
         }
@@ -103,30 +103,51 @@ impl VertexProvider {
                 }
             }),
         };
-        if let Err(error) = self
-            .create_input_table(
-                &plan.project,
-                &plan.dataset,
-                &plan.input_table,
-                &request.context,
-            )
-            .await
-        {
-            self.delete_input_table(&plan, &request.context).await;
-            return Err(error);
+        if let Err(error) = self.create_clean_input_table(&plan, &request.context).await {
+            return Err(
+                match self.delete_input_table(&plan, &request.context).await {
+                    Ok(()) => error,
+                    Err(cleanup_error) => cleanup_error,
+                },
+            );
         }
         if let Err(error) = self
             .insert_input_rows(&plan.project, &plan.dataset, &plan.input_table, request)
             .await
         {
-            self.delete_input_table(&plan, &request.context).await;
-            return Err(error);
+            return Err(
+                match self.delete_input_table(&plan, &request.context).await {
+                    Ok(()) => error,
+                    Err(cleanup_error) => cleanup_error,
+                },
+            );
         }
         Ok(plan)
     }
 
-    async fn delete_input_table(&self, plan: &VertexBatchPlan, context: &ProviderRequestContext) {
-        let _ = self
+    async fn create_clean_input_table(
+        &self,
+        plan: &VertexBatchPlan,
+        context: &ProviderRequestContext,
+    ) -> Result<(), ProviderError> {
+        let result = self
+            .create_input_table(&plan.project, &plan.dataset, &plan.input_table, context)
+            .await;
+        if result.as_ref().is_err_and(table_already_exists) {
+            self.delete_input_table(plan, context).await?;
+            return self
+                .create_input_table(&plan.project, &plan.dataset, &plan.input_table, context)
+                .await;
+        }
+        result
+    }
+
+    async fn delete_input_table(
+        &self,
+        plan: &VertexBatchPlan,
+        context: &ProviderRequestContext,
+    ) -> Result<(), ProviderError> {
+        match self
             .bigquery_json(
                 reqwest::Method::DELETE,
                 &format!(
@@ -136,7 +157,11 @@ impl VertexProvider {
                 None,
                 context,
             )
-            .await;
+            .await
+        {
+            Ok(_) | Err(ProviderError::UpstreamHttp { status: 404, .. }) => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     async fn reconcile_vertex_batch(
@@ -553,6 +578,10 @@ fn submission_is_unknown(error: &ProviderError) -> bool {
     )
 }
 
+fn table_already_exists(error: &ProviderError) -> bool {
+    matches!(error, ProviderError::UpstreamHttp { status: 409, .. })
+}
+
 fn api_base(host: &str) -> String {
     let host = host.trim_end_matches('/');
     if host.starts_with("http://") || host.starts_with("https://") {
@@ -733,7 +762,7 @@ mod tests {
 
     use super::{
         parse_bigquery_results, parse_bigquery_table, parse_vertex_state, submission_is_unknown,
-        validate_bigquery_identifier, validate_bigquery_project,
+        table_already_exists, validate_bigquery_identifier, validate_bigquery_project,
     };
 
     #[test]
@@ -744,6 +773,14 @@ mod tests {
         assert!(!submission_is_unknown(&ProviderError::InvalidRequest(
             "unsupported model".to_string(),
         )));
+    }
+
+    #[test]
+    fn vertex_staging_table_conflict_requires_replacement() {
+        assert!(table_already_exists(&ProviderError::UpstreamHttp {
+            status: 409,
+            body: "table exists".to_string(),
+        }));
     }
 
     #[test]
