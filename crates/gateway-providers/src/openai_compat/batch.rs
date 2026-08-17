@@ -247,26 +247,15 @@ impl OpenAiCompatProvider {
         &self,
         request: &ProviderBatchRequest,
     ) -> Result<String, ProviderError> {
+        for item in &request.items {
+            self.encode_openai_batch_item(request, item)?;
+        }
         let url = join_base_url(&self.batch_base_url(), "files")?;
         let provider = self.clone();
         let stream_request = request.clone();
         let jsonl = async_stream::stream! {
             for item in &stream_request.items {
-                let encoded = provider
-                    .prepare_batch_item_body(&stream_request, item)
-                    .and_then(|body| {
-                        let mut encoded = serde_json::to_vec(&json!({
-                            "custom_id": item.custom_id,
-                            "method": "POST",
-                            "url": stream_request.endpoint.provider_path(),
-                            "body": body,
-                        }))
-                        .map_err(|error| ProviderError::Transport(format!(
-                            "failed encoding OpenAI batch JSONL: {error}"
-                        )))?;
-                        encoded.push(b'\n');
-                        Ok::<Bytes, ProviderError>(Bytes::from(encoded))
-                    });
+                let encoded = provider.encode_openai_batch_item(&stream_request, item);
                 let failed = encoded.is_err();
                 yield encoded;
                 if failed {
@@ -292,6 +281,25 @@ impl OpenAiCompatProvider {
             .and_then(Value::as_str)
             .map(str::to_string)
             .ok_or_else(|| ProviderError::Transport("OpenAI file upload omitted id".to_string()))
+    }
+
+    fn encode_openai_batch_item(
+        &self,
+        request: &ProviderBatchRequest,
+        item: &gateway_core::ProviderBatchRequestItem,
+    ) -> Result<Bytes, ProviderError> {
+        let body = self.prepare_batch_item_body(request, item)?;
+        let mut encoded = serde_json::to_vec(&json!({
+            "custom_id": item.custom_id,
+            "method": "POST",
+            "url": request.endpoint.provider_path(),
+            "body": body,
+        }))
+        .map_err(|error| {
+            ProviderError::Transport(format!("failed encoding OpenAI batch JSONL: {error}"))
+        })?;
+        encoded.push(b'\n');
+        Ok(Bytes::from(encoded))
     }
 
     async fn delete_openai_batch_file(
@@ -637,13 +645,72 @@ fn parse_openrouter_results(value: &Value) -> Vec<ProviderBatchResult> {
 
 #[cfg(test)]
 mod tests {
-    use gateway_core::{BatchStatus, Money4, ProviderError};
-    use serde_json::json;
+    use std::collections::BTreeMap;
+
+    use gateway_core::{
+        BatchEndpoint, BatchStatus, Money4, OpenAiCompatEmptyTools, OpenAiCompatRouteCompatibility,
+        ProviderBatchRequest, ProviderBatchRequestItem, ProviderBatchSubmission, ProviderError,
+        ProviderRequestContext, RouteCompatibility,
+    };
+    use serde_json::{Map, json};
+    use uuid::Uuid;
 
     use super::{
         parse_openai_result, parse_openai_result_line, parse_openrouter_results, parse_state,
         submission_is_unknown,
     };
+    use crate::openai_compat::{
+        OpenAiBatchConfig, OpenAiBatchDialect, OpenAiCompatConfig, OpenAiCompatProvider,
+    };
+
+    #[tokio::test]
+    async fn invalid_openai_batch_item_is_rejected_before_upload() {
+        let mut config = OpenAiCompatConfig::new(
+            "openai-prod".to_string(),
+            "http://127.0.0.1:1/v1".to_string(),
+        );
+        config.batch = OpenAiBatchConfig {
+            dialect: OpenAiBatchDialect::OpenAi,
+            base_url: None,
+        };
+        let provider = OpenAiCompatProvider::new(config).expect("provider");
+        let request = ProviderBatchRequest {
+            batch_id: Uuid::new_v4(),
+            endpoint: BatchEndpoint::ChatCompletions,
+            upstream_model: "gpt-5.6-sol".to_string(),
+            items: vec![ProviderBatchRequestItem {
+                custom_id: "invalid-tools".to_string(),
+                body: json!({
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "tools": [],
+                    "tool_choice": "required"
+                }),
+            }],
+            context: ProviderRequestContext {
+                request_id: "request-1".to_string(),
+                model_key: "fast".to_string(),
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-5.6-sol".to_string(),
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                request_headers: BTreeMap::new(),
+                compatibility: RouteCompatibility {
+                    openai_compat: Some(OpenAiCompatRouteCompatibility {
+                        empty_tools: OpenAiCompatEmptyTools::Omit,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            },
+        };
+
+        match provider.submit_batch_impl(&request).await {
+            ProviderBatchSubmission::NotSubmitted(ProviderError::InvalidRequest(message)) => {
+                assert!(message.contains("when empty `tools` are omitted"));
+            }
+            _ => panic!("invalid batch item was not rejected before upload"),
+        }
+    }
 
     #[test]
     fn only_uncertain_create_failures_require_reconciliation() {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { RefreshIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
@@ -86,6 +86,7 @@ export function BatchesPage() {
   const [batchDetail, setBatchDetail] = useState<BatchResultsView | null>(null)
   const [detailPending, setDetailPending] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const detailRequestId = useRef(0)
   const [cancelTarget, setCancelTarget] = useState<BatchView | null>(null)
   const [cancelPending, setCancelPending] = useState(false)
   const [isListPending, startListTransition] = useTransition()
@@ -126,6 +127,7 @@ export function BatchesPage() {
   }
 
   async function loadBatchResults(batch: BatchView, page: number) {
+    const requestId = ++detailRequestId.current
     setBatchDetail(null)
     setDetailError(null)
     setDetailPending(true)
@@ -133,11 +135,13 @@ export function BatchesPage() {
       const detail = await getBatchResultPage({
         data: { batchId: batch.batch_id, page, pageSize: resultPageSize },
       })
-      setBatchDetail(detail)
+      if (requestId === detailRequestId.current) setBatchDetail(detail)
     } catch (error: unknown) {
-      setDetailError(error instanceof Error ? error.message : 'Failed to load batch responses')
+      if (requestId === detailRequestId.current) {
+        setDetailError(error instanceof Error ? error.message : 'Failed to load batch responses')
+      }
     } finally {
-      setDetailPending(false)
+      if (requestId === detailRequestId.current) setDetailPending(false)
     }
   }
 
@@ -248,6 +252,7 @@ export function BatchesPage() {
         }}
         onOpenChange={(open) => {
           if (!open) {
+            detailRequestId.current += 1
             setSelectedBatch(null)
             setBatchDetail(null)
             setDetailError(null)

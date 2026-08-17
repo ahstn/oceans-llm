@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { platformAdminSession, regularUserSession } from '@/test/auth-session'
@@ -105,6 +105,14 @@ const completedDetail: BatchResultsView = {
   page: 1,
   page_size: 1_000,
   total: 1,
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }
 
 describe('BatchesPage', () => {
@@ -233,6 +241,38 @@ describe('BatchesPage', () => {
       })
     })
     expect(await screen.findByText('page-two-result')).toBeInTheDocument()
+  })
+
+  it('ignores a stale detail response after selecting another batch', async () => {
+    const firstRequest = deferred<BatchResultsView>()
+    const secondRequest = deferred<BatchResultsView>()
+    getBatchResultPageMock
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise)
+    const { BatchesPage } = await import('@/routes/batches')
+
+    render(<BatchesPage />)
+    const viewButtons = screen.getAllByRole('button', { name: 'View' })
+    fireEvent.click(viewButtons[0])
+    fireEvent.click(viewButtons[1])
+
+    await act(async () => {
+      secondRequest.resolve({
+        ...completedDetail,
+        batch: queuedBatch,
+        items: [{ ...completedDetail.items[0], custom_id: 'current-batch-result' }],
+      })
+    })
+    expect(await screen.findByText('current-batch-result')).toBeInTheDocument()
+
+    await act(async () => {
+      firstRequest.resolve({
+        ...completedDetail,
+        items: [{ ...completedDetail.items[0], custom_id: 'stale-batch-result' }],
+      })
+    })
+    expect(screen.queryByText('stale-batch-result')).not.toBeInTheDocument()
+    expect(screen.getByText('current-batch-result')).toBeInTheDocument()
   })
 
   it('confirms cancellation before invalidating the list', async () => {
