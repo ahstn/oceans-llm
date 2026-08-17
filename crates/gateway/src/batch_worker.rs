@@ -143,7 +143,23 @@ async fn process_job(
                 .await
             {
                 Ok(state) => apply_state(service, provider.as_ref(), worker_id, job, state).await,
-                Err(error) => handle_provider_error(service, worker_id, job, error).await,
+                Err(error) if error.is_retryable() => {
+                    handle_provider_error(service, worker_id, job, error).await
+                }
+                Err(cancel_error) => {
+                    match provider
+                        .inspect_batch(provider_batch_id, &job.provider_context)
+                        .await
+                    {
+                        Ok(state) if cancel_failure_reconciles_state(state.status) => {
+                            apply_state(service, provider.as_ref(), worker_id, job, state).await
+                        }
+                        Ok(_) => handle_provider_error(service, worker_id, job, cancel_error).await,
+                        Err(inspect_error) => {
+                            handle_provider_error(service, worker_id, job, inspect_error).await
+                        }
+                    }
+                }
             }
         }
         BatchStatus::Validating
@@ -170,6 +186,10 @@ async fn process_job(
         }
         _ => Ok(()),
     }
+}
+
+fn cancel_failure_reconciles_state(status: BatchStatus) -> bool {
+    status == BatchStatus::Cancelling || status.is_terminal()
 }
 
 async fn submit_job(
@@ -569,9 +589,9 @@ async fn handle_provider_error(
 mod tests {
     use std::collections::BTreeSet;
 
-    use gateway_core::ProviderBatchResult;
+    use gateway_core::{BatchStatus, ProviderBatchResult};
 
-    use super::validate_result_custom_ids;
+    use super::{cancel_failure_reconciles_state, validate_result_custom_ids};
 
     fn result(custom_id: &str) -> ProviderBatchResult {
         ProviderBatchResult {
@@ -614,5 +634,13 @@ mod tests {
 
         assert!(validate_result_custom_ids(&expected(), &duplicate, Some(2)).is_err());
         assert!(validate_result_custom_ids(&expected(), &unknown, Some(2)).is_err());
+    }
+
+    #[test]
+    fn definitive_cancel_failure_reconciles_terminal_or_cancelling_state() {
+        assert!(cancel_failure_reconciles_state(BatchStatus::Completed));
+        assert!(cancel_failure_reconciles_state(BatchStatus::Cancelled));
+        assert!(cancel_failure_reconciles_state(BatchStatus::Cancelling));
+        assert!(!cancel_failure_reconciles_state(BatchStatus::InProgress));
     }
 }
