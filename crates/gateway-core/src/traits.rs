@@ -1,3 +1,8 @@
+pub use crate::agent_analysis::{
+    AgentAnalysisQueueRepository, AgentSessionAnalysisRepository, AgentSessionReportRepository,
+    AgentSessionTraceRepository,
+};
+
 use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 use async_trait::async_trait;
@@ -397,6 +402,22 @@ pub trait BudgetRepository: Send + Sync {
         request_id: &str,
         ownership_scope_key: &str,
     ) -> Result<Option<UsageLedgerRecord>, StoreError>;
+    async fn get_usage_ledgers_by_request_ids_and_scope(
+        &self,
+        request_ids: &[String],
+        ownership_scope_key: &str,
+    ) -> Result<Vec<UsageLedgerRecord>, StoreError> {
+        let mut records = Vec::new();
+        for request_id in request_ids {
+            if let Some(record) = self
+                .get_usage_ledger_by_request_and_scope(request_id, ownership_scope_key)
+                .await?
+            {
+                records.push(record);
+            }
+        }
+        Ok(records)
+    }
     async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
         scope: &BudgetScope,

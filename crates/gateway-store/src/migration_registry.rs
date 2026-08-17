@@ -226,10 +226,26 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 44,
+        name: "agent_session_analysis",
+        checksum: "V44__agent_session_analysis.sql",
+        libsql_sql: include_str!("../migrations/V44__agent_session_analysis.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V44__agent_session_analysis.sql"),
+    },
+    MigrationManifest {
+        version: 45,
+        name: "agent_analysis_configuration_version",
+        checksum: "V45__agent_analysis_configuration_version.sql",
+        libsql_sql: include_str!("../migrations/V45__agent_analysis_configuration_version.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V45__agent_analysis_configuration_version.sql"
+        ),
+    },
+    MigrationManifest {
+        version: 46,
         name: "batch_jobs",
-        checksum: "V44__batch_jobs.sql",
-        libsql_sql: include_str!("../migrations/V44__batch_jobs.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V44__batch_jobs.sql"),
+        checksum: "V46__batch_jobs.sql",
+        libsql_sql: include_str!("../migrations/V46__batch_jobs.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V46__batch_jobs.sql"),
     },
 ];
 

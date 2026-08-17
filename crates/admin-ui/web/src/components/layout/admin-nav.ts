@@ -99,6 +99,12 @@ export const adminNavSections: AdminNavSection[] = [
         icon: RoboticIcon,
       },
       {
+        page: 'agent_sessions',
+        label: 'Agent Sessions',
+        to: '/observability/agent-sessions',
+        icon: RoboticIcon,
+      },
+      {
         page: 'request_logs',
         requiredPage: 'request_logs',
         label: 'Request Logs',

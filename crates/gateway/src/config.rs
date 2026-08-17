@@ -30,8 +30,15 @@ use serde::{Deserialize, Deserializer, de};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
+mod agent_analysis;
 mod permissions;
 mod providers;
+
+pub use agent_analysis::{
+    AgentAnalysisAccessDecision, AgentAnalysisCacheProfileConfig, AgentAnalysisCacheTtlConfig,
+    AgentAnalysisConfig, AgentAnalysisMetricsConfig, AgentAnalysisRuntimeCapabilities,
+    LoadedAgentAnalysis,
+};
 
 pub use permissions::{
     AdminAction, AdminPage, AdminPermissionGroup, PermissionSetConfig, PermissionsConfig,
@@ -63,6 +70,8 @@ pub struct GatewayConfig {
     pub budgets: BudgetsConfig,
     #[serde(default)]
     pub request_logging: RequestLoggingConfig,
+    #[serde(default)]
+    pub agent_analysis: AgentAnalysisConfig,
     #[serde(default)]
     pub permissions: PermissionsConfig,
     #[serde(default)]
@@ -100,6 +109,7 @@ impl GatewayConfig {
         let _ = self.database.connection_options()?;
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
+        self.agent_analysis.validate()?;
         let _ = self.permissions.resolve()?;
         self.auth.oidc.validate(&self.teams)?;
         self.auth.oauth.validate(&self.teams)?;
@@ -3619,8 +3629,9 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        AwsBedrockRouteCompatibilityConfig, GatewayConfig, McpOauthConfig, McpOauthProviderConfig,
-        default_google_authorization_url, default_google_token_url,
+        AgentAnalysisCacheTtlConfig, AwsBedrockRouteCompatibilityConfig, GatewayConfig,
+        McpOauthConfig, McpOauthProviderConfig, default_google_authorization_url,
+        default_google_token_url,
     };
 
     fn write_config(path: &Path, yaml: &str) {
@@ -6455,6 +6466,75 @@ users:
             error_text
                 .contains("user email `ops-admin@example.com` is reserved for bootstrap admin"),
             "unexpected error: {error_text}"
+        );
+    }
+    #[test]
+    fn parses_agent_analysis_policy_and_cache_profiles() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+agent_analysis:
+  enabled: true
+  report_retention_days: 120
+  queue_retention_days: 14
+  context_input_boundary_tokens: 180000
+  context_reserved_output_tokens: 64000
+  context_penalty_points_per_repeated_excess: 3
+  metrics:
+    tokens: true
+    cache: true
+    context: false
+    tools: true
+    skills: false
+    reliability: true
+    outcomes: true
+    finish_reasons: false
+  cache_profiles:
+    - provider_key_contains: anthropic
+      upstream_model_contains: opus
+      minimum_cacheable_tokens: 4096
+      default_ttl: one_hour
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let analysis = config.agent_analysis;
+        assert_eq!(analysis.report_retention_days, 120);
+        assert_eq!(analysis.queue_retention_days, 14);
+        assert_eq!(analysis.context_input_boundary_tokens, 180_000);
+        assert_eq!(analysis.context_reserved_output_tokens, 64_000);
+        assert_eq!(analysis.context_penalty_points_per_repeated_excess, 3);
+        assert!(!analysis.metrics.context);
+        assert!(!analysis.metrics.skills);
+        assert!(!analysis.metrics.finish_reasons);
+        assert_eq!(analysis.cache_profiles.len(), 1);
+        assert_eq!(analysis.cache_profiles[0].minimum_cacheable_tokens, 4_096);
+        assert!(matches!(
+            analysis.cache_profiles[0].default_ttl,
+            AgentAnalysisCacheTtlConfig::OneHour
+        ));
+    }
+
+    #[test]
+    fn rejects_agent_analysis_cache_profile_without_a_match() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+agent_analysis:
+  cache_profiles:
+    - minimum_cacheable_tokens: 1024
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}")
+                .contains("agent analysis cache profiles require a provider or model match"),
+            "unexpected error: {error:#}"
         );
     }
 

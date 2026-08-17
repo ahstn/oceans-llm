@@ -14,6 +14,7 @@ export const sharedAdminPages: AdminPage[] = [
   'usage_costs',
   'leaderboard',
   'agent_harnesses',
+  'agent_sessions',
   'request_logs',
   'mcp_invocations',
   'teams',
@@ -39,6 +40,16 @@ export const allAdminPages: AdminPage[] = [
 
 export function platformAdminSession(pages = allAdminPages): AuthSessionView {
   return {
+    team_id: null,
+    team_role: null,
+    capabilities: {
+      platform_admin: true,
+      agent_analysis: pages.includes('agent_sessions'),
+      passive_analysis_enabled: true,
+      shadow_diagnostics_visible: true,
+      calibrated_score_visible: true,
+      team_admin_analytics_enabled: false,
+    },
     must_change_password: false,
     permissions: {
       group: 'platform_admins',
@@ -57,6 +68,16 @@ export function platformAdminSession(pages = allAdminPages): AuthSessionView {
 
 export function regularUserSession(pages = sharedAdminPages): AuthSessionView {
   return {
+    team_id: 'team-1',
+    team_role: 'member',
+    capabilities: {
+      platform_admin: false,
+      agent_analysis: false,
+      passive_analysis_enabled: true,
+      shadow_diagnostics_visible: false,
+      calibrated_score_visible: false,
+      team_admin_analytics_enabled: false,
+    },
     must_change_password: false,
     permissions: {
       group: 'users',

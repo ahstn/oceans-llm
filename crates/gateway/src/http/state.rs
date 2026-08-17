@@ -8,7 +8,10 @@ use crate::http::{
     admin_contract::{HarnessUsageView, LeaderboardView},
     response_cache::ResponseCache,
 };
-use crate::{config::ResolvedAdminPermissions, observability::GatewayMetrics};
+use crate::{
+    config::{AgentAnalysisRuntimeCapabilities, ResolvedAdminPermissions},
+    observability::GatewayMetrics,
+};
 
 pub type AppGatewayService = GatewayService<AnyStore, WeightedRoutePlanner>;
 
@@ -25,6 +28,7 @@ pub struct AppState {
     pub oauth_public_base_url: Arc<Option<String>>,
     pub client_config_gateway_base_url: Arc<Option<String>>,
     pub budget_defaults: Arc<SeedHumanBudgetDefaults>,
+    pub agent_analysis: AgentAnalysisRuntimeCapabilities,
     pub admin_permissions: Arc<ResolvedAdminPermissions>,
     pub leaderboard_cache: Arc<ResponseCache<String, LeaderboardView>>,
     pub harness_usage_cache: Arc<ResponseCache<String, HarnessUsageView>>,

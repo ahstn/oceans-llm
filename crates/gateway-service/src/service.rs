@@ -1,8 +1,11 @@
+use agent_session_analysis::AnalysisPolicy;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 
 use gateway_core::{
-    AuthenticatedApiKey, BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetRecord,
-    BudgetRepository, ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
+    AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AuthenticatedApiKey,
+    BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetRecord, BudgetRepository,
+    ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
     McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
@@ -12,20 +15,29 @@ use gateway_core::{
     UsageLedgerRecord, UsagePricingStatus,
 };
 use serde_json::{Value, json};
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
     Authenticator, LoggedRequest, ModelAccess, ModelResolver, PricingCatalog, RequestLogContext,
     RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
-    ResolvedProviderConnection, StreamLogResultInput, StreamResponseCollector,
+    ResolvedProviderConnection, StreamFailureSummary, StreamLogResultInput,
+    StreamResponseCollector,
+    agent_analysis::{
+        PassiveRequestRecord, REPORT_RETENTION, desired_versions_for_policy,
+        finalize_idle_sessions, process_next_analysis, record_prepared_passive_request,
+        session_boundary_group_key,
+    },
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::BudgetGuard,
     budget_scopes::usage_ownership_scope_key,
     effective_route_metadata::{EffectiveRouteMetadata, resolve_effective_route_metadata},
     mcp_invocation_logging::{McpInvocationLogInput, McpInvocationLogging},
 };
+
+const AGENT_ANALYSIS_MAX_IN_FLIGHT_INGESTIONS: usize = 64;
+const AGENT_ANALYSIS_QUEUE_RETENTION: Duration = Duration::days(7);
 
 #[derive(Debug, Clone)]
 pub struct RecordedChatUsage {
@@ -49,6 +61,29 @@ struct RouteContextOverrideConflict {
     catalog_context: i64,
 }
 
+struct PassiveRequestOutcome<'a> {
+    request_log_id: Option<Uuid>,
+    response_body: Option<&'a Value>,
+    terminal_success: Option<bool>,
+    response_payload_truncated: bool,
+    completed_at: OffsetDateTime,
+}
+
+fn stream_terminal_success(
+    collector: &mut StreamResponseCollector,
+    explicit_failure: Option<&StreamFailureSummary>,
+) -> Option<bool> {
+    collector.finish();
+    let failure = explicit_failure.or_else(|| collector.failure());
+    if failure.is_none() {
+        Some(true)
+    } else if collector.usage().is_some() {
+        None
+    } else {
+        Some(false)
+    }
+}
+
 #[derive(Clone)]
 pub struct GatewayService<S, P> {
     store: Arc<S>,
@@ -61,6 +96,12 @@ pub struct GatewayService<S, P> {
     request_logging: RequestLogging<S>,
     mcp_invocation_logging: McpInvocationLogging<S>,
     planner: Arc<P>,
+    agent_analysis_enabled: bool,
+    agent_analysis_ingestion_limit: Arc<Semaphore>,
+    agent_analysis_report_retention: Duration,
+    agent_analysis_queue_retention: Duration,
+    agent_analysis_policy: AnalysisPolicy,
+    agent_analysis_desired_versions: AgentAnalysisDesiredVersions,
 }
 
 impl<S, P> GatewayService<S, P>
@@ -119,6 +160,8 @@ where
             crate::McpInvocationPayloadPolicy::from_request_log_policy(payload_policy),
         );
 
+        let agent_analysis_policy = AnalysisPolicy::default();
+        let agent_analysis_desired_versions = desired_versions_for_policy(&agent_analysis_policy);
         Self {
             store,
             authenticator,
@@ -130,7 +173,39 @@ where
             request_logging,
             mcp_invocation_logging,
             planner,
+            agent_analysis_enabled: false,
+            agent_analysis_ingestion_limit: Arc::new(Semaphore::new(
+                AGENT_ANALYSIS_MAX_IN_FLIGHT_INGESTIONS,
+            )),
+            agent_analysis_report_retention: REPORT_RETENTION,
+            agent_analysis_queue_retention: AGENT_ANALYSIS_QUEUE_RETENTION,
+            agent_analysis_policy,
+            agent_analysis_desired_versions,
         }
+    }
+
+    #[must_use]
+    pub fn with_agent_analysis_enabled(mut self, enabled: bool) -> Self {
+        self.agent_analysis_enabled = enabled;
+        self
+    }
+
+    #[must_use]
+    pub fn with_agent_analysis_retention(
+        mut self,
+        report_retention: Duration,
+        queue_retention: Duration,
+    ) -> Self {
+        self.agent_analysis_report_retention = report_retention;
+        self.agent_analysis_queue_retention = queue_retention;
+        self
+    }
+
+    #[must_use]
+    pub fn with_agent_analysis_policy(mut self, policy: AnalysisPolicy) -> Self {
+        self.agent_analysis_desired_versions = desired_versions_for_policy(&policy);
+        self.agent_analysis_policy = policy;
+        self
     }
 
     pub async fn check_readiness(&self) -> Result<(), GatewayError> {
@@ -298,8 +373,13 @@ where
         invoked_tool_count: i64,
         response_body: &Value,
         attempts: Vec<gateway_core::RequestAttemptRecord>,
-    ) -> Result<LoggedRequest, GatewayError> {
-        self.request_logging
+    ) -> Result<LoggedRequest, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        let completed_at = OffsetDateTime::now_utc();
+        let logged = self
+            .request_logging
             .log_non_stream_success(
                 auth,
                 context,
@@ -310,7 +390,22 @@ where
                 response_body,
                 attempts,
             )
-            .await
+            .await?;
+        if logged.wrote {
+            self.record_passive_request(
+                auth,
+                context,
+                PassiveRequestOutcome {
+                    request_log_id: Some(logged.request_log_id),
+                    response_body: logged.analysis_response.as_ref(),
+                    terminal_success: Some(true),
+                    response_payload_truncated: logged.response_payload_truncated,
+                    completed_at,
+                },
+            )
+            .await;
+        }
+        Ok(logged)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -323,8 +418,13 @@ where
         latency_ms: i64,
         gateway_error: &GatewayError,
         attempts: Vec<gateway_core::RequestAttemptRecord>,
-    ) -> Result<LoggedRequest, GatewayError> {
-        self.request_logging
+    ) -> Result<LoggedRequest, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        let completed_at = OffsetDateTime::now_utc();
+        let logged = self
+            .request_logging
             .log_non_stream_failure(
                 auth,
                 context,
@@ -334,7 +434,22 @@ where
                 gateway_error,
                 attempts,
             )
-            .await
+            .await?;
+        if logged.wrote {
+            self.record_passive_request(
+                auth,
+                context,
+                PassiveRequestOutcome {
+                    request_log_id: Some(logged.request_log_id),
+                    response_body: None,
+                    terminal_success: Some(false),
+                    response_payload_truncated: logged.response_payload_truncated,
+                    completed_at,
+                },
+            )
+            .await;
+        }
+        Ok(logged)
     }
 
     pub async fn log_stream_result(
@@ -342,10 +457,160 @@ where
         auth: &AuthenticatedApiKey,
         context: &RequestLogContext,
         stream_result: StreamLogResultInput,
-    ) -> Result<LoggedRequest, GatewayError> {
-        self.request_logging
+    ) -> Result<LoggedRequest, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        let mut stream_result = stream_result;
+        let terminal_success =
+            stream_terminal_success(&mut stream_result.collector, stream_result.failure.as_ref());
+        let completed_at = OffsetDateTime::now_utc();
+        let logged = self
+            .request_logging
             .log_stream_result(auth, context, stream_result)
+            .await?;
+        if logged.wrote {
+            self.record_passive_request(
+                auth,
+                context,
+                PassiveRequestOutcome {
+                    request_log_id: Some(logged.request_log_id),
+                    response_body: logged.analysis_response.as_ref(),
+                    terminal_success,
+                    response_payload_truncated: logged.response_payload_truncated,
+                    completed_at,
+                },
+            )
+            .await;
+        }
+        Ok(logged)
+    }
+
+    async fn record_passive_request(
+        &self,
+        auth: &AuthenticatedApiKey,
+        context: &RequestLogContext,
+        outcome: PassiveRequestOutcome<'_>,
+    ) where
+        S: AgentSessionAnalysisRepository,
+    {
+        if !self.agent_analysis_enabled {
+            return;
+        }
+        let Ok(permit) = Arc::clone(&self.agent_analysis_ingestion_limit).try_acquire_owned()
+        else {
+            warn!(
+                request_id = context.request_id,
+                "passive agent request correlation skipped because the ingestion limit is full"
+            );
+            return;
+        };
+        let store = Arc::clone(&self.store);
+        let auth = auth.clone();
+        let request_id = context.request_id.clone();
+        let requested_model_key = context.requested_model_key.clone();
+        let request_tags = context.request_tags.clone();
+        let request_tags_value = match serde_json::to_value(&request_tags) {
+            Ok(value) => value,
+            Err(error) => {
+                warn!(
+                    request_id = context.request_id,
+                    error = %error,
+                    "passive agent request correlation skipped because request tags were invalid"
+                );
+                return;
+            }
+        };
+        let operation = context.operation;
+        let harness_key = context.agent_harness_key.clone();
+        let harness_label = context.agent_harness_label.clone();
+        let metadata = context.analysis_metadata.clone();
+        let analysis_payload_permitted = context.analysis_payload_permitted;
+        let occurred_at = context.started_at;
+        let payload_truncated = outcome.response_payload_truncated;
+        let response_body = outcome.response_body.cloned();
+        let request_log_id = outcome.request_log_id;
+        let completed_at = outcome.completed_at;
+        let terminal_success = outcome.terminal_success;
+        let desired_versions = self.agent_analysis_desired_versions.clone();
+        tokio::spawn(async move {
+            let boundary_group_key = session_boundary_group_key(&request_tags);
+            let input = PassiveRequestRecord {
+                auth: &auth,
+                request_id: &request_id,
+                request_log_id,
+                harness_key: &harness_key,
+                harness_label: &harness_label,
+                metadata: &metadata,
+                response_body: analysis_payload_permitted
+                    .then_some(response_body.as_ref())
+                    .flatten(),
+                occurred_at,
+                completed_at,
+                terminal_success,
+                payload_truncated,
+                requested_model_key: &requested_model_key,
+                operation,
+                request_tags: request_tags_value,
+                boundary_group_key: &boundary_group_key,
+            }
+            .prepare();
+            if let Err(error) =
+                record_prepared_passive_request(store.as_ref(), input, &desired_versions).await
+            {
+                warn!(
+                    request_id,
+                    error = %error,
+                    "passive agent request correlation failed"
+                );
+            }
+            drop(permit);
+        });
+    }
+    pub async fn finalize_idle_agent_sessions(
+        &self,
+        now: OffsetDateTime,
+    ) -> Result<u64, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        finalize_idle_sessions(
+            self.store.as_ref(),
+            now,
+            &self.agent_analysis_desired_versions,
+        )
+        .await
+    }
+
+    pub async fn process_next_agent_analysis(
+        &self,
+        lease_owner: &str,
+        now: OffsetDateTime,
+    ) -> Result<bool, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        process_next_analysis(
+            self.store.as_ref(),
+            lease_owner,
+            now,
+            self.agent_analysis_report_retention,
+            &self.agent_analysis_policy,
+        )
+        .await
+    }
+
+    pub async fn purge_expired_agent_analysis(
+        &self,
+        now: OffsetDateTime,
+    ) -> Result<u64, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        self.store
+            .purge_expired_agent_analysis(now, now - self.agent_analysis_queue_retention)
             .await
+            .map_err(Into::into)
     }
 
     pub async fn log_request_if_enabled(
@@ -407,10 +672,20 @@ where
         &self,
         retention_window: RequestLogRetentionWindow,
         dry_run: bool,
-    ) -> Result<RequestLogPurgeResult, GatewayError> {
-        self.request_logging
+    ) -> Result<RequestLogPurgeResult, GatewayError>
+    where
+        S: AgentSessionAnalysisRepository,
+    {
+        let result = self
+            .request_logging
             .purge_request_logs(retention_window, dry_run)
-            .await
+            .await?;
+        if !dry_run {
+            self.store
+                .purge_agent_analysis_before(result.cutoff)
+                .await?;
+        }
+        Ok(result)
     }
 
     pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {

@@ -348,6 +348,47 @@ impl BudgetRepository for LibsqlStore {
         decode_usage_ledger_record(&row).map(Some)
     }
 
+    async fn get_usage_ledgers_by_request_ids_and_scope(
+        &self,
+        request_ids: &[String],
+        ownership_scope_key: &str,
+    ) -> Result<Vec<UsageLedgerRecord>, StoreError> {
+        if request_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let request_ids_json = serde_json::to_string(request_ids)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT
+                    usage_event_id, request_id, ownership_scope_key, api_key_id, user_id,
+                    team_id, service_account_id, actor_user_id, model_id, model_route_id,
+                    provider_key, upstream_model, prompt_tokens, completion_tokens, total_tokens,
+                    provider_usage_json, pricing_status, unpriced_reason, pricing_row_id,
+                    pricing_provider_id, pricing_model_id, pricing_source, pricing_source_etag,
+                    pricing_source_fetched_at, pricing_last_updated,
+                    input_cost_per_million_tokens_10000,
+                    output_cost_per_million_tokens_10000,
+                    cache_read_cost_per_million_tokens_10000,
+                    cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
+                    uncached_input_tokens, cache_read_tokens, cache_write_tokens
+                FROM usage_cost_events
+                WHERE request_id IN (SELECT value FROM json_each(?1))
+                  AND ownership_scope_key = ?2
+                "#,
+                libsql::params![request_ids_json, ownership_scope_key],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut records = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            records.push(decode_usage_ledger_record(&row)?);
+        }
+        Ok(records)
+    }
+
     async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
         scope: &BudgetScope,
@@ -1214,7 +1255,6 @@ impl BudgetRepository for LibsqlStore {
         event: &UsageLedgerRecord,
     ) -> Result<bool, StoreError> {
         let provider_usage_json = crate::shared::serialize_json(&event.provider_usage)?;
-
         let written = self
             .connection
             .execute(

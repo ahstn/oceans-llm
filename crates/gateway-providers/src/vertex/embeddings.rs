@@ -490,7 +490,11 @@ fn google_embedding_usage_from_outputs(
     Ok(total_tokens.map(|total_tokens| {
         json!({
             "prompt_tokens": total_tokens,
-            "total_tokens": total_tokens
+            "total_tokens": total_tokens,
+            "usage_source": "vertex_google_embeddings",
+            "provider_usage": {
+                "input_token_count_provenance": "provider_reported_aggregate"
+            }
         })
     }))
 }

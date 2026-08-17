@@ -1,3 +1,4 @@
+pub mod agent_analysis;
 pub mod auth;
 pub mod batch;
 pub mod budgets;
@@ -8,6 +9,25 @@ pub mod protocol;
 pub mod streaming;
 pub mod traits;
 
+pub use agent_analysis::{
+    AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueRepository,
+    AgentAnalysisQueueStatus, AgentObservationSetAppendResult, AgentObservationSetRecord,
+    AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionAnalysisRepository,
+    AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
+    AgentSessionTraceRepository, MAX_AGENT_ANALYSIS_DISTINCT_ITEMS, MAX_AGENT_SESSION_NESTED_FACTS,
+    MAX_AGENT_SESSION_PAGE_SIZE, MAX_AGENT_SESSION_REQUESTS,
+};
+pub use agent_session_analysis::{
+    ActivityInterval, AgentSessionId, AgentSessionSourceId, AnalysisId, AnalysisMetricPolicy,
+    BoundedFileInteractionFact, BoundedObservationFacts, BoundedSkillFact,
+    BoundedToolDefinitionFact, CacheProfileRule, CacheTtl, CohortReference, Confidence,
+    EvidenceQuality, FinishReasonDiagnostics, GatewayOutcomeState, InferredObservation,
+    InferredObservationKind, LimitationCode, ObservationSetId, OutcomeDiagnostics,
+    ReliabilityDiagnostics, RequestAttemptFact, ScoreMaturity, SessionEfficiencyComponents,
+    SessionEfficiencyReport, SessionLifecycleState, SessionRequestFact, SkillDiagnostics,
+    ToolInvocationFact, ToolServerDiagnostics,
+};
 pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
 };
@@ -34,12 +54,13 @@ pub use domain::{
     FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
     GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, GlobalRole,
     HarnessUsageBucketRecord, HarnessUsageLeaderRecord, IdentityUserRecord, MAX_ENTITY_TAGS,
-    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, MAX_TAG_KEY_LEN, MAX_TAG_VALUE_LEN, ManagedApiKeySource,
-    McpAccessResolution, McpAggregateSessionRecord, McpCatalogAccessResolution,
-    McpCatalogToolRecord, McpGrantSubject, McpOauthStateRecord, McpTokenEstimateConfidence,
-    McpTokenEstimateSource, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
-    McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
-    McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
+    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, MAX_REQUEST_LOG_PAGE_SIZE, MAX_TAG_KEY_LEN,
+    MAX_TAG_VALUE_LEN, ManagedApiKeySource, McpAccessResolution, McpAggregateSessionRecord,
+    McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject, McpOauthStateRecord,
+    McpTokenEstimateConfidence, McpTokenEstimateSource, McpToolGrantRecord,
+    McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
+    McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+    McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
     McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus, McpToolsetToolRecord,
     McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamSecretStorageKind, MembershipRole,

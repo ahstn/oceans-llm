@@ -28,6 +28,7 @@ import { Route as McpIndexRouteImport } from './routes/mcp/index'
 import { Route as McpAccessRouteImport } from './routes/mcp/access'
 import { Route as McpServersRouteImport } from './routes/mcp/servers'
 import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
+import { Route as ObservabilityAgentSessionsRouteImport } from './routes/observability/agent-sessions'
 import { Route as ObservabilityLeaderboardRouteImport } from './routes/observability/leaderboard'
 import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observability/mcp-invocations'
 import { Route as ObservabilityRequestLogsRouteImport } from './routes/observability/request-logs'
@@ -129,6 +130,12 @@ const ObservabilityAgentHarnessesRoute =
     path: '/observability/agent-harnesses',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ObservabilityAgentSessionsRoute =
+  ObservabilityAgentSessionsRouteImport.update({
+    id: '/observability/agent-sessions',
+    path: '/observability/agent-sessions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ObservabilityLeaderboardRoute =
   ObservabilityLeaderboardRouteImport.update({
     id: '/observability/leaderboard',
@@ -172,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
+  '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
@@ -197,6 +205,7 @@ export interface FileRoutesByTo {
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
+  '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
@@ -223,6 +232,7 @@ export interface FileRoutesById {
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
+  '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/mcp/access'
     | '/mcp/servers'
     | '/observability/agent-harnesses'
+    | '/observability/agent-sessions'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
@@ -275,6 +286,7 @@ export interface FileRouteTypes {
     | '/mcp/access'
     | '/mcp/servers'
     | '/observability/agent-harnesses'
+    | '/observability/agent-sessions'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
@@ -300,6 +312,7 @@ export interface FileRouteTypes {
     | '/mcp/access'
     | '/mcp/servers'
     | '/observability/agent-harnesses'
+    | '/observability/agent-sessions'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
@@ -326,6 +339,7 @@ export interface RootRouteChildren {
   McpAccessRoute: typeof McpAccessRoute
   McpServersRoute: typeof McpServersRoute
   ObservabilityAgentHarnessesRoute: typeof ObservabilityAgentHarnessesRoute
+  ObservabilityAgentSessionsRoute: typeof ObservabilityAgentSessionsRoute
   ObservabilityLeaderboardRoute: typeof ObservabilityLeaderboardRoute
   ObservabilityMcpInvocationsRoute: typeof ObservabilityMcpInvocationsRoute
   ObservabilityRequestLogsRoute: typeof ObservabilityRequestLogsRoute
@@ -468,6 +482,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ObservabilityAgentHarnessesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/observability/agent-sessions': {
+      id: '/observability/agent-sessions'
+      path: '/observability/agent-sessions'
+      fullPath: '/observability/agent-sessions'
+      preLoaderRoute: typeof ObservabilityAgentSessionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/observability/leaderboard': {
       id: '/observability/leaderboard'
       path: '/observability/leaderboard'
@@ -518,6 +539,7 @@ const rootRouteChildren: RootRouteChildren = {
   McpAccessRoute: McpAccessRoute,
   McpServersRoute: McpServersRoute,
   ObservabilityAgentHarnessesRoute: ObservabilityAgentHarnessesRoute,
+  ObservabilityAgentSessionsRoute: ObservabilityAgentSessionsRoute,
   ObservabilityLeaderboardRoute: ObservabilityLeaderboardRoute,
   ObservabilityMcpInvocationsRoute: ObservabilityMcpInvocationsRoute,
   ObservabilityRequestLogsRoute: ObservabilityRequestLogsRoute,

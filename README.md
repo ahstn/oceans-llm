@@ -48,8 +48,7 @@ Default local endpoints:
 - active config: `./gateway.yaml`
 - database backend: local libsql or SQLite
 
-On a first `mise run dev-stack` with no `./gateway.db`, the local demo dataset is seeded automatically.
-Use `mise run gateway-reset-local-demo` any time you want to recreate that richer sample state from scratch.
+`mise run dev-stack` refreshes the local demo dataset on startup and gives platform admins access to calibration data. Sign in with the seeded platform admin and open **Observability → Agent Sessions** to inspect the sample session reports. The demo includes ten-request Jira and repository sessions. The Jira session has six available tools, two direct MCP calls, and file operations. Use `mise run gateway-reset-local-demo` to recreate the complete sample state.
 
 ## Core Commands
 

@@ -1,3 +1,4 @@
+mod agent_analysis;
 mod api_keys;
 mod batches;
 mod budget_alerts;

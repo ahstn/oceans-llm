@@ -13,7 +13,7 @@ use gateway::{
 use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
 use gateway_providers::{BedrockProvider, CopilotProvider, OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
-    DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
+    AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
     WeightedRoutePlanner, hash_gateway_key_secret,
 };
 use gateway_store::{
@@ -22,6 +22,7 @@ use gateway_store::{
 };
 use tokio::net::TcpListener;
 
+mod agent_analysis_recompute;
 mod local_demo_seed;
 mod request_log_purge;
 
@@ -48,6 +49,9 @@ async fn main() -> anyhow::Result<()> {
         Command::Serve(args) => run_serve(&config, observability.metrics.clone(), args).await,
         Command::Migrate(args) => run_migrate(&config, args.action()?).await,
         Command::PurgeRequestLogs(args) => request_log_purge::run_command(&config, args).await,
+        Command::RecomputeAgentAnalysis(args) => {
+            agent_analysis_recompute::run_command(&config, args).await
+        }
         Command::BootstrapAdmin => run_bootstrap_admin_command(&config).await,
         Command::SeedConfig => run_seed_config_command(&config).await,
         Command::SeedLocalDemo => run_seed_local_demo_command(&config).await,
@@ -196,7 +200,15 @@ async fn run_serve_with_store(
         .context("failed to ensure bootstrap admin access")?;
     }
 
-    let service = build_gateway_service(config, store)?;
+    let agent_analysis = config.agent_analysis.resolve()?;
+    let service = build_gateway_service(
+        config,
+        store,
+        agent_analysis.capabilities.passive_analysis_enabled,
+        agent_analysis.report_retention,
+        agent_analysis.queue_retention,
+        agent_analysis.policy.clone(),
+    )?;
     service
         .refresh_pricing_catalog_if_stale()
         .await
@@ -207,6 +219,10 @@ async fn run_serve_with_store(
         .context("invalid route context-window override")?;
     spawn_pricing_catalog_refresh_loop(service.clone());
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
+    if agent_analysis.capabilities.passive_analysis_enabled {
+        spawn_agent_analysis_loop(service.clone());
+    }
+    spawn_agent_analysis_retention_loop(service.clone());
     request_log_purge::spawn_loop(service.clone(), &config.request_logging.purge);
     let providers = build_provider_registry(config)?;
     gateway::batch_worker::spawn(service.clone(), providers.clone());
@@ -254,6 +270,7 @@ async fn run_serve_with_store(
                     .context("failed resolving client config gateway base URL")?,
             ),
             budget_defaults: human_budget_defaults,
+            agent_analysis: agent_analysis.capabilities,
             admin_permissions,
             leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
             harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
@@ -485,6 +502,48 @@ fn spawn_pricing_catalog_refresh_loop(
     });
 }
 
+fn spawn_agent_analysis_loop(service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>) {
+    let lease_owner = format!("gateway-{}-{}", std::process::id(), uuid::Uuid::new_v4());
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            let now = time::OffsetDateTime::now_utc();
+            if let Err(error) = service.finalize_idle_agent_sessions(now).await {
+                tracing::warn!(error = %error, "finalizing idle agent sessions failed");
+            }
+            loop {
+                match service
+                    .process_next_agent_analysis(&lease_owner, time::OffsetDateTime::now_utc())
+                    .await
+                {
+                    Ok(true) => {}
+                    Ok(false) => break,
+                    Err(error) => {
+                        tracing::warn!(error = %error, "background agent analysis failed");
+                        break;
+                    }
+                }
+            }
+        }
+    });
+}
+fn spawn_agent_analysis_retention_loop(
+    service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
+) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60 * 60));
+        loop {
+            interval.tick().await;
+            if let Err(error) = service
+                .purge_expired_agent_analysis(time::OffsetDateTime::now_utc())
+                .await
+            {
+                tracing::warn!(error = %error, "agent analysis retention purge failed");
+            }
+        }
+    });
+}
 fn spawn_budget_alert_delivery_loop(
     service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
     config: &BudgetAlertEmailConfig,
@@ -511,6 +570,10 @@ fn spawn_budget_alert_delivery_loop(
 fn build_gateway_service(
     config: &GatewayConfig,
     store: Arc<AnyStore>,
+    agent_analysis_enabled: bool,
+    analysis_report_retention: time::Duration,
+    analysis_queue_retention: time::Duration,
+    analysis_policy: AnalysisPolicy,
 ) -> anyhow::Result<Arc<GatewayService<AnyStore, WeightedRoutePlanner>>> {
     let planner = Arc::new(WeightedRoutePlanner::default());
     let budget_alert_sender = build_budget_alert_sender(&config.budget_alerts.email)
@@ -524,7 +587,10 @@ fn build_gateway_service(
             planner,
             budget_alert_sender,
             payload_policy,
-        ),
+        )
+        .with_agent_analysis_enabled(agent_analysis_enabled)
+        .with_agent_analysis_retention(analysis_report_retention, analysis_queue_retention)
+        .with_agent_analysis_policy(analysis_policy),
     ))
 }
 

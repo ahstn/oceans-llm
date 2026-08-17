@@ -36,15 +36,16 @@ use crate::{
             AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload,
             AdminOauthProviderView, AdminOidcProviderView, AdminServiceAccountView,
             AdminServiceAccountsPayload, AdminTeamManagementView, AdminTeamView, AdminTeamsPayload,
-            AuthSessionPermissionsView, AuthSessionUserView, AuthSessionView,
-            ChangePasswordRequest, CompleteInvitationRequest, CompleteInvitationResponse,
-            CreateServiceAccountRequest, CreateTeamRequest, CreateUserRequest, CreateUserResponse,
-            Envelope, IdentityActionStatus, IdentityDirectoryTeamsPayload,
-            IdentityDirectoryUsersPayload, InvitationView, OauthCallbackQuery, OauthStartQuery,
-            OidcCallbackQuery, OidcStartQuery, PasswordInviteResponse, PasswordLoginRequest,
-            PublicOauthProviderView, PublicOauthProvidersPayload, PublicOidcProviderView,
-            PublicOidcProvidersPayload, TransferTeamMemberRequest, UpdateServiceAccountRequest,
-            UpdateTeamRequest, UpdateUserRequest, envelope, format_timestamp,
+            AuthSessionCapabilitiesView, AuthSessionPermissionsView, AuthSessionUserView,
+            AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
+            CompleteInvitationResponse, CreateServiceAccountRequest, CreateTeamRequest,
+            CreateUserRequest, CreateUserResponse, Envelope, IdentityActionStatus,
+            IdentityDirectoryTeamsPayload, IdentityDirectoryUsersPayload, InvitationView,
+            OauthCallbackQuery, OauthStartQuery, OidcCallbackQuery, OidcStartQuery,
+            PasswordInviteResponse, PasswordLoginRequest, PublicOauthProviderView,
+            PublicOauthProvidersPayload, PublicOidcProviderView, PublicOidcProvidersPayload,
+            TransferTeamMemberRequest, UpdateServiceAccountRequest, UpdateTeamRequest,
+            UpdateUserRequest, envelope, format_timestamp,
         },
         error::AppError,
         identity_lifecycle::{
@@ -606,9 +607,10 @@ pub async fn get_auth_session(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<Option<AuthSessionView>>>, AppError> {
-    let session = match resolve_session_user(&state, &headers).await? {
-        Some(user) => Some(build_auth_session_view(&state, user).await?),
-        None => None,
+    let session = if let Some(user) = resolve_session_user(&state, &headers).await? {
+        Some(build_auth_session_view(&state, user).await?)
+    } else {
+        None
     };
 
     Ok(Json(envelope(session)))
@@ -650,12 +652,12 @@ pub async fn login_with_password(
     if user.status != UserStatus::Active {
         return Err(invalid_credentials());
     }
+    let session_view = build_auth_session_view(&state, user.clone()).await?;
 
     let now = OffsetDateTime::now_utc();
     let session_cookie =
         issue_session_cookie(&state, user.user_id, now, session_cookie_secure(&headers)).await?;
-    let session = build_auth_session_view(&state, user).await?;
-    let mut response = Json(envelope(session)).into_response();
+    let mut response = Json(envelope(session_view)).into_response();
     response.headers_mut().append(SET_COOKIE, session_cookie);
     Ok(response)
 }
@@ -2274,17 +2276,33 @@ async fn build_auth_session_view(
     state: &AppState,
     user: UserRecord,
 ) -> Result<AuthSessionView, AppError> {
-    let membership_role = if user.global_role == GlobalRole::PlatformAdmin {
+    let membership = state
+        .store
+        .get_team_membership_for_user(user.user_id)
+        .await?;
+    let platform_admin = user.global_role == GlobalRole::PlatformAdmin;
+    let team_admin = membership.as_ref().is_some_and(|membership| {
+        matches!(
+            membership.role,
+            MembershipRole::Owner | MembershipRole::Admin
+        )
+    });
+    let membership_role = if platform_admin {
         None
     } else {
-        state
-            .store
-            .get_team_membership_for_user(user.user_id)
-            .await?
-            .map(|membership| membership.role)
+        membership.as_ref().map(|membership| membership.role)
     };
     let group = crate::config::AdminPermissionGroup::for_user(user.global_role, membership_role);
     let permissions = state.admin_permissions.for_group(group);
+    let agent_analysis_access = state.agent_analysis.access_for(platform_admin, team_admin);
+    let mut pages = permissions.pages.clone();
+    if !agent_analysis_access.allowed {
+        pages.retain(|page| *page != crate::config::AdminPage::AgentSessions);
+    }
+    let default_page = permissions
+        .default_page
+        .filter(|page| pages.contains(page))
+        .or_else(|| pages.first().copied());
 
     Ok(AuthSessionView {
         user: AuthSessionUserView {
@@ -2293,12 +2311,26 @@ async fn build_auth_session_view(
             email: user.email,
             global_role: user.global_role.as_str().to_string(),
         },
+        team_id: membership
+            .as_ref()
+            .map(|membership| membership.team_id.to_string()),
+        team_role: membership
+            .as_ref()
+            .map(|membership| membership.role.as_str().to_string()),
+        capabilities: AuthSessionCapabilitiesView {
+            platform_admin,
+            agent_analysis: agent_analysis_access.allowed,
+            passive_analysis_enabled: state.agent_analysis.passive_analysis_enabled,
+            shadow_diagnostics_visible: agent_analysis_access.shadow_visible,
+            calibrated_score_visible: agent_analysis_access.score_visible,
+            team_admin_analytics_enabled: state.agent_analysis.team_admin_analytics_enabled,
+        },
         must_change_password: user.must_change_password,
         permissions: AuthSessionPermissionsView {
             group,
-            pages: permissions.pages.clone(),
+            pages,
             actions: permissions.actions.clone(),
-            default_page: permissions.default_page,
+            default_page,
         },
     })
 }

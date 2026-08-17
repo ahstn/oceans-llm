@@ -18,6 +18,7 @@ pub enum AdminPage {
     SpendControls,
     Leaderboard,
     AgentHarnesses,
+    AgentSessions,
     RequestLogs,
     McpInvocations,
     Teams,
@@ -58,6 +59,7 @@ impl fmt::Display for AdminPage {
             Self::SpendControls => "spend_controls",
             Self::Leaderboard => "leaderboard",
             Self::AgentHarnesses => "agent_harnesses",
+            Self::AgentSessions => "agent_sessions",
             Self::RequestLogs => "request_logs",
             Self::McpInvocations => "mcp_invocations",
             Self::Teams => "teams",
@@ -225,6 +227,7 @@ const ADMIN_PAGE_ORDER: &[AdminPage] = &[
     AdminPage::SpendControls,
     AdminPage::Leaderboard,
     AdminPage::AgentHarnesses,
+    AdminPage::AgentSessions,
     AdminPage::RequestLogs,
     AdminPage::McpInvocations,
     AdminPage::Teams,
@@ -245,8 +248,22 @@ const SHARED_PAGES: &[AdminPage] = &[
     AdminPage::ServiceAccounts,
 ];
 
+const TEAM_ADMIN_PAGES: &[AdminPage] = &[
+    AdminPage::ApiKeys,
+    AdminPage::Models,
+    AdminPage::UsageCosts,
+    AdminPage::Leaderboard,
+    AdminPage::AgentHarnesses,
+    AdminPage::AgentSessions,
+    AdminPage::RequestLogs,
+    AdminPage::McpInvocations,
+    AdminPage::Teams,
+    AdminPage::Users,
+    AdminPage::ServiceAccounts,
+];
+
 const DEFAULT_USER_PAGES: &[AdminPage] = SHARED_PAGES;
-const DEFAULT_TEAM_ADMIN_PAGES: &[AdminPage] = &[];
+const DEFAULT_TEAM_ADMIN_PAGES: &[AdminPage] = &[AdminPage::AgentSessions];
 const DEFAULT_PLATFORM_ADMIN_PAGES: &[AdminPage] = &[
     AdminPage::Mcp,
     AdminPage::ReviewAgent,
@@ -280,7 +297,8 @@ fn direct_pages(
         .unwrap_or(default_pages);
     let capability_ceiling = match group {
         AdminPermissionGroup::PlatformAdmins => ADMIN_PAGE_ORDER,
-        AdminPermissionGroup::TeamAdmins | AdminPermissionGroup::Users => SHARED_PAGES,
+        AdminPermissionGroup::TeamAdmins => TEAM_ADMIN_PAGES,
+        AdminPermissionGroup::Users => SHARED_PAGES,
     };
 
     if let Some(page) = pages.iter().find(|page| !capability_ceiling.contains(page)) {
@@ -386,7 +404,7 @@ mod tests {
         let resolved = PermissionsConfig::default().resolve().expect("permissions");
 
         assert_eq!(resolved.users.pages, SHARED_PAGES);
-        assert_eq!(resolved.team_admins.pages, SHARED_PAGES);
+        assert_eq!(resolved.team_admins.pages, TEAM_ADMIN_PAGES);
         assert_eq!(resolved.platform_admins.pages, ADMIN_PAGE_ORDER);
         assert_eq!(resolved.users.actions, USER_ACTIONS);
         assert_eq!(resolved.team_admins.actions, ADMIN_ACTION_ORDER);
@@ -489,7 +507,7 @@ team_admins: {}
         let resolved = config.resolve().expect("permissions");
 
         assert_eq!(resolved.users.pages, SHARED_PAGES);
-        assert_eq!(resolved.team_admins.pages, SHARED_PAGES);
+        assert_eq!(resolved.team_admins.pages, TEAM_ADMIN_PAGES);
         assert_eq!(resolved.platform_admins.pages, ADMIN_PAGE_ORDER);
         assert_eq!(resolved.users.default_page, Some(AdminPage::Leaderboard));
     }

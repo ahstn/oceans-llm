@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/agent-session-analysis",
     "crates/admin-ui",
     "crates/gateway-client-config",
     "crates/gateway",
@@ -12,6 +13,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+agent-session-analysis = { path = "crates/agent-session-analysis" }
 admin-ui = { path = "crates/admin-ui" }
 gateway-core = { path = "crates/gateway-core" }
 gateway-client-config = { path = "crates/gateway-client-config" }

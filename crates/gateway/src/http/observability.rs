@@ -10,27 +10,44 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    AdminApiKeyRepository, AuthError, BudgetRepository, GatewayError, GlobalRole,
-    IdentityRepository, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpTokenOverheadRepository,
-    McpToolInvocationDetail, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-    McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection,
-    ProviderRepository, RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord,
-    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord,
-    RequestTag, RequestTags,
+    AdminApiKeyRepository, AgentSessionListQuery, AgentSessionSourceRecord,
+    AgentSessionTraceRecord, AuthError, BudgetRepository, Confidence, GatewayError,
+    GatewayOutcomeState, GlobalRole, IdentityRepository, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE,
+    MAX_REQUEST_LOG_PAGE_SIZE, McpTokenOverheadRepository, McpToolInvocationDetail,
+    McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+    McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection, ProviderRepository,
+    RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery,
+    RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord, RequestTag, RequestTags,
+    ScoreMaturity, SessionLifecycleState,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
     resolve_provider_display,
 };
 use gateway_store::GatewayStore;
+use serde::Serialize;
 use serde_json::{Map, Value};
 use time::{Duration, OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
 use crate::http::{
-    admin_auth::{require_active_session, require_authenticated_session},
+    admin_auth::{
+        AdminDataScope, require_active_session, require_agent_analysis_scope,
+        require_authenticated_session,
+    },
     admin_contract::{
-        Envelope, HarnessUsageChartHarnessView, HarnessUsageLeaderView, HarnessUsageQuery,
+        AgentAnalysisMetricPolicyView, AgentContextDiagnosticsView, AgentFileInteractionFactView,
+        AgentFinishReasonDiagnosticsView, AgentFinishReasonItemView, AgentObservationCoverageView,
+        AgentObservationFactsView, AgentObservationView, AgentOutcomeDiagnosticsView,
+        AgentReliabilityDiagnosticsView, AgentRequestAttemptView, AgentSessionAnalysisIdentityView,
+        AgentSessionDetailView, AgentSessionDiagnosticsView, AgentSessionEfficiencyComponentsView,
+        AgentSessionEfficiencyReportView, AgentSessionListRequestQuery, AgentSessionOutcomeView,
+        AgentSessionPageView, AgentSessionRequestView, AgentSessionSourceView,
+        AgentSessionSummaryView, AgentSkillDiagnosticItemView, AgentSkillDiagnosticsView,
+        AgentSuppliedSkillFactView, AgentSuppliedToolFactView, AgentTelemetryCoverageView,
+        AgentTokenAndCacheDiagnosticsView, AgentToolAndChangeDiagnosticsView,
+        AgentToolReliabilityItemView, AgentToolServerDiagnosticsView, Envelope,
+        HarnessUsageChartHarnessView, HarnessUsageLeaderView, HarnessUsageQuery,
         HarnessUsageSeriesPointView, HarnessUsageSeriesValueView, HarnessUsageView,
         LeaderboardChartUserView, LeaderboardLeaderView, LeaderboardQuery,
         LeaderboardSeriesPointView, LeaderboardSeriesValueView, LeaderboardView,
@@ -48,8 +65,11 @@ use crate::http::{
 };
 
 const DEFAULT_PAGE: u32 = 1;
+
+pub(crate) mod agent_sessions;
+
+pub use agent_sessions::{get_agent_session_detail, list_agent_sessions};
 const DEFAULT_PAGE_SIZE: u32 = 100;
-const MAX_PAGE_SIZE: u32 = 500;
 const LEADERBOARD_BUCKET_HOURS: u8 = 12;
 const LEADERBOARD_CHART_USERS: usize = 5;
 const LEADERBOARD_LIMIT: u32 = 30;
@@ -362,7 +382,7 @@ pub async fn list_request_logs(
         page_size: query
             .page_size
             .unwrap_or(DEFAULT_PAGE_SIZE)
-            .clamp(1, MAX_PAGE_SIZE),
+            .clamp(1, MAX_REQUEST_LOG_PAGE_SIZE),
         request_id: empty_to_none(query.request_id),
         model_key: empty_to_none(query.model_key),
         provider_key: empty_to_none(query.provider_key),
@@ -905,6 +925,12 @@ fn request_tag_view(tag: &RequestTag) -> RequestTagView {
         key: tag.key.clone(),
         value: tag.value.clone(),
     }
+}
+
+fn normalized_filter(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn parse_optional_uuid(value: Option<&str>, field_name: &str) -> Result<Option<Uuid>, AppError> {

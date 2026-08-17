@@ -3,15 +3,15 @@ use std::collections::BTreeMap;
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
 use gateway_core::{
-    HarnessUsageBucketRecord, HarnessUsageLeaderRecord, RequestLogPurgeResult, RequestTag,
-    RequestTags, RequestToolCardinality,
+    HarnessUsageBucketRecord, HarnessUsageLeaderRecord, MAX_REQUEST_LOG_PAGE_SIZE,
+    RequestLogPurgeResult, RequestTag, RequestTags, RequestToolCardinality,
 };
 
 const REQUEST_LOG_PURGE_BATCH_SIZE: i64 = 1_000;
 
 fn normalize_query(query: &RequestLogQuery) -> (i64, i64) {
     let page = query.page.max(1);
-    let page_size = query.page_size.clamp(1, 200);
+    let page_size = query.page_size.clamp(1, MAX_REQUEST_LOG_PAGE_SIZE);
     let offset = i64::from(page.saturating_sub(1) * page_size);
     (i64::from(page), offset)
 }
@@ -68,7 +68,7 @@ fn decode_request_log_row(row: &PgRow) -> Result<RequestLogRecord, StoreError> {
     })
 }
 
-fn decode_request_attempt_row(row: &PgRow) -> Result<RequestAttemptRecord, StoreError> {
+pub(crate) fn decode_request_attempt_row(row: &PgRow) -> Result<RequestAttemptRecord, StoreError> {
     let request_attempt_id: String = row.try_get(0).map_err(to_query_error)?;
     let request_log_id: String = row.try_get(1).map_err(to_query_error)?;
     let route_id: String = row.try_get(4).map_err(to_query_error)?;
@@ -309,7 +309,7 @@ impl RequestLogRepository for PostgresStore {
         query: &RequestLogQuery,
     ) -> Result<RequestLogPage, StoreError> {
         let (page, offset) = normalize_query(query);
-        let page_size = i64::from(query.page_size.clamp(1, 200));
+        let page_size = i64::from(query.page_size.clamp(1, MAX_REQUEST_LOG_PAGE_SIZE));
         let request_id = query.request_id.as_deref();
         let model_key = query.model_key.as_deref();
         let provider_key = query.provider_key.as_deref();

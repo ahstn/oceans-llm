@@ -136,9 +136,14 @@ async fn google_stream_emits_usage_and_one_terminal_finish_chunk() {
         .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
         .collect::<String>();
 
-    assert!(
-        rendered.contains(r#""usage":{"completion_tokens":2,"prompt_tokens":4,"total_tokens":6}"#)
-    );
+    let events = openai_stream_events(&rendered);
+    assert!(events.iter().any(|event| {
+        event["usage"]["completion_tokens"] == json!(2)
+            && event["usage"]["prompt_tokens"] == json!(4)
+            && event["usage"]["total_tokens"] == json!(6)
+            && event["usage"]["usage_source"] == json!("vertex_google")
+            && event["usage"]["provider_usage"]["totalTokenCount"] == json!(6)
+    }));
     assert_eq!(rendered.matches(r#""finish_reason":"stop""#).count(), 1);
 }
 

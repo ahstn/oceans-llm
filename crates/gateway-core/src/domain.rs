@@ -1277,6 +1277,8 @@ pub struct RequestAttemptRecord {
     pub metadata: Map<String, Value>,
 }
 
+pub const MAX_REQUEST_LOG_PAGE_SIZE: u32 = 200;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RequestLogQuery {
     pub page: u32,

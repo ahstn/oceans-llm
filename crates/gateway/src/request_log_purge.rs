@@ -2,7 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, bail};
 use chrono::{DateTime, Utc};
-use gateway_core::{RequestLogPurgeResult, RequestLogRetentionWindow};
+use gateway_core::{
+    AgentAnalysisQueueRepository, RequestLogPurgeResult, RequestLogRetentionWindow,
+};
 use gateway_service::{GatewayService, RequestLogging, WeightedRoutePlanner};
 use gateway_store::{AnyStore, check_migrations_with_options};
 
@@ -26,11 +28,17 @@ pub async fn run_command(config: &GatewayConfig, args: PurgeRequestLogsArgs) -> 
             .await
             .context("failed to initialize gateway store")?,
     );
-    let request_logging = RequestLogging::new(store);
+    let request_logging = RequestLogging::new(Arc::clone(&store));
     let result = request_logging
         .purge_request_logs(args.retention, args.dry_run)
         .await
         .context("failed to purge request logs")?;
+    if !args.dry_run {
+        store
+            .purge_agent_analysis_before(result.cutoff)
+            .await
+            .context("failed to purge retained agent analysis inputs")?;
+    }
     println!("cutoff: {}", result.cutoff);
     println!("dry_run: {}", result.dry_run);
     println!("matched_count: {}", result.matched_count);

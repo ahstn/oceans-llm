@@ -2101,7 +2101,7 @@ mod tests {
                     .header("content-type", "text/event-stream")
                     .body(Body::from(
                         "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n\
-                         data: {\"id\":\"chatcmpl-1\",\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n\
+                         data: {\"id\":\"chatcmpl-1\",\"choices\":[],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":5,\"total_tokens\":25,\"prompt_tokens_details\":{\"cached_tokens\":8,\"cache_write_tokens\":4},\"completion_tokens_details\":{\"reasoning_tokens\":3}}}\n\n\
                          data: [DONE]\n\n",
                     ))
                     .expect("response")
@@ -2156,7 +2156,10 @@ mod tests {
             rendered.push_str(std::str::from_utf8(chunk.expect("chunk").as_ref()).expect("utf8"));
         }
 
-        assert!(rendered.contains("\"choices\":[],\"id\":\"chatcmpl-1\",\"usage\":{\"completion_tokens\":1,\"prompt_tokens\":2,\"total_tokens\":3}"));
+        assert!(rendered.contains("\"cached_tokens\":8"));
+        assert!(rendered.contains("\"cache_write_tokens\":4"));
+        assert!(rendered.contains("\"reasoning_tokens\":3"));
+        assert!(rendered.contains("\"total_tokens\":25"));
     }
 
     #[tokio::test]
@@ -2574,7 +2577,7 @@ mod tests {
                          event: response.function_call_arguments.delta\n\
                          data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"delta\":\"{}\"}\n\n\
                          event: response.completed\n\
-                         data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"usage\":{\"input_tokens\":3,\"output_tokens\":4,\"total_tokens\":7}}}\n\n",
+                         data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"usage\":{\"input_tokens\":30,\"output_tokens\":4,\"total_tokens\":34,\"input_tokens_details\":{\"cached_tokens\":10,\"cache_write_tokens\":5},\"output_tokens_details\":{\"reasoning_tokens\":2}}}}\n\n",
                     ))
                     .expect("response")
             }),
@@ -2598,7 +2601,10 @@ mod tests {
         assert!(rendered.contains("event: response.output_text.delta"));
         assert!(rendered.contains("event: response.reasoning_text.delta"));
         assert!(rendered.contains("event: response.function_call_arguments.delta"));
-        assert!(rendered.contains("\"input_tokens\":3"));
+        assert!(rendered.contains("\"input_tokens\":30"));
+        assert!(rendered.contains("\"cached_tokens\":10"));
+        assert!(rendered.contains("\"cache_write_tokens\":5"));
+        assert!(rendered.contains("\"reasoning_tokens\":2"));
         assert!(rendered.ends_with("data: [DONE]\n\n"));
     }
 

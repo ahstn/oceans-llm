@@ -278,28 +278,27 @@ pub(super) fn vertex_reasoning_metadata(source: &str, blocks: Vec<Value>) -> Val
 
 pub(super) fn map_google_usage(value: &Value) -> Option<Value> {
     let usage = value.get("usageMetadata")?.as_object()?;
-    Some(json!({
-        "prompt_tokens": usage.get("promptTokenCount").and_then(Value::as_i64).unwrap_or(0),
-        "completion_tokens": usage.get("candidatesTokenCount").and_then(Value::as_i64).unwrap_or(0),
-        "total_tokens": usage.get("totalTokenCount").and_then(Value::as_i64).unwrap_or(0)
-    }))
+    let mut mapped = Map::new();
+    for (source, target) in [
+        ("promptTokenCount", "prompt_tokens"),
+        ("candidatesTokenCount", "completion_tokens"),
+        ("totalTokenCount", "total_tokens"),
+    ] {
+        if let Some(value) = usage.get(source) {
+            mapped.insert(target.to_string(), value.clone());
+        }
+    }
+    mapped.insert(
+        "usage_source".to_string(),
+        Value::String("vertex_google".to_string()),
+    );
+    mapped.insert("provider_usage".to_string(), Value::Object(usage.clone()));
+    Some(Value::Object(mapped))
 }
 
 fn map_anthropic_usage(value: &Value) -> Option<Value> {
     let usage = value.get("usage")?.as_object()?;
-    let prompt = usage
-        .get("input_tokens")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    let completion = usage
-        .get("output_tokens")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    Some(json!({
-        "prompt_tokens": prompt,
-        "completion_tokens": completion,
-        "total_tokens": prompt + completion
-    }))
+    map_anthropic_usage_object(usage)
 }
 
 pub(super) fn map_anthropic_stream_usage(value: &Value) -> Option<Value> {
@@ -311,27 +310,43 @@ pub(super) fn map_anthropic_stream_usage(value: &Value) -> Option<Value> {
                 .and_then(|message| message.get("usage"))
         })?
         .as_object()?;
-    let mut mapped = Map::new();
-    if let Some(prompt) = usage.get("input_tokens").and_then(Value::as_i64) {
-        mapped.insert("prompt_tokens".to_string(), json!(prompt));
-    }
-    if let Some(completion) = usage.get("output_tokens").and_then(Value::as_i64) {
-        mapped.insert("completion_tokens".to_string(), json!(completion));
-    }
-    if let Some(total) = usage.get("total_tokens").and_then(Value::as_i64) {
-        mapped.insert("total_tokens".to_string(), json!(total));
-    } else if let (Some(prompt), Some(completion)) = (
-        mapped.get("prompt_tokens").and_then(Value::as_i64),
-        mapped.get("completion_tokens").and_then(Value::as_i64),
-    ) {
-        mapped.insert("total_tokens".to_string(), json!(prompt + completion));
-    }
+    map_anthropic_usage_object(usage)
+}
 
-    if mapped.is_empty() {
-        None
-    } else {
-        Some(Value::Object(mapped))
+fn map_anthropic_usage_object(usage: &Map<String, Value>) -> Option<Value> {
+    let mut mapped = Map::new();
+    if let Some(input) = usage.get("input_tokens") {
+        mapped.insert("prompt_tokens".to_string(), input.clone());
     }
+    if let Some(output) = usage.get("output_tokens") {
+        mapped.insert("completion_tokens".to_string(), output.clone());
+    }
+    if let Some(total) = usage
+        .get("total_tokens")
+        .cloned()
+        .or_else(|| anthropic_usage_total(usage).map(|total| json!(total)))
+    {
+        mapped.insert("total_tokens".to_string(), total);
+    }
+    mapped.insert(
+        "usage_source".to_string(),
+        Value::String("vertex_anthropic".to_string()),
+    );
+    mapped.insert("provider_usage".to_string(), Value::Object(usage.clone()));
+    Some(Value::Object(mapped))
+}
+
+fn anthropic_usage_total(usage: &Map<String, Value>) -> Option<i64> {
+    [
+        "input_tokens",
+        "output_tokens",
+        "cache_read_input_tokens",
+        "cache_creation_input_tokens",
+    ]
+    .into_iter()
+    .try_fold(0_i64, |total, key| {
+        total.checked_add(usage.get(key).and_then(Value::as_i64).unwrap_or(0))
+    })
 }
 
 pub(super) fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Value) -> Value {
@@ -343,20 +358,51 @@ pub(super) fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Valu
 fn openai_usage_with_known_fields(usage: Value, latest: Option<&Value>) -> Value {
     let prompt_tokens = merged_usage_counter(&usage, latest, "prompt_tokens");
     let completion_tokens = merged_usage_counter(&usage, latest, "completion_tokens");
-    let total_tokens = match (prompt_tokens, completion_tokens) {
-        (Some(prompt), Some(completion)) => prompt.saturating_add(completion),
-        _ => merged_usage_counter(&usage, latest, "total_tokens").unwrap_or(0),
-    };
-
-    let mut object = usage.as_object().cloned().unwrap_or_default();
+    let mut object = latest
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(incoming) = usage.as_object() {
+        merge_usage_maps(&mut object, incoming);
+    }
     if let Some(prompt_tokens) = prompt_tokens {
         object.insert("prompt_tokens".to_string(), json!(prompt_tokens));
     }
     if let Some(completion_tokens) = completion_tokens {
         object.insert("completion_tokens".to_string(), json!(completion_tokens));
     }
-    object.insert("total_tokens".to_string(), json!(total_tokens));
+    let total_tokens =
+        if object.get("usage_source").and_then(Value::as_str) == Some("vertex_anthropic") {
+            object
+                .get("provider_usage")
+                .and_then(Value::as_object)
+                .and_then(anthropic_usage_total)
+        } else {
+            prompt_tokens
+                .zip(completion_tokens)
+                .and_then(|(prompt, completion)| prompt.checked_add(completion))
+                .or_else(|| merged_usage_counter(&usage, latest, "total_tokens"))
+        };
+    if let Some(total_tokens) = total_tokens {
+        object.insert("total_tokens".to_string(), json!(total_tokens));
+    }
     Value::Object(object)
+}
+
+fn merge_usage_maps(current: &mut Map<String, Value>, incoming: &Map<String, Value>) {
+    for (key, incoming_value) in incoming {
+        match (
+            current.get_mut(key).and_then(Value::as_object_mut),
+            incoming_value.as_object(),
+        ) {
+            (Some(current_nested), Some(incoming_nested)) => {
+                merge_usage_maps(current_nested, incoming_nested);
+            }
+            _ => {
+                current.insert(key.clone(), incoming_value.clone());
+            }
+        }
+    }
 }
 
 fn merged_usage_counter(usage: &Value, latest: Option<&Value>, field: &str) -> Option<i64> {
