@@ -247,6 +247,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V46__batch_jobs.sql"),
         postgres_sql: include_str!("../migrations/postgres/V46__batch_jobs.sql"),
     },
+    MigrationManifest {
+        version: 47,
+        name: "batch_pricing_snapshot",
+        checksum: "V47__batch_pricing_snapshot.sql",
+        libsql_sql: include_str!("../migrations/V47__batch_pricing_snapshot.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V47__batch_pricing_snapshot.sql"),
+    },
 ];
 
 #[cfg(test)]

@@ -185,6 +185,27 @@ pub enum BatchAccessScope {
     User(Uuid),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BatchPricingPolicy {
+    HalfAllTokenRates,
+    VertexHalfNonCachedRates,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BatchTokenRates {
+    pub input: Option<Money4>,
+    pub output: Option<Money4>,
+    pub cache_read: Option<Money4>,
+    pub cache_write: Option<Money4>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BatchPricingSnapshot {
+    pub rates: Option<BatchTokenRates>,
+    pub policy: BatchPricingPolicy,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchJobRecord {
     pub batch_id: Uuid,
@@ -218,6 +239,7 @@ pub struct BatchJobRecord {
     pub lease_owner: Option<String>,
     pub lease_expires_at: Option<OffsetDateTime>,
     pub provider_context: crate::ProviderRequestContext,
+    pub pricing_snapshot: Option<BatchPricingSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

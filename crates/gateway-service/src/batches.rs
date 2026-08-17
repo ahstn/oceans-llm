@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use gateway_core::{
-    AuthenticatedApiKey, BatchEndpoint, BatchJobRecord, BatchPricingStatus, BatchRepository,
-    BatchStatus, BudgetAlertRepository, BudgetRepository, GatewayError, IdentityRepository,
-    McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, NewBatchItem, NewBatchJob,
-    PricingCatalogRepository, PricingResolution, ProviderRegistry, ProviderRepository,
-    ProviderRequestContext, RequestLogRepository, RoutePlanner, StoreHealth,
-    is_supported_vertex_google_chat_upstream_model,
+    AuthenticatedApiKey, BatchEndpoint, BatchJobRecord, BatchPricingSnapshot, BatchPricingStatus,
+    BatchRepository, BatchStatus, BatchTokenRates, BudgetAlertRepository, BudgetRepository,
+    GatewayError, IdentityRepository, McpToolInvocationRepository, ModelRepository, ModelRoute,
+    Money4, NewBatchItem, NewBatchJob, PricingCatalogRepository, PricingResolution,
+    ProviderRegistry, ProviderRepository, ProviderRequestContext, RequestLogRepository,
+    RoutePlanner, StoreHealth, is_supported_vertex_google_chat_upstream_model,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -21,11 +21,7 @@ use crate::{
 
 pub const MAX_BATCH_ITEMS: usize = 50_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BatchPricingPolicy {
-    HalfAllTokenRates,
-    VertexHalfNonCachedRates,
-}
+pub use gateway_core::BatchPricingPolicy;
 
 #[derive(Debug, Clone, Copy)]
 pub struct BatchPricer {
@@ -34,6 +30,14 @@ pub struct BatchPricer {
 }
 
 impl BatchPricer {
+    #[must_use]
+    pub const fn from_snapshot(snapshot: BatchPricingSnapshot) -> Self {
+        Self {
+            rates: snapshot.rates,
+            policy: snapshot.policy,
+        }
+    }
+
     pub fn price_usage(
         &self,
         provider_usage: Option<&Value>,
@@ -77,13 +81,7 @@ impl BatchPricer {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct BatchRates {
-    pub(crate) input: Option<Money4>,
-    pub(crate) output: Option<Money4>,
-    pub(crate) cache_read: Option<Money4>,
-    pub(crate) cache_write: Option<Money4>,
-}
+pub(crate) type BatchRates = BatchTokenRates;
 
 impl<S, P> GatewayService<S, P>
 where
@@ -108,6 +106,18 @@ where
         policy: BatchPricingPolicy,
         occurred_at: OffsetDateTime,
     ) -> Result<BatchPricer, GatewayError> {
+        let snapshot = self
+            .batch_pricing_snapshot(route, policy, occurred_at)
+            .await?;
+        Ok(BatchPricer::from_snapshot(snapshot))
+    }
+
+    pub async fn batch_pricing_snapshot(
+        &self,
+        route: &ModelRoute,
+        policy: BatchPricingPolicy,
+        occurred_at: OffsetDateTime,
+    ) -> Result<BatchPricingSnapshot, GatewayError> {
         let rates = match self.resolve_route_pricing(route, occurred_at).await? {
             PricingResolution::Exact { pricing } => Some(BatchRates {
                 input: pricing.input_cost_per_million_tokens,
@@ -123,7 +133,7 @@ where
             }),
             PricingResolution::Unpriced { .. } => None,
         };
-        Ok(BatchPricer { rates, policy })
+        Ok(BatchPricingSnapshot { rates, policy })
     }
 }
 
@@ -252,7 +262,7 @@ where
     }
 
     let resolved = service.resolve_request(auth, &input.model).await?;
-    let (route, _) = resolved
+    let (route, provider) = resolved
         .routes
         .iter()
         .filter_map(|route| {
@@ -277,6 +287,14 @@ where
             Some(route.upstream_model.as_str()),
             now,
         )
+        .await?;
+    let pricing_policy = if provider.provider_type() == "gcp_vertex" {
+        BatchPricingPolicy::VertexHalfNonCachedRates
+    } else {
+        BatchPricingPolicy::HalfAllTokenRates
+    };
+    let pricing_snapshot = service
+        .batch_pricing_snapshot(route, pricing_policy, now)
         .await?;
 
     let provider_context = ProviderRequestContext {
@@ -332,6 +350,7 @@ where
         lease_owner: None,
         lease_expires_at: None,
         provider_context,
+        pricing_snapshot: Some(pricing_snapshot),
     };
     match service
         .store()

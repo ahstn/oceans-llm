@@ -3409,6 +3409,7 @@ pub(crate) mod tests {
                         request_headers: BTreeMap::new(),
                         compatibility: seeded_route.compatibility.clone(),
                     },
+                    pricing_snapshot: None,
                 },
                 items: vec![NewBatchItem {
                     batch_item_id: Uuid::new_v4(),

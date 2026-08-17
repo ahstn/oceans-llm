@@ -1,8 +1,8 @@
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, serialize_optional_json, unix_to_datetime};
 
-const JOB_COLUMNS: &str = "batch_id, idempotency_key, request_hash, api_key_id, user_id, team_id, service_account_id, model_id, model_key, resolved_model_key, route_id, provider_key, upstream_model, endpoint, status, provider_batch_id, request_count, completed_count, failed_count, cost_usd_10000, pricing_status, provider_usage_json, error_json, created_at, submitted_at, completed_at, updated_at, next_poll_at, lease_owner, lease_expires_at, provider_context_json";
-const CLAIMED_JOB_COLUMNS: &str = "b.batch_id, b.idempotency_key, b.request_hash, b.api_key_id, b.user_id, b.team_id, b.service_account_id, b.model_id, b.model_key, b.resolved_model_key, b.route_id, b.provider_key, b.upstream_model, b.endpoint, b.status, b.provider_batch_id, b.request_count, b.completed_count, b.failed_count, b.cost_usd_10000, b.pricing_status, b.provider_usage_json, b.error_json, b.created_at, b.submitted_at, b.completed_at, b.updated_at, b.next_poll_at, b.lease_owner, b.lease_expires_at, b.provider_context_json";
+const JOB_COLUMNS: &str = "batch_id, idempotency_key, request_hash, api_key_id, user_id, team_id, service_account_id, model_id, model_key, resolved_model_key, route_id, provider_key, upstream_model, endpoint, status, provider_batch_id, request_count, completed_count, failed_count, cost_usd_10000, pricing_status, provider_usage_json, error_json, created_at, submitted_at, completed_at, updated_at, next_poll_at, lease_owner, lease_expires_at, provider_context_json, pricing_snapshot_json";
+const CLAIMED_JOB_COLUMNS: &str = "b.batch_id, b.idempotency_key, b.request_hash, b.api_key_id, b.user_id, b.team_id, b.service_account_id, b.model_id, b.model_key, b.resolved_model_key, b.route_id, b.provider_key, b.upstream_model, b.endpoint, b.status, b.provider_batch_id, b.request_count, b.completed_count, b.failed_count, b.cost_usd_10000, b.pricing_status, b.provider_usage_json, b.error_json, b.created_at, b.submitted_at, b.completed_at, b.updated_at, b.next_poll_at, b.lease_owner, b.lease_expires_at, b.provider_context_json, b.pricing_snapshot_json";
 const ITEM_COLUMNS: &str = "batch_item_id, batch_id, custom_id, status, request_body_json, response_body_json, error_json, provider_request_id, provider_usage_json, cost_usd_10000, completed_at, created_at, updated_at";
 
 fn optional_json(raw: Option<String>) -> Result<Option<serde_json::Value>, StoreError> {
@@ -93,6 +93,13 @@ fn decode_job(row: &PgRow) -> Result<BatchJobRecord, StoreError> {
                 .map_err(to_query_error)?,
         )
         .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        pricing_snapshot: optional_json(
+            row.try_get("pricing_snapshot_json")
+                .map_err(to_query_error)?,
+        )?
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|error| StoreError::Serialization(error.to_string()))?,
     })
 }
 
@@ -164,14 +171,14 @@ impl BatchRepository for PostgresStore {
     async fn insert_batch(&self, batch: &NewBatchJob) -> Result<BatchJobRecord, StoreError> {
         let job = &batch.job;
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
-        let result = sqlx::query("INSERT INTO batch_jobs (batch_id, idempotency_key, request_hash, api_key_id, user_id, team_id, service_account_id, model_id, model_key, resolved_model_key, route_id, provider_key, upstream_model, endpoint, status, provider_batch_id, request_count, completed_count, failed_count, cost_usd_10000, pricing_status, provider_usage_json, error_json, created_at, submitted_at, completed_at, updated_at, next_poll_at, lease_owner, lease_expires_at, provider_context_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)")
+        let result = sqlx::query("INSERT INTO batch_jobs (batch_id, idempotency_key, request_hash, api_key_id, user_id, team_id, service_account_id, model_id, model_key, resolved_model_key, route_id, provider_key, upstream_model, endpoint, status, provider_batch_id, request_count, completed_count, failed_count, cost_usd_10000, pricing_status, provider_usage_json, error_json, created_at, submitted_at, completed_at, updated_at, next_poll_at, lease_owner, lease_expires_at, provider_context_json, pricing_snapshot_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)")
             .bind(job.batch_id.to_string()).bind(&job.idempotency_key).bind(&job.request_hash).bind(job.api_key_id.to_string())
             .bind(job.user_id.map(|id| id.to_string())).bind(job.team_id.map(|id| id.to_string())).bind(job.service_account_id.map(|id| id.to_string()))
             .bind(job.model_id.to_string()).bind(&job.model_key).bind(&job.resolved_model_key).bind(job.route_id.to_string()).bind(&job.provider_key).bind(&job.upstream_model)
             .bind(job.endpoint.as_str()).bind(job.status.as_str()).bind(&job.provider_batch_id).bind(job.request_count).bind(job.completed_count).bind(job.failed_count)
             .bind(job.cost_usd.map(Money4::as_scaled_i64)).bind(job.pricing_status.as_str()).bind(serialize_optional_json(job.provider_usage.as_ref())?).bind(serialize_optional_json(job.error.as_ref())?)
             .bind(job.created_at.unix_timestamp()).bind(job.submitted_at.map(|time| time.unix_timestamp())).bind(job.completed_at.map(|time| time.unix_timestamp()))
-            .bind(job.updated_at.unix_timestamp()).bind(job.next_poll_at.map(|time| time.unix_timestamp())).bind(&job.lease_owner).bind(job.lease_expires_at.map(|time| time.unix_timestamp())).bind(serialize_json(&job.provider_context)?)
+            .bind(job.updated_at.unix_timestamp()).bind(job.next_poll_at.map(|time| time.unix_timestamp())).bind(&job.lease_owner).bind(job.lease_expires_at.map(|time| time.unix_timestamp())).bind(serialize_json(&job.provider_context)?).bind(serialize_optional_json(job.pricing_snapshot.as_ref())?)
             .execute(&mut *tx).await;
         if let Err(error) = result {
             return Err(

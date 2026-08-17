@@ -7,7 +7,7 @@ use gateway_core::{
     ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchSubmission, ProviderError,
     ProviderRegistry,
 };
-use gateway_service::{BatchPricingPolicy, BatchUsageInput};
+use gateway_service::{BatchPricer, BatchPricingPolicy, BatchUsageInput};
 use serde_json::json;
 use time::OffsetDateTime;
 use tracing::{error, info, warn};
@@ -464,30 +464,34 @@ async fn price_results(
         }
         return Ok(BatchPricingStatus::ProviderReported);
     }
-    let route = service
-        .store()
-        .list_routes_for_model(job.model_id)
-        .await?
-        .into_iter()
-        .find(|route| route.id == job.route_id)
-        .ok_or_else(|| {
-            gateway_core::GatewayError::Internal(format!(
-                "batch route `{}` is no longer available for pricing",
-                job.route_id
-            ))
-        })?;
-    let policy = if provider_type == "gcp_vertex" {
-        BatchPricingPolicy::VertexHalfNonCachedRates
+    let pricer = if let Some(snapshot) = job.pricing_snapshot {
+        BatchPricer::from_snapshot(snapshot)
     } else {
-        BatchPricingPolicy::HalfAllTokenRates
+        let route = service
+            .store()
+            .list_routes_for_model(job.model_id)
+            .await?
+            .into_iter()
+            .find(|route| route.id == job.route_id)
+            .ok_or_else(|| {
+                gateway_core::GatewayError::Internal(format!(
+                    "batch route `{}` is no longer available for legacy pricing",
+                    job.route_id
+                ))
+            })?;
+        let policy = if provider_type == "gcp_vertex" {
+            BatchPricingPolicy::VertexHalfNonCachedRates
+        } else {
+            BatchPricingPolicy::HalfAllTokenRates
+        };
+        service
+            .batch_pricer(
+                &route,
+                policy,
+                state.completed_at.unwrap_or_else(OffsetDateTime::now_utc),
+            )
+            .await?
     };
-    let pricer = service
-        .batch_pricer(
-            &route,
-            policy,
-            state.completed_at.unwrap_or_else(OffsetDateTime::now_utc),
-        )
-        .await?;
     let mut successful = 0_usize;
     let mut priced = 0_usize;
     let mut locally_priced = vec![false; results.len()];

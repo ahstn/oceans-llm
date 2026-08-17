@@ -34,9 +34,10 @@ pub use auth::{
 pub use batch::{
     BatchAccessScope, BatchCapabilities, BatchEndpoint, BatchItemPage, BatchItemQuery,
     BatchItemRecord, BatchItemStatus, BatchJobRecord, BatchPage, BatchPollUpdate,
-    BatchPricingStatus, BatchQuery, BatchStatus, MAX_BATCH_PAGE_SIZE, MAX_BATCH_RESULT_PAGE_SIZE,
-    NewBatchItem, NewBatchJob, ProviderBatchRequest, ProviderBatchRequestItem, ProviderBatchResult,
-    ProviderBatchState, ProviderBatchSubmission,
+    BatchPricingPolicy, BatchPricingSnapshot, BatchPricingStatus, BatchQuery, BatchStatus,
+    BatchTokenRates, MAX_BATCH_PAGE_SIZE, MAX_BATCH_RESULT_PAGE_SIZE, NewBatchItem, NewBatchJob,
+    ProviderBatchRequest, ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchState,
+    ProviderBatchSubmission,
 };
 pub use budgets::{
     BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource,

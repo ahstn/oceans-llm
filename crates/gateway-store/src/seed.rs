@@ -329,6 +329,7 @@ fn demo_batch_job(
             request_headers: BTreeMap::new(),
             compatibility: route.compatibility.clone(),
         },
+        pricing_snapshot: None,
     }
 }
 

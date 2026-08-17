@@ -1002,9 +1002,9 @@ where
                 job.batch_id
             )));
         }
-        let (usage, item_usage_complete) = aggregate_batch_usage(results)?;
+        let (usage, usage_totals_complete) = aggregate_batch_usage(results, provider_usage)?;
         let result_set_complete = i64::try_from(results.len()).ok() == Some(job.request_count);
-        let usage_complete = item_usage_complete && result_set_complete;
+        let usage_complete = usage_totals_complete && result_set_complete;
         let (ledger_pricing_status, mut unpriced_reason) = match pricing_status {
             BatchPricingStatus::Priced | BatchPricingStatus::ProviderReported => {
                 (UsagePricingStatus::Priced, None)
@@ -1125,6 +1125,7 @@ where
 
 fn aggregate_batch_usage(
     results: &[ProviderBatchResult],
+    provider_usage: Option<&Value>,
 ) -> Result<(UsageSummary, bool), GatewayError> {
     let mut aggregate = UsageSummary::default();
     let mut complete = true;
@@ -1144,6 +1145,38 @@ fn aggregate_batch_usage(
         aggregate.completion_tokens =
             add_optional(aggregate.completion_tokens, usage.completion_tokens)?;
         aggregate.total_tokens = add_optional(aggregate.total_tokens, usage.total_tokens)?;
+    }
+    if !complete || !aggregate.has_usage() {
+        let provider_aggregate = usage_summary_from_value(provider_usage)?;
+        if provider_aggregate.has_usage() {
+            let provider_totals_complete = provider_aggregate.prompt_tokens.is_some()
+                && provider_aggregate.completion_tokens.is_some()
+                && provider_aggregate.total_tokens.is_some();
+            warn!(
+                result_count = results.len(),
+                "using provider aggregate batch usage because item usage is incomplete"
+            );
+            return Ok((
+                UsageSummary {
+                    prompt_tokens: provider_aggregate.prompt_tokens.or(aggregate.prompt_tokens),
+                    uncached_input_tokens: provider_aggregate
+                        .uncached_input_tokens
+                        .or(aggregate.uncached_input_tokens),
+                    cache_read_tokens: provider_aggregate
+                        .cache_read_tokens
+                        .or(aggregate.cache_read_tokens),
+                    cache_write_tokens: provider_aggregate
+                        .cache_write_tokens
+                        .or(aggregate.cache_write_tokens),
+                    completion_tokens: provider_aggregate
+                        .completion_tokens
+                        .or(aggregate.completion_tokens),
+                    total_tokens: provider_aggregate.total_tokens.or(aggregate.total_tokens),
+                    cache_usage: provider_aggregate.cache_usage,
+                },
+                provider_totals_complete,
+            ));
+        }
     }
     if !complete {
         warn!(
@@ -1779,12 +1812,38 @@ mod tests {
             },
         ];
 
-        let (usage, complete) = aggregate_batch_usage(&results).expect("aggregate usage");
+        let (usage, complete) = aggregate_batch_usage(&results, None).expect("aggregate usage");
 
         assert!(!complete);
         assert_eq!(usage.prompt_tokens, Some(100));
         assert_eq!(usage.completion_tokens, Some(20));
         assert_eq!(usage.total_tokens, Some(120));
+    }
+
+    #[test]
+    fn aggregate_batch_usage_uses_provider_totals_when_item_usage_is_incomplete() {
+        let results = vec![ProviderBatchResult {
+            custom_id: "without-usage".to_string(),
+            response_body: Some(json!({"id": "response-1"})),
+            error: None,
+            provider_request_id: Some("request-1".to_string()),
+            provider_usage: None,
+            completed_at: None,
+            cost_usd: Some(Money4::from_scaled(10)),
+        }];
+        let provider_usage = json!({
+            "input_tokens": 240,
+            "output_tokens": 60,
+            "total_tokens": 300,
+        });
+
+        let (usage, complete) = aggregate_batch_usage(&results, Some(&provider_usage))
+            .expect("aggregate provider usage");
+
+        assert!(complete);
+        assert_eq!(usage.prompt_tokens, Some(240));
+        assert_eq!(usage.completion_tokens, Some(60));
+        assert_eq!(usage.total_tokens, Some(300));
     }
 
     #[tokio::test]
@@ -1855,6 +1914,7 @@ mod tests {
                 request_headers: Default::default(),
                 compatibility: Default::default(),
             },
+            pricing_snapshot: None,
         };
 
         service

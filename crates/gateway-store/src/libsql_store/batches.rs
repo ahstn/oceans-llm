@@ -1,7 +1,7 @@
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, serialize_optional_json, unix_to_datetime};
 
-const JOB_COLUMNS: &str = "batch_id, idempotency_key, request_hash, api_key_id, user_id, team_id, service_account_id, model_id, model_key, resolved_model_key, route_id, provider_key, upstream_model, endpoint, status, provider_batch_id, request_count, completed_count, failed_count, cost_usd_10000, pricing_status, provider_usage_json, error_json, created_at, submitted_at, completed_at, updated_at, next_poll_at, lease_owner, lease_expires_at, provider_context_json";
+const JOB_COLUMNS: &str = "batch_id, idempotency_key, request_hash, api_key_id, user_id, team_id, service_account_id, model_id, model_key, resolved_model_key, route_id, provider_key, upstream_model, endpoint, status, provider_batch_id, request_count, completed_count, failed_count, cost_usd_10000, pricing_status, provider_usage_json, error_json, created_at, submitted_at, completed_at, updated_at, next_poll_at, lease_owner, lease_expires_at, provider_context_json, pricing_snapshot_json";
 const ITEM_COLUMNS: &str = "batch_item_id, batch_id, custom_id, status, request_body_json, response_body_json, error_json, provider_request_id, provider_usage_json, cost_usd_10000, completed_at, created_at, updated_at";
 
 fn decode_optional_json(raw: Option<String>) -> Result<Option<serde_json::Value>, StoreError> {
@@ -63,6 +63,13 @@ fn decode_job(row: &libsql::Row) -> Result<BatchJobRecord, StoreError> {
         lease_owner: row.get(28).map_err(to_query_error)?,
         lease_expires_at: lease_expires_at.map(unix_to_datetime).transpose()?,
         provider_context: serde_json::from_str(&row.get::<String>(30).map_err(to_query_error)?)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        pricing_snapshot: row
+            .get::<Option<String>>(31)
+            .map_err(to_query_error)?
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
     })
 }
@@ -137,7 +144,7 @@ impl BatchRepository for LibsqlStore {
             .map_err(to_query_error)?;
         let result = tx
             .execute(
-                "INSERT INTO batch_jobs (batch_id, idempotency_key, request_hash, api_key_id, user_id, team_id, service_account_id, model_id, model_key, resolved_model_key, route_id, provider_key, upstream_model, endpoint, status, provider_batch_id, request_count, completed_count, failed_count, cost_usd_10000, pricing_status, provider_usage_json, error_json, created_at, submitted_at, completed_at, updated_at, next_poll_at, lease_owner, lease_expires_at, provider_context_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31)",
+                "INSERT INTO batch_jobs (batch_id, idempotency_key, request_hash, api_key_id, user_id, team_id, service_account_id, model_id, model_key, resolved_model_key, route_id, provider_key, upstream_model, endpoint, status, provider_batch_id, request_count, completed_count, failed_count, cost_usd_10000, pricing_status, provider_usage_json, error_json, created_at, submitted_at, completed_at, updated_at, next_poll_at, lease_owner, lease_expires_at, provider_context_json, pricing_snapshot_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)",
                 libsql::params![
                     job.batch_id.to_string(), job.idempotency_key.as_str(), job.request_hash.as_str(),
                     job.api_key_id.to_string(), job.user_id.map(|id| id.to_string()),
@@ -152,7 +159,7 @@ impl BatchRepository for LibsqlStore {
                     job.completed_at.map(|time| time.unix_timestamp()), job.updated_at.unix_timestamp(),
                     job.next_poll_at.map(|time| time.unix_timestamp()), job.lease_owner.as_deref(),
                     job.lease_expires_at.map(|time| time.unix_timestamp()),
-                    serialize_json(&job.provider_context)?
+                    serialize_json(&job.provider_context)?, serialize_optional_json(job.pricing_snapshot.as_ref())?
                 ],
             )
             .await;
@@ -534,9 +541,9 @@ mod tests {
 
     use gateway_core::{
         BatchAccessScope, BatchEndpoint, BatchItemQuery, BatchJobRecord, BatchPollUpdate,
-        BatchPricingStatus, BatchQuery, BatchRepository, BatchStatus, Money4, NewBatchItem,
-        NewBatchJob, ProviderBatchResult, ProviderBatchState, ProviderRequestContext,
-        RouteCompatibility, StoreError,
+        BatchPricingPolicy, BatchPricingSnapshot, BatchPricingStatus, BatchQuery, BatchRepository,
+        BatchStatus, BatchTokenRates, Money4, NewBatchItem, NewBatchJob, ProviderBatchResult,
+        ProviderBatchState, ProviderRequestContext, RouteCompatibility, StoreError,
     };
     use serde_json::{Map, json};
     use tempfile::tempdir;
@@ -603,6 +610,15 @@ mod tests {
                     request_headers: BTreeMap::new(),
                     compatibility: RouteCompatibility::default(),
                 },
+                pricing_snapshot: Some(BatchPricingSnapshot {
+                    rates: Some(BatchTokenRates {
+                        input: Some(Money4::from_scaled(20_000)),
+                        output: Some(Money4::from_scaled(80_000)),
+                        cache_read: None,
+                        cache_write: None,
+                    }),
+                    policy: BatchPricingPolicy::HalfAllTokenRates,
+                }),
             },
             items: vec![NewBatchItem {
                 batch_item_id: Uuid::new_v4(),
@@ -618,6 +634,7 @@ mod tests {
             .expect("idempotency lookup")
             .expect("batch exists");
         assert_eq!(replay.batch_id, batch_id);
+        assert_eq!(replay.pricing_snapshot, new_job.job.pricing_snapshot);
         assert!(matches!(
             store
                 .get_batch(batch_id, BatchAccessScope::ApiKey(Uuid::new_v4()))
