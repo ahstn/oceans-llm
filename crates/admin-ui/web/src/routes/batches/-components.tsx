@@ -100,7 +100,7 @@ export function BatchList({
       </div>
 
       <div
-        className="hidden overflow-hidden rounded-md border md:block"
+        className="hidden overflow-x-auto rounded-md border md:block"
         data-testid="batch-desktop-table"
       >
         <Table className="min-w-[70rem] text-left">

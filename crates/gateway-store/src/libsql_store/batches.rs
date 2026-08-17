@@ -495,7 +495,7 @@ impl BatchRepository for LibsqlStore {
         } else {
             ("cancel_requested", None)
         };
-        let changed = self.connection.execute("UPDATE batch_jobs SET status = ?1, completed_at = ?2, next_poll_at = ?3, updated_at = ?3 WHERE batch_id = ?4 AND status = ?5", libsql::params![status, completed_at, requested_at.unix_timestamp(), batch_id.to_string(), current.status.as_str()]).await.map_err(to_query_error)?;
+        let changed = self.connection.execute("UPDATE batch_jobs SET status = ?1, completed_at = ?2, next_poll_at = ?3, updated_at = ?3, lease_owner = NULL, lease_expires_at = NULL WHERE batch_id = ?4 AND status = ?5", libsql::params![status, completed_at, requested_at.unix_timestamp(), batch_id.to_string(), current.status.as_str()]).await.map_err(to_query_error)?;
         if changed == 0 {
             let latest = load_job(&self.connection, batch_id, scope).await?;
             if latest.status.is_terminal() {
@@ -710,52 +710,77 @@ mod tests {
             .await
             .expect("get submitted batch");
         assert_eq!(submitted.request_count, 1);
+        let claimed = store
+            .claim_batch_jobs(
+                "poll-worker",
+                now + Duration::minutes(1),
+                now + Duration::minutes(3),
+                1,
+            )
+            .await
+            .expect("claim provider poll");
+        assert_eq!(claimed[0].status, BatchStatus::InProgress);
+        let cancellation_time = now + Duration::minutes(1) + Duration::seconds(1);
         let cancellation = store
-            .request_batch_cancel(batch_id, BatchAccessScope::ApiKey(api_key_id), now)
+            .request_batch_cancel(
+                batch_id,
+                BatchAccessScope::ApiKey(api_key_id),
+                cancellation_time,
+            )
             .await
             .expect("request cancellation");
         assert_eq!(cancellation.status, BatchStatus::CancelRequested);
+        assert_eq!(cancellation.lease_owner, None);
+
+        let completed_update = BatchPollUpdate {
+            state: ProviderBatchState {
+                provider_batch_id: "provider-batch-1".to_string(),
+                status: BatchStatus::Completed,
+                request_count: 1,
+                completed_count: 1,
+                failed_count: 0,
+                provider_usage: Some(json!({"input_tokens": 10, "output_tokens": 2})),
+                provider_cost_usd: Some(Money4::from_scaled(25)),
+                error: None,
+                submitted_at: Some(now),
+                completed_at: Some(now + Duration::seconds(1)),
+            },
+            results: vec![ProviderBatchResult {
+                custom_id: "row-1".to_string(),
+                response_body: Some(json!({"id": "response-1"})),
+                error: None,
+                provider_request_id: Some("request-1".to_string()),
+                provider_usage: Some(json!({"input_tokens": 10, "output_tokens": 2})),
+                completed_at: Some(now + Duration::seconds(1)),
+                cost_usd: Some(Money4::from_scaled(25)),
+            }],
+            next_poll_at: None,
+            pricing_status: Some(BatchPricingStatus::ProviderReported),
+        };
+        assert!(matches!(
+            store
+                .apply_batch_poll_update(batch_id, "poll-worker", &completed_update)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        let pending_cancellation = store
+            .get_batch(batch_id, BatchAccessScope::ApiKey(api_key_id))
+            .await
+            .expect("get pending cancellation");
+        assert_eq!(pending_cancellation.status, BatchStatus::CancelRequested);
 
         let claimed = store
             .claim_batch_jobs(
                 "worker-3",
-                now + Duration::seconds(1),
-                now + Duration::minutes(2),
+                cancellation_time + Duration::seconds(1),
+                cancellation_time + Duration::minutes(2),
                 1,
             )
             .await
             .expect("claim cancellation");
         assert_eq!(claimed[0].status, BatchStatus::CancelRequested);
         store
-            .apply_batch_poll_update(
-                batch_id,
-                "worker-3",
-                &BatchPollUpdate {
-                    state: ProviderBatchState {
-                        provider_batch_id: "provider-batch-1".to_string(),
-                        status: BatchStatus::Completed,
-                        request_count: 1,
-                        completed_count: 1,
-                        failed_count: 0,
-                        provider_usage: Some(json!({"input_tokens": 10, "output_tokens": 2})),
-                        provider_cost_usd: Some(Money4::from_scaled(25)),
-                        error: None,
-                        submitted_at: Some(now),
-                        completed_at: Some(now + Duration::seconds(1)),
-                    },
-                    results: vec![ProviderBatchResult {
-                        custom_id: "row-1".to_string(),
-                        response_body: Some(json!({"id": "response-1"})),
-                        error: None,
-                        provider_request_id: Some("request-1".to_string()),
-                        provider_usage: Some(json!({"input_tokens": 10, "output_tokens": 2})),
-                        completed_at: Some(now + Duration::seconds(1)),
-                        cost_usd: Some(Money4::from_scaled(25)),
-                    }],
-                    next_poll_at: None,
-                    pricing_status: Some(BatchPricingStatus::ProviderReported),
-                },
-            )
+            .apply_batch_poll_update(batch_id, "worker-3", &completed_update)
             .await
             .expect("apply result");
 

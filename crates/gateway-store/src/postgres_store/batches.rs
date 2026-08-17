@@ -539,7 +539,7 @@ impl BatchRepository for PostgresStore {
         } else {
             ("cancel_requested", None)
         };
-        let changed = sqlx::query("UPDATE batch_jobs SET status=$1,completed_at=$2,next_poll_at=$3,updated_at=$3 WHERE batch_id=$4 AND status=$5").bind(status).bind(completed_at).bind(requested_at.unix_timestamp()).bind(batch_id.to_string()).bind(current.status.as_str()).execute(&self.pool).await.map_err(to_query_error)?.rows_affected();
+        let changed = sqlx::query("UPDATE batch_jobs SET status=$1,completed_at=$2,next_poll_at=$3,updated_at=$3,lease_owner=NULL,lease_expires_at=NULL WHERE batch_id=$4 AND status=$5").bind(status).bind(completed_at).bind(requested_at.unix_timestamp()).bind(batch_id.to_string()).bind(current.status.as_str()).execute(&self.pool).await.map_err(to_query_error)?.rows_affected();
         if changed == 0 {
             let latest = load_job(&self.pool, batch_id, scope).await?;
             if latest.status.is_terminal() {
