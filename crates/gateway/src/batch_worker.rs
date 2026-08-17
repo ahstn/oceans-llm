@@ -479,18 +479,32 @@ async fn price_results(
         .await?;
     let mut successful = 0_usize;
     let mut priced = 0_usize;
-    for result in results.iter_mut() {
+    let mut locally_priced = vec![false; results.len()];
+    for (index, result) in results.iter_mut().enumerate() {
         if result.error.is_none() {
             successful += 1;
             if result.cost_usd.is_none() {
                 result.cost_usd = pricer.price_usage(result.provider_usage.as_ref())?;
+                locally_priced[index] = result.cost_usd.is_some();
             }
             if result.cost_usd.is_some() {
                 priced += 1;
             }
         }
     }
-    state.provider_cost_usd = sum_costs(results.iter().filter_map(|result| result.cost_usd))?;
+    let reported_cost = sum_costs(results.iter().zip(&locally_priced).filter_map(
+        |(result, locally_priced)| {
+            if *locally_priced {
+                None
+            } else {
+                result.cost_usd
+            }
+        },
+    ))?;
+    let local_cost = pricer.price_usages(results.iter().zip(&locally_priced).filter_map(
+        |(result, locally_priced)| locally_priced.then_some(result.provider_usage.as_ref()),
+    ))?;
+    state.provider_cost_usd = sum_costs([reported_cost, local_cost].into_iter().flatten())?;
     Ok(if successful > 0 && priced == successful {
         BatchPricingStatus::Priced
     } else if priced == 0 {

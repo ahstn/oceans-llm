@@ -16,9 +16,7 @@ use uuid::Uuid;
 
 use crate::{
     GatewayService,
-    service::{
-        CacheUsageNormalization, UsageSummary, scaled_cost_for_tokens, usage_summary_from_value,
-    },
+    service::{CacheUsageNormalization, UsageSummary, usage_summary_from_value},
 };
 
 pub const MAX_BATCH_ITEMS: usize = 50_000;
@@ -48,6 +46,34 @@ impl BatchPricer {
             return Ok(None);
         }
         compute_batch_usage_cost(&usage, rates, self.policy)
+    }
+
+    pub fn price_usages<'a>(
+        &self,
+        provider_usages: impl IntoIterator<Item = Option<&'a Value>>,
+    ) -> Result<Option<Money4>, GatewayError> {
+        let Some(rates) = self.rates else {
+            return Ok(None);
+        };
+        let mut total_numerator = 0_i128;
+        let mut seen = false;
+        for provider_usage in provider_usages {
+            let usage = usage_summary_from_value(provider_usage)?;
+            if !usage.has_usage() {
+                return Ok(None);
+            }
+            let Some(numerator) = batch_usage_cost_numerator(&usage, rates, self.policy)? else {
+                return Ok(None);
+            };
+            total_numerator = total_numerator
+                .checked_add(numerator)
+                .ok_or_else(|| GatewayError::Internal("batch usage cost overflow".to_string()))?;
+            seen = true;
+        }
+        if !seen {
+            return Ok(None);
+        }
+        money4_from_batch_numerator(total_numerator).map(Some)
     }
 }
 
@@ -106,6 +132,16 @@ pub(crate) fn compute_batch_usage_cost(
     rates: BatchRates,
     policy: BatchPricingPolicy,
 ) -> Result<Option<Money4>, GatewayError> {
+    batch_usage_cost_numerator(usage, rates, policy)?
+        .map(money4_from_batch_numerator)
+        .transpose()
+}
+
+fn batch_usage_cost_numerator(
+    usage: &UsageSummary,
+    rates: BatchRates,
+    policy: BatchPricingPolicy,
+) -> Result<Option<i128>, GatewayError> {
     let mut components = Vec::new();
     match &usage.cache_usage {
         CacheUsageNormalization::Valid(_) => {
@@ -124,7 +160,7 @@ pub(crate) fn compute_batch_usage_cost(
     }
     components.push((usage.completion_tokens, rates.output, true));
 
-    let mut total = Money4::ZERO;
+    let mut total = 0_i128;
     for (tokens, rate, discounted) in components {
         let tokens = tokens.unwrap_or_default();
         if tokens == 0 {
@@ -133,11 +169,16 @@ pub(crate) fn compute_batch_usage_cost(
         let Some(rate) = rate else {
             return Ok(None);
         };
-        let cost = if discounted {
-            half_cost_for_tokens(tokens, rate)?
-        } else {
-            scaled_cost_for_tokens(tokens, rate)?
-        };
+        if tokens < 0 {
+            return Err(GatewayError::Internal(
+                "token count cannot be negative".to_string(),
+            ));
+        }
+        let rate_multiplier = if discounted { 1_i128 } else { 2_i128 };
+        let cost = i128::from(tokens)
+            .checked_mul(i128::from(rate.as_scaled_i64()))
+            .and_then(|value| value.checked_mul(rate_multiplier))
+            .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?;
         total = total
             .checked_add(cost)
             .ok_or_else(|| GatewayError::Internal("batch usage cost overflow".to_string()))?;
@@ -145,16 +186,8 @@ pub(crate) fn compute_batch_usage_cost(
     Ok(Some(total))
 }
 
-fn half_cost_for_tokens(tokens: i64, rate_per_million: Money4) -> Result<Money4, GatewayError> {
-    if tokens < 0 {
-        return Err(GatewayError::Internal(
-            "token count cannot be negative".to_string(),
-        ));
-    }
+fn money4_from_batch_numerator(numerator: i128) -> Result<Money4, GatewayError> {
     const DENOMINATOR: i128 = 2_000_000;
-    let numerator = i128::from(tokens)
-        .checked_mul(i128::from(rate_per_million.as_scaled_i64()))
-        .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?;
     let rounded = numerator
         .checked_add(DENOMINATOR / 2)
         .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?
@@ -391,4 +424,41 @@ fn request_hash(input: &CreateBatchInput) -> Result<String, GatewayError> {
     let bytes = serde_json::to_vec(&(input.endpoint, &input.model, &input.items))
         .map_err(|error| GatewayError::Internal(error.to_string()))?;
     Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+#[cfg(test)]
+mod tests {
+    use gateway_core::Money4;
+    use serde_json::json;
+
+    use super::{BatchPricer, BatchPricingPolicy, BatchRates, MAX_BATCH_ITEMS};
+
+    #[test]
+    fn local_batch_cost_rounds_once_after_aggregating_items() {
+        let usage = json!({
+            "prompt_tokens": 50,
+            "completion_tokens": 0,
+            "total_tokens": 50
+        });
+        let pricer = BatchPricer {
+            rates: Some(BatchRates {
+                input: Some(Money4::from_scaled(10_000)),
+                output: Some(Money4::ZERO),
+                cache_read: None,
+                cache_write: None,
+            }),
+            policy: BatchPricingPolicy::HalfAllTokenRates,
+        };
+
+        assert_eq!(
+            pricer.price_usage(Some(&usage)).expect("item price"),
+            Some(Money4::ZERO)
+        );
+        assert_eq!(
+            pricer
+                .price_usages((0..MAX_BATCH_ITEMS).map(|_| Some(&usage)))
+                .expect("batch price"),
+            Some(Money4::from_scaled(12_500))
+        );
+    }
 }
