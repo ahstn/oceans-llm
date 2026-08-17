@@ -7,7 +7,7 @@ use gateway_core::{
     ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchSubmission, ProviderError,
     ProviderRegistry,
 };
-use gateway_service::BatchPricingPolicy;
+use gateway_service::{BatchPricingPolicy, BatchUsageInput};
 use serde_json::json;
 use time::OffsetDateTime;
 use tracing::{error, info, warn};
@@ -96,10 +96,14 @@ async fn process_job_with_lease(
             result = &mut work => return result,
             _ = renewals.tick() => {
                 let now = OffsetDateTime::now_utc();
-                service
+                if let Err(error) = service
                     .store()
                     .renew_batch_lease(job.batch_id, lease_owner, now, now + LEASE_DURATION)
-                    .await?;
+                    .await
+                {
+                    warn!(batch_id = %job.batch_id, error = %error, "batch lease renewal failed; waiting for the in-flight provider operation");
+                    return work.await;
+                }
             }
         }
     }
@@ -134,9 +138,12 @@ async fn process_job(
                 )
                 .await;
             };
-            match provider.cancel_batch(provider_batch_id).await {
+            match provider
+                .cancel_batch(provider_batch_id, &job.provider_context)
+                .await
+            {
                 Ok(state) => apply_state(service, provider.as_ref(), worker_id, job, state).await,
-                Err(error) => release_after_provider_error(service, worker_id, job, error).await,
+                Err(error) => handle_provider_error(service, worker_id, job, error).await,
             }
         }
         BatchStatus::Validating
@@ -153,9 +160,12 @@ async fn process_job(
                 )
                 .await;
             };
-            match provider.inspect_batch(provider_batch_id).await {
+            match provider
+                .inspect_batch(provider_batch_id, &job.provider_context)
+                .await
+            {
                 Ok(state) => apply_state(service, provider.as_ref(), worker_id, job, state).await,
-                Err(error) => release_after_provider_error(service, worker_id, job, error).await,
+                Err(error) => handle_provider_error(service, worker_id, job, error).await,
             }
         }
         _ => Ok(()),
@@ -215,7 +225,7 @@ async fn submit_job(
         }
         ProviderBatchSubmission::NotSubmitted(error) => {
             if error.is_retryable() {
-                release_after_provider_error(service, worker_id, job, error).await
+                handle_provider_error(service, worker_id, job, error).await
             } else {
                 fail_claimed_job(
                     service,
@@ -243,7 +253,7 @@ async fn apply_state(
         results = match provider.batch_results(&state, &job.provider_context).await {
             Ok(results) => results,
             Err(error) => {
-                return release_after_provider_error(service, worker_id, job, error).await;
+                return handle_provider_error(service, worker_id, job, error).await;
             }
         };
         if let Err(error) = validate_results(service, job.batch_id, &results).await {
@@ -272,6 +282,7 @@ async fn apply_state(
             service,
             job,
             &results,
+            state.provider_usage.as_ref(),
             pricing_status.expect("terminal batch pricing status"),
             state.provider_cost_usd,
             state.completed_at.unwrap_or_else(OffsetDateTime::now_utc),
@@ -300,6 +311,7 @@ async fn record_batch_usage(
     service: &Arc<AppGatewayService>,
     job: &gateway_core::BatchJobRecord,
     results: &[ProviderBatchResult],
+    provider_usage: Option<&serde_json::Value>,
     pricing_status: BatchPricingStatus,
     cost_usd: Option<Money4>,
     occurred_at: OffsetDateTime,
@@ -325,7 +337,17 @@ async fn record_batch_usage(
         owner_service_account_id: key.owner_service_account_id,
     };
     service
-        .record_batch_usage(&auth, job, results, pricing_status, cost_usd, occurred_at)
+        .record_batch_usage(
+            &auth,
+            job,
+            BatchUsageInput {
+                results,
+                provider_usage,
+                pricing_status,
+                cost_usd,
+                occurred_at,
+            },
+        )
         .await
 }
 
@@ -392,17 +414,21 @@ async fn price_results(
             state.completed_at.unwrap_or_else(OffsetDateTime::now_utc),
         )
         .await?;
+    let mut successful = 0_usize;
     let mut priced = 0_usize;
     for result in results.iter_mut() {
-        if result.cost_usd.is_none() && result.error.is_none() {
-            result.cost_usd = pricer.price_usage(result.provider_usage.as_ref())?;
-        }
-        if result.cost_usd.is_some() || result.error.is_some() {
-            priced += 1;
+        if result.error.is_none() {
+            successful += 1;
+            if result.cost_usd.is_none() {
+                result.cost_usd = pricer.price_usage(result.provider_usage.as_ref())?;
+            }
+            if result.cost_usd.is_some() {
+                priced += 1;
+            }
         }
     }
     state.provider_cost_usd = sum_costs(results.iter().filter_map(|result| result.cost_usd))?;
-    Ok(if priced == results.len() {
+    Ok(if successful > 0 && priced == successful {
         BatchPricingStatus::Priced
     } else if priced == 0 {
         BatchPricingStatus::Unpriced
@@ -445,12 +471,22 @@ async fn fail_claimed_job(
     Ok(())
 }
 
-async fn release_after_provider_error(
+async fn handle_provider_error(
     service: &Arc<AppGatewayService>,
     worker_id: &str,
     job: &gateway_core::BatchJobRecord,
     error: ProviderError,
 ) -> Result<(), gateway_core::GatewayError> {
+    if !error.is_retryable() {
+        return fail_claimed_job(
+            service,
+            worker_id,
+            job,
+            BatchStatus::Failed,
+            &error.to_string(),
+        )
+        .await;
+    }
     service
         .store()
         .release_batch_lease_after_error(

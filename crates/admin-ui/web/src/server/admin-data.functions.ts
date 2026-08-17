@@ -110,6 +110,86 @@ function validateAgentSessionDetailInput(data: unknown): { sessionId: string } {
   return { sessionId }
 }
 
+type BatchFilters = NonNullable<Parameters<typeof listBatches>[0]>
+
+const batchStatuses = new Set([
+  'queued',
+  'submitting',
+  'submission_unknown',
+  'validating',
+  'in_progress',
+  'finalizing',
+  'completed',
+  'failed',
+  'expired',
+  'cancel_requested',
+  'cancelling',
+  'cancelled',
+])
+
+function requireObject(data: unknown, label: string): Record<string, unknown> {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(`${label} must be an object`)
+  }
+  return data as Record<string, unknown>
+}
+
+function optionalPositiveInteger(value: unknown, label: string): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    throw new Error(`${label} must be a positive integer`)
+  }
+  return value
+}
+
+function optionalString(value: unknown, label: string): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string') throw new Error(`${label} must be a string`)
+  return value
+}
+
+function validateBatchFilters(data: unknown): BatchFilters {
+  if (data === undefined) return {}
+  const input = requireObject(data, 'Batch filters')
+  const status = optionalString(input.status, 'status')
+  if (status !== undefined && !batchStatuses.has(status)) {
+    throw new Error('status is not a valid batch status')
+  }
+  return {
+    page: optionalPositiveInteger(input.page, 'page'),
+    page_size: optionalPositiveInteger(input.page_size, 'page_size'),
+    status: status as BatchFilters['status'],
+    model: optionalString(input.model, 'model'),
+    provider: optionalString(input.provider, 'provider'),
+    user_id: optionalString(input.user_id, 'user_id'),
+    service_account_id: optionalString(input.service_account_id, 'service_account_id'),
+    created_at_start: optionalString(input.created_at_start, 'created_at_start'),
+    created_at_end: optionalString(input.created_at_end, 'created_at_end'),
+  }
+}
+
+function validateBatchResultInput(data: unknown): {
+  batchId: string
+  page: number
+  pageSize: number
+} {
+  const input = requireObject(data, 'Batch result input')
+  const batchId = optionalString(input.batchId, 'batchId')
+  if (!batchId?.trim()) throw new Error('batchId is required')
+  return {
+    batchId,
+    page: optionalPositiveInteger(input.page, 'page') ?? 1,
+    pageSize: optionalPositiveInteger(input.pageSize, 'pageSize') ?? 100,
+  }
+}
+
+function validateBatchIdInput(data: unknown): { batchId: string } {
+  const input = requireObject(data, 'Batch input')
+  const batchId = optionalString(input.batchId, 'batchId')
+  if (!batchId?.trim()) throw new Error('batchId is required')
+  return { batchId }
+}
+
 export const getOceansVersion = createServerFn({ method: 'GET' }).handler(async () => {
   return getGatewayVersion()
 })
@@ -256,23 +336,23 @@ export const getRequestLogs = createServerFn({ method: 'POST' }).handler(
   },
 )
 
-export const getBatches = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data?: Parameters<typeof listBatches>[0] }) => {
+export const getBatches = createServerFn({ method: 'POST' })
+  .validator(validateBatchFilters)
+  .handler(async ({ data }) => {
     return listBatches(data)
-  },
-)
+  })
 
-export const getBatchResultPage = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data: { batchId: string; page: number; pageSize: number } }) => {
+export const getBatchResultPage = createServerFn({ method: 'GET' })
+  .validator(validateBatchResultInput)
+  .handler(async ({ data }) => {
     return getBatchResults(data.batchId, { page: data.page, page_size: data.pageSize })
-  },
-)
+  })
 
-export const cancelGatewayBatch = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { batchId: string } }) => {
+export const cancelGatewayBatch = createServerFn({ method: 'POST' })
+  .validator(validateBatchIdInput)
+  .handler(async ({ data }) => {
     return cancelBatch(data.batchId)
-  },
-)
+  })
 
 export const getObservabilityRequestLogDetail = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data: { requestLogId: string } }) => {

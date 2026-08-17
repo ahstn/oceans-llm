@@ -208,6 +208,7 @@ describe('BatchesPage', () => {
       screen.getByText(/Activation and repeat use are the strongest signals/),
     ).toBeInTheDocument()
     expect(screen.getByText('Request payload')).toBeInTheDocument()
+    expect(screen.queryByText('req_retention')).not.toBeInTheDocument()
   })
 
   it('loads later result pages from the gateway', async () => {

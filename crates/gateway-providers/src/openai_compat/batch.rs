@@ -1,3 +1,7 @@
+use std::collections::BTreeSet;
+
+use bytes::{Bytes, BytesMut};
+use futures_util::StreamExt;
 use gateway_core::{
     BatchCapabilities, BatchStatus, Money4, ProviderBatchRequest, ProviderBatchResult,
     ProviderBatchState, ProviderBatchSubmission, ProviderError,
@@ -58,6 +62,7 @@ impl OpenAiCompatProvider {
     pub(super) async fn inspect_batch_impl(
         &self,
         provider_batch_id: &str,
+        context: &gateway_core::ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
         if self.config.batch.dialect == OpenAiBatchDialect::Disabled {
             return Err(batch_disabled());
@@ -67,6 +72,7 @@ impl OpenAiCompatProvider {
                 reqwest::Method::GET,
                 &format!("batches/{provider_batch_id}"),
                 None,
+                Some(context),
             )
             .await?;
         parse_state(&value)
@@ -75,6 +81,7 @@ impl OpenAiCompatProvider {
     pub(super) async fn cancel_batch_impl(
         &self,
         provider_batch_id: &str,
+        context: &gateway_core::ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
         if self.config.batch.dialect != OpenAiBatchDialect::OpenAi {
             return Err(ProviderError::NotImplemented(
@@ -86,6 +93,7 @@ impl OpenAiCompatProvider {
                 reqwest::Method::POST,
                 &format!("batches/{provider_batch_id}/cancel"),
                 Some(json!({})),
+                Some(context),
             )
             .await?;
         parse_state(&value)
@@ -94,46 +102,28 @@ impl OpenAiCompatProvider {
     pub(super) async fn batch_results_impl(
         &self,
         state: &ProviderBatchState,
+        context: &gateway_core::ProviderRequestContext,
     ) -> Result<Vec<ProviderBatchResult>, ProviderError> {
+        if self.config.batch.dialect == OpenAiBatchDialect::Disabled {
+            return Err(batch_disabled());
+        }
         let value = self
             .batch_json(
                 reqwest::Method::GET,
                 &format!("batches/{}", state.provider_batch_id),
                 None,
+                Some(context),
             )
             .await?;
         match self.config.batch.dialect {
-            OpenAiBatchDialect::OpenAi => self.openai_results(&value).await,
+            OpenAiBatchDialect::OpenAi => self.openai_results(&value, context).await,
             OpenAiBatchDialect::OpenRouter => Ok(parse_openrouter_results(&value)),
-            OpenAiBatchDialect::Disabled => Err(batch_disabled()),
+            OpenAiBatchDialect::Disabled => unreachable!("disabled dialect returned above"),
         }
     }
 
     async fn submit_openai_batch(&self, request: &ProviderBatchRequest) -> ProviderBatchSubmission {
-        let mut jsonl = String::new();
-        for item in &request.items {
-            let body = match self.prepare_batch_item_body(request, item) {
-                Ok(body) => body,
-                Err(error) => return ProviderBatchSubmission::NotSubmitted(error),
-            };
-            let line = json!({
-                "custom_id": item.custom_id,
-                "method": "POST",
-                "url": request.endpoint.provider_path(),
-                "body": body,
-            });
-            let encoded = match serde_json::to_string(&line) {
-                Ok(encoded) => encoded,
-                Err(error) => {
-                    return ProviderBatchSubmission::NotSubmitted(ProviderError::Transport(
-                        format!("failed encoding OpenAI batch JSONL: {error}"),
-                    ));
-                }
-            };
-            jsonl.push_str(&encoded);
-            jsonl.push('\n');
-        }
-        let file_id = match self.upload_openai_batch_file(jsonl).await {
+        let file_id = match self.upload_openai_batch_file(request).await {
             Ok(file_id) => file_id,
             Err(error) => return ProviderBatchSubmission::NotSubmitted(error),
         };
@@ -147,19 +137,24 @@ impl OpenAiCompatProvider {
                     "completion_window": "24h",
                     "metadata": {"oceans_batch_id": request.batch_id.to_string()},
                 })),
+                Some(&request.context),
             )
             .await
             .and_then(|value| parse_state(&value));
         match result {
             Ok(state) => ProviderBatchSubmission::Submitted(state),
             Err(error) if submission_is_unknown(&error) => {
-                match self.reconcile_openai_batch(request.batch_id).await {
+                match self
+                    .reconcile_openai_batch(request.batch_id, &request.context)
+                    .await
+                {
                     Some(state) => ProviderBatchSubmission::Submitted(state),
                     None => ProviderBatchSubmission::SubmissionUnknown(error),
                 }
             }
             Err(error) => {
-                self.delete_openai_batch_file(&file_id).await;
+                self.delete_openai_batch_file(&file_id, &request.context)
+                    .await;
                 ProviderBatchSubmission::NotSubmitted(error)
             }
         }
@@ -194,7 +189,12 @@ impl OpenAiCompatProvider {
             Err(error) => return ProviderBatchSubmission::NotSubmitted(error),
         };
         match self
-            .batch_json(reqwest::Method::POST, "batches", Some(payload))
+            .batch_json(
+                reqwest::Method::POST,
+                "batches",
+                Some(payload),
+                Some(&request.context),
+            )
             .await
             .and_then(|value| parse_state(&value))
         {
@@ -243,9 +243,38 @@ impl OpenAiCompatProvider {
         Ok(body)
     }
 
-    async fn upload_openai_batch_file(&self, jsonl: String) -> Result<String, ProviderError> {
+    async fn upload_openai_batch_file(
+        &self,
+        request: &ProviderBatchRequest,
+    ) -> Result<String, ProviderError> {
         let url = join_base_url(&self.batch_base_url(), "files")?;
-        let part = Part::text(jsonl)
+        let provider = self.clone();
+        let stream_request = request.clone();
+        let jsonl = async_stream::stream! {
+            for item in &stream_request.items {
+                let encoded = provider
+                    .prepare_batch_item_body(&stream_request, item)
+                    .and_then(|body| {
+                        let mut encoded = serde_json::to_vec(&json!({
+                            "custom_id": item.custom_id,
+                            "method": "POST",
+                            "url": stream_request.endpoint.provider_path(),
+                            "body": body,
+                        }))
+                        .map_err(|error| ProviderError::Transport(format!(
+                            "failed encoding OpenAI batch JSONL: {error}"
+                        )))?;
+                        encoded.push(b'\n');
+                        Ok::<Bytes, ProviderError>(Bytes::from(encoded))
+                    });
+                let failed = encoded.is_err();
+                yield encoded;
+                if failed {
+                    break;
+                }
+            }
+        };
+        let part = Part::stream(reqwest::Body::wrap_stream(jsonl))
             .file_name("batch.jsonl")
             .mime_str("application/jsonl")
             .map_err(|error| ProviderError::Transport(error.to_string()))?;
@@ -254,6 +283,7 @@ impl OpenAiCompatProvider {
                 self.client
                     .post(url)
                     .multipart(Form::new().text("purpose", "batch").part("file", part)),
+                Some(&request.context),
             )
             .await?;
         let value = response_json(builder.send().await.map_err(map_reqwest_error)?).await?;
@@ -264,48 +294,117 @@ impl OpenAiCompatProvider {
             .ok_or_else(|| ProviderError::Transport("OpenAI file upload omitted id".to_string()))
     }
 
-    async fn delete_openai_batch_file(&self, file_id: &str) {
+    async fn delete_openai_batch_file(
+        &self,
+        file_id: &str,
+        context: &gateway_core::ProviderRequestContext,
+    ) {
         let _ = self
-            .batch_json(reqwest::Method::DELETE, &format!("files/{file_id}"), None)
+            .batch_json(
+                reqwest::Method::DELETE,
+                &format!("files/{file_id}"),
+                None,
+                Some(context),
+            )
             .await;
     }
 
-    async fn reconcile_openai_batch(&self, batch_id: uuid::Uuid) -> Option<ProviderBatchState> {
+    async fn reconcile_openai_batch(
+        &self,
+        batch_id: uuid::Uuid,
+        context: &gateway_core::ProviderRequestContext,
+    ) -> Option<ProviderBatchState> {
         let batch_id = batch_id.to_string();
-        let value = self
-            .batch_json(reqwest::Method::GET, "batches?limit=100", None)
-            .await
-            .ok()?;
-        value
-            .get("data")?
-            .as_array()?
-            .iter()
-            .find(|batch| {
-                batch
-                    .pointer("/metadata/oceans_batch_id")
-                    .and_then(Value::as_str)
-                    == Some(batch_id.as_str())
-            })
-            .and_then(|batch| parse_state(batch).ok())
+        let mut after = None;
+        let mut seen_cursors = BTreeSet::new();
+        loop {
+            let path = match after.as_deref() {
+                Some(cursor) => {
+                    let query = url::form_urlencoded::Serializer::new(String::new())
+                        .append_pair("limit", "100")
+                        .append_pair("after", cursor)
+                        .finish();
+                    format!("batches?{query}")
+                }
+                None => "batches?limit=100".to_string(),
+            };
+            let value = self
+                .batch_json(reqwest::Method::GET, &path, None, Some(context))
+                .await
+                .ok()?;
+            let batches = value.get("data")?.as_array()?;
+            if let Some(state) = batches
+                .iter()
+                .find(|batch| {
+                    batch
+                        .pointer("/metadata/oceans_batch_id")
+                        .and_then(Value::as_str)
+                        == Some(batch_id.as_str())
+                })
+                .and_then(|batch| parse_state(batch).ok())
+            {
+                return Some(state);
+            }
+            if value.get("has_more").and_then(Value::as_bool) != Some(true) {
+                return None;
+            }
+            let cursor = batches.last()?.get("id")?.as_str()?.to_string();
+            if !seen_cursors.insert(cursor.clone()) {
+                return None;
+            }
+            after = Some(cursor);
+        }
     }
 
     async fn openai_results(
         &self,
         batch: &Value,
+        context: &gateway_core::ProviderRequestContext,
     ) -> Result<Vec<ProviderBatchResult>, ProviderError> {
         let mut results = Vec::new();
         for key in ["output_file_id", "error_file_id"] {
             let Some(file_id) = batch.get(key).and_then(Value::as_str) else {
                 continue;
             };
-            let text = self.batch_text(&format!("files/{file_id}/content")).await?;
-            for line in text.lines().filter(|line| !line.trim().is_empty()) {
-                let value: Value = serde_json::from_str(line).map_err(|error| {
-                    ProviderError::Transport(format!("invalid OpenAI batch result JSONL: {error}"))
-                })?;
-                results.push(parse_openai_result(&value)?);
+            results.extend(self.openai_result_file(file_id, context).await?);
+        }
+        Ok(results)
+    }
+
+    async fn openai_result_file(
+        &self,
+        file_id: &str,
+        context: &gateway_core::ProviderRequestContext,
+    ) -> Result<Vec<ProviderBatchResult>, ProviderError> {
+        let builder = self
+            .apply_batch_auth(
+                self.client.get(join_base_url(
+                    &self.batch_base_url(),
+                    &format!("files/{file_id}/content"),
+                )?),
+                Some(context),
+            )
+            .await?;
+        let response = builder.send().await.map_err(map_reqwest_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(ProviderError::UpstreamHttp {
+                status: status.as_u16(),
+                body: response.text().await.map_err(map_reqwest_error)?,
+            });
+        }
+        let mut chunks = response.bytes_stream();
+        let mut pending = BytesMut::new();
+        let mut results = Vec::new();
+        while let Some(chunk) = chunks.next().await {
+            pending.extend_from_slice(&chunk.map_err(map_reqwest_error)?);
+            while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
+                let mut line = pending.split_to(newline + 1);
+                line.truncate(newline);
+                parse_openai_result_line(&line, &mut results)?;
             }
         }
+        parse_openai_result_line(&pending, &mut results)?;
         Ok(results)
     }
 
@@ -314,6 +413,7 @@ impl OpenAiCompatProvider {
         method: reqwest::Method,
         path: &str,
         body: Option<Value>,
+        context: Option<&gateway_core::ProviderRequestContext>,
     ) -> Result<Value, ProviderError> {
         let mut builder = self
             .client
@@ -321,18 +421,8 @@ impl OpenAiCompatProvider {
         if let Some(body) = body {
             builder = builder.json(&body);
         }
-        builder = self.apply_batch_auth(builder).await?;
+        builder = self.apply_batch_auth(builder, context).await?;
         response_json(builder.send().await.map_err(map_reqwest_error)?).await
-    }
-
-    async fn batch_text(&self, path: &str) -> Result<String, ProviderError> {
-        let builder = self
-            .apply_batch_auth(
-                self.client
-                    .get(join_base_url(&self.batch_base_url(), path)?),
-            )
-            .await?;
-        response_text(builder.send().await.map_err(map_reqwest_error)?).await
     }
 
     fn batch_base_url(&self) -> String {
@@ -346,9 +436,18 @@ impl OpenAiCompatProvider {
     async fn apply_batch_auth(
         &self,
         mut builder: reqwest::RequestBuilder,
+        context: Option<&gateway_core::ProviderRequestContext>,
     ) -> Result<reqwest::RequestBuilder, ProviderError> {
         for (name, value) in &self.config.default_headers {
             builder = builder.header(name, value);
+        }
+        if let Some(context) = context {
+            for (name, value) in &context.extra_headers {
+                if let Some(value) = value.as_str() {
+                    builder = builder.header(name, value);
+                }
+            }
+            builder = builder.header("x-request-id", &context.request_id);
         }
         if let Some(token) = self.auth_token().await? {
             builder = self.config.bearer_auth_header.apply(builder, &token);
@@ -484,6 +583,20 @@ fn parse_openai_result(value: &Value) -> Result<ProviderBatchResult, ProviderErr
     })
 }
 
+fn parse_openai_result_line(
+    line: &[u8],
+    results: &mut Vec<ProviderBatchResult>,
+) -> Result<(), ProviderError> {
+    if line.iter().all(u8::is_ascii_whitespace) {
+        return Ok(());
+    }
+    let value: Value = serde_json::from_slice(line).map_err(|error| {
+        ProviderError::Transport(format!("invalid OpenAI batch result JSONL: {error}"))
+    })?;
+    results.push(parse_openai_result(&value)?);
+    Ok(())
+}
+
 fn parse_openrouter_results(value: &Value) -> Vec<ProviderBatchResult> {
     value
         .get("requests")
@@ -528,7 +641,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        parse_openai_result, parse_openrouter_results, parse_state, submission_is_unknown,
+        parse_openai_result, parse_openai_result_line, parse_openrouter_results, parse_state,
+        submission_is_unknown,
     };
 
     #[test]
@@ -573,6 +687,16 @@ mod tests {
         assert_eq!(result.custom_id, "row-1");
         assert_eq!(result.provider_request_id.as_deref(), Some("request-1"));
         assert_eq!(result.provider_usage, Some(json!({"input_tokens": 10})));
+
+        let mut streamed = Vec::new();
+        parse_openai_result_line(
+            br#"{"custom_id":"row-2","response":{"body":{"id":"response-2"}},"error":null}"#,
+            &mut streamed,
+        )
+        .expect("streamed result line");
+        parse_openai_result_line(b"\r", &mut streamed).expect("blank line");
+        assert_eq!(streamed.len(), 1);
+        assert_eq!(streamed[0].custom_id, "row-2");
     }
 
     #[test]

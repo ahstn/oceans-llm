@@ -163,13 +163,24 @@ impl BatchRepository for LibsqlStore {
                 to_query_error(error)
             });
         }
-        for item in &batch.items {
-            tx.execute(
-                "INSERT INTO batch_items (batch_item_id, batch_id, custom_id, status, request_body_json, created_at, updated_at) VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?5)",
-                libsql::params![item.batch_item_id.to_string(), job.batch_id.to_string(), item.custom_id.as_str(), serialize_json(&item.request_body)?, job.created_at.unix_timestamp()],
-            )
-            .await
-            .map_err(to_query_error)?;
+        const INSERT_CHUNK_SIZE: usize = 1_000;
+        for items in batch.items.chunks(INSERT_CHUNK_SIZE) {
+            let placeholders = std::iter::repeat_n("(?, ?, ?, 'pending', ?, ?, ?)", items.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "INSERT INTO batch_items (batch_item_id, batch_id, custom_id, status, request_body_json, created_at, updated_at) VALUES {placeholders}"
+            );
+            let mut params = Vec::with_capacity(items.len() * 6);
+            for item in items {
+                params.push(libsql::Value::Text(item.batch_item_id.to_string()));
+                params.push(libsql::Value::Text(job.batch_id.to_string()));
+                params.push(libsql::Value::Text(item.custom_id.clone()));
+                params.push(libsql::Value::Text(serialize_json(&item.request_body)?));
+                params.push(libsql::Value::Integer(job.created_at.unix_timestamp()));
+                params.push(libsql::Value::Integer(job.created_at.unix_timestamp()));
+            }
+            tx.execute(&sql, params).await.map_err(to_query_error)?;
         }
         tx.commit().await.map_err(to_query_error)?;
         Ok(job.clone())
@@ -396,7 +407,7 @@ impl BatchRepository for LibsqlStore {
         state: &ProviderBatchState,
         next_poll_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let changed = self.connection.execute("UPDATE batch_jobs SET status = ?1, provider_batch_id = ?2, request_count = ?3, completed_count = ?4, failed_count = ?5, cost_usd_10000 = ?6, pricing_status = ?7, provider_usage_json = ?8, error_json = ?9, submitted_at = COALESCE(?10, submitted_at), completed_at = ?11, updated_at = ?12, next_poll_at = ?13, lease_owner = NULL, lease_expires_at = NULL WHERE batch_id = ?14 AND lease_owner = ?15 AND status = 'submitting'", libsql::params![state.status.as_str(), state.provider_batch_id.as_str(), state.request_count, state.completed_count, state.failed_count, state.provider_cost_usd.map(Money4::as_scaled_i64), if state.provider_cost_usd.is_some() { "provider_reported" } else { "pending" }, serialize_optional_json(state.provider_usage.as_ref())?, serialize_optional_json(state.error.as_ref())?, state.submitted_at.map(|time| time.unix_timestamp()), state.completed_at.map(|time| time.unix_timestamp()), OffsetDateTime::now_utc().unix_timestamp(), next_poll_at.unix_timestamp(), batch_id.to_string(), worker_id]).await.map_err(to_query_error)?;
+        let changed = self.connection.execute("UPDATE batch_jobs SET status = ?1, provider_batch_id = ?2, request_count = CASE WHEN ?3 > 0 THEN ?3 ELSE request_count END, completed_count = ?4, failed_count = ?5, cost_usd_10000 = ?6, pricing_status = ?7, provider_usage_json = ?8, error_json = ?9, submitted_at = COALESCE(?10, submitted_at), completed_at = ?11, updated_at = ?12, next_poll_at = ?13, lease_owner = NULL, lease_expires_at = NULL WHERE batch_id = ?14 AND lease_owner = ?15 AND status = 'submitting'", libsql::params![state.status.as_str(), state.provider_batch_id.as_str(), state.request_count, state.completed_count, state.failed_count, state.provider_cost_usd.map(Money4::as_scaled_i64), if state.provider_cost_usd.is_some() { BatchPricingStatus::ProviderReported } else { BatchPricingStatus::Pending }.as_str(), serialize_optional_json(state.provider_usage.as_ref())?, serialize_optional_json(state.error.as_ref())?, state.submitted_at.map(|time| time.unix_timestamp()), state.completed_at.map(|time| time.unix_timestamp()), OffsetDateTime::now_utc().unix_timestamp(), next_poll_at.unix_timestamp(), batch_id.to_string(), worker_id]).await.map_err(to_query_error)?;
         if changed == 0 {
             return Err(StoreError::Conflict(format!(
                 "batch `{batch_id}` lease was lost"
@@ -454,7 +465,7 @@ impl BatchRepository for LibsqlStore {
         error: &serde_json::Value,
         next_poll_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let changed = self.connection.execute("UPDATE batch_jobs SET error_json = ?1, next_poll_at = ?2, updated_at = ?3, lease_owner = NULL, lease_expires_at = NULL WHERE batch_id = ?4 AND lease_owner = ?5", libsql::params![serialize_json(error)?, next_poll_at.unix_timestamp(), OffsetDateTime::now_utc().unix_timestamp(), batch_id.to_string(), worker_id]).await.map_err(to_query_error)?;
+        let changed = self.connection.execute("UPDATE batch_jobs SET status = CASE WHEN status = 'submitting' THEN 'queued' ELSE status END, error_json = ?1, next_poll_at = ?2, updated_at = ?3, lease_owner = NULL, lease_expires_at = NULL WHERE batch_id = ?4 AND lease_owner = ?5", libsql::params![serialize_json(error)?, next_poll_at.unix_timestamp(), OffsetDateTime::now_utc().unix_timestamp(), batch_id.to_string(), worker_id]).await.map_err(to_query_error)?;
         if changed == 0 {
             return Err(StoreError::Conflict(format!(
                 "batch `{batch_id}` lease was lost"
@@ -651,13 +662,37 @@ mod tests {
             .await
             .expect("renew submission lease");
         store
-            .mark_batch_submitted(
+            .release_batch_lease_after_error(
                 batch_id,
                 "worker-1",
+                &json!({"message": "retry"}),
+                now + Duration::seconds(20),
+            )
+            .await
+            .expect("release submission lease");
+        let released = store
+            .get_batch(batch_id, BatchAccessScope::ApiKey(api_key_id))
+            .await
+            .expect("get released batch");
+        assert_eq!(released.status, BatchStatus::Queued);
+        let reclaimed = store
+            .claim_batch_jobs(
+                "worker-2",
+                now + Duration::seconds(30),
+                now + Duration::minutes(4),
+                1,
+            )
+            .await
+            .expect("reclaim submission");
+        assert_eq!(reclaimed[0].status, BatchStatus::Submitting);
+        store
+            .mark_batch_submitted(
+                batch_id,
+                "worker-2",
                 &ProviderBatchState {
                     provider_batch_id: "provider-batch-1".to_string(),
                     status: BatchStatus::InProgress,
-                    request_count: 1,
+                    request_count: 0,
                     completed_count: 0,
                     failed_count: 0,
                     provider_usage: None,
@@ -670,6 +705,11 @@ mod tests {
             )
             .await
             .expect("mark submitted");
+        let submitted = store
+            .get_batch(batch_id, BatchAccessScope::ApiKey(api_key_id))
+            .await
+            .expect("get submitted batch");
+        assert_eq!(submitted.request_count, 1);
         let cancellation = store
             .request_batch_cancel(batch_id, BatchAccessScope::ApiKey(api_key_id), now)
             .await
@@ -678,7 +718,7 @@ mod tests {
 
         let claimed = store
             .claim_batch_jobs(
-                "worker-2",
+                "worker-3",
                 now + Duration::seconds(1),
                 now + Duration::minutes(2),
                 1,
@@ -689,7 +729,7 @@ mod tests {
         store
             .apply_batch_poll_update(
                 batch_id,
-                "worker-2",
+                "worker-3",
                 &BatchPollUpdate {
                     state: ProviderBatchState {
                         provider_batch_id: "provider-batch-1".to_string(),

@@ -2,6 +2,7 @@ use super::*;
 use crate::shared::{parse_uuid, serialize_json, serialize_optional_json, unix_to_datetime};
 
 const JOB_COLUMNS: &str = "batch_id, idempotency_key, request_hash, api_key_id, user_id, team_id, service_account_id, model_id, model_key, resolved_model_key, route_id, provider_key, upstream_model, endpoint, status, provider_batch_id, request_count, completed_count, failed_count, cost_usd_10000, pricing_status, provider_usage_json, error_json, created_at, submitted_at, completed_at, updated_at, next_poll_at, lease_owner, lease_expires_at, provider_context_json";
+const CLAIMED_JOB_COLUMNS: &str = "b.batch_id, b.idempotency_key, b.request_hash, b.api_key_id, b.user_id, b.team_id, b.service_account_id, b.model_id, b.model_key, b.resolved_model_key, b.route_id, b.provider_key, b.upstream_model, b.endpoint, b.status, b.provider_batch_id, b.request_count, b.completed_count, b.failed_count, b.cost_usd_10000, b.pricing_status, b.provider_usage_json, b.error_json, b.created_at, b.submitted_at, b.completed_at, b.updated_at, b.next_poll_at, b.lease_owner, b.lease_expires_at, b.provider_context_json";
 const ITEM_COLUMNS: &str = "batch_item_id, batch_id, custom_id, status, request_body_json, response_body_json, error_json, provider_request_id, provider_usage_json, cost_usd_10000, completed_at, created_at, updated_at";
 
 fn optional_json(raw: Option<String>) -> Result<Option<serde_json::Value>, StoreError> {
@@ -11,87 +12,120 @@ fn optional_json(raw: Option<String>) -> Result<Option<serde_json::Value>, Store
         .map_err(|error| StoreError::Serialization(error.to_string()))
 }
 
+struct SerializedItemUpdate {
+    status: &'static str,
+    response_body: Option<String>,
+    error: Option<String>,
+    provider_request_id: Option<String>,
+    provider_usage: Option<String>,
+    completed_at: Option<i64>,
+    updated_at: i64,
+    batch_id: String,
+    custom_id: String,
+    cost_usd_10000: Option<i64>,
+}
+
 fn decode_job(row: &PgRow) -> Result<BatchJobRecord, StoreError> {
-    let endpoint: String = row.try_get(13).map_err(to_query_error)?;
-    let status: String = row.try_get(14).map_err(to_query_error)?;
-    let pricing: String = row.try_get(20).map_err(to_query_error)?;
-    let user_id: Option<String> = row.try_get(4).map_err(to_query_error)?;
-    let team_id: Option<String> = row.try_get(5).map_err(to_query_error)?;
-    let service_account_id: Option<String> = row.try_get(6).map_err(to_query_error)?;
-    let submitted_at: Option<i64> = row.try_get(24).map_err(to_query_error)?;
-    let completed_at: Option<i64> = row.try_get(25).map_err(to_query_error)?;
-    let next_poll_at: Option<i64> = row.try_get(27).map_err(to_query_error)?;
-    let lease_expires_at: Option<i64> = row.try_get(29).map_err(to_query_error)?;
+    let endpoint: String = row.try_get("endpoint").map_err(to_query_error)?;
+    let status: String = row.try_get("status").map_err(to_query_error)?;
+    let pricing: String = row.try_get("pricing_status").map_err(to_query_error)?;
+    let user_id: Option<String> = row.try_get("user_id").map_err(to_query_error)?;
+    let team_id: Option<String> = row.try_get("team_id").map_err(to_query_error)?;
+    let service_account_id: Option<String> =
+        row.try_get("service_account_id").map_err(to_query_error)?;
+    let submitted_at: Option<i64> = row.try_get("submitted_at").map_err(to_query_error)?;
+    let completed_at: Option<i64> = row.try_get("completed_at").map_err(to_query_error)?;
+    let next_poll_at: Option<i64> = row.try_get("next_poll_at").map_err(to_query_error)?;
+    let lease_expires_at: Option<i64> = row.try_get("lease_expires_at").map_err(to_query_error)?;
     Ok(BatchJobRecord {
-        batch_id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
-        idempotency_key: row.try_get(1).map_err(to_query_error)?,
-        request_hash: row.try_get(2).map_err(to_query_error)?,
-        api_key_id: parse_uuid(&row.try_get::<String, _>(3).map_err(to_query_error)?)?,
+        batch_id: parse_uuid(
+            &row.try_get::<String, _>("batch_id")
+                .map_err(to_query_error)?,
+        )?,
+        idempotency_key: row.try_get("idempotency_key").map_err(to_query_error)?,
+        request_hash: row.try_get("request_hash").map_err(to_query_error)?,
+        api_key_id: parse_uuid(
+            &row.try_get::<String, _>("api_key_id")
+                .map_err(to_query_error)?,
+        )?,
         user_id: user_id.as_deref().map(parse_uuid).transpose()?,
         team_id: team_id.as_deref().map(parse_uuid).transpose()?,
         service_account_id: service_account_id.as_deref().map(parse_uuid).transpose()?,
-        model_id: parse_uuid(&row.try_get::<String, _>(7).map_err(to_query_error)?)?,
-        model_key: row.try_get(8).map_err(to_query_error)?,
-        resolved_model_key: row.try_get(9).map_err(to_query_error)?,
-        route_id: parse_uuid(&row.try_get::<String, _>(10).map_err(to_query_error)?)?,
-        provider_key: row.try_get(11).map_err(to_query_error)?,
-        upstream_model: row.try_get(12).map_err(to_query_error)?,
+        model_id: parse_uuid(
+            &row.try_get::<String, _>("model_id")
+                .map_err(to_query_error)?,
+        )?,
+        model_key: row.try_get("model_key").map_err(to_query_error)?,
+        resolved_model_key: row.try_get("resolved_model_key").map_err(to_query_error)?,
+        route_id: parse_uuid(
+            &row.try_get::<String, _>("route_id")
+                .map_err(to_query_error)?,
+        )?,
+        provider_key: row.try_get("provider_key").map_err(to_query_error)?,
+        upstream_model: row.try_get("upstream_model").map_err(to_query_error)?,
         endpoint: BatchEndpoint::from_db(&endpoint).ok_or_else(|| {
             StoreError::Serialization(format!("unknown batch endpoint `{endpoint}`"))
         })?,
         status: BatchStatus::from_db(&status)
             .ok_or_else(|| StoreError::Serialization(format!("unknown batch status `{status}`")))?,
-        provider_batch_id: row.try_get(15).map_err(to_query_error)?,
-        request_count: row.try_get(16).map_err(to_query_error)?,
-        completed_count: row.try_get(17).map_err(to_query_error)?,
-        failed_count: row.try_get(18).map_err(to_query_error)?,
+        provider_batch_id: row.try_get("provider_batch_id").map_err(to_query_error)?,
+        request_count: row.try_get("request_count").map_err(to_query_error)?,
+        completed_count: row.try_get("completed_count").map_err(to_query_error)?,
+        failed_count: row.try_get("failed_count").map_err(to_query_error)?,
         cost_usd: row
-            .try_get::<Option<i64>, _>(19)
+            .try_get::<Option<i64>, _>("cost_usd_10000")
             .map_err(to_query_error)?
             .map(Money4::from_scaled),
         pricing_status: BatchPricingStatus::from_db(&pricing).ok_or_else(|| {
             StoreError::Serialization(format!("unknown batch pricing status `{pricing}`"))
         })?,
-        provider_usage: optional_json(row.try_get(21).map_err(to_query_error)?)?,
-        error: optional_json(row.try_get(22).map_err(to_query_error)?)?,
-        created_at: unix_to_datetime(row.try_get(23).map_err(to_query_error)?)?,
+        provider_usage: optional_json(row.try_get("provider_usage_json").map_err(to_query_error)?)?,
+        error: optional_json(row.try_get("error_json").map_err(to_query_error)?)?,
+        created_at: unix_to_datetime(row.try_get("created_at").map_err(to_query_error)?)?,
         submitted_at: submitted_at.map(unix_to_datetime).transpose()?,
         completed_at: completed_at.map(unix_to_datetime).transpose()?,
-        updated_at: unix_to_datetime(row.try_get(26).map_err(to_query_error)?)?,
+        updated_at: unix_to_datetime(row.try_get("updated_at").map_err(to_query_error)?)?,
         next_poll_at: next_poll_at.map(unix_to_datetime).transpose()?,
-        lease_owner: row.try_get(28).map_err(to_query_error)?,
+        lease_owner: row.try_get("lease_owner").map_err(to_query_error)?,
         lease_expires_at: lease_expires_at.map(unix_to_datetime).transpose()?,
         provider_context: serde_json::from_str(
-            &row.try_get::<String, _>(30).map_err(to_query_error)?,
+            &row.try_get::<String, _>("provider_context_json")
+                .map_err(to_query_error)?,
         )
         .map_err(|error| StoreError::Serialization(error.to_string()))?,
     })
 }
 
 fn decode_item(row: &PgRow) -> Result<BatchItemRecord, StoreError> {
-    let status: String = row.try_get(3).map_err(to_query_error)?;
-    let request: String = row.try_get(4).map_err(to_query_error)?;
-    let completed_at: Option<i64> = row.try_get(10).map_err(to_query_error)?;
+    let status: String = row.try_get("status").map_err(to_query_error)?;
+    let request: String = row.try_get("request_body_json").map_err(to_query_error)?;
+    let completed_at: Option<i64> = row.try_get("completed_at").map_err(to_query_error)?;
     Ok(BatchItemRecord {
-        batch_item_id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
-        batch_id: parse_uuid(&row.try_get::<String, _>(1).map_err(to_query_error)?)?,
-        custom_id: row.try_get(2).map_err(to_query_error)?,
+        batch_item_id: parse_uuid(
+            &row.try_get::<String, _>("batch_item_id")
+                .map_err(to_query_error)?,
+        )?,
+        batch_id: parse_uuid(
+            &row.try_get::<String, _>("batch_id")
+                .map_err(to_query_error)?,
+        )?,
+        custom_id: row.try_get("custom_id").map_err(to_query_error)?,
         status: BatchItemStatus::from_db(&status).ok_or_else(|| {
             StoreError::Serialization(format!("unknown batch item status `{status}`"))
         })?,
         request_body: serde_json::from_str(&request)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
-        response_body: optional_json(row.try_get(5).map_err(to_query_error)?)?,
-        error: optional_json(row.try_get(6).map_err(to_query_error)?)?,
-        provider_request_id: row.try_get(7).map_err(to_query_error)?,
-        provider_usage: optional_json(row.try_get(8).map_err(to_query_error)?)?,
+        response_body: optional_json(row.try_get("response_body_json").map_err(to_query_error)?)?,
+        error: optional_json(row.try_get("error_json").map_err(to_query_error)?)?,
+        provider_request_id: row.try_get("provider_request_id").map_err(to_query_error)?,
+        provider_usage: optional_json(row.try_get("provider_usage_json").map_err(to_query_error)?)?,
         cost_usd: row
-            .try_get::<Option<i64>, _>(9)
+            .try_get::<Option<i64>, _>("cost_usd_10000")
             .map_err(to_query_error)?
             .map(Money4::from_scaled),
         completed_at: completed_at.map(unix_to_datetime).transpose()?,
-        created_at: unix_to_datetime(row.try_get(11).map_err(to_query_error)?)?,
-        updated_at: unix_to_datetime(row.try_get(12).map_err(to_query_error)?)?,
+        created_at: unix_to_datetime(row.try_get("created_at").map_err(to_query_error)?)?,
+        updated_at: unix_to_datetime(row.try_get("updated_at").map_err(to_query_error)?)?,
     })
 }
 
@@ -153,10 +187,38 @@ impl BatchRepository for PostgresStore {
                 },
             );
         }
-        for item in &batch.items {
-            sqlx::query("INSERT INTO batch_items (batch_item_id, batch_id, custom_id, status, request_body_json, created_at, updated_at) VALUES ($1,$2,$3,'pending',$4,$5,$5)")
-                .bind(item.batch_item_id.to_string()).bind(job.batch_id.to_string()).bind(&item.custom_id).bind(serialize_json(&item.request_body)?).bind(job.created_at.unix_timestamp())
-                .execute(&mut *tx).await.map_err(to_query_error)?;
+        const INSERT_CHUNK_SIZE: usize = 5_000;
+        for items in batch.items.chunks(INSERT_CHUNK_SIZE) {
+            let rows = items
+                .iter()
+                .map(|item| {
+                    Ok((
+                        item.batch_item_id.to_string(),
+                        job.batch_id.to_string(),
+                        item.custom_id.as_str(),
+                        serialize_json(&item.request_body)?,
+                        job.created_at.unix_timestamp(),
+                    ))
+                })
+                .collect::<Result<Vec<_>, StoreError>>()?;
+            let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+                "INSERT INTO batch_items (batch_item_id, batch_id, custom_id, status, request_body_json, created_at, updated_at) ",
+            );
+            builder.push_values(rows, |mut values, row| {
+                values
+                    .push_bind(row.0)
+                    .push_bind(row.1)
+                    .push_bind(row.2)
+                    .push("'pending'")
+                    .push_bind(row.3)
+                    .push_bind(row.4)
+                    .push_bind(row.4);
+            });
+            builder
+                .build()
+                .execute(&mut *tx)
+                .await
+                .map_err(to_query_error)?;
         }
         tx.commit().await.map_err(to_query_error)?;
         Ok(job.clone())
@@ -294,7 +356,7 @@ impl BatchRepository for PostgresStore {
         limit: u32,
     ) -> Result<Vec<BatchJobRecord>, StoreError> {
         let sql = format!(
-            "WITH selected AS (SELECT batch_id FROM batch_jobs WHERE status IN ('queued','validating','in_progress','finalizing','cancel_requested','cancelling') AND (next_poll_at IS NULL OR next_poll_at <= $1) AND (lease_expires_at IS NULL OR lease_expires_at <= $1) ORDER BY created_at ASC FOR UPDATE SKIP LOCKED LIMIT $2) UPDATE batch_jobs b SET status = CASE WHEN b.status = 'queued' THEN 'submitting' ELSE b.status END, lease_owner = $3, lease_expires_at = $4, updated_at = $1 FROM selected WHERE b.batch_id = selected.batch_id RETURNING {JOB_COLUMNS}"
+            "WITH selected AS (SELECT batch_id FROM batch_jobs WHERE status IN ('queued','validating','in_progress','finalizing','cancel_requested','cancelling') AND (next_poll_at IS NULL OR next_poll_at <= $1) AND (lease_expires_at IS NULL OR lease_expires_at <= $1) ORDER BY created_at ASC FOR UPDATE SKIP LOCKED LIMIT $2) UPDATE batch_jobs b SET status = CASE WHEN b.status = 'queued' THEN 'submitting' ELSE b.status END, lease_owner = $3, lease_expires_at = $4, updated_at = $1 FROM selected WHERE b.batch_id = selected.batch_id RETURNING {CLAIMED_JOB_COLUMNS}"
         );
         let rows = sqlx::query(&sql)
             .bind(now.unix_timestamp())
@@ -347,7 +409,7 @@ impl BatchRepository for PostgresStore {
         state: &ProviderBatchState,
         next_poll_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let changed = sqlx::query("UPDATE batch_jobs SET status=$1, provider_batch_id=$2, request_count=$3, completed_count=$4, failed_count=$5, cost_usd_10000=$6, pricing_status=$7, provider_usage_json=$8, error_json=$9, submitted_at=COALESCE($10,submitted_at), completed_at=$11, updated_at=$12, next_poll_at=$13, lease_owner=NULL, lease_expires_at=NULL WHERE batch_id=$14 AND lease_owner=$15 AND status='submitting'").bind(state.status.as_str()).bind(&state.provider_batch_id).bind(state.request_count).bind(state.completed_count).bind(state.failed_count).bind(state.provider_cost_usd.map(Money4::as_scaled_i64)).bind(if state.provider_cost_usd.is_some(){"provider_reported"}else{"pending"}).bind(serialize_optional_json(state.provider_usage.as_ref())?).bind(serialize_optional_json(state.error.as_ref())?).bind(state.submitted_at.map(|t|t.unix_timestamp())).bind(state.completed_at.map(|t|t.unix_timestamp())).bind(OffsetDateTime::now_utc().unix_timestamp()).bind(next_poll_at.unix_timestamp()).bind(batch_id.to_string()).bind(worker_id).execute(&self.pool).await.map_err(to_query_error)?.rows_affected();
+        let changed = sqlx::query("UPDATE batch_jobs SET status=$1, provider_batch_id=$2, request_count=CASE WHEN $3 > 0 THEN $3 ELSE request_count END, completed_count=$4, failed_count=$5, cost_usd_10000=$6, pricing_status=$7, provider_usage_json=$8, error_json=$9, submitted_at=COALESCE($10,submitted_at), completed_at=$11, updated_at=$12, next_poll_at=$13, lease_owner=NULL, lease_expires_at=NULL WHERE batch_id=$14 AND lease_owner=$15 AND status='submitting'").bind(state.status.as_str()).bind(&state.provider_batch_id).bind(state.request_count).bind(state.completed_count).bind(state.failed_count).bind(state.provider_cost_usd.map(Money4::as_scaled_i64)).bind(if state.provider_cost_usd.is_some(){BatchPricingStatus::ProviderReported}else{BatchPricingStatus::Pending}.as_str()).bind(serialize_optional_json(state.provider_usage.as_ref())?).bind(serialize_optional_json(state.error.as_ref())?).bind(state.submitted_at.map(|t|t.unix_timestamp())).bind(state.completed_at.map(|t|t.unix_timestamp())).bind(OffsetDateTime::now_utc().unix_timestamp()).bind(next_poll_at.unix_timestamp()).bind(batch_id.to_string()).bind(worker_id).execute(&self.pool).await.map_err(to_query_error)?.rows_affected();
         if changed == 0 {
             return Err(StoreError::Conflict(format!(
                 "batch `{batch_id}` lease was lost"
@@ -387,8 +449,54 @@ impl BatchRepository for PostgresStore {
                 "batch `{batch_id}` lease was lost"
             )));
         }
-        for result in &update.results {
-            sqlx::query("UPDATE batch_items SET status=$1,response_body_json=$2,error_json=$3,provider_request_id=$4,provider_usage_json=$5,completed_at=$6,updated_at=$7,cost_usd_10000=$10 WHERE batch_id=$8 AND custom_id=$9").bind(if result.error.is_some(){"failed"}else{"succeeded"}).bind(serialize_optional_json(result.response_body.as_ref())?).bind(serialize_optional_json(result.error.as_ref())?).bind(&result.provider_request_id).bind(serialize_optional_json(result.provider_usage.as_ref())?).bind(result.completed_at.map(|t|t.unix_timestamp())).bind(OffsetDateTime::now_utc().unix_timestamp()).bind(batch_id.to_string()).bind(&result.custom_id).bind(result.cost_usd.map(Money4::as_scaled_i64)).execute(&mut *tx).await.map_err(to_query_error)?;
+        const UPDATE_CHUNK_SIZE: usize = 3_000;
+        for results in update.results.chunks(UPDATE_CHUNK_SIZE) {
+            let updated_at = OffsetDateTime::now_utc().unix_timestamp();
+            let rows = results
+                .iter()
+                .map(|result| {
+                    Ok(SerializedItemUpdate {
+                        status: if result.error.is_some() {
+                            "failed"
+                        } else {
+                            "succeeded"
+                        },
+                        response_body: serialize_optional_json(result.response_body.as_ref())?,
+                        error: serialize_optional_json(result.error.as_ref())?,
+                        provider_request_id: result.provider_request_id.clone(),
+                        provider_usage: serialize_optional_json(result.provider_usage.as_ref())?,
+                        completed_at: result.completed_at.map(|time| time.unix_timestamp()),
+                        updated_at,
+                        batch_id: batch_id.to_string(),
+                        custom_id: result.custom_id.clone(),
+                        cost_usd_10000: result.cost_usd.map(Money4::as_scaled_i64),
+                    })
+                })
+                .collect::<Result<Vec<_>, StoreError>>()?;
+            let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+                "UPDATE batch_items AS item SET status=updates.status,response_body_json=updates.response_body_json,error_json=updates.error_json,provider_request_id=updates.provider_request_id,provider_usage_json=updates.provider_usage_json,completed_at=updates.completed_at,updated_at=updates.updated_at,cost_usd_10000=updates.cost_usd_10000 FROM (",
+            );
+            builder.push_values(rows, |mut values, row| {
+                values
+                    .push_bind(row.status)
+                    .push_bind(row.response_body)
+                    .push_bind(row.error)
+                    .push_bind(row.provider_request_id)
+                    .push_bind(row.provider_usage)
+                    .push_bind(row.completed_at)
+                    .push_bind(row.updated_at)
+                    .push_bind(row.batch_id)
+                    .push_bind(row.custom_id)
+                    .push_bind(row.cost_usd_10000);
+            });
+            builder.push(
+                ") AS updates(status,response_body_json,error_json,provider_request_id,provider_usage_json,completed_at,updated_at,batch_id,custom_id,cost_usd_10000) WHERE item.batch_id=updates.batch_id AND item.custom_id=updates.custom_id",
+            );
+            builder
+                .build()
+                .execute(&mut *tx)
+                .await
+                .map_err(to_query_error)?;
         }
         tx.commit().await.map_err(to_query_error)?;
         Ok(())
@@ -401,7 +509,7 @@ impl BatchRepository for PostgresStore {
         error: &serde_json::Value,
         next_poll_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let changed = sqlx::query("UPDATE batch_jobs SET error_json=$1,next_poll_at=$2,updated_at=$3,lease_owner=NULL,lease_expires_at=NULL WHERE batch_id=$4 AND lease_owner=$5").bind(serialize_json(error)?).bind(next_poll_at.unix_timestamp()).bind(OffsetDateTime::now_utc().unix_timestamp()).bind(batch_id.to_string()).bind(worker_id).execute(&self.pool).await.map_err(to_query_error)?.rows_affected();
+        let changed = sqlx::query("UPDATE batch_jobs SET status=CASE WHEN status='submitting' THEN 'queued' ELSE status END,error_json=$1,next_poll_at=$2,updated_at=$3,lease_owner=NULL,lease_expires_at=NULL WHERE batch_id=$4 AND lease_owner=$5").bind(serialize_json(error)?).bind(next_poll_at.unix_timestamp()).bind(OffsetDateTime::now_utc().unix_timestamp()).bind(batch_id.to_string()).bind(worker_id).execute(&self.pool).await.map_err(to_query_error)?.rows_affected();
         if changed == 0 {
             return Err(StoreError::Conflict(format!(
                 "batch `{batch_id}` lease was lost"

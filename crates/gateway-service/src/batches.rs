@@ -6,6 +6,7 @@ use gateway_core::{
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, NewBatchItem, NewBatchJob,
     PricingCatalogRepository, PricingResolution, ProviderRegistry, ProviderRepository,
     ProviderRequestContext, RequestLogRepository, RoutePlanner, StoreHealth,
+    is_supported_vertex_google_chat_upstream_model,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -206,7 +207,7 @@ where
                 .get(&route.provider_key)
                 .map(|provider| (route, provider))
         })
-        .find(|(_, provider)| provider.batch_capabilities().supports(input.endpoint))
+        .find(|(route, provider)| route_supports_batch(route, provider.as_ref(), input.endpoint))
         .ok_or_else(|| {
             GatewayError::InvalidRequest(format!(
                 "no configured route supports {:?} batch requests",
@@ -306,6 +307,24 @@ where
         }
         Err(error) => Err(error.into()),
     }
+}
+
+fn route_supports_batch(
+    route: &ModelRoute,
+    provider: &dyn gateway_core::ProviderClient,
+    endpoint: BatchEndpoint,
+) -> bool {
+    if !provider.batch_capabilities().supports(endpoint) {
+        return false;
+    }
+    let route_supports_endpoint = match endpoint {
+        BatchEndpoint::ChatCompletions => route.capabilities.chat_completions,
+        BatchEndpoint::Responses => route.capabilities.responses,
+        BatchEndpoint::Embeddings => route.capabilities.embeddings,
+    };
+    route_supports_endpoint
+        && (provider.provider_type() != "gcp_vertex"
+            || is_supported_vertex_google_chat_upstream_model(&route.upstream_model))
 }
 
 fn validate_input(input: &CreateBatchInput) -> Result<(), GatewayError> {

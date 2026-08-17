@@ -152,15 +152,27 @@ impl GatewayConfig {
                         );
                     }
                     if let Some(batch) = &provider.batch {
-                        if batch
-                            .base_url
-                            .as_deref()
-                            .is_some_and(|value| value.trim().is_empty())
-                        {
-                            bail!(
-                                "openai_compat provider `{}` batch.base_url cannot be empty",
-                                provider.id
-                            );
+                        if let Some(base_url) = batch.base_url.as_deref() {
+                            if base_url.trim().is_empty() {
+                                bail!(
+                                    "openai_compat provider `{}` batch.base_url cannot be empty",
+                                    provider.id
+                                );
+                            }
+                            let parsed = url::Url::parse(base_url).with_context(|| {
+                                format!(
+                                    "openai_compat provider `{}` batch.base_url is invalid",
+                                    provider.id
+                                )
+                            })?;
+                            if !matches!(parsed.scheme(), "http" | "https")
+                                || parsed.host_str().is_none()
+                            {
+                                bail!(
+                                    "openai_compat provider `{}` batch.base_url must be an HTTP URL with a host",
+                                    provider.id
+                                );
+                            }
                         }
                         if batch.dialect == OpenAiBatchDialectConfig::OpenRouter
                             && batch.base_url.is_none()
@@ -5204,6 +5216,71 @@ providers:
     }
 
     #[test]
+    fn rejects_blank_openai_batch_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    batch:
+      dialect: open_ai
+      base_url: " "
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(format!("{error:#}").contains("batch.base_url cannot be empty"));
+    }
+
+    #[test]
+    fn rejects_invalid_openai_batch_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    batch:
+      dialect: open_ai
+      base_url: not-a-url
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(format!("{error:#}").contains("batch.base_url is invalid"));
+    }
+
+    #[test]
+    fn rejects_openrouter_batch_without_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter-prod
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+    batch:
+      dialect: open_router
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(format!("{error:#}").contains("OpenRouter batch mode requires batch.base_url"));
+    }
+
+    #[test]
     fn parses_vertex_batch_provider_config() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
@@ -5231,6 +5308,29 @@ providers:
         let batch = providers[0].batch.as_ref().expect("batch config");
         assert_eq!(batch.bigquery_project_id, "billing-project");
         assert_eq!(batch.dataset, "batch_jobs_eu");
+    }
+
+    #[test]
+    fn rejects_blank_vertex_batch_dataset() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: vertex-prod
+    type: gcp_vertex
+    project_id: vertex-project
+    location: europe-west4
+    auth:
+      mode: adc
+    batch:
+      dataset: " "
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(format!("{error:#}").contains("batch.dataset cannot be empty"));
     }
 
     #[test]

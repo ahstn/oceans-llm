@@ -4028,11 +4028,16 @@
         ],
         "responses": {
           "200": {
-            "description": "Paged batch results",
+            "description": "Paged JSON results or NDJSON result lines",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BatchResultsResponse"
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }

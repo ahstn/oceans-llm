@@ -5855,13 +5855,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Paged batch results */
+            /** @description Paged JSON results or NDJSON result lines */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["BatchResultsResponse"];
+                    "application/x-ndjson": string;
                 };
             };
         };

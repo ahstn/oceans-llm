@@ -215,6 +215,7 @@ impl ProviderClient for VertexProvider {
     async fn inspect_batch(
         &self,
         provider_batch_id: &str,
+        _context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
         self.inspect_batch_impl(provider_batch_id).await
     }
@@ -222,6 +223,7 @@ impl ProviderClient for VertexProvider {
     async fn cancel_batch(
         &self,
         provider_batch_id: &str,
+        _context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
         self.cancel_batch_impl(provider_batch_id).await
     }

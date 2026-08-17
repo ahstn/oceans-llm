@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 use axum::{
     Json,
     body::Body,
-    extract::{Path, Query, State},
+    extract::{FromRequestParts, Path, Query, State},
     http::{HeaderMap, StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
 };
@@ -11,8 +11,8 @@ use futures_util::{StreamExt, TryStreamExt, stream};
 use gateway_core::{
     AdminApiKeyRepository, AuthError, AuthenticatedApiKey, BatchAccessScope, BatchEndpoint,
     BatchItemQuery, BatchItemRecord, BatchItemStatus, BatchJobRecord, BatchPricingStatus,
-    BatchQuery, BatchRepository, BatchStatus, GlobalRole, IdentityRepository, Money4,
-    extract_bearer_token,
+    BatchQuery, BatchRepository, BatchStatus, GlobalRole, IdentityRepository, MAX_BATCH_PAGE_SIZE,
+    MAX_BATCH_RESULT_PAGE_SIZE, Money4, extract_bearer_token,
 };
 use gateway_service::{CreateBatchInput, CreateBatchItemInput};
 use serde::{Deserialize, Serialize};
@@ -193,10 +193,10 @@ enum BatchPricingStatusSchema {
 )]
 pub async fn create_batch(
     State(state): State<AppState>,
+    BatchApiKey(auth): BatchApiKey,
     headers: HeaderMap,
     Json(request): Json<CreateBatchRequest>,
 ) -> Result<Response, AppError> {
-    let auth = require_api_key(&state, &headers).await?;
     let idempotency_key = headers
         .get("idempotency-key")
         .and_then(|value| value.to_str().ok())
@@ -255,7 +255,7 @@ pub async fn list_batches(
         .list_batches(
             &BatchQuery {
                 page: query.page.unwrap_or(1),
-                page_size: query.page_size.unwrap_or(50),
+                page_size: query.page_size.unwrap_or(50).clamp(1, MAX_BATCH_PAGE_SIZE),
                 status: query.status,
                 model_key: query.model,
                 provider_key: query.provider,
@@ -304,7 +304,10 @@ pub async fn get_batch(
     get,
     path = "/api/v1/batches/{batch_id}/results",
     params(("batch_id" = Uuid, Path, description = "Batch identifier"), BatchResultsQuery),
-    responses((status = 200, description = "Paged batch results", body = BatchResultsResponse)),
+    responses((status = 200, description = "Paged JSON results or NDJSON result lines", content(
+        (BatchResultsResponse = "application/json"),
+        (String = "application/x-ndjson")
+    ))),
     security(("session_cookie" = []), ("gateway_api_key" = [])),
     tag = "batches"
 )]
@@ -322,7 +325,10 @@ pub async fn get_batch_results(
             batch_id,
             &BatchItemQuery {
                 page: query.page.unwrap_or(1),
-                page_size: query.page_size.unwrap_or(100),
+                page_size: query
+                    .page_size
+                    .unwrap_or(100)
+                    .clamp(1, MAX_BATCH_RESULT_PAGE_SIZE),
                 status: query.status,
             },
             scope,
@@ -334,14 +340,19 @@ pub async fn get_batch_results(
         .map(result_response)
         .collect::<Vec<_>>();
     if query.format.as_deref() == Some("jsonl") {
-        let mut body = String::new();
-        for item in &items {
-            body.push_str(&serde_json::to_string(item).map_err(|error| {
-                AppError(gateway_core::GatewayError::Internal(error.to_string()))
-            })?);
-            body.push('\n');
-        }
-        return Ok(([(CONTENT_TYPE, "application/x-ndjson")], Body::from(body)).into_response());
+        let lines = stream::iter(items.into_iter().map(|item| {
+            serde_json::to_string(&item)
+                .map(|mut line| {
+                    line.push('\n');
+                    line
+                })
+                .map_err(std::io::Error::other)
+        }));
+        return Ok((
+            [(CONTENT_TYPE, "application/x-ndjson")],
+            Body::from_stream(lines),
+        )
+            .into_response());
     }
     let caller_names = load_caller_names(&state, std::slice::from_ref(&job)).await?;
     Ok(Json(BatchResultsResponse {
@@ -426,6 +437,19 @@ async fn require_api_key(
             AuthError::MissingBearerToken,
         ))
     })
+}
+
+pub struct BatchApiKey(AuthenticatedApiKey);
+
+impl FromRequestParts<AppState> for BatchApiKey {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        require_api_key(state, &parts.headers).await.map(Self)
+    }
 }
 
 async fn optional_api_key(

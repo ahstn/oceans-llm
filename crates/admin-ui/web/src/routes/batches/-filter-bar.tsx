@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { formatStatus } from '@/routes/batches/-components'
+import { formatStatus } from '@/routes/batches/-utils'
 import type { BatchFiltersInput, BatchStatus, ServiceAccountView, UserView } from '@/types/api'
 
 const batchStatuses: BatchStatus[] = [

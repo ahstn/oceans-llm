@@ -52,6 +52,14 @@ pub struct RecordedChatUsage {
     pub cost_usd: Option<f64>,
 }
 
+pub struct BatchUsageInput<'a> {
+    pub results: &'a [ProviderBatchResult],
+    pub provider_usage: Option<&'a Value>,
+    pub pricing_status: BatchPricingStatus,
+    pub cost_usd: Option<Money4>,
+    pub occurred_at: OffsetDateTime,
+}
+
 #[derive(Debug)]
 struct RouteContextOverrideConflict {
     route_id: Uuid,
@@ -959,11 +967,25 @@ where
         &self,
         auth: &AuthenticatedApiKey,
         job: &BatchJobRecord,
-        results: &[ProviderBatchResult],
-        pricing_status: BatchPricingStatus,
-        cost_usd: Option<Money4>,
-        occurred_at: OffsetDateTime,
+        input: BatchUsageInput<'_>,
     ) -> Result<(), GatewayError> {
+        let BatchUsageInput {
+            results,
+            provider_usage,
+            pricing_status,
+            cost_usd,
+            occurred_at,
+        } = input;
+        if matches!(
+            pricing_status,
+            BatchPricingStatus::Priced | BatchPricingStatus::ProviderReported
+        ) && cost_usd.is_none()
+        {
+            return Err(GatewayError::Internal(format!(
+                "batch `{}` is marked as priced without a cost",
+                job.batch_id
+            )));
+        }
         let request_id = format!("batch:{}", job.batch_id);
         let ownership_scope_key = usage_ownership_scope_key(auth)?;
         let cost_usd = cost_usd.unwrap_or(Money4::ZERO);
@@ -1017,7 +1039,7 @@ where
                 "processing_mode": "batch",
                 "batch_id": job.batch_id,
                 "item_count": results.len(),
-                "provider_batch_usage": job.provider_usage.clone(),
+                "provider_batch_usage": provider_usage,
             }),
             pricing_status: ledger_pricing_status,
             unpriced_reason,
@@ -1083,11 +1105,15 @@ fn aggregate_batch_usage(results: &[ProviderBatchResult]) -> Result<UsageSummary
             add_optional(aggregate.completion_tokens, usage.completion_tokens)?;
         aggregate.total_tokens = add_optional(aggregate.total_tokens, usage.total_tokens)?;
     }
-    Ok(if complete {
-        aggregate
+    if complete {
+        Ok(aggregate)
     } else {
-        UsageSummary::default()
-    })
+        warn!(
+            result_count = results.len(),
+            "discarding partial aggregate batch usage because a successful result omitted usage"
+        );
+        Ok(UsageSummary::default())
+    }
 }
 
 fn add_optional(left: Option<i64>, right: Option<i64>) -> Result<Option<i64>, GatewayError> {

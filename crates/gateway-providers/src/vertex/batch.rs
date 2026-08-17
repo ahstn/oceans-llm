@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use gateway_core::{
     BatchCapabilities, BatchEndpoint, BatchStatus, ChatCompletionsRequest, ProviderBatchRequest,
     ProviderBatchResult, ProviderBatchState, ProviderBatchSubmission, ProviderError,
@@ -70,6 +72,7 @@ impl VertexProvider {
             ));
         }
         let config = self.batch_config()?;
+        validate_bigquery_project(&config.bigquery_project_id)?;
         validate_bigquery_identifier(&config.dataset, "dataset")?;
         let project = config.bigquery_project_id.clone();
         let dataset = config.dataset.clone();
@@ -127,19 +130,40 @@ impl VertexProvider {
     }
 
     async fn reconcile_vertex_batch(&self, batch_id: uuid::Uuid) -> Option<ProviderBatchState> {
-        let value = self
-            .vertex_batch_json(reqwest::Method::GET, &self.batch_jobs_url(), None)
-            .await
-            .ok()?;
         let display_name = format!("oceans-batch-{batch_id}");
-        value
-            .get("batchPredictionJobs")?
-            .as_array()?
-            .iter()
-            .find(|job| {
-                job.get("displayName").and_then(Value::as_str) == Some(display_name.as_str())
-            })
-            .and_then(|job| parse_vertex_state(job).ok())
+        let mut page_token = None;
+        let mut seen_tokens = BTreeSet::new();
+        loop {
+            let mut url = url::Url::parse(&self.batch_jobs_url()).ok()?;
+            {
+                let mut query = url.query_pairs_mut();
+                query.append_pair("pageSize", "100");
+                if let Some(token) = page_token.as_deref() {
+                    query.append_pair("pageToken", token);
+                }
+            }
+            let value = self
+                .vertex_batch_json(reqwest::Method::GET, url.as_str(), None)
+                .await
+                .ok()?;
+            if let Some(state) = value
+                .get("batchPredictionJobs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .find(|job| {
+                    job.get("displayName").and_then(Value::as_str) == Some(display_name.as_str())
+                })
+                .and_then(|job| parse_vertex_state(job).ok())
+            {
+                return Some(state);
+            }
+            let token = value.get("nextPageToken").and_then(Value::as_str)?;
+            if token.is_empty() || !seen_tokens.insert(token.to_string()) {
+                return None;
+            }
+            page_token = Some(token.to_string());
+        }
     }
 
     pub(super) async fn inspect_batch_impl(
@@ -171,6 +195,9 @@ impl VertexProvider {
             )
         })?;
         let (project, dataset, table) = parse_bigquery_table(output)?;
+        validate_bigquery_project(project)?;
+        validate_bigquery_identifier(dataset, "dataset")?;
+        validate_bigquery_identifier(table, "table")?;
         self.set_table_expiration(project, dataset, table).await?;
         let sql = format!(
             "SELECT custom_id, response, status FROM `{project}.{dataset}.{table}` ORDER BY custom_id"
@@ -181,6 +208,7 @@ impl VertexProvider {
 
     async fn query_bigquery_rows(&self, project: &str, sql: &str) -> Result<Value, ProviderError> {
         const PAGE_SIZE: u64 = 10_000;
+        const MAX_REQUESTS: usize = 240;
 
         let mut page = self
             .bigquery_json(
@@ -195,6 +223,7 @@ impl VertexProvider {
             )
             .await?;
         let mut rows = Vec::new();
+        let mut requests = 1_usize;
         loop {
             if let Some(page_rows) = page.get_mut("rows").and_then(Value::as_array_mut) {
                 rows.append(page_rows);
@@ -218,6 +247,10 @@ impl VertexProvider {
             if complete && page_token.is_none() {
                 break;
             }
+            if requests >= MAX_REQUESTS {
+                return Err(ProviderError::Timeout);
+            }
+            requests += 1;
             let mut url = url::Url::parse(&format!(
                 "https://bigquery.googleapis.com/bigquery/v2/projects/{query_project}/queries/{job_id}"
             ))
@@ -582,6 +615,19 @@ fn validate_bigquery_identifier(value: &str, label: &str) -> Result<(), Provider
     Ok(())
 }
 
+fn validate_bigquery_project(value: &str) -> Result<(), ProviderError> {
+    if value.is_empty()
+        || !value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | ':')
+        })
+    {
+        return Err(ProviderError::InvalidRequest(
+            "Vertex batch project contains invalid characters".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn parse_bigquery_results(
     value: &Value,
     context: &ProviderRequestContext,
@@ -649,6 +695,7 @@ mod tests {
 
     use super::{
         parse_bigquery_results, parse_bigquery_table, parse_vertex_state, submission_is_unknown,
+        validate_bigquery_identifier, validate_bigquery_project,
     };
 
     #[test]
@@ -715,5 +762,9 @@ mod tests {
                 .expect("resource"),
             ("project", "dataset", "table")
         );
+        assert!(validate_bigquery_project("my-project:billing").is_ok());
+        assert!(validate_bigquery_project("project` UNION SELECT 1").is_err());
+        assert!(validate_bigquery_identifier("safe_table", "table").is_ok());
+        assert!(validate_bigquery_identifier("unsafe`table", "table").is_err());
     }
 }

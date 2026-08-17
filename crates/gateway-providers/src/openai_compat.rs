@@ -729,23 +729,25 @@ impl ProviderClient for OpenAiCompatProvider {
     async fn inspect_batch(
         &self,
         provider_batch_id: &str,
+        context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
-        self.inspect_batch_impl(provider_batch_id).await
+        self.inspect_batch_impl(provider_batch_id, context).await
     }
 
     async fn cancel_batch(
         &self,
         provider_batch_id: &str,
+        context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
-        self.cancel_batch_impl(provider_batch_id).await
+        self.cancel_batch_impl(provider_batch_id, context).await
     }
 
     async fn batch_results(
         &self,
         state: &ProviderBatchState,
-        _context: &ProviderRequestContext,
+        context: &ProviderRequestContext,
     ) -> Result<Vec<ProviderBatchResult>, ProviderError> {
-        self.batch_results_impl(state).await
+        self.batch_results_impl(state, context).await
     }
 
     async fn chat_completions(

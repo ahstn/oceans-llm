@@ -1104,6 +1104,7 @@ pub trait ProviderClient: Send + Sync {
     async fn inspect_batch(
         &self,
         _provider_batch_id: &str,
+        _context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
         Err(ProviderError::NotImplemented(format!(
             "{} does not support batch inspection",
@@ -1114,6 +1115,7 @@ pub trait ProviderClient: Send + Sync {
     async fn cancel_batch(
         &self,
         _provider_batch_id: &str,
+        _context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
         Err(ProviderError::NotImplemented(format!(
             "{} does not support batch cancellation",

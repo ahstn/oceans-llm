@@ -19,7 +19,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import { BatchFilterBar } from '@/routes/batches/-filter-bar'
-import { BatchDetailSheet, BatchList, isBatchActive } from '@/routes/batches/-components'
+import { BatchDetailSheet, BatchList } from '@/routes/batches/-components'
+import { isBatchActive } from '@/routes/batches/-utils'
 import {
   cancelGatewayBatch,
   getBatchResultPage,

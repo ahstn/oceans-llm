@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { formatStatus, isBatchCancellable } from '@/routes/batches/-utils'
 import type { BatchResultsView, BatchStatus, BatchView } from '@/types/api'
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
@@ -380,21 +381,6 @@ function statusVariant(status: BatchStatus): 'success' | 'warning' | 'destructiv
   }
   if (status === 'cancelled') return 'secondary'
   return 'warning'
-}
-
-export function isBatchActive(status: BatchStatus) {
-  return !['completed', 'failed', 'expired', 'cancelled', 'submission_unknown'].includes(status)
-}
-
-export function isBatchCancellable(status: BatchStatus) {
-  return ['queued', 'validating', 'in_progress', 'finalizing'].includes(status)
-}
-
-export function formatStatus(status: string) {
-  return status
-    .split('_')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
 }
 
 function formatEndpoint(endpoint: BatchView['endpoint']) {

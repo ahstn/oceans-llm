@@ -100,6 +100,7 @@ export const adminNavSections: AdminNavSection[] = [
       },
       {
         page: 'agent_sessions',
+        requiredPage: 'agent_sessions',
         label: 'Agent Sessions',
         to: '/observability/agent-sessions',
         icon: RoboticIcon,
