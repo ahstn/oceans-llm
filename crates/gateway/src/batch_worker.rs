@@ -146,15 +146,14 @@ async fn process_job(
                 Err(error) if error.is_retryable() => {
                     handle_provider_error(service, worker_id, job, error).await
                 }
-                Err(cancel_error) => {
+                Err(_) => {
                     match provider
                         .inspect_batch(provider_batch_id, &job.provider_context)
                         .await
                     {
-                        Ok(state) if cancel_failure_reconciles_state(state.status) => {
+                        Ok(state) => {
                             apply_state(service, provider.as_ref(), worker_id, job, state).await
                         }
-                        Ok(_) => handle_provider_error(service, worker_id, job, cancel_error).await,
                         Err(inspect_error) => {
                             handle_provider_error(service, worker_id, job, inspect_error).await
                         }
@@ -188,10 +187,6 @@ async fn process_job(
     }
 }
 
-fn cancel_failure_reconciles_state(status: BatchStatus) -> bool {
-    status == BatchStatus::Cancelling || status.is_terminal()
-}
-
 async fn submit_job(
     service: &Arc<AppGatewayService>,
     provider: &dyn gateway_core::ProviderClient,
@@ -216,11 +211,8 @@ async fn submit_job(
         context: job.provider_context.clone(),
     };
     match provider.submit_batch(&request).await {
-        ProviderBatchSubmission::Submitted(mut state) => {
-            if state.status == BatchStatus::Completed {
-                state.status = BatchStatus::Finalizing;
-                state.completed_at = None;
-            }
+        ProviderBatchSubmission::Submitted(state) => {
+            let state = prepare_submitted_state(state);
             service
                 .store()
                 .mark_batch_submitted(
@@ -258,6 +250,16 @@ async fn submit_job(
             }
         }
     }
+}
+
+fn prepare_submitted_state(
+    mut state: gateway_core::ProviderBatchState,
+) -> gateway_core::ProviderBatchState {
+    if state.status.is_terminal() {
+        state.status = BatchStatus::Finalizing;
+        state.completed_at = None;
+    }
+    state
 }
 
 async fn apply_state(
@@ -589,9 +591,10 @@ async fn handle_provider_error(
 mod tests {
     use std::collections::BTreeSet;
 
-    use gateway_core::{BatchStatus, ProviderBatchResult};
+    use gateway_core::{BatchStatus, ProviderBatchResult, ProviderBatchState};
+    use time::OffsetDateTime;
 
-    use super::{cancel_failure_reconciles_state, validate_result_custom_ids};
+    use super::{prepare_submitted_state, validate_result_custom_ids};
 
     fn result(custom_id: &str) -> ProviderBatchResult {
         ProviderBatchResult {
@@ -637,10 +640,27 @@ mod tests {
     }
 
     #[test]
-    fn definitive_cancel_failure_reconciles_terminal_or_cancelling_state() {
-        assert!(cancel_failure_reconciles_state(BatchStatus::Completed));
-        assert!(cancel_failure_reconciles_state(BatchStatus::Cancelled));
-        assert!(cancel_failure_reconciles_state(BatchStatus::Cancelling));
-        assert!(!cancel_failure_reconciles_state(BatchStatus::InProgress));
+    fn immediate_terminal_submission_is_finalized_before_storage() {
+        for status in [
+            BatchStatus::Completed,
+            BatchStatus::Failed,
+            BatchStatus::Expired,
+            BatchStatus::Cancelled,
+        ] {
+            let state = prepare_submitted_state(ProviderBatchState {
+                provider_batch_id: "provider-batch".to_string(),
+                status,
+                request_count: 1,
+                completed_count: 0,
+                failed_count: 1,
+                provider_usage: None,
+                provider_cost_usd: None,
+                error: None,
+                submitted_at: None,
+                completed_at: Some(OffsetDateTime::now_utc()),
+            });
+            assert_eq!(state.status, BatchStatus::Finalizing);
+            assert!(state.completed_at.is_none());
+        }
     }
 }
