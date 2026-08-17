@@ -1065,26 +1065,28 @@ where
             computed_cost_usd: cost_usd,
             occurred_at,
         };
-        if !self.store.insert_usage_ledger_if_absent(&record).await? {
-            let existing = self
+        if let Err(error) = self
+            .budget_guard
+            .enforce_and_record_usage(auth, &record)
+            .await
+        {
+            if let Some(existing) = self
                 .store
                 .get_usage_ledger_by_request_and_scope(
                     &record.request_id,
                     &record.ownership_scope_key,
                 )
                 .await?
-                .ok_or_else(|| {
-                    GatewayError::Internal(
-                        "batch usage insert lost its idempotency race".to_string(),
-                    )
-                })?;
-            if existing.computed_cost_usd != cost_usd {
+            {
+                if existing.computed_cost_usd == cost_usd {
+                    return Ok(());
+                }
                 return Err(GatewayError::Internal(format!(
                     "batch `{}` raced with a different recorded cost",
                     job.batch_id
                 )));
             }
-            return Ok(());
+            return Err(error);
         }
         if let Err(error) = self.budget_alerts.evaluate_after_usage(auth, &record).await {
             warn!(batch_id = %job.batch_id, error = %error, "budget alert evaluation failed after batch usage insert");
@@ -1650,14 +1652,15 @@ mod tests {
     use async_trait::async_trait;
     use gateway_core::{
         ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthenticatedApiKey,
-        BudgetAlertRepository, BudgetCadence, BudgetRecord, BudgetRepository, BudgetScope,
-        BudgetSettings, BudgetSource, GatewayError, GatewayModel, IdentityRepository,
-        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
-        McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
-        ModelPricingRecord, ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4,
-        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderBatchResult, ProviderCapabilities, ProviderConnection,
-        ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+        BatchEndpoint, BatchJobRecord, BatchPricingStatus, BatchStatus, BudgetAlertRepository,
+        BudgetCadence, BudgetRecord, BudgetRepository, BudgetScope, BudgetSettings, BudgetSource,
+        GatewayError, GatewayModel, IdentityRepository, McpToolInvocationDetail,
+        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+        McpToolInvocationRecord, McpToolInvocationRepository, ModelPricingRecord,
+        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, PricingCatalogCacheRecord,
+        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
+        ProviderBatchResult, ProviderCapabilities, ProviderConnection, ProviderRepository,
+        ProviderRequestContext, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
         RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository, RouteError,
         RoutePlanner, RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord,
         TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserRecord,
@@ -1669,7 +1672,8 @@ mod tests {
     use crate::batches::{BatchPricingPolicy, BatchRates, compute_batch_usage_cost};
 
     use super::{
-        CacheUsageNormalization, GatewayService, aggregate_batch_usage, usage_summary_from_value,
+        BatchUsageInput, CacheUsageNormalization, GatewayService, aggregate_batch_usage,
+        usage_summary_from_value,
     };
 
     #[test]
@@ -1696,6 +1700,28 @@ mod tests {
             compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::VertexHalfNonCachedRates,)
                 .expect("Vertex price"),
             Some(Money4::from_scaled(240))
+        );
+    }
+
+    #[test]
+    fn batch_discount_is_applied_before_money_rounding() {
+        let usage = usage_summary_from_value(Some(&json!({
+            "prompt_tokens": 50,
+            "completion_tokens": 0,
+            "total_tokens": 50
+        })))
+        .expect("usage");
+        let rates = BatchRates {
+            input: Some(Money4::from_scaled(10_000)),
+            output: Some(Money4::ZERO),
+            cache_read: None,
+            cache_write: None,
+        };
+
+        assert_eq!(
+            compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::HalfAllTokenRates)
+                .expect("batch price"),
+            Some(Money4::ZERO)
         );
     }
 
@@ -1731,6 +1757,103 @@ mod tests {
         assert_eq!(usage.prompt_tokens, Some(100));
         assert_eq!(usage.completion_tokens, Some(20));
         assert_eq!(usage.total_tokens, Some(120));
+    }
+
+    #[tokio::test]
+    async fn batch_usage_respects_projected_hard_budget() {
+        let auth = auth();
+        let occurred_at = OffsetDateTime::now_utc();
+        let scope = BudgetScope::User {
+            user_id: auth.owner_user_id.expect("user owner"),
+        };
+        let repo = Arc::new(UsageAccountingRepo {
+            budget: Some(BudgetRecord {
+                budget_id: Uuid::new_v4(),
+                scope_key: scope.scope_key(),
+                scope,
+                settings: BudgetSettings {
+                    cadence: BudgetCadence::Daily,
+                    amount_usd: Money4::from_scaled(100),
+                    hard_limit: true,
+                    timezone: "UTC".to_string(),
+                },
+                source: BudgetSource::manual(),
+                is_active: true,
+                created_at: occurred_at,
+                updated_at: occurred_at,
+            }),
+            ..Default::default()
+        });
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+        let model_id = Uuid::new_v4();
+        let job = BatchJobRecord {
+            batch_id: Uuid::new_v4(),
+            idempotency_key: "batch-budget".to_string(),
+            request_hash: "hash".to_string(),
+            api_key_id: auth.id,
+            user_id: auth.owner_user_id,
+            team_id: None,
+            service_account_id: None,
+            model_id,
+            model_key: "fast".to_string(),
+            resolved_model_key: "fast".to_string(),
+            route_id: Uuid::new_v4(),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-5.6-sol".to_string(),
+            endpoint: BatchEndpoint::Responses,
+            status: BatchStatus::Completed,
+            provider_batch_id: Some("batch-provider".to_string()),
+            request_count: 0,
+            completed_count: 0,
+            failed_count: 0,
+            cost_usd: Some(Money4::from_scaled(200)),
+            pricing_status: BatchPricingStatus::ProviderReported,
+            provider_usage: None,
+            error: None,
+            created_at: occurred_at,
+            submitted_at: Some(occurred_at),
+            completed_at: Some(occurred_at),
+            updated_at: occurred_at,
+            next_poll_at: None,
+            lease_owner: None,
+            lease_expires_at: None,
+            provider_context: ProviderRequestContext {
+                request_id: "batch-budget-request".to_string(),
+                model_key: "fast".to_string(),
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-5.6-sol".to_string(),
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                request_headers: Default::default(),
+                compatibility: Default::default(),
+            },
+        };
+
+        let error = service
+            .record_batch_usage(
+                &auth,
+                &job,
+                BatchUsageInput {
+                    results: &[],
+                    provider_usage: None,
+                    pricing_status: BatchPricingStatus::ProviderReported,
+                    cost_usd: Some(Money4::from_scaled(200)),
+                    occurred_at,
+                },
+            )
+            .await
+            .expect_err("projected batch cost must exceed the hard budget");
+
+        assert!(matches!(
+            error,
+            GatewayError::BudgetExceeded {
+                projected_cost_usd,
+                limit_usd,
+                ..
+            } if projected_cost_usd == Money4::from_scaled(200)
+                && limit_usd == Money4::from_scaled(100)
+        ));
+        assert!(repo.events.lock().expect("events lock").is_empty());
     }
 
     #[derive(Clone, Default)]

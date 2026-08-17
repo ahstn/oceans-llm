@@ -573,10 +573,15 @@ fn parse_openai_result(value: &Value) -> Result<ProviderBatchResult, ProviderErr
         .and_then(Value::as_str)
         .ok_or_else(|| ProviderError::Transport("batch result omitted custom_id".to_string()))?;
     let response = value.get("response");
+    let error = value
+        .get("error")
+        .filter(|error| !error.is_null())
+        .cloned()
+        .or_else(|| openai_response_error(response));
     Ok(ProviderBatchResult {
         custom_id: custom_id.to_string(),
         response_body: response.and_then(|item| item.get("body")).cloned(),
-        error: value.get("error").filter(|error| !error.is_null()).cloned(),
+        error,
         provider_request_id: response
             .and_then(|item| item.get("request_id"))
             .and_then(Value::as_str)
@@ -589,6 +594,18 @@ fn parse_openai_result(value: &Value) -> Result<ProviderBatchResult, ProviderErr
             .and_then(|item| item.pointer("/body/usage/cost"))
             .and_then(parse_money),
     })
+}
+
+fn openai_response_error(response: Option<&Value>) -> Option<Value> {
+    let response = response?;
+    let status_code = response.get("status_code")?.as_u64()?;
+    if (200..300).contains(&status_code) {
+        return None;
+    }
+    Some(json!({
+        "status_code": status_code,
+        "body": response.get("body").cloned().unwrap_or(Value::Null),
+    }))
 }
 
 fn parse_openai_result_line(
@@ -764,6 +781,41 @@ mod tests {
         parse_openai_result_line(b"\r", &mut streamed).expect("blank line");
         assert_eq!(streamed.len(), 1);
         assert_eq!(streamed[0].custom_id, "row-2");
+    }
+
+    #[test]
+    fn openai_non_success_response_is_a_failed_item() {
+        let result = parse_openai_result(&json!({
+            "custom_id": "row-rejected",
+            "response": {
+                "status_code": 429,
+                "request_id": "request-rejected",
+                "body": {
+                    "error": {
+                        "message": "Rate limit exceeded",
+                        "type": "rate_limit_error"
+                    }
+                }
+            },
+            "error": null
+        }))
+        .expect("result");
+
+        assert_eq!(
+            result
+                .error
+                .as_ref()
+                .and_then(|error| error["status_code"].as_u64()),
+            Some(429)
+        );
+        assert_eq!(
+            result
+                .error
+                .as_ref()
+                .and_then(|error| error.pointer("/body/error/type"))
+                .and_then(serde_json::Value::as_str),
+            Some("rate_limit_error")
+        );
     }
 
     #[test]

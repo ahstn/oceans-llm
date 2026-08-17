@@ -289,7 +289,7 @@ async fn apply_state(
             )
             .await?,
         );
-        record_batch_usage(
+        let usage_result = record_batch_usage(
             service,
             job,
             &results,
@@ -298,7 +298,18 @@ async fn apply_state(
             state.provider_cost_usd,
             state.completed_at.unwrap_or_else(OffsetDateTime::now_utc),
         )
-        .await?;
+        .await;
+        match usage_result {
+            Ok(()) => {}
+            Err(error @ gateway_core::GatewayError::BudgetExceeded { .. }) => {
+                warn!(
+                    batch_id = %job.batch_id,
+                    error = %error,
+                    "batch usage exceeded a hard budget; storing the terminal provider result without a ledger charge"
+                );
+            }
+            Err(error) => return Err(error),
+        }
     }
     let next_poll_at =
         (!state.status.is_terminal()).then(|| OffsetDateTime::now_utc() + POLL_INTERVAL);

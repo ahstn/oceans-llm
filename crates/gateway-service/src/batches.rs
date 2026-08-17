@@ -133,15 +133,35 @@ pub(crate) fn compute_batch_usage_cost(
         let Some(rate) = rate else {
             return Ok(None);
         };
-        let mut cost = scaled_cost_for_tokens(tokens, rate)?;
-        if discounted {
-            cost = Money4::from_scaled((cost.as_scaled_i64() + 1) / 2);
-        }
+        let cost = if discounted {
+            half_cost_for_tokens(tokens, rate)?
+        } else {
+            scaled_cost_for_tokens(tokens, rate)?
+        };
         total = total
             .checked_add(cost)
             .ok_or_else(|| GatewayError::Internal("batch usage cost overflow".to_string()))?;
     }
     Ok(Some(total))
+}
+
+fn half_cost_for_tokens(tokens: i64, rate_per_million: Money4) -> Result<Money4, GatewayError> {
+    if tokens < 0 {
+        return Err(GatewayError::Internal(
+            "token count cannot be negative".to_string(),
+        ));
+    }
+    const DENOMINATOR: i128 = 2_000_000;
+    let numerator = i128::from(tokens)
+        .checked_mul(i128::from(rate_per_million.as_scaled_i64()))
+        .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?;
+    let rounded = numerator
+        .checked_add(DENOMINATOR / 2)
+        .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?
+        / DENOMINATOR;
+    let scaled = i64::try_from(rounded)
+        .map_err(|_| GatewayError::Internal("usage cost overflow".to_string()))?;
+    Ok(Money4::from_scaled(scaled))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
