@@ -50,7 +50,7 @@ Trade-offs:
 
 ## Follow-up work
 
-- Add operator tools to reconcile or close `submission_unknown` jobs.
+- Add admin tools to reconcile or close `submission_unknown` jobs.
 - Add metrics for lease loss, reconciliation pages, polling latency, and terminal provider errors.
 - Add retention settings for batch inputs and results.
 - Verify provider billing and cancellation behavior with live acceptance tests.

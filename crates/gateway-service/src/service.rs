@@ -1002,8 +1002,8 @@ where
                 job.batch_id
             )));
         }
-        let usage = aggregate_batch_usage(results)?;
-        let (ledger_pricing_status, unpriced_reason) = match pricing_status {
+        let (usage, usage_complete) = aggregate_batch_usage(results)?;
+        let (ledger_pricing_status, mut unpriced_reason) = match pricing_status {
             BatchPricingStatus::Priced | BatchPricingStatus::ProviderReported => {
                 (UsagePricingStatus::Priced, None)
             }
@@ -1016,6 +1016,12 @@ where
                 Some("batch_pricing_unavailable".to_string()),
             ),
         };
+        if !usage_complete {
+            unpriced_reason = Some(match unpriced_reason {
+                Some(reason) => format!("{reason};batch_usage_partial"),
+                None => "batch_usage_partial".to_string(),
+            });
+        }
         let record = UsageLedgerRecord {
             usage_event_id: Uuid::new_v4(),
             request_id,
@@ -1085,7 +1091,9 @@ where
     }
 }
 
-fn aggregate_batch_usage(results: &[ProviderBatchResult]) -> Result<UsageSummary, GatewayError> {
+fn aggregate_batch_usage(
+    results: &[ProviderBatchResult],
+) -> Result<(UsageSummary, bool), GatewayError> {
     let mut aggregate = UsageSummary::default();
     let mut complete = true;
     for result in results {
@@ -1105,15 +1113,13 @@ fn aggregate_batch_usage(results: &[ProviderBatchResult]) -> Result<UsageSummary
             add_optional(aggregate.completion_tokens, usage.completion_tokens)?;
         aggregate.total_tokens = add_optional(aggregate.total_tokens, usage.total_tokens)?;
     }
-    if complete {
-        Ok(aggregate)
-    } else {
+    if !complete {
         warn!(
             result_count = results.len(),
-            "discarding partial aggregate batch usage because a successful result omitted usage"
+            "recording partial aggregate batch usage because a successful result omitted usage"
         );
-        Ok(UsageSummary::default())
     }
+    Ok((aggregate, complete))
 }
 
 fn add_optional(left: Option<i64>, right: Option<i64>) -> Result<Option<i64>, GatewayError> {
@@ -1648,11 +1654,11 @@ mod tests {
         McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
         ModelPricingRecord, ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, ProviderConnection, ProviderRepository,
-        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
-        RequestLogQuery, RequestLogRecord, RequestLogRepository, RouteError, RoutePlanner,
-        RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
-        UsageLedgerRecord, UsagePricingStatus, UserRecord,
+        PricingProvenance, ProviderBatchResult, ProviderCapabilities, ProviderConnection,
+        ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+        RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository, RouteError,
+        RoutePlanner, RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord,
+        TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserRecord,
     };
     use serde_json::{Map, json};
     use time::OffsetDateTime;
@@ -1660,7 +1666,9 @@ mod tests {
 
     use crate::batches::{BatchPricingPolicy, BatchRates, compute_batch_usage_cost};
 
-    use super::{CacheUsageNormalization, GatewayService, usage_summary_from_value};
+    use super::{
+        CacheUsageNormalization, GatewayService, aggregate_batch_usage, usage_summary_from_value,
+    };
 
     #[test]
     fn batch_pricing_halves_openai_cache_reads_but_not_vertex_cache_reads() {
@@ -1687,6 +1695,40 @@ mod tests {
                 .expect("Vertex price"),
             Some(Money4::from_scaled(240))
         );
+    }
+
+    #[test]
+    fn aggregate_batch_usage_preserves_known_tokens_when_one_result_omits_usage() {
+        let results = vec![
+            ProviderBatchResult {
+                custom_id: "with-usage".to_string(),
+                response_body: Some(json!({"id": "response-1"})),
+                error: None,
+                provider_request_id: Some("request-1".to_string()),
+                provider_usage: Some(json!({
+                    "input_tokens": 100,
+                    "output_tokens": 20,
+                })),
+                completed_at: None,
+                cost_usd: Some(Money4::from_scaled(10)),
+            },
+            ProviderBatchResult {
+                custom_id: "without-usage".to_string(),
+                response_body: Some(json!({"id": "response-2"})),
+                error: None,
+                provider_request_id: Some("request-2".to_string()),
+                provider_usage: None,
+                completed_at: None,
+                cost_usd: Some(Money4::from_scaled(10)),
+            },
+        ];
+
+        let (usage, complete) = aggregate_batch_usage(&results).expect("aggregate usage");
+
+        assert!(!complete);
+        assert_eq!(usage.prompt_tokens, Some(100));
+        assert_eq!(usage.completion_tokens, Some(20));
+        assert_eq!(usage.total_tokens, Some(120));
     }
 
     #[derive(Clone, Default)]
