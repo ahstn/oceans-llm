@@ -38,19 +38,23 @@ impl VertexProvider {
                 reqwest::Method::POST,
                 &self.batch_jobs_url(),
                 Some(plan.request_body.clone()),
+                &request.context,
             )
             .await
             .and_then(|value| parse_vertex_state(&value));
         match result {
             Ok(state) => ProviderBatchSubmission::Submitted(state),
             Err(error) if submission_is_unknown(&error) => {
-                match self.reconcile_vertex_batch(request.batch_id).await {
+                match self
+                    .reconcile_vertex_batch(request.batch_id, &request.context)
+                    .await
+                {
                     Some(state) => ProviderBatchSubmission::Submitted(state),
                     None => ProviderBatchSubmission::SubmissionUnknown(error),
                 }
             }
             Err(error) => {
-                self.delete_input_table(&plan).await;
+                self.delete_input_table(&plan, &request.context).await;
                 ProviderBatchSubmission::NotSubmitted(error)
             }
         }
@@ -100,23 +104,28 @@ impl VertexProvider {
             }),
         };
         if let Err(error) = self
-            .create_input_table(&plan.project, &plan.dataset, &plan.input_table)
+            .create_input_table(
+                &plan.project,
+                &plan.dataset,
+                &plan.input_table,
+                &request.context,
+            )
             .await
         {
-            self.delete_input_table(&plan).await;
+            self.delete_input_table(&plan, &request.context).await;
             return Err(error);
         }
         if let Err(error) = self
             .insert_input_rows(&plan.project, &plan.dataset, &plan.input_table, request)
             .await
         {
-            self.delete_input_table(&plan).await;
+            self.delete_input_table(&plan, &request.context).await;
             return Err(error);
         }
         Ok(plan)
     }
 
-    async fn delete_input_table(&self, plan: &VertexBatchPlan) {
+    async fn delete_input_table(&self, plan: &VertexBatchPlan, context: &ProviderRequestContext) {
         let _ = self
             .bigquery_json(
                 reqwest::Method::DELETE,
@@ -125,11 +134,16 @@ impl VertexProvider {
                     plan.project, plan.dataset, plan.input_table
                 ),
                 None,
+                context,
             )
             .await;
     }
 
-    async fn reconcile_vertex_batch(&self, batch_id: uuid::Uuid) -> Option<ProviderBatchState> {
+    async fn reconcile_vertex_batch(
+        &self,
+        batch_id: uuid::Uuid,
+        context: &ProviderRequestContext,
+    ) -> Option<ProviderBatchState> {
         let display_name = format!("oceans-batch-{batch_id}");
         let mut page_token = None;
         let mut seen_tokens = BTreeSet::new();
@@ -143,7 +157,7 @@ impl VertexProvider {
                 }
             }
             let value = self
-                .vertex_batch_json(reqwest::Method::GET, url.as_str(), None)
+                .vertex_batch_json(reqwest::Method::GET, url.as_str(), None, context)
                 .await
                 .ok()?;
             if let Some(state) = value
@@ -169,18 +183,20 @@ impl VertexProvider {
     pub(super) async fn inspect_batch_impl(
         &self,
         provider_batch_id: &str,
+        context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
-        parse_vertex_state(&self.load_vertex_batch(provider_batch_id).await?)
+        parse_vertex_state(&self.load_vertex_batch(provider_batch_id, context).await?)
     }
 
     pub(super) async fn cancel_batch_impl(
         &self,
         provider_batch_id: &str,
+        context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
         let url = format!("{}:cancel", self.vertex_resource_url(provider_batch_id));
-        self.vertex_batch_json(reqwest::Method::POST, &url, Some(json!({})))
+        self.vertex_batch_json(reqwest::Method::POST, &url, Some(json!({})), context)
             .await?;
-        self.inspect_batch_impl(provider_batch_id).await
+        self.inspect_batch_impl(provider_batch_id, context).await
     }
 
     pub(super) async fn batch_results_impl(
@@ -188,7 +204,9 @@ impl VertexProvider {
         state: &ProviderBatchState,
         context: &ProviderRequestContext,
     ) -> Result<Vec<ProviderBatchResult>, ProviderError> {
-        let job = self.load_vertex_batch(&state.provider_batch_id).await?;
+        let job = self
+            .load_vertex_batch(&state.provider_batch_id, context)
+            .await?;
         let output = output_table(&job).ok_or_else(|| {
             ProviderError::Transport(
                 "Vertex batch job omitted its BigQuery output table".to_string(),
@@ -198,15 +216,21 @@ impl VertexProvider {
         validate_bigquery_project(project)?;
         validate_bigquery_identifier(dataset, "dataset")?;
         validate_bigquery_identifier(table, "table")?;
-        self.set_table_expiration(project, dataset, table).await?;
+        self.set_table_expiration(project, dataset, table, context)
+            .await?;
         let sql = format!(
             "SELECT custom_id, response, status FROM `{project}.{dataset}.{table}` ORDER BY custom_id"
         );
-        let query = self.query_bigquery_rows(project, &sql).await?;
+        let query = self.query_bigquery_rows(project, &sql, context).await?;
         parse_bigquery_results(&query, context)
     }
 
-    async fn query_bigquery_rows(&self, project: &str, sql: &str) -> Result<Value, ProviderError> {
+    async fn query_bigquery_rows(
+        &self,
+        project: &str,
+        sql: &str,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
         const PAGE_SIZE: u64 = 10_000;
         const MAX_REQUESTS: usize = 240;
 
@@ -220,6 +244,7 @@ impl VertexProvider {
                     "maxResults": PAGE_SIZE,
                     "timeoutMs": 10_000
                 })),
+                context,
             )
             .await?;
         let mut rows = Vec::new();
@@ -268,7 +293,7 @@ impl VertexProvider {
                 }
             }
             page = self
-                .authenticated_json(reqwest::Method::GET, url.as_str(), None)
+                .authenticated_json(reqwest::Method::GET, url.as_str(), None, context)
                 .await?;
         }
         Ok(json!({"rows": rows}))
@@ -285,6 +310,7 @@ impl VertexProvider {
         project: &str,
         dataset: &str,
         table: &str,
+        context: &ProviderRequestContext,
     ) -> Result<(), ProviderError> {
         self.bigquery_json(
             reqwest::Method::POST,
@@ -297,6 +323,7 @@ impl VertexProvider {
                     {"name": "request", "type": "JSON", "mode": "REQUIRED"}
                 ]}
             })),
+            context,
         )
         .await?;
         Ok(())
@@ -307,6 +334,7 @@ impl VertexProvider {
         project: &str,
         dataset: &str,
         table: &str,
+        context: &ProviderRequestContext,
     ) -> Result<(), ProviderError> {
         self.bigquery_json(
             reqwest::Method::PATCH,
@@ -314,6 +342,7 @@ impl VertexProvider {
             Some(json!({
                 "expirationTime": ((OffsetDateTime::now_utc() + time::Duration::days(30)).unix_timestamp() * 1_000).to_string()
             })),
+            context,
         )
         .await?;
         Ok(())
@@ -374,7 +403,7 @@ impl VertexProvider {
                 && (rows.len() >= MAX_CHUNK_ROWS
                     || chunk_bytes.saturating_add(row_bytes) > MAX_CHUNK_BYTES)
             {
-                self.insert_input_chunk(project, dataset, table, &rows)
+                self.insert_input_chunk(project, dataset, table, &rows, &request.context)
                     .await?;
                 rows.clear();
                 chunk_bytes = 0;
@@ -383,7 +412,7 @@ impl VertexProvider {
             rows.push(row);
         }
         if !rows.is_empty() {
-            self.insert_input_chunk(project, dataset, table, &rows)
+            self.insert_input_chunk(project, dataset, table, &rows, &request.context)
                 .await?;
         }
         Ok(())
@@ -395,12 +424,14 @@ impl VertexProvider {
         dataset: &str,
         table: &str,
         rows: &[Value],
+        context: &ProviderRequestContext,
     ) -> Result<(), ProviderError> {
         let response = self
             .bigquery_json(
                 reqwest::Method::POST,
                 &format!("projects/{project}/datasets/{dataset}/tables/{table}/insertAll"),
                 Some(json!({"rows": rows})),
+                context,
             )
             .await?;
         if response
@@ -415,11 +446,16 @@ impl VertexProvider {
         Ok(())
     }
 
-    async fn load_vertex_batch(&self, provider_batch_id: &str) -> Result<Value, ProviderError> {
+    async fn load_vertex_batch(
+        &self,
+        provider_batch_id: &str,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
         self.vertex_batch_json(
             reqwest::Method::GET,
             &self.vertex_resource_url(provider_batch_id),
             None,
+            context,
         )
         .await
     }
@@ -429,8 +465,9 @@ impl VertexProvider {
         method: reqwest::Method,
         url: &str,
         body: Option<Value>,
+        context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        self.authenticated_json(method, url, body).await
+        self.authenticated_json(method, url, body, context).await
     }
 
     async fn bigquery_json(
@@ -438,11 +475,13 @@ impl VertexProvider {
         method: reqwest::Method,
         path: &str,
         body: Option<Value>,
+        context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         self.authenticated_json(
             method,
             &format!("https://bigquery.googleapis.com/bigquery/v2/{path}"),
             body,
+            context,
         )
         .await
     }
@@ -452,12 +491,11 @@ impl VertexProvider {
         method: reqwest::Method,
         url: &str,
         body: Option<Value>,
+        context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         let token = self.access_token_source.token().await?;
-        let mut builder = self.client.request(method, url).bearer_auth(token);
-        for (name, value) in &self.config.default_headers {
-            builder = builder.header(name, value);
-        }
+        let mut builder = self
+            .apply_request_headers(self.client.request(method, url).bearer_auth(token), context);
         if let Some(body) = body {
             builder = builder.json(&body);
         }

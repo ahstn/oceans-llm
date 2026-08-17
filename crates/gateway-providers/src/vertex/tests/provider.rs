@@ -37,6 +37,53 @@ fn vertex_provider_advertises_tool_capable_chat() {
 }
 
 #[tokio::test]
+async fn vertex_batch_inspection_forwards_route_headers() {
+    let app = Router::new().route(
+        "/v1/{*path}",
+        get(|headers: HeaderMap| async move {
+            assert_eq!(
+                headers
+                    .get("authorization")
+                    .and_then(|value| value.to_str().ok()),
+                Some("Bearer test-token")
+            );
+            assert_eq!(
+                headers
+                    .get("x-request-id")
+                    .and_then(|value| value.to_str().ok()),
+                Some("req-1")
+            );
+            assert_eq!(
+                headers
+                    .get("x-goog-user-project")
+                    .and_then(|value| value.to_str().ok()),
+                Some("billing-project")
+            );
+            Json(json!({
+                "name": "projects/proj-123/locations/global/batchPredictionJobs/123",
+                "state": "JOB_STATE_RUNNING"
+            }))
+        }),
+    );
+    let host = start_router(app).await;
+    let provider = vertex_provider_for_test(format!("http://{host}"));
+    let mut request_context = context("google/gemini-2.0-flash");
+    request_context
+        .extra_headers
+        .insert("x-goog-user-project".to_string(), json!("billing-project"));
+
+    let state = provider
+        .inspect_batch(
+            "projects/proj-123/locations/global/batchPredictionJobs/123",
+            &request_context,
+        )
+        .await
+        .expect("batch state");
+
+    assert_eq!(state.status, gateway_core::BatchStatus::InProgress);
+}
+
+#[tokio::test]
 async fn vertex_provider_google_non_stream_executes_real_http_mapping() {
     let captured = Arc::new(Mutex::new(None::<Value>));
     let state = captured.clone();

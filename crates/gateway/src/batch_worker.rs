@@ -249,14 +249,23 @@ async fn apply_state(
 ) -> Result<(), gateway_core::GatewayError> {
     let mut results = Vec::new();
     let mut pricing_status = None;
-    if state.status == BatchStatus::Completed {
+    let complete = state.status == BatchStatus::Completed;
+    let partial_terminal = matches!(
+        state.status,
+        BatchStatus::Failed | BatchStatus::Expired | BatchStatus::Cancelled
+    );
+    let processed_count = partial_terminal
+        .then(|| processed_result_count(&state))
+        .transpose()?;
+    if complete || processed_count.is_some_and(|count| count > 0) {
         results = match provider.batch_results(&state, &job.provider_context).await {
             Ok(results) => results,
             Err(error) => {
                 return handle_provider_error(service, worker_id, job, error).await;
             }
         };
-        if let Err(error) = validate_results(service, job.batch_id, &results).await {
+        if let Err(error) = validate_results(service, job.batch_id, &results, processed_count).await
+        {
             service
                 .store()
                 .release_batch_lease_after_error(
@@ -268,6 +277,8 @@ async fn apply_state(
                 .await?;
             return Ok(());
         }
+    }
+    if complete || !results.is_empty() || state.provider_cost_usd.is_some() {
         pricing_status = Some(
             price_results(
                 service,
@@ -355,6 +366,7 @@ async fn validate_results(
     service: &Arc<AppGatewayService>,
     batch_id: Uuid,
     results: &[ProviderBatchResult],
+    expected_result_count: Option<usize>,
 ) -> Result<(), gateway_core::GatewayError> {
     let expected = service
         .store()
@@ -363,15 +375,55 @@ async fn validate_results(
         .into_iter()
         .map(|item| item.custom_id)
         .collect::<BTreeSet<_>>();
+    validate_result_custom_ids(&expected, results, expected_result_count)
+}
+
+fn processed_result_count(
+    state: &gateway_core::ProviderBatchState,
+) -> Result<usize, gateway_core::GatewayError> {
+    let processed = state
+        .completed_count
+        .checked_add(state.failed_count)
+        .ok_or_else(|| {
+            gateway_core::GatewayError::Internal(
+                "provider batch processed count overflow".to_string(),
+            )
+        })?;
+    usize::try_from(processed).map_err(|_| {
+        gateway_core::GatewayError::Internal(format!(
+            "provider batch returned invalid processed count `{processed}`"
+        ))
+    })
+}
+
+fn validate_result_custom_ids(
+    expected: &BTreeSet<String>,
+    results: &[ProviderBatchResult],
+    expected_result_count: Option<usize>,
+) -> Result<(), gateway_core::GatewayError> {
     let actual = results
         .iter()
         .map(|item| item.custom_id.clone())
         .collect::<BTreeSet<_>>();
-    if expected != actual || actual.len() != results.len() {
+    if actual.len() != results.len() || !actual.is_subset(expected) {
         return Err(gateway_core::GatewayError::Internal(
-            "provider batch results did not contain exactly one result for each custom_id"
-                .to_string(),
+            "provider batch results contained a duplicate or unknown custom_id".to_string(),
         ));
+    }
+    match expected_result_count {
+        Some(count) if results.len() != count => {
+            return Err(gateway_core::GatewayError::Internal(format!(
+                "provider batch returned {} results for {count} processed requests",
+                results.len()
+            )));
+        }
+        None if actual != *expected => {
+            return Err(gateway_core::GatewayError::Internal(
+                "provider batch results did not contain exactly one result for each custom_id"
+                    .to_string(),
+            ));
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -497,4 +549,56 @@ async fn handle_provider_error(
         )
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use gateway_core::ProviderBatchResult;
+
+    use super::validate_result_custom_ids;
+
+    fn result(custom_id: &str) -> ProviderBatchResult {
+        ProviderBatchResult {
+            custom_id: custom_id.to_string(),
+            response_body: None,
+            error: None,
+            provider_request_id: None,
+            provider_usage: None,
+            completed_at: None,
+            cost_usd: None,
+        }
+    }
+
+    fn expected() -> BTreeSet<String> {
+        ["one", "two", "three"]
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn terminal_partial_results_accept_the_exact_processed_subset() {
+        let results = vec![result("one"), result("three")];
+
+        validate_result_custom_ids(&expected(), &results, Some(2))
+            .expect("processed result subset");
+    }
+
+    #[test]
+    fn terminal_partial_results_reject_an_incorrect_count() {
+        let results = vec![result("one")];
+
+        assert!(validate_result_custom_ids(&expected(), &results, Some(2)).is_err());
+    }
+
+    #[test]
+    fn terminal_partial_results_reject_duplicate_or_unknown_ids() {
+        let duplicate = vec![result("one"), result("one")];
+        let unknown = vec![result("one"), result("unknown")];
+
+        assert!(validate_result_custom_ids(&expected(), &duplicate, Some(2)).is_err());
+        assert!(validate_result_custom_ids(&expected(), &unknown, Some(2)).is_err());
+    }
 }

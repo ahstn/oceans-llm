@@ -95,25 +95,31 @@ impl VertexProvider {
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
         let token = self.access_token_source.token().await?;
-        let mut request = self
+        let request = self
             .client
             .post(endpoint_suffix)
             .bearer_auth(token)
             .json(body);
+        self.apply_request_headers(request, context)
+            .build()
+            .map_err(map_reqwest_error)
+    }
 
+    fn apply_request_headers(
+        &self,
+        mut request: reqwest::RequestBuilder,
+        context: &ProviderRequestContext,
+    ) -> reqwest::RequestBuilder {
         request = request.header("x-request-id", &context.request_id);
-
         for (name, value) in &self.config.default_headers {
             request = request.header(name, value);
         }
-
         for (name, value) in &context.extra_headers {
             if let Some(value) = value.as_str() {
                 request = request.header(name, value);
             }
         }
-
-        request.build().map_err(map_reqwest_error)
+        request
     }
     fn model_endpoint(&self, publisher: &str, model_id: &str, method: &str) -> String {
         let host = self.config.api_host.trim_end_matches('/');
@@ -215,17 +221,17 @@ impl ProviderClient for VertexProvider {
     async fn inspect_batch(
         &self,
         provider_batch_id: &str,
-        _context: &ProviderRequestContext,
+        context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
-        self.inspect_batch_impl(provider_batch_id).await
+        self.inspect_batch_impl(provider_batch_id, context).await
     }
 
     async fn cancel_batch(
         &self,
         provider_batch_id: &str,
-        _context: &ProviderRequestContext,
+        context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
-        self.cancel_batch_impl(provider_batch_id).await
+        self.cancel_batch_impl(provider_batch_id, context).await
     }
 
     async fn batch_results(

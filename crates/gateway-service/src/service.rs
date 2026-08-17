@@ -1002,7 +1002,9 @@ where
                 job.batch_id
             )));
         }
-        let (usage, usage_complete) = aggregate_batch_usage(results)?;
+        let (usage, item_usage_complete) = aggregate_batch_usage(results)?;
+        let result_set_complete = i64::try_from(results.len()).ok() == Some(job.request_count);
+        let usage_complete = item_usage_complete && result_set_complete;
         let (ledger_pricing_status, mut unpriced_reason) = match pricing_status {
             BatchPricingStatus::Priced | BatchPricingStatus::ProviderReported => {
                 (UsagePricingStatus::Priced, None)
