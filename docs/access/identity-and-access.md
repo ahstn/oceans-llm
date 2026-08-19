@@ -96,14 +96,15 @@ For the startup and first-access path, use [runtime-bootstrap-and-access.md](../
 
 ## Onboarding Model
 
-User provisioning is admin-controlled. OIDC and OAuth sign-in use a shared login entry point.
+User provisioning is admin-controlled. The control plane generates three onboarding link flows:
 
-- admins create users through config or the control plane, or invite them into teams
-- password users require a unique, token-bearing invite URL from the control plane
-- pre-provisioned OIDC and OAuth users can open `/admin/login`, select their configured provider, and activate their account after a successful identity match
-- generated SSO sign-in URLs are optional convenience links that select a provider, add an email hint, and use the account-ready landing page
+- password onboarding: a unique, token-bearing invite URL that only the invited password user can complete
+- OIDC onboarding: an optional generated sign-in URL that selects the OIDC provider, passes the user email as `login_hint`, and lands on the account-ready page
+- OAuth onboarding: an optional generated sign-in URL that selects the OAuth provider, passes the user email as `login_hint`, and lands on the account-ready page
 
-An SSO sign-in URL does not grant access. The gateway still requires a valid provider identity and applies the configured invite or JIT policy. The public login page discovers enabled providers, but it does not create an account when JIT is disabled. See [OIDC and SSO](oidc-and-sso-status.md#start-sso-sign-in) for the sign-in URLs and parameter rules.
+Admins create users through config or the control plane, or invite them into teams. Pre-provisioned OIDC and OAuth users can instead open the shared `/admin/login` page, select their configured provider, and activate their account after a successful identity match, without a per-user link.
+
+A sign-in URL does not grant access. The gateway still requires a valid provider identity and applies the configured invite or JIT policy. The public login page discovers enabled providers, but it does not create an account when JIT is disabled. See [OIDC and SSO](oidc-and-sso-status.md#start-sso-sign-in) for the sign-in URLs and parameter rules.
 
 ## Team Lifecycle
 
@@ -229,13 +230,13 @@ Config-backed identity is now part of the startup seed path.
 
 Config seeding no longer creates legacy system-owned runtime API keys. Non-human team access is managed through service accounts.
 
-For teams, users, and service accounts, omitted `tags` leaves existing identity tags unchanged during startup reconciliation. Set `tags: []` when config should explicitly clear tags. Tag validation and semantics are documented in [Tagging](../operations/tagging.md).
+The `tags` fields reconcile identity tags when present. Field syntax, omit/clear semantics, and startup validation are owned by the [Configuration Reference](../configuration/configuration-reference.md#identity-tags-in-declarative-identity). Tag rules and naming guidance are owned by [Tagging](../operations/tagging.md).
 
 Team config supports:
 
 - `id`: stable team key used for reconciliation
 - `name`: display name
-- `tags`: optional identity tag list; omit to leave existing tags unchanged or set `[]` to clear tags
+- `tags`: optional identity tag list
 
 User config supports:
 
@@ -244,7 +245,7 @@ User config supports:
 - optional `oidc_provider_key` or `oauth_provider_key` for SSO users
 - optional `membership` with `team` and non-`owner` `role`
 - optional `budget`
-- `tags`: optional identity tag list; omit to leave existing tags unchanged or set `[]` to clear tags
+- `tags`: optional identity tag list
 
 Service-account config supports:
 
@@ -253,7 +254,7 @@ Service-account config supports:
 - `team`: owning team key
 - `budget`
 - `keys`: optional managed API-key declarations
-- `tags`: optional identity tag list; omit to leave existing tags unchanged or set `[]` to clear tags
+- `tags`: optional identity tag list
 
 ## Service Accounts
 

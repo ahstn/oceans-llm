@@ -19,7 +19,7 @@ The snippets use the gateway model ids shown in the Models table. API keys are s
 
 By default, snippets use the local development gateway base URL `http://127.0.0.1:3000`. Production deployments should set `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway process, or `gateway.clientConfigGatewayBaseUrl` in the Helm chart, to the public gateway URL users can reach, for example `https://api.oceans-llm.com`.
 
-Base URL can change depending on API format and client harness. Experiment with adding or removing `/v1` if requests initially fail.
+Generated base URLs are deterministic. The gateway derives each model's client API style from its ids: Anthropic Messages when the gateway model id or upstream model id contains `anthropic` or `claude`, and OpenAI-compatible otherwise. Anthropic Messages clients receive the gateway root URL and append their own endpoint paths. OpenAI-compatible clients receive the root with `/v1` appended.
 
 For a gateway hosted at `https://api.oceans-llm.com`, generated client configs use:
 
@@ -54,7 +54,7 @@ The Claude Code tab emits `.claude/settings.json` content with the SchemaStore C
 - `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, and the matching default model class variable
 - `modelOverrides`, mapping Claude Code's Anthropic model ids to the selected gateway model ids
 
-Claude Code appends Anthropic endpoints such as `/v1/messages` and `/v1/models` to `ANTHROPIC_BASE_URL`. Do not include `/v1/messages` in the configured gateway URL. OpenCode and Pi still use the OpenAI-compatible `/v1` base URL, grouped by client API style when needed.
+Claude Code appends Anthropic endpoints such as `/v1/messages` and `/v1/models` to `ANTHROPIC_BASE_URL`. Do not include `/v1/messages` in the configured gateway URL. OpenCode and Pi base URLs follow the per-model API style from the table above: Anthropic Messages models use the gateway root, and OpenAI-compatible models use the `/v1` path.
 
 The same dialog also shows a second `settings.json` block for a smaller local Claude Code experience. It disables telemetry, experimental betas, 1M context, and related UI/reporting behavior, and sets a lower auto-compact window.
 
