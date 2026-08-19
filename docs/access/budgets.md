@@ -44,7 +44,7 @@ Live enforcement windows currently use UTC:
 
 ## Hard And Soft Limits
 
-Hard budgets reject new chargeable traffic when the active window is already exhausted. If a request starts under the limit but its final priced usage would push the window over the budget, the gateway rejects that completed charge before recording it as spend.
+Hard budgets reject new chargeable traffic when the active window is already exhausted. If a synchronous request starts under the limit but its final priced usage would push the window over the budget, the gateway rejects that completed charge before recording it as spend. Asynchronous batch spend is already incurred when the final cost becomes available, so the gateway records that spend even when it pushes a hard budget over its limit. The updated ledger then blocks later traffic.
 
 Soft budgets never reject traffic. They are useful for alerting and reporting when a team wants visibility before enforcing a hard cap.
 

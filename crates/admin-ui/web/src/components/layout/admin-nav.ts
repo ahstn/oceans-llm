@@ -6,6 +6,7 @@ import {
   SaveMoneyDollarIcon,
   SearchIcon,
   RoboticIcon,
+  TaskDaily01Icon,
   UserIcon,
   UserGroupIcon,
   WaterfallUp02Icon,
@@ -13,8 +14,11 @@ import {
 
 import type { AdminPage, AuthSessionView } from '@/types/api'
 
+export type AdminRouteId = AdminPage | 'batches'
+
 export interface AdminNavItem {
-  page?: AdminPage
+  page?: AdminRouteId
+  requiredPage?: AdminPage
   label: string
   to: string
   icon: unknown
@@ -37,12 +41,19 @@ export const adminNavSections: AdminNavSection[] = [
     label: 'Control Plane',
     icon: SearchIcon,
     items: [
-      { page: 'api_keys', label: 'API Keys', to: '/api-keys', icon: SearchIcon },
-      { page: 'models', label: 'Models', to: '/models', icon: HomeIcon },
+      {
+        page: 'api_keys',
+        requiredPage: 'api_keys',
+        label: 'API Keys',
+        to: '/api-keys',
+        icon: SearchIcon,
+      },
+      { page: 'models', requiredPage: 'models', label: 'Models', to: '/models', icon: HomeIcon },
       connectionsNavItem,
-      { page: 'mcp', label: 'MCP', to: '/mcp', icon: McpServerIcon },
+      { page: 'mcp', requiredPage: 'mcp', label: 'MCP', to: '/mcp', icon: McpServerIcon },
       {
         page: 'review_agent',
+        requiredPage: 'review_agent',
         label: 'Review Agent',
         to: '/review-agent',
         icon: GitPullRequestIcon,
@@ -55,18 +66,21 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       {
         page: 'usage_costs',
+        requiredPage: 'usage_costs',
         label: 'Usage Costs',
         to: '/observability/usage-costs',
         icon: SaveMoneyDollarIcon,
       },
       {
         page: 'spend_controls',
+        requiredPage: 'spend_controls',
         label: 'Spend Controls',
         to: '/spend-controls',
         icon: Notification03Icon,
       },
       {
         page: 'leaderboard',
+        requiredPage: 'leaderboard',
         label: 'Leaderboard',
         to: '/observability/leaderboard',
         icon: WaterfallUp02Icon,
@@ -79,24 +93,35 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       {
         page: 'agent_harnesses',
+        requiredPage: 'agent_harnesses',
         label: 'Agent Harnesses',
         to: '/observability/agent-harnesses',
         icon: RoboticIcon,
       },
       {
         page: 'agent_sessions',
+        requiredPage: 'agent_sessions',
         label: 'Agent Sessions',
         to: '/observability/agent-sessions',
         icon: RoboticIcon,
       },
       {
         page: 'request_logs',
+        requiredPage: 'request_logs',
         label: 'Request Logs',
         to: '/observability/request-logs',
         icon: SearchIcon,
       },
       {
+        page: 'batches',
+        requiredPage: 'request_logs',
+        label: 'Batch Requests',
+        to: '/batches',
+        icon: TaskDaily01Icon,
+      },
+      {
         page: 'mcp_invocations',
+        requiredPage: 'mcp_invocations',
         label: 'MCP Invocations',
         to: '/observability/mcp-invocations',
         icon: McpServerIcon,
@@ -107,10 +132,23 @@ export const adminNavSections: AdminNavSection[] = [
     label: 'Identity',
     icon: UserIcon,
     items: [
-      { page: 'teams', label: 'Teams', to: '/identity/teams', icon: UserGroupIcon },
-      { page: 'users', label: 'Users', to: '/identity/users', icon: UserIcon },
+      {
+        page: 'teams',
+        requiredPage: 'teams',
+        label: 'Teams',
+        to: '/identity/teams',
+        icon: UserGroupIcon,
+      },
+      {
+        page: 'users',
+        requiredPage: 'users',
+        label: 'Users',
+        to: '/identity/users',
+        icon: UserIcon,
+      },
       {
         page: 'service_accounts',
+        requiredPage: 'service_accounts',
         label: 'Service Accounts',
         to: '/identity/service-accounts',
         icon: RoboticIcon,
@@ -128,7 +166,9 @@ export function getAdminNavSections(pages: AdminPage[]) {
   return adminNavSections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => !item.page || allowedPages.has(item.page)),
+      items: section.items.filter(
+        (item) => !item.requiredPage || allowedPages.has(item.requiredPage),
+      ),
     }))
     .filter((section) => section.items.length > 0)
 }
@@ -139,7 +179,7 @@ export function getAdminPagePath(page: AdminPage) {
 
 export function getAdminPageForPath(path: string) {
   const currentPath = normalizeAdminPath(path.split(/[?#]/, 1)[0])
-  return adminNavItems().find((item) => matchesAdminPath(currentPath, item.to))?.page
+  return adminNavItems().find((item) => matchesAdminPath(currentPath, item.to))?.requiredPage
 }
 
 export function canAccessPage(session: AuthSessionView, page: AdminPage) {

@@ -7,6 +7,11 @@ import type {
   ApiKeysPayload,
   AuthSessionView,
   BudgetAlertHistoryView,
+  BatchFiltersInput,
+  BatchPageView,
+  BatchResultsInput,
+  BatchResultsView,
+  BatchView,
   ChangePasswordInput,
   CreateApiKeyInput,
   CreateApiKeyResult,
@@ -331,6 +336,36 @@ export async function listRequestLogs(
       params: {
         query: filters,
       },
+    }),
+  )
+}
+
+export async function listBatches(filters: BatchFiltersInput = {}): Promise<BatchPageView> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/batches', {
+      params: { query: filters },
+    }),
+  )
+}
+
+export async function getBatchResults(
+  batchId: string,
+  query: BatchResultsInput = {},
+): Promise<BatchResultsView> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/batches/{batch_id}/results', {
+      params: { path: { batch_id: batchId }, query },
+    }),
+  )
+}
+
+export async function cancelBatch(batchId: string): Promise<BatchView> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/batches/{batch_id}/cancel', {
+      params: { path: { batch_id: batchId } },
     }),
   )
 }

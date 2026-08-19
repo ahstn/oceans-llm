@@ -42,6 +42,22 @@ pub struct OpenAiCompatProviderConfig {
     pub timeouts: Option<ProviderTimeouts>,
     #[serde(default)]
     pub display: Option<ProviderDisplayConfig>,
+    #[serde(default)]
+    pub batch: Option<OpenAiBatchProviderConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OpenAiBatchProviderConfig {
+    pub dialect: OpenAiBatchDialectConfig,
+    #[serde(default)]
+    pub base_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiBatchDialectConfig {
+    OpenAi,
+    OpenRouter,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -118,6 +134,15 @@ pub struct GcpVertexProviderConfig {
     pub timeouts: Option<ProviderTimeouts>,
     #[serde(default)]
     pub display: Option<ProviderDisplayConfig>,
+    #[serde(default)]
+    pub batch: Option<GcpVertexBatchConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GcpVertexBatchConfig {
+    #[serde(default)]
+    pub bigquery_project_id: Option<String>,
+    pub dataset: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -1044,6 +1044,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_batches"];
+        put?: never;
+        post: operations["create_batch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_batch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batches/{batch_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancel_batch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batches/{batch_id}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_batch_results"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/identity/directory/teams": {
         parameters: {
             query?: never;
@@ -2106,6 +2170,87 @@ export interface components {
             team_role?: string | null;
             user: components["schemas"]["AuthSessionUserView"];
         };
+        BatchCallerResponse: {
+            /** Format: uuid */
+            api_key_id: string;
+            api_key_name?: string | null;
+            /** Format: uuid */
+            service_account_id?: string | null;
+            service_account_name?: string | null;
+            /** Format: uuid */
+            team_id?: string | null;
+            /** Format: uuid */
+            user_id?: string | null;
+            user_name?: string | null;
+        };
+        /** @enum {string} */
+        BatchEndpointSchema: "chat_completions" | "responses" | "embeddings";
+        /** @enum {string} */
+        BatchItemStatusSchema: "pending" | "succeeded" | "failed";
+        BatchListResponse: {
+            items: components["schemas"]["BatchResponse"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
+        /** @enum {string} */
+        BatchPricingStatusSchema: "pending" | "priced" | "partially_priced" | "unpriced" | "provider_reported";
+        BatchResponse: {
+            /** Format: uuid */
+            batch_id: string;
+            caller: components["schemas"]["BatchCallerResponse"];
+            completed_at?: string | null;
+            /** Format: int64 */
+            completed_count: number;
+            /** Format: double */
+            cost_usd?: number | null;
+            created_at: string;
+            endpoint: components["schemas"]["BatchEndpointSchema"];
+            error?: unknown;
+            /** Format: int64 */
+            failed_count: number;
+            model: string;
+            pricing_status: components["schemas"]["BatchPricingStatusSchema"];
+            provider: string;
+            provider_batch_id?: string | null;
+            provider_usage?: unknown;
+            /** Format: int64 */
+            request_count: number;
+            resolved_model: string;
+            /** Format: uuid */
+            route_id: string;
+            status: components["schemas"]["BatchStatusSchema"];
+            submitted_at?: string | null;
+            updated_at: string;
+            upstream_model: string;
+        };
+        BatchResultResponse: {
+            completed_at?: string | null;
+            /** Format: double */
+            cost_usd?: number | null;
+            custom_id: string;
+            error?: unknown;
+            provider_request_id?: string | null;
+            provider_usage?: unknown;
+            request: unknown;
+            response?: unknown;
+            status: components["schemas"]["BatchItemStatusSchema"];
+        };
+        BatchResultsResponse: {
+            batch: components["schemas"]["BatchResponse"];
+            items: components["schemas"]["BatchResultResponse"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
+        /** @enum {string} */
+        BatchStatusSchema: "queued" | "submitting" | "submission_unknown" | "validating" | "in_progress" | "finalizing" | "completed" | "failed" | "expired" | "cancel_requested" | "cancelling" | "cancelled";
         BudgetAlertHistoryItemView: {
             budget_alert_id: string;
             cadence: string;
@@ -2217,6 +2362,15 @@ export interface components {
         CreateApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
             raw_key: string;
+        };
+        CreateBatchRequest: {
+            endpoint: components["schemas"]["BatchEndpointSchema"];
+            items: components["schemas"]["CreateBatchRequestItem"][];
+            model: string;
+        };
+        CreateBatchRequestItem: {
+            body: unknown;
+            custom_id: string;
         };
         CreateMcpServerRequest: {
             auth_config?: {
@@ -5577,6 +5731,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_Option_AuthSessionView"];
+                };
+            };
+        };
+    };
+    list_batches: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                status?: components["schemas"]["BatchStatusSchema"];
+                model?: string;
+                provider?: string;
+                user_id?: string;
+                service_account_id?: string;
+                created_at_start?: string;
+                created_at_end?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Visible batch requests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchListResponse"];
+                };
+            };
+        };
+    };
+    create_batch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Caller supplied idempotency key */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Batch accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchResponse"];
+                };
+            };
+        };
+    };
+    get_batch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Batch identifier */
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Batch request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchResponse"];
+                };
+            };
+        };
+    };
+    cancel_batch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Batch identifier */
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated batch request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchResponse"];
+                };
+            };
+        };
+    };
+    get_batch_results: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                status?: components["schemas"]["BatchItemStatusSchema"];
+                format?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Batch identifier */
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paged JSON results or NDJSON result lines */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchResultsResponse"];
+                    "application/x-ndjson": string;
                 };
             };
         };

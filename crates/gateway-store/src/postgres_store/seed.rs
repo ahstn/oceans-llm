@@ -256,11 +256,23 @@ impl PostgresStore {
             .await
             .map_err(to_query_error)?;
 
-            sqlx::query("DELETE FROM model_routes WHERE model_id = $1")
+            // Batch history retains the exact route used for each submitted
+            // job. Disable all existing routes first, then remove only routes
+            // that have no batch reference. Configured routes are restored by
+            // the upsert below, including routes configured as disabled.
+            sqlx::query("UPDATE model_routes SET enabled = 0, updated_at = $1 WHERE model_id = $2")
+                .bind(now_unix)
                 .bind(model_id.to_string())
                 .execute(&self.pool)
                 .await
                 .map_err(to_query_error)?;
+            sqlx::query(
+                "DELETE FROM model_routes WHERE model_id = $1 AND NOT EXISTS (SELECT 1 FROM batch_jobs WHERE batch_jobs.route_id = model_routes.id)",
+            )
+            .bind(model_id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(to_query_error)?;
 
             sqlx::query("DELETE FROM model_allowlist_users WHERE model_id = $1")
                 .bind(model_id.to_string())

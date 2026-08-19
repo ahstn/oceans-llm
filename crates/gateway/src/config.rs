@@ -18,7 +18,7 @@ use gateway_core::{
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
     CopilotAuthConfig, CopilotProviderConfig, OpenAiCompatConfig, VertexAuthConfig,
-    VertexProviderConfig,
+    VertexBatchConfig, VertexProviderConfig,
 };
 use gateway_service::{
     McpOauthProvider, McpOauthRuntime, PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode,
@@ -48,9 +48,10 @@ pub use permissions::{
 pub use providers::{
     AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
     GcpCloudRunOpenAiCompatAuthHeaderConfig, GcpCloudRunOpenAiCompatProviderConfig,
-    GcpVertexAuthConfig, GcpVertexProviderConfig, GitHubCopilotAuthConfig,
-    GitHubCopilotProviderConfig, OpenAiCompatAuthConfig, OpenAiCompatProviderConfig,
-    ProviderConfig, ProviderDisplayConfig, ProviderTimeouts,
+    GcpVertexAuthConfig, GcpVertexBatchConfig, GcpVertexProviderConfig, GitHubCopilotAuthConfig,
+    GitHubCopilotProviderConfig, OpenAiBatchDialectConfig, OpenAiBatchProviderConfig,
+    OpenAiCompatAuthConfig, OpenAiCompatProviderConfig, ProviderConfig, ProviderDisplayConfig,
+    ProviderTimeouts,
 };
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -150,6 +151,38 @@ impl GatewayConfig {
                             provider.pricing_provider_id
                         );
                     }
+                    if let Some(batch) = &provider.batch {
+                        if let Some(base_url) = batch.base_url.as_deref() {
+                            if base_url.trim().is_empty() {
+                                bail!(
+                                    "openai_compat provider `{}` batch.base_url cannot be empty",
+                                    provider.id
+                                );
+                            }
+                            let parsed = url::Url::parse(base_url).with_context(|| {
+                                format!(
+                                    "openai_compat provider `{}` batch.base_url is invalid",
+                                    provider.id
+                                )
+                            })?;
+                            if !matches!(parsed.scheme(), "http" | "https")
+                                || parsed.host_str().is_none()
+                            {
+                                bail!(
+                                    "openai_compat provider `{}` batch.base_url must be an HTTP URL with a host",
+                                    provider.id
+                                );
+                            }
+                        }
+                        if batch.dialect == OpenAiBatchDialectConfig::OpenRouter
+                            && batch.base_url.is_none()
+                        {
+                            bail!(
+                                "openai_compat provider `{}` OpenRouter batch mode requires batch.base_url",
+                                provider.id
+                            );
+                        }
+                    }
                     validate_provider_display_config(
                         provider.id.as_str(),
                         provider.display.as_ref(),
@@ -226,6 +259,24 @@ impl GatewayConfig {
                             "gcp_vertex provider `{}` api_host cannot be empty",
                             provider.id
                         );
+                    }
+                    if let Some(batch) = &provider.batch {
+                        if batch.dataset.trim().is_empty() {
+                            bail!(
+                                "gcp_vertex provider `{}` batch.dataset cannot be empty",
+                                provider.id
+                            );
+                        }
+                        if batch
+                            .bigquery_project_id
+                            .as_deref()
+                            .is_some_and(|value| value.trim().is_empty())
+                        {
+                            bail!(
+                                "gcp_vertex provider `{}` batch.bigquery_project_id cannot be empty",
+                                provider.id
+                            );
+                        }
                     }
 
                     match &provider.auth {
@@ -776,6 +827,7 @@ impl GatewayConfig {
                         "default_headers": provider.default_headers,
                         "timeouts": provider.timeouts,
                         "display": provider.display,
+                        "batch": provider.batch,
                     });
 
                     let secrets = provider.auth.as_ref().map(|auth| {
@@ -856,6 +908,7 @@ impl GatewayConfig {
                         "default_headers": provider.default_headers,
                         "timeouts": provider.timeouts,
                         "display": provider.display,
+                        "batch": provider.batch,
                     });
 
                     let secrets = Some(match &provider.auth {
@@ -1251,6 +1304,19 @@ impl GatewayConfig {
                         .as_ref()
                         .map(|timeouts| timeouts.total_ms)
                         .unwrap_or(120_000);
+                    if let Some(batch) = &provider.batch {
+                        config.batch = gateway_providers::OpenAiBatchConfig {
+                            dialect: match batch.dialect {
+                                OpenAiBatchDialectConfig::OpenAi => {
+                                    gateway_providers::OpenAiBatchDialect::OpenAi
+                                }
+                                OpenAiBatchDialectConfig::OpenRouter => {
+                                    gateway_providers::OpenAiBatchDialect::OpenRouter
+                                }
+                            },
+                            base_url: batch.base_url.clone(),
+                        };
+                    }
 
                     if let Some(auth) = &provider.auth
                         && let Some(token) = &auth.token
@@ -1344,6 +1410,13 @@ impl GatewayConfig {
                     .as_ref()
                     .map(|timeouts| timeouts.total_ms)
                     .unwrap_or(120_000),
+                batch: provider.batch.as_ref().map(|batch| VertexBatchConfig {
+                    bigquery_project_id: batch
+                        .bigquery_project_id
+                        .clone()
+                        .unwrap_or_else(|| provider.project_id.clone()),
+                    dataset: batch.dataset.clone(),
+                }),
             });
         }
 
@@ -3561,7 +3634,9 @@ mod tests {
         OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
         OpenRouterPercentilePreference, RequestLogRetentionWindow,
     };
-    use gateway_providers::{BearerAuthHeader, BedrockAuthConfig, CopilotAuthConfig};
+    use gateway_providers::{
+        BearerAuthHeader, BedrockAuthConfig, CopilotAuthConfig, OpenAiBatchDialect,
+    };
     use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
 
@@ -5100,6 +5175,162 @@ providers:
         );
 
         GatewayConfig::from_path(&config_path).expect("config should parse");
+    }
+
+    #[test]
+    fn parses_openai_and_openrouter_batch_provider_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    batch:
+      dialect: open_ai
+  - id: openrouter-prod
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+    batch:
+      dialect: open_router
+      base_url: https://openrouter.ai/api/beta
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let providers = config
+            .openai_compatible_provider_configs()
+            .expect("runtime provider configs");
+        assert_eq!(providers[0].batch.dialect, OpenAiBatchDialect::OpenAi);
+        assert_eq!(providers[0].batch.base_url, None);
+        assert_eq!(providers[1].batch.dialect, OpenAiBatchDialect::OpenRouter);
+        assert_eq!(
+            providers[1].batch.base_url.as_deref(),
+            Some("https://openrouter.ai/api/beta")
+        );
+    }
+
+    #[test]
+    fn rejects_blank_openai_batch_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    batch:
+      dialect: open_ai
+      base_url: " "
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(format!("{error:#}").contains("batch.base_url cannot be empty"));
+    }
+
+    #[test]
+    fn rejects_invalid_openai_batch_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    batch:
+      dialect: open_ai
+      base_url: not-a-url
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(format!("{error:#}").contains("batch.base_url is invalid"));
+    }
+
+    #[test]
+    fn rejects_openrouter_batch_without_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter-prod
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+    batch:
+      dialect: open_router
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(format!("{error:#}").contains("OpenRouter batch mode requires batch.base_url"));
+    }
+
+    #[test]
+    fn parses_vertex_batch_provider_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: vertex-prod
+    type: gcp_vertex
+    project_id: vertex-project
+    location: europe-west4
+    auth:
+      mode: adc
+    batch:
+      bigquery_project_id: billing-project
+      dataset: batch_jobs_eu
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let providers = config
+            .vertex_provider_configs()
+            .expect("runtime provider configs");
+        let batch = providers[0].batch.as_ref().expect("batch config");
+        assert_eq!(batch.bigquery_project_id, "billing-project");
+        assert_eq!(batch.dataset, "batch_jobs_eu");
+    }
+
+    #[test]
+    fn rejects_blank_vertex_batch_dataset() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: vertex-prod
+    type: gcp_vertex
+    project_id: vertex-project
+    location: europe-west4
+    auth:
+      mode: adc
+    batch:
+      dataset: " "
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(format!("{error:#}").contains("batch.dataset cannot be empty"));
     }
 
     #[test]

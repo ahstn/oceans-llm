@@ -258,9 +258,20 @@ impl LibsqlStore {
                 .await
                 .map_err(to_query_error)?;
 
+            // Batch history retains the exact route used for each submitted
+            // job. Disable all existing routes first, then remove only routes
+            // that have no batch reference. Configured routes are restored by
+            // the upsert below, including routes configured as disabled.
             self.connection
                 .execute(
-                    "DELETE FROM model_routes WHERE model_id = ?1",
+                    "UPDATE model_routes SET enabled = 0, updated_at = ?1 WHERE model_id = ?2",
+                    libsql::params![now_unix, model_id.to_string()],
+                )
+                .await
+                .map_err(to_query_error)?;
+            self.connection
+                .execute(
+                    "DELETE FROM model_routes WHERE model_id = ?1 AND NOT EXISTS (SELECT 1 FROM batch_jobs WHERE batch_jobs.route_id = model_routes.id)",
                     [model_id.to_string()],
                 )
                 .await

@@ -311,6 +311,10 @@ models:
     description: Alias kept for backward compatibility
     alias_of: gpt-5.6-sol
 
+  - id: openai-fast-v2
+    description: Legacy local demo alias
+    alias_of: gpt-5.6-sol
+
   - id: deepseek-v4-pro
     routes:
       - provider: openrouter
@@ -332,6 +336,10 @@ models:
     routes:
       - provider: vertex-claude
         upstream_model: anthropic/claude-opus-4-7
+
+  - id: claude-opus
+    description: Legacy local demo alias
+    alias_of: claude-opus-4-7
 
   - id: claude-fable-5
     description: Claude Fable on Vertex
@@ -356,6 +364,10 @@ models:
         - ben@platform.local
         - diego@research.local
 
+  - id: bedrock-claude-sonnet
+    description: Legacy local demo alias
+    alias_of: claude-sonnet-4.6
+
   - id: gpt-oss-120b
     description: OpenAI OSS on AWS Bedrock
     routes:
@@ -374,3 +386,7 @@ models:
     routes:
       - provider: vertex-adc
         upstream_model: google/gemini-3.1-pro-preview
+
+  - id: gemini-fast
+    description: Legacy local demo alias
+    alias_of: gemini-pro-preview

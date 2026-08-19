@@ -108,6 +108,8 @@ const ACTIVE_APPLICATION_TABLES: &[&str] = &[
     "agent_analysis_recompute_queue",
     "usage_cost_event_duplicates_archive",
     "usage_cost_events",
+    "batch_jobs",
+    "batch_items",
 ];
 
 #[derive(Debug, Clone, Default)]

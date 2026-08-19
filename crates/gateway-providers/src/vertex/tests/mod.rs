@@ -6,7 +6,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::Response,
-    routing::post,
+    routing::{get, post},
 };
 use bytes::Bytes;
 use futures_util::StreamExt;
@@ -58,6 +58,7 @@ fn vertex_provider_for_test(api_host: String) -> VertexProvider {
         },
         default_headers: BTreeMap::new(),
         request_timeout_ms: 5_000,
+        batch: None,
     })
     .expect("provider")
 }

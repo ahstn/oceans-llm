@@ -2,6 +2,7 @@ pub mod admin_auth;
 pub mod admin_contract;
 mod anthropic_stream;
 pub mod api_keys;
+pub mod batches;
 pub mod error;
 mod focus_export;
 pub mod handlers;
@@ -21,7 +22,9 @@ pub mod state;
 
 use admin_ui::{AdminUiConfig, mount_admin_ui};
 use axum::{
-    Router, middleware,
+    Router,
+    extract::DefaultBodyLimit,
+    middleware,
     routing::{delete, get, patch, post},
 };
 use http::HeaderName;
@@ -34,8 +37,8 @@ use tower_http::{
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use self::{
-    api_keys::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*, mcp_registry::*,
-    models::*, observability::*, review_agent::*, spend::*, state::AppState,
+    api_keys::*, batches::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*,
+    mcp_registry::*, models::*, observability::*, review_agent::*, spend::*, state::AppState,
 };
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
@@ -46,6 +49,15 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api/v1/health", get(api_health))
+        .route(
+            "/api/v1/batches",
+            get(list_batches)
+                .post(create_batch)
+                .layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
+        )
+        .route("/api/v1/batches/{batch_id}", get(get_batch))
+        .route("/api/v1/batches/{batch_id}/results", get(get_batch_results))
+        .route("/api/v1/batches/{batch_id}/cancel", post(cancel_batch))
         .route(
             "/api/v1/admin/api-keys",
             get(list_api_keys).post(create_api_key),

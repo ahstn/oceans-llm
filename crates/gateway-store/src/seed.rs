@@ -1,14 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use gateway_core::{
-    ApiKeySecretStorageKind, AuthMode, BudgetModelSelector, BudgetScope, BudgetSettings,
-    BudgetSource, BudgetSourceKind, GlobalRole, IdentityUserRecord, MembershipRole,
-    OauthProviderRecord, OidcProviderRecord, SYSTEM_BOOTSTRAP_ADMIN_USER_ID,
-    SeedApiKeySecretMaterial, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
-    SeedServiceAccount, SeedTeam, SeedUser, SeedUserModelBudgetDefault, StoreError, TeamRecord,
-    UserStatus, encrypt_gateway_api_key_secret, generate_gateway_api_key_value,
-    hash_gateway_key_secret, parse_gateway_api_key,
+    ApiKeyRecord, ApiKeySecretStorageKind, AuthMode, BatchEndpoint, BatchJobRecord,
+    BatchPollUpdate, BatchPricingStatus, BatchStatus, BudgetModelSelector, BudgetScope,
+    BudgetSettings, BudgetSource, BudgetSourceKind, GatewayModel, GlobalRole, IdentityUserRecord,
+    MembershipRole, ModelRoute, Money4, NewBatchItem, NewBatchJob, OauthProviderRecord,
+    OidcProviderRecord, ProviderBatchResult, ProviderBatchState, ProviderRequestContext,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKeySecretMaterial, SeedHumanBudgetDefaults,
+    SeedManagedServiceAccountApiKey, SeedServiceAccount, SeedTeam, SeedUser,
+    SeedUserModelBudgetDefault, StoreError, TeamRecord, UserStatus, encrypt_gateway_api_key_secret,
+    generate_gateway_api_key_value, hash_gateway_key_secret, parse_gateway_api_key,
 };
+use serde_json::json;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -50,6 +53,297 @@ pub(crate) fn service_account_uuid(service_account_key: &str) -> Uuid {
     Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
         format!("service_account:{service_account_key}").as_bytes(),
+    )
+}
+
+/// Add stable batch examples to the local demo data set.
+///
+/// The completed batch makes response inspection useful without an upstream
+/// provider. The queued batch stays unclaimed so operators can exercise the
+/// cancellation flow from the admin UI.
+pub async fn seed_local_demo_batches<S>(
+    store: &S,
+    user_api_key: &ApiKeyRecord,
+    service_account_api_key: &ApiKeyRecord,
+    requested_model_key: &str,
+    execution_model: &GatewayModel,
+    route: &ModelRoute,
+    now: OffsetDateTime,
+) -> Result<(), StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    seed_completed_demo_batch(
+        store,
+        user_api_key,
+        requested_model_key,
+        execution_model,
+        route,
+        now,
+    )
+    .await?;
+    seed_queued_demo_batch(
+        store,
+        service_account_api_key,
+        requested_model_key,
+        execution_model,
+        route,
+        now,
+    )
+    .await
+}
+
+async fn seed_completed_demo_batch<S>(
+    store: &S,
+    api_key: &ApiKeyRecord,
+    requested_model_key: &str,
+    execution_model: &GatewayModel,
+    route: &ModelRoute,
+    now: OffsetDateTime,
+) -> Result<(), StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    const IDEMPOTENCY_KEY: &str = "local-demo-completed-analysis";
+    if store
+        .get_batch_by_idempotency_key(api_key.id, IDEMPOTENCY_KEY)
+        .await?
+        .is_some()
+    {
+        return Ok(());
+    }
+
+    let worker_id = "local-demo-seed";
+    let created_at = now - time::Duration::hours(2);
+    let completed_at = created_at + time::Duration::minutes(18);
+    let batch_id = local_demo_batch_uuid(IDEMPOTENCY_KEY);
+    let items = vec![
+        NewBatchItem {
+            batch_item_id: local_demo_batch_item_uuid(IDEMPOTENCY_KEY, "retention-summary"),
+            custom_id: "retention-summary".to_string(),
+            request_body: json!({
+                "input": "Summarize the strongest retention signals in the Q2 cohort analysis.",
+                "reasoning": {"effort": "medium"}
+            }),
+        },
+        NewBatchItem {
+            batch_item_id: local_demo_batch_item_uuid(IDEMPOTENCY_KEY, "risk-review"),
+            custom_id: "risk-review".to_string(),
+            request_body: json!({
+                "input": "List the main evidence gaps and the next checks for the Q2 cohort analysis.",
+                "reasoning": {"effort": "medium"}
+            }),
+        },
+    ];
+    let job = demo_batch_job(
+        batch_id,
+        IDEMPOTENCY_KEY,
+        api_key,
+        requested_model_key,
+        execution_model,
+        route,
+        BatchEndpoint::Responses,
+        BatchStatus::InProgress,
+        i64::try_from(items.len()).unwrap_or(i64::MAX),
+        created_at,
+        Some(worker_id.to_string()),
+        Some(now + time::Duration::minutes(5)),
+        Some("batch_local_demo_completed".to_string()),
+        Some(created_at + time::Duration::minutes(1)),
+        Some(now),
+    );
+    store.insert_batch(&NewBatchJob { job, items }).await?;
+    store
+        .apply_batch_poll_update(
+            batch_id,
+            worker_id,
+            &BatchPollUpdate {
+                state: ProviderBatchState {
+                    provider_batch_id: "batch_local_demo_completed".to_string(),
+                    status: BatchStatus::Completed,
+                    request_count: 2,
+                    completed_count: 2,
+                    failed_count: 0,
+                    provider_usage: Some(json!({
+                        "input_tokens": 1860,
+                        "output_tokens": 724,
+                        "total_tokens": 2584
+                    })),
+                    provider_cost_usd: Some(Money4::from_scaled(184)),
+                    error: None,
+                    submitted_at: Some(created_at + time::Duration::minutes(1)),
+                    completed_at: Some(completed_at),
+                },
+                results: vec![
+                    ProviderBatchResult {
+                        custom_id: "retention-summary".to_string(),
+                        response_body: Some(json!({
+                            "id": "resp_local_demo_retention",
+                            "status": "completed",
+                            "output_text": "Activation in the first session and repeated use in week one are the strongest retention signals. The result is directional because the cohort has not completed a full quarter."
+                        })),
+                        error: None,
+                        provider_request_id: Some("req_local_demo_retention".to_string()),
+                        provider_usage: Some(json!({"input_tokens": 920, "output_tokens": 338})),
+                        completed_at: Some(completed_at - time::Duration::minutes(2)),
+                        cost_usd: Some(Money4::from_scaled(89)),
+                    },
+                    ProviderBatchResult {
+                        custom_id: "risk-review".to_string(),
+                        response_body: Some(json!({
+                            "id": "resp_local_demo_risks",
+                            "status": "completed",
+                            "output_text": "The main gaps are short follow-up time, channel mix changes, and missing acquisition-cost data. Re-run after the quarter closes and stratify by channel and plan."
+                        })),
+                        error: None,
+                        provider_request_id: Some("req_local_demo_risks".to_string()),
+                        provider_usage: Some(json!({"input_tokens": 940, "output_tokens": 386})),
+                        completed_at: Some(completed_at),
+                        cost_usd: Some(Money4::from_scaled(95)),
+                    },
+                ],
+                next_poll_at: None,
+                pricing_status: Some(BatchPricingStatus::ProviderReported),
+            },
+        )
+        .await
+}
+
+async fn seed_queued_demo_batch<S>(
+    store: &S,
+    api_key: &ApiKeyRecord,
+    requested_model_key: &str,
+    execution_model: &GatewayModel,
+    route: &ModelRoute,
+    now: OffsetDateTime,
+) -> Result<(), StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    const IDEMPOTENCY_KEY: &str = "local-demo-queued-evaluation";
+    if store
+        .get_batch_by_idempotency_key(api_key.id, IDEMPOTENCY_KEY)
+        .await?
+        .is_some()
+    {
+        return Ok(());
+    }
+
+    let created_at = now - time::Duration::minutes(12);
+    let batch_id = local_demo_batch_uuid(IDEMPOTENCY_KEY);
+    let items = [
+        (
+            "eval-grounding",
+            "Evaluate grounding against the supplied reference set.",
+        ),
+        (
+            "eval-refusal",
+            "Evaluate refusal quality for unsafe requests.",
+        ),
+        ("eval-format", "Evaluate JSON schema compliance."),
+    ]
+    .into_iter()
+    .map(|(custom_id, input)| NewBatchItem {
+        batch_item_id: local_demo_batch_item_uuid(IDEMPOTENCY_KEY, custom_id),
+        custom_id: custom_id.to_string(),
+        request_body: json!({"input": input, "reasoning": {"effort": "low"}}),
+    })
+    .collect::<Vec<_>>();
+    let job = demo_batch_job(
+        batch_id,
+        IDEMPOTENCY_KEY,
+        api_key,
+        requested_model_key,
+        execution_model,
+        route,
+        BatchEndpoint::Responses,
+        BatchStatus::Queued,
+        i64::try_from(items.len()).unwrap_or(i64::MAX),
+        created_at,
+        None,
+        None,
+        None,
+        None,
+        Some(now + time::Duration::days(365)),
+    );
+    store.insert_batch(&NewBatchJob { job, items }).await?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn demo_batch_job(
+    batch_id: Uuid,
+    idempotency_key: &str,
+    api_key: &ApiKeyRecord,
+    requested_model_key: &str,
+    execution_model: &GatewayModel,
+    route: &ModelRoute,
+    endpoint: BatchEndpoint,
+    status: BatchStatus,
+    request_count: i64,
+    created_at: OffsetDateTime,
+    lease_owner: Option<String>,
+    lease_expires_at: Option<OffsetDateTime>,
+    provider_batch_id: Option<String>,
+    submitted_at: Option<OffsetDateTime>,
+    next_poll_at: Option<OffsetDateTime>,
+) -> BatchJobRecord {
+    BatchJobRecord {
+        batch_id,
+        idempotency_key: idempotency_key.to_string(),
+        request_hash: format!("local-demo:{idempotency_key}"),
+        api_key_id: api_key.id,
+        user_id: api_key.owner_user_id,
+        team_id: api_key.owner_team_id,
+        service_account_id: api_key.owner_service_account_id,
+        model_id: execution_model.id,
+        model_key: requested_model_key.to_string(),
+        resolved_model_key: execution_model.model_key.clone(),
+        route_id: route.id,
+        provider_key: route.provider_key.clone(),
+        upstream_model: route.upstream_model.clone(),
+        endpoint,
+        status,
+        provider_batch_id,
+        request_count,
+        completed_count: 0,
+        failed_count: 0,
+        cost_usd: None,
+        pricing_status: BatchPricingStatus::Pending,
+        provider_usage: None,
+        error: None,
+        created_at,
+        submitted_at,
+        completed_at: None,
+        updated_at: created_at,
+        next_poll_at,
+        lease_owner,
+        lease_expires_at,
+        provider_context: ProviderRequestContext {
+            request_id: format!("local-demo-{batch_id}"),
+            model_key: requested_model_key.to_string(),
+            provider_key: route.provider_key.clone(),
+            upstream_model: route.upstream_model.clone(),
+            extra_headers: route.extra_headers.clone(),
+            extra_body: route.extra_body.clone(),
+            request_headers: BTreeMap::new(),
+            compatibility: route.compatibility.clone(),
+        },
+        pricing_snapshot: None,
+    }
+}
+
+fn local_demo_batch_uuid(key: &str) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("local_demo:batch:{key}").as_bytes(),
+    )
+}
+
+fn local_demo_batch_item_uuid(batch_key: &str, custom_id: &str) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("local_demo:batch_item:{batch_key}:{custom_id}").as_bytes(),
     )
 }
 

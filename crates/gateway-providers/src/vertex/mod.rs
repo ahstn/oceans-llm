@@ -5,8 +5,9 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
-    CoreChatMessage, CoreChatRequest, CoreContentPartType, CoreEmbeddingsRequest,
-    CoreResponsesRequest, ProviderCapabilities, ProviderClient, ProviderError,
+    BatchCapabilities, CoreChatMessage, CoreChatRequest, CoreContentPartType,
+    CoreEmbeddingsRequest, CoreResponsesRequest, ProviderBatchRequest, ProviderBatchResult,
+    ProviderBatchState, ProviderCapabilities, ProviderClient, ProviderError,
     ProviderRequestContext, ProviderStream, SseEventParser, Utf8ChunkDecoder,
     VERTEX_TEXT_EMBEDDING_MODEL_IDS, is_supported_vertex_text_embedding_model_id,
 };
@@ -24,6 +25,8 @@ use crate::{
     },
 };
 
+mod batch;
+
 #[derive(Debug, Clone)]
 pub enum VertexAuthConfig {
     Adc,
@@ -40,6 +43,13 @@ pub struct VertexProviderConfig {
     pub auth: VertexAuthConfig,
     pub default_headers: BTreeMap<String, String>,
     pub request_timeout_ms: u64,
+    pub batch: Option<VertexBatchConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VertexBatchConfig {
+    pub bigquery_project_id: String,
+    pub dataset: String,
 }
 
 #[derive(Clone)]
@@ -85,25 +95,31 @@ impl VertexProvider {
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
         let token = self.access_token_source.token().await?;
-        let mut request = self
+        let request = self
             .client
             .post(endpoint_suffix)
             .bearer_auth(token)
             .json(body);
+        self.apply_request_headers(request, context)
+            .build()
+            .map_err(map_reqwest_error)
+    }
 
+    fn apply_request_headers(
+        &self,
+        mut request: reqwest::RequestBuilder,
+        context: &ProviderRequestContext,
+    ) -> reqwest::RequestBuilder {
         request = request.header("x-request-id", &context.request_id);
-
         for (name, value) in &self.config.default_headers {
             request = request.header(name, value);
         }
-
         for (name, value) in &context.extra_headers {
             if let Some(value) = value.as_str() {
                 request = request.header(name, value);
             }
         }
-
-        request.build().map_err(map_reqwest_error)
+        request
     }
     fn model_endpoint(&self, publisher: &str, model_id: &str, method: &str) -> String {
         let host = self.config.api_host.trim_end_matches('/');
@@ -189,6 +205,41 @@ impl ProviderClient for VertexProvider {
 
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true)
+    }
+
+    fn batch_capabilities(&self) -> BatchCapabilities {
+        self.batch_capabilities_impl()
+    }
+
+    async fn submit_batch(
+        &self,
+        request: &ProviderBatchRequest,
+    ) -> gateway_core::ProviderBatchSubmission {
+        self.submit_batch_impl(request).await
+    }
+
+    async fn inspect_batch(
+        &self,
+        provider_batch_id: &str,
+        context: &ProviderRequestContext,
+    ) -> Result<ProviderBatchState, ProviderError> {
+        self.inspect_batch_impl(provider_batch_id, context).await
+    }
+
+    async fn cancel_batch(
+        &self,
+        provider_batch_id: &str,
+        context: &ProviderRequestContext,
+    ) -> Result<ProviderBatchState, ProviderError> {
+        self.cancel_batch_impl(provider_batch_id, context).await
+    }
+
+    async fn batch_results(
+        &self,
+        state: &ProviderBatchState,
+        context: &ProviderRequestContext,
+    ) -> Result<Vec<ProviderBatchResult>, ProviderError> {
+        self.batch_results_impl(state, context).await
     }
 
     async fn chat_completions(

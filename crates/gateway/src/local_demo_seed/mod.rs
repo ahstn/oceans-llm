@@ -10,7 +10,7 @@ use gateway_core::{
 use gateway_service::{
     RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, hash_gateway_key_secret,
 };
-use gateway_store::{AnyStore, GatewayStore};
+use gateway_store::{AnyStore, GatewayStore, seed_local_demo_batches};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -499,7 +499,57 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
         .await?;
     }
 
+    let user_batch_key = api_keys
+        .get("locdemoalice1")
+        .ok_or_else(|| anyhow::anyhow!("missing Alice demo API key for batch seed"))?;
+    seed_demo_batches(store, user_batch_key, now).await?;
+
     Ok(raw_keys)
+}
+
+async fn seed_demo_batches(
+    store: &AnyStore,
+    user_batch_key: &gateway_core::ApiKeyRecord,
+    now: OffsetDateTime,
+) -> anyhow::Result<()> {
+    let service_account = store
+        .list_service_accounts()
+        .await
+        .context("failed loading service accounts for batch seed")?
+        .into_iter()
+        .find(|account| account.service_account_key == "local-ci-runner")
+        .ok_or_else(|| anyhow::anyhow!("local-ci-runner service account is missing"))?;
+    let service_batch_key = store
+        .list_api_keys()
+        .await
+        .context("failed loading API keys for batch seed")?
+        .into_iter()
+        .find(|key| key.owner_service_account_id == Some(service_account.service_account_id))
+        .ok_or_else(|| anyhow::anyhow!("local-ci-runner managed API key is missing"))?;
+    let execution_model = store
+        .get_model_by_key("gpt-5.6-sol")
+        .await
+        .context("failed loading batch seed execution model")?
+        .ok_or_else(|| anyhow::anyhow!("batch seed execution model is missing"))?;
+    let route = store
+        .list_routes_for_model(execution_model.id)
+        .await
+        .context("failed loading batch seed route")?
+        .into_iter()
+        .find(|route| route.enabled)
+        .ok_or_else(|| anyhow::anyhow!("batch seed execution model has no enabled route"))?;
+    seed_local_demo_batches(
+        store,
+        user_batch_key,
+        &service_batch_key,
+        "openai-fast",
+        &execution_model,
+        &route,
+        now,
+    )
+    .await
+    .context("failed seeding local demo batches")?;
+    Ok(())
 }
 
 fn normalize_demo_email(email: &str) -> String {
@@ -867,8 +917,10 @@ fn pricing_provider_id_for_demo_provider(provider_key: &str) -> Option<&'static 
 #[cfg(test)]
 mod tests {
     use gateway_core::{
-        AgentSessionTraceRepository, AuthMode, GlobalRole, MembershipRole, SeedModel, SeedProvider,
-        SeedTeam, SeedUser, SeedUserMembership,
+        AgentSessionTraceRepository, AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4,
+        ProviderCapabilities, RouteCompatibility, SeedApiKey, SeedBudget, SeedModel,
+        SeedModelRoute, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
+        hash_gateway_key_secret,
     };
     use gateway_service::{GatewayService, WeightedRoutePlanner};
     use gateway_store::{AnyStore, StoreConnectionOptions};
@@ -876,12 +928,16 @@ mod tests {
 
     use super::*;
 
-    fn demo_seed_prerequisites() -> (
-        Vec<SeedProvider>,
-        Vec<SeedModel>,
-        Vec<SeedTeam>,
-        Vec<SeedUser>,
-    ) {
+    struct DemoSeedPrerequisites {
+        providers: Vec<SeedProvider>,
+        models: Vec<SeedModel>,
+        api_keys: Vec<SeedApiKey>,
+        service_accounts: Vec<SeedServiceAccount>,
+        teams: Vec<SeedTeam>,
+        users: Vec<SeedUser>,
+    }
+
+    fn demo_seed_prerequisites() -> DemoSeedPrerequisites {
         let providers = [
             "openai-prod",
             "openai-secondary",
@@ -899,16 +955,55 @@ mod tests {
         .collect();
         let models = models::LOCAL_DEMO_MODEL_KEYS
             .iter()
+            .copied()
+            .chain(std::iter::once("gpt-5.6-sol"))
             .map(|model_key| SeedModel {
-                model_key: (*model_key).to_string(),
+                model_key: model_key.to_string(),
                 alias_target_model_key: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 0,
-                routes: Vec::new(),
+                routes: if model_key == "gpt-5.6-sol" {
+                    vec![SeedModelRoute {
+                        provider_key: "openai-prod".to_string(),
+                        upstream_model: "gpt-5.6-sol".to_string(),
+                        priority: 0,
+                        weight: 1.0,
+                        enabled: true,
+                        context_window_tokens: None,
+                        pricing_override: None,
+                        extra_headers: serde_json::Map::new(),
+                        extra_body: serde_json::Map::new(),
+                        capabilities: ProviderCapabilities::all_enabled(),
+                        compatibility: RouteCompatibility::default(),
+                    }]
+                } else {
+                    Vec::new()
+                },
                 allowlist: None,
             })
             .collect();
+        let service_accounts = vec![SeedServiceAccount {
+            service_account_key: "local-ci-runner".to_string(),
+            service_account_name: "Local CI Runner".to_string(),
+            team_key: "platform".to_string(),
+            tags: None,
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(250_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: Vec::new(),
+        }];
+        let service_account_api_keys = vec![SeedApiKey {
+            name: "Local CI Runner Key".to_string(),
+            public_id: "localcirunner".to_string(),
+            secret_hash: hash_gateway_key_secret("local-ci-runner-test-secret")
+                .expect("hash service account API key"),
+            service_account_key: "local-ci-runner".to_string(),
+            allowed_models: vec!["openai-fast".to_string(), "gpt-5.6-sol".to_string()],
+        }];
         let teams = teams::LOCAL_DEMO_TEAM_KEYS
             .iter()
             .map(|team_key| SeedTeam {
@@ -945,7 +1040,14 @@ mod tests {
                 }
             })
             .collect();
-        (providers, models, teams, users)
+        DemoSeedPrerequisites {
+            providers,
+            models,
+            api_keys: service_account_api_keys,
+            service_accounts,
+            teams,
+            users,
+        }
     }
 
     #[tokio::test]
@@ -958,9 +1060,18 @@ mod tests {
             .await
             .expect("migrations");
         let store = AnyStore::connect(&options).await.expect("store");
-        let (providers, models, teams, users) = demo_seed_prerequisites();
+        let prerequisites = demo_seed_prerequisites();
         store
-            .seed_from_inputs(&providers, &models, &[], &[], &[], &[], &teams, &users)
+            .seed_from_inputs(
+                &prerequisites.providers,
+                &prerequisites.models,
+                &prerequisites.api_keys,
+                &prerequisites.service_accounts,
+                &[],
+                &[],
+                &prerequisites.teams,
+                &prerequisites.users,
+            )
             .await
             .expect("seed config");
         seed_local_demo_data(&store).await.expect("seed demo data");

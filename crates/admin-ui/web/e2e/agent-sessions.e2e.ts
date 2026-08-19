@@ -11,6 +11,18 @@ test('correlates a live agent request and exposes it through the admin session e
 }) => {
   const root = requireEnv('E2E_BASE_URL')
   const adminCookie = await ensureAdminSession(page, request, root)
+  const serviceAccountsResponse = await request.get(
+    `${root}/api/v1/admin/identity/service-accounts`,
+    { headers: { cookie: adminCookie } },
+  )
+  expect(serviceAccountsResponse.status()).toBe(200)
+  const serviceAccountsBody = (await serviceAccountsResponse.json()) as {
+    data: { service_accounts: Array<{ id: string; name: string }> }
+  }
+  const serviceAccount = serviceAccountsBody.data.service_accounts.find(
+    (account) => account.name === 'E2E Seed API Keys',
+  )
+  expect(serviceAccount).toBeDefined()
   const externalSessionId = `e2e-agent-session-${Date.now()}`
   const startedAfter = new Date(Date.now() - 1_000).toISOString()
 
@@ -40,7 +52,7 @@ test('correlates a live agent request and exposes it through the admin session e
   expect(completionResponse.status()).toBe(200)
 
   const listResponse = await request.get(
-    `${root}/api/v1/admin/observability/agent-sessions?harness_key=opencode&requested_model_key=fast&started_after=${encodeURIComponent(startedAfter)}`,
+    `${root}/api/v1/admin/observability/agent-sessions?harness_key=opencode&requested_model_key=fast&service_account_id=${encodeURIComponent(serviceAccount?.id ?? '')}&started_after=${encodeURIComponent(startedAfter)}`,
     { headers: { cookie: adminCookie } },
   )
   expect(listResponse.status()).toBe(200)

@@ -14,6 +14,7 @@ pub use copilot::{
     DEFAULT_COPILOT_EDITOR_VERSION, DEFAULT_COPILOT_INTEGRATION_ID, DEFAULT_COPILOT_PLUGIN_VERSION,
 };
 pub use openai_compat::{
-    BearerAuthHeader, CloudRunOpenAiCompatAuth, OpenAiCompatConfig, OpenAiCompatProvider,
+    BearerAuthHeader, CloudRunOpenAiCompatAuth, OpenAiBatchConfig, OpenAiBatchDialect,
+    OpenAiCompatConfig, OpenAiCompatProvider,
 };
-pub use vertex::{VertexAuthConfig, VertexProvider, VertexProviderConfig};
+pub use vertex::{VertexAuthConfig, VertexBatchConfig, VertexProvider, VertexProviderConfig};

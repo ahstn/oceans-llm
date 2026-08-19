@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountReadyRouteImport } from './routes/account-ready'
 import { Route as ApiKeysRouteImport } from './routes/api-keys'
+import { Route as BatchesRouteImport } from './routes/batches'
 import { Route as ChangePasswordRouteImport } from './routes/change-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ModelsRouteImport } from './routes/models'
@@ -46,6 +47,11 @@ const AccountReadyRoute = AccountReadyRouteImport.update({
 const ApiKeysRoute = ApiKeysRouteImport.update({
   id: '/api-keys',
   path: '/api-keys',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BatchesRoute = BatchesRouteImport.update({
+  id: '/batches',
+  path: '/batches',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChangePasswordRoute = ChangePasswordRouteImport.update({
@@ -158,6 +164,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account-ready': typeof AccountReadyRoute
   '/api-keys': typeof ApiKeysRoute
+  '/batches': typeof BatchesRoute
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
@@ -183,6 +190,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account-ready': typeof AccountReadyRoute
   '/api-keys': typeof ApiKeysRoute
+  '/batches': typeof BatchesRoute
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
@@ -209,6 +217,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/account-ready': typeof AccountReadyRoute
   '/api-keys': typeof ApiKeysRoute
+  '/batches': typeof BatchesRoute
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
@@ -236,6 +245,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account-ready'
     | '/api-keys'
+    | '/batches'
     | '/change-password'
     | '/login'
     | '/models'
@@ -261,6 +271,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account-ready'
     | '/api-keys'
+    | '/batches'
     | '/change-password'
     | '/login'
     | '/models'
@@ -286,6 +297,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account-ready'
     | '/api-keys'
+    | '/batches'
     | '/change-password'
     | '/login'
     | '/models'
@@ -312,6 +324,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountReadyRoute: typeof AccountReadyRoute
   ApiKeysRoute: typeof ApiKeysRoute
+  BatchesRoute: typeof BatchesRoute
   ChangePasswordRoute: typeof ChangePasswordRoute
   LoginRoute: typeof LoginRoute
   ModelsRoute: typeof ModelsRoute
@@ -355,6 +368,13 @@ declare module '@tanstack/react-router' {
       path: '/api-keys'
       fullPath: '/api-keys'
       preLoaderRoute: typeof ApiKeysRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/batches': {
+      id: '/batches'
+      path: '/batches'
+      fullPath: '/batches'
+      preLoaderRoute: typeof BatchesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/change-password': {
@@ -504,6 +524,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountReadyRoute: AccountReadyRoute,
   ApiKeysRoute: ApiKeysRoute,
+  BatchesRoute: BatchesRoute,
   ChangePasswordRoute: ChangePasswordRoute,
   LoginRoute: LoginRoute,
   ModelsRoute: ModelsRoute,

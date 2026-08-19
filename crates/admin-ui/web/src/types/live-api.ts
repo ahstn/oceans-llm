@@ -112,6 +112,18 @@ export type RequestLogPageView = components['schemas']['RequestLogPageView']
 export type RequestLogFiltersInput = NonNullable<
   operations['list_request_logs']['parameters']['query']
 >
+
+export type BatchStatus = components['schemas']['BatchStatusSchema']
+export type BatchItemStatus = components['schemas']['BatchItemStatusSchema']
+export type BatchEndpoint = components['schemas']['BatchEndpointSchema']
+export type BatchPricingStatus = components['schemas']['BatchPricingStatusSchema']
+export type BatchCallerView = components['schemas']['BatchCallerResponse']
+export type BatchView = components['schemas']['BatchResponse']
+export type BatchPageView = components['schemas']['BatchListResponse']
+export type BatchResultView = components['schemas']['BatchResultResponse']
+export type BatchResultsView = components['schemas']['BatchResultsResponse']
+export type BatchFiltersInput = NonNullable<operations['list_batches']['parameters']['query']>
+export type BatchResultsInput = NonNullable<operations['get_batch_results']['parameters']['query']>
 export type McpInvocationView = components['schemas']['McpToolInvocationSummaryView']
 export type McpInvocationPayloadView = components['schemas']['McpToolInvocationPayloadView']
 export type McpInvocationDetailView = components['schemas']['McpToolInvocationDetailView']
