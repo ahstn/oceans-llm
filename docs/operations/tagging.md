@@ -73,7 +73,7 @@ Request tags are captured at the gateway boundary and written to request-log dat
 
 ## Identity Tags
 
-Admins can set tags on users and teams from the admin identity UI. Deployment config can also seed tags on users, teams, and service accounts with `users[].tags`, `teams[].tags`, and `service_accounts[].tags`. When config seeding runs, omitted identity `tags` leave existing tags unchanged; `tags: []` explicitly clears the tag set.
+Admins can set tags on users and teams from the admin identity UI. Deployment config can also seed tags on users, teams, and service accounts with `users[].tags`, `teams[].tags`, and `service_accounts[].tags`; config field syntax and omit/clear semantics are owned by the [Configuration Reference](../configuration/configuration-reference.md#identity-tags-in-declarative-identity).
 
 Identity tags help communicate ownership context. They are useful when an organization has external systems that do not map cleanly to Oceans user or team names, such as:
 

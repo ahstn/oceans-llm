@@ -1082,9 +1082,9 @@ function ClientConfigDialog({
                       Base URL
                     </TableCell>
                     <TableCell className="text-muted-foreground min-w-0 align-baseline whitespace-normal">
-                      Base URL can change depending on API format and client harness. Experiment
-                      with adding or removing <code className="font-mono text-xs">/v1</code> if
-                      requests initially fail. For more info, see:{' '}
+                      Base URLs follow the selected model's API style. Anthropic Messages
+                      models use the gateway root URL, and OpenAI-compatible models use the{' '}
+                      <code className="font-mono text-xs">/v1</code> path. For more info, see:{' '}
                       <a
                         href={CLIENT_HARNESS_CONFIGURATION_URL}
                         target="_blank"

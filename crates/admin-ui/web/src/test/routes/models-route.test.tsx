@@ -536,7 +536,7 @@ describe('ModelsPage', () => {
     expect(clientConfigDialog.querySelectorAll('[data-agent-harness-icon]')).toHaveLength(4)
     expect(screen.getByText('~/.config/opencode/opencode.json')).toBeInTheDocument()
     expect(screen.getByText('Base URL')).toBeInTheDocument()
-    expect(screen.getByText(/Base URL can change depending on API format/)).toBeInTheDocument()
+    expect(screen.getByText(/Base URLs follow the selected model's API style/)).toBeInTheDocument()
     expect(screen.getByText('/v1')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'client harness configuration' })).toHaveAttribute(
       'href',
