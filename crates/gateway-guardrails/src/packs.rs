@@ -243,6 +243,19 @@ fn match_core_shell(invocation: &CommandInvocation) -> Option<MatchedRule> {
             "Terminates the host init process",
             "Restart the intended service through its service manager",
         )),
+        executable
+            if matches!(executable, "sh" | "bash" | "zsh" | "dash" | "fish")
+                && crate::command::nested_shell_command(invocation).is_none() =>
+        {
+            Some(rule(
+                "core.shell",
+                "uninspectable-shell-input",
+                "command.arguments",
+                "shell.uninspectable_input",
+                "Runs shell input that the policy cannot inspect",
+                "Pass the command through the shell command option",
+            ))
+        }
         executable if executable.starts_with('$') => Some(rule(
             "core.shell",
             "dynamic-executable",
@@ -914,7 +927,12 @@ mod tests {
         let cases = vec![
             (
                 "core.shell",
-                vec!["reboot", "bash -c 'poweroff'", "kill 1 -9"],
+                vec![
+                    "reboot",
+                    "bash -c 'poweroff'",
+                    "kill 1 -9",
+                    "printf 'rm -rf /tmp/work' | bash",
+                ],
                 vec!["echo 'reboot'", "reboot-check", "kill 10 -9"],
             ),
             (

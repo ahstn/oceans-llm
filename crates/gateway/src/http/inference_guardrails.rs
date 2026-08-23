@@ -10,6 +10,18 @@ use gateway_guardrails::{
 use serde_json::{Map, Value};
 
 use crate::http::{guardrail_events::record_guardrail_evaluation, state::AppState};
+const PROMPT_TEXT_FIELDS: &[&str] = &[
+    "content",
+    "description",
+    "input",
+    "instructions",
+    "name",
+    "prompt",
+    "summary",
+    "text",
+    "title",
+];
+
 const MODEL_RESPONSE_TEXT_FIELDS: &[&str] = &[
     "content",
     "output_text",
@@ -53,7 +65,7 @@ pub async fn guard_prompt(
         GuardPhase::Prompt,
         request,
         None,
-        &["content", "input", "instructions", "prompt", "text"],
+        PROMPT_TEXT_FIELDS,
     )
     .await?;
     Ok(InferenceGuardContext {
@@ -85,12 +97,7 @@ pub fn batch_guard_context(
 
 fn batch_associated_prompt(request: &Value) -> Option<String> {
     let mut pointers = Vec::new();
-    collect_string_pointers(
-        request,
-        "",
-        &["content", "input", "instructions", "prompt", "text"],
-        &mut pointers,
-    );
+    collect_string_pointers(request, "", PROMPT_TEXT_FIELDS, &mut pointers);
     let associated_prompt = pointers
         .iter()
         .filter_map(|pointer| request.pointer(pointer).and_then(Value::as_str))
@@ -208,6 +215,9 @@ async fn guard_sse_payload(
                 let value = parse_guarded_sse_json(&payload)?;
                 let mut pointers = Vec::new();
                 collect_string_pointers(&value, "", MODEL_RESPONSE_TEXT_FIELDS, &mut pointers);
+                if let Some(error) = value.get("error") {
+                    collect_all_string_pointers(error, "/error", &mut pointers);
+                }
                 let event_type = value.get("type").and_then(Value::as_str);
                 if event_type.is_some_and(|kind| {
                     kind == "response.completed"
@@ -840,6 +850,31 @@ fn collect_string_pointers(
     }
 }
 
+fn collect_all_string_pointers(value: &Value, pointer: &str, output: &mut Vec<String>) {
+    match value {
+        Value::String(_) => {
+            if !output.iter().any(|existing| existing == pointer) {
+                output.push(pointer.to_string());
+            }
+        }
+        Value::Object(object) => {
+            for (key, child) in object {
+                collect_all_string_pointers(
+                    child,
+                    &format!("{pointer}/{}", escape_pointer(key)),
+                    output,
+                );
+            }
+        }
+        Value::Array(array) => {
+            for (index, child) in array.iter().enumerate() {
+                collect_all_string_pointers(child, &format!("{pointer}/{index}"), output);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn collect_tool_call_pointers(value: &Value, pointer: &str, output: &mut Vec<String>) {
     match value {
         Value::Object(object) => {
@@ -1400,5 +1435,55 @@ mod tests {
             ]
         );
         assert!(!pointers.iter().any(|pointer| pointer.ends_with("/id")));
+    }
+
+    #[test]
+    fn prompt_pointers_include_tool_definitions_without_request_identifiers() {
+        let value = json!({
+            "model": "keep",
+            "tools": [{
+                "type": "function",
+                "function": {
+                    "name": "inspect_name",
+                    "description": "inspect description",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "inspect parameter"}
+                        }
+                    }
+                }
+            }]
+        });
+        let mut pointers = Vec::new();
+        collect_string_pointers(&value, "", PROMPT_TEXT_FIELDS, &mut pointers);
+
+        assert_eq!(
+            pointers,
+            vec![
+                "/tools/0/function/description",
+                "/tools/0/function/name",
+                "/tools/0/function/parameters/properties/query/description",
+            ]
+        );
+        assert!(!pointers.iter().any(|pointer| pointer == "/model"));
+    }
+
+    #[test]
+    fn response_error_pointers_include_all_nested_strings() {
+        let value = json!({
+            "error": {
+                "code": "private-code",
+                "data": ["private-data"],
+                "message": "private-message"
+            }
+        });
+        let mut pointers = Vec::new();
+        collect_all_string_pointers(&value["error"], "/error", &mut pointers);
+
+        assert_eq!(
+            pointers,
+            vec!["/error/code", "/error/data/0", "/error/message",]
+        );
     }
 }

@@ -488,6 +488,7 @@ async fn guard_mcp_sse_result(
     let blocks = source.split(&event_separator).collect::<Vec<_>>();
     let mut event_values = Vec::new();
     let mut event_envelopes = Vec::new();
+    let mut event_payload_fields = Vec::new();
     let mut event_by_block = vec![None; blocks.len()];
     for (block_index, block) in blocks.iter().enumerate() {
         let data = block
@@ -503,12 +504,13 @@ async fn guard_mcp_sse_result(
             continue;
         }
         let parsed = parse_guarded_mcp_sse_json(&data).map_err(|_| None)?;
-        let Some(result) = parsed.get("result").cloned() else {
+        let Some((payload_field, payload)) = guarded_mcp_sse_payload(&parsed) else {
             continue;
         };
         event_by_block[block_index] = Some(event_values.len());
-        event_values.push(result);
+        event_values.push(payload);
         event_envelopes.push(parsed);
+        event_payload_fields.push(payload_field);
     }
     if event_values.is_empty() {
         return Ok((bytes.clone(), None));
@@ -550,7 +552,7 @@ async fn guard_mcp_sse_result(
                 return block.to_string();
             };
             let mut envelope = event_envelopes[event_index].clone();
-            envelope["result"] = replacements[event_index].clone();
+            envelope[event_payload_fields[event_index]] = replacements[event_index].clone();
             let replacement =
                 serde_json::to_string(&envelope).expect("guardrail MCP envelope is valid JSON");
             let mut replaced = false;
@@ -576,6 +578,13 @@ async fn guard_mcp_sse_result(
 
 fn parse_guarded_mcp_sse_json(data: &str) -> serde_json::Result<Value> {
     serde_json::from_str(data)
+}
+
+fn guarded_mcp_sse_payload(value: &Value) -> Option<(&'static str, Value)> {
+    value
+        .get("result")
+        .map(|result| ("result", result.clone()))
+        .or_else(|| value.get("error").map(|error| ("error", error.clone())))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -931,6 +940,21 @@ mod tests {
     #[test]
     fn guarded_mcp_sse_rejects_non_json_data() {
         assert!(parse_guarded_mcp_sse_json("private content").is_err());
+    }
+
+    #[test]
+    fn guarded_mcp_sse_extracts_result_and_error_payloads() {
+        let result = json!({"jsonrpc": "2.0", "id": 1, "result": {"content": "allowed"}});
+        let error = json!({"jsonrpc": "2.0", "id": 1, "error": {"message": "private content"}});
+
+        assert_eq!(
+            guarded_mcp_sse_payload(&result),
+            Some(("result", json!({"content": "allowed"})))
+        );
+        assert_eq!(
+            guarded_mcp_sse_payload(&error),
+            Some(("error", json!({"message": "private content"})))
+        );
     }
 
     #[test]

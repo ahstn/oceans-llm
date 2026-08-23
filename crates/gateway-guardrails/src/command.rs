@@ -96,7 +96,7 @@ fn resolve_executable_variable(
     assignments.get(name).cloned()
 }
 
-fn nested_shell_command(invocation: &CommandInvocation) -> Option<String> {
+pub(crate) fn nested_shell_command(invocation: &CommandInvocation) -> Option<String> {
     if invocation.executable == "eval" {
         return (!invocation.arguments.is_empty()).then(|| invocation.arguments.join(" "));
     }
