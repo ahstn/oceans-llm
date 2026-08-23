@@ -223,7 +223,7 @@ impl GuardrailEngine {
             };
 
             let started = Instant::now();
-            let result = if input.payload.byte_len() > check.max_content_bytes {
+            let result = if input.serialized_byte_len() > check.max_content_bytes {
                 Err(EvaluationError::ContentTooLarge)
             } else {
                 timeout(
@@ -864,6 +864,48 @@ mod tests {
             started.elapsed() < Duration::from_secs(2),
             "{CONCURRENCY} managed evaluations took {:?}",
             started.elapsed()
+        );
+    }
+    #[tokio::test]
+    async fn associated_prompt_counts_toward_managed_content_limit() {
+        let managed = Arc::new(StubManagedEvaluator::new(
+            "managed",
+            ManagedService::GoogleModelArmor,
+            [Ok(ManagedOutcome::Allow {
+                reason_code: reason("managed.allow"),
+                metadata: Default::default(),
+            })],
+        ));
+        let engine = GuardrailEngine::new(
+            vec![],
+            BTreeMap::from([("managed".to_string(), managed as Arc<dyn ManagedEvaluator>)]),
+        );
+        let input = EvaluationInput::new(
+            GuardPhase::ModelResponse,
+            EvaluationPayload::Text {
+                text: "short".into(),
+            },
+        )
+        .with_associated_prompt("a prompt that exceeds the configured bound");
+        let mut guardrail_config = config(&["managed"], FailureDisposition::FailClosed, 100);
+        guardrail_config
+            .managed_checks
+            .get_mut("managed")
+            .unwrap()
+            .max_content_bytes = 16;
+
+        let result = engine
+            .evaluate(
+                &policy(PolicyMode::Deny, vec!["managed".into()]),
+                &guardrail_config,
+                input,
+            )
+            .await;
+
+        assert_eq!(result.action, DecisionAction::Deny);
+        assert_eq!(
+            result.decisions[0].reason_code.as_str(),
+            "managed.content_too_large"
         );
     }
 }

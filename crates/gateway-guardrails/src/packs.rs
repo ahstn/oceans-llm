@@ -243,6 +243,14 @@ fn match_core_shell(invocation: &CommandInvocation) -> Option<MatchedRule> {
             "Terminates the host init process",
             "Restart the intended service through its service manager",
         )),
+        executable if executable.starts_with('$') => Some(rule(
+            "core.shell",
+            "dynamic-executable",
+            "command.executable",
+            "shell.dynamic_executable",
+            "Resolves the executable from an unknown shell variable",
+            "Use an explicit executable name that policy can inspect",
+        )),
         _ => None,
     }
 }
@@ -288,6 +296,22 @@ fn match_git(invocation: &CommandInvocation) -> Option<MatchedRule> {
                 "git.push_force",
                 "Rewrites remote branch history",
                 "Use a normal push or coordinate a reviewed force-with-lease operation",
+            ))
+        }
+        "push"
+            if has_option(arguments, "--delete", Some('d'))
+                || arguments
+                    .iter()
+                    .skip(1)
+                    .any(|argument| argument.len() > 1 && argument.starts_with(':')) =>
+        {
+            Some(rule(
+                "core.git",
+                "push-delete",
+                "command.arguments",
+                "git.push_delete",
+                "Deletes a remote reference",
+                "Delete the remote reference through a reviewed repository workflow",
             ))
         }
         "branch" if arguments.iter().any(|argument| argument == "-D") => Some(rule(
@@ -351,6 +375,7 @@ fn match_destructive_sql(sql: &str, field: &str) -> Option<MatchedRule> {
 }
 
 fn match_destructive_sql_statement(sql: &str, field: &str) -> Option<MatchedRule> {
+    let sql = strip_leading_sql_comments(sql);
     let normalized = sql
         .split_whitespace()
         .map(|word| word.trim_matches(|character: char| matches!(character, ';' | '"')))
@@ -696,6 +721,25 @@ fn git_operation(arguments: &[String]) -> Option<&str> {
     None
 }
 
+fn strip_leading_sql_comments(mut sql: &str) -> &str {
+    loop {
+        sql = sql.trim_start();
+        if let Some(comment) = sql.strip_prefix("--") {
+            sql = comment
+                .split_once('\n')
+                .map_or("", |(_, remainder)| remainder);
+            continue;
+        }
+        if let Some(comment) = sql.strip_prefix("/*") {
+            sql = comment
+                .split_once("*/")
+                .map_or("", |(_, remainder)| remainder);
+            continue;
+        }
+        return sql;
+    }
+}
+
 fn sql_statements(sql: &str) -> Vec<String> {
     let characters = sql.chars().collect::<Vec<_>>();
     let mut statements = Vec::new();
@@ -791,15 +835,18 @@ fn positional_arguments(arguments: &[String]) -> Vec<String> {
 }
 
 fn has_option(arguments: &[String], long: &str, short: Option<char>) -> bool {
-    arguments.iter().any(|argument| {
-        argument == long
-            || argument.strip_prefix(&format!("{long}=")).is_some()
-            || short.is_some_and(|short| {
-                argument.starts_with('-')
-                    && !argument.starts_with("--")
-                    && argument[1..].chars().any(|candidate| candidate == short)
-            })
-    })
+    arguments
+        .iter()
+        .take_while(|argument| argument.as_str() != "--")
+        .any(|argument| {
+            argument == long
+                || argument.strip_prefix(&format!("{long}=")).is_some()
+                || short.is_some_and(|short| {
+                    argument.starts_with('-')
+                        && !argument.starts_with("--")
+                        && argument[1..].chars().any(|candidate| candidate == short)
+                })
+        })
 }
 
 fn option_value<'a>(arguments: &'a [String], names: &[&str]) -> Option<&'a str> {
@@ -878,6 +925,8 @@ mod tests {
                     "git --no-pager reset main --hard",
                     "git -C /repo reset --hard",
                     "git --git-dir=/repo/.git reset --hard",
+                    "git push origin --delete old",
+                    "git push origin :old",
                 ],
                 vec![
                     "printf '%s' 'git reset --hard'",
@@ -893,10 +942,18 @@ mod tests {
                     "rm --force --recursive /tmp/work",
                     "rm -Rf /tmp/work",
                     "rm -R -f /tmp/work",
+                    "nice rm -rf /tmp/work",
+                    "setsid rm -rf /tmp/work",
+                    "cmd=rm; $cmd -rf /tmp/work",
+                    "find /tmp/work -exec rm -rf {} +",
+                    "function wipe { rm -rf /tmp/work; }; wipe",
+                    "sudo FOO=bar rm -rf /tmp/work",
+                    "2>&1 rm -rf /tmp/work",
                 ],
                 vec![
                     "echo 'rm -rf /tmp/work'",
                     "rm -f report.txt",
+                    "rm -- -rf",
                     "find . -depth",
                 ],
             ),
@@ -907,6 +964,8 @@ mod tests {
                     "bash -c \"psql -c 'TRUNCATE audit'\"",
                     "psql --host=db --command='DELETE FROM users'",
                     "psql -c 'SELECT 1; DROP DATABASE app'",
+                    "psql -c '-- migration\nDROP TABLE users'",
+                    "psql -c '/* migration */ DROP TABLE users'",
                 ],
                 vec![
                     "echo 'DROP DATABASE app'",

@@ -234,6 +234,10 @@ async fn submit_job(
             body,
         });
     }
+    service
+        .store()
+        .replace_batch_item_requests(job.batch_id, &guarded_items)
+        .await?;
     let request = ProviderBatchRequest {
         batch_id: job.batch_id,
         endpoint: job.endpoint,
@@ -392,15 +396,19 @@ async fn guard_batch_results(
         &job.upstream_model,
     );
     for result in results {
-        let (Some(request), Some(response)) = (
-            requests.get(&result.custom_id),
-            result.response_body.as_mut(),
-        ) else {
+        let Some(request) = requests.get(&result.custom_id) else {
+            continue;
+        };
+        let guarded_payload = if let Some(response) = result.response_body.as_mut() {
+            response
+        } else if let Some(error) = result.error.as_mut() {
+            error
+        } else {
             continue;
         };
         let request_id = format!("batch:{}:{}", job.batch_id, result.custom_id);
         let context = batch_guard_context(state, request_id, route_key.clone(), request);
-        if let Err(error) = guard_model_response(state, &context, response).await {
+        if let Err(error) = guard_model_response(state, &context, guarded_payload).await {
             result.response_body = None;
             result.error = Some(json!({
                 "message": "Batch result was rejected by guardrails",

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CommandInvocation {
     pub executable: String,
@@ -8,11 +10,12 @@ pub(crate) fn parse_command_line(source: &str) -> Vec<CommandInvocation> {
     let tokens = tokenize(source);
     let mut invocations = Vec::new();
     let mut words = Vec::new();
+    let mut assignments = BTreeMap::new();
 
     for token in tokens {
         match token {
             Token::Operator(Operator::Separator) => {
-                push_invocation(&mut invocations, &mut words);
+                push_invocation(&mut invocations, &mut words, &mut assignments);
             }
             Token::Operator(Operator::Redirect) => {
                 // The following word is a redirection target, not a command argument.
@@ -27,7 +30,7 @@ pub(crate) fn parse_command_line(source: &str) -> Vec<CommandInvocation> {
             }
         }
     }
-    push_invocation(&mut invocations, &mut words);
+    push_invocation(&mut invocations, &mut words, &mut assignments);
 
     let nested_shells = invocations
         .iter()
@@ -41,8 +44,21 @@ pub(crate) fn parse_command_line(source: &str) -> Vec<CommandInvocation> {
     invocations
 }
 
-fn push_invocation(invocations: &mut Vec<CommandInvocation>, words: &mut Vec<String>) {
+fn push_invocation(
+    invocations: &mut Vec<CommandInvocation>,
+    words: &mut Vec<String>,
+    assignments: &mut BTreeMap<String, String>,
+) {
     if words.is_empty() {
+        return;
+    }
+    if words.iter().all(|word| is_assignment(word)) {
+        for assignment in words.drain(..) {
+            let (name, value) = assignment
+                .split_once('=')
+                .expect("assignment was validated");
+            assignments.insert(name.to_string(), value.to_string());
+        }
         return;
     }
 
@@ -58,13 +74,26 @@ fn push_invocation(invocations: &mut Vec<CommandInvocation>, words: &mut Vec<Str
             words.clear();
             return;
         }
-        let executable = basename(&words[index]).to_ascii_lowercase();
+        let raw_executable = resolve_executable_variable(&words[index], assignments)
+            .unwrap_or_else(|| words[index].clone());
+        let executable = basename(&raw_executable).to_ascii_lowercase();
         invocations.push(CommandInvocation {
             executable,
             arguments: words.drain(index + 1..).collect(),
         });
     }
     words.clear();
+}
+
+fn resolve_executable_variable(
+    executable: &str,
+    assignments: &BTreeMap<String, String>,
+) -> Option<String> {
+    let name = executable
+        .strip_prefix("${")
+        .and_then(|value| value.strip_suffix('}'))
+        .or_else(|| executable.strip_prefix('$'))?;
+    assignments.get(name).cloned()
 }
 
 fn nested_shell_command(invocation: &CommandInvocation) -> Option<String> {
@@ -110,6 +139,32 @@ fn nested_shell_command(invocation: &CommandInvocation) -> Option<String> {
         return (index < invocation.arguments.len())
             .then(|| invocation.arguments[index..].join(" "));
     }
+    if invocation.executable == "nice" {
+        let mut index = 0;
+        skip_wrapper_options(&invocation.arguments, &mut index, &["-n", "--adjustment"]);
+        return (index < invocation.arguments.len())
+            .then(|| invocation.arguments[index..].join(" "));
+    }
+    if invocation.executable == "setsid" {
+        let mut index = 0;
+        skip_wrapper_options(&invocation.arguments, &mut index, &["-a", "--argv0"]);
+        return (index < invocation.arguments.len())
+            .then(|| invocation.arguments[index..].join(" "));
+    }
+    if invocation.executable == "find"
+        && let Some(index) = invocation
+            .arguments
+            .iter()
+            .position(|argument| matches!(argument.as_str(), "-exec" | "-execdir"))
+    {
+        let command = invocation.arguments[index + 1..]
+            .iter()
+            .take_while(|argument| !matches!(argument.as_str(), ";" | "+"))
+            .cloned()
+            .collect::<Vec<_>>();
+        return (!command.is_empty()).then(|| command.join(" "));
+    }
+
     if !matches!(
         invocation.executable.as_str(),
         "sh" | "bash" | "zsh" | "dash" | "fish"
@@ -194,6 +249,9 @@ fn executable_index(words: &[String]) -> Option<usize> {
                         "--type",
                     ],
                 );
+                while words.get(index).is_some_and(|word| is_assignment(word)) {
+                    index += 1;
+                }
             }
             _ => return (index < words.len()).then_some(index),
         }
@@ -404,7 +462,7 @@ fn tokenize(source: &str) -> Vec<Token> {
                 }
             }
             ' ' | '\t' | '\r' => push_word(&mut tokens, &mut word),
-            '\n' | ';' | '|' | '&' | '(' | ')' => {
+            '\n' | ';' | '|' | '&' | '(' | ')' | '{' | '}' => {
                 push_word(&mut tokens, &mut word);
                 if matches!(character, '|' | '&') && chars.peek() == Some(&character) {
                     chars.next();
@@ -418,6 +476,9 @@ fn tokenize(source: &str) -> Vec<Token> {
                     push_word(&mut tokens, &mut word);
                 }
                 if chars.peek() == Some(&character) {
+                    chars.next();
+                }
+                if chars.peek() == Some(&'&') {
                     chars.next();
                 }
                 tokens.push(Token::Operator(Operator::Redirect));
@@ -600,5 +661,56 @@ mod tests {
         let parsed = parse_command_line("printf '%s' '$(rm -rf /)'");
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].executable, "printf");
+    }
+    #[test]
+    fn parses_commands_through_process_wrappers() {
+        for command in [
+            "nice -n 5 rm -rf /tmp/work",
+            "setsid --fork rm -rf /tmp/work",
+            "sudo -u root FOO=bar rm -rf /tmp/work",
+        ] {
+            let parsed = parse_command_line(command);
+            assert!(
+                parsed.iter().any(|call| {
+                    call.executable == "rm" && call.arguments == ["-rf", "/tmp/work"]
+                }),
+                "did not inspect wrapped command: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolves_assigned_and_preserves_unknown_variable_executables() {
+        let parsed = parse_command_line("cmd=rm; $cmd -rf /tmp/work; $unknown safe");
+
+        assert!(parsed.iter().any(|call| call.executable == "rm"));
+        assert!(parsed.iter().any(|call| call.executable == "$unknown"));
+    }
+
+    #[test]
+    fn parses_find_exec_and_function_bodies() {
+        for command in [
+            r"find /tmp/work -exec rm -rf {} \;",
+            "function wipe { rm -rf /tmp/work; }; wipe",
+        ] {
+            let parsed = parse_command_line(command);
+            assert!(
+                parsed.iter().any(|call| call.executable == "rm"),
+                "did not inspect nested command: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn keeps_descriptor_duplication_as_one_redirection() {
+        let parsed = parse_command_line("2>&1 rm -rf /tmp/work");
+
+        assert_eq!(
+            parsed,
+            vec![CommandInvocation {
+                executable: "rm".into(),
+                arguments: vec!["-rf".into(), "/tmp/work".into()],
+            }]
+        );
     }
 }

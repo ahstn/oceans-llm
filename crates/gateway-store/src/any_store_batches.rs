@@ -152,6 +152,14 @@ impl BatchRepository for AnyStore {
         dispatch_store!(self, request_batch_cancel(batch_id, scope, requested_at))
     }
 
+    async fn replace_batch_item_requests(
+        &self,
+        batch_id: Uuid,
+        requests: &[gateway_core::ProviderBatchRequestItem],
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, replace_batch_item_requests(batch_id, requests))
+    }
+
     async fn get_batch_items_for_worker(
         &self,
         batch_id: Uuid,

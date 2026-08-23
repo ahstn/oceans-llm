@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt, str::FromStr, time::Duration};
+use std::{collections::BTreeMap, fmt, io::Write, str::FromStr, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -259,6 +259,26 @@ impl EvaluationInput {
     pub fn with_associated_prompt(mut self, prompt: impl Into<String>) -> Self {
         self.associated_prompt = Some(prompt.into());
         self
+    }
+
+    pub fn serialized_byte_len(&self) -> usize {
+        struct ByteCounter(usize);
+
+        impl Write for ByteCounter {
+            fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+                self.0 = self.0.saturating_add(buffer.len());
+                Ok(buffer.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let mut counter = ByteCounter(0);
+        serde_json::to_writer(&mut counter, self)
+            .expect("guardrail evaluation input serialization cannot fail");
+        counter.0
     }
 }
 

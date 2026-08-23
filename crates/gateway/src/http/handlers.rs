@@ -284,7 +284,9 @@ async fn v1_messages_inner(
     {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
-            let (error, attempt) = provider_error_attempt(
+            let (error, attempt) = guarded_provider_error_attempt(
+                &state,
+                &guard_context,
                 &request_log_context,
                 &route,
                 RequestAttemptStatus::ProviderError,
@@ -292,7 +294,8 @@ async fn v1_messages_inner(
                 attempt_started_at,
                 error,
                 requirements,
-            );
+            )
+            .await;
             best_effort_log_non_stream_failure(
                 &state.service,
                 &auth,
@@ -559,7 +562,9 @@ pub async fn v1_chat_completions(
         {
             Ok(stream) => stream,
             Err(error) => {
-                let (gateway_error, attempt) = provider_error_attempt(
+                let (gateway_error, attempt) = guarded_provider_error_attempt(
+                    &state,
+                    &guard_context,
                     &request_log_context,
                     &route,
                     RequestAttemptStatus::StreamStartError,
@@ -567,7 +572,8 @@ pub async fn v1_chat_completions(
                     attempt_started_at,
                     error,
                     requirements,
-                );
+                )
+                .await;
                 tracing::warn!(
                     request_id = %request_id,
                     provider_key = %route.provider_key,
@@ -673,7 +679,9 @@ pub async fn v1_chat_completions(
     {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
-            let (error, attempt) = provider_error_attempt(
+            let (error, attempt) = guarded_provider_error_attempt(
+                &state,
+                &guard_context,
                 &request_log_context,
                 &route,
                 RequestAttemptStatus::ProviderError,
@@ -681,7 +689,8 @@ pub async fn v1_chat_completions(
                 attempt_started_at,
                 error,
                 requirements,
-            );
+            )
+            .await;
             best_effort_log_non_stream_failure(
                 &state.service,
                 &auth,
@@ -943,7 +952,9 @@ pub async fn v1_responses(
         {
             Ok(stream) => stream,
             Err(error) => {
-                let (gateway_error, attempt) = provider_error_attempt(
+                let (gateway_error, attempt) = guarded_provider_error_attempt(
+                    &state,
+                    &guard_context,
                     &request_log_context,
                     &route,
                     RequestAttemptStatus::StreamStartError,
@@ -951,7 +962,8 @@ pub async fn v1_responses(
                     attempt_started_at,
                     error,
                     requirements,
-                );
+                )
+                .await;
                 tracing::warn!(
                     request_id = %request_id,
                     provider_key = %route.provider_key,
@@ -1052,7 +1064,9 @@ pub async fn v1_responses(
     {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
-            let (error, attempt) = provider_error_attempt(
+            let (error, attempt) = guarded_provider_error_attempt(
+                &state,
+                &guard_context,
                 &request_log_context,
                 &route,
                 RequestAttemptStatus::ProviderError,
@@ -1060,7 +1074,8 @@ pub async fn v1_responses(
                 attempt_started_at,
                 error,
                 requirements,
-            );
+            )
+            .await;
             best_effort_log_non_stream_failure(
                 &state.service,
                 &auth,
@@ -1157,7 +1172,7 @@ pub async fn v1_embeddings(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
-    Json(request): Json<EmbeddingsRequest>,
+    Json(mut request): Json<EmbeddingsRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
@@ -1219,6 +1234,30 @@ pub async fn v1_embeddings(
         provider_key: &route.provider_key,
         stream: false,
     };
+    let route_key = model_route_key(
+        &resolved.selection.execution_model.model_key,
+        &route.provider_key,
+        &route.upstream_model,
+    );
+    let guard_context =
+        match guard_typed_request(&state, &request_id, route_key, &mut request).await {
+            Ok(context) => context,
+            Err(AppError(error)) => {
+                record_guarded_pre_provider_failure(
+                    &state,
+                    &auth,
+                    &request_log_context,
+                    &route,
+                    icon_metadata,
+                    request_started_at,
+                    &labels,
+                    &error,
+                )
+                .await;
+                return Err(AppError(error));
+            }
+        };
+    let core_request = openai_embeddings_request_to_core(&request);
 
     state
         .service
@@ -1259,7 +1298,9 @@ pub async fn v1_embeddings(
                 .await;
             }
 
-            let (error, attempt) = provider_error_attempt(
+            let (error, attempt) = guarded_provider_error_attempt(
+                &state,
+                &guard_context,
                 &request_log_context,
                 &route,
                 RequestAttemptStatus::ProviderError,
@@ -1267,7 +1308,8 @@ pub async fn v1_embeddings(
                 attempt_started_at,
                 provider_error,
                 requirements,
-            );
+            )
+            .await;
             best_effort_log_non_stream_failure(
                 &state.service,
                 &auth,
@@ -1376,6 +1418,63 @@ fn route_effective_provider_capabilities(
     }
 
     provider.capabilities()
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn guarded_provider_error_attempt(
+    state: &AppState,
+    guard_context: &InferenceGuardContext,
+    context: &gateway_service::RequestLogContext,
+    route: &gateway_core::ModelRoute,
+    status: RequestAttemptStatus,
+    stream: bool,
+    started_at: OffsetDateTime,
+    error: ProviderError,
+    requirements: CoreRequestRequirements,
+) -> (GatewayError, RequestAttemptRecord) {
+    let error = match error {
+        ProviderError::UpstreamHttp {
+            status: http_status,
+            body,
+        } if guard_context.enabled => {
+            let mut payload = json!({ "text": body });
+            if let Err(error) = guard_model_response(state, guard_context, &mut payload).await {
+                let attempt = gateway_service::build_request_attempt(
+                    context,
+                    route,
+                    1,
+                    stream,
+                    started_at,
+                    gateway_service::offset_now(),
+                    gateway_service::failed_attempt_outcome(
+                        status,
+                        &error,
+                        false,
+                        error.to_string(),
+                    ),
+                );
+                return (error, attempt);
+            }
+            ProviderError::UpstreamHttp {
+                status: http_status,
+                body: payload
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("upstream request failed")
+                    .to_string(),
+            }
+        }
+        error => error,
+    };
+    provider_error_attempt(
+        context,
+        route,
+        status,
+        stream,
+        started_at,
+        error,
+        requirements,
+    )
 }
 
 fn provider_error_attempt(
@@ -1741,7 +1840,9 @@ async fn anthropic_messages_stream_response(
     {
         Ok(stream) => stream,
         Err(error) => {
-            let (gateway_error, attempt) = provider_error_attempt(
+            let (gateway_error, attempt) = guarded_provider_error_attempt(
+                state,
+                guard_context,
                 request_log_context,
                 route,
                 RequestAttemptStatus::StreamStartError,
@@ -1749,7 +1850,8 @@ async fn anthropic_messages_stream_response(
                 attempt_started_at,
                 error,
                 requirements,
-            );
+            )
+            .await;
             best_effort_log_stream_result(
                 &state.service,
                 auth,

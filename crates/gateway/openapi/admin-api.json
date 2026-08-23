@@ -12503,8 +12503,20 @@
               "type": "string"
             }
           },
+          "prompt_resource": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "resource": {
             "type": "string"
+          },
+          "response_resource": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "timeout_ms": {
             "type": "integer",

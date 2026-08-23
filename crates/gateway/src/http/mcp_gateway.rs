@@ -412,12 +412,14 @@ async fn enforce_direct_mcp_result(
     } else {
         let mut parsed = serde_json::from_slice::<Value>(&bytes)
             .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()));
-        let Some(result_payload) = parsed
-            .get("result")
-            .cloned()
-            .or_else(|| (!parsed.is_object()).then(|| parsed.clone()))
-        else {
+        let (payload_field, result_payload) = if let Some(result) = parsed.get("result") {
+            (Some("result"), result.clone())
+        } else if let Some(error) = parsed.get("error") {
+            (Some("error"), error.clone())
+        } else if parsed.is_object() {
             return (Response::from_parts(parts, Body::from(bytes)), None, false);
+        } else {
+            (None, parsed.clone())
         };
         let evaluation = evaluate_mcp_result(
             state,
@@ -442,7 +444,9 @@ async fn enforce_direct_mcp_result(
         {
             match &evaluation.output {
                 EvaluationPayload::McpResult { result, .. } => {
-                    if let Some(slot) = parsed.get_mut("result") {
+                    if let Some(payload_field) = payload_field
+                        && let Some(slot) = parsed.get_mut(payload_field)
+                    {
                         *slot = result.clone();
                         serde_json::to_vec(&parsed)
                             .map(Bytes::from)

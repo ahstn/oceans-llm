@@ -10,6 +10,16 @@ use gateway_guardrails::{
 use serde_json::{Map, Value};
 
 use crate::http::{guardrail_events::record_guardrail_evaluation, state::AppState};
+const MODEL_RESPONSE_TEXT_FIELDS: &[&str] = &[
+    "content",
+    "output_text",
+    "refusal",
+    "text",
+    "thinking",
+    "reasoning",
+    "reasoning_content",
+    "reasoning_text",
+];
 
 #[derive(Debug, Clone)]
 pub struct InferenceGuardContext {
@@ -102,7 +112,7 @@ pub async fn guard_model_response(
         GuardPhase::ModelResponse,
         response,
         context.associated_prompt.as_deref(),
-        &["content", "output_text", "refusal", "text"],
+        MODEL_RESPONSE_TEXT_FIELDS,
     )
     .await?;
     Ok(())
@@ -197,12 +207,7 @@ async fn guard_sse_payload(
             } else {
                 let value = parse_guarded_sse_json(&payload)?;
                 let mut pointers = Vec::new();
-                collect_string_pointers(
-                    &value,
-                    "",
-                    &["content", "output_text", "refusal", "text"],
-                    &mut pointers,
-                );
+                collect_string_pointers(&value, "", MODEL_RESPONSE_TEXT_FIELDS, &mut pointers);
                 let event_type = value.get("type").and_then(Value::as_str);
                 if event_type.is_some_and(|kind| {
                     kind == "response.completed"
@@ -213,8 +218,10 @@ async fn guard_sse_payload(
                         (stream_text_group(&value, &pointer), event_index, pointer)
                     }));
                 } else {
-                    if event_type.is_some_and(|kind| kind.ends_with("output_text.delta"))
-                        && value.get("delta").is_some_and(Value::is_string)
+                    if event_type.is_some_and(|kind| {
+                        kind.ends_with("output_text.delta")
+                            || kind.ends_with("reasoning_text.delta")
+                    }) && value.get("delta").is_some_and(Value::is_string)
                     {
                         pointers.push("/delta".to_string());
                     }
@@ -1373,24 +1380,23 @@ mod tests {
         let value = json!({
             "id": "keep",
             "choices": [
-                {"message": {"content": "inspect", "refusal": null}},
+                {"message": {"content": "inspect", "refusal": null, "reasoning_content": "inspect reasoning"}},
                 {"message": {"content": null, "refusal": "inspect refusal"}},
-                {"delta": {"refusal": "stream refusal"}}
-            ]
+                {"delta": {"refusal": "stream refusal", "reasoning": "stream reasoning"}}
+            ],
+            "content": [{"type": "thinking", "thinking": "inspect thinking"}]
         });
         let mut pointers = Vec::new();
-        collect_string_pointers(
-            &value,
-            "",
-            &["content", "output_text", "refusal", "text"],
-            &mut pointers,
-        );
+        collect_string_pointers(&value, "", MODEL_RESPONSE_TEXT_FIELDS, &mut pointers);
         assert_eq!(
             pointers,
             vec![
                 "/choices/0/message/content",
+                "/choices/0/message/reasoning_content",
                 "/choices/1/message/refusal",
+                "/choices/2/delta/reasoning",
                 "/choices/2/delta/refusal",
+                "/content/0/thinking",
             ]
         );
         assert!(!pointers.iter().any(|pointer| pointer.ends_with("/id")));

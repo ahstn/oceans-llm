@@ -3201,7 +3201,9 @@ export interface components {
             max_content_bytes: number;
             name: string;
             phases: string[];
+            prompt_resource?: string | null;
             resource: string;
+            response_resource?: string | null;
             /** Format: int64 */
             timeout_ms: number;
         };

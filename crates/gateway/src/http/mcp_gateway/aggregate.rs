@@ -675,7 +675,55 @@ async fn call_catalog_tool(
             )
         }
         Err(error) => {
-            let gateway_error = map_mcp_client_error(error);
+            let mut guardrail_metadata = call_guardrail_metadata;
+            let gateway_error = if let McpClientError::Http { status, body } = error {
+                let result_evaluation = evaluate_mcp_result(
+                    state,
+                    Some(&guardrail_request_id),
+                    Some(mcp_tool_invocation_id),
+                    &record.server.server_key,
+                    &record.tool.upstream_name,
+                    Value::String(body.clone()),
+                )
+                .await;
+                guardrail_metadata.insert(
+                    "guardrail_result".to_string(),
+                    Value::Object(guardrail_decision_metadata(&result_evaluation)),
+                );
+                if result_evaluation.denied() {
+                    log_aggregate_invocation(AggregateInvocationLog {
+                        state,
+                        auth,
+                        id: &id,
+                        mcp_tool_invocation_id,
+                        record: &record,
+                        status: McpToolInvocationStatus::PolicyDenied,
+                        policy_result: McpToolPolicyResult::Denied,
+                        error_code: Some("guardrail_policy_denied".to_string()),
+                        arguments_json: Some(arguments),
+                        result_json: None,
+                        started_at,
+                        metadata: guardrail_metadata,
+                    })
+                    .await;
+                    return aggregate_tool_error(
+                        id,
+                        "MCP result denied by guardrail policy",
+                        "guardrail_policy_denied",
+                        json!({"address": input.address, "server_key": record.server.server_key}),
+                    );
+                }
+                let body = match result_evaluation.output {
+                    EvaluationPayload::McpResult { result, .. } => result
+                        .as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| result.to_string()),
+                    _ => body,
+                };
+                ProviderError::UpstreamHttp { status, body }.into()
+            } else {
+                map_mcp_client_error(error)
+            };
             log_aggregate_invocation(AggregateInvocationLog {
                 state,
                 auth,
@@ -688,7 +736,7 @@ async fn call_catalog_tool(
                 arguments_json: Some(arguments),
                 result_json: None,
                 started_at,
-                metadata: call_guardrail_metadata,
+                metadata: guardrail_metadata,
             })
             .await;
             aggregate_tool_error(

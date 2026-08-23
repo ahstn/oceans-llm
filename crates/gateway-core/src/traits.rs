@@ -16,7 +16,8 @@ use crate::{
     batch::{
         BatchAccessScope, BatchCapabilities, BatchItemPage, BatchItemQuery, BatchItemRecord,
         BatchJobRecord, BatchPage, BatchPollUpdate, BatchQuery, BatchStatus, NewBatchJob,
-        ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderBatchSubmission,
+        ProviderBatchRequest, ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchState,
+        ProviderBatchSubmission,
     },
     budgets::{BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource},
     domain::{
@@ -773,6 +774,12 @@ pub trait BatchRepository: Send + Sync {
         scope: BatchAccessScope,
         requested_at: OffsetDateTime,
     ) -> Result<BatchJobRecord, StoreError>;
+
+    async fn replace_batch_item_requests(
+        &self,
+        batch_id: Uuid,
+        requests: &[ProviderBatchRequestItem],
+    ) -> Result<(), StoreError>;
 
     async fn get_batch_items_for_worker(
         &self,

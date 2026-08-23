@@ -515,6 +515,32 @@ impl BatchRepository for LibsqlStore {
         load_job(&self.connection, batch_id, scope).await
     }
 
+    async fn replace_batch_item_requests(
+        &self,
+        batch_id: Uuid,
+        requests: &[gateway_core::ProviderBatchRequestItem],
+    ) -> Result<(), StoreError> {
+        let tx = self
+            .connection
+            .transaction()
+            .await
+            .map_err(to_query_error)?;
+        for request in requests {
+            tx.execute(
+                "UPDATE batch_items SET request_body_json = ?1, updated_at = ?2 WHERE batch_id = ?3 AND custom_id = ?4",
+                libsql::params![
+                    serialize_json(&request.body)?,
+                    OffsetDateTime::now_utc().unix_timestamp(),
+                    batch_id.to_string(),
+                    request.custom_id.clone()
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        }
+        tx.commit().await.map_err(to_query_error)
+    }
+
     async fn get_batch_items_for_worker(
         &self,
         batch_id: Uuid,

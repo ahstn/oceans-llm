@@ -177,6 +177,8 @@ pub struct ManagedCheckView {
     pub failure_disposition: String,
     pub max_content_bytes: usize,
     pub resource: String,
+    pub prompt_resource: Option<String>,
+    pub response_resource: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -265,7 +267,7 @@ pub async fn get_guardrail_policies(
         .managed_checks
         .iter()
         .map(|(name, check)| {
-            let (kind, resource) = match check.kind {
+            let (kind, resource, prompt_resource, response_resource) = match check.kind {
                 ManagedCheckKind::AmazonBedrock => (
                     "amazon_bedrock",
                     check
@@ -273,20 +275,18 @@ pub async fn get_guardrail_policies(
                         .as_ref()
                         .map(|config| config.guardrail_identifier.clone())
                         .unwrap_or_default(),
+                    None,
+                    None,
                 ),
-                ManagedCheckKind::GoogleModelArmor => (
-                    "google_model_armor",
-                    check
-                        .model_armor
-                        .as_ref()
-                        .and_then(|config| {
-                            config
-                                .prompt_template
-                                .clone()
-                                .or_else(|| config.response_template.clone())
-                        })
-                        .unwrap_or_default(),
-                ),
+                ManagedCheckKind::GoogleModelArmor => {
+                    let config = check.model_armor.as_ref();
+                    (
+                        "google_model_armor",
+                        String::new(),
+                        config.and_then(|config| config.prompt_template.clone()),
+                        config.and_then(|config| config.response_template.clone()),
+                    )
+                }
             };
             ManagedCheckView {
                 name: name.clone(),
@@ -303,6 +303,8 @@ pub async fn get_guardrail_policies(
                     .to_string(),
                 max_content_bytes: check.max_content_bytes,
                 resource,
+                prompt_resource,
+                response_resource,
             }
         })
         .collect();
