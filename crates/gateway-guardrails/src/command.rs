@@ -99,6 +99,17 @@ fn nested_shell_command(invocation: &CommandInvocation) -> Option<String> {
         return (index < invocation.arguments.len())
             .then(|| invocation.arguments[index..].join(" "));
     }
+    if invocation.executable == "timeout" {
+        let mut index = 0;
+        skip_wrapper_options(
+            &invocation.arguments,
+            &mut index,
+            &["-k", "--kill-after", "-s", "--signal"],
+        );
+        index += usize::from(index < invocation.arguments.len());
+        return (index < invocation.arguments.len())
+            .then(|| invocation.arguments[index..].join(" "));
+    }
     if !matches!(
         invocation.executable.as_str(),
         "sh" | "bash" | "zsh" | "dash" | "fish"
@@ -479,6 +490,17 @@ mod tests {
                 executable: "rm".into(),
                 arguments: vec!["-rf".into(), "/tmp/work".into()],
             }]
+        );
+    }
+
+    #[test]
+    fn parses_commands_executed_through_timeout() {
+        let parsed = parse_command_line("timeout 5 rm -rf /tmp/work");
+
+        assert!(
+            parsed
+                .iter()
+                .any(|call| { call.executable == "rm" && call.arguments == ["-rf", "/tmp/work"] })
         );
     }
 
