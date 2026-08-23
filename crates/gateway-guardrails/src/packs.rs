@@ -394,14 +394,21 @@ fn match_destructive_sql(sql: &str, field: &str) -> Option<MatchedRule> {
 }
 
 fn match_destructive_sql_statement(sql: &str, field: &str) -> Option<MatchedRule> {
-    let sql = sql.trim_start();
-    let normalized = sql
-        .split_whitespace()
-        .map(|word| word.trim_matches(|character: char| matches!(character, ';' | '"')))
-        .collect::<Vec<_>>();
-    let first = normalized.first()?.to_ascii_lowercase();
-    let second = normalized.get(1).map(|word| word.to_ascii_lowercase());
-    match (first.as_str(), second.as_deref()) {
+    let words = top_level_sql_words(sql);
+    let first = words.first()?;
+    let operation_index = if is_destructive_sql_operation(first) {
+        0
+    } else if matches!(first.as_str(), "with" | "explain") {
+        words
+            .iter()
+            .position(|word| is_destructive_sql_operation(word))?
+    } else {
+        return None;
+    };
+    let normalized = &words[operation_index..];
+    let first = normalized.first()?;
+    let second = normalized.get(1).map(String::as_str);
+    match (first.as_str(), second) {
         ("drop", Some("database")) => Some(rule(
             "database.postgresql",
             "drop-database",
@@ -434,21 +441,97 @@ fn match_destructive_sql_statement(sql: &str, field: &str) -> Option<MatchedRule
             "Removes all rows from a table",
             "Use a scoped DELETE in a transaction after a verified backup",
         )),
-        ("delete", Some("from"))
-            if !normalized
-                .iter()
-                .any(|word| word.eq_ignore_ascii_case("where")) =>
-        {
-            Some(rule(
-                "database.postgresql",
-                "delete-without-where",
-                field,
-                "postgresql.delete_without_where",
-                "Deletes every row from a table",
-                "Add a reviewed WHERE clause and run inside a transaction",
-            ))
-        }
+        ("delete", Some("from")) if !normalized.iter().any(|word| word == "where") => Some(rule(
+            "database.postgresql",
+            "delete-without-where",
+            field,
+            "postgresql.delete_without_where",
+            "Deletes every row from a table",
+            "Add a reviewed WHERE clause and run inside a transaction",
+        )),
         _ => None,
+    }
+}
+
+fn is_destructive_sql_operation(word: &str) -> bool {
+    matches!(word, "drop" | "truncate" | "delete")
+}
+
+fn top_level_sql_words(sql: &str) -> Vec<String> {
+    let characters = sql.chars().collect::<Vec<_>>();
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut quote = None;
+    let mut dollar_quote = None;
+    let mut depth = 0_usize;
+    let mut index = 0;
+    while index < characters.len() {
+        if let Some(delimiter) = dollar_quote.as_deref() {
+            if characters[index..].starts_with(delimiter) {
+                index += delimiter.len();
+                dollar_quote = None;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        let character = characters[index];
+        match quote {
+            Some(active) if character == active => {
+                if characters.get(index + 1) == Some(&active) {
+                    index += 2;
+                } else {
+                    quote = None;
+                    index += 1;
+                }
+            }
+            Some(_) => index += 1,
+            None if matches!(character, '\'' | '"') => {
+                push_sql_word(&mut words, &mut word);
+                quote = Some(character);
+                index += 1;
+            }
+            None if character == '$' => {
+                if let Some(delimiter) = dollar_quote_delimiter(&characters, index) {
+                    push_sql_word(&mut words, &mut word);
+                    index += delimiter.len();
+                    dollar_quote = Some(delimiter);
+                } else {
+                    push_sql_word(&mut words, &mut word);
+                    index += 1;
+                }
+            }
+            None if character == '(' => {
+                push_sql_word(&mut words, &mut word);
+                depth += 1;
+                index += 1;
+            }
+            None if character == ')' => {
+                if depth == 0 {
+                    push_sql_word(&mut words, &mut word);
+                }
+                depth = depth.saturating_sub(1);
+                index += 1;
+            }
+            None if depth == 0 && (character.is_alphanumeric() || character == '_') => {
+                word.push(character.to_ascii_lowercase());
+                index += 1;
+            }
+            None => {
+                if depth == 0 {
+                    push_sql_word(&mut words, &mut word);
+                }
+                index += 1;
+            }
+        }
+    }
+    push_sql_word(&mut words, &mut word);
+    words
+}
+
+fn push_sql_word(words: &mut Vec<String>, word: &mut String) {
+    if !word.is_empty() {
+        words.push(std::mem::take(word));
     }
 }
 
@@ -976,6 +1059,7 @@ mod tests {
                     "setsid rm -rf /tmp/work",
                     "chroot /sandbox rm -rf /tmp/work",
                     "cmd=rm; $cmd -rf /tmp/work",
+                    "opts=-rf; rm $opts /tmp/work",
                     "find /tmp/work -exec rm -rf {} +",
                     "function wipe { rm -rf /tmp/work; }; wipe",
                     "sudo FOO=bar rm -rf /tmp/work",
@@ -998,11 +1082,15 @@ mod tests {
                     "psql -c '-- migration\nDROP TABLE users'",
                     "psql -c '/* migration */ DROP TABLE users'",
                     "psql -c 'DROP /* migration */ TABLE users'",
+                    "psql -c 'WITH x AS (SELECT 1) DELETE FROM users'",
+                    "psql -c 'EXPLAIN ANALYZE DELETE FROM users'",
                 ],
                 vec![
                     "echo 'DROP DATABASE app'",
                     "psql -c 'DELETE FROM users WHERE id = 1'",
                     "psql -c 'SELECT drop_database_hint FROM docs'",
+                    "psql -c 'WITH x AS (SELECT 1) SELECT * FROM x'",
+                    "psql -c 'EXPLAIN SELECT \"delete\" FROM docs'",
                 ],
             ),
             (

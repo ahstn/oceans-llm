@@ -386,26 +386,46 @@ fn stream_text_group(value: &Value, pointer: &str) -> String {
         .split('/')
         .filter(|segment| !segment.is_empty())
         .collect::<Vec<_>>();
+    let kind = stream_text_kind(value, &segments);
     if segments.first() == Some(&"choices")
         && let Some(choice) = segments.get(1)
     {
-        return format!("choice:{choice}");
+        return format!("choice:{choice}:{kind}");
     }
     if let Some(output_index) = value.get("output_index").and_then(Value::as_u64) {
-        return format!("output:{output_index}");
+        return format!("output:{output_index}:{kind}");
     }
     if let Some(position) = segments.iter().position(|segment| *segment == "output")
         && let Some(output_index) = segments.get(position + 1)
     {
-        return format!("output:{output_index}");
+        return format!("output:{output_index}:{kind}");
     }
     if let Some(item_id) = value.get("item_id").and_then(Value::as_str) {
-        return format!("item:{item_id}");
+        return format!("item:{item_id}:{kind}");
     }
     if let Some(content_block_index) = value.get("index").and_then(Value::as_u64) {
-        return format!("content-block:{content_block_index}");
+        return format!("content-block:{content_block_index}:{kind}");
     }
-    "default".to_string()
+    format!("default:{kind}")
+}
+
+fn stream_text_kind(value: &Value, segments: &[&str]) -> &'static str {
+    let field = segments.last().copied().unwrap_or_default();
+    let event_type = value
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if matches!(
+        field,
+        "thinking" | "reasoning" | "reasoning_content" | "reasoning_text"
+    ) || event_type.contains("reasoning")
+    {
+        "reasoning"
+    } else if field == "refusal" {
+        "refusal"
+    } else {
+        "content"
+    }
 }
 
 fn replace_stream_text(
@@ -1103,27 +1123,39 @@ mod tests {
     }
 
     #[test]
-    fn groups_stream_text_by_independent_output() {
+    fn groups_stream_text_by_independent_output_and_kind() {
         assert_eq!(
             stream_text_group(&json!({}), "/choices/0/delta/content"),
-            "choice:0"
+            "choice:0:content"
+        );
+        assert_eq!(
+            stream_text_group(&json!({}), "/choices/0/delta/reasoning_content"),
+            "choice:0:reasoning"
+        );
+        assert_eq!(
+            stream_text_group(&json!({}), "/choices/0/delta/refusal"),
+            "choice:0:refusal"
         );
         assert_eq!(
             stream_text_group(&json!({"item_id": "item-a", "output_index": 1}), "/delta"),
-            "output:1"
+            "output:1:content"
         );
         assert_eq!(
             stream_text_group(&json!({}), "/response/output/1/content/0/text"),
-            "output:1"
+            "output:1:content"
         );
         assert_eq!(
             stream_text_group(
                 &json!({"type": "content_block_delta", "index": 2}),
                 "/delta/text"
             ),
-            "content-block:2"
+            "content-block:2:content"
         );
-        assert_eq!(stream_text_group(&json!({}), "/delta"), "default");
+        assert_eq!(
+            stream_text_group(&json!({"type": "response.reasoning_text.delta"}), "/delta"),
+            "default:reasoning"
+        );
+        assert_eq!(stream_text_group(&json!({}), "/delta"), "default:content");
     }
 
     #[test]

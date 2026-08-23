@@ -74,25 +74,25 @@ fn push_invocation(
             words.clear();
             return;
         }
-        let raw_executable = resolve_executable_variable(&words[index], assignments)
-            .unwrap_or_else(|| words[index].clone());
+        let raw_executable =
+            resolve_variable(&words[index], assignments).unwrap_or_else(|| words[index].clone());
         let executable = basename(&raw_executable).to_ascii_lowercase();
         invocations.push(CommandInvocation {
             executable,
-            arguments: words.drain(index + 1..).collect(),
+            arguments: words
+                .drain(index + 1..)
+                .map(|argument| resolve_variable(&argument, assignments).unwrap_or(argument))
+                .collect(),
         });
     }
     words.clear();
 }
 
-fn resolve_executable_variable(
-    executable: &str,
-    assignments: &BTreeMap<String, String>,
-) -> Option<String> {
-    let name = executable
+fn resolve_variable(word: &str, assignments: &BTreeMap<String, String>) -> Option<String> {
+    let name = word
         .strip_prefix("${")
         .and_then(|value| value.strip_suffix('}'))
-        .or_else(|| executable.strip_prefix('$'))?;
+        .or_else(|| word.strip_prefix('$'))?;
     assignments.get(name).cloned()
 }
 
@@ -696,6 +696,17 @@ mod tests {
 
         assert!(parsed.iter().any(|call| call.executable == "rm"));
         assert!(parsed.iter().any(|call| call.executable == "$unknown"));
+    }
+
+    #[test]
+    fn resolves_assigned_argument_variables() {
+        assert_eq!(
+            parse_command_line("opts=-rf; rm $opts /tmp/work"),
+            vec![CommandInvocation {
+                executable: "rm".into(),
+                arguments: vec!["-rf".into(), "/tmp/work".into()],
+            }]
+        );
     }
 
     #[test]
