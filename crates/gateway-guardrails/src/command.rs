@@ -151,6 +151,17 @@ pub(crate) fn nested_shell_command(invocation: &CommandInvocation) -> Option<Str
         return (index < invocation.arguments.len())
             .then(|| invocation.arguments[index..].join(" "));
     }
+    if invocation.executable == "chroot" {
+        let mut index = 0;
+        skip_wrapper_options(
+            &invocation.arguments,
+            &mut index,
+            &["--userspec", "--groups"],
+        );
+        index += usize::from(index < invocation.arguments.len());
+        return (index < invocation.arguments.len())
+            .then(|| invocation.arguments[index..].join(" "));
+    }
     if invocation.executable == "find"
         && let Some(index) = invocation
             .arguments

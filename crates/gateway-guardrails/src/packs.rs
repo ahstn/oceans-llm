@@ -327,14 +327,20 @@ fn match_git(invocation: &CommandInvocation) -> Option<MatchedRule> {
                 "Delete the remote reference through a reviewed repository workflow",
             ))
         }
-        "branch" if arguments.iter().any(|argument| argument == "-D") => Some(rule(
-            "core.git",
-            "branch-delete-force",
-            "command.arguments",
-            "git.branch_delete_force",
-            "Deletes a branch without merge checks",
-            "Use git branch -d after the branch is merged",
-        )),
+        "branch"
+            if arguments.iter().any(|argument| argument == "-D")
+                || (has_option(arguments, "--delete", Some('d'))
+                    && has_option(arguments, "--force", Some('f'))) =>
+        {
+            Some(rule(
+                "core.git",
+                "branch-delete-force",
+                "command.arguments",
+                "git.branch_delete_force",
+                "Deletes a branch without merge checks",
+                "Use git branch -d after the branch is merged",
+            ))
+        }
         _ => None,
     }
 }
@@ -388,7 +394,7 @@ fn match_destructive_sql(sql: &str, field: &str) -> Option<MatchedRule> {
 }
 
 fn match_destructive_sql_statement(sql: &str, field: &str) -> Option<MatchedRule> {
-    let sql = strip_leading_sql_comments(sql);
+    let sql = sql.trim_start();
     let normalized = sql
         .split_whitespace()
         .map(|word| word.trim_matches(|character: char| matches!(character, ';' | '"')))
@@ -734,25 +740,6 @@ fn git_operation(arguments: &[String]) -> Option<&str> {
     None
 }
 
-fn strip_leading_sql_comments(mut sql: &str) -> &str {
-    loop {
-        sql = sql.trim_start();
-        if let Some(comment) = sql.strip_prefix("--") {
-            sql = comment
-                .split_once('\n')
-                .map_or("", |(_, remainder)| remainder);
-            continue;
-        }
-        if let Some(comment) = sql.strip_prefix("/*") {
-            sql = comment
-                .split_once("*/")
-                .map_or("", |(_, remainder)| remainder);
-            continue;
-        }
-        return sql;
-    }
-}
-
 fn sql_statements(sql: &str) -> Vec<String> {
     let characters = sql.chars().collect::<Vec<_>>();
     let mut statements = Vec::new();
@@ -787,6 +774,29 @@ fn sql_statements(sql: &str) -> Vec<String> {
             Some(_) => {
                 statement.push(character);
                 index += 1;
+            }
+            None if character == '-' && characters.get(index + 1) == Some(&'-') => {
+                index += 2;
+                while index < characters.len() && characters[index] != '\n' {
+                    index += 1;
+                }
+                statement.push(' ');
+            }
+            None if character == '/' && characters.get(index + 1) == Some(&'*') => {
+                let mut depth = 1;
+                index += 2;
+                while index < characters.len() && depth > 0 {
+                    if characters[index..].starts_with(&['/', '*']) {
+                        depth += 1;
+                        index += 2;
+                    } else if characters[index..].starts_with(&['*', '/']) {
+                        depth -= 1;
+                        index += 2;
+                    } else {
+                        index += 1;
+                    }
+                }
+                statement.push(' ');
             }
             None if matches!(character, '\'' | '"') => {
                 quote = Some(character);
@@ -945,6 +955,8 @@ mod tests {
                     "git --git-dir=/repo/.git reset --hard",
                     "git push origin --delete old",
                     "git push origin :old",
+                    "git branch --delete --force old",
+                    "git branch -df old",
                 ],
                 vec![
                     "printf '%s' 'git reset --hard'",
@@ -962,6 +974,7 @@ mod tests {
                     "rm -R -f /tmp/work",
                     "nice rm -rf /tmp/work",
                     "setsid rm -rf /tmp/work",
+                    "chroot /sandbox rm -rf /tmp/work",
                     "cmd=rm; $cmd -rf /tmp/work",
                     "find /tmp/work -exec rm -rf {} +",
                     "function wipe { rm -rf /tmp/work; }; wipe",
@@ -984,6 +997,7 @@ mod tests {
                     "psql -c 'SELECT 1; DROP DATABASE app'",
                     "psql -c '-- migration\nDROP TABLE users'",
                     "psql -c '/* migration */ DROP TABLE users'",
+                    "psql -c 'DROP /* migration */ TABLE users'",
                 ],
                 vec![
                     "echo 'DROP DATABASE app'",
