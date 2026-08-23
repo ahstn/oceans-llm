@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const navigateMock = vi.fn()
+let routeSearch = ''
 const routeMock = {
   useLoaderData: vi.fn(),
   useSearch: vi.fn(),
@@ -10,6 +11,11 @@ const routeMock = {
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
   useRouter: () => ({ navigate: navigateMock }),
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { searchStr: string } }) => unknown
+  }) => select({ location: { searchStr: routeSearch } }),
 }))
 
 vi.mock('@/server/admin-data.functions', () => ({
@@ -64,6 +70,7 @@ describe('GuardrailsPage', () => {
 
   beforeEach(() => {
     navigateMock.mockReset()
+    routeSearch = ''
     routeMock.useLoaderData.mockReturnValue(loaderData)
     routeMock.useSearch.mockReturnValue({})
   })
