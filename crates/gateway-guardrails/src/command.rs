@@ -84,6 +84,16 @@ fn executable_index(words: &[String]) -> Option<usize> {
     loop {
         let wrapper = words.get(index).map(|word| basename(word));
         match wrapper {
+            Some(
+                "if" | "then" | "else" | "elif" | "fi" | "do" | "done" | "while" | "until" | "for"
+                | "in" | "case" | "esac" | "select" | "function" | "time" | "coproc" | "{" | "}"
+                | "!",
+            ) => {
+                index += 1;
+                while words.get(index).is_some_and(|word| is_assignment(word)) {
+                    index += 1;
+                }
+            }
             Some("command" | "builtin" | "exec" | "nohup") => index += 1,
             Some("env") => {
                 index += 1;
@@ -382,6 +392,17 @@ mod tests {
                 executable: "rm".into(),
                 arguments: vec!["-rf".into(), "/tmp/work".into()],
             }]
+        );
+    }
+
+    #[test]
+    fn skips_shell_reserved_words_before_executables() {
+        let parsed = parse_command_line("if true; then rm -rf /tmp/work; fi");
+
+        assert!(
+            parsed
+                .iter()
+                .any(|call| { call.executable == "rm" && call.arguments == ["-rf", "/tmp/work"] })
         );
     }
 

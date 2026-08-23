@@ -459,12 +459,18 @@ fn collect_stream_tool_fragments(
                 }
             }
 
-            if let Some(function) = object.get("function").and_then(Value::as_object) {
-                let key = object
+            let function_field = if object.contains_key("function") {
+                "function"
+            } else {
+                "function_call"
+            };
+            if let Some(function) = object.get(function_field).and_then(Value::as_object) {
+                let identity = object
                     .get("index")
                     .or_else(|| object.get("id"))
                     .map(identity_key)
                     .unwrap_or_else(|| "default".to_string());
+                let key = format!("{pointer}:{identity}");
                 let fragments = output.entry(key).or_default();
                 if let Some(name) = function.get("name").and_then(Value::as_str) {
                     fragments.name.push_str(name);
@@ -473,7 +479,7 @@ fn collect_stream_tool_fragments(
                     fragments.arguments.push_str(arguments);
                     fragments
                         .argument_locations
-                        .push((event_index, format!("{pointer}/function/arguments")));
+                        .push((event_index, format!("{pointer}/{function_field}/arguments")));
                 }
             }
 
@@ -768,7 +774,11 @@ fn collect_tool_call_pointers(value: &Value, pointer: &str, output: &mut Vec<Str
 }
 
 fn parse_tool_call(object: &Map<String, Value>) -> Option<(String, Value)> {
-    if let Some(function) = object.get("function").and_then(Value::as_object) {
+    if let Some(function) = object
+        .get("function")
+        .or_else(|| object.get("function_call"))
+        .and_then(Value::as_object)
+    {
         let name = function.get("name")?.as_str()?.to_string();
         let arguments = parse_arguments(function.get("arguments")?);
         return Some((name, arguments));
@@ -889,7 +899,14 @@ fn replace_stream_argument(slot: &mut Value, replacement: &str, shell_command: b
 }
 
 fn replace_tool_call_arguments(object: &mut Map<String, Value>, arguments: Value) {
-    if let Some(function) = object.get_mut("function").and_then(Value::as_object_mut)
+    let function_field = if object.contains_key("function") {
+        "function"
+    } else {
+        "function_call"
+    };
+    if let Some(function) = object
+        .get_mut(function_field)
+        .and_then(Value::as_object_mut)
         && let Some(slot) = function.get_mut("arguments")
     {
         replace_json_value(slot, arguments);
@@ -974,6 +991,44 @@ mod tests {
     }
 
     #[test]
+    fn parses_and_replaces_legacy_function_call_envelopes() {
+        let mut response = json!({
+            "choices": [{
+                "message": {
+                    "function_call": {
+                        "name": "bash",
+                        "arguments": "{\"command\":\"rm -rf /tmp/work\"}"
+                    }
+                }
+            }]
+        });
+        let mut pointers = Vec::new();
+        collect_tool_call_pointers(&response, "", &mut pointers);
+
+        assert_eq!(pointers, ["/choices/0/message"]);
+        let call = response
+            .pointer(&pointers[0])
+            .and_then(Value::as_object)
+            .and_then(parse_tool_call)
+            .expect("legacy function call");
+        assert_eq!(
+            shell_command(&call.0, &call.1).as_deref(),
+            Some("rm -rf /tmp/work")
+        );
+        replace_tool_call_arguments(
+            response
+                .pointer_mut(&pointers[0])
+                .and_then(Value::as_object_mut)
+                .expect("legacy envelope"),
+            json!({"command": "[masked]"}),
+        );
+        assert_eq!(
+            response["choices"][0]["message"]["function_call"]["arguments"],
+            "{\"command\":\"[masked]\"}"
+        );
+    }
+
+    #[test]
     fn reconstructs_split_parallel_stream_tool_calls() {
         let mut fragments = BTreeMap::new();
         for (event_index, event) in [
@@ -993,10 +1048,12 @@ mod tests {
         }
 
         assert_eq!(fragments.len(), 2);
-        assert_eq!(fragments["0"].name, "bash");
-        assert_eq!(fragments["0"].arguments, "{\"command\":\"rm -rf /tmp/x\"}");
-        assert_eq!(fragments["1"].arguments, "{\"value\":1}");
-        assert_eq!(fragments["0"].argument_locations.len(), 2);
+        let first = &fragments["/choices/0/delta/tool_calls/0:0"];
+        let second = &fragments["/choices/0/delta/tool_calls/1:1"];
+        assert_eq!(first.name, "bash");
+        assert_eq!(first.arguments, "{\"command\":\"rm -rf /tmp/x\"}");
+        assert_eq!(second.arguments, "{\"value\":1}");
+        assert_eq!(first.argument_locations.len(), 2);
     }
 
     #[test]
