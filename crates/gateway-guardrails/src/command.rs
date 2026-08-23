@@ -108,7 +108,25 @@ fn executable_index(words: &[String]) -> Option<usize> {
                     index += 1;
                 }
             }
-            Some("command" | "builtin" | "exec" | "nohup") => index += 1,
+            Some("command") => {
+                let command_index = index;
+                index += 1;
+                while let Some(option) = words.get(index) {
+                    if option == "--" {
+                        index += 1;
+                        break;
+                    }
+                    if option == "-p" {
+                        index += 1;
+                        continue;
+                    }
+                    if option == "-v" || option == "-V" {
+                        return Some(command_index);
+                    }
+                    break;
+                }
+            }
+            Some("builtin" | "exec" | "nohup") => index += 1,
             Some("env") => {
                 index += 1;
                 skip_env_options_and_assignments(words, &mut index);
@@ -426,6 +444,19 @@ mod tests {
     #[test]
     fn ignores_io_numbers_before_redirections() {
         let parsed = parse_command_line("2>/dev/null rm -rf /tmp/work");
+
+        assert_eq!(
+            parsed,
+            vec![CommandInvocation {
+                executable: "rm".into(),
+                arguments: vec!["-rf".into(), "/tmp/work".into()],
+            }]
+        );
+    }
+
+    #[test]
+    fn skips_command_execution_options() {
+        let parsed = parse_command_line("command -p rm -rf /tmp/work");
 
         assert_eq!(
             parsed,
