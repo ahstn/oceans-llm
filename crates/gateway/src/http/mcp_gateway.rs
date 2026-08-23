@@ -410,15 +410,22 @@ async fn enforce_direct_mcp_result(
             }
         }
     } else {
-        let parsed = serde_json::from_slice::<Value>(&bytes)
+        let mut parsed = serde_json::from_slice::<Value>(&bytes)
             .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()));
+        let Some(result_payload) = parsed
+            .get("result")
+            .cloned()
+            .or_else(|| (!parsed.is_object()).then(|| parsed.clone()))
+        else {
+            return (Response::from_parts(parts, Body::from(bytes)), None, false);
+        };
         let evaluation = evaluate_mcp_result(
             state,
             Some(&request_id),
             Some(mcp_tool_invocation_id),
             server,
             tool,
-            parsed,
+            result_payload,
         )
         .await;
         if evaluation.denied() {
@@ -435,7 +442,14 @@ async fn enforce_direct_mcp_result(
         {
             match &evaluation.output {
                 EvaluationPayload::McpResult { result, .. } => {
-                    serde_json::to_vec(result).map(Bytes::from).unwrap_or(bytes)
+                    if let Some(slot) = parsed.get_mut("result") {
+                        *slot = result.clone();
+                        serde_json::to_vec(&parsed)
+                            .map(Bytes::from)
+                            .unwrap_or(bytes)
+                    } else {
+                        serde_json::to_vec(result).map(Bytes::from).unwrap_or(bytes)
+                    }
                 }
                 _ => bytes,
             }

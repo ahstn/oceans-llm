@@ -304,7 +304,11 @@ fn tokenize(source: &str) -> Vec<Token> {
                 tokens.push(Token::Operator(Operator::Separator));
             }
             '<' | '>' => {
-                push_word(&mut tokens, &mut word);
+                if !word.is_empty() && word.bytes().all(|byte| byte.is_ascii_digit()) {
+                    word.clear();
+                } else {
+                    push_word(&mut tokens, &mut word);
+                }
                 if chars.peek() == Some(&character) {
                     chars.next();
                 }
@@ -367,6 +371,20 @@ mod tests {
                 .any(|call| { call.executable == "find" && call.arguments == [".", "-delete"] })
         );
     }
+
+    #[test]
+    fn ignores_io_numbers_before_redirections() {
+        let parsed = parse_command_line("2>/dev/null rm -rf /tmp/work");
+
+        assert_eq!(
+            parsed,
+            vec![CommandInvocation {
+                executable: "rm".into(),
+                arguments: vec!["-rf".into(), "/tmp/work".into()],
+            }]
+        );
+    }
+
     #[test]
     fn parses_legacy_and_process_substitutions() {
         let parsed = parse_command_line(

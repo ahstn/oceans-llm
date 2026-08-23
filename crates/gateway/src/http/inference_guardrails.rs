@@ -175,9 +175,11 @@ async fn guard_sse_payload(
                     &mut pointers,
                 );
                 let event_type = value.get("type").and_then(Value::as_str);
-                if event_type
-                    .is_some_and(|kind| kind == "response.completed" || kind == "response.done")
-                {
+                if event_type.is_some_and(|kind| {
+                    kind == "response.completed"
+                        || kind == "response.done"
+                        || kind == "response.output_text.done"
+                }) {
                     snapshot_text_locations
                         .extend(pointers.into_iter().map(|pointer| (event_index, pointer)));
                 } else {
@@ -475,11 +477,8 @@ fn collect_stream_tool_fragments(
                 }
             }
 
-            if object
-                .get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|kind| kind.ends_with("function_call_arguments.delta"))
-            {
+            let event_type = object.get("type").and_then(Value::as_str);
+            if event_type.is_some_and(|kind| kind.ends_with("function_call_arguments.delta")) {
                 let key = object
                     .get("item_id")
                     .map(identity_key)
@@ -490,6 +489,19 @@ fn collect_stream_tool_fragments(
                     fragments
                         .argument_locations
                         .push((event_index, format!("{pointer}/delta")));
+                }
+            } else if event_type.is_some_and(|kind| kind.ends_with("function_call_arguments.done"))
+            {
+                let key = object
+                    .get("item_id")
+                    .map(identity_key)
+                    .unwrap_or_else(|| "default".to_string());
+                if let Some(arguments) = object.get("arguments").and_then(Value::as_str) {
+                    let fragments = output.entry(key).or_default();
+                    fragments.arguments = arguments.to_string();
+                    fragments
+                        .terminal_argument_locations
+                        .push((event_index, format!("{pointer}/arguments")));
                 }
             }
 
@@ -1016,6 +1028,11 @@ mod tests {
                 "delta": "{\"cmd\":\"git reset --hard\"}"
             }),
             json!({
+                "type": "response.function_call_arguments.done",
+                "item_id": "item-1",
+                "arguments": "{\"cmd\":\"git reset --hard\"}"
+            }),
+            json!({
                 "type": "response.output_item.done",
                 "item": {
                     "type": "function_call",
@@ -1041,6 +1058,7 @@ mod tests {
             "{\"cmd\":\"git reset --hard\"}"
         );
         assert_eq!(fragments["item-1"].name, "shell");
+        assert_eq!(fragments["item-1"].terminal_argument_locations.len(), 2);
     }
 
     #[test]

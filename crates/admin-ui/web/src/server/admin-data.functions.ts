@@ -163,12 +163,9 @@ function optionalRfc3339(value: unknown, label: string): string | undefined {
   const year = Number(match[1])
   const month = Number(match[2])
   const day = Number(match[3])
-  const calendarDate = new Date(Date.UTC(year, month - 1, day))
-  if (
-    calendarDate.getUTCFullYear() !== year ||
-    calendarDate.getUTCMonth() !== month - 1 ||
-    calendarDate.getUTCDate() !== day
-  ) {
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) {
     throw new Error(`${label} must be an RFC 3339 timestamp`)
   }
   return timestamp

@@ -134,6 +134,7 @@ describe("shell guardrail hooks", () => {
     expect(piEvent.input.command).toContain(sandboxExecutable);
     expect(openCodeOutput.args.command).toContain(sandboxExecutable);
     expect(piEvent.input.command).toContain("/tmp/guardrail-workspace");
+    expect(openCodeOutput.args.command).toContain("/tmp/guardrail-workspace");
   });
 
   test("both hooks fail closed when policy evaluation is unavailable", async () => {
@@ -194,7 +195,10 @@ async function loadPiHook(): Promise<PiHook> {
 }
 
 async function loadOpenCodeHook(): Promise<OpenCodeHook> {
-  const module = (await loadSource(guardrailPluginSource(), "opencode")) as {
+  const module = (await loadSource(
+    guardrailPluginSource("/tmp/guardrail-workspace"),
+    "opencode",
+  )) as {
     OceansGuardrails: () => Promise<Record<"tool.execute.before", OpenCodeHook>>;
   };
   const hooks = await module.OceansGuardrails();

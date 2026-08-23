@@ -25,7 +25,11 @@ export class OpenCodeAdapter implements HarnessAdapter {
     const isolated = await createIsolatedPaths(workspace, this.key);
     const pluginDirectory = join(isolated.config, "plugins");
     await mkdir(pluginDirectory, { recursive: true });
-    await writeFile(join(pluginDirectory, "oceans-guardrails.js"), guardrailPluginSource(), "utf8");
+    await writeFile(
+      join(pluginDirectory, "oceans-guardrails.js"),
+      guardrailPluginSource(workspace),
+      "utf8",
+    );
     const config = {
       agent: {
         build: {
@@ -121,10 +125,11 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 }
 
-export function guardrailPluginSource(): string {
+export function guardrailPluginSource(workspace: string): string {
   return `
 const guardrailUrl = new URL("/api/v1/guardrails/evaluate", process.env.OCEANS_BASE_URL).toString();
 const guardrailTimeoutMs = Number(process.env.OCEANS_GUARDRAIL_TIMEOUT_MS ?? "2000");
+const workspace = ${JSON.stringify(workspace)};
 
 function validateGuardrailDecision(value) {
   if (
@@ -141,7 +146,6 @@ function validateGuardrailDecision(value) {
   return value;
 }
 
-const workspace = process.cwd();
 
 function shellQuote(value) {
   return "'" + value.replaceAll("'", "'\\"'\\"'") + "'";
