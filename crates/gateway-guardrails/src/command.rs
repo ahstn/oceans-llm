@@ -71,6 +71,34 @@ fn nested_shell_command(invocation: &CommandInvocation) -> Option<String> {
     if invocation.executable == "eval" {
         return (!invocation.arguments.is_empty()).then(|| invocation.arguments.join(" "));
     }
+    if invocation.executable == "xargs" {
+        let mut index = 0;
+        skip_wrapper_options(
+            &invocation.arguments,
+            &mut index,
+            &[
+                "-a",
+                "--arg-file",
+                "-d",
+                "--delimiter",
+                "-E",
+                "--eof",
+                "-I",
+                "--replace",
+                "-L",
+                "--max-lines",
+                "-n",
+                "--max-args",
+                "-P",
+                "--max-procs",
+                "-s",
+                "--max-chars",
+                "--process-slot-var",
+            ],
+        );
+        return (index < invocation.arguments.len())
+            .then(|| invocation.arguments[index..].join(" "));
+    }
     if !matches!(
         invocation.executable.as_str(),
         "sh" | "bash" | "zsh" | "dash" | "fish"
@@ -451,6 +479,17 @@ mod tests {
                 executable: "rm".into(),
                 arguments: vec!["-rf".into(), "/tmp/work".into()],
             }]
+        );
+    }
+
+    #[test]
+    fn parses_commands_executed_through_xargs() {
+        let parsed = parse_command_line("printf '/tmp/work' | xargs rm -rf");
+
+        assert!(
+            parsed
+                .iter()
+                .any(|call| { call.executable == "rm" && call.arguments == ["-rf"] })
         );
     }
 
