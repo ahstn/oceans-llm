@@ -161,12 +161,7 @@ async fn guard_sse_payload(
             let stream_line = if payload == "[DONE]" {
                 StreamLine::Done
             } else {
-                let Ok(value) = serde_json::from_str::<Value>(&payload) else {
-                    lines.clear();
-                    lines.push(StreamLine::Other(block.to_string()));
-                    blocks.push(lines);
-                    continue;
-                };
+                let value = parse_guarded_sse_json(&payload)?;
                 let mut pointers = Vec::new();
                 collect_string_pointers(
                     &value,
@@ -324,6 +319,13 @@ async fn guard_sse_payload(
         .collect::<Vec<_>>()
         .join(&event_separator);
     Ok(rendered.into_bytes())
+}
+fn parse_guarded_sse_json(payload: &str) -> Result<Value, GatewayError> {
+    serde_json::from_str(payload).map_err(|error| {
+        GatewayError::Internal(format!(
+            "provider stream contained invalid SSE JSON: {error}"
+        ))
+    })
 }
 
 fn stream_text_group(pointer: &str) -> String {
@@ -980,6 +982,14 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn rejects_non_json_guarded_sse_data() {
+        let error = parse_guarded_sse_json("not-json").unwrap_err();
+
+        assert!(error.to_string().contains("invalid SSE JSON"));
+        assert!(!error.to_string().contains("not-json"));
+    }
 
     #[test]
     fn groups_stream_text_by_chat_completion_choice() {
