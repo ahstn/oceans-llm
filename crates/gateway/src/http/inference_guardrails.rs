@@ -140,8 +140,8 @@ async fn guard_sse_payload(
     let event_separator = format!("{separator}{separator}");
     let mut blocks = Vec::new();
     let mut tool_fragments = BTreeMap::<String, ToolCallFragments>::new();
-    let mut text_locations = Vec::<(usize, String)>::new();
-    let mut snapshot_text_locations = Vec::<(usize, String)>::new();
+    let mut text_locations = Vec::<(String, usize, String)>::new();
+    let mut snapshot_text_locations = Vec::<(String, usize, String)>::new();
 
     for block in source.split(&event_separator) {
         let event_index = blocks.len();
@@ -175,16 +175,18 @@ async fn guard_sse_payload(
                         || kind == "response.done"
                         || kind == "response.output_text.done"
                 }) {
-                    snapshot_text_locations
-                        .extend(pointers.into_iter().map(|pointer| (event_index, pointer)));
+                    snapshot_text_locations.extend(pointers.into_iter().map(|pointer| {
+                        (stream_text_group(&value, &pointer), event_index, pointer)
+                    }));
                 } else {
                     if event_type.is_some_and(|kind| kind.ends_with("output_text.delta"))
                         && value.get("delta").is_some_and(Value::is_string)
                     {
                         pointers.push("/delta".to_string());
                     }
-                    text_locations
-                        .extend(pointers.into_iter().map(|pointer| (event_index, pointer)));
+                    text_locations.extend(pointers.into_iter().map(|pointer| {
+                        (stream_text_group(&value, &pointer), event_index, pointer)
+                    }));
                 }
                 collect_stream_tool_fragments(&value, "", event_index, &mut tool_fragments);
                 StreamLine::Json(value)
@@ -249,21 +251,21 @@ async fn guard_sse_payload(
         }
     }
 
-    let mut text_locations_by_choice = BTreeMap::<String, Vec<(usize, String)>>::new();
-    for location in text_locations {
-        text_locations_by_choice
-            .entry(stream_text_group(&location.1))
+    let mut text_locations_by_group = BTreeMap::<String, Vec<(usize, String)>>::new();
+    for (group, event_index, pointer) in text_locations {
+        text_locations_by_group
+            .entry(group)
             .or_default()
-            .push(location);
+            .push((event_index, pointer));
     }
-    let mut snapshot_locations_by_choice = BTreeMap::<String, Vec<(usize, String)>>::new();
-    for location in snapshot_text_locations {
-        snapshot_locations_by_choice
-            .entry(stream_text_group(&location.1))
+    let mut snapshot_locations_by_group = BTreeMap::<String, Vec<(usize, String)>>::new();
+    for (group, event_index, pointer) in snapshot_text_locations {
+        snapshot_locations_by_group
+            .entry(group)
             .or_default()
-            .push(location);
+            .push((event_index, pointer));
     }
-    for (choice, locations) in text_locations_by_choice {
+    for (group, locations) in text_locations_by_group {
         let combined_text = locations
             .iter()
             .filter_map(|(event_index, pointer)| {
@@ -292,7 +294,7 @@ async fn guard_sse_payload(
             && transformed != combined_text
         {
             replace_stream_text(&mut blocks, &locations, transformed, true);
-            if let Some(snapshot_locations) = snapshot_locations_by_choice.get(&choice)
+            if let Some(snapshot_locations) = snapshot_locations_by_group.get(&group)
                 && locations != *snapshot_locations
             {
                 replace_stream_text(&mut blocks, snapshot_locations, transformed, true);
@@ -328,12 +330,28 @@ fn parse_guarded_sse_json(payload: &str) -> Result<Value, GatewayError> {
     })
 }
 
-fn stream_text_group(pointer: &str) -> String {
-    let mut segments = pointer.split('/').filter(|segment| !segment.is_empty());
-    match (segments.next(), segments.next()) {
-        (Some("choices"), Some(choice)) => format!("choice:{choice}"),
-        _ => "default".to_string(),
+fn stream_text_group(value: &Value, pointer: &str) -> String {
+    let segments = pointer
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    if segments.first() == Some(&"choices")
+        && let Some(choice) = segments.get(1)
+    {
+        return format!("choice:{choice}");
     }
+    if let Some(output_index) = value.get("output_index").and_then(Value::as_u64) {
+        return format!("output:{output_index}");
+    }
+    if let Some(position) = segments.iter().position(|segment| *segment == "output")
+        && let Some(output_index) = segments.get(position + 1)
+    {
+        return format!("output:{output_index}");
+    }
+    if let Some(item_id) = value.get("item_id").and_then(Value::as_str) {
+        return format!("item:{item_id}");
+    }
+    "default".to_string()
 }
 
 fn replace_stream_text(
@@ -992,10 +1010,20 @@ mod tests {
     }
 
     #[test]
-    fn groups_stream_text_by_chat_completion_choice() {
-        assert_eq!(stream_text_group("/choices/0/delta/content"), "choice:0");
-        assert_eq!(stream_text_group("/choices/1/delta/content"), "choice:1");
-        assert_eq!(stream_text_group("/delta"), "default");
+    fn groups_stream_text_by_independent_output() {
+        assert_eq!(
+            stream_text_group(&json!({}), "/choices/0/delta/content"),
+            "choice:0"
+        );
+        assert_eq!(
+            stream_text_group(&json!({"item_id": "item-a", "output_index": 1}), "/delta"),
+            "output:1"
+        );
+        assert_eq!(
+            stream_text_group(&json!({}), "/response/output/1/content/0/text"),
+            "output:1"
+        );
+        assert_eq!(stream_text_group(&json!({}), "/delta"), "default");
     }
 
     #[test]
