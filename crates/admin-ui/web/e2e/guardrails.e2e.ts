@@ -22,7 +22,23 @@ async function upstreamRequestCount(request: APIRequestContext) {
   return payload.requests.length
 }
 
+async function requestLogCount(
+  request: APIRequestContext,
+  root: string,
+  cookie: string,
+  statusCode: number,
+) {
+  const response = await request.get(
+    `${root}/api/v1/admin/observability/request-logs?status_code=${statusCode}`,
+    { headers: { cookie } },
+  )
+  expect(response.status()).toBe(200)
+  const payload = (await response.json()) as { data: { total: number } }
+  return payload.data.total
+}
+
 test('guards prompt, non-stream response, and buffered stream boundaries', async ({
+  page,
   request,
   baseURL,
 }) => {
@@ -31,6 +47,8 @@ test('guards prompt, non-stream response, and buffered stream boundaries', async
     authorization: `Bearer ${gatewayApiKey}`,
     'content-type': 'application/json',
   }
+  const cookie = await ensureAdminSession(page, request, root)
+  const deniedLogsBefore = await requestLogCount(request, root, cookie, 403)
   await request.delete(`${upstreamRoot}/__admin/requests`)
 
   const promptDenied = await request.post(`${root}/v1/chat/completions`, {
@@ -69,6 +87,9 @@ test('guards prompt, non-stream response, and buffered stream boundaries', async
     expect(denied.status(), path).toBe(403)
     expect(await upstreamRequestCount(request), path).toBe(0)
   }
+  expect(await requestLogCount(request, root, cookie, 403)).toBeGreaterThanOrEqual(
+    deniedLogsBefore + 3,
+  )
 
   const auditAllowed = await request.post(`${root}/v1/chat/completions`, {
     headers,

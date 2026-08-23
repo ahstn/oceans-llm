@@ -209,7 +209,23 @@ async fn v1_messages_inner(
         &route.upstream_model,
     );
     let guard_context =
-        guard_typed_request(&state, &request_id, route_key, &mut core_request).await?;
+        match guard_typed_request(&state, &request_id, route_key, &mut core_request).await {
+            Ok(context) => context,
+            Err(AppError(error)) => {
+                record_guarded_pre_provider_failure(
+                    &state,
+                    &auth,
+                    &request_log_context,
+                    &route,
+                    icon_metadata,
+                    request_started_at,
+                    &labels,
+                    &error,
+                )
+                .await;
+                return Err(AppError(error));
+            }
+        };
 
     if let Err(error) = state
         .service
@@ -480,7 +496,23 @@ pub async fn v1_chat_completions(
         &route.upstream_model,
     );
     let guard_context =
-        guard_typed_request(&state, &request_id, route_key, &mut core_request).await?;
+        match guard_typed_request(&state, &request_id, route_key, &mut core_request).await {
+            Ok(context) => context,
+            Err(AppError(error)) => {
+                record_guarded_pre_provider_failure(
+                    &state,
+                    &auth,
+                    &request_log_context,
+                    &route,
+                    icon_metadata,
+                    request_started_at,
+                    &labels,
+                    &error,
+                )
+                .await;
+                return Err(AppError(error));
+            }
+        };
 
     if let Err(error) = state
         .service
@@ -848,7 +880,23 @@ pub async fn v1_responses(
         &route.upstream_model,
     );
     let guard_context =
-        guard_typed_request(&state, &request_id, route_key, &mut core_request).await?;
+        match guard_typed_request(&state, &request_id, route_key, &mut core_request).await {
+            Ok(context) => context,
+            Err(AppError(error)) => {
+                record_guarded_pre_provider_failure(
+                    &state,
+                    &auth,
+                    &request_log_context,
+                    &route,
+                    icon_metadata,
+                    request_started_at,
+                    &labels,
+                    &error,
+                )
+                .await;
+                return Err(AppError(error));
+            }
+        };
 
     if let Err(error) = state
         .service
@@ -1474,6 +1522,41 @@ struct UsageAccountingContext<'a> {
     request_id: &'a str,
     labels: ChatMetricLabels<'a>,
     operation: &'static str,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn record_guarded_pre_provider_failure(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+    request_log_context: &RequestLogContext,
+    route: &gateway_core::ModelRoute,
+    icon_metadata: RequestLogIconMetadata,
+    request_started_at: Instant,
+    labels: &ChatMetricLabels<'_>,
+    error: &GatewayError,
+) {
+    best_effort_log_non_stream_failure(
+        &state.service,
+        auth,
+        request_log_context,
+        &route.provider_key,
+        icon_metadata,
+        latency_ms_since(request_started_at),
+        error,
+        Vec::new(),
+    )
+    .await;
+    state.metrics.record_chat_request(&ChatRequestMetric {
+        labels: labels.clone(),
+        status_code: i64::from(error.http_status_code()),
+        outcome: error.error_type(),
+        latency_seconds: latency_seconds_since(request_started_at),
+    });
+    state.metrics.record_tool_cardinality(
+        labels,
+        request_log_context.operation,
+        &request_log_context.tool_cardinality,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
