@@ -1,5 +1,5 @@
-import { useState, useTransition } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { useEffect, useState, useTransition } from 'react'
+import { createFileRoute, useRouter, useRouterState } from '@tanstack/react-router'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { Badge } from '@/components/ui/badge'
@@ -67,11 +67,19 @@ export function GuardrailsPage() {
   const { policies, decisions } = Route.useLoaderData()
   const search = Route.useSearch()
   const router = useRouter()
+  const routeSearch = useRouterState({ select: (state) => state.location.searchStr })
   const [filters, setFilters] = useState<GuardrailDecisionFiltersInput>({
     ...emptyFilters,
     ...normalizeFilterValues(search),
   })
   const [pending, startTransition] = useTransition()
+
+  useEffect(() => {
+    setFilters({
+      ...emptyFilters,
+      ...normalizeFilterValues(Object.fromEntries(new URLSearchParams(routeSearch))),
+    })
+  }, [routeSearch])
 
   function applyFilters() {
     startTransition(async () => {

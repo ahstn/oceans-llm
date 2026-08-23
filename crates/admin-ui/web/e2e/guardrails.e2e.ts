@@ -187,6 +187,29 @@ test('guards prompt, non-stream response, and buffered stream boundaries', async
   }
 })
 
+test('keeps decision filters synchronized with browser navigation', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const root = baseURL ?? 'http://127.0.0.1:38080'
+  await ensureAdminSession(page, request, root)
+  await page.goto(`${root}/admin/observability/guardrails`)
+
+  const evaluator = page.getByLabel('Evaluator')
+  await evaluator.fill('deterministic')
+  await page.getByRole('button', { name: 'Apply filters' }).click()
+  await expect(page).toHaveURL(/evaluator=deterministic/)
+
+  await evaluator.fill('managed')
+  await page.getByRole('button', { name: 'Apply filters' }).click()
+  await expect(page).toHaveURL(/evaluator=managed/)
+
+  await page.goBack()
+  await expect(page).toHaveURL(/evaluator=deterministic/)
+  await expect(evaluator).toHaveValue('deterministic')
+})
+
 test('uses one deny path for direct and aggregate MCP calls before execution', async ({
   page,
   request,
