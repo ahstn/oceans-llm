@@ -198,7 +198,7 @@ async fn guard_sse_payload(
     }
 
     if text_locations.is_empty() {
-        text_locations = snapshot_text_locations;
+        text_locations.clone_from(&snapshot_text_locations);
     }
     for fragments in tool_fragments.values() {
         if fragments.name.is_empty() {
@@ -234,23 +234,20 @@ async fn guard_sse_payload(
                 serde_json::to_string(&arguments).ok()
             };
             if let Some(replacement) = replacement {
-                let mut first = true;
-                for (event_index, pointer) in &fragments.argument_locations {
-                    for line in &mut blocks[*event_index] {
-                        if let StreamLine::Json(value) = line
-                            && let Some(slot) = value.pointer_mut(pointer)
-                        {
-                            let replacement = if first { replacement.as_str() } else { "" };
-                            replace_stream_argument(
-                                slot,
-                                replacement,
-                                fragments.shell_command_locations,
-                            );
-                            first = false;
-                            break;
-                        }
-                    }
-                }
+                replace_stream_arguments(
+                    &mut blocks,
+                    &fragments.argument_locations,
+                    &replacement,
+                    fragments.shell_command_locations,
+                    true,
+                );
+                replace_stream_arguments(
+                    &mut blocks,
+                    &fragments.terminal_argument_locations,
+                    &replacement,
+                    fragments.shell_command_locations,
+                    false,
+                );
             }
         }
     }
@@ -280,16 +277,9 @@ async fn guard_sse_payload(
         if let Some(transformed) = evaluation.output.text_content()
             && transformed != combined_text
         {
-            let mut replacement = Some(transformed.to_string());
-            for (event_index, pointer) in &text_locations {
-                for line in &mut blocks[*event_index] {
-                    if let StreamLine::Json(value) = line
-                        && let Some(slot) = value.pointer_mut(pointer)
-                    {
-                        *slot = Value::String(replacement.take().unwrap_or_default());
-                        break;
-                    }
-                }
+            replace_stream_text(&mut blocks, &text_locations, transformed, true);
+            if !snapshot_text_locations.is_empty() && text_locations != snapshot_text_locations {
+                replace_stream_text(&mut blocks, &snapshot_text_locations, transformed, true);
             }
         }
     }
@@ -315,6 +305,56 @@ async fn guard_sse_payload(
     Ok(rendered.into_bytes())
 }
 
+fn replace_stream_text(
+    blocks: &mut [Vec<StreamLine>],
+    locations: &[(usize, String)],
+    replacement: &str,
+    clear_after_first: bool,
+) {
+    let mut first = true;
+    for (event_index, pointer) in locations {
+        for line in &mut blocks[*event_index] {
+            if let StreamLine::Json(value) = line
+                && let Some(slot) = value.pointer_mut(pointer)
+            {
+                *slot = Value::String(if first || !clear_after_first {
+                    replacement.to_string()
+                } else {
+                    String::new()
+                });
+                first = false;
+                break;
+            }
+        }
+    }
+}
+
+fn replace_stream_arguments(
+    blocks: &mut [Vec<StreamLine>],
+    locations: &[(usize, String)],
+    replacement: &str,
+    shell_command: bool,
+    clear_after_first: bool,
+) {
+    let mut first = true;
+    for (event_index, pointer) in locations {
+        for line in &mut blocks[*event_index] {
+            if let StreamLine::Json(value) = line
+                && let Some(slot) = value.pointer_mut(pointer)
+            {
+                let value = if first || !clear_after_first {
+                    replacement
+                } else {
+                    ""
+                };
+                replace_stream_argument(slot, value, shell_command);
+                first = false;
+                break;
+            }
+        }
+    }
+}
+
 enum StreamLine {
     Json(Value),
     Done,
@@ -326,6 +366,7 @@ struct ToolCallFragments {
     name: String,
     arguments: String,
     argument_locations: Vec<(usize, String)>,
+    terminal_argument_locations: Vec<(usize, String)>,
     shell_command_locations: bool,
 }
 
@@ -350,12 +391,11 @@ fn collect_stream_tool_fragments(
                     .or_else(|| item.get("call_id"))
                     .map(identity_key)
                     .unwrap_or_else(|| "default".to_string());
+                let event_type = object.get("type").and_then(Value::as_str);
                 let fragments = output.entry(key).or_default();
                 fragments.name = name;
                 let arguments = serialized_arguments(&arguments);
-                if fragments.arguments.is_empty()
-                    || object.get("type").and_then(Value::as_str)
-                        == Some("response.output_item.done")
+                if fragments.arguments.is_empty() || event_type == Some("response.output_item.done")
                 {
                     fragments.arguments = arguments;
                 }
@@ -368,9 +408,15 @@ fn collect_stream_tool_fragments(
                 } else {
                     format!("{pointer}/item/arguments")
                 };
-                fragments
-                    .argument_locations
-                    .push((event_index, argument_pointer));
+                if event_type == Some("response.output_item.done") {
+                    fragments
+                        .terminal_argument_locations
+                        .push((event_index, argument_pointer));
+                } else if event_type != Some("response.output_item.added") {
+                    fragments
+                        .argument_locations
+                        .push((event_index, argument_pointer));
+                }
             }
 
             let anthropic_index = (object
@@ -808,9 +854,10 @@ fn transformed_tool_arguments(output: &EvaluationPayload, original: &Value) -> O
 fn replace_shell_command(arguments: &mut Value, replacement: &str) -> bool {
     for field in ["command", "cmd", "script"] {
         if let Some(slot) = arguments.get_mut(field)
-            && slot.is_string()
+            && (slot.is_string() || slot.is_array())
         {
-            *slot = Value::String(replacement.to_string());
+            let array = slot.is_array();
+            replace_stream_argument(slot, replacement, array);
             return true;
         }
     }
@@ -1027,6 +1074,7 @@ mod tests {
             "type": "shell_call",
             "action": {"command": ["rm -rf /tmp/a", "printf safe"]}
         });
+
         replace_tool_call_arguments(
             responses.as_object_mut().expect("tool call"),
             json!({"command": "[masked]\nprintf safe"}),
@@ -1039,6 +1087,80 @@ mod tests {
         let mut streamed_commands = json!(["rm -rf /tmp/a", "printf safe"]);
         replace_stream_argument(&mut streamed_commands, "[masked]\nprintf safe", true);
         assert_eq!(streamed_commands, json!(["[masked]", "printf safe"]));
+    }
+
+    #[test]
+    fn preserves_responses_delta_and_terminal_snapshot_semantics() {
+        let mut blocks = vec![
+            vec![StreamLine::Json(json!({
+                "type": "response.output_item.added",
+                "item": {"arguments": ""}
+            }))],
+            vec![StreamLine::Json(json!({
+                "type": "response.function_call_arguments.delta",
+                "delta": "{\"command\":\"old\"}"
+            }))],
+            vec![StreamLine::Json(json!({
+                "type": "response.output_item.done",
+                "item": {"arguments": "{\"command\":\"old\"}"}
+            }))],
+        ];
+        replace_stream_arguments(
+            &mut blocks,
+            &[(1, "/delta".into())],
+            "{\"command\":\"[masked]\"}",
+            false,
+            true,
+        );
+        replace_stream_arguments(
+            &mut blocks,
+            &[(2, "/item/arguments".into())],
+            "{\"command\":\"[masked]\"}",
+            false,
+            false,
+        );
+
+        let json_at = |index: usize| match &blocks[index][0] {
+            StreamLine::Json(value) => value,
+            _ => panic!("expected JSON"),
+        };
+        assert_eq!(json_at(0)["item"]["arguments"], "");
+        assert_eq!(json_at(1)["delta"], "{\"command\":\"[masked]\"}");
+        assert_eq!(
+            json_at(2)["item"]["arguments"],
+            "{\"command\":\"[masked]\"}"
+        );
+    }
+
+    #[test]
+    fn rewrites_responses_text_deltas_and_completion_snapshot() {
+        let mut blocks = vec![
+            vec![StreamLine::Json(json!({
+                "type": "response.output_text.delta",
+                "delta": "private"
+            }))],
+            vec![StreamLine::Json(json!({
+                "type": "response.completed",
+                "response": {"output": [{"content": [{"text": "private"}]}]}
+            }))],
+        ];
+        replace_stream_text(&mut blocks, &[(0, "/delta".into())], "[masked]", true);
+        replace_stream_text(
+            &mut blocks,
+            &[(1, "/response/output/0/content/0/text".into())],
+            "[masked]",
+            true,
+        );
+
+        let json_at = |index: usize| match &blocks[index][0] {
+            StreamLine::Json(value) => value,
+            _ => panic!("expected JSON"),
+        };
+        assert_eq!(json_at(0)["delta"], "[masked]");
+        assert_eq!(
+            json_at(1)["response"]["output"][0]["content"][0]["text"],
+            "[masked]"
+        );
     }
 
     #[test]

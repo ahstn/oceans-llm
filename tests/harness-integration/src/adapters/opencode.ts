@@ -141,8 +141,23 @@ function validateGuardrailDecision(value) {
   return value;
 }
 
-function shellStaysWithinWorkspace(command) {
-  return !/(^|[\\s"'=])(?:\\/|~(?:\\/|\\s|$)|\\.\\.(?:\\/|\\\\|\\s|$)|\\$HOME(?:\\/|\\s|$)|\\$\\{HOME\\})/.test(command);
+const workspace = process.cwd();
+
+function shellQuote(value) {
+  return "'" + value.replaceAll("'", "'\\"'\\"'") + "'";
+}
+
+function confineShell(command) {
+  if (process.platform === "linux") {
+    return "bwrap --die-with-parent --unshare-all --new-session --tmpfs / --proc /proc --dev /dev --tmpfs /tmp --ro-bind-try /usr /usr --ro-bind-try /bin /bin --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 --bind " +
+      shellQuote(workspace) + " /workspace --chdir /workspace /bin/sh -c " + shellQuote(command);
+  }
+  if (process.platform === "darwin") {
+    const profile = '(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/dev") (subpath ' +
+      JSON.stringify(workspace) + '))(allow file-write* (subpath ' + JSON.stringify(workspace) + '))';
+    return "/usr/bin/sandbox-exec -p " + shellQuote(profile) + " /bin/sh -c " + shellQuote(command);
+  }
+  return null;
 }
 export const OceansGuardrails = async () => ({
   "tool.execute.before": async (input, output) => {
@@ -173,11 +188,12 @@ export const OceansGuardrails = async () => ({
         throw new Error("Oceans guardrail returned an invalid shell transformation");
       }
       command = decision.output_command;
-      output.args.command = command;
     }
-    if (!shellStaysWithinWorkspace(command)) {
-      throw new Error("Shell access outside the harness workspace is disabled");
+    const confinedCommand = confineShell(command);
+    if (confinedCommand === null) {
+      throw new Error("Shell sandboxing is unavailable on this platform");
     }
+    output.args.command = confinedCommand;
     return;
   },
 });

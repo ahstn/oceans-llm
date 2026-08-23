@@ -8,6 +8,7 @@ use aws_sigv4::{
     sign::v4,
 };
 use aws_smithy_runtime_api::client::identity::Identity;
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::OnceCell;
@@ -16,6 +17,12 @@ use crate::{
     ContentTransformation, EvaluationError, EvaluationInput, GuardPhase, ManagedDecisionMetadata,
     ManagedEvaluator, ManagedOutcome, ManagedService, ReasonCode, managed::input_text,
 };
+
+const URI_LABEL_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
 
 #[derive(Debug, Clone)]
 pub enum BedrockAuth {
@@ -158,8 +165,8 @@ impl BedrockApplyGuardrail {
         let endpoint = format!(
             "{}/guardrail/{}/version/{}/apply",
             self.config.endpoint().trim_end_matches('/'),
-            self.config.guardrail_identifier,
-            self.config.guardrail_version
+            encode_uri_label(&self.config.guardrail_identifier),
+            encode_uri_label(&self.config.guardrail_version)
         );
         let request = self
             .client
@@ -337,7 +344,9 @@ async fn normalize_response(
             metadata: metadata.clone(),
         }),
         "GUARDRAIL_INTERVENED"
-            if !output.is_empty() && has_anonymized_assessment(&response.assessments) =>
+            if !output.is_empty()
+                && has_assessment_action(&response.assessments, "ANONYMIZED")
+                && !has_assessment_action(&response.assessments, "BLOCKED") =>
         {
             Ok(ManagedOutcome::Transformed {
                 transformation: ContentTransformation::new(output),
@@ -354,22 +363,30 @@ async fn normalize_response(
         ))),
     }
 }
-fn has_anonymized_assessment(assessments: &[Value]) -> bool {
-    assessments.iter().any(has_anonymized_action)
+fn has_assessment_action(assessments: &[Value], expected: &str) -> bool {
+    assessments
+        .iter()
+        .any(|assessment| contains_assessment_action(assessment, expected))
 }
 
-fn has_anonymized_action(value: &Value) -> bool {
+fn contains_assessment_action(value: &Value, expected: &str) -> bool {
     match value {
         Value::Object(object) => object.iter().any(|(key, value)| {
             (key == "action"
                 && value
                     .as_str()
-                    .is_some_and(|action| action.eq_ignore_ascii_case("ANONYMIZED")))
-                || has_anonymized_action(value)
+                    .is_some_and(|action| action.eq_ignore_ascii_case(expected)))
+                || contains_assessment_action(value, expected)
         }),
-        Value::Array(values) => values.iter().any(has_anonymized_action),
+        Value::Array(values) => values
+            .iter()
+            .any(|value| contains_assessment_action(value, expected)),
         _ => false,
     }
+}
+
+fn encode_uri_label(value: &str) -> String {
+    utf8_percent_encode(value, URI_LABEL_ENCODE_SET).to_string()
 }
 
 fn map_reqwest_error(error: reqwest::Error) -> EvaluationError {
@@ -500,6 +517,34 @@ mod tests {
             } if transformation.content == "Customer [NAME]"
                 && reason_code.as_str() == "bedrock.anonymized"
         ));
+    }
+
+    #[tokio::test]
+    async fn blocking_assessment_takes_precedence_over_anonymization() {
+        let response_body = r#"{
+            "action":"GUARDRAIL_INTERVENED",
+            "outputs":[{"text":"blocked message"}],
+            "assessments":[{
+                "contentPolicy":{"filters":[{"action":"BLOCKED"}]},
+                "sensitiveInformationPolicy":{
+                    "piiEntities":[{"action":"ANONYMIZED"}]
+                }
+            }]
+        }"#;
+        let (endpoint, _) = fake_server(response_body);
+        let response = reqwest::get(endpoint).await.unwrap();
+
+        let outcome = normalize_response(response, "unsafe input").await.unwrap();
+
+        assert!(matches!(outcome, ManagedOutcome::Intervention { .. }));
+    }
+
+    #[test]
+    fn encodes_guardrail_arns_as_one_uri_label() {
+        assert_eq!(
+            encode_uri_label("arn:aws:bedrock:us-east-1:123:guardrail/abc"),
+            "arn%3Aaws%3Abedrock%3Aus-east-1%3A123%3Aguardrail%2Fabc"
+        );
     }
 
     #[tokio::test]

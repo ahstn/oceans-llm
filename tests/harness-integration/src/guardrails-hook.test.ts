@@ -110,7 +110,7 @@ describe("shell guardrail hooks", () => {
     );
   });
 
-  test("allowed commands cannot escape the harness workspace", async () => {
+  test("allowed commands execute inside an OS filesystem sandbox", async () => {
     globalThis.fetch = vi.fn().mockImplementation(() =>
       Response.json({
         decision_id: "decision-allowed",
@@ -121,16 +121,19 @@ describe("shell guardrail hooks", () => {
     );
     const piHook = await loadPiHook();
     const openCodeHook = await loadOpenCodeHook();
+    const piEvent = {
+      toolName: "bash",
+      input: { command: "cat ././../../etc/passwd" },
+    };
+    const openCodeOutput = { args: { command: 'cat "$PWD/../../etc/passwd"' } };
 
-    await expect(
-      piHook({ toolName: "bash", input: { command: "cat /etc/passwd" } }),
-    ).resolves.toMatchObject({
-      block: true,
-      reason: expect.stringContaining("outside the harness workspace"),
-    });
-    await expect(
-      openCodeHook({ tool: "bash" }, { args: { command: "cat ../secret" } }),
-    ).rejects.toThrow("outside the harness workspace");
+    await expect(piHook(piEvent)).resolves.toBeUndefined();
+    await expect(openCodeHook({ tool: "bash" }, openCodeOutput)).resolves.toBeUndefined();
+
+    const sandboxExecutable = process.platform === "darwin" ? "sandbox-exec" : "bwrap";
+    expect(piEvent.input.command).toContain(sandboxExecutable);
+    expect(openCodeOutput.args.command).toContain(sandboxExecutable);
+    expect(piEvent.input.command).toContain("/tmp/guardrail-workspace");
   });
 
   test("both hooks fail closed when policy evaluation is unavailable", async () => {

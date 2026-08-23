@@ -158,8 +158,21 @@ function isWithinWorkspace(target) {
   );
 }
 
-function shellStaysWithinWorkspace(command) {
-  return !/(^|[\\s"'=])(?:\\/|~(?:\\/|\\s|$)|\\.\\.(?:\\/|\\\\|\\s|$)|\\$HOME(?:\\/|\\s|$)|\\$\\{HOME\\})/.test(command);
+function shellQuote(value) {
+  return "'" + value.replaceAll("'", "'\\"'\\"'") + "'";
+}
+
+function confineShell(command) {
+  if (process.platform === "linux") {
+    return "bwrap --die-with-parent --unshare-all --new-session --tmpfs / --proc /proc --dev /dev --tmpfs /tmp --ro-bind-try /usr /usr --ro-bind-try /bin /bin --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 --bind " +
+      shellQuote(workspace) + " /workspace --chdir /workspace /bin/sh -c " + shellQuote(command);
+  }
+  if (process.platform === "darwin") {
+    const profile = '(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/dev") (subpath ' +
+      JSON.stringify(workspace) + '))(allow file-write* (subpath ' + JSON.stringify(workspace) + '))';
+    return "/usr/bin/sandbox-exec -p " + shellQuote(profile) + " /bin/sh -c " + shellQuote(command);
+  }
+  return null;
 }
 
 export default function workspaceSandbox(pi) {
@@ -187,11 +200,12 @@ export default function workspaceSandbox(pi) {
           return { block: true, reason: "Oceans guardrail returned an invalid shell transformation" };
         }
         command = decision.output_command;
-        event.input.command = command;
       }
-      if (!shellStaysWithinWorkspace(command)) {
-        return { block: true, reason: "Shell access outside the harness workspace is disabled" };
+      const confinedCommand = confineShell(command);
+      if (confinedCommand === null) {
+        return { block: true, reason: "Shell sandboxing is unavailable on this platform" };
       }
+      event.input.command = confinedCommand;
       return;
     }
     if (!["edit", "read", "write"].includes(event.toolName)) {

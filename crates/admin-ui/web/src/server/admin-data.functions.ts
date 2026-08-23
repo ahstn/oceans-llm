@@ -152,10 +152,22 @@ function optionalString(value: unknown, label: string): string | undefined {
 
 function optionalRfc3339(value: unknown, label: string): string | undefined {
   const timestamp = optionalString(value, label)
+  if (timestamp === undefined) return undefined
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.exec(
+      timestamp,
+    )
+  if (!match || Number.isNaN(Date.parse(timestamp))) {
+    throw new Error(`${label} must be an RFC 3339 timestamp`)
+  }
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const calendarDate = new Date(Date.UTC(year, month - 1, day))
   if (
-    timestamp !== undefined &&
-    (!/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(timestamp) ||
-      Number.isNaN(Date.parse(timestamp)))
+    calendarDate.getUTCFullYear() !== year ||
+    calendarDate.getUTCMonth() !== month - 1 ||
+    calendarDate.getUTCDate() !== day
   ) {
     throw new Error(`${label} must be an RFC 3339 timestamp`)
   }

@@ -1712,6 +1712,7 @@ dependencies = [
  "aws-credential-types",
  "aws-sigv4",
  "aws-smithy-runtime-api",
+ "percent-encoding",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
