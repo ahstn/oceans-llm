@@ -156,23 +156,31 @@ impl DeterministicEvaluator for BuiltInEvaluator {
     }
 }
 
-fn match_tool_call_pack(pack: &str, name: &str, arguments: &Value) -> Option<MatchedRule> {
-    if is_shell_tool(name) {
-        for path in [
-            "$.command",
-            "$.cmd",
-            "$.input.command",
-            "$.arguments.command",
-        ] {
-            if let Some(command) = first_string(arguments, path)
-                && let Some(matched) = match_shell_pack(pack, command)
-            {
-                return Some(MatchedRule {
-                    matched_field: path.to_string(),
-                    ..matched
-                });
-            }
+fn match_shell_tool(pack: &str, name: &str, arguments: &Value) -> Option<MatchedRule> {
+    if !is_shell_tool(name) {
+        return None;
+    }
+    for path in [
+        "$.command",
+        "$.cmd",
+        "$.input.command",
+        "$.arguments.command",
+    ] {
+        if let Some(command) = first_string(arguments, path)
+            && let Some(matched) = match_shell_pack(pack, command)
+        {
+            return Some(MatchedRule {
+                matched_field: path.to_string(),
+                ..matched
+            });
         }
+    }
+    None
+}
+
+fn match_tool_call_pack(pack: &str, name: &str, arguments: &Value) -> Option<MatchedRule> {
+    if let Some(matched) = match_shell_tool(pack, name, arguments) {
+        return Some(matched);
     }
 
     let call = McpCall {
@@ -443,6 +451,11 @@ fn match_gcp(invocation: &CommandInvocation) -> Option<MatchedRule> {
 }
 
 fn match_mcp_pack(pack: &str, call: &McpCall) -> Option<MatchedRule> {
+    if matches!(pack, "core.shell" | "core.git" | "core.filesystem")
+        && let Some(matched) = match_shell_tool(pack, &call.tool, &call.arguments)
+    {
+        return Some(matched);
+    }
     match pack {
         "database.postgresql" => match_postgresql_mcp(call),
         "cloud.aws" => match_operation_mcp(
@@ -1090,6 +1103,39 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn core_packs_inspect_commands_exposed_as_mcp_tools() {
+        let cases = [
+            ("core.shell", "bash", json!({"command": "reboot"})),
+            (
+                "core.git",
+                "execute_command",
+                json!({"input": {"command": "git reset --hard"}}),
+            ),
+            (
+                "core.filesystem",
+                "run_command",
+                json!({"cmd": "rm -rf /tmp/work"}),
+            ),
+        ];
+
+        for (pack, tool, arguments) in cases {
+            let matched = evaluate(
+                pack,
+                EvaluationPayload::McpCall {
+                    call: McpCall {
+                        server: "local-tools".into(),
+                        tool: tool.into(),
+                        arguments,
+                    },
+                },
+            )
+            .unwrap();
+            assert_eq!(matched.pack_id, pack);
+            assert!(matched.matched_field.starts_with("$."));
+        }
     }
 
     #[test]
