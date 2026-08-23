@@ -385,6 +385,9 @@ fn stream_text_group(value: &Value, pointer: &str) -> String {
     if let Some(item_id) = value.get("item_id").and_then(Value::as_str) {
         return format!("item:{item_id}");
     }
+    if let Some(content_block_index) = value.get("index").and_then(Value::as_u64) {
+        return format!("content-block:{content_block_index}");
+    }
     "default".to_string()
 }
 
@@ -1070,6 +1073,13 @@ mod tests {
         assert_eq!(
             stream_text_group(&json!({}), "/response/output/1/content/0/text"),
             "output:1"
+        );
+        assert_eq!(
+            stream_text_group(
+                &json!({"type": "content_block_delta", "index": 2}),
+                "/delta/text"
+            ),
+            "content-block:2"
         );
         assert_eq!(stream_text_group(&json!({}), "/delta"), "default");
     }
