@@ -22,6 +22,7 @@ import {
   getRequestLogDetail,
   getBatchResults,
   getHarnessUsage,
+  getGuardrailPolicies,
   getMcpInvocationDetail,
   previewMcpEffectiveAccess,
   listRecommendedMcpServers,
@@ -32,6 +33,7 @@ import {
   getGatewayVersion,
   listRequestLogs,
   listBatches,
+  listGuardrailDecisions,
   listMcpInvocations,
   listMcpOauthConnections,
   listMcpServers,
@@ -363,6 +365,16 @@ export const getObservabilityRequestLogDetail = createServerFn({ method: 'GET' }
 export const getMcpInvocations = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data?: Parameters<typeof listMcpInvocations>[0] }) => {
     return listMcpInvocations(data)
+  },
+)
+
+export const getGuardrailPolicyView = createServerFn({ method: 'GET' }).handler(async () => {
+  return getGuardrailPolicies()
+})
+
+export const getGuardrailDecisionPage = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data?: Parameters<typeof listGuardrailDecisions>[0] }) => {
+    return listGuardrailDecisions(data)
   },
 )
 

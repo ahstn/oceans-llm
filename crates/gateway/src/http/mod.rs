@@ -5,10 +5,13 @@ pub mod api_keys;
 pub mod batches;
 pub mod error;
 mod focus_export;
+pub mod guardrail_events;
+pub mod guardrails;
 pub mod handlers;
 pub mod identity;
 pub mod identity_lifecycle;
 pub mod identity_views;
+pub mod inference_guardrails;
 pub mod mcp_gateway;
 pub mod mcp_oauth;
 pub mod mcp_registry;
@@ -37,7 +40,7 @@ use tower_http::{
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use self::{
-    api_keys::*, batches::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*,
+    api_keys::*, batches::*, guardrails::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*,
     mcp_registry::*, models::*, observability::*, review_agent::*, spend::*, state::AppState,
 };
 
@@ -49,6 +52,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api/v1/health", get(api_health))
+        .route("/api/v1/guardrails/evaluate", post(evaluate_guardrail))
         .route(
             "/api/v1/batches",
             get(list_batches)
@@ -230,6 +234,14 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}",
             get(get_mcp_tool_invocation_detail),
+        )
+        .route(
+            "/api/v1/admin/guardrails/policies",
+            get(get_guardrail_policies),
+        )
+        .route(
+            "/api/v1/admin/guardrails/decisions",
+            get(list_guardrail_decisions),
         )
         .route(
             "/api/v1/admin/mcp/recommended-servers",

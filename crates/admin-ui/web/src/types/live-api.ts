@@ -132,6 +132,12 @@ export type McpInvocationFiltersInput = NonNullable<
   operations['list_mcp_tool_invocations']['parameters']['query']
 >
 export type McpInvocationStatus = NonNullable<McpInvocationFiltersInput['status']>
+export type GuardrailPoliciesView = components['schemas']['GuardrailPoliciesView']
+export type GuardrailDecisionView = components['schemas']['GuardrailDecisionView']
+export type GuardrailDecisionPageView = components['schemas']['GuardrailDecisionPageView']
+export type GuardrailDecisionFiltersInput = NonNullable<
+  operations['list_guardrail_decisions']['parameters']['query']
+>
 export type RecommendedMcpServerView = components['schemas']['RecommendedMcpServerView']
 export type RecommendedMcpServersPayload = components['schemas']['RecommendedMcpServersPayload']
 export type McpServerView = components['schemas']['McpServerView']

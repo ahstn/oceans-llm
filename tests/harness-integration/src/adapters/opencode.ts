@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,6 +23,9 @@ export class OpenCodeAdapter implements HarnessAdapter {
   async run(workspace: string, prompt: string): Promise<HarnessRun> {
     const requestTag = randomUUID();
     const isolated = await createIsolatedPaths(workspace, this.key);
+    const pluginDirectory = join(isolated.config, "plugins");
+    await mkdir(pluginDirectory, { recursive: true });
+    await writeFile(join(pluginDirectory, "oceans-guardrails.js"), guardrailPluginSource(), "utf8");
     const config = {
       agent: {
         build: {
@@ -39,7 +43,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
         },
       },
       permission: {
-        bash: "deny",
+        bash: "allow",
         external_directory: "deny",
         task: "deny",
       },
@@ -64,6 +68,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
     };
     const environment = createHarnessEnvironment(isolated, {
       OCEANS_API_KEY: this.#runtime.apiKey,
+      OCEANS_BASE_URL: this.#runtime.baseUrl,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
       OPENCODE_CONFIG_DIR: isolated.config,
       OPENCODE_DISABLE_AUTOUPDATE: "true",
@@ -114,6 +119,41 @@ export class OpenCodeAdapter implements HarnessAdapter {
       toolCalls: parseToolCalls(result.stdout),
     };
   }
+}
+
+export function guardrailPluginSource(): string {
+  return `
+const guardrailUrl = new URL("/api/v1/guardrails/evaluate", process.env.OCEANS_BASE_URL).toString();
+const guardrailTimeoutMs = Number(process.env.OCEANS_GUARDRAIL_TIMEOUT_MS ?? "2000");
+
+export const OceansGuardrails = async () => ({
+  "tool.execute.before": async (input, output) => {
+    if (input.tool !== "bash") return;
+    const command = output.args?.command;
+    if (typeof command !== "string") {
+      throw new Error("Shell command is missing");
+    }
+    const response = await fetch(guardrailUrl, {
+      signal: AbortSignal.timeout(guardrailTimeoutMs),
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + process.env.OCEANS_API_KEY,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ tool_name: "bash", command }),
+    });
+    if (!response.ok) {
+      throw new Error("Guardrail evaluation failed with HTTP " + response.status);
+    }
+    const decision = await response.json();
+    console.error("oceans_guardrail_decision_id=" + decision.decision_id);
+    if (!decision.allowed) {
+      throw new Error("Oceans guardrail denied shell execution: " + decision.reason_code);
+    }
+    return;
+  },
+});
+`;
 }
 
 function stripAnsi(value: string): string {

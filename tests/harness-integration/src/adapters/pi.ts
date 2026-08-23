@@ -95,6 +95,7 @@ export class PiAdapter implements HarnessAdapter {
         cwd: workspace,
         env: createHarnessEnvironment(isolated, {
           OCEANS_API_KEY: this.#runtime.apiKey,
+          OCEANS_BASE_URL: this.#runtime.baseUrl,
           PI_OFFLINE: "1",
           PI_CODING_AGENT_DIR: agentDir,
         }),
@@ -110,10 +111,29 @@ export class PiAdapter implements HarnessAdapter {
   }
 }
 
-function workspaceSandboxSource(workspace: string): string {
+export function workspaceSandboxSource(workspace: string): string {
   return `import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const workspace = ${JSON.stringify(workspace)};
+const guardrailUrl = new URL("/api/v1/guardrails/evaluate", process.env.OCEANS_BASE_URL).toString();
+const guardrailTimeoutMs = Number(process.env.OCEANS_GUARDRAIL_TIMEOUT_MS ?? "2000");
+
+async function guardShell(command) {
+  const response = await fetch(guardrailUrl, {
+    signal: AbortSignal.timeout(guardrailTimeoutMs),
+    method: "POST",
+    headers: {
+      authorization: "Bearer " + process.env.OCEANS_API_KEY,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ tool_name: "bash", command }),
+  });
+  if (!response.ok) {
+    throw new Error("Guardrail evaluation failed with HTTP " + response.status);
+  }
+  return response.json();
+}
+
 
 function isWithinWorkspace(target) {
   const relativePath = relative(workspace, resolve(workspace, target));
@@ -126,7 +146,24 @@ function isWithinWorkspace(target) {
 export default function workspaceSandbox(pi) {
   pi.on("tool_call", async (event) => {
     if (event.toolName === "bash") {
-      return { block: true, reason: "Shell access is disabled in the harness integration sandbox" };
+      const command = event.input?.command;
+      if (typeof command !== "string") {
+        return { block: true, reason: "Shell command is missing" };
+      }
+      let decision;
+      try {
+        decision = await guardShell(command);
+      } catch (error) {
+        return { block: true, reason: String(error) };
+      }
+      console.error("oceans_guardrail_decision_id=" + decision.decision_id);
+      if (!decision.allowed) {
+        return {
+          block: true,
+          reason: "Oceans guardrail denied shell execution: " + decision.reason_code,
+        };
+      }
+      return;
     }
     if (!["edit", "read", "write"].includes(event.toolName)) {
       return;

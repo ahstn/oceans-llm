@@ -44,6 +44,12 @@ The Pi tab emits `models.json` content for Pi custom provider/model configuratio
 
 Generated model metadata uses effective route pricing and conservative logical-model context limits from the Models API. Pi receives `cost.cacheRead` and `cost.cacheWrite` when those rates are available; either value falls back to zero only when the effective route pricing omits it. OpenCode receives its supported input, output, and cache-read fields. If selectable routes differ in pricing, the Models API marks `pricing_varies_by_route`; generated snippets use the primary display route's effective rates.
 
+### Shell guardrail hook
+
+The Oceans harness integration fixture adds a gateway pre-tool hook for Pi and an OpenCode `tool.execute.before` plugin hook. Both call `POST /api/v1/guardrails/evaluate` with the same `OCEANS_API_KEY` and `OCEANS_BASE_URL` used for model traffic. Install the generated hook beside the normal harness configuration and keep those environment variables out of checked-in files.
+
+The hook must run directly before shell execution. A deny or evaluation failure prevents process creation. Audit decisions permit execution and return a decision ID for correlation. See [Gateway Guardrails](../operations/gateway-guardrails.md).
+
 ## Claude Code
 
 The Claude Code tab emits `.claude/settings.json` content with the SchemaStore Claude Code schema URL. The gateway settings block includes:

@@ -5,6 +5,7 @@
 //! `tests/` or private test submodules as store domains continue to grow.
 mod any_store_agent_analysis;
 mod any_store_batches;
+mod any_store_guardrail_decisions;
 mod any_store_mcp_access;
 mod any_store_mcp_aggregate_sessions;
 mod any_store_mcp_credentials;

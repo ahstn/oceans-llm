@@ -24,7 +24,8 @@ use crate::{
         BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord,
         CacheUsageAggregateRecord, ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord,
         ExternalMcpToolRecord, FocusExportAggregateRecord, FocusExportDiagnosticsRecord,
-        GatewayModel, HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
+        GatewayModel, GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
+        HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
         McpAggregateSessionRecord, McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord,
         McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
         McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
@@ -777,6 +778,19 @@ pub trait BatchRepository: Send + Sync {
         &self,
         batch_id: Uuid,
     ) -> Result<Vec<BatchItemRecord>, StoreError>;
+}
+
+#[async_trait]
+pub trait GuardrailDecisionRepository: Send + Sync {
+    async fn insert_guardrail_decision(
+        &self,
+        decision: &GuardrailDecisionEventRecord,
+    ) -> Result<(), StoreError>;
+
+    async fn list_guardrail_decisions(
+        &self,
+        query: &GuardrailDecisionQuery,
+    ) -> Result<GuardrailDecisionPage, StoreError>;
 }
 
 #[async_trait]

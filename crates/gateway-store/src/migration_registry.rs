@@ -254,6 +254,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V47__batch_pricing_snapshot.sql"),
         postgres_sql: include_str!("../migrations/postgres/V47__batch_pricing_snapshot.sql"),
     },
+    MigrationManifest {
+        version: 48,
+        name: "guardrail_decisions",
+        checksum: "V48__guardrail_decisions.sql",
+        libsql_sql: include_str!("../migrations/V48__guardrail_decisions.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V48__guardrail_decisions.sql"),
+    },
 ];
 
 #[cfg(test)]

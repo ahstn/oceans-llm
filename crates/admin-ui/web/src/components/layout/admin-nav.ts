@@ -126,6 +126,12 @@ export const adminNavSections: AdminNavSection[] = [
         to: '/observability/mcp-invocations',
         icon: McpServerIcon,
       },
+      {
+        requiredPage: 'mcp_invocations',
+        label: 'Guardrails',
+        to: '/observability/guardrails',
+        icon: Notification03Icon,
+      },
     ],
   },
   {

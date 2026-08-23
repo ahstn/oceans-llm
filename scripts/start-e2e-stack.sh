@@ -96,7 +96,7 @@ service_accounts:
       - id: contract
         name: E2E Contract Key
         value: env.E2E_GATEWAY_API_KEY
-        allowed_models: ["fast"]
+        allowed_models: ["fast", "audit-fast"]
 
 providers:
   - id: openai-e2e
@@ -107,9 +107,54 @@ providers:
       kind: bearer
       token: literal.upstream-e2e-token
 
+guardrails:
+  default:
+    enabled: true
+    mode: deny
+    packs:
+      - core.shell
+      - core.git
+      - core.filesystem
+      - database.postgresql
+      - cloud.aws
+      - cloud.gcp
+      - saas.notion
+    managed_checks:
+      - model-armor-e2e
+  model_routes:
+    audit-fast/openai-e2e/gpt-4o-mini:
+      mode: audit
+  managed_checks:
+    model-armor-e2e:
+      kind: google_model_armor
+      phases:
+        - prompt
+        - model_response
+        - generated_tool_call
+        - mcp_call
+        - mcp_result
+        - harness_pre_tool
+      timeout_ms: 2000
+      failure_disposition: fail_open
+      max_content_bytes: 262144
+      model_armor:
+        project: e2e-project
+        location: us-central1
+        prompt_template: projects/e2e-project/locations/us-central1/templates/prompt
+        response_template: projects/e2e-project/locations/us-central1/templates/response
+        endpoint_url: http://127.0.0.1:${E2E_UPSTREAM_PORT}/modelarmor
+        auth:
+          kind: bearer_token
+          token: literal.model-armor-e2e-token
+
 models:
   - id: fast
     description: E2E test route
+    routes:
+      - provider: openai-e2e
+        upstream_model: gpt-4o-mini
+  - id: audit-fast
+    description: E2E audit rollout route
     routes:
       - provider: openai-e2e
         upstream_model: gpt-4o-mini

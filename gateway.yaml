@@ -43,6 +43,24 @@ permissions:
     actions: []
     default_page: api_keys
 
+guardrails:
+  default:
+    enabled: true
+    mode: audit
+    packs:
+      - core.shell
+      - core.git
+      - core.filesystem
+      - database.postgresql
+      - cloud.aws
+      - cloud.gcp
+      - saas.notion
+    managed_checks: []
+    stream_buffer_bytes: 4194304
+  managed_checks: {}
+  model_routes: {}
+  mcp_servers: {}
+
 request_logging:
   payloads:
     capture_mode: redacted_payloads

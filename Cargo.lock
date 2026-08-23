@@ -1642,6 +1642,7 @@ dependencies = [
  "cron",
  "futures-util",
  "gateway-core",
+ "gateway-guardrails",
  "gateway-mcp",
  "gateway-providers",
  "gateway-service",
@@ -1699,6 +1700,26 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "time",
+ "uuid",
+]
+
+[[package]]
+name = "gateway-guardrails"
+version = "0.24.0"
+dependencies = [
+ "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sigv4",
+ "aws-smithy-runtime-api",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
  "uuid",
 ]
 

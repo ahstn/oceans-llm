@@ -10,7 +10,7 @@ use gateway::{
     http::{build_router, response_cache::ResponseCache, state::AppState},
     observability,
 };
-use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
+use gateway_core::{McpRegistryRepository, ProviderRegistry, SeedHumanBudgetDefaults};
 use gateway_providers::{BedrockProvider, CopilotProvider, OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
     AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
@@ -217,6 +217,23 @@ async fn run_serve_with_store(
         .validate_route_context_overrides()
         .await
         .context("invalid route context-window override")?;
+    let known_mcp_servers = service
+        .store()
+        .list_external_mcp_servers(true)
+        .await
+        .context("failed loading MCP servers for guardrail validation")?
+        .into_iter()
+        .map(|server| server.server_key)
+        .collect();
+    config
+        .validate_guardrail_mcp_server_keys(&known_mcp_servers)
+        .context("invalid guardrail MCP-server override")?;
+    let guardrail_engine = Arc::new(
+        config
+            .guardrail_engine()
+            .context("failed to initialize guardrail evaluators")?,
+    );
+    let guardrail_config = Arc::new(config.guardrails.clone());
     spawn_pricing_catalog_refresh_loop(service.clone());
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     if agent_analysis.capabilities.passive_analysis_enabled {
@@ -238,6 +255,8 @@ async fn run_serve_with_store(
             service: service.clone(),
             store: service.store().clone(),
             providers,
+            guardrail_engine,
+            guardrail_config,
             metrics,
             mcp_http_client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())

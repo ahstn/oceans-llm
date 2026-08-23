@@ -2,7 +2,7 @@ mod aggregate;
 mod json_rpc;
 mod upstream;
 
-use std::{error::Error as _, time::Instant};
+use std::{collections::BTreeMap, error::Error as _, time::Instant};
 
 use axum::{
     Json,
@@ -18,14 +18,18 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthError, GatewayError, McpToolInvocationStatus, McpToolPolicyResult,
     OpenAiErrorEnvelope, ProviderError, auth::extract_bearer_token,
 };
+use gateway_guardrails::{
+    DecisionAction, EvaluationInput, EvaluationPayload, GuardrailEvaluation, McpCall,
+    PolicyResolver, PolicyTarget,
+};
 use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput, McpInvocationLogging};
 use json_rpc::{McpRpcRequest, mcp_jsonrpc_error_response, mcp_request_id, parse_mcp_rpc_request};
-use serde_json::{Map, json};
+use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use upstream::{proxy_tools_list, proxy_upstream};
 use uuid::Uuid;
 
-use crate::http::state::AppState;
+use crate::http::{guardrail_events::record_guardrail_evaluation, state::AppState};
 
 const X_OCEANS_API_KEY: &str = "x-oceans-api-key";
 const MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
@@ -33,6 +37,7 @@ const MCP_SESSION_ID: &str = "mcp-session-id";
 const LAST_EVENT_ID: &str = "last-event-id";
 const MAX_MCP_REQUEST_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_MCP_REWRITE_BODY_BYTES: u64 = 4 * 1024 * 1024;
+const GUARDRAIL_POLICY_DENIED_CODE: i64 = -32001;
 
 #[tracing::instrument(
     skip(state, request),
@@ -139,6 +144,7 @@ pub async fn mcp_streamable_http_proxy(
                 &upstream,
                 &id,
                 None,
+                None,
                 "tools/list",
                 "tools/list",
                 status,
@@ -183,6 +189,7 @@ pub async fn mcp_streamable_http_proxy(
                 .log_invocation(
                     &auth,
                     McpInvocationLogInput {
+                        mcp_tool_invocation_id: None,
                         request_log_id: None,
                         request_id: Uuid::new_v4().to_string(),
                         server_id: Some(log_upstream.server.mcp_server_id),
@@ -233,6 +240,287 @@ fn body_read_exceeded_limit(error: &axum::Error) -> bool {
         || error.to_string().contains("length limit exceeded")
 }
 
+async fn evaluate_mcp_call(
+    state: &AppState,
+    request_id: Option<&str>,
+    mcp_tool_invocation_id: Option<Uuid>,
+    server: &str,
+    tool: &str,
+    arguments: Value,
+) -> GuardrailEvaluation {
+    let policy =
+        PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::McpServer(server));
+    let evaluation = state
+        .guardrail_engine
+        .evaluate(
+            &policy,
+            &state.guardrail_config,
+            EvaluationInput::new(
+                gateway_guardrails::GuardPhase::McpCall,
+                EvaluationPayload::McpCall {
+                    call: McpCall {
+                        server: server.to_string(),
+                        tool: tool.to_string(),
+                        arguments,
+                    },
+                },
+            ),
+        )
+        .await;
+    record_guardrail_evaluation(state, request_id, mcp_tool_invocation_id, &evaluation).await;
+    evaluation
+}
+
+async fn evaluate_mcp_result(
+    state: &AppState,
+    request_id: Option<&str>,
+    mcp_tool_invocation_id: Option<Uuid>,
+    server: &str,
+    tool: &str,
+    result: Value,
+) -> GuardrailEvaluation {
+    let policy =
+        PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::McpServer(server));
+    let evaluation = state
+        .guardrail_engine
+        .evaluate(
+            &policy,
+            &state.guardrail_config,
+            EvaluationInput::new(
+                gateway_guardrails::GuardPhase::McpResult,
+                EvaluationPayload::McpResult {
+                    server: server.to_string(),
+                    tool: tool.to_string(),
+                    result,
+                },
+            ),
+        )
+        .await;
+    record_guardrail_evaluation(state, request_id, mcp_tool_invocation_id, &evaluation).await;
+    evaluation
+}
+
+fn guardrail_decision_metadata(evaluation: &GuardrailEvaluation) -> Map<String, Value> {
+    let relevant = evaluation
+        .decisions
+        .iter()
+        .rev()
+        .find(|decision| decision.action != DecisionAction::Allow);
+    let action = match evaluation.action {
+        DecisionAction::Allow => "allowed",
+        DecisionAction::Audit => "audit",
+        DecisionAction::Deny => "denied",
+        DecisionAction::Transformed => "transformed",
+    };
+    Map::from_iter([
+        ("guardrail_decision".to_string(), json!(action)),
+        (
+            "guardrail_decision_id".to_string(),
+            relevant
+                .map(|decision| json!(decision.decision_id.to_string()))
+                .unwrap_or(Value::Null),
+        ),
+        (
+            "guardrail_reason_code".to_string(),
+            relevant
+                .map(|decision| json!(decision.reason_code.as_str()))
+                .unwrap_or(Value::Null),
+        ),
+    ])
+}
+
+fn guardrail_denied_response(
+    id: Option<&Value>,
+    evaluation: &GuardrailEvaluation,
+) -> Response<Body> {
+    let reason_code = evaluation
+        .decisions
+        .iter()
+        .find(|decision| decision.action == DecisionAction::Deny)
+        .map(|decision| decision.reason_code.as_str())
+        .unwrap_or("guardrail.policy_denied");
+    mcp_jsonrpc_error_response(
+        StatusCode::FORBIDDEN,
+        id,
+        GUARDRAIL_POLICY_DENIED_CODE,
+        &format!("MCP operation denied by guardrail policy ({reason_code})"),
+    )
+}
+
+async fn enforce_direct_mcp_result(
+    state: &AppState,
+    server: &str,
+    tool: &str,
+    id: Option<&Value>,
+    mcp_tool_invocation_id: Uuid,
+    response: Response<Body>,
+) -> Response<Body> {
+    let policy =
+        PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::McpServer(server));
+    if !policy.enabled {
+        return response;
+    }
+    let (mut parts, body) = response.into_parts();
+    let bytes = match to_bytes(body, policy.stream_buffer_bytes).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return mcp_jsonrpc_error_response(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                id,
+                GUARDRAIL_POLICY_DENIED_CODE,
+                "MCP result exceeded the configured guardrail buffer",
+            );
+        }
+    };
+    let request_id = mcp_request_id(&id.cloned());
+    let output = if parts
+        .headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("text/event-stream"))
+    {
+        match guard_mcp_sse_result(
+            state,
+            &request_id,
+            mcp_tool_invocation_id,
+            server,
+            tool,
+            &bytes,
+        )
+        .await
+        {
+            Ok(output) => output,
+            Err(evaluation) => return guardrail_denied_response(id, &evaluation),
+        }
+    } else {
+        let parsed = serde_json::from_slice::<Value>(&bytes)
+            .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()));
+        let evaluation = evaluate_mcp_result(
+            state,
+            Some(&request_id),
+            Some(mcp_tool_invocation_id),
+            server,
+            tool,
+            parsed,
+        )
+        .await;
+        if evaluation.denied() {
+            return guardrail_denied_response(id, &evaluation);
+        }
+        if evaluation
+            .decisions
+            .iter()
+            .any(|decision| decision.transformed)
+        {
+            match &evaluation.output {
+                EvaluationPayload::McpResult { result, .. } => {
+                    serde_json::to_vec(result).map(Bytes::from).unwrap_or(bytes)
+                }
+                _ => bytes,
+            }
+        } else {
+            bytes
+        }
+    };
+    parts.headers.remove(axum::http::header::CONTENT_LENGTH);
+    Response::from_parts(parts, Body::from(output))
+}
+
+async fn guard_mcp_sse_result(
+    state: &AppState,
+    request_id: &str,
+    mcp_tool_invocation_id: Uuid,
+    server: &str,
+    tool: &str,
+    bytes: &Bytes,
+) -> Result<Bytes, GuardrailEvaluation> {
+    let Ok(source) = std::str::from_utf8(bytes) else {
+        return Ok(bytes.clone());
+    };
+    let lines = source.split_inclusive('\n').collect::<Vec<_>>();
+    let mut event_values = Vec::new();
+    let mut event_by_line = BTreeMap::new();
+    for (line_index, line) in lines.iter().enumerate() {
+        let content = line
+            .strip_suffix("\r\n")
+            .or_else(|| line.strip_suffix('\n'))
+            .unwrap_or(line);
+        let Some(data) = content.strip_prefix("data:") else {
+            continue;
+        };
+        let data = data.strip_prefix(' ').unwrap_or(data);
+        if data == "[DONE]" {
+            continue;
+        }
+        let parsed =
+            serde_json::from_str::<Value>(data).unwrap_or_else(|_| Value::String(data.to_string()));
+        event_by_line.insert(line_index, event_values.len());
+        event_values.push(parsed);
+    }
+    if event_values.is_empty() {
+        return Ok(bytes.clone());
+    }
+
+    let evaluation = evaluate_mcp_result(
+        state,
+        Some(request_id),
+        Some(mcp_tool_invocation_id),
+        server,
+        tool,
+        Value::Array(event_values),
+    )
+    .await;
+    if evaluation.denied() {
+        return Err(evaluation);
+    }
+    let transformed = evaluation
+        .decisions
+        .iter()
+        .any(|decision| decision.transformed);
+    let replacements = if transformed {
+        match &evaluation.output {
+            EvaluationPayload::McpResult { result, .. } => result
+                .as_array()
+                .filter(|result| result.len() == event_by_line.len()),
+            _ => None,
+        }
+        .ok_or(evaluation.clone())?
+    } else {
+        return Ok(bytes.clone());
+    };
+
+    let mut output = String::with_capacity(source.len());
+    for (line_index, line) in lines.into_iter().enumerate() {
+        let Some(event_index) = event_by_line.get(&line_index) else {
+            output.push_str(line);
+            continue;
+        };
+        let ending = if line.ends_with("\r\n") {
+            "\r\n"
+        } else if line.ends_with('\n') {
+            "\n"
+        } else {
+            ""
+        };
+        let spacing = if line
+            .strip_prefix("data:")
+            .is_some_and(|data| data.starts_with(' '))
+        {
+            " "
+        } else {
+            ""
+        };
+        output.push_str("data:");
+        output.push_str(spacing);
+        output.push_str(
+            &serde_json::to_string(&replacements[*event_index])
+                .expect("guardrail MCP result is valid JSON"),
+        );
+        output.push_str(ending);
+    }
+    Ok(Bytes::from(output))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn handle_tools_call(
     state: &AppState,
@@ -248,6 +536,7 @@ async fn handle_tools_call(
 ) -> Response<Body> {
     let access = McpAccess::new(state.store.clone());
     let invocation_logger = McpInvocationLogging::new(state.store.clone());
+    let mcp_tool_invocation_id = Uuid::new_v4();
     let log_upstream = gateway_service::McpGatewayUpstream {
         server: server.clone(),
         headers: None,
@@ -266,6 +555,7 @@ async fn handle_tools_call(
                 tool_invocation_log_input(
                     &log_upstream,
                     &id,
+                    Some(mcp_tool_invocation_id),
                     None,
                     &tool_name,
                     &tool_name,
@@ -285,6 +575,54 @@ async fn handle_tools_call(
             "MCP tool is not granted for this API key",
         );
     };
+    let normalized_arguments = arguments.clone().unwrap_or_else(|| json!({}));
+    let guardrail_request_id = mcp_request_id(&id);
+    let guardrail_evaluation = evaluate_mcp_call(
+        state,
+        Some(&guardrail_request_id),
+        Some(mcp_tool_invocation_id),
+        &server.server_key,
+        &tool.upstream_name,
+        normalized_arguments,
+    )
+    .await;
+    if guardrail_evaluation.denied() {
+        let mut log_input = tool_invocation_log_input(
+            &log_upstream,
+            &id,
+            Some(mcp_tool_invocation_id),
+            Some(tool.mcp_tool_id),
+            &tool.upstream_name,
+            &tool.display_name,
+            McpToolInvocationStatus::PolicyDenied,
+            McpToolPolicyResult::Denied,
+            Some("guardrail_policy_denied".to_string()),
+            arguments,
+            None,
+            started_at,
+        );
+        log_input.metadata = guardrail_decision_metadata(&guardrail_evaluation);
+        let _ = invocation_logger.log_invocation(auth, log_input).await;
+        return guardrail_denied_response(id.as_ref(), &guardrail_evaluation);
+    }
+
+    let transformed = guardrail_evaluation
+        .decisions
+        .iter()
+        .any(|decision| decision.transformed);
+    let guarded_arguments = match &guardrail_evaluation.output {
+        EvaluationPayload::McpCall { call } => call.arguments.clone(),
+        _ => unreachable!("MCP call evaluation preserves payload kind"),
+    };
+    let body = if transformed {
+        match rewrite_tools_call_arguments(&body, &guarded_arguments) {
+            Ok(body) => body,
+            Err(error) => return mcp_error_response(error),
+        }
+    } else {
+        body
+    };
+    let arguments = transformed.then_some(guarded_arguments).or(arguments);
 
     let gateway = McpGatewayService::new(state.store.clone())
         .with_oauth_runtime(state.mcp_oauth_runtime.clone());
@@ -297,6 +635,7 @@ async fn handle_tools_call(
                     tool_invocation_log_input(
                         &log_upstream,
                         &id,
+                        Some(mcp_tool_invocation_id),
                         Some(tool.mcp_tool_id),
                         &tool.upstream_name,
                         &tool.display_name,
@@ -312,30 +651,55 @@ async fn handle_tools_call(
             return mcp_error_response(error);
         }
     };
-    let outcome = proxy_upstream(&state.mcp_http_client, method, headers, body, &upstream).await;
-    let (status, error_code) = response_outcome(&outcome);
-    let _ = invocation_logger
-        .log_invocation(
-            auth,
-            tool_invocation_log_input(
-                &upstream,
-                &id,
-                Some(tool.mcp_tool_id),
+    let outcome =
+        match proxy_upstream(&state.mcp_http_client, method, headers, body, &upstream).await {
+            Ok(response) => Ok(enforce_direct_mcp_result(
+                state,
+                &upstream.server.server_key,
                 &tool.upstream_name,
-                &tool.display_name,
-                status,
-                McpToolPolicyResult::Allowed,
-                error_code,
-                arguments,
-                None,
-                started_at,
-            ),
-        )
-        .await;
+                id.as_ref(),
+                mcp_tool_invocation_id,
+                response,
+            )
+            .await),
+            Err(error) => Err(error),
+        };
+    let (status, error_code) = response_outcome(&outcome);
+    let mut log_input = tool_invocation_log_input(
+        &upstream,
+        &id,
+        Some(mcp_tool_invocation_id),
+        Some(tool.mcp_tool_id),
+        &tool.upstream_name,
+        &tool.display_name,
+        status,
+        McpToolPolicyResult::Allowed,
+        error_code,
+        arguments,
+        None,
+        started_at,
+    );
+    log_input.metadata = guardrail_decision_metadata(&guardrail_evaluation);
+    let _ = invocation_logger.log_invocation(auth, log_input).await;
     match outcome {
         Ok(response) => response,
         Err(error) => mcp_error_response(error),
     }
+}
+
+fn rewrite_tools_call_arguments(body: &[u8], arguments: &Value) -> Result<Bytes, GatewayError> {
+    let mut request: Value = serde_json::from_slice(body)
+        .map_err(|error| GatewayError::InvalidRequest(format!("invalid MCP request: {error}")))?;
+    let params = request
+        .get_mut("params")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| {
+            GatewayError::InvalidRequest("tools/call params must be an object".into())
+        })?;
+    params.insert("arguments".to_string(), arguments.clone());
+    serde_json::to_vec(&request)
+        .map(Bytes::from)
+        .map_err(|error| GatewayError::Internal(format!("failed to encode MCP request: {error}")))
 }
 
 fn tools_list_metadata(
@@ -361,6 +725,7 @@ fn tools_list_metadata(
 fn tool_invocation_log_input(
     upstream: &gateway_service::McpGatewayUpstream,
     id: &Option<serde_json::Value>,
+    mcp_tool_invocation_id: Option<Uuid>,
     tool_id: Option<uuid::Uuid>,
     tool_display_key: &str,
     tool_display_name: &str,
@@ -372,6 +737,7 @@ fn tool_invocation_log_input(
     started_at: Instant,
 ) -> McpInvocationLogInput {
     McpInvocationLogInput {
+        mcp_tool_invocation_id,
         request_log_id: None,
         request_id: mcp_request_id(id),
         server_id: Some(upstream.server.mcp_server_id),

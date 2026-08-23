@@ -33,6 +33,9 @@ use tracing::{Instrument, Span, field};
 use crate::http::{
     anthropic_stream::anthropic_messages_stream_from_openai,
     error::AppError,
+    inference_guardrails::{
+        InferenceGuardContext, guard_model_response, guard_prompt, guard_stream, model_route_key,
+    },
     request_tags::extract_request_tags,
     state::{AppGatewayService, AppState},
 };
@@ -105,7 +108,7 @@ async fn v1_messages_inner(
     let request_id = canonical_request_id(request_id)?;
     let authorization = extract_anthropic_authorization_header(&headers);
     let auth = state.service.authenticate(authorization.as_deref()).await?;
-    let core_request = anthropic_messages_request_to_core(&request);
+    let mut core_request = anthropic_messages_request_to_core(&request);
     let log_request = core_chat_request_to_openai(&core_request);
     let requirements = core_request.requirements();
     let resolved = state
@@ -174,6 +177,25 @@ async fn v1_messages_inner(
     };
     record_provider_execution_span_fields(&request_span, &route.provider_key);
 
+    let route_key = model_route_key(
+        &resolved.selection.execution_model.model_key,
+        &route.provider_key,
+        &route.upstream_model,
+    );
+    let mut guarded_request = serde_json::to_value(&core_request).map_err(|error| {
+        AppError(GatewayError::Internal(format!(
+            "failed to encode guardrail request: {error}"
+        )))
+    })?;
+    let guard_context = guard_prompt(&state, &request_id, route_key, &mut guarded_request)
+        .await
+        .map_err(AppError)?;
+    core_request = serde_json::from_value(guarded_request).map_err(|error| {
+        AppError(GatewayError::Internal(format!(
+            "guardrail transformation produced an invalid request: {error}"
+        )))
+    })?;
+
     if let Err(error) = state
         .service
         .enforce_pre_provider_budget(
@@ -209,6 +231,7 @@ async fn v1_messages_inner(
             &context,
             icon_metadata,
             requirements,
+            &guard_context,
         )
         .await;
     }
@@ -223,7 +246,7 @@ async fn v1_messages_inner(
         ownership_kind = %auth.owner_kind.as_str(),
     );
     let attempt_started_at = gateway_service::offset_now();
-    let openai_value = match provider
+    let mut openai_value = match provider
         .chat_completions(&core_request, &context)
         .instrument(provider_execution_span)
         .await
@@ -259,6 +282,9 @@ async fn v1_messages_inner(
             return Err(AppError(error));
         }
     };
+    guard_model_response(&state, &guard_context, &mut openai_value)
+        .await
+        .map_err(AppError)?;
     let value = anthropic_message_from_openai_chat(
         &openai_value,
         &resolved.selection.requested_model.model_key,
@@ -333,7 +359,7 @@ pub async fn v1_chat_completions(
         .service
         .authenticate(extract_authorization_header(&headers))
         .await?;
-    let core_request = openai_chat_request_to_core(&request);
+    let mut core_request = openai_chat_request_to_core(&request);
     let requirements = core_request.requirements();
     let resolved = state
         .service
@@ -420,6 +446,25 @@ pub async fn v1_chat_completions(
         stream: core_request.stream,
     };
     record_provider_execution_span_fields(&request_span, &route.provider_key);
+
+    let route_key = model_route_key(
+        &resolved.selection.execution_model.model_key,
+        &route.provider_key,
+        &route.upstream_model,
+    );
+    let mut guarded_request = serde_json::to_value(&core_request).map_err(|error| {
+        AppError(GatewayError::Internal(format!(
+            "failed to encode guardrail request: {error}"
+        )))
+    })?;
+    let guard_context = guard_prompt(&state, &request_id, route_key, &mut guarded_request)
+        .await
+        .map_err(AppError)?;
+    core_request = serde_json::from_value(guarded_request).map_err(|error| {
+        AppError(GatewayError::Internal(format!(
+            "guardrail transformation produced an invalid request: {error}"
+        )))
+    })?;
 
     if let Err(error) = state
         .service
@@ -518,6 +563,9 @@ pub async fn v1_chat_completions(
                 return Err(AppError(gateway_error));
             }
         };
+        let stream = guard_stream(&state, &guard_context, stream)
+            .await
+            .map_err(AppError)?;
         let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
             upstream: stream,
             service: state.service.clone(),
@@ -560,7 +608,7 @@ pub async fn v1_chat_completions(
         ownership_kind = %auth.owner_kind.as_str(),
     );
     let attempt_started_at = gateway_service::offset_now();
-    let value = match provider
+    let mut value = match provider
         .chat_completions(&core_request, &context)
         .instrument(provider_execution_span)
         .await
@@ -601,6 +649,9 @@ pub async fn v1_chat_completions(
             return Err(AppError(error));
         }
     };
+    guard_model_response(&state, &guard_context, &mut value)
+        .await
+        .map_err(AppError)?;
     let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
     let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     finalize_successful_usage_accounting(
@@ -665,7 +716,7 @@ pub async fn v1_responses(
         .service
         .authenticate(extract_authorization_header(&headers))
         .await?;
-    let core_request = openai_responses_request_to_core(&request);
+    let mut core_request = openai_responses_request_to_core(&request);
     let requirements = core_request.requirements();
     let resolved = state
         .service
@@ -752,6 +803,25 @@ pub async fn v1_responses(
         stream: core_request.stream,
     };
     record_provider_execution_span_fields(&request_span, &route.provider_key);
+
+    let route_key = model_route_key(
+        &resolved.selection.execution_model.model_key,
+        &route.provider_key,
+        &route.upstream_model,
+    );
+    let mut guarded_request = serde_json::to_value(&core_request).map_err(|error| {
+        AppError(GatewayError::Internal(format!(
+            "failed to encode guardrail request: {error}"
+        )))
+    })?;
+    let guard_context = guard_prompt(&state, &request_id, route_key, &mut guarded_request)
+        .await
+        .map_err(AppError)?;
+    core_request = serde_json::from_value(guarded_request).map_err(|error| {
+        AppError(GatewayError::Internal(format!(
+            "guardrail transformation produced an invalid request: {error}"
+        )))
+    })?;
 
     if let Err(error) = state
         .service
@@ -845,6 +915,9 @@ pub async fn v1_responses(
                 return Err(AppError(gateway_error));
             }
         };
+        let stream = guard_stream(&state, &guard_context, stream)
+            .await
+            .map_err(AppError)?;
         let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
             upstream: stream,
             service: state.service.clone(),
@@ -887,7 +960,7 @@ pub async fn v1_responses(
         ownership_kind = %auth.owner_kind.as_str(),
     );
     let attempt_started_at = gateway_service::offset_now();
-    let value = match provider
+    let mut value = match provider
         .responses(&core_request, &context)
         .instrument(provider_execution_span)
         .await
@@ -928,6 +1001,9 @@ pub async fn v1_responses(
             return Err(AppError(error));
         }
     };
+    guard_model_response(&state, &guard_context, &mut value)
+        .await
+        .map_err(AppError)?;
     let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
     let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     finalize_successful_usage_accounting(
@@ -1365,6 +1441,7 @@ async fn anthropic_messages_stream_response(
     context: &ProviderRequestContext,
     icon_metadata: RequestLogIconMetadata,
     requirements: CoreRequestRequirements,
+    guard_context: &InferenceGuardContext,
 ) -> Result<Response, AppError> {
     let provider_execution_span = tracing::info_span!(
         "provider_execution",
@@ -1381,10 +1458,7 @@ async fn anthropic_messages_stream_response(
         .instrument(provider_execution_span)
         .await
     {
-        Ok(stream) => anthropic_messages_stream_from_openai(
-            stream,
-            resolved.selection.requested_model.model_key.clone(),
-        ),
+        Ok(stream) => stream,
         Err(error) => {
             let (gateway_error, attempt) = provider_error_attempt(
                 request_log_context,
@@ -1415,6 +1489,13 @@ async fn anthropic_messages_stream_response(
             return Err(AppError(gateway_error));
         }
     };
+    let stream = guard_stream(state, guard_context, stream)
+        .await
+        .map_err(AppError)?;
+    let stream = anthropic_messages_stream_from_openai(
+        stream,
+        resolved.selection.requested_model.model_key.clone(),
+    );
 
     let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
         upstream: stream,

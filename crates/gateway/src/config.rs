@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, env, fs, net::SocketAddr, path::Path};
+use std::{collections::BTreeMap, env, fs, net::SocketAddr, path::Path, sync::Arc};
 
 use anyhow::{Context, bail};
 use gateway_core::{
@@ -14,6 +14,12 @@ use gateway_core::{
     SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
     SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
     hash_gateway_key_secret, parse_gateway_api_key, validate_entity_tags,
+};
+use gateway_guardrails::{
+    BearerTokenProvider, BedrockApplyGuardrail, BedrockApplyGuardrailConfig, BedrockAuth,
+    BedrockManagedAuthConfig, BuiltInEvaluator, GuardrailConfig, GuardrailEngine, ManagedCheckKind,
+    ManagedEvaluator, ModelArmor, ModelArmorAuthConfig, ModelArmorConfig,
+    StaticBearerTokenProvider,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
@@ -73,6 +79,8 @@ pub struct GatewayConfig {
     #[serde(default)]
     pub agent_analysis: AgentAnalysisConfig,
     #[serde(default)]
+    pub guardrails: GuardrailConfig,
+    #[serde(default)]
     pub permissions: PermissionsConfig,
     #[serde(default)]
     pub providers: Vec<ProviderConfig>,
@@ -110,6 +118,11 @@ impl GatewayConfig {
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
         self.agent_analysis.validate()?;
+        let model_route_keys = self.guardrail_model_route_keys();
+        // MCP server references are checked against the seeded registry during startup.
+        let configured_mcp_server_keys = self.guardrails.mcp_servers.keys().cloned().collect();
+        self.guardrails
+            .validate(&model_route_keys, &configured_mcp_server_keys)?;
         let _ = self.permissions.resolve()?;
         self.auth.oidc.validate(&self.teams)?;
         self.auth.oauth.validate(&self.teams)?;
@@ -781,6 +794,93 @@ impl GatewayConfig {
 
     pub fn resolved_admin_permissions(&self) -> anyhow::Result<ResolvedAdminPermissions> {
         self.permissions.resolve()
+    }
+
+    pub fn guardrail_model_route_keys(&self) -> std::collections::BTreeSet<String> {
+        self.models
+            .iter()
+            .flat_map(|model| {
+                model.routes.iter().map(move |route| {
+                    format!("{}/{}/{}", model.id, route.provider, route.upstream_model)
+                })
+            })
+            .collect()
+    }
+
+    pub fn validate_guardrail_mcp_server_keys(
+        &self,
+        known_mcp_servers: &std::collections::BTreeSet<String>,
+    ) -> anyhow::Result<()> {
+        self.guardrails
+            .validate(&self.guardrail_model_route_keys(), known_mcp_servers)
+            .map_err(Into::into)
+    }
+
+    pub fn guardrail_engine(&self) -> anyhow::Result<GuardrailEngine> {
+        let mut managed = BTreeMap::<String, Arc<dyn ManagedEvaluator>>::new();
+        for (name, check) in &self.guardrails.managed_checks {
+            let evaluator: Arc<dyn ManagedEvaluator> = match check.kind {
+                ManagedCheckKind::AmazonBedrock => {
+                    let config = check.bedrock.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "managed guardrail check `{name}` is missing bedrock config"
+                        )
+                    })?;
+                    let auth = match &config.auth {
+                        BedrockManagedAuthConfig::DefaultChain => BedrockAuth::DefaultChain,
+                        BedrockManagedAuthConfig::StaticCredentials {
+                            access_key_id,
+                            secret_access_key,
+                            session_token,
+                        } => BedrockAuth::StaticCredentials {
+                            access_key_id: resolve_secret_reference(access_key_id)?,
+                            secret_access_key: resolve_secret_reference(secret_access_key)?,
+                            session_token: session_token
+                                .as_deref()
+                                .map(resolve_secret_reference)
+                                .transpose()?,
+                        },
+                    };
+                    Arc::new(BedrockApplyGuardrail::new(BedrockApplyGuardrailConfig {
+                        evaluator_id: name.clone(),
+                        region: config.region.clone(),
+                        guardrail_identifier: config.guardrail_identifier.clone(),
+                        guardrail_version: config.guardrail_version.clone(),
+                        endpoint_url: config.endpoint_url.clone(),
+                        auth,
+                        max_retries: config.max_retries,
+                    })?)
+                }
+                ManagedCheckKind::GoogleModelArmor => {
+                    let config = check.model_armor.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "managed guardrail check `{name}` is missing model_armor config"
+                        )
+                    })?;
+                    let token_provider: Arc<dyn BearerTokenProvider> = match &config.auth {
+                        ModelArmorAuthConfig::BearerToken { token } => Arc::new(
+                            StaticBearerTokenProvider::new(resolve_secret_reference(token)?),
+                        ),
+                    };
+                    Arc::new(ModelArmor::new(
+                        ModelArmorConfig {
+                            evaluator_id: name.clone(),
+                            project: config.project.clone(),
+                            location: config.location.clone(),
+                            prompt_template: config.prompt_template.clone(),
+                            response_template: config.response_template.clone(),
+                            endpoint_url: config.endpoint_url.clone(),
+                        },
+                        token_provider,
+                    )?)
+                }
+            };
+            managed.insert(name.clone(), evaluator);
+        }
+        Ok(GuardrailEngine::new(
+            vec![Arc::new(BuiltInEvaluator)],
+            managed,
+        ))
     }
 
     fn validate_budget_defaults(

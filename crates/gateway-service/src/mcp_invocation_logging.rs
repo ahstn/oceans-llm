@@ -58,6 +58,7 @@ impl McpInvocationPayloadPolicy {
 
 #[derive(Debug, Clone)]
 pub struct McpInvocationLogInput {
+    pub mcp_tool_invocation_id: Option<Uuid>,
     pub request_log_id: Option<Uuid>,
     pub request_id: String,
     pub server_id: Option<Uuid>,
@@ -113,7 +114,7 @@ where
         auth: &AuthenticatedApiKey,
         input: McpInvocationLogInput,
     ) -> Result<LoggedMcpToolInvocation, GatewayError> {
-        let mcp_tool_invocation_id = Uuid::new_v4();
+        let mcp_tool_invocation_id = input.mcp_tool_invocation_id.unwrap_or_else(Uuid::new_v4);
         let (payload, arguments_truncated, result_truncated) =
             self.payload_for(mcp_tool_invocation_id, &input);
         let invocation = McpToolInvocationRecord {
