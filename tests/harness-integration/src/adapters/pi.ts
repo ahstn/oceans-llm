@@ -158,10 +158,14 @@ function isWithinWorkspace(target) {
   );
 }
 
+function shellStaysWithinWorkspace(command) {
+  return !/(^|[\\s"'=])(?:\\/|~(?:\\/|\\s|$)|\\.\\.(?:\\/|\\\\|\\s|$)|\\$HOME(?:\\/|\\s|$)|\\$\\{HOME\\})/.test(command);
+}
+
 export default function workspaceSandbox(pi) {
   pi.on("tool_call", async (event) => {
     if (event.toolName === "bash") {
-      const command = event.input?.command;
+      let command = event.input?.command;
       if (typeof command !== "string") {
         return { block: true, reason: "Shell command is missing" };
       }
@@ -182,7 +186,11 @@ export default function workspaceSandbox(pi) {
         if (typeof decision.output_command !== "string") {
           return { block: true, reason: "Oceans guardrail returned an invalid shell transformation" };
         }
-        event.input.command = decision.output_command;
+        command = decision.output_command;
+        event.input.command = command;
+      }
+      if (!shellStaysWithinWorkspace(command)) {
+        return { block: true, reason: "Shell access outside the harness workspace is disabled" };
       }
       return;
     }

@@ -141,6 +141,7 @@ async fn guard_sse_payload(
     let mut blocks = Vec::new();
     let mut tool_fragments = BTreeMap::<String, ToolCallFragments>::new();
     let mut text_locations = Vec::<(usize, String)>::new();
+    let mut snapshot_text_locations = Vec::<(usize, String)>::new();
 
     for block in source.split(&event_separator) {
         let event_index = blocks.len();
@@ -173,15 +174,21 @@ async fn guard_sse_payload(
                     &["content", "output_text", "text"],
                     &mut pointers,
                 );
-                if value
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .is_some_and(|kind| kind.ends_with("output_text.delta"))
-                    && value.get("delta").is_some_and(Value::is_string)
+                let event_type = value.get("type").and_then(Value::as_str);
+                if event_type
+                    .is_some_and(|kind| kind == "response.completed" || kind == "response.done")
                 {
-                    pointers.push("/delta".to_string());
+                    snapshot_text_locations
+                        .extend(pointers.into_iter().map(|pointer| (event_index, pointer)));
+                } else {
+                    if event_type.is_some_and(|kind| kind.ends_with("output_text.delta"))
+                        && value.get("delta").is_some_and(Value::is_string)
+                    {
+                        pointers.push("/delta".to_string());
+                    }
+                    text_locations
+                        .extend(pointers.into_iter().map(|pointer| (event_index, pointer)));
                 }
-                text_locations.extend(pointers.into_iter().map(|pointer| (event_index, pointer)));
                 collect_stream_tool_fragments(&value, "", event_index, &mut tool_fragments);
                 StreamLine::Json(value)
             };
@@ -190,6 +197,9 @@ async fn guard_sse_payload(
         blocks.push(lines);
     }
 
+    if text_locations.is_empty() {
+        text_locations = snapshot_text_locations;
+    }
     for fragments in tool_fragments.values() {
         if fragments.name.is_empty() {
             continue;
@@ -224,13 +234,19 @@ async fn guard_sse_payload(
                 serde_json::to_string(&arguments).ok()
             };
             if let Some(replacement) = replacement {
-                let mut replacement = Some(replacement);
+                let mut first = true;
                 for (event_index, pointer) in &fragments.argument_locations {
                     for line in &mut blocks[*event_index] {
                         if let StreamLine::Json(value) = line
                             && let Some(slot) = value.pointer_mut(pointer)
                         {
-                            *slot = Value::String(replacement.take().unwrap_or_default());
+                            let replacement = if first { replacement.as_str() } else { "" };
+                            replace_stream_argument(
+                                slot,
+                                replacement,
+                                fragments.shell_command_locations,
+                            );
+                            first = false;
                             break;
                         }
                     }
@@ -346,7 +362,9 @@ fn collect_stream_tool_fragments(
                 let shell_call = is_responses_shell_call(item);
                 fragments.shell_command_locations |= shell_call;
                 let argument_pointer = if shell_call {
-                    format!("{pointer}/item/action/command")
+                    shell_argument_pointer(item)
+                        .map(|suffix| format!("{pointer}/item/action/{suffix}"))
+                        .unwrap_or_else(|| format!("{pointer}/item/action/command"))
                 } else {
                     format!("{pointer}/item/arguments")
                 };
@@ -446,7 +464,9 @@ fn collect_stream_tool_fragments(
                 let shell_call = is_responses_shell_call(object);
                 fragments.shell_command_locations |= shell_call;
                 let argument_pointer = if shell_call {
-                    format!("{pointer}/action/command")
+                    shell_argument_pointer(object)
+                        .map(|suffix| format!("{pointer}/action/{suffix}"))
+                        .unwrap_or_else(|| format!("{pointer}/action/command"))
                 } else {
                     format!("{pointer}/arguments")
                 };
@@ -725,6 +745,16 @@ fn is_responses_shell_call(object: &Map<String, Value>) -> bool {
         Some("shell_call" | "local_shell_call")
     )
 }
+fn shell_argument_pointer(object: &Map<String, Value>) -> Option<&'static str> {
+    let action = object.get("action")?.as_object()?;
+    if action.contains_key("command") {
+        Some("command")
+    } else if action.contains_key("commands") {
+        Some("commands")
+    } else {
+        None
+    }
+}
 
 fn shell_action_command(value: &Value) -> Option<String> {
     match value {
@@ -761,8 +791,7 @@ fn shell_command(name: &str, arguments: &Value) -> Option<String> {
         .get("command")
         .or_else(|| arguments.get("cmd"))
         .or_else(|| arguments.get("script"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
+        .and_then(shell_action_command)
 }
 
 fn transformed_tool_arguments(output: &EvaluationPayload, original: &Value) -> Option<Value> {
@@ -787,6 +816,18 @@ fn replace_shell_command(arguments: &mut Value, replacement: &str) -> bool {
     }
     false
 }
+fn replace_stream_argument(slot: &mut Value, replacement: &str, shell_command: bool) {
+    if shell_command && slot.is_array() {
+        *slot = Value::Array(
+            replacement
+                .lines()
+                .map(|line| Value::String(line.to_string()))
+                .collect(),
+        );
+    } else {
+        *slot = Value::String(replacement.to_string());
+    }
+}
 
 fn replace_tool_call_arguments(object: &mut Map<String, Value>, arguments: Value) {
     if let Some(function) = object.get_mut("function").and_then(Value::as_object_mut)
@@ -799,17 +840,13 @@ fn replace_tool_call_arguments(object: &mut Map<String, Value>, arguments: Value
         && let Some(command) = arguments.get("command").and_then(Value::as_str)
         && let Some(action) = object.get_mut("action").and_then(Value::as_object_mut)
     {
-        if let Some(slot) = action.get_mut("command") {
-            *slot = Value::String(command.to_string());
-            return;
-        }
-        if let Some(slot) = action.get_mut("commands") {
-            *slot = Value::Array(
-                command
-                    .lines()
-                    .map(|line| Value::String(line.to_string()))
-                    .collect(),
-            );
+        let field = if action.contains_key("command") {
+            "command"
+        } else {
+            "commands"
+        };
+        if let Some(slot) = action.get_mut(field) {
+            replace_stream_argument(slot, command, true);
             return;
         }
     }
@@ -986,6 +1023,22 @@ mod tests {
             json!({"cmd": "[masked]"}),
         );
         assert_eq!(anthropic["input"], json!({"cmd": "[masked]"}));
+        let mut responses = json!({
+            "type": "shell_call",
+            "action": {"command": ["rm -rf /tmp/a", "printf safe"]}
+        });
+        replace_tool_call_arguments(
+            responses.as_object_mut().expect("tool call"),
+            json!({"command": "[masked]\nprintf safe"}),
+        );
+        assert_eq!(
+            responses["action"]["command"],
+            json!(["[masked]", "printf safe"])
+        );
+
+        let mut streamed_commands = json!(["rm -rf /tmp/a", "printf safe"]);
+        replace_stream_argument(&mut streamed_commands, "[masked]\nprintf safe", true);
+        assert_eq!(streamed_commands, json!(["[masked]", "printf safe"]));
     }
 
     #[test]

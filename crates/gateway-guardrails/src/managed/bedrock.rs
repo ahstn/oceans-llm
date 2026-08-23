@@ -336,6 +336,15 @@ async fn normalize_response(
             reason_code: reason("bedrock.allow"),
             metadata: metadata.clone(),
         }),
+        "GUARDRAIL_INTERVENED"
+            if !output.is_empty() && has_anonymized_assessment(&response.assessments) =>
+        {
+            Ok(ManagedOutcome::Transformed {
+                transformation: ContentTransformation::new(output),
+                reason_code: reason("bedrock.anonymized"),
+                metadata,
+            })
+        }
         "GUARDRAIL_INTERVENED" => Ok(ManagedOutcome::Intervention {
             reason_code: reason("bedrock.intervened"),
             metadata,
@@ -343,6 +352,23 @@ async fn normalize_response(
         other => Err(EvaluationError::MalformedResponse(format!(
             "unknown Bedrock guardrail action `{other}`"
         ))),
+    }
+}
+fn has_anonymized_assessment(assessments: &[Value]) -> bool {
+    assessments.iter().any(has_anonymized_action)
+}
+
+fn has_anonymized_action(value: &Value) -> bool {
+    match value {
+        Value::Object(object) => object.iter().any(|(key, value)| {
+            (key == "action"
+                && value
+                    .as_str()
+                    .is_some_and(|action| action.eq_ignore_ascii_case("ANONYMIZED")))
+                || has_anonymized_action(value)
+        }),
+        Value::Array(values) => values.iter().any(has_anonymized_action),
+        _ => false,
     }
 }
 
@@ -445,6 +471,35 @@ mod tests {
                 if transformation.content == "masked"
         ));
         assert!(request_rx.recv().unwrap().contains(r#""text":"sensitive""#));
+    }
+
+    #[tokio::test]
+    async fn maps_intervened_anonymization_as_a_transformation() {
+        let response_body = r#"{
+            "action":"GUARDRAIL_INTERVENED",
+            "outputs":[{"text":"Customer [NAME]"}],
+            "assessments":[{
+                "sensitiveInformationPolicy":{
+                    "piiEntities":[{"type":"NAME","action":"ANONYMIZED"}]
+                }
+            }]
+        }"#;
+        let (endpoint, _) = fake_server(response_body);
+        let response = reqwest::get(endpoint).await.unwrap();
+
+        let outcome = normalize_response(response, "Customer Alice")
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            outcome,
+            ManagedOutcome::Transformed {
+                transformation,
+                reason_code,
+                ..
+            } if transformation.content == "Customer [NAME]"
+                && reason_code.as_str() == "bedrock.anonymized"
+        ));
     }
 
     #[tokio::test]

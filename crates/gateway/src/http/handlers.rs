@@ -1476,6 +1476,10 @@ async fn record_guarded_stream_failure(
         invoked_tool_count: Some(collector.invoked_tool_count()),
         ..request_log_context.tool_cardinality
     };
+    let failure = gateway_service::StreamFailureSummary {
+        status_code: error.http_status_code().into(),
+        error_code: error.error_code().to_string(),
+    };
     best_effort_log_stream_result(
         &state.service,
         auth,
@@ -1485,15 +1489,12 @@ async fn record_guarded_stream_failure(
             icon_metadata,
             latency_ms: latency_ms_since(request_started_at),
             collector,
-            failure: Some(gateway_service::StreamFailureSummary {
-                status_code: error.http_status_code().into(),
-                error_code: error.error_code().to_string(),
-            }),
-            attempts: vec![success_attempt(
+            failure: Some(failure.clone()),
+            attempts: vec![stream_failure_attempt(
                 request_log_context,
                 route,
-                true,
                 attempt_started_at,
+                &failure,
             )],
         },
     )

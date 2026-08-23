@@ -141,10 +141,13 @@ function validateGuardrailDecision(value) {
   return value;
 }
 
+function shellStaysWithinWorkspace(command) {
+  return !/(^|[\\s"'=])(?:\\/|~(?:\\/|\\s|$)|\\.\\.(?:\\/|\\\\|\\s|$)|\\$HOME(?:\\/|\\s|$)|\\$\\{HOME\\})/.test(command);
+}
 export const OceansGuardrails = async () => ({
   "tool.execute.before": async (input, output) => {
     if (input.tool !== "bash") return;
-    const command = output.args?.command;
+    let command = output.args?.command;
     if (typeof command !== "string") {
       throw new Error("Shell command is missing");
     }
@@ -169,7 +172,11 @@ export const OceansGuardrails = async () => ({
       if (typeof decision.output_command !== "string") {
         throw new Error("Oceans guardrail returned an invalid shell transformation");
       }
-      output.args.command = decision.output_command;
+      command = decision.output_command;
+      output.args.command = command;
+    }
+    if (!shellStaysWithinWorkspace(command)) {
+      throw new Error("Shell access outside the harness workspace is disabled");
     }
     return;
   },

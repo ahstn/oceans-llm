@@ -110,6 +110,29 @@ describe("shell guardrail hooks", () => {
     );
   });
 
+  test("allowed commands cannot escape the harness workspace", async () => {
+    globalThis.fetch = vi.fn().mockImplementation(() =>
+      Response.json({
+        decision_id: "decision-allowed",
+        allowed: true,
+        transformed: false,
+        action: "allow",
+      }),
+    );
+    const piHook = await loadPiHook();
+    const openCodeHook = await loadOpenCodeHook();
+
+    await expect(
+      piHook({ toolName: "bash", input: { command: "cat /etc/passwd" } }),
+    ).resolves.toMatchObject({
+      block: true,
+      reason: expect.stringContaining("outside the harness workspace"),
+    });
+    await expect(
+      openCodeHook({ tool: "bash" }, { args: { command: "cat ../secret" } }),
+    ).rejects.toThrow("outside the harness workspace");
+  });
+
   test("both hooks fail closed when policy evaluation is unavailable", async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error("network unavailable"));
     const piHook = await loadPiHook();

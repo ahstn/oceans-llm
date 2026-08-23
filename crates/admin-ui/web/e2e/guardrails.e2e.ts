@@ -280,7 +280,7 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
     data: call('search', { query: 'guardrail-e2e-result-deny' }, 5),
   })
   expect(deniedResult.status()).toBe(403)
-  expect(await deniedResult.text()).not.toContain('guardrail-e2e-managed-deny')
+  expect(await deniedResult.text()).not.toContain('guardrail-e2e-result-deny')
   executions = (await (await request.get(`${upstreamRoot}/__admin/mcp-executions`)).json()) as {
     executions: unknown[]
   }
