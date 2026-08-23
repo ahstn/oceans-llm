@@ -401,7 +401,7 @@ async fn enforce_direct_mcp_result(
                             StatusCode::FORBIDDEN,
                             id,
                             GUARDRAIL_POLICY_DENIED_CODE,
-                            "MCP result was not valid UTF-8",
+                            "MCP result was not valid guarded SSE",
                         )
                     },
                     |evaluation| guardrail_denied_response(id, evaluation),
@@ -498,9 +498,7 @@ async fn guard_mcp_sse_result(
         if data == "[DONE]" {
             continue;
         }
-        let Ok(parsed) = serde_json::from_str::<Value>(&data) else {
-            continue;
-        };
+        let parsed = parse_guarded_mcp_sse_json(&data).map_err(|_| None)?;
         let Some(result) = parsed.get("result").cloned() else {
             continue;
         };
@@ -570,6 +568,10 @@ async fn guard_mcp_sse_result(
         .collect::<Vec<_>>()
         .join(&event_separator);
     Ok((Bytes::from(rendered), Some(evaluation)))
+}
+
+fn parse_guarded_mcp_sse_json(data: &str) -> serde_json::Result<Value> {
+    serde_json::from_str(data)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -921,6 +923,11 @@ fn mcp_error_response(error: GatewayError) -> Response<Body> {
 mod tests {
     use super::*;
     use axum::http::{HeaderMap, HeaderValue};
+
+    #[test]
+    fn guarded_mcp_sse_rejects_non_json_data() {
+        assert!(parse_guarded_mcp_sse_json("private content").is_err());
+    }
 
     #[test]
     fn auth_extractor_accepts_authorization_only() {
