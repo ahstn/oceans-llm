@@ -102,7 +102,7 @@ pub async fn guard_model_response(
         GuardPhase::ModelResponse,
         response,
         context.associated_prompt.as_deref(),
-        &["content", "output_text", "text"],
+        &["content", "output_text", "refusal", "text"],
     )
     .await?;
     Ok(())
@@ -200,7 +200,7 @@ async fn guard_sse_payload(
                 collect_string_pointers(
                     &value,
                     "",
-                    &["content", "output_text", "text"],
+                    &["content", "output_text", "refusal", "text"],
                     &mut pointers,
                 );
                 let event_type = value.get("type").and_then(Value::as_str);
@@ -1359,10 +1359,30 @@ mod tests {
     }
 
     #[test]
-    fn text_pointers_target_content_without_touching_identifiers() {
-        let value = json!({"id": "keep", "choices": [{"message": {"content": "inspect"}}]});
+    fn text_pointers_target_response_content_without_touching_identifiers() {
+        let value = json!({
+            "id": "keep",
+            "choices": [
+                {"message": {"content": "inspect", "refusal": null}},
+                {"message": {"content": null, "refusal": "inspect refusal"}},
+                {"delta": {"refusal": "stream refusal"}}
+            ]
+        });
         let mut pointers = Vec::new();
-        collect_string_pointers(&value, "", &["content"], &mut pointers);
-        assert_eq!(pointers, vec!["/choices/0/message/content"]);
+        collect_string_pointers(
+            &value,
+            "",
+            &["content", "output_text", "refusal", "text"],
+            &mut pointers,
+        );
+        assert_eq!(
+            pointers,
+            vec![
+                "/choices/0/message/content",
+                "/choices/1/message/refusal",
+                "/choices/2/delta/refusal",
+            ]
+        );
+        assert!(!pointers.iter().any(|pointer| pointer.ends_with("/id")));
     }
 }
