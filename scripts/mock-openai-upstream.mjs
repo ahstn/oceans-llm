@@ -314,6 +314,17 @@ const server = createServer(async (req, res) => {
             }],
           })}\n\n`,
         )
+      } else if (body?.user === 'guardrail-e2e-multi-choice-mask') {
+        res.write(
+          `data: ${JSON.stringify({
+            id: 'chatcmpl-e2e-multi-choice',
+            object: 'chat.completion.chunk',
+            choices: [
+              { index: 0, delta: { content: 'guardrail-e2e-mask' } },
+              { index: 1, delta: { content: 'keep-choice' } },
+            ],
+          })}\n\n`,
+        )
       } else if (body?.user === 'guardrail-e2e-oversize-stream') {
         res.write(
           `data: ${JSON.stringify({

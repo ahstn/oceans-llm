@@ -125,6 +125,16 @@ test('guards prompt, non-stream response, and buffered stream boundaries', async
   expect(safeStream.status()).toBe(200)
   expect(await safeStream.text()).toContain('pong')
 
+  const transformedMultiChoiceStream = await request.post(`${root}/v1/chat/completions`, {
+    headers,
+    data: chatRequest('guardrail-e2e-multi-choice-mask', true),
+  })
+  expect(transformedMultiChoiceStream.status()).toBe(200)
+  const transformedMultiChoiceBody = await transformedMultiChoiceStream.text()
+  expect(transformedMultiChoiceBody).toContain('[masked]')
+  expect(transformedMultiChoiceBody).toContain('keep-choice')
+  expect(transformedMultiChoiceBody).not.toContain('guardrail-e2e-mask')
+
   const oversizedStream = await request.post(`${root}/v1/chat/completions`, {
     headers,
     data: chatRequest('guardrail-e2e-oversize-stream', true),

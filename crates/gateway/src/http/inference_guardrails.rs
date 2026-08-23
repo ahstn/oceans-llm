@@ -254,16 +254,33 @@ async fn guard_sse_payload(
         }
     }
 
-    let combined_text = text_locations
-        .iter()
-        .filter_map(|(event_index, pointer)| {
-            blocks[*event_index].iter().find_map(|line| match line {
-                StreamLine::Json(value) => value.pointer(pointer).and_then(Value::as_str),
-                _ => None,
+    let mut text_locations_by_choice = BTreeMap::<String, Vec<(usize, String)>>::new();
+    for location in text_locations {
+        text_locations_by_choice
+            .entry(stream_text_group(&location.1))
+            .or_default()
+            .push(location);
+    }
+    let mut snapshot_locations_by_choice = BTreeMap::<String, Vec<(usize, String)>>::new();
+    for location in snapshot_text_locations {
+        snapshot_locations_by_choice
+            .entry(stream_text_group(&location.1))
+            .or_default()
+            .push(location);
+    }
+    for (choice, locations) in text_locations_by_choice {
+        let combined_text = locations
+            .iter()
+            .filter_map(|(event_index, pointer)| {
+                blocks[*event_index].iter().find_map(|line| match line {
+                    StreamLine::Json(value) => value.pointer(pointer).and_then(Value::as_str),
+                    _ => None,
+                })
             })
-        })
-        .collect::<String>();
-    if !combined_text.is_empty() {
+            .collect::<String>();
+        if combined_text.is_empty() {
+            continue;
+        }
         let mut input = EvaluationInput::new(
             GuardPhase::ModelResponse,
             EvaluationPayload::Text {
@@ -279,9 +296,11 @@ async fn guard_sse_payload(
         if let Some(transformed) = evaluation.output.text_content()
             && transformed != combined_text
         {
-            replace_stream_text(&mut blocks, &text_locations, transformed, true);
-            if !snapshot_text_locations.is_empty() && text_locations != snapshot_text_locations {
-                replace_stream_text(&mut blocks, &snapshot_text_locations, transformed, true);
+            replace_stream_text(&mut blocks, &locations, transformed, true);
+            if let Some(snapshot_locations) = snapshot_locations_by_choice.get(&choice)
+                && locations != *snapshot_locations
+            {
+                replace_stream_text(&mut blocks, snapshot_locations, transformed, true);
             }
         }
     }
@@ -305,6 +324,14 @@ async fn guard_sse_payload(
         .collect::<Vec<_>>()
         .join(&event_separator);
     Ok(rendered.into_bytes())
+}
+
+fn stream_text_group(pointer: &str) -> String {
+    let mut segments = pointer.split('/').filter(|segment| !segment.is_empty());
+    match (segments.next(), segments.next()) {
+        (Some("choices"), Some(choice)) => format!("choice:{choice}"),
+        _ => "default".to_string(),
+    }
 }
 
 fn replace_stream_text(
@@ -953,6 +980,13 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn groups_stream_text_by_chat_completion_choice() {
+        assert_eq!(stream_text_group("/choices/0/delta/content"), "choice:0");
+        assert_eq!(stream_text_group("/choices/1/delta/content"), "choice:1");
+        assert_eq!(stream_text_group("/delta"), "default");
+    }
 
     #[test]
     fn extracts_parallel_and_protocol_specific_tool_calls() {
