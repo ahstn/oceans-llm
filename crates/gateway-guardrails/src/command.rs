@@ -32,7 +32,7 @@ pub(crate) fn parse_command_line(source: &str) -> Vec<CommandInvocation> {
     let nested_shells = invocations
         .iter()
         .filter_map(nested_shell_command)
-        .flat_map(parse_command_line)
+        .flat_map(|command| parse_command_line(&command))
         .collect::<Vec<_>>();
     let substitutions = command_substitutions(source)
         .into_iter()
@@ -56,7 +56,10 @@ fn push_invocation(invocations: &mut Vec<CommandInvocation>, words: &mut Vec<Str
     words.clear();
 }
 
-fn nested_shell_command(invocation: &CommandInvocation) -> Option<&str> {
+fn nested_shell_command(invocation: &CommandInvocation) -> Option<String> {
+    if invocation.executable == "eval" {
+        return (!invocation.arguments.is_empty()).then(|| invocation.arguments.join(" "));
+    }
     if !matches!(
         invocation.executable.as_str(),
         "sh" | "bash" | "zsh" | "dash" | "fish"
@@ -73,7 +76,7 @@ fn nested_shell_command(invocation: &CommandInvocation) -> Option<&str> {
                     .is_some_and(|options| !options.starts_with('-') && options.contains('c'))
         })
         .and_then(|index| invocation.arguments.get(index + 1))
-        .map(String::as_str)
+        .cloned()
 }
 
 fn executable_index(words: &[String]) -> Option<usize> {
@@ -398,6 +401,17 @@ mod tests {
     #[test]
     fn skips_shell_reserved_words_before_executables() {
         let parsed = parse_command_line("if true; then rm -rf /tmp/work; fi");
+
+        assert!(
+            parsed
+                .iter()
+                .any(|call| { call.executable == "rm" && call.arguments == ["-rf", "/tmp/work"] })
+        );
+    }
+
+    #[test]
+    fn parses_commands_passed_through_eval() {
+        let parsed = parse_command_line("eval 'rm -rf /tmp/work'");
 
         assert!(
             parsed
