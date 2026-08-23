@@ -47,6 +47,17 @@ fn push_invocation(invocations: &mut Vec<CommandInvocation>, words: &mut Vec<Str
     }
 
     if let Some(index) = executable_index(words) {
+        if words[..index]
+            .iter()
+            .any(|word| matches!(word.as_str(), "-S" | "--split-string"))
+            && words[..index]
+                .iter()
+                .any(|word| basename(word).eq_ignore_ascii_case("env"))
+        {
+            invocations.extend(parse_command_line(&words[index]));
+            words.clear();
+            return;
+        }
         let executable = basename(&words[index]).to_ascii_lowercase();
         invocations.push(CommandInvocation {
             executable,
@@ -100,10 +111,7 @@ fn executable_index(words: &[String]) -> Option<usize> {
             Some("command" | "builtin" | "exec" | "nohup") => index += 1,
             Some("env") => {
                 index += 1;
-                skip_wrapper_options(words, &mut index, &["-u", "--unset", "-C", "--chdir"]);
-                while words.get(index).is_some_and(|word| is_assignment(word)) {
-                    index += 1;
-                }
+                skip_env_options_and_assignments(words, &mut index);
             }
             Some("sudo") => {
                 index += 1;
@@ -131,6 +139,36 @@ fn executable_index(words: &[String]) -> Option<usize> {
                 );
             }
             _ => return (index < words.len()).then_some(index),
+        }
+    }
+}
+
+fn skip_env_options_and_assignments(words: &[String], index: &mut usize) {
+    while let Some(argument) = words.get(*index) {
+        if matches!(argument.as_str(), "-S" | "--split-string") {
+            *index += 1;
+            return;
+        }
+        if is_assignment(argument) {
+            *index += 1;
+            continue;
+        }
+        if argument == "--" {
+            *index += 1;
+            return;
+        }
+        if !argument.starts_with('-') || argument == "-" {
+            return;
+        }
+        let option = argument
+            .split_once('=')
+            .map_or(argument.as_str(), |(name, _)| name);
+        *index += 1;
+        if !argument.contains('=')
+            && matches!(option, "-u" | "--unset" | "-C" | "--chdir")
+            && *index < words.len()
+        {
+            *index += 1;
         }
     }
 }
@@ -388,6 +426,19 @@ mod tests {
     #[test]
     fn ignores_io_numbers_before_redirections() {
         let parsed = parse_command_line("2>/dev/null rm -rf /tmp/work");
+
+        assert_eq!(
+            parsed,
+            vec![CommandInvocation {
+                executable: "rm".into(),
+                arguments: vec!["-rf".into(), "/tmp/work".into()],
+            }]
+        );
+    }
+
+    #[test]
+    fn parses_commands_from_env_split_strings() {
+        let parsed = parse_command_line("env -S 'rm -rf /tmp/work'");
 
         assert_eq!(
             parsed,
