@@ -251,7 +251,7 @@ fn match_git(invocation: &CommandInvocation) -> Option<MatchedRule> {
         return None;
     }
     let arguments = &invocation.arguments;
-    let operation = first_positional(arguments)?;
+    let operation = git_operation(arguments)?;
     match operation {
         "reset" if has_option(arguments, "--hard", None) => Some(rule(
             "core.git",
@@ -296,7 +296,8 @@ fn match_git(invocation: &CommandInvocation) -> Option<MatchedRule> {
 
 fn match_filesystem(invocation: &CommandInvocation) -> Option<MatchedRule> {
     match invocation.executable.as_str() {
-        "rm" if has_option(&invocation.arguments, "--recursive", Some('r'))
+        "rm" if (has_option(&invocation.arguments, "--recursive", Some('r'))
+            || has_option(&invocation.arguments, "--recursive", Some('R')))
             && has_option(&invocation.arguments, "--force", Some('f')) =>
         {
             Some(rule(
@@ -336,6 +337,12 @@ fn match_postgresql_invocation(invocation: &CommandInvocation) -> Option<Matched
 }
 
 fn match_destructive_sql(sql: &str, field: &str) -> Option<MatchedRule> {
+    sql_statements(sql)
+        .into_iter()
+        .find_map(|statement| match_destructive_sql_statement(&statement, field))
+}
+
+fn match_destructive_sql_statement(sql: &str, field: &str) -> Option<MatchedRule> {
     let normalized = sql
         .split_whitespace()
         .map(|word| word.trim_matches(|character: char| matches!(character, ';' | '"')))
@@ -651,11 +658,115 @@ fn server_has_identity(server: &str, identities: &[&str]) -> bool {
         .any(|part| identities.contains(&part))
 }
 
-fn first_positional(arguments: &[String]) -> Option<&str> {
-    arguments
+fn git_operation(arguments: &[String]) -> Option<&str> {
+    let mut index = 0;
+    while let Some(argument) = arguments.get(index) {
+        if argument == "--" {
+            return arguments.get(index + 1).map(String::as_str);
+        }
+        let option = argument
+            .split_once('=')
+            .map_or(argument.as_str(), |(name, _)| name);
+        if matches!(
+            option,
+            "-C" | "-c" | "--git-dir" | "--work-tree" | "--namespace" | "--super-prefix"
+        ) {
+            index += if argument.contains('=') { 1 } else { 2 };
+            continue;
+        }
+        if argument.starts_with('-') {
+            index += 1;
+            continue;
+        }
+        return Some(argument);
+    }
+    None
+}
+
+fn sql_statements(sql: &str) -> Vec<String> {
+    let characters = sql.chars().collect::<Vec<_>>();
+    let mut statements = Vec::new();
+    let mut statement = String::new();
+    let mut quote = None;
+    let mut dollar_quote = None;
+    let mut index = 0;
+    while index < characters.len() {
+        if let Some(delimiter) = dollar_quote.as_deref() {
+            if characters[index..].starts_with(delimiter) {
+                statement.extend(delimiter);
+                index += delimiter.len();
+                dollar_quote = None;
+            } else {
+                statement.push(characters[index]);
+                index += 1;
+            }
+            continue;
+        }
+        let character = characters[index];
+        match quote {
+            Some(active) if character == active => {
+                statement.push(character);
+                if characters.get(index + 1) == Some(&active) {
+                    statement.push(active);
+                    index += 2;
+                } else {
+                    quote = None;
+                    index += 1;
+                }
+            }
+            Some(_) => {
+                statement.push(character);
+                index += 1;
+            }
+            None if matches!(character, '\'' | '"') => {
+                quote = Some(character);
+                statement.push(character);
+                index += 1;
+            }
+            None if character == '$' => {
+                if let Some(delimiter) = dollar_quote_delimiter(&characters, index) {
+                    statement.extend(delimiter.iter());
+                    index += delimiter.len();
+                    dollar_quote = Some(delimiter);
+                } else {
+                    statement.push(character);
+                    index += 1;
+                }
+            }
+            None if character == ';' => {
+                if !statement.trim().is_empty() {
+                    statements.push(std::mem::take(&mut statement));
+                }
+                index += 1;
+            }
+            None => {
+                statement.push(character);
+                index += 1;
+            }
+        }
+    }
+    if !statement.trim().is_empty() {
+        statements.push(statement);
+    }
+    statements
+}
+
+fn dollar_quote_delimiter(characters: &[char], start: usize) -> Option<Vec<char>> {
+    let end = characters[start + 1..]
         .iter()
-        .find(|argument| !argument.starts_with('-'))
-        .map(String::as_str)
+        .position(|character| *character == '$')?
+        + start
+        + 1;
+    let tag = &characters[start + 1..end];
+    if !tag.is_empty()
+        && (!matches!(tag.first(), Some(character) if character.is_ascii_alphabetic() || *character == '_')
+            || !tag
+                .iter()
+                .all(|character| character.is_ascii_alphanumeric() || *character == '_'))
+    {
+        return None;
+    }
+    Some(characters[start..=end].to_vec())
 }
 
 fn positional_arguments(arguments: &[String]) -> Vec<String> {
@@ -740,20 +851,22 @@ mod tests {
 
     #[test]
     fn every_shell_pack_covers_positive_quoting_order_data_and_near_miss_cases() {
-        let cases = [
+        let cases = vec![
             (
                 "core.shell",
-                ["reboot", "bash -c 'poweroff'", "kill 1 -9"],
-                ["echo 'reboot'", "reboot-check", "kill 10 -9"],
+                vec!["reboot", "bash -c 'poweroff'", "kill 1 -9"],
+                vec!["echo 'reboot'", "reboot-check", "kill 10 -9"],
             ),
             (
                 "core.git",
-                [
+                vec![
                     "git reset --hard",
                     "bash -c 'git branch -D old'",
                     "git --no-pager reset main --hard",
+                    "git -C /repo reset --hard",
+                    "git --git-dir=/repo/.git reset --hard",
                 ],
-                [
+                vec![
                     "printf '%s' 'git reset --hard'",
                     "git reset --soft HEAD~1",
                     "git branch -d merged",
@@ -761,12 +874,14 @@ mod tests {
             ),
             (
                 "core.filesystem",
-                [
+                vec![
                     "rm -rf /tmp/work",
                     "bash -c 'find . -delete'",
                     "rm --force --recursive /tmp/work",
+                    "rm -Rf /tmp/work",
+                    "rm -R -f /tmp/work",
                 ],
-                [
+                vec![
                     "echo 'rm -rf /tmp/work'",
                     "rm -f report.txt",
                     "find . -depth",
@@ -774,12 +889,13 @@ mod tests {
             ),
             (
                 "database.postgresql",
-                [
+                vec![
                     "psql -c 'DROP DATABASE app'",
                     "bash -c \"psql -c 'TRUNCATE audit'\"",
                     "psql --host=db --command='DELETE FROM users'",
+                    "psql -c 'SELECT 1; DROP DATABASE app'",
                 ],
-                [
+                vec![
                     "echo 'DROP DATABASE app'",
                     "psql -c 'DELETE FROM users WHERE id = 1'",
                     "psql -c 'SELECT drop_database_hint FROM docs'",
@@ -787,12 +903,12 @@ mod tests {
             ),
             (
                 "cloud.aws",
-                [
+                vec![
                     "aws ec2 terminate-instances --instance-ids i-1",
                     "bash -c 'aws s3 rm s3://bucket --recursive'",
                     "aws --region us-east-1 ec2 delete-vpc --vpc-id vpc-1",
                 ],
-                [
+                vec![
                     "echo 'aws ec2 terminate-instances'",
                     "aws ec2 describe-instances",
                     "aws s3 ls s3://bucket",
@@ -800,12 +916,12 @@ mod tests {
             ),
             (
                 "cloud.gcp",
-                [
+                vec![
                     "gcloud projects delete example",
                     "bash -c 'gcloud compute instances delete vm'",
                     "gcloud --quiet compute disks delete disk",
                 ],
-                [
+                vec![
                     "echo 'gcloud projects delete example'",
                     "gcloud projects describe example",
                     "gcloud compute instances list",
@@ -838,6 +954,25 @@ mod tests {
                     "{pack} matched safe command `{command}`"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn postgresql_dollar_quoted_text_is_not_matched_as_sql() {
+        for command in [
+            "psql -c 'SELECT $$safe; DROP TABLE users;$$'",
+            "psql -c 'SELECT $body$safe; TRUNCATE audit;$body$'",
+        ] {
+            assert!(
+                evaluate(
+                    "database.postgresql",
+                    EvaluationPayload::ShellCommand {
+                        command: command.into(),
+                    }
+                )
+                .is_none(),
+                "matched SQL inside dollar-quoted text: {command}"
+            );
         }
     }
 

@@ -6,7 +6,7 @@ use gateway_core::{
 use sqlx::{Row, postgres::PgRow};
 
 use super::{PostgresStore, to_query_error};
-use crate::shared::{parse_uuid, unix_to_datetime};
+use crate::shared::{datetime_to_unix_millis, parse_uuid, unix_millis_to_datetime};
 
 fn decode(row: &PgRow) -> Result<GuardrailDecisionEventRecord, StoreError> {
     let decision_id: String = row.try_get(0).map_err(to_query_error)?;
@@ -29,7 +29,7 @@ fn decode(row: &PgRow) -> Result<GuardrailDecisionEventRecord, StoreError> {
         failure_disposition: row.try_get(12).map_err(to_query_error)?,
         transformed: transformed == 1,
         content_hash: row.try_get(14).map_err(to_query_error)?,
-        occurred_at: unix_to_datetime(occurred_at)?,
+        occurred_at: unix_millis_to_datetime(occurred_at)?,
     })
 }
 
@@ -67,7 +67,7 @@ impl GuardrailDecisionRepository for PostgresStore {
         .bind(decision.failure_disposition.as_deref())
         .bind(if decision.transformed { 1_i64 } else { 0_i64 })
         .bind(decision.content_hash.as_str())
-        .bind(decision.occurred_at.unix_timestamp())
+        .bind(datetime_to_unix_millis(decision.occurred_at)?)
         .execute(&self.pool)
         .await
         .map_err(to_query_error)?;
@@ -81,8 +81,14 @@ impl GuardrailDecisionRepository for PostgresStore {
         let page = query.page.max(1);
         let page_size = query.page_size.clamp(1, MAX_GUARDRAIL_DECISION_PAGE_SIZE);
         let offset = u64::from(page.saturating_sub(1)) * u64::from(page_size);
-        let start = query.occurred_at_start.map(|value| value.unix_timestamp());
-        let end = query.occurred_at_end.map(|value| value.unix_timestamp());
+        let start = query
+            .occurred_at_start
+            .map(datetime_to_unix_millis)
+            .transpose()?;
+        let end = query
+            .occurred_at_end
+            .map(datetime_to_unix_millis)
+            .transpose()?;
         let total_row = sqlx::query(
             r#"
             SELECT COUNT(*) FROM guardrail_decisions

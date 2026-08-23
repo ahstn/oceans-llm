@@ -4224,11 +4224,11 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid evaluation request"
+          },
           "401": {
             "description": "Missing or invalid API key"
-          },
-          "422": {
-            "description": "Invalid evaluation request"
           }
         },
         "security": [
@@ -11868,6 +11868,13 @@
               {
                 "$ref": "#/components/schemas/MatchedRuleResponse"
               }
+            ]
+          },
+          "output_arguments": {},
+          "output_command": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "reason_code": {

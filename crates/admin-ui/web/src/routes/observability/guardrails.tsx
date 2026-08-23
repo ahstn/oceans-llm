@@ -8,7 +8,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Pagination,
   PaginationContent,
@@ -17,9 +24,22 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { getGuardrailDecisionPage, getGuardrailPolicyView } from '@/server/admin-data.functions'
 import type { GuardrailDecisionFiltersInput, GuardrailPoliciesView } from '@/types/api'
+
+const timestampFormatter = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+  timeStyle: 'medium',
+  timeZone: 'UTC',
+})
 
 export const Route = createFileRoute('/observability/guardrails')({
   validateSearch: (search: Record<string, unknown>) => normalizeSearch(search),
@@ -86,7 +106,9 @@ export function GuardrailsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Effective policies</CardTitle>
-          <CardDescription>Configuration is authoritative. This view cannot change policy.</CardDescription>
+          <CardDescription>
+            Configuration is authoritative. This view cannot change policy.
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 lg:grid-cols-3">
           <PolicyCard name="Global default" policy={policies.default} />
@@ -102,7 +124,9 @@ export function GuardrailsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Decision events</CardTitle>
-          <CardDescription>Raw prompts, commands, arguments, and results are not shown.</CardDescription>
+          <CardDescription>
+            Raw prompts, commands, arguments, and results are not shown.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <FieldGroup className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -111,7 +135,9 @@ export function GuardrailsPage() {
               <Input
                 id="guardrail-request-id"
                 value={filters.request_id ?? ''}
-                onChange={(event) => setFilters((current) => ({ ...current, request_id: event.target.value }))}
+                onChange={(event) =>
+                  setFilters((current) => ({ ...current, request_id: event.target.value }))
+                }
               />
             </Field>
             <Field>
@@ -119,16 +145,22 @@ export function GuardrailsPage() {
               <Input
                 id="guardrail-evaluator"
                 value={filters.evaluator ?? ''}
-                onChange={(event) => setFilters((current) => ({ ...current, evaluator: event.target.value }))}
+                onChange={(event) =>
+                  setFilters((current) => ({ ...current, evaluator: event.target.value }))
+                }
               />
             </Field>
             <Field>
               <FieldLabel>Phase</FieldLabel>
               <Select
                 value={filters.phase || 'all'}
-                onValueChange={(value) => setFilters((current) => ({ ...current, phase: value === 'all' ? '' : value }))}
+                onValueChange={(value) =>
+                  setFilters((current) => ({ ...current, phase: value === 'all' ? '' : value }))
+                }
               >
-                <SelectTrigger className="w-full"><SelectValue placeholder="All phases" /></SelectTrigger>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="All phases" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
                     <SelectItem value="all">All phases</SelectItem>
@@ -146,9 +178,13 @@ export function GuardrailsPage() {
               <FieldLabel>Action</FieldLabel>
               <Select
                 value={filters.action || 'all'}
-                onValueChange={(value) => setFilters((current) => ({ ...current, action: value === 'all' ? '' : value }))}
+                onValueChange={(value) =>
+                  setFilters((current) => ({ ...current, action: value === 'all' ? '' : value }))
+                }
               >
-                <SelectTrigger className="w-full"><SelectValue placeholder="All actions" /></SelectTrigger>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="All actions" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
                     <SelectItem value="all">All actions</SelectItem>
@@ -162,7 +198,9 @@ export function GuardrailsPage() {
             </Field>
           </FieldGroup>
           <div className="flex gap-2">
-            <Button disabled={pending} onClick={applyFilters}>Apply filters</Button>
+            <Button disabled={pending} onClick={applyFilters}>
+              Apply filters
+            </Button>
             <Button
               variant="outline"
               disabled={pending}
@@ -201,11 +239,19 @@ export function GuardrailsPage() {
               <TableBody>
                 {decisions.items.map((decision) => (
                   <TableRow key={decision.decision_id}>
-                    <TableCell>{new Date(decision.occurred_at).toLocaleString()}</TableCell>
+                    <TableCell>
+                      {timestampFormatter.format(new Date(decision.occurred_at))}
+                    </TableCell>
                     <TableCell>{decision.phase}</TableCell>
-                    <TableCell><Badge variant={decision.action === 'deny' ? 'destructive' : 'secondary'}>{decision.action}</Badge></TableCell>
+                    <TableCell>
+                      <Badge variant={decision.action === 'deny' ? 'destructive' : 'secondary'}>
+                        {decision.action}
+                      </Badge>
+                    </TableCell>
                     <TableCell>{decision.managed_service ?? decision.evaluator}</TableCell>
-                    <TableCell>{[decision.pack_id, decision.rule_id].filter(Boolean).join(' / ') || '—'}</TableCell>
+                    <TableCell>
+                      {[decision.pack_id, decision.rule_id].filter(Boolean).join(' / ') || '—'}
+                    </TableCell>
                     <TableCell>{decision.reason_code}</TableCell>
                     <TableCell>{formatLatency(decision.latency_micros)}</TableCell>
                     <TableCell className="font-mono text-xs">{decision.decision_id}</TableCell>
@@ -214,7 +260,7 @@ export function GuardrailsPage() {
               </TableBody>
             </Table>
           )}
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             Showing {decisions.items.length} of {decisions.total} decisions.
           </p>
           {decisions.total > decisions.page_size ? (
@@ -265,12 +311,22 @@ function PolicyCard({ name, policy }: { name: string; policy: GuardrailPoliciesV
       </CardHeader>
       <CardContent className="flex flex-col gap-2 text-sm">
         <div className="flex gap-2">
-          <Badge variant={policy.enabled ? 'secondary' : 'outline'}>{policy.enabled ? 'Enabled' : 'Disabled'}</Badge>
+          <Badge variant={policy.enabled ? 'secondary' : 'outline'}>
+            {policy.enabled ? 'Enabled' : 'Disabled'}
+          </Badge>
           <Badge variant="outline">{policy.mode}</Badge>
         </div>
-        <p><span className="font-medium">Packs:</span> {policy.packs.join(', ') || 'None'}</p>
-        <p><span className="font-medium">Managed checks:</span> {policy.managed_checks.join(', ') || 'None'}</p>
-        <p><span className="font-medium">Stream buffer:</span> {policy.stream_buffer_bytes.toLocaleString()} bytes</p>
+        <p>
+          <span className="font-medium">Packs:</span> {policy.packs.join(', ') || 'None'}
+        </p>
+        <p>
+          <span className="font-medium">Managed checks:</span>{' '}
+          {policy.managed_checks.join(', ') || 'None'}
+        </p>
+        <p>
+          <span className="font-medium">Stream buffer:</span>{' '}
+          {policy.stream_buffer_bytes.toLocaleString()} bytes
+        </p>
       </CardContent>
     </Card>
   )
@@ -278,7 +334,14 @@ function PolicyCard({ name, policy }: { name: string; policy: GuardrailPoliciesV
 
 function normalizeFilterValues(search: Record<string, unknown>): GuardrailDecisionFiltersInput {
   const filters: GuardrailDecisionFiltersInput = {}
-  for (const key of ['request_id', 'phase', 'action', 'evaluator', 'occurred_at_start', 'occurred_at_end'] as const) {
+  for (const key of [
+    'request_id',
+    'phase',
+    'action',
+    'evaluator',
+    'occurred_at_start',
+    'occurred_at_end',
+  ] as const) {
     const value = search[key]
     if (typeof value === 'string' && value.trim()) filters[key] = value.trim()
   }

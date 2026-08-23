@@ -118,6 +118,21 @@ const workspace = ${JSON.stringify(workspace)};
 const guardrailUrl = new URL("/api/v1/guardrails/evaluate", process.env.OCEANS_BASE_URL).toString();
 const guardrailTimeoutMs = Number(process.env.OCEANS_GUARDRAIL_TIMEOUT_MS ?? "2000");
 
+function validateGuardrailDecision(value) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    typeof value.allowed !== "boolean" ||
+    typeof value.transformed !== "boolean" ||
+    typeof value.decision_id !== "string" ||
+    value.decision_id.length === 0 ||
+    (!value.allowed && (typeof value.reason_code !== "string" || value.reason_code.length === 0))
+  ) {
+    throw new Error("Guardrail evaluation returned an invalid response");
+  }
+  return value;
+}
+
 async function guardShell(command) {
   const response = await fetch(guardrailUrl, {
     signal: AbortSignal.timeout(guardrailTimeoutMs),
@@ -131,7 +146,7 @@ async function guardShell(command) {
   if (!response.ok) {
     throw new Error("Guardrail evaluation failed with HTTP " + response.status);
   }
-  return response.json();
+  return validateGuardrailDecision(await response.json());
 }
 
 
@@ -162,6 +177,12 @@ export default function workspaceSandbox(pi) {
           block: true,
           reason: "Oceans guardrail denied shell execution: " + decision.reason_code,
         };
+      }
+      if (decision.transformed) {
+        if (typeof decision.output_command !== "string") {
+          return { block: true, reason: "Oceans guardrail returned an invalid shell transformation" };
+        }
+        event.input.command = decision.output_command;
       }
       return;
     }

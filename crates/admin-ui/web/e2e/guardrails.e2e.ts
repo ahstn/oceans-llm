@@ -89,13 +89,11 @@ test('guards prompt, non-stream response, and buffered stream boundaries', async
     },
   })
   expect(maskedPrompt.status()).toBe(200)
-  const captured = (await (
-    await request.get(`${upstreamRoot}/__admin/requests`)
-  ).json()) as { requests: Array<{ body: unknown }> }
+  const captured = (await (await request.get(`${upstreamRoot}/__admin/requests`)).json()) as {
+    requests: Array<{ body: unknown }>
+  }
   expect(JSON.stringify(captured.requests.at(-1)?.body)).toContain('[masked]')
-  expect(JSON.stringify(captured.requests.at(-1)?.body)).not.toContain(
-    'guardrail-e2e-mask',
-  )
+  expect(JSON.stringify(captured.requests.at(-1)?.body)).not.toContain('guardrail-e2e-mask')
 
   const failOpenPrompt = await request.post(`${root}/v1/chat/completions`, {
     headers,
@@ -201,10 +199,9 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
   expect(refreshResponse.status(), await refreshResponse.text()).toBe(200)
   const refresh = await refreshResponse.json()
   expect(refresh.data.status, JSON.stringify(refresh)).toBe('success')
-  const catalogResponse = await request.get(
-    `${root}/api/v1/admin/mcp/servers/${serverId}/tools`,
-    { headers: { cookie } },
-  )
+  const catalogResponse = await request.get(`${root}/api/v1/admin/mcp/servers/${serverId}/tools`, {
+    headers: { cookie },
+  })
   expect(catalogResponse.status()).toBe(200)
   const catalog = (await catalogResponse.json()) as {
     data: { items: Array<{ id: string }> }
@@ -242,9 +239,9 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
     data: call('search', { query: 'safe' }, 1),
   })
   expect(safeDirect.status()).toBe(200)
-  let executions = (await (
-    await request.get(`${upstreamRoot}/__admin/mcp-executions`)
-  ).json()) as { executions: unknown[] }
+  let executions = (await (await request.get(`${upstreamRoot}/__admin/mcp-executions`)).json()) as {
+    executions: unknown[]
+  }
   expect(executions.executions).toHaveLength(1)
 
   await request.delete(`${upstreamRoot}/__admin/mcp-executions`)
@@ -253,9 +250,9 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
     data: call('delete_page', { page_id: 'page-e2e' }, 2),
   })
   expect(deniedDirect.status()).toBe(403)
-  executions = (await (
-    await request.get(`${upstreamRoot}/__admin/mcp-executions`)
-  ).json()) as { executions: unknown[] }
+  executions = (await (await request.get(`${upstreamRoot}/__admin/mcp-executions`)).json()) as {
+    executions: unknown[]
+  }
   expect(executions.executions).toHaveLength(0)
 
   const managedDeniedDirect = await request.post(`${root}/mcp/${serverKey}`, {
@@ -263,9 +260,9 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
     data: call('search', { query: 'guardrail-e2e-managed-deny' }, 3),
   })
   expect(managedDeniedDirect.status()).toBe(403)
-  executions = (await (
-    await request.get(`${upstreamRoot}/__admin/mcp-executions`)
-  ).json()) as { executions: unknown[] }
+  executions = (await (await request.get(`${upstreamRoot}/__admin/mcp-executions`)).json()) as {
+    executions: unknown[]
+  }
   expect(executions.executions).toHaveLength(0)
 
   const transformedResult = await request.post(`${root}/mcp/${serverKey}`, {
@@ -276,6 +273,18 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
   const transformedPayload = await transformedResult.text()
   expect(transformedPayload).toContain('[masked]')
   expect(transformedPayload).not.toContain('guardrail-e2e-mask')
+
+  await request.delete(`${upstreamRoot}/__admin/mcp-executions`)
+  const deniedResult = await request.post(`${root}/mcp/${serverKey}`, {
+    headers: mcpHeaders,
+    data: call('search', { query: 'guardrail-e2e-result-deny' }, 5),
+  })
+  expect(deniedResult.status()).toBe(403)
+  expect(await deniedResult.text()).not.toContain('guardrail-e2e-managed-deny')
+  executions = (await (await request.get(`${upstreamRoot}/__admin/mcp-executions`)).json()) as {
+    executions: unknown[]
+  }
+  expect(executions.executions).toHaveLength(1)
   await request.delete(`${upstreamRoot}/__admin/mcp-executions`)
 
   const initializeResponse = await request.post(`${root}/mcp`, {
@@ -300,7 +309,6 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
     data: { jsonrpc: '2.0', method: 'notifications/initialized' },
   })
   expect(initializedResponse.status()).toBe(202)
-
 
   const toolsResponse = await request.post(`${root}/mcp`, {
     headers: aggregateHeaders,
@@ -343,13 +351,12 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
   })
   expect(deniedAggregate.status()).toBe(200)
   const aggregatePayload = await deniedAggregate.json()
-  expect(
-    JSON.stringify(aggregatePayload),
-    JSON.stringify(aggregatePayload),
-  ).toContain('guardrail_policy_denied')
-  executions = (await (
-    await request.get(`${upstreamRoot}/__admin/mcp-executions`)
-  ).json()) as { executions: unknown[] }
+  expect(JSON.stringify(aggregatePayload), JSON.stringify(aggregatePayload)).toContain(
+    'guardrail_policy_denied',
+  )
+  executions = (await (await request.get(`${upstreamRoot}/__admin/mcp-executions`)).json()) as {
+    executions: unknown[]
+  }
   expect(executions.executions).toHaveLength(0)
 })
 
@@ -408,10 +415,9 @@ test('denies destructive shell execution and exposes only privacy-safe decision 
   })
 
   const cookie = await ensureAdminSession(page, request, root)
-  const eventsResponse = await request.get(
-    `${root}/api/v1/admin/guardrails/decisions`,
-    { headers: { cookie } },
-  )
+  const eventsResponse = await request.get(`${root}/api/v1/admin/guardrails/decisions`, {
+    headers: { cookie },
+  })
   expect(eventsResponse.status()).toBe(200)
   const events = await eventsResponse.json()
   expect(JSON.stringify(events)).toContain(decision.decision_id)

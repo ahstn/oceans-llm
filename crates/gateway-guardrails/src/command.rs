@@ -29,12 +29,15 @@ pub(crate) fn parse_command_line(source: &str) -> Vec<CommandInvocation> {
     }
     push_invocation(&mut invocations, &mut words);
 
-    let nested = invocations
+    let nested_shells = invocations
         .iter()
         .filter_map(nested_shell_command)
         .flat_map(parse_command_line)
         .collect::<Vec<_>>();
-    invocations.extend(nested);
+    let substitutions = command_substitutions(source)
+        .into_iter()
+        .flat_map(|command| parse_command_line(&command));
+    invocations.extend(nested_shells.into_iter().chain(substitutions));
     invocations
 }
 
@@ -43,10 +46,7 @@ fn push_invocation(invocations: &mut Vec<CommandInvocation>, words: &mut Vec<Str
         return;
     }
 
-    let executable_index = words
-        .iter()
-        .position(|word| !is_assignment(word) && !is_shell_prefix(word));
-    if let Some(index) = executable_index {
+    if let Some(index) = executable_index(words) {
         let executable = basename(&words[index]).to_ascii_lowercase();
         invocations.push(CommandInvocation {
             executable,
@@ -66,9 +66,181 @@ fn nested_shell_command(invocation: &CommandInvocation) -> Option<&str> {
     invocation
         .arguments
         .iter()
-        .position(|argument| argument == "-c" || argument == "--command")
+        .position(|argument| {
+            argument == "--command"
+                || argument
+                    .strip_prefix('-')
+                    .is_some_and(|options| !options.starts_with('-') && options.contains('c'))
+        })
         .and_then(|index| invocation.arguments.get(index + 1))
         .map(String::as_str)
+}
+
+fn executable_index(words: &[String]) -> Option<usize> {
+    let mut index = 0;
+    while index < words.len() && is_assignment(&words[index]) {
+        index += 1;
+    }
+    loop {
+        let wrapper = words.get(index).map(|word| basename(word));
+        match wrapper {
+            Some("command" | "builtin" | "exec" | "nohup") => index += 1,
+            Some("env") => {
+                index += 1;
+                skip_wrapper_options(words, &mut index, &["-u", "--unset", "-C", "--chdir"]);
+                while words.get(index).is_some_and(|word| is_assignment(word)) {
+                    index += 1;
+                }
+            }
+            Some("sudo") => {
+                index += 1;
+                skip_wrapper_options(
+                    words,
+                    &mut index,
+                    &[
+                        "-u",
+                        "--user",
+                        "-g",
+                        "--group",
+                        "-h",
+                        "--host",
+                        "-p",
+                        "--prompt",
+                        "-C",
+                        "--close-from",
+                        "-T",
+                        "--command-timeout",
+                        "-r",
+                        "--role",
+                        "-t",
+                        "--type",
+                    ],
+                );
+            }
+            _ => return (index < words.len()).then_some(index),
+        }
+    }
+}
+
+fn skip_wrapper_options(words: &[String], index: &mut usize, options_with_values: &[&str]) {
+    while let Some(argument) = words.get(*index) {
+        if argument == "--" {
+            *index += 1;
+            return;
+        }
+        if !argument.starts_with('-') || argument == "-" {
+            return;
+        }
+        let option = argument
+            .split_once('=')
+            .map_or(argument.as_str(), |(name, _)| name);
+        *index += 1;
+        if !argument.contains('=') && options_with_values.contains(&option) {
+            *index += usize::from(*index < words.len());
+        }
+    }
+}
+
+fn command_substitutions(source: &str) -> Vec<String> {
+    let characters = source.chars().collect::<Vec<_>>();
+    let mut substitutions = Vec::new();
+    let mut index = 0;
+    let mut quote = None;
+    while index < characters.len() {
+        let character = characters[index];
+        if character == '\'' {
+            quote = if quote == Some('\'') {
+                None
+            } else if quote.is_none() {
+                Some('\'')
+            } else {
+                quote
+            };
+            index += 1;
+            continue;
+        }
+        if character == '"' {
+            quote = if quote == Some('"') {
+                None
+            } else if quote.is_none() {
+                Some('"')
+            } else {
+                quote
+            };
+            index += 1;
+            continue;
+        }
+        if quote != Some('\'') && character == '`' {
+            let start = index + 1;
+            index = start;
+            while index < characters.len() && characters[index] != '`' {
+                index += 1;
+            }
+            if index < characters.len() {
+                substitutions.push(characters[start..index].iter().collect());
+                index += 1;
+            }
+            continue;
+        }
+        let parenthesized_start = (quote != Some('\'')
+            && matches!(character, '$' | '<' | '>')
+            && characters.get(index + 1) == Some(&'('))
+        .then_some(index + 2);
+        if let Some(start) = parenthesized_start {
+            if let Some(end) = parenthesized_substitution_end(&characters, start) {
+                substitutions.push(characters[start..end].iter().collect());
+                index = end + 1;
+            } else {
+                index = characters.len();
+            }
+            continue;
+        }
+        index += 1;
+    }
+    substitutions
+}
+
+fn parenthesized_substitution_end(characters: &[char], start: usize) -> Option<usize> {
+    let mut depth = 1;
+    let mut quote = None;
+    let mut index = start;
+    while index < characters.len() {
+        let character = characters[index];
+        if character == '\\' && quote != Some('\'') {
+            index = index.saturating_add(2);
+            continue;
+        }
+        if matches!(character, '\'' | '"' | '`') {
+            quote = if quote == Some(character) {
+                None
+            } else if quote.is_none() {
+                Some(character)
+            } else {
+                quote
+            };
+            index += 1;
+            continue;
+        }
+        if quote != Some('\'') && character == '$' && characters.get(index + 1) == Some(&'(') {
+            depth += 1;
+            index += 2;
+            continue;
+        }
+        if quote.is_none() {
+            match character {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(index);
+                    }
+                }
+                _ => {}
+            }
+        }
+        index += 1;
+    }
+    None
 }
 
 fn is_assignment(word: &str) -> bool {
@@ -78,13 +250,6 @@ fn is_assignment(word: &str) -> bool {
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
     })
-}
-
-fn is_shell_prefix(word: &str) -> bool {
-    matches!(
-        word,
-        "command" | "builtin" | "exec" | "env" | "sudo" | "nohup"
-    )
 }
 
 fn basename(value: &str) -> &str {
@@ -179,5 +344,52 @@ mod tests {
         assert_eq!(parsed.len(), 3);
         assert_eq!(parsed[2].executable, "git");
         assert_eq!(parsed[2].arguments, ["reset", "--hard"]);
+    }
+
+    #[test]
+    fn parses_shell_option_clusters_sudo_options_and_substitutions() {
+        let parsed = parse_command_line(
+            "bash -lc 'git reset --hard'; sudo -u root rm -rf /tmp/data; echo $(find . -delete)",
+        );
+        assert!(
+            parsed
+                .iter()
+                .any(|call| { call.executable == "git" && call.arguments == ["reset", "--hard"] })
+        );
+        assert!(
+            parsed
+                .iter()
+                .any(|call| { call.executable == "rm" && call.arguments == ["-rf", "/tmp/data"] })
+        );
+        assert!(
+            parsed
+                .iter()
+                .any(|call| { call.executable == "find" && call.arguments == [".", "-delete"] })
+        );
+    }
+    #[test]
+    fn parses_legacy_and_process_substitutions() {
+        let parsed = parse_command_line(
+            "printf '%s' `git reset --hard`; diff <(printf safe) <(rm -rf /tmp/work)",
+        );
+        assert!(parsed.iter().any(|call| call.executable == "git"));
+        assert!(parsed.iter().any(|call| call.executable == "rm"));
+    }
+
+    #[test]
+    fn quoted_parentheses_do_not_hide_commands_in_substitutions() {
+        let parsed = parse_command_line(r#"echo "$(printf '('; rm -rf /tmp/work)""#);
+        assert!(
+            parsed
+                .iter()
+                .any(|call| { call.executable == "rm" && call.arguments == ["-rf", "/tmp/work"] })
+        );
+    }
+
+    #[test]
+    fn ignores_command_substitution_inside_single_quotes() {
+        let parsed = parse_command_line("printf '%s' '$(rm -rf /)'");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].executable, "printf");
     }
 }

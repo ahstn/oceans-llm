@@ -144,7 +144,9 @@ const server = createServer(async (req, res) => {
       mcpExecutions.push(body.params)
       const resultText = body.params?.arguments?.query === 'guardrail-e2e-result-sensitive'
         ? 'guardrail-e2e-mask'
-        : 'upstream executed'
+        : body.params?.arguments?.query === 'guardrail-e2e-result-deny'
+          ? 'guardrail-e2e-managed-deny'
+          : 'upstream executed'
       sendJson(res, 200, {
         jsonrpc: '2.0',
         id: body.id,

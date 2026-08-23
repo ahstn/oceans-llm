@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use futures_util::future::join_all;
 use gateway_core::{GuardrailDecisionEventRecord, GuardrailDecisionRepository};
 use gateway_guardrails::{
     DecisionAction, EffectiveScope, FailureDisposition, GuardPhase, GuardrailEvaluation,
@@ -14,6 +17,7 @@ pub async fn record_guardrail_evaluation(
     mcp_tool_invocation_id: Option<Uuid>,
     evaluation: &GuardrailEvaluation,
 ) {
+    let mut records = Vec::with_capacity(evaluation.decisions.len());
     for decision in &evaluation.decisions {
         let phase = phase_name(decision.phase);
         let action = action_name(decision.action);
@@ -42,12 +46,8 @@ pub async fn record_guardrail_evaluation(
             content_hash = %decision.content_hash,
             "guardrail decision"
         );
-        let Ok(decision_id) = Uuid::parse_str(&decision.decision_id.to_string()) else {
-            tracing::error!(decision_id = %decision.decision_id, "invalid guardrail decision UUID");
-            continue;
-        };
-        let record = GuardrailDecisionEventRecord {
-            decision_id,
+        records.push(GuardrailDecisionEventRecord {
+            decision_id: decision.decision_id.as_uuid(),
             request_id: request_id.map(str::to_string),
             mcp_tool_invocation_id,
             phase: phase.to_string(),
@@ -72,14 +72,29 @@ pub async fn record_guardrail_evaluation(
             transformed: decision.transformed,
             content_hash: decision.content_hash.clone(),
             occurred_at: OffsetDateTime::now_utc(),
-        };
-        if let Err(error) = state.store.insert_guardrail_decision(&record).await {
-            tracing::warn!(
-                decision_id = %decision.decision_id,
-                error = %error,
-                "failed to persist guardrail decision"
-            );
+        });
+    }
+
+    let writes = records
+        .iter()
+        .map(|record| state.store.insert_guardrail_decision(record));
+    match tokio::time::timeout(Duration::from_millis(250), join_all(writes)).await {
+        Ok(results) => {
+            for (record, result) in records.iter().zip(results) {
+                if let Err(error) = result {
+                    tracing::warn!(
+                        decision_id = %record.decision_id,
+                        error = %error,
+                        "failed to persist guardrail decision"
+                    );
+                }
+            }
         }
+        Err(_) => tracing::warn!(
+            decision_count = records.len(),
+            persistence_deadline_ms = 250,
+            "guardrail decision persistence deadline exceeded"
+        ),
     }
 }
 

@@ -228,6 +228,12 @@ async fn normalize_response(
     }
 
     let metadata = model_armor_metadata(result);
+    if has_non_sdp_filter_match(result) {
+        return Ok(ManagedOutcome::Intervention {
+            reason_code: reason("model_armor.match"),
+            metadata,
+        });
+    }
 
     let transformed = transformed_text(result);
     if let Some(transformed) = transformed
@@ -252,6 +258,17 @@ async fn normalize_response(
             "invalid Model Armor filterMatchState {other:?}"
         ))),
     }
+}
+
+fn has_non_sdp_filter_match(result: &Value) -> bool {
+    result
+        .get("filterResults")
+        .and_then(Value::as_object)
+        .is_some_and(|filters| {
+            filters
+                .iter()
+                .any(|(name, result)| name != "sdp" && contains_match(result))
+        })
 }
 
 fn model_armor_metadata(result: &Value) -> ManagedDecisionMetadata {
@@ -358,6 +375,7 @@ mod tests {
             )
             .await
             .unwrap();
+
         assert!(matches!(
             outcome,
             ManagedOutcome::Transformed { transformation, .. }
@@ -374,6 +392,31 @@ mod tests {
         );
         assert!(request.contains(r#""userPrompt":"original prompt""#));
         assert!(request.contains(r#""text":"sensitive""#));
+    }
+
+    #[tokio::test]
+    async fn blocking_filter_takes_precedence_over_deidentification() {
+        let response = r#"{
+            "sanitizationResult": {
+                "invocationResult": "SUCCESS",
+                "filterMatchState": "MATCH_FOUND",
+                "filterResults": {
+                    "sdp": {
+                        "sdpFilterResult": {
+                            "deidentifyResult": {"data": {"text": "masked"}}
+                        }
+                    },
+                    "rai": {"raiFilterResult":{"matchState":"MATCH_FOUND"}}
+                }
+            }
+        }"#;
+        let (endpoint, _) = fake_server(response);
+        let response = reqwest::get(endpoint).await.unwrap();
+
+        assert!(matches!(
+            normalize_response(response, "sensitive").await.unwrap(),
+            ManagedOutcome::Intervention { .. }
+        ));
     }
 
     #[tokio::test]

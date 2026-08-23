@@ -3,6 +3,7 @@ import {
   canAccessPage,
   getAdminPageForPath,
   getAdminPagePath,
+  isPlatformAdminOnlyPath,
   normalizeAdminPath,
 } from '@/components/layout/admin-nav'
 
@@ -54,6 +55,7 @@ export function canAccessSignedInPath(session: AuthSessionView, path: string) {
   if (pathname === '/') return true
   if (PERSONAL_ACCOUNT_PATHS.has(pathname)) return true
   if (pathname === '/no-access') return session.permissions.pages.length === 0
+  if (isPlatformAdminOnlyPath(pathname) && !isPlatformAdminSession(session)) return false
   const page = getAdminPageForPath(pathname)
   return page ? canAccessPage(session, page) : false
 }

@@ -3045,6 +3045,8 @@ export interface components {
             decision_id: string;
             failure_disposition?: string | null;
             matched_rule?: null | components["schemas"]["MatchedRuleResponse"];
+            output_arguments?: unknown;
+            output_command?: string | null;
             reason_code?: string | null;
             transformed: boolean;
         };
@@ -6092,15 +6094,15 @@ export interface operations {
                     "application/json": components["schemas"]["GuardEvaluationResponse"];
                 };
             };
-            /** @description Missing or invalid API key */
-            401: {
+            /** @description Invalid evaluation request */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Invalid evaluation request */
-            422: {
+            /** @description Missing or invalid API key */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

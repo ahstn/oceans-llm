@@ -5,7 +5,7 @@ use gateway_core::{
 };
 
 use super::{LibsqlStore, to_query_error};
-use crate::shared::{parse_uuid, unix_to_datetime};
+use crate::shared::{datetime_to_unix_millis, parse_uuid, unix_millis_to_datetime};
 
 fn decode(row: &libsql::Row) -> Result<GuardrailDecisionEventRecord, StoreError> {
     let decision_id: String = row.get(0).map_err(to_query_error)?;
@@ -28,7 +28,7 @@ fn decode(row: &libsql::Row) -> Result<GuardrailDecisionEventRecord, StoreError>
         failure_disposition: row.get(12).map_err(to_query_error)?,
         transformed: transformed == 1,
         content_hash: row.get(14).map_err(to_query_error)?,
-        occurred_at: unix_to_datetime(occurred_at)?,
+        occurred_at: unix_millis_to_datetime(occurred_at)?,
     })
 }
 
@@ -65,7 +65,7 @@ impl GuardrailDecisionRepository for LibsqlStore {
                     decision.failure_disposition.as_deref(),
                     if decision.transformed { 1_i64 } else { 0_i64 },
                     decision.content_hash.as_str(),
-                    decision.occurred_at.unix_timestamp(),
+                    datetime_to_unix_millis(decision.occurred_at)?,
                 ],
             )
             .await
@@ -80,8 +80,14 @@ impl GuardrailDecisionRepository for LibsqlStore {
         let page = query.page.max(1);
         let page_size = query.page_size.clamp(1, MAX_GUARDRAIL_DECISION_PAGE_SIZE);
         let offset = u64::from(page.saturating_sub(1)) * u64::from(page_size);
-        let start = query.occurred_at_start.map(|value| value.unix_timestamp());
-        let end = query.occurred_at_end.map(|value| value.unix_timestamp());
+        let start = query
+            .occurred_at_start
+            .map(datetime_to_unix_millis)
+            .transpose()?;
+        let end = query
+            .occurred_at_end
+            .map(datetime_to_unix_millis)
+            .transpose()?;
         let parameters = libsql::params![
             query.request_id.as_deref(),
             query.phase.as_deref(),
@@ -221,6 +227,18 @@ mod tests {
         );
         assert_eq!(page.items[0].content_hash, decision.content_hash);
         assert_eq!(page.items[0].pack_id, decision.pack_id);
+        assert_eq!(
+            page.items[0].occurred_at.unix_timestamp_nanos() / 1_000_000,
+            decision.occurred_at.unix_timestamp_nanos() / 1_000_000,
+        );
+        let after_decision = store
+            .list_guardrail_decisions(&GuardrailDecisionQuery {
+                occurred_at_start: Some(decision.occurred_at + time::Duration::milliseconds(1)),
+                ..Default::default()
+            })
+            .await
+            .expect("filter decisions after millisecond boundary");
+        assert_eq!(after_decision.total, 0);
     }
 
     #[tokio::test]

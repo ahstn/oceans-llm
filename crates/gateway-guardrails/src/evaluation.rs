@@ -124,19 +124,17 @@ impl GuardrailEngine {
                 Ok(Some(matched_rule)) => {
                     let action = action_for_mode(policy.mode);
                     decisions.push(DecisionRecord {
-                        decision_id: DecisionId::new(),
-                        phase: input.phase,
-                        scope: policy.scope.clone(),
-                        evaluator: evaluator.id().to_string(),
-                        managed_service: None,
-                        managed_metadata: None,
                         action,
                         reason_code: matched_rule.reason_code.clone(),
                         matched_rule: Some(matched_rule),
-                        latency_micros: DecisionRecord::latency(started.elapsed()),
-                        failure_disposition: None,
-                        transformed: false,
-                        content_hash,
+                        ..base_decision(
+                            &input,
+                            policy,
+                            evaluator.id(),
+                            None,
+                            DecisionRecord::latency(started.elapsed()),
+                            content_hash,
+                        )
                     });
                     if action == DecisionAction::Deny {
                         return GuardrailEvaluation {
@@ -147,36 +145,27 @@ impl GuardrailEngine {
                     }
                     final_action = DecisionAction::Audit;
                 }
-                Ok(None) => decisions.push(DecisionRecord {
-                    decision_id: DecisionId::new(),
-                    phase: input.phase,
-                    scope: policy.scope.clone(),
-                    evaluator: evaluator.id().to_string(),
-                    managed_service: None,
-                    managed_metadata: None,
-                    action: DecisionAction::Allow,
-                    reason_code: reason("deterministic.allow"),
-                    matched_rule: None,
-                    latency_micros: DecisionRecord::latency(started.elapsed()),
-                    failure_disposition: None,
-                    transformed: false,
+                Ok(None) => decisions.push(base_decision(
+                    &input,
+                    policy,
+                    evaluator.id(),
+                    None,
+                    DecisionRecord::latency(started.elapsed()),
                     content_hash,
-                }),
+                )),
                 Err(error) => {
                     decisions.push(DecisionRecord {
-                        decision_id: DecisionId::new(),
-                        phase: input.phase,
-                        scope: policy.scope.clone(),
-                        evaluator: evaluator.id().to_string(),
-                        managed_service: None,
-                        managed_metadata: None,
                         action: DecisionAction::Deny,
                         reason_code: error.reason_code(),
-                        matched_rule: None,
-                        latency_micros: DecisionRecord::latency(started.elapsed()),
                         failure_disposition: Some(FailureDisposition::FailClosed),
-                        transformed: false,
-                        content_hash,
+                        ..base_decision(
+                            &input,
+                            policy,
+                            evaluator.id(),
+                            None,
+                            DecisionRecord::latency(started.elapsed()),
+                            content_hash,
+                        )
                     });
                     return GuardrailEvaluation {
                         action: DecisionAction::Deny,
@@ -253,19 +242,16 @@ impl GuardrailEngine {
                     metadata,
                 }) => {
                     decisions.push(DecisionRecord {
-                        decision_id: DecisionId::new(),
-                        phase: input.phase,
-                        scope: policy.scope.clone(),
-                        evaluator: evaluator.id().to_string(),
-                        managed_service: Some(evaluator.service()),
                         managed_metadata: Some(metadata),
-                        action: DecisionAction::Allow,
                         reason_code,
-                        matched_rule: None,
-                        latency_micros,
-                        failure_disposition: None,
-                        transformed: false,
-                        content_hash,
+                        ..base_decision(
+                            &input,
+                            policy,
+                            evaluator.id(),
+                            Some(evaluator.service()),
+                            latency_micros,
+                            content_hash,
+                        )
                     });
                 }
                 Ok(ManagedOutcome::Intervention {
@@ -274,19 +260,17 @@ impl GuardrailEngine {
                 }) => {
                     let action = action_for_mode(policy.mode);
                     decisions.push(DecisionRecord {
-                        decision_id: DecisionId::new(),
-                        phase: input.phase,
-                        scope: policy.scope.clone(),
-                        evaluator: evaluator.id().to_string(),
-                        managed_service: Some(evaluator.service()),
                         managed_metadata: Some(metadata),
                         action,
                         reason_code,
-                        matched_rule: None,
-                        latency_micros,
-                        failure_disposition: None,
-                        transformed: false,
-                        content_hash,
+                        ..base_decision(
+                            &input,
+                            policy,
+                            evaluator.id(),
+                            Some(evaluator.service()),
+                            latency_micros,
+                            content_hash,
+                        )
                     });
                     if action == DecisionAction::Deny {
                         return GuardrailEvaluation {
@@ -325,19 +309,18 @@ impl GuardrailEngine {
                         continue;
                     }
                     decisions.push(DecisionRecord {
-                        decision_id: DecisionId::new(),
-                        phase: input.phase,
-                        scope: policy.scope.clone(),
-                        evaluator: evaluator.id().to_string(),
-                        managed_service: Some(evaluator.service()),
                         managed_metadata: Some(metadata),
                         action: DecisionAction::Transformed,
                         reason_code,
-                        matched_rule: None,
-                        latency_micros,
-                        failure_disposition: None,
                         transformed: true,
-                        content_hash,
+                        ..base_decision(
+                            &input,
+                            policy,
+                            evaluator.id(),
+                            Some(evaluator.service()),
+                            latency_micros,
+                            content_hash,
+                        )
                     });
                     if final_action == DecisionAction::Allow {
                         final_action = DecisionAction::Transformed;
@@ -375,6 +358,31 @@ impl GuardrailEngine {
     }
 }
 
+fn base_decision(
+    input: &EvaluationInput,
+    policy: &EffectivePolicy,
+    evaluator: &str,
+    managed_service: Option<ManagedService>,
+    latency_micros: u64,
+    content_hash: String,
+) -> DecisionRecord {
+    DecisionRecord {
+        decision_id: DecisionId::new(),
+        phase: input.phase,
+        scope: policy.scope.clone(),
+        evaluator: evaluator.to_string(),
+        managed_service,
+        managed_metadata: None,
+        action: DecisionAction::Allow,
+        reason_code: reason("deterministic.allow"),
+        matched_rule: None,
+        latency_micros,
+        failure_disposition: None,
+        transformed: false,
+        content_hash,
+    }
+}
+
 fn action_for_mode(mode: PolicyMode) -> DecisionAction {
     match mode {
         PolicyMode::Audit => DecisionAction::Audit,
@@ -392,22 +400,20 @@ fn failure_decision(
     latency_micros: u64,
 ) -> DecisionRecord {
     DecisionRecord {
-        decision_id: DecisionId::new(),
-        phase: input.phase,
-        scope: policy.scope.clone(),
-        evaluator: evaluator.to_string(),
-        managed_service,
-        managed_metadata: None,
         action: match disposition {
             FailureDisposition::FailOpen => DecisionAction::Audit,
             FailureDisposition::FailClosed => DecisionAction::Deny,
         },
         reason_code: error.reason_code(),
-        matched_rule: None,
-        latency_micros,
         failure_disposition: Some(disposition),
-        transformed: false,
-        content_hash: input.payload.content_hash(),
+        ..base_decision(
+            input,
+            policy,
+            evaluator,
+            managed_service,
+            latency_micros,
+            input.payload.content_hash(),
+        )
     }
 }
 

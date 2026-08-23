@@ -2,7 +2,7 @@ mod aggregate;
 mod json_rpc;
 mod upstream;
 
-use std::{collections::BTreeMap, error::Error as _, time::Instant};
+use std::{error::Error as _, time::Instant};
 
 use axum::{
     Json,
@@ -354,21 +354,25 @@ async fn enforce_direct_mcp_result(
     id: Option<&Value>,
     mcp_tool_invocation_id: Uuid,
     response: Response<Body>,
-) -> Response<Body> {
+) -> (Response<Body>, Option<GuardrailEvaluation>, bool) {
     let policy =
         PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::McpServer(server));
     if !policy.enabled {
-        return response;
+        return (response, None, false);
     }
     let (mut parts, body) = response.into_parts();
     let bytes = match to_bytes(body, policy.stream_buffer_bytes).await {
         Ok(bytes) => bytes,
         Err(_) => {
-            return mcp_jsonrpc_error_response(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                id,
-                GUARDRAIL_POLICY_DENIED_CODE,
-                "MCP result exceeded the configured guardrail buffer",
+            return (
+                mcp_jsonrpc_error_response(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    id,
+                    GUARDRAIL_POLICY_DENIED_CODE,
+                    "MCP result exceeded the configured guardrail buffer",
+                ),
+                None,
+                true,
             );
         }
     };
@@ -389,8 +393,21 @@ async fn enforce_direct_mcp_result(
         )
         .await
         {
-            Ok(output) => output,
-            Err(evaluation) => return guardrail_denied_response(id, &evaluation),
+            Ok((output, evaluation)) => (output, evaluation),
+            Err(evaluation) => {
+                let response = evaluation.as_ref().map_or_else(
+                    || {
+                        mcp_jsonrpc_error_response(
+                            StatusCode::FORBIDDEN,
+                            id,
+                            GUARDRAIL_POLICY_DENIED_CODE,
+                            "MCP result was not valid UTF-8",
+                        )
+                    },
+                    |evaluation| guardrail_denied_response(id, evaluation),
+                );
+                return (response, evaluation, true);
+            }
         }
     } else {
         let parsed = serde_json::from_slice::<Value>(&bytes)
@@ -405,9 +422,13 @@ async fn enforce_direct_mcp_result(
         )
         .await;
         if evaluation.denied() {
-            return guardrail_denied_response(id, &evaluation);
+            return (
+                guardrail_denied_response(id, &evaluation),
+                Some(evaluation),
+                true,
+            );
         }
-        if evaluation
+        let output = if evaluation
             .decisions
             .iter()
             .any(|decision| decision.transformed)
@@ -420,10 +441,15 @@ async fn enforce_direct_mcp_result(
             }
         } else {
             bytes
-        }
+        };
+        (output, Some(evaluation))
     };
     parts.headers.remove(axum::http::header::CONTENT_LENGTH);
-    Response::from_parts(parts, Body::from(output))
+    (
+        Response::from_parts(parts, Body::from(output.0)),
+        output.1,
+        false,
+    )
 }
 
 async fn guard_mcp_sse_result(
@@ -433,34 +459,39 @@ async fn guard_mcp_sse_result(
     server: &str,
     tool: &str,
     bytes: &Bytes,
-) -> Result<Bytes, GuardrailEvaluation> {
-    let Ok(source) = std::str::from_utf8(bytes) else {
-        return Ok(bytes.clone());
+) -> Result<(Bytes, Option<GuardrailEvaluation>), Option<GuardrailEvaluation>> {
+    let source = std::str::from_utf8(bytes).map_err(|_| None)?;
+    let separator = if source.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
     };
-    let lines = source.split_inclusive('\n').collect::<Vec<_>>();
+    let event_separator = format!("{separator}{separator}");
+    let blocks = source.split(&event_separator).collect::<Vec<_>>();
     let mut event_values = Vec::new();
-    let mut event_by_line = BTreeMap::new();
-    for (line_index, line) in lines.iter().enumerate() {
-        let content = line
-            .strip_suffix("\r\n")
-            .or_else(|| line.strip_suffix('\n'))
-            .unwrap_or(line);
-        let Some(data) = content.strip_prefix("data:") else {
+    let mut event_by_block = vec![None; blocks.len()];
+    for (block_index, block) in blocks.iter().enumerate() {
+        let data = block
+            .split(separator)
+            .filter_map(|line| line.strip_prefix("data:"))
+            .map(|data| data.strip_prefix(' ').unwrap_or(data))
+            .collect::<Vec<_>>();
+        if data.is_empty() {
             continue;
-        };
-        let data = data.strip_prefix(' ').unwrap_or(data);
+        }
+        let data = data.join("\n");
         if data == "[DONE]" {
             continue;
         }
-        let parsed =
-            serde_json::from_str::<Value>(data).unwrap_or_else(|_| Value::String(data.to_string()));
-        event_by_line.insert(line_index, event_values.len());
+        let parsed = serde_json::from_str::<Value>(&data).unwrap_or(Value::String(data));
+        event_by_block[block_index] = Some(event_values.len());
         event_values.push(parsed);
     }
     if event_values.is_empty() {
-        return Ok(bytes.clone());
+        return Ok((bytes.clone(), None));
     }
 
+    let event_count = event_values.len();
     let evaluation = evaluate_mcp_result(
         state,
         Some(request_id),
@@ -471,54 +502,51 @@ async fn guard_mcp_sse_result(
     )
     .await;
     if evaluation.denied() {
-        return Err(evaluation);
+        return Err(Some(evaluation));
     }
-    let transformed = evaluation
+    if !evaluation
         .decisions
         .iter()
-        .any(|decision| decision.transformed);
-    let replacements = if transformed {
-        match &evaluation.output {
-            EvaluationPayload::McpResult { result, .. } => result
-                .as_array()
-                .filter(|result| result.len() == event_by_line.len()),
-            _ => None,
-        }
-        .ok_or(evaluation.clone())?
-    } else {
-        return Ok(bytes.clone());
-    };
-
-    let mut output = String::with_capacity(source.len());
-    for (line_index, line) in lines.into_iter().enumerate() {
-        let Some(event_index) = event_by_line.get(&line_index) else {
-            output.push_str(line);
-            continue;
-        };
-        let ending = if line.ends_with("\r\n") {
-            "\r\n"
-        } else if line.ends_with('\n') {
-            "\n"
-        } else {
-            ""
-        };
-        let spacing = if line
-            .strip_prefix("data:")
-            .is_some_and(|data| data.starts_with(' '))
-        {
-            " "
-        } else {
-            ""
-        };
-        output.push_str("data:");
-        output.push_str(spacing);
-        output.push_str(
-            &serde_json::to_string(&replacements[*event_index])
-                .expect("guardrail MCP result is valid JSON"),
-        );
-        output.push_str(ending);
+        .any(|decision| decision.transformed)
+    {
+        return Ok((bytes.clone(), Some(evaluation)));
     }
-    Ok(Bytes::from(output))
+    let replacements = match &evaluation.output {
+        EvaluationPayload::McpResult { result, .. } => result
+            .as_array()
+            .filter(|result| result.len() == event_count),
+        _ => None,
+    }
+    .ok_or_else(|| Some(evaluation.clone()))?;
+
+    let rendered = blocks
+        .into_iter()
+        .enumerate()
+        .map(|(block_index, block)| {
+            let Some(event_index) = event_by_block[block_index] else {
+                return block.to_string();
+            };
+            let replacement = serde_json::to_string(&replacements[event_index])
+                .expect("guardrail MCP result is valid JSON");
+            let mut replaced = false;
+            block
+                .split(separator)
+                .filter_map(|line| {
+                    if line.strip_prefix("data:").is_none() {
+                        return Some(line.to_string());
+                    }
+                    if replaced {
+                        return None;
+                    }
+                    replaced = true;
+                    Some(format!("data: {replacement}"))
+                })
+                .collect::<Vec<_>>()
+                .join(separator)
+        })
+        .collect::<Vec<_>>()
+        .join(&event_separator);
+    Ok((Bytes::from(rendered), Some(evaluation)))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -664,7 +692,33 @@ async fn handle_tools_call(
             .await),
             Err(error) => Err(error),
         };
-    let (status, error_code) = response_outcome(&outcome);
+    let (status, error_code, policy_result) = match &outcome {
+        Ok((_, _, true)) => (
+            McpToolInvocationStatus::PolicyDenied,
+            Some("guardrail_policy_denied".to_string()),
+            McpToolPolicyResult::Denied,
+        ),
+        Ok((response, _, false)) if response.status().is_success() => (
+            McpToolInvocationStatus::Success,
+            None,
+            McpToolPolicyResult::Allowed,
+        ),
+        Ok((response, _, false)) => (
+            McpToolInvocationStatus::UpstreamError,
+            Some(format!("http_{}", response.status().as_u16())),
+            McpToolPolicyResult::Allowed,
+        ),
+        Err(GatewayError::Provider(ProviderError::Timeout)) => (
+            McpToolInvocationStatus::Timeout,
+            Some("timeout".to_string()),
+            McpToolPolicyResult::Allowed,
+        ),
+        Err(error) => (
+            McpToolInvocationStatus::GatewayError,
+            Some(error.to_string()),
+            McpToolPolicyResult::Allowed,
+        ),
+    };
     let mut log_input = tool_invocation_log_input(
         &upstream,
         &id,
@@ -673,16 +727,22 @@ async fn handle_tools_call(
         &tool.upstream_name,
         &tool.display_name,
         status,
-        McpToolPolicyResult::Allowed,
+        policy_result,
         error_code,
         arguments,
         None,
         started_at,
     );
     log_input.metadata = guardrail_decision_metadata(&guardrail_evaluation);
+    if let Ok((_, Some(result_evaluation), _)) = &outcome {
+        log_input.metadata.insert(
+            "guardrail_result".to_string(),
+            Value::Object(guardrail_decision_metadata(result_evaluation)),
+        );
+    }
     let _ = invocation_logger.log_invocation(auth, log_input).await;
     match outcome {
-        Ok(response) => response,
+        Ok((response, _, _)) => response,
         Err(error) => mcp_error_response(error),
     }
 }

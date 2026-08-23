@@ -150,6 +150,34 @@ function optionalString(value: unknown, label: string): string | undefined {
   return value
 }
 
+function optionalRfc3339(value: unknown, label: string): string | undefined {
+  const timestamp = optionalString(value, label)
+  if (
+    timestamp !== undefined &&
+    (!/^\d{4}-\d{2}-\d{2}T/.test(timestamp) || Number.isNaN(Date.parse(timestamp)))
+  ) {
+    throw new Error(`${label} must be an RFC 3339 timestamp`)
+  }
+  return timestamp
+}
+
+type GuardrailDecisionFilters = NonNullable<Parameters<typeof listGuardrailDecisions>[0]>
+
+function validateGuardrailDecisionFilters(data: unknown): GuardrailDecisionFilters {
+  if (data === undefined) return {}
+  const input = requireObject(data, 'Guardrail decision filters')
+  return {
+    page: optionalPositiveInteger(input.page, 'page'),
+    page_size: optionalPositiveInteger(input.page_size, 'page_size'),
+    request_id: optionalString(input.request_id, 'request_id'),
+    phase: optionalString(input.phase, 'phase'),
+    action: optionalString(input.action, 'action'),
+    evaluator: optionalString(input.evaluator, 'evaluator'),
+    occurred_at_start: optionalRfc3339(input.occurred_at_start, 'occurred_at_start'),
+    occurred_at_end: optionalRfc3339(input.occurred_at_end, 'occurred_at_end'),
+  }
+}
+
 function validateBatchFilters(data: unknown): BatchFilters {
   if (data === undefined) return {}
   const input = requireObject(data, 'Batch filters')
@@ -372,11 +400,11 @@ export const getGuardrailPolicyView = createServerFn({ method: 'GET' }).handler(
   return getGuardrailPolicies()
 })
 
-export const getGuardrailDecisionPage = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data?: Parameters<typeof listGuardrailDecisions>[0] }) => {
+export const getGuardrailDecisionPage = createServerFn({ method: 'POST' })
+  .validator(validateGuardrailDecisionFilters)
+  .handler(async ({ data }) => {
     return listGuardrailDecisions(data)
-  },
-)
+  })
 
 export const getMcpOauthConnections = createServerFn({ method: 'GET' }).handler(async () => {
   return listMcpOauthConnections()

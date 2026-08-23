@@ -33,6 +33,7 @@ describe("shell guardrail hooks", () => {
       Response.json({
         decision_id: "decision-pi",
         allowed: false,
+        transformed: false,
         action: "deny",
         reason_code: "filesystem.recursive_force_remove",
       }),
@@ -57,6 +58,7 @@ describe("shell guardrail hooks", () => {
       Response.json({
         decision_id: "decision-opencode",
         allowed: false,
+        transformed: false,
         action: "deny",
         reason_code: "filesystem.recursive_force_remove",
       }),
@@ -76,6 +78,7 @@ describe("shell guardrail hooks", () => {
         Response.json({
           decision_id: "decision-pi-audit",
           allowed: true,
+          transformed: false,
           action: "audit",
           reason_code: "filesystem.recursive_force_remove",
         }),
@@ -84,6 +87,7 @@ describe("shell guardrail hooks", () => {
         Response.json({
           decision_id: "decision-opencode-audit",
           allowed: true,
+          transformed: false,
           action: "audit",
           reason_code: "filesystem.recursive_force_remove",
         }),
@@ -117,6 +121,22 @@ describe("shell guardrail hooks", () => {
     await expect(
       openCodeHook({ tool: "bash" }, { args: { command: "printf safe" } }),
     ).rejects.toThrow("network unavailable");
+  });
+
+  test("both hooks fail closed on malformed successful responses", async () => {
+    globalThis.fetch = vi.fn().mockImplementation(() => Response.json({ allowed: true }));
+    const piHook = await loadPiHook();
+    const openCodeHook = await loadOpenCodeHook();
+
+    await expect(
+      piHook({ toolName: "bash", input: { command: "printf safe" } }),
+    ).resolves.toMatchObject({
+      block: true,
+      reason: expect.stringContaining("invalid response"),
+    });
+    await expect(
+      openCodeHook({ tool: "bash" }, { args: { command: "printf safe" } }),
+    ).rejects.toThrow("invalid response");
   });
 });
 

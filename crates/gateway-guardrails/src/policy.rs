@@ -360,6 +360,35 @@ fn validate_managed_settings(
                     });
                 }
             }
+            let needs_prompt_template = check.phases.iter().any(|phase| {
+                matches!(
+                    phase,
+                    GuardPhase::Prompt | GuardPhase::McpCall | GuardPhase::HarnessPreTool
+                )
+            });
+            if needs_prompt_template && config.prompt_template.is_none() {
+                return Err(GuardrailConfigError::InvalidManagedSettings {
+                    check: name.to_string(),
+                    message: "selected prompt, MCP-call, or harness phase requires prompt_template"
+                        .to_string(),
+                });
+            }
+            let needs_response_template = check.phases.iter().any(|phase| {
+                matches!(
+                    phase,
+                    GuardPhase::ModelResponse
+                        | GuardPhase::GeneratedToolCall
+                        | GuardPhase::McpResult
+                )
+            });
+            if needs_response_template && config.response_template.is_none() {
+                return Err(GuardrailConfigError::InvalidManagedSettings {
+                    check: name.to_string(),
+                    message:
+                        "selected response, generated-tool-call, or MCP-result phase requires response_template"
+                            .to_string(),
+                });
+            }
             if config.prompt_template.is_none() && config.response_template.is_none() {
                 return Err(GuardrailConfigError::InvalidManagedSettings {
                     check: name.to_string(),
@@ -586,5 +615,39 @@ mod tests {
             config.validate(&BTreeSet::new(), &BTreeSet::new()),
             Err(GuardrailConfigError::UnknownMcpServer("missing".into()))
         );
+    }
+
+    #[test]
+    fn rejects_model_armor_phases_without_the_required_template() {
+        let managed = ManagedCheckConfig {
+            kind: ManagedCheckKind::GoogleModelArmor,
+            phases: BTreeSet::from([GuardPhase::ModelResponse]),
+            timeout_ms: 100,
+            failure_disposition: FailureDisposition::FailOpen,
+            max_content_bytes: 100,
+            bedrock: None,
+            model_armor: Some(ModelArmorManagedConfig {
+                project: "project".into(),
+                location: "us-central1".into(),
+                prompt_template: Some(
+                    "projects/project/locations/us-central1/templates/prompt".into(),
+                ),
+                response_template: None,
+                endpoint_url: None,
+                auth: ModelArmorAuthConfig::BearerToken {
+                    token: "test".into(),
+                },
+            }),
+        };
+        let config = GuardrailConfig {
+            managed_checks: BTreeMap::from([("armor".into(), managed)]),
+            ..GuardrailConfig::default()
+        };
+
+        assert!(matches!(
+            config.validate(&BTreeSet::new(), &BTreeSet::new()),
+            Err(GuardrailConfigError::InvalidManagedSettings { check, message })
+                if check == "armor" && message.contains("response_template")
+        ));
     }
 }

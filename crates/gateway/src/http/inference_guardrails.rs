@@ -43,7 +43,7 @@ pub async fn guard_prompt(
         GuardPhase::Prompt,
         request,
         None,
-        &["content", "input", "prompt", "text"],
+        &["content", "input", "instructions", "prompt", "text"],
     )
     .await?;
     Ok(InferenceGuardContext {
@@ -74,25 +74,51 @@ pub async fn guard_model_response(
     Ok(())
 }
 
+pub struct GuardStreamError {
+    pub error: GatewayError,
+    pub collector: Option<gateway_service::StreamResponseCollector>,
+}
+
 pub async fn guard_stream(
     state: &AppState,
     context: &InferenceGuardContext,
     mut upstream: ProviderStream,
-) -> Result<ProviderStream, GatewayError> {
+) -> Result<ProviderStream, GuardStreamError> {
     if !context.enabled {
         return Ok(upstream);
     }
     let mut buffered = Vec::new();
+    let mut collector = state.service.new_stream_response_collector();
     while let Some(chunk) = upstream.next().await {
-        let chunk = chunk.map_err(GatewayError::Provider)?;
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(error) => {
+                collector.finish();
+                return Err(GuardStreamError {
+                    error: GatewayError::Provider(error),
+                    collector: Some(collector),
+                });
+            }
+        };
+        collector.observe_chunk(&chunk);
         if buffered.len().saturating_add(chunk.len()) > context.stream_buffer_bytes {
-            return Err(GatewayError::PayloadTooLarge {
-                limit_bytes: context.stream_buffer_bytes,
+            collector.finish();
+            return Err(GuardStreamError {
+                error: GatewayError::PayloadTooLarge {
+                    limit_bytes: context.stream_buffer_bytes,
+                },
+                collector: Some(collector),
             });
         }
         buffered.extend_from_slice(&chunk);
     }
-    let guarded = guard_sse_payload(state, context, &buffered).await?;
+    collector.finish();
+    let guarded = guard_sse_payload(state, context, &buffered)
+        .await
+        .map_err(|error| GuardStreamError {
+            error,
+            collector: Some(collector),
+        })?;
     Ok(Box::pin(stream::once(
         async move { Ok(Bytes::from(guarded)) },
     )))
@@ -117,39 +143,49 @@ async fn guard_sse_payload(
     let mut text_locations = Vec::<(usize, String)>::new();
 
     for block in source.split(&event_separator) {
+        let event_index = blocks.len();
         let mut lines = Vec::new();
+        let mut data = Vec::new();
+        let mut data_index = None;
         for line in block.split(separator) {
-            let Some(data) = line.strip_prefix("data:") else {
+            let Some(payload) = line.strip_prefix("data:") else {
                 lines.push(StreamLine::Other(line.to_string()));
                 continue;
             };
-            let data = data.strip_prefix(' ').unwrap_or(data);
-            if data == "[DONE]" {
-                lines.push(StreamLine::Done);
-                continue;
-            }
-            let mut value: Value = serde_json::from_str(data).map_err(|error| {
-                GatewayError::Internal(format!("provider stream contained invalid JSON: {error}"))
-            })?;
-            let event_index = blocks.len();
-            let mut pointers = Vec::new();
-            collect_string_pointers(
-                &value,
-                "",
-                &["content", "output_text", "text"],
-                &mut pointers,
-            );
-            if value
-                .get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|kind| kind.ends_with("output_text.delta"))
-                && value.get("delta").is_some_and(Value::is_string)
-            {
-                pointers.push("/delta".to_string());
-            }
-            text_locations.extend(pointers.into_iter().map(|pointer| (event_index, pointer)));
-            collect_stream_tool_fragments(&value, "", event_index, &mut tool_fragments);
-            lines.push(StreamLine::Json(std::mem::take(&mut value)));
+            data_index.get_or_insert(lines.len());
+            data.push(payload.strip_prefix(' ').unwrap_or(payload));
+        }
+        if let Some(data_index) = data_index {
+            let payload = data.join("\n");
+            let stream_line = if payload == "[DONE]" {
+                StreamLine::Done
+            } else {
+                let Ok(value) = serde_json::from_str::<Value>(&payload) else {
+                    lines.clear();
+                    lines.push(StreamLine::Other(block.to_string()));
+                    blocks.push(lines);
+                    continue;
+                };
+                let mut pointers = Vec::new();
+                collect_string_pointers(
+                    &value,
+                    "",
+                    &["content", "output_text", "text"],
+                    &mut pointers,
+                );
+                if value
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| kind.ends_with("output_text.delta"))
+                    && value.get("delta").is_some_and(Value::is_string)
+                {
+                    pointers.push("/delta".to_string());
+                }
+                text_locations.extend(pointers.into_iter().map(|pointer| (event_index, pointer)));
+                collect_stream_tool_fragments(&value, "", event_index, &mut tool_fragments);
+                StreamLine::Json(value)
+            };
+            lines.insert(data_index, stream_line);
         }
         blocks.push(lines);
     }
@@ -178,16 +214,25 @@ async fn guard_sse_payload(
             .iter()
             .any(|decision| decision.transformed)
             && let Some(arguments) = transformed_tool_arguments(&evaluation.output, &arguments)
-            && let Ok(arguments) = serde_json::to_string(&arguments)
         {
-            let mut replacement = Some(arguments);
-            for (event_index, pointer) in &fragments.argument_locations {
-                for line in &mut blocks[*event_index] {
-                    if let StreamLine::Json(value) = line
-                        && let Some(slot) = value.pointer_mut(pointer)
-                    {
-                        *slot = Value::String(replacement.take().unwrap_or_default());
-                        break;
+            let replacement = if fragments.shell_command_locations {
+                arguments
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            } else {
+                serde_json::to_string(&arguments).ok()
+            };
+            if let Some(replacement) = replacement {
+                let mut replacement = Some(replacement);
+                for (event_index, pointer) in &fragments.argument_locations {
+                    for line in &mut blocks[*event_index] {
+                        if let StreamLine::Json(value) = line
+                            && let Some(slot) = value.pointer_mut(pointer)
+                        {
+                            *slot = Value::String(replacement.take().unwrap_or_default());
+                            break;
+                        }
                     }
                 }
             }
@@ -265,6 +310,7 @@ struct ToolCallFragments {
     name: String,
     arguments: String,
     argument_locations: Vec<(usize, String)>,
+    shell_command_locations: bool,
 }
 
 fn collect_stream_tool_fragments(
@@ -275,6 +321,40 @@ fn collect_stream_tool_fragments(
 ) {
     match value {
         Value::Object(object) => {
+            let response_item_event = matches!(
+                object.get("type").and_then(Value::as_str),
+                Some("response.output_item.added" | "response.output_item.done")
+            );
+            if response_item_event
+                && let Some(item) = object.get("item").and_then(Value::as_object)
+                && let Some((name, arguments)) = parse_tool_call(item)
+            {
+                let key = item
+                    .get("id")
+                    .or_else(|| item.get("call_id"))
+                    .map(identity_key)
+                    .unwrap_or_else(|| "default".to_string());
+                let fragments = output.entry(key).or_default();
+                fragments.name = name;
+                let arguments = serialized_arguments(&arguments);
+                if fragments.arguments.is_empty()
+                    || object.get("type").and_then(Value::as_str)
+                        == Some("response.output_item.done")
+                {
+                    fragments.arguments = arguments;
+                }
+                let shell_call = is_responses_shell_call(item);
+                fragments.shell_command_locations |= shell_call;
+                let argument_pointer = if shell_call {
+                    format!("{pointer}/item/action/command")
+                } else {
+                    format!("{pointer}/item/arguments")
+                };
+                fragments
+                    .argument_locations
+                    .push((event_index, argument_pointer));
+            }
+
             let anthropic_index = (object
                 .get("content_block")
                 .and_then(Value::as_object)
@@ -312,11 +392,12 @@ fn collect_stream_tool_fragments(
                         .push((event_index, format!("{pointer}/delta/partial_json")));
                 }
             }
+
             if let Some(function) = object.get("function").and_then(Value::as_object) {
                 let key = object
                     .get("index")
                     .or_else(|| object.get("id"))
-                    .map(Value::to_string)
+                    .map(identity_key)
                     .unwrap_or_else(|| "default".to_string());
                 let fragments = output.entry(key).or_default();
                 if let Some(name) = function.get("name").and_then(Value::as_str) {
@@ -329,6 +410,7 @@ fn collect_stream_tool_fragments(
                         .push((event_index, format!("{pointer}/function/arguments")));
                 }
             }
+
             if object
                 .get("type")
                 .and_then(Value::as_str)
@@ -336,7 +418,7 @@ fn collect_stream_tool_fragments(
             {
                 let key = object
                     .get("item_id")
-                    .map(Value::to_string)
+                    .map(identity_key)
                     .unwrap_or_else(|| "default".to_string());
                 if let Some(delta) = object.get("delta").and_then(Value::as_str) {
                     let fragments = output.entry(key).or_default();
@@ -346,35 +428,39 @@ fn collect_stream_tool_fragments(
                         .push((event_index, format!("{pointer}/delta")));
                 }
             }
-            if matches!(
-                object.get("type").and_then(Value::as_str),
-                Some("function_call" | "tool_use")
-            ) {
+
+            if !response_item_event
+                && object.get("function").is_none()
+                && let Some((name, arguments)) = parse_tool_call(object)
+            {
                 let key = object
                     .get("id")
                     .or_else(|| object.get("call_id"))
-                    .map(Value::to_string)
+                    .map(identity_key)
                     .unwrap_or_else(|| "default".to_string());
                 let fragments = output.entry(key).or_default();
-                if let Some(name) = object.get("name").and_then(Value::as_str) {
-                    fragments.name.push_str(name);
-                }
-                if let Some((field, arguments)) =
-                    ["arguments", "input"].into_iter().find_map(|field| {
-                        object
-                            .get(field)
-                            .and_then(Value::as_str)
-                            .map(|arguments| (field, arguments))
-                    })
-                {
-                    fragments.arguments.push_str(arguments);
-                    fragments
-                        .argument_locations
-                        .push((event_index, format!("{pointer}/{field}")));
-                }
+                fragments.name.push_str(&name);
+                fragments
+                    .arguments
+                    .push_str(&serialized_arguments(&arguments));
+                let shell_call = is_responses_shell_call(object);
+                fragments.shell_command_locations |= shell_call;
+                let argument_pointer = if shell_call {
+                    format!("{pointer}/action/command")
+                } else {
+                    format!("{pointer}/arguments")
+                };
+                fragments
+                    .argument_locations
+                    .push((event_index, argument_pointer));
+                return;
             }
+
             for (key, child) in object {
                 if anthropic_index.is_some() && matches!(key.as_str(), "content_block" | "delta") {
+                    continue;
+                }
+                if response_item_event && key == "item" {
                     continue;
                 }
                 collect_stream_tool_fragments(
@@ -397,6 +483,20 @@ fn collect_stream_tool_fragments(
         }
         _ => {}
     }
+}
+
+fn identity_key(value: &Value) -> String {
+    value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string())
+}
+
+fn serialized_arguments(value: &Value) -> String {
+    value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| serde_json::to_string(value).expect("tool arguments are valid JSON"))
 }
 pub fn model_route_key(model: &str, provider: &str, upstream_model: &str) -> String {
     format!("{model}/{provider}/{upstream_model}")
@@ -437,19 +537,31 @@ async fn inspect_text_fields(
     }
     let evaluation = evaluate(state, route_key, Some(request_id), input).await;
     ensure_allowed(&evaluation)?;
-    if evaluation
+    let transformed = evaluation
         .decisions
         .iter()
-        .any(|decision| decision.transformed)
-        && let EvaluationPayload::TextSegments { segments } = &evaluation.output
-    {
+        .any(|decision| decision.transformed);
+    let final_segments = if transformed {
+        let EvaluationPayload::TextSegments { segments } = &evaluation.output else {
+            return Err(GatewayError::Internal(
+                "guardrail transformation changed the prompt payload kind".to_string(),
+            ));
+        };
+        if segments.len() != pointers.len() {
+            return Err(GatewayError::Internal(
+                "guardrail transformation returned a mismatched segment count".to_string(),
+            ));
+        }
         for (pointer, transformed) in pointers.iter().zip(segments) {
             if let Some(slot) = value.pointer_mut(pointer) {
                 *slot = Value::String(transformed.clone());
             }
         }
-    }
-    Ok(Some(inspected.join("\n")))
+        segments
+    } else {
+        &inspected
+    };
+    Ok(Some(final_segments.join("\n")))
 }
 
 async fn inspect_generated_tool_calls(
@@ -593,7 +705,37 @@ fn parse_tool_call(object: &Map<String, Value>) -> Option<(String, Value)> {
             .unwrap_or_else(|| Value::Object(Map::new()));
         return Some((name, arguments));
     }
+    if matches!(call_type, Some("shell_call" | "local_shell_call")) {
+        let action = object.get("action")?.as_object()?;
+        let command = action
+            .get("command")
+            .or_else(|| action.get("commands"))
+            .and_then(shell_action_command)?;
+        return Some((
+            call_type?.to_string(),
+            serde_json::json!({"command": command}),
+        ));
+    }
     None
+}
+
+fn is_responses_shell_call(object: &Map<String, Value>) -> bool {
+    matches!(
+        object.get("type").and_then(Value::as_str),
+        Some("shell_call" | "local_shell_call")
+    )
+}
+
+fn shell_action_command(value: &Value) -> Option<String> {
+    match value {
+        Value::String(command) => Some(command.clone()),
+        Value::Array(commands) => commands
+            .iter()
+            .map(Value::as_str)
+            .collect::<Option<Vec<_>>>()
+            .map(|commands| commands.join("\n")),
+        _ => None,
+    }
 }
 
 fn parse_arguments(value: &Value) -> Value {
@@ -604,7 +746,14 @@ fn parse_arguments(value: &Value) -> Value {
 }
 
 fn shell_command(name: &str, arguments: &Value) -> Option<String> {
-    const SHELL_TOOL_NAMES: &[&str] = &["bash", "shell", "shell_command", "terminal.exec"];
+    const SHELL_TOOL_NAMES: &[&str] = &[
+        "bash",
+        "shell",
+        "shell_call",
+        "local_shell_call",
+        "shell_command",
+        "terminal.exec",
+    ];
     if !SHELL_TOOL_NAMES.contains(&name.to_ascii_lowercase().as_str()) {
         return None;
     }
@@ -645,6 +794,24 @@ fn replace_tool_call_arguments(object: &mut Map<String, Value>, arguments: Value
     {
         replace_json_value(slot, arguments);
         return;
+    }
+    if is_responses_shell_call(object)
+        && let Some(command) = arguments.get("command").and_then(Value::as_str)
+        && let Some(action) = object.get_mut("action").and_then(Value::as_object_mut)
+    {
+        if let Some(slot) = action.get_mut("command") {
+            *slot = Value::String(command.to_string());
+            return;
+        }
+        if let Some(slot) = action.get_mut("commands") {
+            *slot = Value::Array(
+                command
+                    .lines()
+                    .map(|line| Value::String(line.to_string()))
+                    .collect(),
+            );
+            return;
+        }
     }
     for field in ["arguments", "input"] {
         if let Some(slot) = object.get_mut(field) {
@@ -764,6 +931,15 @@ mod tests {
                 "item_id": "item-1",
                 "delta": "{\"cmd\":\"git reset --hard\"}"
             }),
+            json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "type": "function_call",
+                    "id": "item-1",
+                    "name": "shell",
+                    "arguments": "{\"cmd\":\"git reset --hard\"}"
+                }
+            }),
         ]
         .iter()
         .enumerate()
@@ -777,10 +953,10 @@ mod tests {
         );
         assert_eq!(fragments["anthropic:0"].name, "bash");
         assert_eq!(
-            fragments["\"item-1\""].arguments,
+            fragments["item-1"].arguments,
             "{\"cmd\":\"git reset --hard\"}"
         );
-        assert_eq!(fragments["\"item-1\""].name, "shell");
+        assert_eq!(fragments["item-1"].name, "shell");
     }
 
     #[test]

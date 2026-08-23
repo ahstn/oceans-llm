@@ -14,7 +14,7 @@ use futures_util::{StreamExt, stream as futures_stream};
 use gateway_core::{
     AnthropicMessagesRequest, AuthenticatedApiKey, ChatCompletionsRequest, CoreChatRequest,
     CoreRequestRequirements, EmbeddingsRequest, GatewayError, ModelsListResponse,
-    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext,
+    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
     RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
     anthropic_messages_request_to_core, core_chat_request_to_openai, openai_chat_request_to_core,
     openai_embeddings_request_to_core, openai_responses_request_to_core,
@@ -25,6 +25,7 @@ use gateway_service::{
     McpAccess, McpTokenOverhead, McpTokenOverheadInput, RequestLogContext, RequestLogIconMetadata,
     ResolvedProviderConnection, resolve_model_icon_key, resolve_provider_display_from_parts,
 };
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use tower_http::request_id::RequestId;
@@ -34,13 +35,38 @@ use crate::http::{
     anthropic_stream::anthropic_messages_stream_from_openai,
     error::AppError,
     inference_guardrails::{
-        InferenceGuardContext, guard_model_response, guard_prompt, guard_stream, model_route_key,
+        GuardStreamError, InferenceGuardContext, guard_model_response, guard_prompt, guard_stream,
+        model_route_key,
     },
     request_tags::extract_request_tags,
     state::{AppGatewayService, AppState},
 };
 use crate::observability::{ChatMetricLabels, ChatRequestMetric};
 
+async fn guard_typed_request<T>(
+    state: &AppState,
+    request_id: &str,
+    route_key: String,
+    request: &mut T,
+) -> Result<InferenceGuardContext, AppError>
+where
+    T: Serialize + DeserializeOwned,
+{
+    let mut guarded = serde_json::to_value(&*request).map_err(|error| {
+        AppError(GatewayError::Internal(format!(
+            "failed to encode guardrail request: {error}"
+        )))
+    })?;
+    let context = guard_prompt(state, request_id, route_key, &mut guarded)
+        .await
+        .map_err(AppError)?;
+    *request = serde_json::from_value(guarded).map_err(|error| {
+        AppError(GatewayError::Internal(format!(
+            "guardrail transformation produced an invalid request: {error}"
+        )))
+    })?;
+    Ok(context)
+}
 type SelectedProviderRoute = (gateway_core::ModelRoute, Arc<dyn ProviderClient>);
 
 pub async fn healthz() -> Json<serde_json::Value> {
@@ -182,19 +208,8 @@ async fn v1_messages_inner(
         &route.provider_key,
         &route.upstream_model,
     );
-    let mut guarded_request = serde_json::to_value(&core_request).map_err(|error| {
-        AppError(GatewayError::Internal(format!(
-            "failed to encode guardrail request: {error}"
-        )))
-    })?;
-    let guard_context = guard_prompt(&state, &request_id, route_key, &mut guarded_request)
-        .await
-        .map_err(AppError)?;
-    core_request = serde_json::from_value(guarded_request).map_err(|error| {
-        AppError(GatewayError::Internal(format!(
-            "guardrail transformation produced an invalid request: {error}"
-        )))
-    })?;
+    let guard_context =
+        guard_typed_request(&state, &request_id, route_key, &mut core_request).await?;
 
     if let Err(error) = state
         .service
@@ -282,15 +297,6 @@ async fn v1_messages_inner(
             return Err(AppError(error));
         }
     };
-    guard_model_response(&state, &guard_context, &mut openai_value)
-        .await
-        .map_err(AppError)?;
-    let value = anthropic_message_from_openai_chat(
-        &openai_value,
-        &resolved.selection.requested_model.model_key,
-    );
-    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
-    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &openai_value);
     finalize_successful_usage_accounting(
         &state,
         UsageAccountingContext {
@@ -304,6 +310,15 @@ async fn v1_messages_inner(
         usage_value_from_response(&openai_value),
     )
     .await;
+    guard_model_response(&state, &guard_context, &mut openai_value)
+        .await
+        .map_err(AppError)?;
+    let value = anthropic_message_from_openai_chat(
+        &openai_value,
+        &resolved.selection.requested_model.model_key,
+    );
+    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
+    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &openai_value);
     best_effort_log_non_stream_success(
         &state.service,
         &auth,
@@ -452,19 +467,8 @@ pub async fn v1_chat_completions(
         &route.provider_key,
         &route.upstream_model,
     );
-    let mut guarded_request = serde_json::to_value(&core_request).map_err(|error| {
-        AppError(GatewayError::Internal(format!(
-            "failed to encode guardrail request: {error}"
-        )))
-    })?;
-    let guard_context = guard_prompt(&state, &request_id, route_key, &mut guarded_request)
-        .await
-        .map_err(AppError)?;
-    core_request = serde_json::from_value(guarded_request).map_err(|error| {
-        AppError(GatewayError::Internal(format!(
-            "guardrail transformation produced an invalid request: {error}"
-        )))
-    })?;
+    let guard_context =
+        guard_typed_request(&state, &request_id, route_key, &mut core_request).await?;
 
     if let Err(error) = state
         .service
@@ -563,9 +567,19 @@ pub async fn v1_chat_completions(
                 return Err(AppError(gateway_error));
             }
         };
-        let stream = guard_stream(&state, &guard_context, stream)
-            .await
-            .map_err(AppError)?;
+        let stream = enforce_guarded_stream_after_provider(
+            &state,
+            &auth,
+            &resolved,
+            &request_log_context,
+            &route,
+            icon_metadata.clone(),
+            request_started_at,
+            attempt_started_at,
+            &guard_context,
+            stream,
+        )
+        .await?;
         let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
             upstream: stream,
             service: state.service.clone(),
@@ -649,11 +663,6 @@ pub async fn v1_chat_completions(
             return Err(AppError(error));
         }
     };
-    guard_model_response(&state, &guard_context, &mut value)
-        .await
-        .map_err(AppError)?;
-    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
-    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     finalize_successful_usage_accounting(
         &state,
         UsageAccountingContext {
@@ -667,6 +676,11 @@ pub async fn v1_chat_completions(
         usage_value_from_response(&value),
     )
     .await;
+    guard_model_response(&state, &guard_context, &mut value)
+        .await
+        .map_err(AppError)?;
+    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
+    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     best_effort_log_non_stream_success(
         &state.service,
         &auth,
@@ -809,19 +823,8 @@ pub async fn v1_responses(
         &route.provider_key,
         &route.upstream_model,
     );
-    let mut guarded_request = serde_json::to_value(&core_request).map_err(|error| {
-        AppError(GatewayError::Internal(format!(
-            "failed to encode guardrail request: {error}"
-        )))
-    })?;
-    let guard_context = guard_prompt(&state, &request_id, route_key, &mut guarded_request)
-        .await
-        .map_err(AppError)?;
-    core_request = serde_json::from_value(guarded_request).map_err(|error| {
-        AppError(GatewayError::Internal(format!(
-            "guardrail transformation produced an invalid request: {error}"
-        )))
-    })?;
+    let guard_context =
+        guard_typed_request(&state, &request_id, route_key, &mut core_request).await?;
 
     if let Err(error) = state
         .service
@@ -915,9 +918,19 @@ pub async fn v1_responses(
                 return Err(AppError(gateway_error));
             }
         };
-        let stream = guard_stream(&state, &guard_context, stream)
-            .await
-            .map_err(AppError)?;
+        let stream = enforce_guarded_stream_after_provider(
+            &state,
+            &auth,
+            &resolved,
+            &request_log_context,
+            &route,
+            icon_metadata.clone(),
+            request_started_at,
+            attempt_started_at,
+            &guard_context,
+            stream,
+        )
+        .await?;
         let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
             upstream: stream,
             service: state.service.clone(),
@@ -1001,11 +1014,6 @@ pub async fn v1_responses(
             return Err(AppError(error));
         }
     };
-    guard_model_response(&state, &guard_context, &mut value)
-        .await
-        .map_err(AppError)?;
-    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
-    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     finalize_successful_usage_accounting(
         &state,
         UsageAccountingContext {
@@ -1019,6 +1027,11 @@ pub async fn v1_responses(
         usage_value_from_response(&value),
     )
     .await;
+    guard_model_response(&state, &guard_context, &mut value)
+        .await
+        .map_err(AppError)?;
+    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
+    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     best_effort_log_non_stream_success(
         &state.service,
         &auth,
@@ -1428,6 +1441,113 @@ struct UsageAccountingContext<'a> {
 }
 
 #[allow(clippy::too_many_arguments)]
+async fn record_guarded_stream_failure(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+    resolved: &gateway_service::ResolvedGatewayRequest,
+    request_log_context: &RequestLogContext,
+    route: &gateway_core::ModelRoute,
+    icon_metadata: RequestLogIconMetadata,
+    request_started_at: Instant,
+    attempt_started_at: OffsetDateTime,
+    error: &GatewayError,
+    collector: gateway_service::StreamResponseCollector,
+) {
+    let labels = ChatMetricLabels {
+        requested_model: &resolved.selection.requested_model.model_key,
+        resolved_model: &resolved.selection.execution_model.model_key,
+        provider_key: &route.provider_key,
+        stream: true,
+    };
+    finalize_successful_usage_accounting(
+        state,
+        UsageAccountingContext {
+            auth,
+            model: &resolved.selection.execution_model,
+            route,
+            request_id: &request_log_context.request_id,
+            labels: labels.clone(),
+            operation: request_log_context.operation,
+        },
+        collector.usage().cloned(),
+    )
+    .await;
+    let tool_cardinality = RequestToolCardinality {
+        invoked_tool_count: Some(collector.invoked_tool_count()),
+        ..request_log_context.tool_cardinality
+    };
+    best_effort_log_stream_result(
+        &state.service,
+        auth,
+        request_log_context,
+        gateway_service::StreamLogResultInput {
+            provider_key: route.provider_key.clone(),
+            icon_metadata,
+            latency_ms: latency_ms_since(request_started_at),
+            collector,
+            failure: Some(gateway_service::StreamFailureSummary {
+                status_code: error.http_status_code().into(),
+                error_code: error.error_code().to_string(),
+            }),
+            attempts: vec![success_attempt(
+                request_log_context,
+                route,
+                true,
+                attempt_started_at,
+            )],
+        },
+    )
+    .await;
+    state.metrics.record_chat_request(&ChatRequestMetric {
+        labels: labels.clone(),
+        status_code: i64::from(error.http_status_code()),
+        outcome: error.error_type(),
+        latency_seconds: latency_seconds_since(request_started_at),
+    });
+    state.metrics.record_tool_cardinality(
+        &labels,
+        request_log_context.operation,
+        &tool_cardinality,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn enforce_guarded_stream_after_provider(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+    resolved: &gateway_service::ResolvedGatewayRequest,
+    request_log_context: &RequestLogContext,
+    route: &gateway_core::ModelRoute,
+    icon_metadata: RequestLogIconMetadata,
+    request_started_at: Instant,
+    attempt_started_at: OffsetDateTime,
+    guard_context: &InferenceGuardContext,
+    stream: ProviderStream,
+) -> Result<ProviderStream, AppError> {
+    match guard_stream(state, guard_context, stream).await {
+        Ok(stream) => Ok(stream),
+        Err(GuardStreamError { error, collector }) => {
+            if let Some(collector) = collector {
+                record_guarded_stream_failure(
+                    state,
+                    auth,
+                    resolved,
+                    request_log_context,
+                    route,
+                    icon_metadata,
+                    request_started_at,
+                    attempt_started_at,
+                    &error,
+                    collector,
+                )
+                .await;
+            }
+            Err(AppError(error))
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn anthropic_messages_stream_response(
     state: &AppState,
     auth: &AuthenticatedApiKey,
@@ -1489,9 +1609,19 @@ async fn anthropic_messages_stream_response(
             return Err(AppError(gateway_error));
         }
     };
-    let stream = guard_stream(state, guard_context, stream)
-        .await
-        .map_err(AppError)?;
+    let stream = enforce_guarded_stream_after_provider(
+        state,
+        auth,
+        resolved,
+        request_log_context,
+        route,
+        icon_metadata.clone(),
+        request_started_at,
+        attempt_started_at,
+        guard_context,
+        stream,
+    )
+    .await?;
     let stream = anthropic_messages_stream_from_openai(
         stream,
         resolved.selection.requested_model.model_key.clone(),

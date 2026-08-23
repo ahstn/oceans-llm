@@ -45,6 +45,8 @@ pub struct GuardEvaluationResponse {
     pub reason_code: Option<String>,
     pub failure_disposition: Option<String>,
     pub transformed: bool,
+    pub output_command: Option<String>,
+    pub output_arguments: Option<Value>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -63,7 +65,7 @@ pub struct MatchedRuleResponse {
     responses(
         (status = 200, description = "Guardrail decision", body = GuardEvaluationResponse),
         (status = 401, description = "Missing or invalid API key"),
-        (status = 422, description = "Invalid evaluation request")
+        (status = 400, description = "Invalid evaluation request")
     ),
     security(("gateway_api_key" = [])),
     tag = "Guardrails"
@@ -121,6 +123,11 @@ pub async fn evaluate_guardrail(
             safer_action: matched.safer_action.clone(),
         });
 
+    let (output_command, output_arguments) = match &evaluation.output {
+        EvaluationPayload::ShellCommand { command } => (Some(command.clone()), None),
+        EvaluationPayload::ToolCall { arguments, .. } => (None, Some(arguments.clone())),
+        _ => (None, None),
+    };
     Ok(Json(GuardEvaluationResponse {
         decision_id: relevant
             .map(|decision| decision.decision_id.to_string())
@@ -137,6 +144,8 @@ pub async fn evaluate_guardrail(
             .decisions
             .iter()
             .any(|decision| decision.transformed),
+        output_command,
+        output_arguments,
     }))
 }
 

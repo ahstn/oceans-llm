@@ -78,7 +78,9 @@ describe('GuardrailsPage', () => {
     expect(screen.getByText(/shell\.recursive-delete/)).toBeInTheDocument()
     expect(screen.getByText('destructive_operation')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /save|edit|update/i })).not.toBeInTheDocument()
-    expect(screen.getByText(/Raw prompts, commands, arguments, and results are not shown/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Raw prompts, commands, arguments, and results are not shown/),
+    ).toBeInTheDocument()
   })
 
   it('applies privacy-safe decision filters through route search', async () => {
