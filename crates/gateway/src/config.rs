@@ -106,13 +106,7 @@ impl BearerTokenProvider for SecretReferenceBearerTokenProvider {
 }
 
 fn resolve_model_armor_token_reference(value: &str) -> anyhow::Result<String> {
-    let token = if let Some(path) = value.strip_prefix("file.") {
-        fs::read_to_string(path)
-            .with_context(|| format!("failed to read Model Armor token file `{path}`"))?
-    } else {
-        resolve_secret_reference(value)?
-    };
-    let token = token.trim().to_string();
+    let token = resolve_secret_reference(value)?.trim().to_string();
     if token.is_empty() {
         bail!("Model Armor bearer token cannot be empty");
     }
@@ -2997,8 +2991,14 @@ pub(crate) fn resolve_secret_reference(value: &str) -> anyhow::Result<String> {
         resolve_env_reference(value)
     } else if let Some(literal) = value.strip_prefix("literal.") {
         Ok(literal.to_string())
+    } else if let Some(path) = value.strip_prefix("file.") {
+        fs::read_to_string(path)
+            .with_context(|| format!("failed to read secret file `{path}`"))
+            .map(|secret| secret.trim_end_matches(['\r', '\n']).to_string())
     } else {
-        bail!("unsupported secret reference `{value}`; use env.* or literal.* for this phase")
+        bail!(
+            "unsupported secret reference `{value}`; use env.*, file.*, or literal.* for this phase"
+        )
     }
 }
 
@@ -3771,11 +3771,29 @@ mod tests {
     use super::{
         AgentAnalysisCacheTtlConfig, AwsBedrockRouteCompatibilityConfig, GatewayConfig,
         McpOauthConfig, McpOauthProviderConfig, SecretReferenceBearerTokenProvider,
-        default_google_authorization_url, default_google_token_url,
+        default_google_authorization_url, default_google_token_url, resolve_secret_reference,
     };
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
+    }
+
+    #[test]
+    fn managed_bedrock_credentials_accept_file_references() {
+        let temporary = tempdir().expect("tempdir");
+        for (name, expected) in [
+            ("access-key", "test-access-key"),
+            ("secret-key", "test-secret-key"),
+            ("session-token", "test-session-token"),
+        ] {
+            let path = temporary.path().join(name);
+            std::fs::write(&path, format!("{expected}\n")).expect("write credential");
+            assert_eq!(
+                resolve_secret_reference(&format!("file.{}", path.display()))
+                    .expect("resolve file credential"),
+                expected
+            );
+        }
     }
 
     #[tokio::test]
