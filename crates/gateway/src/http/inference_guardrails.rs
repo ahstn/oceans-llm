@@ -55,6 +55,40 @@ pub async fn guard_prompt(
     })
 }
 
+pub fn batch_guard_context(
+    state: &AppState,
+    request_id: String,
+    route_key: String,
+    request: &Value,
+) -> InferenceGuardContext {
+    let policy =
+        PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::ModelRoute(&route_key));
+    let associated_prompt = batch_associated_prompt(request);
+    InferenceGuardContext {
+        route_key,
+        request_id,
+        associated_prompt,
+        enabled: policy.enabled,
+        stream_buffer_bytes: policy.stream_buffer_bytes,
+    }
+}
+
+fn batch_associated_prompt(request: &Value) -> Option<String> {
+    let mut pointers = Vec::new();
+    collect_string_pointers(
+        request,
+        "",
+        &["content", "input", "instructions", "prompt", "text"],
+        &mut pointers,
+    );
+    let associated_prompt = pointers
+        .iter()
+        .filter_map(|pointer| request.pointer(pointer).and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("\n");
+    (!associated_prompt.is_empty()).then_some(associated_prompt)
+}
+
 pub async fn guard_model_response(
     state: &AppState,
     context: &InferenceGuardContext,
@@ -998,6 +1032,20 @@ fn escape_pointer(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+
+    #[test]
+    fn extracts_batch_prompt_without_request_identifiers() {
+        let request = json!({
+            "id": "private-id",
+            "messages": [{"role": "user", "content": "protect this"}],
+            "input": [{"type": "input_text", "text": "and this"}],
+        });
+
+        assert_eq!(
+            batch_associated_prompt(&request).as_deref(),
+            Some("and this\nprotect this")
+        );
+    }
 
     use super::*;
 
