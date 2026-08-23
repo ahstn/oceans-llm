@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::*;
-use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
+use crate::shared::{datetime_to_unix_millis, parse_uuid, serialize_json, unix_to_datetime};
 use gateway_core::{
     HarnessUsageBucketRecord, HarnessUsageLeaderRecord, MAX_REQUEST_LOG_PAGE_SIZE,
     RequestLogPurgeResult, RequestTag, RequestTags, RequestToolCardinality,
@@ -601,6 +601,12 @@ impl RequestLogRepository for PostgresStore {
                 deleted_count: 0,
             });
         }
+
+        sqlx::query("DELETE FROM guardrail_decisions WHERE occurred_at < $1")
+            .bind(datetime_to_unix_millis(cutoff)?)
+            .execute(&self.pool)
+            .await
+            .map_err(to_query_error)?;
 
         let mut deleted_count = 0_u64;
         loop {

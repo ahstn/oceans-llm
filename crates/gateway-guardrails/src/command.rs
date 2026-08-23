@@ -309,9 +309,9 @@ fn tokenize(source: &str) -> Vec<Token> {
                 }
             }
             ' ' | '\t' | '\r' => push_word(&mut tokens, &mut word),
-            '\n' | ';' | '|' | '&' => {
+            '\n' | ';' | '|' | '&' | '(' | ')' => {
                 push_word(&mut tokens, &mut word);
-                if chars.peek() == Some(&character) {
+                if matches!(character, '|' | '&') && chars.peek() == Some(&character) {
                     chars.next();
                 }
                 tokens.push(Token::Operator(Operator::Separator));
@@ -406,6 +406,19 @@ mod tests {
             parsed
                 .iter()
                 .any(|call| { call.executable == "rm" && call.arguments == ["-rf", "/tmp/work"] })
+        );
+    }
+
+    #[test]
+    fn parses_commands_inside_bare_subshell_groups() {
+        let parsed = parse_command_line("(rm -rf /tmp/work)");
+
+        assert_eq!(
+            parsed,
+            vec![CommandInvocation {
+                executable: "rm".into(),
+                arguments: vec!["-rf".into(), "/tmp/work".into()],
+            }]
         );
     }
 

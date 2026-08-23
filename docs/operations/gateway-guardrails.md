@@ -141,7 +141,7 @@ guardrails:
     managed_checks: [company-model-armor]
 ```
 
-The Google identity needs `modelarmor.templates.useToSanitizeUserPrompt` or `modelarmor.templates.useToSanitizeModelResponse` on each referenced template. Supply a current OAuth access token through the secret resolver. Do not store the token in YAML.
+The Google identity needs `modelarmor.templates.useToSanitizeUserPrompt` or `modelarmor.templates.useToSanitizeModelResponse` on each referenced template. For production, write a current OAuth access token to a protected file and configure a `file./path` secret reference. The gateway reads that file before each evaluation, so an external credential process can rotate the token without restarting the gateway. An `env.NAME` reference is also supported, but its value is fixed for the life of the process. Do not store the token in YAML.
 
 Grant the predefined Model Armor User role to the gateway service account:
 

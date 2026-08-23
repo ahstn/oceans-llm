@@ -310,9 +310,21 @@ async fn v1_messages_inner(
         usage_value_from_response(&openai_value),
     )
     .await;
-    guard_model_response(&state, &guard_context, &mut openai_value)
-        .await
-        .map_err(AppError)?;
+    if let Err(error) = guard_model_response(&state, &guard_context, &mut openai_value).await {
+        record_guarded_non_stream_failure(
+            &state,
+            &auth,
+            &request_log_context,
+            &route,
+            icon_metadata.clone(),
+            request_started_at,
+            attempt_started_at,
+            &labels,
+            &error,
+        )
+        .await;
+        return Err(AppError(error));
+    }
     let value = anthropic_message_from_openai_chat(
         &openai_value,
         &resolved.selection.requested_model.model_key,
@@ -676,9 +688,21 @@ pub async fn v1_chat_completions(
         usage_value_from_response(&value),
     )
     .await;
-    guard_model_response(&state, &guard_context, &mut value)
-        .await
-        .map_err(AppError)?;
+    if let Err(error) = guard_model_response(&state, &guard_context, &mut value).await {
+        record_guarded_non_stream_failure(
+            &state,
+            &auth,
+            &request_log_context,
+            &route,
+            icon_metadata.clone(),
+            request_started_at,
+            attempt_started_at,
+            &labels,
+            &error,
+        )
+        .await;
+        return Err(AppError(error));
+    }
     let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
     let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     best_effort_log_non_stream_success(
@@ -1027,9 +1051,21 @@ pub async fn v1_responses(
         usage_value_from_response(&value),
     )
     .await;
-    guard_model_response(&state, &guard_context, &mut value)
-        .await
-        .map_err(AppError)?;
+    if let Err(error) = guard_model_response(&state, &guard_context, &mut value).await {
+        record_guarded_non_stream_failure(
+            &state,
+            &auth,
+            &request_log_context,
+            &route,
+            icon_metadata.clone(),
+            request_started_at,
+            attempt_started_at,
+            &labels,
+            &error,
+        )
+        .await;
+        return Err(AppError(error));
+    }
     let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
     let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     best_effort_log_non_stream_success(
@@ -1438,6 +1474,47 @@ struct UsageAccountingContext<'a> {
     request_id: &'a str,
     labels: ChatMetricLabels<'a>,
     operation: &'static str,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn record_guarded_non_stream_failure(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+    request_log_context: &RequestLogContext,
+    route: &gateway_core::ModelRoute,
+    icon_metadata: RequestLogIconMetadata,
+    request_started_at: Instant,
+    attempt_started_at: OffsetDateTime,
+    labels: &ChatMetricLabels<'_>,
+    error: &GatewayError,
+) {
+    best_effort_log_non_stream_failure(
+        &state.service,
+        auth,
+        request_log_context,
+        &route.provider_key,
+        icon_metadata,
+        latency_ms_since(request_started_at),
+        error,
+        vec![success_attempt(
+            request_log_context,
+            route,
+            false,
+            attempt_started_at,
+        )],
+    )
+    .await;
+    state.metrics.record_chat_request(&ChatRequestMetric {
+        labels: labels.clone(),
+        status_code: i64::from(error.http_status_code()),
+        outcome: error.error_type(),
+        latency_seconds: latency_seconds_since(request_started_at),
+    });
+    state.metrics.record_tool_cardinality(
+        labels,
+        request_log_context.operation,
+        &request_log_context.tool_cardinality,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]

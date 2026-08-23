@@ -239,6 +239,21 @@ mod tests {
             .await
             .expect("filter decisions after millisecond boundary");
         assert_eq!(after_decision.total, 0);
+        gateway_core::RequestLogRepository::purge_request_logs_older_than(
+            &store,
+            decision.occurred_at + time::Duration::milliseconds(1),
+            false,
+        )
+        .await
+        .expect("purge guardrail decision through request retention");
+        assert_eq!(
+            store
+                .list_guardrail_decisions(&GuardrailDecisionQuery::default())
+                .await
+                .expect("list after retention purge")
+                .total,
+            0
+        );
     }
 
     #[tokio::test]

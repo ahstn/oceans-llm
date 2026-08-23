@@ -483,6 +483,7 @@ async fn guard_mcp_sse_result(
     let event_separator = format!("{separator}{separator}");
     let blocks = source.split(&event_separator).collect::<Vec<_>>();
     let mut event_values = Vec::new();
+    let mut event_envelopes = Vec::new();
     let mut event_by_block = vec![None; blocks.len()];
     for (block_index, block) in blocks.iter().enumerate() {
         let data = block
@@ -497,9 +498,15 @@ async fn guard_mcp_sse_result(
         if data == "[DONE]" {
             continue;
         }
-        let parsed = serde_json::from_str::<Value>(&data).unwrap_or(Value::String(data));
+        let Ok(parsed) = serde_json::from_str::<Value>(&data) else {
+            continue;
+        };
+        let Some(result) = parsed.get("result").cloned() else {
+            continue;
+        };
         event_by_block[block_index] = Some(event_values.len());
-        event_values.push(parsed);
+        event_values.push(result);
+        event_envelopes.push(parsed);
     }
     if event_values.is_empty() {
         return Ok((bytes.clone(), None));
@@ -540,8 +547,10 @@ async fn guard_mcp_sse_result(
             let Some(event_index) = event_by_block[block_index] else {
                 return block.to_string();
             };
-            let replacement = serde_json::to_string(&replacements[event_index])
-                .expect("guardrail MCP result is valid JSON");
+            let mut envelope = event_envelopes[event_index].clone();
+            envelope["result"] = replacements[event_index].clone();
+            let replacement =
+                serde_json::to_string(&envelope).expect("guardrail MCP envelope is valid JSON");
             let mut replaced = false;
             block
                 .split(separator)

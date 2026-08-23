@@ -17,9 +17,8 @@ use gateway_core::{
 };
 use gateway_guardrails::{
     BearerTokenProvider, BedrockApplyGuardrail, BedrockApplyGuardrailConfig, BedrockAuth,
-    BedrockManagedAuthConfig, BuiltInEvaluator, GuardrailConfig, GuardrailEngine, ManagedCheckKind,
-    ManagedEvaluator, ModelArmor, ModelArmorAuthConfig, ModelArmorConfig,
-    StaticBearerTokenProvider,
+    BedrockManagedAuthConfig, BuiltInEvaluator, EvaluationError, GuardrailConfig, GuardrailEngine,
+    ManagedCheckKind, ManagedEvaluator, ModelArmor, ModelArmorAuthConfig, ModelArmorConfig,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
@@ -92,6 +91,32 @@ pub struct GatewayConfig {
     pub service_accounts: Vec<ServiceAccountConfig>,
     #[serde(default)]
     pub users: Vec<UserConfig>,
+}
+
+struct SecretReferenceBearerTokenProvider {
+    reference: String,
+}
+
+#[async_trait::async_trait]
+impl BearerTokenProvider for SecretReferenceBearerTokenProvider {
+    async fn bearer_token(&self) -> Result<String, EvaluationError> {
+        resolve_model_armor_token_reference(&self.reference)
+            .map_err(|error| EvaluationError::Unavailable(error.to_string()))
+    }
+}
+
+fn resolve_model_armor_token_reference(value: &str) -> anyhow::Result<String> {
+    let token = if let Some(path) = value.strip_prefix("file.") {
+        fs::read_to_string(path)
+            .with_context(|| format!("failed to read Model Armor token file `{path}`"))?
+    } else {
+        resolve_secret_reference(value)?
+    };
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        bail!("Model Armor bearer token cannot be empty");
+    }
+    Ok(token)
 }
 
 impl GatewayConfig {
@@ -858,9 +883,12 @@ impl GatewayConfig {
                         )
                     })?;
                     let token_provider: Arc<dyn BearerTokenProvider> = match &config.auth {
-                        ModelArmorAuthConfig::BearerToken { token } => Arc::new(
-                            StaticBearerTokenProvider::new(resolve_secret_reference(token)?),
-                        ),
+                        ModelArmorAuthConfig::BearerToken { token } => {
+                            resolve_model_armor_token_reference(token)?;
+                            Arc::new(SecretReferenceBearerTokenProvider {
+                                reference: token.clone(),
+                            })
+                        }
                     };
                     Arc::new(ModelArmor::new(
                         ModelArmorConfig {
@@ -3742,12 +3770,36 @@ mod tests {
 
     use super::{
         AgentAnalysisCacheTtlConfig, AwsBedrockRouteCompatibilityConfig, GatewayConfig,
-        McpOauthConfig, McpOauthProviderConfig, default_google_authorization_url,
-        default_google_token_url,
+        McpOauthConfig, McpOauthProviderConfig, SecretReferenceBearerTokenProvider,
+        default_google_authorization_url, default_google_token_url,
     };
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
+    }
+
+    #[tokio::test]
+    async fn model_armor_token_provider_reloads_file_references() {
+        let temporary = tempdir().expect("tempdir");
+        let token_path = temporary.path().join("model-armor-token");
+        std::fs::write(&token_path, "first-token\n").expect("write first token");
+        let provider = SecretReferenceBearerTokenProvider {
+            reference: format!("file.{}", token_path.display()),
+        };
+
+        assert_eq!(
+            gateway_guardrails::BearerTokenProvider::bearer_token(&provider)
+                .await
+                .expect("first token"),
+            "first-token"
+        );
+        std::fs::write(&token_path, "second-token\n").expect("rotate token");
+        assert_eq!(
+            gateway_guardrails::BearerTokenProvider::bearer_token(&provider)
+                .await
+                .expect("rotated token"),
+            "second-token"
+        );
     }
 
     #[test]

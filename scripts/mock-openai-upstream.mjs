@@ -142,6 +142,18 @@ const server = createServer(async (req, res) => {
     }
     if (body?.method === 'tools/call') {
       mcpExecutions.push(body.params)
+      if (body.params?.arguments?.query === 'guardrail-e2e-result-sensitive-sse') {
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.end(`data: ${JSON.stringify({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: {
+            content: [{ type: 'text', text: 'guardrail-e2e-mask' }],
+            isError: false,
+          },
+        })}\n\n`)
+        return
+      }
       const resultText = body.params?.arguments?.query === 'guardrail-e2e-result-sensitive'
         ? 'guardrail-e2e-mask'
         : body.params?.arguments?.query === 'guardrail-e2e-result-deny'

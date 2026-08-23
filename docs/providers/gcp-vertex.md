@@ -355,7 +355,7 @@ Troubleshooting:
 
 Gateway guardrails call the standalone Model Armor `sanitizeUserPrompt` and `sanitizeModelResponse` methods. This is separate from Vertex model routing. A Model Armor template can protect a route on Google Cloud, AWS, OpenAI, or another provider because evaluation occurs at the gateway boundary.
 
-The gateway references existing prompt and response templates. It does not create, update, or delete Model Armor resources. The runtime identity needs `modelarmor.templates.useToSanitizeUserPrompt` or `modelarmor.templates.useToSanitizeModelResponse` on each template. Supply the OAuth access token through an `env.NAME` or `file./path` secret reference.
+The gateway references existing prompt and response templates. It does not create, update, or delete Model Armor resources. The runtime identity needs `modelarmor.templates.useToSanitizeUserPrompt` or `modelarmor.templates.useToSanitizeModelResponse` on each template. For production, supply the OAuth access token through a protected `file./path` secret reference. The gateway reads the file before each Model Armor evaluation, so an external credential process can rotate the token. An `env.NAME` reference is also supported, but it does not refresh while the process runs.
 
 See [Gateway Guardrails](../operations/gateway-guardrails.md) for phase selection, failure behavior, configuration, rollout, and incident handling.
 

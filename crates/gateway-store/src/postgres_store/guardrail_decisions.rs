@@ -257,6 +257,22 @@ mod tests {
             serde_json::to_value([&records[0]]).unwrap()
         );
 
+        gateway_core::RequestLogRepository::purge_request_logs_older_than(
+            &store,
+            occurred_at + time::Duration::seconds(2),
+            false,
+        )
+        .await
+        .expect("purge guardrail decisions through request retention");
+        assert_eq!(
+            store
+                .list_guardrail_decisions(&GuardrailDecisionQuery::default())
+                .await
+                .expect("list after retention purge")
+                .total,
+            0
+        );
+
         drop(store);
         drop_postgres_test_database(&test_db).await;
     }

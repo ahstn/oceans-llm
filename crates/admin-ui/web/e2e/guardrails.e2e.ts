@@ -226,7 +226,7 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
     accept: 'application/json, text/event-stream',
     'mcp-protocol-version': '2025-11-25',
   }
-  const call = (name: string, arguments_: Record<string, unknown>, id: number) => ({
+  const call = (name: string, arguments_: Record<string, unknown>, id: number | string) => ({
     jsonrpc: '2.0',
     id,
     method: 'tools/call',
@@ -273,6 +273,17 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
   const transformedPayload = await transformedResult.text()
   expect(transformedPayload).toContain('[masked]')
   expect(transformedPayload).not.toContain('guardrail-e2e-mask')
+
+  const transformedSseResult = await request.post(`${root}/mcp/${serverKey}`, {
+    headers: mcpHeaders,
+    data: call('search', { query: 'guardrail-e2e-result-sensitive-sse' }, 'guardrail-e2e-mask'),
+  })
+  expect(transformedSseResult.status()).toBe(200)
+  expect(transformedSseResult.headers()['content-type']).toContain('text/event-stream')
+  const transformedSsePayload = await transformedSseResult.text()
+  expect(transformedSsePayload).toContain('"id":"guardrail-e2e-mask"')
+  expect(transformedSsePayload).toContain('[masked]')
+  expect(transformedSsePayload.match(/guardrail-e2e-mask/g)).toHaveLength(1)
 
   await request.delete(`${upstreamRoot}/__admin/mcp-executions`)
   const deniedResult = await request.post(`${root}/mcp/${serverKey}`, {
