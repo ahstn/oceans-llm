@@ -1495,6 +1495,8 @@ pub struct AgentTokenAndCacheDiagnosticsView {
     pub cache_write_amplification_basis_points: Option<i32>,
     pub silent_cache_threshold_miss_requests: Option<u32>,
     pub provider_model_switches: u32,
+    #[schema(deprecated)]
+    pub cache_key_switches: u32,
     pub reasoning_config_switches: Option<u32>,
     pub pricing_policy_versions: Vec<String>,
 }

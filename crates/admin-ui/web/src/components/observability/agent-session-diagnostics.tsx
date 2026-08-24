@@ -128,7 +128,10 @@ export function AgentSessionDiagnostics({
         />
         <DiagnosticRow
           label="Provider/model switches"
-          value={formatNullable(diagnostics?.token_and_cache.provider_model_switches)}
+          value={formatNullable(
+            diagnostics?.token_and_cache.provider_model_switches ??
+              diagnostics?.token_and_cache.cache_key_switches,
+          )}
         />
         <DiagnosticRow
           label="Reasoning configuration switches"

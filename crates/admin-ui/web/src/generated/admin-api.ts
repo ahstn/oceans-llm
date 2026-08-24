@@ -2046,6 +2046,11 @@ export interface components {
             cache_creation_cost_10000?: number | null;
             /** Format: int64 */
             cache_creation_tokens?: number | null;
+            /**
+             * Format: int32
+             * @deprecated
+             */
+            cache_key_switches: number;
             /** Format: int64 */
             cache_read_cost_10000?: number | null;
             /** Format: int64 */

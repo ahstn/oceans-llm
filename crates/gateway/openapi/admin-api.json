@@ -7739,6 +7739,7 @@
         "type": "object",
         "required": [
           "provider_model_switches",
+          "cache_key_switches",
           "pricing_policy_versions"
         ],
         "properties": {
@@ -7776,6 +7777,12 @@
               "null"
             ],
             "format": "int64"
+          },
+          "cache_key_switches": {
+            "type": "integer",
+            "format": "int32",
+            "deprecated": true,
+            "minimum": 0
           },
           "cache_read_cost_10000": {
             "type": [

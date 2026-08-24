@@ -22,6 +22,8 @@ The gateway keeps the current request-log storage layout. This decision does not
 - A complete-payload marker is the final safety fallback when the bounded envelope cannot fit.
 - Response truncation keeps its existing budget and semantics.
 
+The admin contract names the adjacent provider and model transition metric `provider_model_switches`. It also serves the former `cache_key_switches` field as a deprecated compatibility alias during rolling gateway and UI deployments. Stored legacy reports remain readable through a Serde alias.
+
 ## Why
 
 Database compression does not protect gateway serialization latency, API transfer, JSON parsing, or admin UI rendering. Structure-preserving request bounds keep session evidence and debugging context available without retaining an unbounded payload.

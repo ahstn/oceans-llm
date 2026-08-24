@@ -235,6 +235,7 @@ const detail: AgentSessionDetailView = {
         cache_write_amplification_basis_points: 2_500,
         silent_cache_threshold_miss_requests: 0,
         provider_model_switches: 1,
+        cache_key_switches: 1,
         reasoning_config_switches: 0,
         pricing_policy_versions: ['cache-aware-v1'],
       },
