@@ -14,10 +14,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-pub const REPORT_SCHEMA_VERSION: &str = "agent-session-report-v5";
+pub const REPORT_SCHEMA_VERSION: &str = "agent-session-report-v6";
 pub const SESSION_BOUNDARY_POLICY_VERSION: &str = "passive-gap-v2";
 pub const OBSERVATION_PARSER_VERSION: &str = "passive-observations-v3";
-pub const ANALYZER_VERSION: &str = "session-efficiency-v4";
+pub const ANALYZER_VERSION: &str = "session-efficiency-v5";
 pub const SCORE_POLICY_VERSION: &str = "outcome-cost-time-context-v2";
 pub const DEFAULT_ORCHESTRATION_GAP: Duration = Duration::minutes(2);
 pub const MIN_EXACT_COHORT_SIZE: usize = 6;

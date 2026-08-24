@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::{
     MAX_ORDINARY_MESSAGE_BYTES, MAX_SOLITARY_MESSAGE_BYTES, MAX_TOTAL_CONTENT_BYTES,
@@ -14,6 +14,33 @@ fn under_cap_payload_is_unchanged() {
 
     assert!(!truncated);
     assert_eq!(stored, payload);
+}
+
+#[test]
+fn bounds_string_responses_input_without_discarding_the_envelope() {
+    let payload = json!({
+        "headers": {"session_id": "session-string-input"},
+        "body": {
+            "model": "gpt-test",
+            "input": "prompt ".repeat(4000),
+            "reasoning": {"effort": "high"}
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 4096);
+
+    assert!(truncated);
+    assert!(serialized_size(&stored).expect("stored size") <= 4096);
+    assert_eq!(stored["headers"]["session_id"], "session-string-input");
+    assert_eq!(stored["body"]["model"], "gpt-test");
+    assert_eq!(stored["body"]["reasoning"]["effort"], "high");
+    assert!(
+        stored["body"]["input"]
+            .as_str()
+            .expect("string input")
+            .contains("gateway truncated")
+    );
+    assert_eq!(stored["truncation"]["affected_paths"][0], "/body/input");
 }
 
 #[test]
@@ -160,6 +187,63 @@ fn compacts_tool_envelope_before_hard_fallback() {
         stored["truncation"]["tool_fields_compacted"]
             .as_u64()
             .is_some_and(|count| count >= 3)
+    );
+}
+
+#[test]
+fn tool_compaction_preserves_schema_properties_named_like_keywords() {
+    let payload = json!({
+        "headers": {"session_id": "session-schema-properties"},
+        "body": {
+            "model": "gpt-test",
+            "input": [{"role": "user", "content": "hello"}],
+            "tools": [{
+                "type": "function",
+                "name": "configure",
+                "description": "description ".repeat(2000),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "default": {
+                            "type": "string",
+                            "description": "default property ".repeat(1000),
+                            "default": "value ".repeat(1000)
+                        },
+                        "example": {
+                            "type": "string",
+                            "examples": ["example value ".repeat(1000)]
+                        },
+                        "examples": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "example": ["item ".repeat(1000)]
+                        }
+                    }
+                }
+            }]
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 8192);
+    let properties = &stored["body"]["tools"][0]["parameters"]["properties"];
+
+    assert!(truncated);
+    assert!(serialized_size(&stored).expect("stored size") <= 8192);
+    assert_eq!(properties["default"]["type"], "string");
+    assert_eq!(properties["example"]["type"], "string");
+    assert_eq!(properties["examples"]["type"], "array");
+    assert_eq!(properties["examples"]["items"]["type"], "string");
+    assert_eq!(
+        properties["default"]["default"],
+        "[omitted by gateway storage bound]"
+    );
+    assert_eq!(
+        properties["example"]["examples"],
+        "[omitted by gateway storage bound]"
+    );
+    assert_eq!(
+        properties["examples"]["example"],
+        "[omitted by gateway storage bound]"
     );
 }
 
@@ -348,18 +432,36 @@ fn oversized_envelope_compacts_verbose_tool_fields_before_content() {
 
 #[test]
 fn hard_fallback_is_reserved_for_an_envelope_that_cannot_fit() {
+    let max_bytes = 32 * 1024;
     let payload = json!({
-        "headers": {"session_id": "x".repeat(48 * 1024)},
+        "headers": {"session_id": "x🙂\"\\\n".repeat(12 * 1024)},
         "body": {
             "model": "gpt-test",
             "input": [{"type": "future_item", "id": "unknown", "metadata": "y".repeat(48 * 1024)}]
         }
     });
+    let original_size = serialized_size(&payload).expect("original size");
+    let expected = legacy_hard_fallback_marker(&payload, original_size, max_bytes);
 
-    let (stored, truncated) = bound_request_payload(payload, 32 * 1024);
+    let (stored, truncated) = bound_request_payload(payload, max_bytes);
 
     assert!(truncated);
-    assert_eq!(stored["truncated"], true);
-    assert!(stored.get("preview").is_some());
-    assert!(serialized_size(&stored).expect("stored size") <= 32 * 1024);
+    assert_eq!(stored, expected);
+    assert!(serialized_size(&stored).expect("stored size") <= max_bytes);
+}
+
+fn legacy_hard_fallback_marker(value: &Value, original_size: usize, max_bytes: usize) -> Value {
+    let bytes = serde_json::to_vec(value).expect("serialize legacy fallback input");
+    let mut preview_bytes = max_bytes.min(bytes.len());
+    loop {
+        let marker = json!({
+            "truncated": true,
+            "size_bytes": original_size,
+            "preview": String::from_utf8_lossy(&bytes[..preview_bytes]),
+        });
+        if serialized_size(&marker).is_ok_and(|size| size <= max_bytes) {
+            return marker;
+        }
+        preview_bytes /= 2;
+    }
 }

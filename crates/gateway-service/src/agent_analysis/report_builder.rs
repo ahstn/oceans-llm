@@ -58,16 +58,23 @@ where
     let observation_set = observation_sets
         .last()
         .expect("observation sets are known to be non-empty");
-    let observations = observation_sets
+    let mut observations = observation_sets
         .iter()
         .flat_map(|set| set.observations.iter().cloned())
-        .collect();
+        .collect::<Vec<_>>();
+    normalize_legacy_tool_inventory_limitations(&mut observations);
     let request_metadata_count =
-        observation_coverage_count(&observation_sets, "request_metadata", trace.requests.len());
+        observation_coverage_count(&observation_sets, trace.requests.len(), |coverage| {
+            coverage_flag(coverage, "request_metadata")
+        });
     let response_payload_count =
-        observation_coverage_count(&observation_sets, "response_payload", trace.requests.len());
+        observation_coverage_count(&observation_sets, trace.requests.len(), |coverage| {
+            response_payload_was_captured(coverage)
+        });
     let truncated_payload_count =
-        observation_coverage_count(&observation_sets, "response_payload_truncated", usize::MAX);
+        observation_coverage_count(&observation_sets, usize::MAX, |coverage| {
+            coverage_flag(coverage, "response_payload_truncated")
+        });
 
     let mut attempts_by_request = BTreeMap::<String, Vec<RequestAttemptFact>>::new();
     if configured_policy.metrics.reliability_metrics {
@@ -316,20 +323,39 @@ where
 
 fn observation_coverage_count(
     sets: &[AgentObservationSetRecord],
-    key: &str,
     maximum: usize,
+    is_covered: impl Fn(&Value) -> bool,
 ) -> u32 {
     sets.iter()
-        .filter(|set| {
-            set.coverage
-                .get(key)
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        })
+        .filter(|set| is_covered(&set.coverage))
         .count()
         .min(maximum)
         .try_into()
         .unwrap_or(u32::MAX)
+}
+
+fn coverage_flag(coverage: &Value, key: &str) -> bool {
+    coverage.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+fn response_payload_was_captured(coverage: &Value) -> bool {
+    coverage_flag(coverage, "response_payload")
+        || coverage_flag(coverage, "response_payload_truncated")
+}
+
+fn normalize_legacy_tool_inventory_limitations(observations: &mut [InferredObservation]) {
+    for observation in observations {
+        if observation.kind == InferredObservationKind::SessionMetadataClassified
+            && !tool_inventory_is_estimated(
+                observation.facts.supplied_tool_count,
+                observation.facts.supplied_tools.len(),
+            )
+        {
+            observation
+                .limitations
+                .retain(|code| *code != LimitationCode::ToolInventoryPotentialOnly);
+        }
+    }
 }
 fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
     let priced = record.pricing_status == UsagePricingStatus::Priced;
@@ -516,7 +542,42 @@ fn unix_timestamp_millis(value: OffsetDateTime) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::provider_reasoning_tokens;
+    use super::{
+        normalize_legacy_tool_inventory_limitations, provider_reasoning_tokens,
+        response_payload_was_captured,
+    };
+    use agent_session_analysis::{
+        BoundedObservationFacts, BoundedToolDefinitionFact, EvidenceQuality, InferredObservation,
+        InferredObservationKind, LimitationCode,
+    };
+    use time::OffsetDateTime;
+    use uuid::Uuid;
+
+    fn metadata_observation(
+        supplied_tool_count: u32,
+        retained_tools: usize,
+    ) -> InferredObservation {
+        InferredObservation {
+            observation_id: Uuid::nil(),
+            kind: InferredObservationKind::SessionMetadataClassified,
+            source_request_id: "request".to_string(),
+            parser_version: "passive-observations-v3".to_string(),
+            evidence: EvidenceQuality::Direct,
+            occurred_at: OffsetDateTime::UNIX_EPOCH,
+            facts: BoundedObservationFacts {
+                supplied_tool_count: Some(supplied_tool_count),
+                supplied_tools: (0..retained_tools)
+                    .map(|index| BoundedToolDefinitionFact {
+                        name: format!("tool-{index}"),
+                        server_key: None,
+                        token_estimate: 1,
+                    })
+                    .collect(),
+                ..BoundedObservationFacts::default()
+            },
+            limitations: vec![LimitationCode::ToolInventoryPotentialOnly],
+        }
+    }
 
     #[test]
     fn reads_reasoning_tokens_from_openai_usage_shapes() {
@@ -545,5 +606,36 @@ mod tests {
             None
         );
         assert_eq!(provider_reasoning_tokens(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn truncated_responses_count_as_captured_response_payloads() {
+        assert!(response_payload_was_captured(&serde_json::json!({
+            "response_payload": true,
+            "response_payload_truncated": false,
+        })));
+        assert!(response_payload_was_captured(&serde_json::json!({
+            "response_payload": false,
+            "response_payload_truncated": true,
+        })));
+        assert!(!response_payload_was_captured(&serde_json::json!({
+            "response_payload": false,
+            "response_payload_truncated": false,
+        })));
+    }
+
+    #[test]
+    fn legacy_tool_inventory_notice_is_kept_only_for_incomplete_inventory() {
+        let complete = metadata_observation(1, 1);
+        let incomplete = metadata_observation(2, 1);
+        let mut observations = vec![complete, incomplete];
+
+        normalize_legacy_tool_inventory_limitations(&mut observations);
+
+        assert!(observations[0].limitations.is_empty());
+        assert_eq!(
+            observations[1].limitations,
+            vec![LimitationCode::ToolInventoryPotentialOnly]
+        );
     }
 }

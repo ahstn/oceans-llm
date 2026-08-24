@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde_json::{Map, Value, json};
 
 mod large_fields;
@@ -12,6 +14,29 @@ const SENSITIVE_HEADERS: &[&str] = &[
     "set-cookie",
     "x-goog-api-key",
     "x-api-key",
+];
+
+const DIAGNOSTIC_HEADERS: &[&str] = &[
+    "session-id",
+    "session_id",
+    "thread-id",
+    "x-claude-code-agent-id",
+    "x-claude-code-parent-agent-id",
+    "x-claude-code-session-id",
+    "x-client-request-id",
+    "x-codex-turn-metadata",
+    "x-opencode-session",
+    "x-parent-session-id",
+    "x-session-affinity",
+    "x-session-id",
+];
+
+const CODEX_TURN_METADATA_FIELDS: &[&str] = &[
+    "forked_from_thread_id",
+    "parent_thread_id",
+    "session_id",
+    "thread_id",
+    "turn_id",
 ];
 
 const SENSITIVE_JSON_KEYS: &[&str] = &[
@@ -89,6 +114,38 @@ const MEDIA_URL_PATHS: &[BuiltInPayloadPath] = &[
         BuiltInPathSegment::Wildcard,
         BuiltInPathSegment::Key("document"),
         BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("input"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("image_url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("input"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("file_url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("input"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("video_url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("input"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("content"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("audio_url"),
     ]),
 ];
 
@@ -331,6 +388,43 @@ pub fn redact_header_value(header_name: &str, header_value: &str) -> String {
     } else {
         header_value.to_string()
     }
+}
+
+#[must_use]
+pub fn sanitize_diagnostic_headers(headers: &BTreeMap<String, String>) -> Map<String, Value> {
+    headers
+        .iter()
+        .filter(|(name, _)| is_diagnostic_header(name))
+        .filter_map(|(name, value)| {
+            sanitize_diagnostic_header_value(name, value)
+                .map(|value| (name.clone(), Value::String(value)))
+        })
+        .collect()
+}
+
+fn is_diagnostic_header(header_name: &str) -> bool {
+    DIAGNOSTIC_HEADERS
+        .iter()
+        .any(|candidate| header_name.eq_ignore_ascii_case(candidate))
+}
+
+fn sanitize_diagnostic_header_value(header_name: &str, header_value: &str) -> Option<String> {
+    if !header_name.eq_ignore_ascii_case("x-codex-turn-metadata") {
+        return Some(redact_header_value(header_name, header_value));
+    }
+
+    let metadata = serde_json::from_str::<Value>(header_value.trim()).ok()?;
+    let metadata = metadata.as_object()?;
+    let retained = CODEX_TURN_METADATA_FIELDS
+        .iter()
+        .filter_map(|field| {
+            metadata
+                .get(*field)
+                .and_then(Value::as_str)
+                .map(|value| ((*field).to_string(), Value::String(value.to_string())))
+        })
+        .collect::<Map<_, _>>();
+    serde_json::to_string(&retained).ok()
 }
 
 #[must_use]

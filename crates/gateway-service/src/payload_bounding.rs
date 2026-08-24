@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::redaction::MAX_INLINE_REQUEST_BYTES;
@@ -59,7 +60,42 @@ impl Write for CountingWriter {
     }
 }
 
-pub(crate) fn serialized_size(value: &Value) -> Result<usize, serde_json::Error> {
+#[derive(Default)]
+struct PrefixCountingWriter {
+    bytes: usize,
+    prefix: Vec<u8>,
+    prefix_limit: usize,
+}
+
+impl PrefixCountingWriter {
+    fn new(prefix_limit: usize) -> Self {
+        Self {
+            prefix: Vec::with_capacity(prefix_limit),
+            prefix_limit,
+            ..Self::default()
+        }
+    }
+}
+
+impl Write for PrefixCountingWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.bytes = self.bytes.saturating_add(buffer.len());
+        let retained = buffer
+            .len()
+            .min(self.prefix_limit.saturating_sub(self.prefix.len()));
+        self.prefix.extend_from_slice(&buffer[..retained]);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+pub(crate) fn serialized_size<T>(value: &T) -> Result<usize, serde_json::Error>
+where
+    T: Serialize + ?Sized,
+{
     let mut writer = CountingWriter::default();
     serde_json::to_writer(&mut writer, value)?;
     Ok(writer.bytes)
@@ -89,35 +125,26 @@ pub(crate) fn bound_request_payload_after_known_fields(
         known_large_fields_truncated: known_large_field_count,
         ..BoundingFacts::default()
     };
-    if current_size <= max_bytes {
-        insert_truncation_metadata(&mut value, original_size, max_bytes, &facts);
-        if serialized_size(&value).is_ok_and(|size| size <= max_bytes) {
-            return (value, true);
-        }
-        if let Some(object) = value.as_object_mut() {
-            object.remove("truncation");
-        }
+    if current_size <= max_bytes
+        && try_attach_truncation_metadata(&mut value, original_size, max_bytes, &facts)
+    {
+        return (value, true);
     }
-    let mut items = content_items(&value);
+    let items = content_items(&value);
     if essential_envelope_size(current_size, &items) > ESSENTIAL_ENVELOPE_TARGET_BYTES {
         compact_tool_envelope(&mut value, &mut facts);
     }
 
-    let Ok(mut bounded_size) = serialized_size(&value) else {
+    let Ok(bounded_size) = serialized_size(&value) else {
         return serialization_failure_marker(max_bytes);
     };
-    if facts.truncated_field_count > 0 && bounded_size <= max_bytes {
-        insert_truncation_metadata(&mut value, original_size, max_bytes, &facts);
-        if serialized_size(&value).is_ok_and(|size| size <= max_bytes) {
-            return (value, true);
-        }
-        if let Some(object) = value.as_object_mut() {
-            object.remove("truncation");
-        }
-        bounded_size = serialized_size(&value).unwrap_or(bounded_size);
+    if facts.truncated_field_count > 0
+        && bounded_size <= max_bytes
+        && try_attach_truncation_metadata(&mut value, original_size, max_bytes, &facts)
+    {
+        return (value, true);
     }
 
-    items = content_items(&value);
     let metadata_overhead = truncation_metadata_overhead(original_size, max_bytes, &items, &facts);
     let available = content_replacement_budget(bounded_size, max_bytes, metadata_overhead, &items)
         .min(MAX_TOTAL_CONTENT_BYTES);
@@ -277,11 +304,20 @@ fn ceil_char_boundary(text: &str, mut index: usize) -> usize {
 }
 
 fn serialized_string_size(text: &str) -> usize {
-    serialized_size(&Value::String(text.to_string())).unwrap_or(usize::MAX)
+    serialized_size(text).unwrap_or(usize::MAX)
 }
 
 fn content_items(value: &Value) -> Vec<ContentItem> {
     let mut content_items = Vec::new();
+    if let Some(input) = value.pointer("/body/input").and_then(Value::as_str) {
+        content_items.push(ContentItem {
+            leaves: vec![ContentLeaf {
+                pointer: "/body/input".to_string(),
+                serialized_size: serialized_string_size(input),
+            }],
+            max_retained_bytes: MAX_SOLITARY_MESSAGE_BYTES,
+        });
+    }
     for collection in ["messages", "input"] {
         let Some(items) = value
             .pointer(&format!("/body/{collection}"))
@@ -376,16 +412,17 @@ fn compact_tool_envelope(value: &mut Value, facts: &mut BoundingFacts) {
     let Some(tools) = value.pointer_mut("/body/tools") else {
         return;
     };
-    compact_tool_value(tools, "/body/tools", None, facts);
+    compact_tool_value(tools, "/body/tools", None, false, facts);
 }
 
 fn compact_tool_value(
     value: &mut Value,
     pointer: &str,
     field_name: Option<&str>,
+    is_schema_property: bool,
     facts: &mut BoundingFacts,
 ) {
-    if matches!(field_name, Some("example" | "examples" | "default")) {
+    if !is_schema_property && matches!(field_name, Some("example" | "examples" | "default")) {
         if value != OMITTED_TOOL_VALUE {
             *value = Value::String(OMITTED_TOOL_VALUE.to_string());
             facts.tool_fields_compacted = facts.tool_fields_compacted.saturating_add(1);
@@ -405,15 +442,18 @@ fn compact_tool_value(
     match value {
         Value::Array(values) => {
             for (index, value) in values.iter_mut().enumerate() {
-                compact_tool_value(value, &format!("{pointer}/{index}"), None, facts);
+                compact_tool_value(value, &format!("{pointer}/{index}"), None, false, facts);
             }
         }
         Value::Object(values) => {
+            let children_are_schema_properties =
+                !is_schema_property && field_name == Some("properties");
             for (key, value) in values {
                 compact_tool_value(
                     value,
                     &format!("{pointer}/{}", escape_pointer_segment(key)),
                     Some(key),
+                    children_are_schema_properties,
                     facts,
                 );
             }
@@ -487,6 +527,22 @@ fn insert_truncation_metadata(
     }
 }
 
+fn try_attach_truncation_metadata(
+    value: &mut Value,
+    original_size: usize,
+    max_bytes: usize,
+    facts: &BoundingFacts,
+) -> bool {
+    insert_truncation_metadata(value, original_size, max_bytes, facts);
+    if serialized_size(value).is_ok_and(|size| size <= max_bytes) {
+        return true;
+    }
+    if let Some(object) = value.as_object_mut() {
+        object.remove("truncation");
+    }
+    false
+}
+
 fn truncation_metadata(
     original_size: usize,
     stored_size: usize,
@@ -510,13 +566,16 @@ fn truncation_metadata(
 }
 
 fn hard_fallback(value: Value, original_size: usize, max_bytes: usize) -> (Value, bool) {
-    let bytes = serde_json::to_vec(&value).unwrap_or_default();
-    let mut preview_bytes = max_bytes.min(bytes.len());
+    let mut writer = PrefixCountingWriter::new(max_bytes);
+    if serde_json::to_writer(&mut writer, &value).is_err() {
+        writer = PrefixCountingWriter::default();
+    }
+    let mut preview_bytes = max_bytes.min(writer.bytes);
     loop {
         let marker = json!({
             "truncated": true,
             "size_bytes": original_size,
-            "preview": String::from_utf8_lossy(&bytes[..preview_bytes]),
+            "preview": String::from_utf8_lossy(&writer.prefix[..preview_bytes]),
         });
         if serialized_size(&marker).is_ok_and(|size| size <= max_bytes) {
             return (marker, true);

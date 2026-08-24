@@ -1,9 +1,12 @@
+use std::collections::BTreeMap;
+
 use serde_json::json;
 
 use super::{
     MAX_INLINE_REQUEST_BYTES, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
     is_sensitive_json_key, mask_secret_leaf_values, parse_payload_path, redact_header_value,
-    redact_json_value, redact_json_value_with_policy, truncate_large_payload_fields,
+    redact_json_value, redact_json_value_with_policy, sanitize_diagnostic_headers,
+    truncate_large_payload_fields,
 };
 
 #[test]
@@ -46,6 +49,48 @@ fn redacts_nested_sensitive_json_keys() {
 fn header_redaction_keeps_non_sensitive_values() {
     assert_eq!(redact_header_value("x-trace-id", "trace-1"), "trace-1");
     assert_eq!(redact_header_value("authorization", "secret"), "[REDACTED]");
+}
+
+#[test]
+fn diagnostic_headers_keep_only_session_and_lineage_fields() {
+    let headers = BTreeMap::from([
+        ("Authorization".to_string(), "Bearer secret".to_string()),
+        ("Session_Id".to_string(), "session-1".to_string()),
+        ("X-Client-Secret".to_string(), "client-secret".to_string()),
+        (
+            "X-Client-Request-Id".to_string(),
+            "request-lineage-1".to_string(),
+        ),
+        (
+            "X-Codex-Turn-Metadata".to_string(),
+            json!({
+                "session_id": "codex-session",
+                "thread_id": "thread-1",
+                "turn_id": {"token": "nested-secret"},
+                "token": "embedded-secret",
+                "unrelated": "not diagnostic"
+            })
+            .to_string(),
+        ),
+    ]);
+
+    let sanitized = sanitize_diagnostic_headers(&headers);
+
+    assert_eq!(sanitized["Session_Id"], "session-1");
+    assert_eq!(sanitized["X-Client-Request-Id"], "request-lineage-1");
+    assert!(sanitized.get("Authorization").is_none());
+    assert!(sanitized.get("X-Client-Secret").is_none());
+    let codex_metadata: serde_json::Value = serde_json::from_str(
+        sanitized["X-Codex-Turn-Metadata"]
+            .as_str()
+            .expect("metadata string"),
+    )
+    .expect("sanitized metadata JSON");
+    assert_eq!(codex_metadata["session_id"], "codex-session");
+    assert_eq!(codex_metadata["thread_id"], "thread-1");
+    assert!(codex_metadata.get("turn_id").is_none());
+    assert!(codex_metadata.get("token").is_none());
+    assert!(codex_metadata.get("unrelated").is_none());
 }
 
 #[test]
@@ -256,6 +301,100 @@ fn redacts_signed_media_url_queries_from_retained_payloads() {
     ] {
         assert!(!retained.contains(secret));
     }
+}
+
+#[test]
+fn redacts_direct_responses_media_urls_before_storage() {
+    let input = json!({
+        "body": {
+            "input": [{
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_image",
+                        "image_url": "https://user:password@media.example.invalid/image.png?token=image-secret"
+                    },
+                    {
+                        "type": "input_file",
+                        "file_url": "https://media.example.invalid/file.pdf?signature=file-secret"
+                    },
+                    {
+                        "type": "input_video",
+                        "video_url": "https://media.example.invalid/video.mp4?signature=video-secret"
+                    },
+                    {
+                        "type": "input_audio",
+                        "audio_url": "https://media.example.invalid/audio.wav?signature=audio-secret"
+                    }
+                ]
+            }]
+        }
+    });
+
+    let redacted = redact_json_value(&input);
+    let content = redacted["body"]["input"][0]["content"]
+        .as_array()
+        .expect("content");
+    assert_eq!(
+        content[0]["image_url"],
+        "https://media.example.invalid/image.png?<redacted>"
+    );
+    assert_eq!(
+        content[1]["file_url"],
+        "https://media.example.invalid/file.pdf?<redacted>"
+    );
+    assert_eq!(
+        content[2]["video_url"],
+        "https://media.example.invalid/video.mp4?<redacted>"
+    );
+    assert_eq!(
+        content[3]["audio_url"],
+        "https://media.example.invalid/audio.wav?<redacted>"
+    );
+    let retained = redacted.to_string();
+    for secret in [
+        "password",
+        "image-secret",
+        "file-secret",
+        "video-secret",
+        "audio-secret",
+    ] {
+        assert!(!retained.contains(secret));
+    }
+}
+
+#[test]
+fn truncates_large_direct_responses_media_fields() {
+    let input = json!({
+        "body": {
+            "input": [{
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_image",
+                        "image_url": "data:image/png;base64,".to_string() + &"A".repeat(400)
+                    },
+                    {
+                        "type": "input_file",
+                        "file_data": "A".repeat(400)
+                    }
+                ]
+            }]
+        }
+    });
+
+    let truncated = truncate_large_payload_fields(&input);
+
+    assert_eq!(
+        truncated["body"]["input"][0]["content"][0]["image_url"]["truncated"],
+        true
+    );
+    assert_eq!(
+        truncated["body"]["input"][0]["content"][1]["file_data"]["truncated"],
+        true
+    );
 }
 
 #[test]

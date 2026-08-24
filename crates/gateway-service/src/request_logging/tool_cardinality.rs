@@ -8,6 +8,33 @@ pub(super) enum ToolCallIdentity {
     Anonymous,
 }
 
+#[derive(Debug, Clone, Default)]
+pub(super) struct ToolCallCounter {
+    known_ids: HashSet<String>,
+    anonymous: i64,
+}
+
+impl ToolCallCounter {
+    pub(super) fn observe_value(&mut self, value: &Value) {
+        for identity in tool_call_identities_from_value(value) {
+            match identity {
+                ToolCallIdentity::Known(id) => {
+                    self.known_ids.insert(id);
+                }
+                ToolCallIdentity::Anonymous => {
+                    self.anonymous = self.anonymous.saturating_add(1);
+                }
+            }
+        }
+    }
+
+    pub(super) fn count(&self) -> i64 {
+        i64::try_from(self.known_ids.len())
+            .unwrap_or(i64::MAX)
+            .saturating_add(self.anonymous)
+    }
+}
+
 pub(super) fn shallow_tool_count_from_request_body(value: &Value) -> Option<i64> {
     let tools = value.get("tools").or_else(|| {
         value
@@ -24,22 +51,9 @@ pub(super) fn shallow_tool_count_from_request_body(value: &Value) -> Option<i64>
 
 #[must_use]
 pub fn invoked_tool_count_from_response_body(value: &Value) -> i64 {
-    let identities = tool_call_identities_from_value(value);
-    let mut known_ids = HashSet::new();
-    let mut anonymous = 0_i64;
-    for identity in identities {
-        match identity {
-            ToolCallIdentity::Known(id) => {
-                known_ids.insert(id);
-            }
-            ToolCallIdentity::Anonymous => {
-                anonymous = anonymous.saturating_add(1);
-            }
-        }
-    }
-    i64::try_from(known_ids.len())
-        .unwrap_or(i64::MAX)
-        .saturating_add(anonymous)
+    let mut counter = ToolCallCounter::default();
+    counter.observe_value(value);
+    counter.count()
 }
 
 pub(super) fn tool_call_identities_from_value(value: &Value) -> Vec<ToolCallIdentity> {

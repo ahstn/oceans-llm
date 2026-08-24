@@ -120,6 +120,8 @@ async fn logs_service_account_requests_with_payload_and_redaction() {
     };
     let mut headers = BTreeMap::new();
     headers.insert("authorization".to_string(), "secret".to_string());
+    headers.insert("session_id".to_string(), "session-1".to_string());
+    headers.insert("x-client-secret".to_string(), "client-secret".to_string());
     let context = logging.begin_chat_request(
         "req_1",
         "fast",
@@ -167,8 +169,18 @@ async fn logs_service_account_requests_with_payload_and_redaction() {
     assert_eq!(logs[0].team_id, Some(team_id));
     assert!(logs[0].has_payload);
     assert_eq!(
-        payloads[0].request_json["headers"]["authorization"],
-        "[REDACTED]"
+        payloads[0].request_json["headers"]["session_id"],
+        "session-1"
+    );
+    assert!(
+        payloads[0].request_json["headers"]
+            .get("authorization")
+            .is_none()
+    );
+    assert!(
+        payloads[0].request_json["headers"]
+            .get("x-client-secret")
+            .is_none()
     );
     assert_eq!(payloads[0].request_json["body"]["token"], "[REDACTED]");
     assert_eq!(logs[0].request_tags.service.as_deref(), Some("checkout"));
@@ -442,6 +454,89 @@ async fn separate_payload_limits_mark_only_affected_side_truncated() {
 }
 
 #[tokio::test]
+async fn under_cap_responses_request_redacts_media_urls_and_filters_headers() {
+    let repo = Arc::new(InMemoryRepo::default());
+    let logging = RequestLogging::new(repo.clone());
+    let request = ResponsesRequest {
+        model: "gpt-test".to_string(),
+        input: json!([{
+            "type": "message",
+            "role": "user",
+            "content": [
+                {
+                    "type": "input_image",
+                    "image_url": "https://media.example.invalid/image.png?token=image-secret"
+                },
+                {
+                    "type": "input_file",
+                    "file_url": "https://media.example.invalid/file.pdf?signature=file-secret"
+                }
+            ]
+        }]),
+        stream: false,
+        instructions: None,
+        tools: None,
+        tool_choice: None,
+        reasoning: None,
+        text: None,
+        extra: BTreeMap::new(),
+    };
+    let headers = BTreeMap::from([
+        ("user-agent".to_string(), "pi/0.80.2".to_string()),
+        ("session_id".to_string(), "pi-session-small".to_string()),
+        (
+            "x-client-request-id".to_string(),
+            "pi-session-small".to_string(),
+        ),
+        ("x-client-secret".to_string(), "header-secret".to_string()),
+    ]);
+    let context = logging.begin_responses_request(
+        "req_pi_small",
+        "gpt-test",
+        "gpt-test",
+        &request,
+        &headers,
+        RequestTags::default(),
+    );
+
+    assert!(!context.request_payload_truncated);
+    assert_eq!(
+        context.analysis_metadata.external_session_id.as_deref(),
+        Some("pi-session-small")
+    );
+    logging
+        .log_non_stream_success(
+            &sample_service_account_auth(),
+            &context,
+            "openai-prod",
+            sample_icon_metadata(),
+            10,
+            0,
+            &json!({"id": "response-small", "status": "completed"}),
+            Vec::new(),
+        )
+        .await
+        .expect("log under-cap request");
+
+    let payloads = repo.payloads.lock().expect("payloads lock");
+    let stored = &payloads[0].request_json;
+    assert_eq!(stored["headers"]["session_id"], "pi-session-small");
+    assert!(stored["headers"].get("x-client-secret").is_none());
+    assert_eq!(
+        stored["body"]["input"][0]["content"][0]["image_url"],
+        "https://media.example.invalid/image.png?<redacted>"
+    );
+    assert_eq!(
+        stored["body"]["input"][0]["content"][1]["file_url"],
+        "https://media.example.invalid/file.pdf?<redacted>"
+    );
+    let retained = stored.to_string();
+    for secret in ["header-secret", "image-secret", "file-secret"] {
+        assert!(!retained.contains(secret));
+    }
+}
+
+#[tokio::test]
 async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() {
     let repo = Arc::new(InMemoryRepo::default());
     let request_max_bytes = 8 * 1024;
@@ -468,7 +563,11 @@ async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() 
             "metadata": {"keep": true},
             "content": [
                 {"type": "input_text", "text": "second é prompt ".repeat(900)},
-                {"type": "input_text", "text": "short marker"}
+                {"type": "input_text", "text": "short marker"},
+                {
+                    "type": "input_image",
+                    "image_url": "https://media.example.invalid/oversized.png?token=oversized-secret"
+                }
             ]
         }
     ]);
@@ -505,6 +604,7 @@ async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() 
         ("user-agent".to_string(), "pi/0.80.2".to_string()),
         ("session_id".to_string(), session_id.to_string()),
         ("x-client-request-id".to_string(), session_id.to_string()),
+        ("x-auth-token".to_string(), "header-secret".to_string()),
     ]);
     let original_prompt_bytes = serde_json::to_vec(&input).expect("serialize input").len();
 
@@ -551,6 +651,7 @@ async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() 
     let stored = &payloads[0].request_json;
     assert!(serde_json::to_vec(stored).expect("serialize stored").len() <= request_max_bytes);
     assert_eq!(stored["headers"]["session_id"], session_id);
+    assert!(stored["headers"].get("x-auth-token").is_none());
     assert_eq!(stored["body"]["model"], "gpt-test");
     assert_eq!(stored["body"]["reasoning"]["effort"], "high");
     assert_eq!(stored["body"]["tools"][0]["name"], "search");
@@ -574,6 +675,13 @@ async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() 
             .expect("content array text")
             .contains("gateway truncated")
     );
+    assert_eq!(
+        stored["body"]["input"][1]["content"][2]["image_url"],
+        "https://media.example.invalid/oversized.png?<redacted>"
+    );
+    let retained = stored.to_string();
+    assert!(!retained.contains("header-secret"));
+    assert!(!retained.contains("oversized-secret"));
     assert_eq!(
         stored["body"]["input"][1]["content"][1]["text"],
         "short marker"

@@ -79,5 +79,13 @@ const MAX_INFERRED_TOOL_CALLS: usize = 128;
 const MAX_TOOL_CALL_SCAN_DEPTH: usize = 32;
 const MAX_TOOL_CALL_SCAN_NODES: usize = 4_096;
 
+fn tool_inventory_is_estimated(
+    supplied_tool_count: Option<u32>,
+    retained_tool_count: usize,
+) -> bool {
+    let retained_tool_count = u32::try_from(retained_tool_count).unwrap_or(u32::MAX);
+    supplied_tool_count.is_some_and(|supplied_count| supplied_count > retained_tool_count)
+}
+
 #[cfg(test)]
 mod tests;

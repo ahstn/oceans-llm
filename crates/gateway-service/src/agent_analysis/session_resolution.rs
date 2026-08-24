@@ -1,4 +1,36 @@
+use std::io::{self, Write};
+
+use serde::Serialize;
+
 use super::*;
+
+#[derive(Default)]
+struct CountingWriter {
+    bytes: usize,
+}
+
+impl Write for CountingWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.bytes = self
+            .bytes
+            .checked_add(buffer.len())
+            .ok_or_else(|| io::Error::other("serialized size overflow"))?;
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn serialized_json_bytes<T>(value: &T) -> Option<u64>
+where
+    T: Serialize + ?Sized,
+{
+    let mut writer = CountingWriter::default();
+    serde_json::to_writer(&mut writer, value).ok()?;
+    u64::try_from(writer.bytes).ok()
+}
 
 #[derive(Debug, Clone, Copy)]
 struct HarnessAdapter {
@@ -111,9 +143,7 @@ pub(crate) fn extract_request_metadata(
     let prompt_bytes = prompt_bytes(body);
     let supplied_tools = body.get("tools").and_then(Value::as_array);
     let supplied_tool_count = supplied_tools.and_then(|values| u32::try_from(values.len()).ok());
-    let tool_schema_bytes = supplied_tools
-        .and_then(|values| serde_json::to_vec(values).ok())
-        .and_then(|bytes| u64::try_from(bytes.len()).ok());
+    let tool_schema_bytes = supplied_tools.and_then(serialized_json_bytes);
     let supplied_tools =
         supplied_tools.map_or_else(Vec::new, |tools| bounded_supplied_tools(tools.as_slice()));
     let instrumentation = analysis_instrumentation(body);
@@ -504,9 +534,7 @@ fn extract_codex_lineage(
 
 fn prompt_bytes(body: &Value) -> Option<u64> {
     let prompt = body.get("messages").or_else(|| body.get("input"))?;
-    serde_json::to_vec(prompt)
-        .ok()
-        .and_then(|bytes| u64::try_from(bytes.len()).ok())
+    serialized_json_bytes(prompt)
 }
 
 fn bounded_supplied_tools(tools: &[Value]) -> Vec<BoundedToolDefinitionFact> {
@@ -524,10 +552,7 @@ fn bounded_supplied_tools(tools: &[Value]) -> Vec<BoundedToolDefinitionFact> {
             if name.is_empty() {
                 return None;
             }
-            let token_estimate = serde_json::to_vec(tool)
-                .ok()
-                .and_then(|bytes| u64::try_from(bytes.len()).ok())?
-                .div_ceil(4);
+            let token_estimate = serialized_json_bytes(tool)?.div_ceil(4);
             Some(BoundedToolDefinitionFact {
                 server_key: tool_server_key(&name),
                 name,

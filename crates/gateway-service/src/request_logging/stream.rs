@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use gateway_core::{RequestAttemptRecord, SseEventParser};
 use serde_json::{Map, Value, json};
 
@@ -10,10 +8,7 @@ use crate::{
     },
 };
 
-use super::{
-    tool_cardinality::{ToolCallIdentity, tool_call_identities_from_value},
-    truncate_payload,
-};
+use super::{tool_cardinality::ToolCallCounter, truncate_payload};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamFailureSummary {
@@ -38,8 +33,7 @@ pub struct StreamResponseCollector {
     events: Vec<Value>,
     usage: Option<Value>,
     failure: Option<StreamFailureSummary>,
-    seen_tool_call_ids: HashSet<String>,
-    anonymous_tool_call_count: i64,
+    tool_calls: ToolCallCounter,
     finished: bool,
     truncated: bool,
 }
@@ -132,23 +126,11 @@ impl StreamResponseCollector {
 
     #[must_use]
     pub fn invoked_tool_count(&self) -> i64 {
-        i64::try_from(self.seen_tool_call_ids.len())
-            .unwrap_or(i64::MAX)
-            .saturating_add(self.anonymous_tool_call_count)
+        self.tool_calls.count()
     }
 
     fn observe_tool_calls(&mut self, value: &Value) {
-        for identity in tool_call_identities_from_value(value) {
-            match identity {
-                ToolCallIdentity::Known(id) => {
-                    self.seen_tool_call_ids.insert(id);
-                }
-                ToolCallIdentity::Anonymous => {
-                    self.anonymous_tool_call_count =
-                        self.anonymous_tool_call_count.saturating_add(1);
-                }
-            }
-        }
+        self.tool_calls.observe_value(value);
     }
 
     pub(super) fn into_payload(self, failure: Option<&StreamFailureSummary>) -> (Value, bool) {

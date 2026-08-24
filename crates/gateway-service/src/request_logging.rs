@@ -17,8 +17,8 @@ use crate::agent_analysis::{PassiveRequestMetadata, extract_request_metadata};
 use crate::payload_bounding::{bound_request_payload, bound_request_payload_after_known_fields};
 
 use crate::redaction::{
-    RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, redact_header_value,
-    redact_json_value_with_policy, truncate_large_payload_fields,
+    RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, redact_json_value_with_policy,
+    sanitize_diagnostic_headers, truncate_large_payload_fields,
     truncate_large_payload_fields_with_count,
 };
 
@@ -140,6 +140,13 @@ struct OperationRequestLogInput<'a, T> {
     request_tags: RequestTags,
 }
 
+struct PreparedRequestPayload {
+    analysis_metadata: PassiveRequestMetadata,
+    request_json: Option<Value>,
+    request_payload_truncated: bool,
+    analysis_payload_permitted: bool,
+}
+
 impl UsageSummary {
     #[must_use]
     pub fn has_usage(self) -> bool {
@@ -245,63 +252,9 @@ where
         let user_agent_raw = normalized_user_agent(request_user_agent(input.request_headers));
         let harness = classify_agent_harness(user_agent_raw.as_deref());
         let request_body = serde_json::to_value(input.request).unwrap_or_else(|_| json!({}));
-        let analysis_payload_permitted = self.payload_policy.should_capture_payloads();
         let exposed_tool_count = shallow_tool_count_from_request_body(&request_body);
-        let (analysis_metadata, request_json, request_payload_truncated) =
-            if analysis_payload_permitted {
-                let sanitized_headers = input
-                    .request_headers
-                    .iter()
-                    .map(|(key, value)| {
-                        (key.clone(), Value::String(redact_header_value(key, value)))
-                    })
-                    .collect::<Map<_, _>>();
-                let redacted = redact_json_value_with_policy(
-                    &json!({
-                        "headers": sanitized_headers,
-                        "body": request_body,
-                    }),
-                    &self.payload_policy,
-                );
-                let analysis_headers = redacted
-                    .get("headers")
-                    .and_then(Value::as_object)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|(key, value)| {
-                        value.as_str().map(|value| (key.clone(), value.to_string()))
-                    })
-                    .collect::<BTreeMap<_, _>>();
-                let analysis_body = redacted.get("body").unwrap_or(&Value::Null);
-                let analysis_metadata =
-                    extract_request_metadata(analysis_body, &analysis_headers, true, harness.key);
-                let (storage_request, large_field_count) =
-                    truncate_large_payload_fields_with_count(&redacted);
-                let (request_json, storage_bounded) = if large_field_count == 0 {
-                    bound_request_payload(storage_request, self.payload_policy.request_max_bytes)
-                } else {
-                    let original_storage_size =
-                        crate::payload_bounding::serialized_size(&redacted).ok();
-                    bound_request_payload_after_known_fields(
-                        storage_request,
-                        self.payload_policy.request_max_bytes,
-                        original_storage_size,
-                        large_field_count,
-                    )
-                };
-                (analysis_metadata, Some(request_json), storage_bounded)
-            } else {
-                (
-                    extract_request_metadata(
-                        &Value::Null,
-                        input.request_headers,
-                        false,
-                        harness.key,
-                    ),
-                    None,
-                    false,
-                )
-            };
+        let prepared =
+            self.prepare_request_payload(request_body, input.request_headers, harness.key);
 
         RequestLogContext {
             request_log_id: Uuid::new_v4(),
@@ -320,10 +273,72 @@ where
                 invoked_tool_count: Some(0),
                 filtered_tool_count: None,
             },
-            request_json,
-            request_payload_truncated,
+            request_json: prepared.request_json,
+            request_payload_truncated: prepared.request_payload_truncated,
             started_at: OffsetDateTime::now_utc(),
+            analysis_metadata: prepared.analysis_metadata,
+            analysis_payload_permitted: prepared.analysis_payload_permitted,
+        }
+    }
+
+    fn prepare_request_payload(
+        &self,
+        request_body: Value,
+        request_headers: &BTreeMap<String, String>,
+        harness_key: &str,
+    ) -> PreparedRequestPayload {
+        let analysis_payload_permitted = self.payload_policy.should_capture_payloads();
+        if !analysis_payload_permitted {
+            return PreparedRequestPayload {
+                analysis_metadata: extract_request_metadata(
+                    &Value::Null,
+                    request_headers,
+                    false,
+                    harness_key,
+                ),
+                request_json: None,
+                request_payload_truncated: false,
+                analysis_payload_permitted,
+            };
+        }
+
+        let original_prompt_bytes = request_prompt_bytes(&request_body);
+        let redacted = redact_json_value_with_policy(
+            &json!({
+                "headers": sanitize_diagnostic_headers(request_headers),
+                "body": request_body,
+            }),
+            &self.payload_policy,
+        );
+        let analysis_headers = redacted
+            .get("headers")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+            .filter_map(|(key, value)| value.as_str().map(|value| (key.clone(), value.to_string())))
+            .collect::<BTreeMap<_, _>>();
+        let analysis_body = redacted.get("body").unwrap_or(&Value::Null);
+        let mut analysis_metadata =
+            extract_request_metadata(analysis_body, &analysis_headers, true, harness_key);
+        analysis_metadata.prompt_bytes = original_prompt_bytes;
+
+        let (storage_request, large_field_count) =
+            truncate_large_payload_fields_with_count(&redacted);
+        let (request_json, request_payload_truncated) = if large_field_count == 0 {
+            bound_request_payload(storage_request, self.payload_policy.request_max_bytes)
+        } else {
+            let original_storage_size = crate::payload_bounding::serialized_size(&redacted).ok();
+            bound_request_payload_after_known_fields(
+                storage_request,
+                self.payload_policy.request_max_bytes,
+                original_storage_size,
+                large_field_count,
+            )
+        };
+        PreparedRequestPayload {
             analysis_metadata,
+            request_json: Some(request_json),
+            request_payload_truncated,
             analysis_payload_permitted,
         }
     }
@@ -611,6 +626,13 @@ where
             analysis_response,
         })
     }
+}
+
+fn request_prompt_bytes(body: &Value) -> Option<u64> {
+    let prompt = body.get("messages").or_else(|| body.get("input"))?;
+    crate::payload_bounding::serialized_size(prompt)
+        .ok()
+        .and_then(|bytes| u64::try_from(bytes).ok())
 }
 
 pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
