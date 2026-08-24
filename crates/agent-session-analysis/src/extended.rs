@@ -268,13 +268,20 @@ pub(crate) fn cache_creation_tokens_for_ttl(
 
 #[must_use]
 pub(crate) fn provider_model_switches(requests: &[SessionRequestFact]) -> u32 {
+    let has_persisted_ordinals = requests.iter().any(|request| request.ordinal != 0);
     let mut ordered = requests
         .iter()
+        .enumerate()
         .filter_map(|request| {
+            let (input_index, request) = request;
             let usage = request.usage.as_ref()?;
             Some((
                 request.occurred_at,
-                request.ordinal,
+                if has_persisted_ordinals {
+                    request.ordinal
+                } else {
+                    i64::try_from(input_index).unwrap_or(i64::MAX)
+                },
                 request.request_id.as_str(),
                 usage.provider_key.as_deref()?,
                 usage.upstream_model.as_deref()?,

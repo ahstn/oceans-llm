@@ -457,6 +457,44 @@ fn provider_model_switches_use_session_ordinal_for_equal_timestamps() {
 }
 
 #[test]
+fn provider_model_switches_preserve_legacy_trace_order_without_ordinals() {
+    let mut first = request("z-first", 0, Some(true), Some(100));
+    first.ordinal = 0;
+    first.usage.as_mut().expect("first usage").provider_key = Some("provider-a".to_string());
+    first.usage.as_mut().expect("first usage").upstream_model = Some("model-a".to_string());
+
+    let mut second = request("a-second", 0, Some(true), Some(100));
+    second.ordinal = 0;
+    second.usage.as_mut().expect("second usage").provider_key = Some("provider-b".to_string());
+    second.usage.as_mut().expect("second usage").upstream_model = Some("model-b".to_string());
+
+    let mut third = request("m-third", 0, Some(true), Some(100));
+    third.ordinal = 0;
+    third.usage.as_mut().expect("third usage").provider_key = Some("provider-a".to_string());
+    third.usage.as_mut().expect("third usage").upstream_model = Some("model-a".to_string());
+
+    assert_eq!(
+        extended::provider_model_switches(&[first, second, third]),
+        2
+    );
+}
+
+#[test]
+fn token_diagnostics_accept_legacy_cache_key_switch_field() {
+    let diagnostics: TokenAndCacheDiagnostics = serde_json::from_value(serde_json::json!({
+        "cache_key_switches": 3,
+        "pricing_policy_versions": []
+    }))
+    .expect("legacy diagnostics");
+
+    assert_eq!(diagnostics.provider_model_switches, 3);
+    assert_eq!(
+        serde_json::to_value(diagnostics).expect("current diagnostics")["provider_model_switches"],
+        3
+    );
+}
+
+#[test]
 fn cache_profiles_classify_aggregate_writes_and_truncated_payloads_remain_unknown() {
     let mut cache_request = request("cache", 0, Some(true), Some(100));
     let usage = cache_request.usage.as_mut().expect("usage");

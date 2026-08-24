@@ -101,11 +101,12 @@ impl RequestLogRepository for InMemoryRepo {
         &self,
         _query: &RequestLogQuery,
     ) -> Result<RequestLogPage, StoreError> {
+        let logs = self.logs.lock().expect("logs lock").clone();
         Ok(RequestLogPage {
-            items: self.logs.lock().expect("logs lock").clone(),
+            total: logs.len() as u64,
+            items: logs,
             page: 1,
             page_size: 50,
-            total: self.logs.lock().expect("logs lock").len() as u64,
         })
     }
 

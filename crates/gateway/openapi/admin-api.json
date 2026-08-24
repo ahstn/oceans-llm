@@ -7738,7 +7738,7 @@
       "AgentTokenAndCacheDiagnosticsView": {
         "type": "object",
         "required": [
-          "cache_key_switches",
+          "provider_model_switches",
           "pricing_policy_versions"
         ],
         "properties": {
@@ -7776,11 +7776,6 @@
               "null"
             ],
             "format": "int64"
-          },
-          "cache_key_switches": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
           },
           "cache_read_cost_10000": {
             "type": [
@@ -7857,6 +7852,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "provider_model_switches": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           },
           "provider_total_tokens": {
             "type": [

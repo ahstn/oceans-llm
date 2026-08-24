@@ -376,8 +376,8 @@ pub struct TokenAndCacheDiagnostics {
     pub cache_write_amplification_basis_points: Option<i32>,
     #[serde(default)]
     pub silent_cache_threshold_miss_requests: Option<u32>,
-    #[serde(default)]
-    pub cache_key_switches: u32,
+    #[serde(default, alias = "cache_key_switches")]
+    pub provider_model_switches: u32,
     #[serde(default)]
     pub reasoning_config_switches: Option<u32>,
     pub pricing_policy_versions: Vec<String>,

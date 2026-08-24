@@ -446,20 +446,27 @@ fn compact_tool_value(
             }
         }
         Value::Object(values) => {
-            let children_are_schema_properties =
-                !is_schema_property && field_name == Some("properties");
+            let children_are_schema_entries =
+                !is_schema_property && field_name.is_some_and(is_named_schema_map);
             for (key, value) in values {
                 compact_tool_value(
                     value,
                     &format!("{pointer}/{}", escape_pointer_segment(key)),
                     Some(key),
-                    children_are_schema_properties,
+                    children_are_schema_entries,
                     facts,
                 );
             }
         }
         _ => {}
     }
+}
+
+fn is_named_schema_map(field_name: &str) -> bool {
+    matches!(
+        field_name,
+        "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties"
+    )
 }
 
 fn truncation_metadata_overhead(
@@ -558,7 +565,7 @@ fn truncation_metadata(
         "stored_size_bytes": stored_size,
         "truncated_field_count": truncated_field_count,
         "omitted_bytes": omitted_bytes,
-        "affected_path_count": truncated_field_count,
+        "affected_path_count": affected_paths.len(),
         "affected_paths": affected_paths,
         "tool_fields_compacted": tool_fields_compacted,
         "known_large_fields_truncated": known_large_fields_truncated,

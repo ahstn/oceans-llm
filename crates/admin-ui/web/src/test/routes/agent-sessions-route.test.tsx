@@ -234,7 +234,7 @@ const detail: AgentSessionDetailView = {
         cache_read_write_ratio_basis_points: 40_000,
         cache_write_amplification_basis_points: 2_500,
         silent_cache_threshold_miss_requests: 0,
-        cache_key_switches: 1,
+        provider_model_switches: 1,
         reasoning_config_switches: 0,
         pricing_policy_versions: ['cache-aware-v1'],
       },
@@ -550,7 +550,11 @@ describe('AgentSessionsPage', () => {
     expect(within(detailSheet).getByText('External session source')).toBeInTheDocument()
     expect(within(detailSheet).getByText('Observed')).toBeInTheDocument()
     expect(within(detailSheet).getByText('External session source hash')).toBeInTheDocument()
-    expect(within(detailSheet).getByText('sha256:safe-session-source')).toBeInTheDocument()
+    expect(within(detailSheet).getByText('sha256:safe-session-source')).toHaveClass(
+      'min-w-0',
+      'max-w-full',
+      'break-all',
+    )
     expect(within(detailSheet).queryByText('Operation')).not.toBeInTheDocument()
     expect(within(detailSheet).queryByText('Caller class')).not.toBeInTheDocument()
     expect(within(detailSheet).queryByText('External session ID')).not.toBeInTheDocument()

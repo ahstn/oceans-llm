@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
 
+use crate::agent_analysis::SESSION_ANALYSIS_DIAGNOSTIC_HEADERS;
+
 mod large_fields;
 
 pub use large_fields::{truncate_large_payload_fields, truncate_large_payload_fields_with_count};
@@ -14,21 +16,6 @@ const SENSITIVE_HEADERS: &[&str] = &[
     "set-cookie",
     "x-goog-api-key",
     "x-api-key",
-];
-
-const DIAGNOSTIC_HEADERS: &[&str] = &[
-    "session-id",
-    "session_id",
-    "thread-id",
-    "x-claude-code-agent-id",
-    "x-claude-code-parent-agent-id",
-    "x-claude-code-session-id",
-    "x-client-request-id",
-    "x-codex-turn-metadata",
-    "x-opencode-session",
-    "x-parent-session-id",
-    "x-session-affinity",
-    "x-session-id",
 ];
 
 const CODEX_TURN_METADATA_FIELDS: &[&str] = &[
@@ -403,7 +390,7 @@ pub fn sanitize_diagnostic_headers(headers: &BTreeMap<String, String>) -> Map<St
 }
 
 fn is_diagnostic_header(header_name: &str) -> bool {
-    DIAGNOSTIC_HEADERS
+    SESSION_ANALYSIS_DIAGNOSTIC_HEADERS
         .iter()
         .any(|candidate| header_name.eq_ignore_ascii_case(candidate))
 }

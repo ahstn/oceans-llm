@@ -1,35 +1,12 @@
-use std::io::{self, Write};
-
-use serde::Serialize;
-
 use super::*;
-
-#[derive(Default)]
-struct CountingWriter {
-    bytes: usize,
-}
-
-impl Write for CountingWriter {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.bytes = self
-            .bytes
-            .checked_add(buffer.len())
-            .ok_or_else(|| io::Error::other("serialized size overflow"))?;
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
 
 fn serialized_json_bytes<T>(value: &T) -> Option<u64>
 where
-    T: Serialize + ?Sized,
+    T: serde::Serialize + ?Sized,
 {
-    let mut writer = CountingWriter::default();
-    serde_json::to_writer(&mut writer, value).ok()?;
-    u64::try_from(writer.bytes).ok()
+    crate::payload_bounding::serialized_size(value)
+        .ok()
+        .and_then(|bytes| u64::try_from(bytes).ok())
 }
 
 #[derive(Debug, Clone, Copy)]

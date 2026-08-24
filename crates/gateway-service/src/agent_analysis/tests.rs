@@ -77,6 +77,7 @@ fn metadata_accepts_direct_and_nested_tool_name_shapes() {
             .iter()
             .all(|tool| tool.token_estimate > 0)
     );
+    assert_eq!(metadata.supplied_tool_count, Some(2));
     assert!(tool_inventory_limitations(&metadata).is_empty());
 
     let partial = extract_request_metadata(
@@ -85,6 +86,7 @@ fn metadata_accepts_direct_and_nested_tool_name_shapes() {
         true,
         "opencode",
     );
+    assert_eq!(partial.supplied_tool_count, Some(2));
     assert_eq!(
         tool_inventory_limitations(&partial),
         vec![LimitationCode::ToolInventoryPotentialOnly]

@@ -356,7 +356,7 @@ fn token_and_cache_diagnostics(
                 )
             })
             .flatten(),
-        cache_key_switches: if cache_metrics {
+        provider_model_switches: if cache_metrics {
             extended::provider_model_switches(&trace.requests)
         } else {
             Default::default()

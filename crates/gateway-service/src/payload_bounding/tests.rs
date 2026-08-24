@@ -64,6 +64,8 @@ fn known_large_field_truncation_gets_top_level_metadata_under_cap() {
     assert!(truncated);
     assert_eq!(stored["truncation"]["original_size_bytes"], 5000);
     assert_eq!(stored["truncation"]["truncated_field_count"], 1);
+    assert_eq!(stored["truncation"]["affected_path_count"], 0);
+    assert_eq!(stored["truncation"]["affected_paths"], json!([]));
     assert_eq!(stored["truncation"]["known_large_fields_truncated"], 1);
     assert!(serialized_size(&stored).expect("stored size") <= 1024);
 }
@@ -203,8 +205,16 @@ fn tool_compaction_preserves_schema_properties_named_like_keywords() {
                 "description": "description ".repeat(2000),
                 "parameters": {
                     "type": "object",
+                    "$defs": {
+                        "default": {
+                            "type": "string",
+                            "description": "definition ".repeat(1000),
+                            "default": "definition value ".repeat(1000)
+                        }
+                    },
                     "properties": {
                         "default": {
+                            "$ref": "#/$defs/default",
                             "type": "string",
                             "description": "default property ".repeat(1000),
                             "default": "value ".repeat(1000)
@@ -230,9 +240,18 @@ fn tool_compaction_preserves_schema_properties_named_like_keywords() {
     assert!(truncated);
     assert!(serialized_size(&stored).expect("stored size") <= 8192);
     assert_eq!(properties["default"]["type"], "string");
+    assert_eq!(properties["default"]["$ref"], "#/$defs/default");
     assert_eq!(properties["example"]["type"], "string");
     assert_eq!(properties["examples"]["type"], "array");
     assert_eq!(properties["examples"]["items"]["type"], "string");
+    assert_eq!(
+        stored["body"]["tools"][0]["parameters"]["$defs"]["default"]["type"],
+        "string"
+    );
+    assert_eq!(
+        stored["body"]["tools"][0]["parameters"]["$defs"]["default"]["default"],
+        "[omitted by gateway storage bound]"
+    );
     assert_eq!(
         properties["default"]["default"],
         "[omitted by gateway storage bound]"

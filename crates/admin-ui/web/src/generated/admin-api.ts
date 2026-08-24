@@ -2046,8 +2046,6 @@ export interface components {
             cache_creation_cost_10000?: number | null;
             /** Format: int64 */
             cache_creation_tokens?: number | null;
-            /** Format: int32 */
-            cache_key_switches: number;
             /** Format: int64 */
             cache_read_cost_10000?: number | null;
             /** Format: int64 */
@@ -2069,6 +2067,8 @@ export interface components {
             /** Format: int64 */
             output_tokens?: number | null;
             pricing_policy_versions: string[];
+            /** Format: int32 */
+            provider_model_switches: number;
             /** Format: int64 */
             provider_total_tokens?: number | null;
             /** Format: int32 */

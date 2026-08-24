@@ -33,6 +33,20 @@ const MAX_DIRECT_MCP_SCAN_PAGES: u32 = 100;
 const MAX_COHORT_SCAN_PAGES: u32 = 25;
 const MAX_COHORT_SAMPLES_PER_LEVEL: usize = 2_000;
 const COHORT_LOOKBACK: Duration = Duration::days(90);
+pub(crate) const SESSION_ANALYSIS_DIAGNOSTIC_HEADERS: &[&str] = &[
+    "session-id",
+    "session_id",
+    "thread-id",
+    "x-claude-code-agent-id",
+    "x-claude-code-parent-agent-id",
+    "x-claude-code-session-id",
+    "x-client-request-id",
+    "x-codex-turn-metadata",
+    "x-opencode-session",
+    "x-parent-session-id",
+    "x-session-affinity",
+    "x-session-id",
+];
 use uuid::Uuid;
 
 use crate::redaction::REDACTED_VALUE;

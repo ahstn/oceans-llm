@@ -102,7 +102,7 @@ pub(super) fn agent_session_efficiency_report(
                 silent_cache_threshold_miss_requests: diagnostics
                     .token_and_cache
                     .silent_cache_threshold_miss_requests,
-                cache_key_switches: diagnostics.token_and_cache.cache_key_switches,
+                provider_model_switches: diagnostics.token_and_cache.provider_model_switches,
                 reasoning_config_switches: diagnostics.token_and_cache.reasoning_config_switches,
                 pricing_policy_versions: diagnostics
                     .token_and_cache

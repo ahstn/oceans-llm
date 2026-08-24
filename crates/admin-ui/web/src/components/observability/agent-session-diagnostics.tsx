@@ -128,7 +128,7 @@ export function AgentSessionDiagnostics({
         />
         <DiagnosticRow
           label="Provider/model switches"
-          value={formatNullable(diagnostics?.token_and_cache.cache_key_switches)}
+          value={formatNullable(diagnostics?.token_and_cache.provider_model_switches)}
         />
         <DiagnosticRow
           label="Reasoning configuration switches"
@@ -322,7 +322,7 @@ function DiagnosticRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium">{value}</span>
+      <span className="min-w-0 max-w-full break-all text-right font-medium">{value}</span>
     </div>
   )
 }
