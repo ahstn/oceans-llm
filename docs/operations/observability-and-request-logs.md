@@ -263,12 +263,22 @@ Built-in URL query redaction preserves the scheme, authority, and path while rep
 
 Known bulky provider fields are shape-preserving truncated before the whole-payload byte budget is applied. Built-ins cover OpenAI-compatible image/audio/file payloads, Vertex Gemini inline data, and Vertex Anthropic base64 source data.
 
-Processing order:
+Request processing uses a structured analysis projection and a separate storage representation:
 
-1. wrap the payload
-2. apply built-in and admin-configured redaction rules
-3. truncate known bulky fields while preserving JSON shape where possible
-4. apply `request_max_bytes` or `response_max_bytes` as a final guardrail
+1. wrap the request and apply built-in and admin-configured redaction rules
+2. extract Agent Session Analysis metadata from the structured redacted request, including permitted session headers, original prompt size, reasoning settings, and supplied-tool facts
+3. truncate known bulky binary fields while preserving JSON shape
+4. count the serialized size and return without adaptive work when the request is within `request_max_bytes`
+5. for an oversized Chat request, bound each `body.messages[*].content` text leaf; for an oversized Responses request, bound each `body.input[*].content` text leaf
+6. use a per-field limit and a shared total budget; retained text uses a UTF-8-safe head/tail marker
+7. if the non-message envelope still cannot fit, compact tool and schema descriptions, examples, and defaults while retaining tool names and schema structure
+8. use the complete-payload `{ truncated, size_bytes, preview }` marker only as the final hard fallback
+
+Structured request truncation adds a top-level `truncation` object beside `headers` and `body`. It records the strategy version, original and stored serialized sizes, omitted bytes, truncated-field count, a bounded affected-path list, known-large-field count, and tool-field compaction count. `request_payload_truncated=true` means that at least one request field was truncated or the hard fallback was required. Analysis metadata does not depend on this stored representation, so storage truncation does not remove an observed external session source or reduce the original prompt and tool facts used by Agent Session Analysis.
+
+Response storage keeps the existing behavior: known bulky fields are reduced first, then `response_max_bytes` applies the complete-payload hard guardrail. The existing `response_payload_truncated=true` signal records a response that hit the whole-response or stream storage limit. Agent session reports count affected responses, and the admin UI shows that count separately from permanent analysis capability notices.
+
+The adaptive request path mutates the already redacted storage value and uses `serde_json::to_writer` with a counting writer when it only needs a size. It does not clone the full JSON tree again. The manual measurement harness covers 8 KiB, 64 KiB, 256 KiB, and 1 MiB requests with long messages, many small messages, tool-heavy envelopes, content arrays, binary blocks, and multibyte UTF-8. Run it with `mise exec -- cargo test -p gateway-service measures_payload_helper_and_request_setup_matrix -- --ignored --nocapture`. The harness reports the pure bounding helper and complete gateway request-setup time; it does not enforce a machine-dependent latency threshold.
 
 For streams, the gateway keeps parsing every frame for usage and provider errors. Only stored event payloads are capped by `stream_max_events`; if the cap is hit, `response_payload_truncated=true`.
 

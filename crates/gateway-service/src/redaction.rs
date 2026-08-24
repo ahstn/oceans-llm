@@ -533,18 +533,32 @@ fn redact_https_url_queries(text: &str) -> String {
 
 #[must_use]
 pub fn truncate_large_payload_fields(value: &Value) -> Value {
-    truncate_large_fields_at_path(value, LARGE_FIELD_PATHS, &mut Vec::new())
+    truncate_large_payload_fields_with_count(value).0
+}
+
+#[must_use]
+pub fn truncate_large_payload_fields_with_count(value: &Value) -> (Value, usize) {
+    let mut truncated_field_count = 0_usize;
+    let value = truncate_large_fields_at_path(
+        value,
+        LARGE_FIELD_PATHS,
+        &mut Vec::new(),
+        &mut truncated_field_count,
+    );
+    (value, truncated_field_count)
 }
 
 fn truncate_large_fields_at_path(
     value: &Value,
     paths: &[BuiltInPayloadPath],
     path: &mut Vec<PathSegment>,
+    truncated_field_count: &mut usize,
 ) -> Value {
     if paths.iter().any(|candidate| candidate.matches(path))
         && let Some(text) = value.as_str()
         && should_truncate_known_large_field(text)
     {
+        *truncated_field_count = truncated_field_count.saturating_add(1);
         return json!({
             "truncated": true,
             "size_bytes": text.len(),
@@ -555,24 +569,26 @@ fn truncate_large_fields_at_path(
     match value {
         Value::Array(values) => {
             path.push(PathSegment::Wildcard);
-            let truncated = values
+            let bounded_values = values
                 .iter()
-                .map(|value| truncate_large_fields_at_path(value, paths, path))
+                .map(|value| {
+                    truncate_large_fields_at_path(value, paths, path, truncated_field_count)
+                })
                 .collect();
             path.pop();
-            Value::Array(truncated)
+            Value::Array(bounded_values)
         }
         Value::Object(values) => {
-            let mut truncated = Map::with_capacity(values.len());
+            let mut bounded_values = Map::with_capacity(values.len());
             for (key, value) in values {
                 path.push(PathSegment::Key(key.clone()));
-                truncated.insert(
+                bounded_values.insert(
                     key.clone(),
-                    truncate_large_fields_at_path(value, paths, path),
+                    truncate_large_fields_at_path(value, paths, path, truncated_field_count),
                 );
                 path.pop();
             }
-            Value::Object(truncated)
+            Value::Object(bounded_values)
         }
         _ => value.clone(),
     }

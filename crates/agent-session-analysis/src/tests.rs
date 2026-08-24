@@ -4,6 +4,7 @@ fn request(id: &str, second: i64, success: Option<bool>, cost: Option<i64>) -> S
     let occurred_at = OffsetDateTime::UNIX_EPOCH + Duration::seconds(second);
     SessionRequestFact {
         request_id: id.to_string(),
+        ordinal: second,
         occurred_at,
         completed_at: Some(occurred_at + Duration::seconds(1)),
         terminal_success: success,
@@ -433,6 +434,29 @@ fn report_exposes_extended_cache_context_reliability_and_change_diagnostics() {
 }
 
 #[test]
+fn provider_model_switches_use_session_ordinal_for_equal_timestamps() {
+    let mut first = request("first", 0, Some(true), Some(100));
+    first.ordinal = 0;
+    first.usage.as_mut().expect("first usage").provider_key = Some("provider-a".to_string());
+    first.usage.as_mut().expect("first usage").upstream_model = Some("model-a".to_string());
+
+    let mut second = request("second", 0, Some(true), Some(100));
+    second.ordinal = 1;
+    second.usage.as_mut().expect("second usage").provider_key = Some("provider-b".to_string());
+    second.usage.as_mut().expect("second usage").upstream_model = Some("model-b".to_string());
+
+    let mut third = request("third", 0, Some(true), Some(100));
+    third.ordinal = 2;
+    third.usage.as_mut().expect("third usage").provider_key = Some("provider-a".to_string());
+    third.usage.as_mut().expect("third usage").upstream_model = Some("model-a".to_string());
+
+    assert_eq!(
+        extended::provider_model_switches(&[third, first, second]),
+        2
+    );
+}
+
+#[test]
 fn cache_profiles_classify_aggregate_writes_and_truncated_payloads_remain_unknown() {
     let mut cache_request = request("cache", 0, Some(true), Some(100));
     let usage = cache_request.usage.as_mut().expect("usage");
@@ -478,6 +502,8 @@ fn cache_profiles_classify_aggregate_writes_and_truncated_payloads_remain_unknow
         0
     );
     assert_eq!(truncated_report.diagnostics.outcome.zero_outcome, None);
+    assert_eq!(truncated_report.coverage.response_payload_count, 1);
+    assert_eq!(truncated_report.coverage.truncated_response_count, 1);
 }
 
 #[test]

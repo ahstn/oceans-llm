@@ -1465,6 +1465,8 @@ pub struct AgentTelemetryCoverageView {
     pub cost_percent: u8,
     pub timing_percent: u8,
     pub payload_percent: u8,
+    pub response_payload_count: u32,
+    pub truncated_response_count: u32,
     pub cohort_percent: u8,
     pub overall_percent: u8,
 }

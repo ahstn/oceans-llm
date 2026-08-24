@@ -124,6 +124,7 @@ where
             .unwrap_or_default();
         requests.push(SessionRequestFact {
             request_id: link.request_id.clone(),
+            ordinal: link.ordinal,
             occurred_at: link.occurred_at,
             completed_at: link.completed_at,
             terminal_success: link.terminal_success,

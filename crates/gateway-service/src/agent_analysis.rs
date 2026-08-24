@@ -65,7 +65,7 @@ pub use worker::{
 #[cfg(test)]
 use ingestion::{
     ToolCall, classify_tool_call, collect_tool_calls, response_finish_reasons,
-    scope_file_identifiers,
+    scope_file_identifiers, tool_inventory_limitations,
 };
 const SESSION_SOURCE_ID_NAMESPACE: Uuid = Uuid::from_u128(0xc3fc5f3b_56a6_4d1f_99fe_f8ba6d1cc9e1);
 const SESSION_ID_NAMESPACE: Uuid = Uuid::from_u128(0x1674a48a_0679_4983_848a_9f6fb626e40d);

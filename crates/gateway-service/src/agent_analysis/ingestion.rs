@@ -576,7 +576,7 @@ fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredOb
                 cache_requested: input.metadata.cache_requested,
                 ..Default::default()
             },
-            limitations: vec![LimitationCode::ToolInventoryPotentialOnly],
+            limitations: tool_inventory_limitations(input.metadata),
         });
     }
     if let Some(response) = input.response_body {
@@ -631,6 +631,18 @@ fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredOb
         }
     }
     observations
+}
+
+pub(super) fn tool_inventory_limitations(metadata: &PassiveRequestMetadata) -> Vec<LimitationCode> {
+    let retained_count = u32::try_from(metadata.supplied_tools.len()).unwrap_or(u32::MAX);
+    if metadata
+        .supplied_tool_count
+        .is_some_and(|supplied_count| supplied_count > retained_count)
+    {
+        vec![LimitationCode::ToolInventoryPotentialOnly]
+    } else {
+        Vec::new()
+    }
 }
 
 pub(super) fn response_finish_reasons(response: &Value) -> (Option<String>, Option<String>) {

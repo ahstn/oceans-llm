@@ -16,10 +16,12 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::agent_analysis::{PassiveRequestMetadata, extract_request_metadata};
+use crate::payload_bounding::{bound_request_payload, bound_request_payload_after_known_fields};
 
 use crate::redaction::{
     RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, redact_header_value,
     redact_json_value_with_policy, truncate_large_payload_fields,
+    truncate_large_payload_fields_with_count,
 };
 
 #[derive(Debug, Clone)]
@@ -668,10 +670,7 @@ where
                     }),
                     &self.payload_policy,
                 );
-                let redacted = truncate_large_payload_fields(&redacted);
-                let (request_json, truncated) =
-                    truncate_payload(redacted, self.payload_policy.request_max_bytes);
-                let analysis_headers = request_json
+                let analysis_headers = redacted
                     .get("headers")
                     .and_then(Value::as_object)
                     .into_iter()
@@ -680,10 +679,24 @@ where
                         value.as_str().map(|value| (key.clone(), value.to_string()))
                     })
                     .collect::<BTreeMap<_, _>>();
-                let analysis_body = request_json.get("body").unwrap_or(&Value::Null);
+                let analysis_body = redacted.get("body").unwrap_or(&Value::Null);
                 let analysis_metadata =
                     extract_request_metadata(analysis_body, &analysis_headers, true, harness.key);
-                (analysis_metadata, Some(request_json), truncated)
+                let (storage_request, large_field_count) =
+                    truncate_large_payload_fields_with_count(&redacted);
+                let (request_json, storage_bounded) = if large_field_count == 0 {
+                    bound_request_payload(storage_request, self.payload_policy.request_max_bytes)
+                } else {
+                    let original_storage_size =
+                        crate::payload_bounding::serialized_size(&redacted).ok();
+                    bound_request_payload_after_known_fields(
+                        storage_request,
+                        self.payload_policy.request_max_bytes,
+                        original_storage_size,
+                        large_field_count,
+                    )
+                };
+                (analysis_metadata, Some(request_json), storage_bounded)
             } else {
                 (
                     extract_request_metadata(
@@ -1343,6 +1356,7 @@ mod tests {
     use std::{
         collections::BTreeMap,
         sync::{Arc, Mutex},
+        time::Instant,
     };
 
     use async_trait::async_trait;
@@ -1352,8 +1366,8 @@ mod tests {
         ModelAccessMode, ProviderError, RequestAttemptRecord, RequestAttemptStatus,
         RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
         RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestLogRetentionWindow,
-        RequestTag, RequestTags, StoreError, TeamMembershipRecord, TeamRecord, UserRecord,
-        UserStatus,
+        RequestTag, RequestTags, ResponsesRequest, StoreError, TeamMembershipRecord, TeamRecord,
+        UserRecord, UserStatus,
     };
     use serde_json::{Value, json};
     use time::OffsetDateTime;
@@ -1361,6 +1375,7 @@ mod tests {
 
     use crate::{
         RequestLogIconMetadata,
+        payload_bounding::bound_request_payload,
         redaction::{RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, parse_payload_path},
     };
 
@@ -1702,6 +1717,156 @@ mod tests {
             model: "embeddings".to_string(),
             input: json!("hello"),
             extra: BTreeMap::new(),
+        }
+    }
+
+    fn measured_responses_request(scenario: &str, bytes: usize) -> ResponsesRequest {
+        let (input, tools) = match scenario {
+            "long_message" => (
+                json!([{"type": "message", "role": "user", "content": "x".repeat(bytes)}]),
+                None,
+            ),
+            "many_messages" => {
+                let per_message = bytes.div_ceil(128);
+                (
+                    Value::Array(
+                        (0..128)
+                            .map(|index| {
+                                json!({
+                                    "type": "message",
+                                    "role": "user",
+                                    "id": format!("message-{index}"),
+                                    "content": "x".repeat(per_message),
+                                })
+                            })
+                            .collect(),
+                    ),
+                    None,
+                )
+            }
+            "tool_heavy" => (
+                json!([{"type": "message", "role": "user", "content": "measure"}]),
+                Some(Value::Array(
+                    (0..8)
+                        .map(|index| {
+                            json!({
+                                "type": "function",
+                                "name": format!("tool_{index}"),
+                                "description": "description ".repeat(bytes.div_ceil(96)),
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "input": {
+                                            "type": "string",
+                                            "description": "property ".repeat(bytes.div_ceil(128)),
+                                            "examples": ["example ".repeat(bytes.div_ceil(128))]
+                                        }
+                                    }
+                                }
+                            })
+                        })
+                        .collect(),
+                )),
+            ),
+            "content_arrays" => (
+                json!([{
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "a".repeat(bytes / 2)},
+                        {"type": "input_text", "text": "b".repeat(bytes / 2)}
+                    ]
+                }]),
+                None,
+            ),
+            "binary_blocks" => (
+                json!([{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{
+                        "type": "input_image",
+                        "image_url": "data:image/png;base64,".to_string() + &"A".repeat(bytes)
+                    }]
+                }]),
+                None,
+            ),
+            "multibyte_utf8" => (
+                json!([{
+                    "type": "message",
+                    "role": "user",
+                    "content": "🙂".repeat(bytes.div_ceil(4))
+                }]),
+                None,
+            ),
+            _ => unreachable!("known measurement scenario"),
+        };
+        ResponsesRequest {
+            model: "measurement-model".to_string(),
+            input,
+            stream: false,
+            instructions: None,
+            tools,
+            tool_choice: Some(json!("auto")),
+            reasoning: Some(json!({"effort": "high"})),
+            text: None,
+            extra: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    #[ignore = "manual request truncation measurement harness"]
+    fn measures_payload_helper_and_request_setup_matrix() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let scenarios = [
+            "long_message",
+            "many_messages",
+            "tool_heavy",
+            "content_arrays",
+            "binary_blocks",
+            "multibyte_utf8",
+        ];
+        for bytes in [8 * 1024, 64 * 1024, 256 * 1024, 1024 * 1024] {
+            let max_bytes = (bytes / 2).max(4096);
+            let logging = RequestLogging::new_with_payload_policy(
+                repo.clone(),
+                policy(
+                    RequestLogPayloadCaptureMode::RedactedPayloads,
+                    max_bytes,
+                    64 * 1024,
+                    128,
+                ),
+            );
+            for scenario in scenarios {
+                let request = measured_responses_request(scenario, bytes);
+                let wrapped = json!({
+                    "headers": {"session_id": "measurement-session"},
+                    "body": serde_json::to_value(&request).expect("serialize request"),
+                });
+                let helper_started = Instant::now();
+                let (stored, _) = bound_request_payload(wrapped, max_bytes);
+                let helper_elapsed = helper_started.elapsed();
+                assert!(serde_json::to_vec(&stored).expect("serialize stored").len() <= max_bytes);
+
+                let setup_started = Instant::now();
+                let context = logging.begin_responses_request(
+                    "measurement-request",
+                    "measurement-model",
+                    "measurement-model",
+                    &request,
+                    &BTreeMap::from([
+                        ("user-agent".to_string(), "pi/0.80.2".to_string()),
+                        ("session_id".to_string(), "measurement-session".to_string()),
+                    ]),
+                    RequestTags::default(),
+                );
+                let setup_elapsed = setup_started.elapsed();
+                assert!(context.request_json.is_some());
+                eprintln!(
+                    "payload_bounding scenario={scenario} input_bytes={bytes} max_bytes={max_bytes} helper_us={} request_setup_us={}",
+                    helper_elapsed.as_micros(),
+                    setup_elapsed.as_micros(),
+                );
+            }
         }
     }
 
@@ -2250,6 +2415,149 @@ mod tests {
         assert!(!logs[0].request_payload_truncated);
         assert!(logs[0].response_payload_truncated);
         assert_eq!(payloads[0].response_json["truncated"], true);
+    }
+
+    #[tokio::test]
+    async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let request_max_bytes = 8 * 1024;
+        let logging = RequestLogging::new_with_payload_policy(
+            repo.clone(),
+            policy(
+                RequestLogPayloadCaptureMode::RedactedPayloads,
+                request_max_bytes,
+                4096,
+                4,
+            ),
+        );
+        let input = json!([
+            {
+                "type": "message",
+                "id": "message-1",
+                "role": "user",
+                "content": "first 🙂 prompt ".repeat(1200)
+            },
+            {
+                "type": "future_input_item",
+                "id": "future-1",
+                "name": "preserved-item",
+                "metadata": {"keep": true},
+                "content": [
+                    {"type": "input_text", "text": "second é prompt ".repeat(900)},
+                    {"type": "input_text", "text": "short marker"}
+                ]
+            }
+        ]);
+        let tools = json!([{
+            "type": "function",
+            "name": "search",
+            "description": "Search repository content",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"]
+            }
+        }]);
+        let request = ResponsesRequest {
+            model: "gpt-test".to_string(),
+            input: input.clone(),
+            stream: false,
+            instructions: None,
+            tools: Some(tools),
+            tool_choice: Some(json!("auto")),
+            reasoning: Some(json!({"effort": "high"})),
+            text: None,
+            extra: BTreeMap::from([
+                (
+                    "include".to_string(),
+                    json!(["reasoning.encrypted_content"]),
+                ),
+                ("metadata".to_string(), json!({"trace": "kept"})),
+                ("prompt_cache_key".to_string(), json!("cache-key-1")),
+            ]),
+        };
+        let session_id = "pi-session-123";
+        let headers = BTreeMap::from([
+            ("user-agent".to_string(), "pi/0.80.2".to_string()),
+            ("session_id".to_string(), session_id.to_string()),
+            ("x-client-request-id".to_string(), session_id.to_string()),
+        ]);
+        let original_prompt_bytes = serde_json::to_vec(&input).expect("serialize input").len();
+
+        let context = logging.begin_responses_request(
+            "req_pi_oversized",
+            "gpt-test",
+            "gpt-test",
+            &request,
+            &headers,
+            RequestTags::default(),
+        );
+
+        assert!(context.request_payload_truncated);
+        assert_eq!(
+            context.analysis_metadata.external_session_id.as_deref(),
+            Some(session_id)
+        );
+        assert_eq!(
+            context.analysis_metadata.session_source.as_deref(),
+            Some("header:session_id+header:x-client-request-id")
+        );
+        assert_eq!(
+            context.analysis_metadata.prompt_bytes,
+            u64::try_from(original_prompt_bytes).ok()
+        );
+        assert_eq!(context.analysis_metadata.supplied_tool_count, Some(1));
+        assert_eq!(context.analysis_metadata.supplied_tools[0].name, "search");
+
+        logging
+            .log_non_stream_success(
+                &sample_service_account_auth(),
+                &context,
+                "openai-prod",
+                sample_icon_metadata(),
+                120,
+                0,
+                &json!({"id": "response-1", "status": "completed"}),
+                Vec::new(),
+            )
+            .await
+            .expect("log oversized request");
+
+        let payloads = repo.payloads.lock().expect("payloads lock");
+        let stored = &payloads[0].request_json;
+        assert!(serde_json::to_vec(stored).expect("serialize stored").len() <= request_max_bytes);
+        assert_eq!(stored["headers"]["session_id"], session_id);
+        assert_eq!(stored["body"]["model"], "gpt-test");
+        assert_eq!(stored["body"]["reasoning"]["effort"], "high");
+        assert_eq!(stored["body"]["tools"][0]["name"], "search");
+        assert_eq!(stored["body"]["tool_choice"], "auto");
+        assert_eq!(stored["body"]["include"][0], "reasoning.encrypted_content");
+        assert_eq!(stored["body"]["prompt_cache_key"], "cache-key-1");
+        assert_eq!(stored["body"]["metadata"]["trace"], "kept");
+        assert_eq!(stored["body"]["input"][0]["role"], "user");
+        assert_eq!(stored["body"]["input"][1]["type"], "future_input_item");
+        assert_eq!(stored["body"]["input"][1]["name"], "preserved-item");
+        assert_eq!(stored["body"]["input"][1]["metadata"]["keep"], true);
+        assert!(
+            stored["body"]["input"][0]["content"]
+                .as_str()
+                .expect("string content")
+                .contains("gateway truncated")
+        );
+        assert!(
+            stored["body"]["input"][1]["content"][0]["text"]
+                .as_str()
+                .expect("content array text")
+                .contains("gateway truncated")
+        );
+        assert_eq!(
+            stored["body"]["input"][1]["content"][1]["text"],
+            "short marker"
+        );
+        assert_eq!(
+            stored["truncation"]["strategy_version"],
+            "structured-request-v1"
+        );
     }
 
     #[tokio::test]

@@ -189,6 +189,8 @@ fn measure_coverage(trace: &SessionTrace, has_scoring_cohort: bool) -> Telemetry
         cost_percent,
         timing_percent,
         payload_percent,
+        response_payload_count: trace.evidence.response_payload_count,
+        truncated_response_count: trace.evidence.truncated_payload_count,
         cohort_percent,
         overall_percent,
     }
@@ -355,7 +357,7 @@ fn token_and_cache_diagnostics(
             })
             .flatten(),
         cache_key_switches: if cache_metrics {
-            extended::cache_key_switches(&trace.requests)
+            extended::provider_model_switches(&trace.requests)
         } else {
             Default::default()
         },

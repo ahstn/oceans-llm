@@ -2029,7 +2029,11 @@ export interface components {
             /** Format: int32 */
             payload_percent: number;
             /** Format: int32 */
+            response_payload_count: number;
+            /** Format: int32 */
             timing_percent: number;
+            /** Format: int32 */
+            truncated_response_count: number;
         };
         AgentTokenAndCacheDiagnosticsView: {
             /** Format: int64 */

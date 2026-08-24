@@ -42,7 +42,15 @@ export function AgentSessionDiagnostics({
       <DiagnosticSection title="Session identity">
         <DiagnosticRow label="Model" value={detail.session.requested_model_key} />
         <DiagnosticRow label="Harness" value={detail.session.harness_label ?? 'Unknown'} />
-        <DiagnosticRow label="Session ID" value={detail.session.session_id} />
+        <DiagnosticRow label="Gateway analysis session ID" value={detail.session.session_id} />
+        <DiagnosticRow
+          label="External session source"
+          value={detail.session.session_source_observed ? 'Observed' : 'Not observed'}
+        />
+        <DiagnosticRow
+          label="External session source hash"
+          value={detail.session.session_source_hash ?? 'Not available'}
+        />
       </DiagnosticSection>
 
       <DiagnosticSection title="Score components">
@@ -119,7 +127,7 @@ export function AgentSessionDiagnostics({
           )}
         />
         <DiagnosticRow
-          label="Provider or model cache-key switches"
+          label="Provider/model switches"
           value={formatNullable(diagnostics?.token_and_cache.cache_key_switches)}
         />
         <DiagnosticRow

@@ -201,6 +201,8 @@ pub struct SessionUsageFact {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionRequestFact {
     pub request_id: String,
+    #[serde(default)]
+    pub ordinal: i64,
     pub occurred_at: OffsetDateTime,
     pub completed_at: Option<OffsetDateTime>,
     pub terminal_success: Option<bool>,
@@ -334,6 +336,10 @@ pub struct TelemetryCoverage {
     pub cost_percent: u8,
     pub timing_percent: u8,
     pub payload_percent: u8,
+    #[serde(default)]
+    pub response_payload_count: u32,
+    #[serde(default)]
+    pub truncated_response_count: u32,
     pub cohort_percent: u8,
     pub overall_percent: u8,
 }

@@ -65,6 +65,18 @@ fn metadata_accepts_direct_and_nested_tool_name_shapes() {
             .iter()
             .all(|tool| tool.token_estimate > 0)
     );
+    assert!(tool_inventory_limitations(&metadata).is_empty());
+
+    let partial = extract_request_metadata(
+        &json!({"tools": [{"name": "search"}, {"type": "unknown"}]}),
+        &BTreeMap::new(),
+        true,
+        "opencode",
+    );
+    assert_eq!(
+        tool_inventory_limitations(&partial),
+        vec![LimitationCode::ToolInventoryPotentialOnly]
+    );
 }
 
 #[test]

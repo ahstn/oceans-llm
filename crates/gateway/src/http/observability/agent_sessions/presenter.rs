@@ -47,6 +47,8 @@ pub(super) fn agent_session_efficiency_report(
             cost_percent: report.coverage.cost_percent,
             timing_percent: report.coverage.timing_percent,
             payload_percent: report.coverage.payload_percent,
+            response_payload_count: report.coverage.response_payload_count,
+            truncated_response_count: report.coverage.truncated_response_count,
             cohort_percent: report.coverage.cohort_percent,
             overall_percent: report.coverage.overall_percent,
         },

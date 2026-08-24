@@ -267,22 +267,25 @@ pub(crate) fn cache_creation_tokens_for_ttl(
 }
 
 #[must_use]
-pub(crate) fn cache_key_switches(requests: &[SessionRequestFact]) -> u32 {
+pub(crate) fn provider_model_switches(requests: &[SessionRequestFact]) -> u32 {
     let mut ordered = requests
         .iter()
         .filter_map(|request| {
             let usage = request.usage.as_ref()?;
             Some((
                 request.occurred_at,
+                request.ordinal,
+                request.request_id.as_str(),
                 usage.provider_key.as_deref()?,
                 usage.upstream_model.as_deref()?,
             ))
         })
         .collect::<Vec<_>>();
-    ordered.sort_unstable_by_key(|(occurred_at, _, _)| *occurred_at);
+    ordered
+        .sort_unstable_by(|left, right| (left.0, left.1, left.2).cmp(&(right.0, right.1, right.2)));
     ordered
         .windows(2)
-        .filter(|pair| pair[0].1 != pair[1].1 || pair[0].2 != pair[1].2)
+        .filter(|pair| pair[0].3 != pair[1].3 || pair[0].4 != pair[1].4)
         .count()
         .try_into()
         .unwrap_or(u32::MAX)
