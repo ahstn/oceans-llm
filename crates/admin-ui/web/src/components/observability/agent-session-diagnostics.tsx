@@ -325,7 +325,7 @@ function DiagnosticRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span className="min-w-0 max-w-full break-all text-right font-medium">{value}</span>
+      <span className="max-w-full min-w-0 text-right font-medium break-all">{value}</span>
     </div>
   )
 }
