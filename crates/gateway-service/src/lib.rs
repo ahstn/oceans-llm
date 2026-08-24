@@ -95,7 +95,8 @@ pub use pricing_catalog::{
     is_supported_pricing_provider_id, snapshot_to_pretty_json,
 };
 pub use redaction::{
-    PayloadPath, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, parse_payload_path,
+    MAX_INLINE_REQUEST_BYTES, PayloadPath, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
+    parse_payload_path,
 };
 pub use request_logging::{
     LoggedRequest, RequestAttemptOutcome, RequestLogContext, RequestLogging, StreamFailureSummary,

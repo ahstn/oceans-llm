@@ -104,11 +104,12 @@ const ERROR_TEXT_PATHS: &[BuiltInPayloadPath] = &[
     ]),
 ];
 
-const DEFAULT_REQUEST_MAX_BYTES: usize = 64 * 1024;
+const DEFAULT_REQUEST_MAX_BYTES: usize = 128 * 1024;
 const DEFAULT_RESPONSE_MAX_BYTES: usize = 64 * 1024;
 const DEFAULT_STREAM_MAX_EVENTS: usize = 128;
 const PAYLOAD_POLICY_VERSION: &str = "builtin:v2";
 const SECRET_MASK: &str = "********";
+pub const MAX_INLINE_REQUEST_BYTES: usize = 256 * 1024;
 pub(crate) const REDACTED_VALUE: &str = "[REDACTED]";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -162,7 +163,7 @@ impl RequestLogPayloadPolicy {
     ) -> Self {
         Self {
             capture_mode,
-            request_max_bytes,
+            request_max_bytes: request_max_bytes.min(MAX_INLINE_REQUEST_BYTES),
             response_max_bytes,
             stream_max_events,
             redaction_paths,

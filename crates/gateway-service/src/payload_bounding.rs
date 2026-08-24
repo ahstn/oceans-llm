@@ -2,8 +2,14 @@ use std::io::{self, Write};
 
 use serde_json::{Value, json};
 
-const STRATEGY_VERSION: &str = "structured-request-v1";
-const MAX_CONTENT_LEAF_BYTES: usize = 4 * 1024;
+use crate::redaction::MAX_INLINE_REQUEST_BYTES;
+
+const STRATEGY_VERSION: &str = "structured-request-v2";
+const ESSENTIAL_ENVELOPE_TARGET_BYTES: usize = 16 * 1024;
+const MIN_ORDINARY_MESSAGE_BYTES: usize = 8 * 1024;
+const MAX_ORDINARY_MESSAGE_BYTES: usize = 16 * 1024;
+const MAX_SOLITARY_MESSAGE_BYTES: usize = 32 * 1024;
+const MAX_TOTAL_CONTENT_BYTES: usize = 96 * 1024;
 const MAX_AFFECTED_PATHS: usize = 32;
 const TOOL_DESCRIPTION_BYTES: usize = 128;
 const OMITTED_TOOL_VALUE: &str = "[omitted by gateway storage bound]";
@@ -12,6 +18,12 @@ const OMITTED_TOOL_VALUE: &str = "[omitted by gateway storage bound]";
 struct ContentLeaf {
     pointer: String,
     serialized_size: usize,
+}
+
+#[derive(Debug)]
+struct ContentItem {
+    leaves: Vec<ContentLeaf>,
+    max_retained_bytes: usize,
 }
 
 #[derive(Debug, Default)]
@@ -63,6 +75,7 @@ pub(crate) fn bound_request_payload_after_known_fields(
     original_size: Option<usize>,
     known_large_field_count: usize,
 ) -> (Value, bool) {
+    let max_bytes = max_bytes.min(MAX_INLINE_REQUEST_BYTES);
     let Ok(current_size) = serialized_size(&value) else {
         return serialization_failure_marker(max_bytes);
     };
@@ -85,29 +98,37 @@ pub(crate) fn bound_request_payload_after_known_fields(
             object.remove("truncation");
         }
     }
-    let mut leaves = content_leaves(&value);
-    let mut metadata_overhead =
-        truncation_metadata_overhead(original_size, max_bytes, &leaves, &facts);
-    let mut available =
-        content_replacement_budget(current_size, max_bytes, metadata_overhead, &leaves);
-
-    if !content_leaves_fit_at_zero(&value, &leaves, available) {
+    let mut items = content_items(&value);
+    if essential_envelope_size(current_size, &items) > ESSENTIAL_ENVELOPE_TARGET_BYTES {
         compact_tool_envelope(&mut value, &mut facts);
-        let Ok(compacted_size) = serialized_size(&value) else {
-            return serialization_failure_marker(max_bytes);
-        };
-        leaves = content_leaves(&value);
-        metadata_overhead = truncation_metadata_overhead(original_size, max_bytes, &leaves, &facts);
-        available =
-            content_replacement_budget(compacted_size, max_bytes, metadata_overhead, &leaves);
-        if !content_leaves_fit_at_zero(&value, &leaves, available) {
-            return hard_fallback(value, original_size, max_bytes);
-        }
     }
 
-    let per_field_bytes = largest_content_budget(&value, &leaves, available);
+    let Ok(mut bounded_size) = serialized_size(&value) else {
+        return serialization_failure_marker(max_bytes);
+    };
+    if facts.truncated_field_count > 0 && bounded_size <= max_bytes {
+        insert_truncation_metadata(&mut value, original_size, max_bytes, &facts);
+        if serialized_size(&value).is_ok_and(|size| size <= max_bytes) {
+            return (value, true);
+        }
+        if let Some(object) = value.as_object_mut() {
+            object.remove("truncation");
+        }
+        bounded_size = serialized_size(&value).unwrap_or(bounded_size);
+    }
+
+    items = content_items(&value);
+    let metadata_overhead = truncation_metadata_overhead(original_size, max_bytes, &items, &facts);
+    let available = content_replacement_budget(bounded_size, max_bytes, metadata_overhead, &items)
+        .min(MAX_TOTAL_CONTENT_BYTES);
+
+    if !content_items_fit_at_zero(&value, &items, available) {
+        return hard_fallback(value, original_size, max_bytes);
+    }
+
+    let per_item_bytes = largest_content_budget(&value, &items, available);
     let fields_before_content = facts.truncated_field_count;
-    truncate_content_leaves(&mut value, &leaves, per_field_bytes, &mut facts);
+    truncate_content_items(&mut value, &items, per_item_bytes, &mut facts);
     if facts.truncated_field_count == fields_before_content {
         compact_tool_envelope(&mut value, &mut facts);
     }
@@ -126,25 +147,35 @@ fn content_replacement_budget(
     current_size: usize,
     max_bytes: usize,
     metadata_overhead: usize,
-    leaves: &[ContentLeaf],
+    items: &[ContentItem],
 ) -> usize {
-    let existing_content = leaves.iter().fold(0_usize, |total, leaf| {
-        total.saturating_add(leaf.serialized_size)
-    });
+    let existing_content = serialized_content_size(items);
     let envelope = current_size.saturating_sub(existing_content);
     max_bytes.saturating_sub(envelope.saturating_add(metadata_overhead))
 }
 
-fn content_leaves_fit_at_zero(value: &Value, leaves: &[ContentLeaf], available: usize) -> bool {
-    replacement_size(value, leaves, 0) <= available
+fn serialized_content_size(items: &[ContentItem]) -> usize {
+    items.iter().fold(0_usize, |total, item| {
+        item.leaves.iter().fold(total, |total, leaf| {
+            total.saturating_add(leaf.serialized_size)
+        })
+    })
 }
 
-fn largest_content_budget(value: &Value, leaves: &[ContentLeaf], available: usize) -> usize {
+fn essential_envelope_size(current_size: usize, items: &[ContentItem]) -> usize {
+    current_size.saturating_sub(serialized_content_size(items))
+}
+
+fn content_items_fit_at_zero(value: &Value, items: &[ContentItem], available: usize) -> bool {
+    replacement_size(value, items, 0) <= available
+}
+
+fn largest_content_budget(value: &Value, items: &[ContentItem], available: usize) -> usize {
     let mut low = 0_usize;
-    let mut high = MAX_CONTENT_LEAF_BYTES;
+    let mut high = target_item_budget(items, available);
     while low < high {
         let candidate = low + (high - low).div_ceil(2);
-        if replacement_size(value, leaves, candidate) <= available {
+        if replacement_size(value, items, candidate) <= available {
             low = candidate;
         } else {
             high = candidate.saturating_sub(1);
@@ -153,36 +184,61 @@ fn largest_content_budget(value: &Value, leaves: &[ContentLeaf], available: usiz
     low
 }
 
-fn replacement_size(value: &Value, leaves: &[ContentLeaf], per_field_bytes: usize) -> usize {
-    leaves.iter().fold(0_usize, |total, leaf| {
-        let size = value
-            .pointer(&leaf.pointer)
-            .and_then(Value::as_str)
-            .map_or(0, |text| {
-                truncated_text(text, per_field_bytes).map_or(leaf.serialized_size, |truncated| {
-                    serialized_string_size(&truncated)
-                })
-            });
-        total.saturating_add(size)
+fn target_item_budget(items: &[ContentItem], available: usize) -> usize {
+    if items.is_empty() {
+        return 0;
+    }
+    if items.len() == 1
+        || items
+            .iter()
+            .any(|item| item.max_retained_bytes > MAX_ORDINARY_MESSAGE_BYTES)
+    {
+        return available.min(MAX_SOLITARY_MESSAGE_BYTES);
+    }
+    available
+        .checked_div(items.len())
+        .unwrap_or(0)
+        .clamp(MIN_ORDINARY_MESSAGE_BYTES, MAX_ORDINARY_MESSAGE_BYTES)
+}
+
+fn replacement_size(value: &Value, items: &[ContentItem], per_item_bytes: usize) -> usize {
+    items.iter().fold(0_usize, |total, item| {
+        let item_bytes = per_item_bytes.min(item.max_retained_bytes);
+        let per_leaf_bytes = item_bytes.checked_div(item.leaves.len()).unwrap_or(0);
+        item.leaves.iter().fold(total, |total, leaf| {
+            let size = value
+                .pointer(&leaf.pointer)
+                .and_then(Value::as_str)
+                .map_or(0, |text| {
+                    truncated_text(text, per_leaf_bytes).map_or(leaf.serialized_size, |truncated| {
+                        serialized_string_size(&truncated)
+                    })
+                });
+            total.saturating_add(size)
+        })
     })
 }
 
-fn truncate_content_leaves(
+fn truncate_content_items(
     value: &mut Value,
-    leaves: &[ContentLeaf],
-    per_field_bytes: usize,
+    items: &[ContentItem],
+    per_item_bytes: usize,
     facts: &mut BoundingFacts,
 ) {
-    for leaf in leaves {
-        let Some(text) = value.pointer(&leaf.pointer).and_then(Value::as_str) else {
-            continue;
-        };
-        let Some(truncated) = truncated_text(text, per_field_bytes) else {
-            continue;
-        };
-        if let Some(target) = value.pointer_mut(&leaf.pointer) {
-            *target = Value::String(truncated);
-            facts.record(&leaf.pointer);
+    for item in items {
+        let item_bytes = per_item_bytes.min(item.max_retained_bytes);
+        let per_leaf_bytes = item_bytes.checked_div(item.leaves.len()).unwrap_or(0);
+        for leaf in &item.leaves {
+            let Some(text) = value.pointer(&leaf.pointer).and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(truncated) = truncated_text(text, per_leaf_bytes) else {
+                continue;
+            };
+            if let Some(target) = value.pointer_mut(&leaf.pointer) {
+                *target = Value::String(truncated);
+                facts.record(&leaf.pointer);
+            }
         }
     }
 }
@@ -224,8 +280,8 @@ fn serialized_string_size(text: &str) -> usize {
     serialized_size(&Value::String(text.to_string())).unwrap_or(usize::MAX)
 }
 
-fn content_leaves(value: &Value) -> Vec<ContentLeaf> {
-    let mut leaves = Vec::new();
+fn content_items(value: &Value) -> Vec<ContentItem> {
+    let mut content_items = Vec::new();
     for collection in ["messages", "input"] {
         let Some(items) = value
             .pointer(&format!("/body/{collection}"))
@@ -237,15 +293,33 @@ fn content_leaves(value: &Value) -> Vec<ContentLeaf> {
             let Some(content) = item.get("content") else {
                 continue;
             };
+            let mut leaves = Vec::new();
             collect_content_leaves(
                 content,
                 &format!("/body/{collection}/{index}/content"),
                 None,
                 &mut leaves,
             );
+            if !leaves.is_empty() {
+                let important = matches!(
+                    item.get("role").and_then(Value::as_str),
+                    Some("system" | "developer")
+                );
+                content_items.push(ContentItem {
+                    leaves,
+                    max_retained_bytes: if important {
+                        MAX_SOLITARY_MESSAGE_BYTES
+                    } else {
+                        MAX_ORDINARY_MESSAGE_BYTES
+                    },
+                });
+            }
         }
     }
-    leaves
+    if content_items.len() == 1 {
+        content_items[0].max_retained_bytes = MAX_SOLITARY_MESSAGE_BYTES;
+    }
+    content_items
 }
 
 fn collect_content_leaves(
@@ -351,21 +425,23 @@ fn compact_tool_value(
 fn truncation_metadata_overhead(
     original_size: usize,
     max_bytes: usize,
-    leaves: &[ContentLeaf],
+    items: &[ContentItem],
     facts: &BoundingFacts,
 ) -> usize {
+    let leaves = items.iter().flat_map(|item| item.leaves.iter());
     let paths = facts
         .affected_paths
         .iter()
         .cloned()
         .chain(
             leaves
-                .iter()
                 .map(|leaf| leaf.pointer.clone())
                 .take(MAX_AFFECTED_PATHS.saturating_sub(facts.affected_paths.len())),
         )
         .collect::<Vec<_>>();
-    let field_count = facts.truncated_field_count.saturating_add(leaves.len());
+    let field_count = facts
+        .truncated_field_count
+        .saturating_add(items.iter().map(|item| item.leaves.len()).sum());
     let metadata = truncation_metadata(
         original_size,
         max_bytes,

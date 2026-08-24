@@ -3,7 +3,10 @@ use std::{collections::BTreeMap, sync::Arc, time::Instant};
 use gateway_core::{RequestTags, ResponsesRequest};
 use serde_json::{Value, json};
 
-use crate::{payload_bounding::bound_request_payload, redaction::RequestLogPayloadCaptureMode};
+use crate::{
+    payload_bounding::bound_request_payload,
+    redaction::{MAX_INLINE_REQUEST_BYTES, RequestLogPayloadCaptureMode},
+};
 
 use super::super::RequestLogging;
 use super::{InMemoryRepo, policy};
@@ -105,6 +108,8 @@ fn measured_responses_request(scenario: &str, bytes: usize) -> ResponsesRequest 
 #[ignore = "manual request truncation measurement harness"]
 fn measures_payload_helper_and_request_setup_matrix() {
     let repo = Arc::new(InMemoryRepo::default());
+    let max_bytes = 128 * 1024;
+    let mut stored_sizes = Vec::new();
     let scenarios = [
         "long_message",
         "many_messages",
@@ -114,7 +119,6 @@ fn measures_payload_helper_and_request_setup_matrix() {
         "multibyte_utf8",
     ];
     for bytes in [8 * 1024, 64 * 1024, 256 * 1024, 1024 * 1024] {
-        let max_bytes = (bytes / 2).max(4096);
         let logging = RequestLogging::new_with_payload_policy(
             repo.clone(),
             policy(
@@ -131,9 +135,12 @@ fn measures_payload_helper_and_request_setup_matrix() {
                 "body": serde_json::to_value(&request).expect("serialize request"),
             });
             let helper_started = Instant::now();
-            let (stored, _) = bound_request_payload(wrapped, max_bytes);
+            let (stored, truncated) = bound_request_payload(wrapped, max_bytes);
             let helper_elapsed = helper_started.elapsed();
-            assert!(serde_json::to_vec(&stored).expect("serialize stored").len() <= max_bytes);
+            let stored_size = serde_json::to_vec(&stored).expect("serialize stored").len();
+            assert!(stored_size <= max_bytes);
+            assert!(stored_size <= MAX_INLINE_REQUEST_BYTES);
+            stored_sizes.push(stored_size);
 
             let setup_started = Instant::now();
             let context = logging.begin_responses_request(
@@ -150,10 +157,18 @@ fn measures_payload_helper_and_request_setup_matrix() {
             let setup_elapsed = setup_started.elapsed();
             assert!(context.request_json.is_some());
             eprintln!(
-                "payload_bounding scenario={scenario} input_bytes={bytes} max_bytes={max_bytes} helper_us={} request_setup_us={}",
+                "payload_bounding scenario={scenario} input_bytes={bytes} stored_bytes={stored_size} max_bytes={max_bytes} truncated={truncated} helper_us={} request_setup_us={}",
                 helper_elapsed.as_micros(),
                 setup_elapsed.as_micros(),
             );
         }
     }
+    stored_sizes.sort_unstable();
+    let p95_index = stored_sizes.len().saturating_mul(95).div_ceil(100) - 1;
+    let p95_stored_bytes = stored_sizes[p95_index];
+    assert!(p95_stored_bytes <= max_bytes);
+    eprintln!(
+        "payload_bounding stress_fixture_p95_stored_bytes={p95_stored_bytes} preferred_p95_bytes={} normal_cap_bytes={max_bytes} absolute_inline_bytes={MAX_INLINE_REQUEST_BYTES}",
+        64 * 1024,
+    );
 }

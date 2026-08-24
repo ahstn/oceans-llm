@@ -580,7 +580,7 @@ async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() 
     );
     assert_eq!(
         stored["truncation"]["strategy_version"],
-        "structured-request-v1"
+        "structured-request-v2"
     );
 }
 

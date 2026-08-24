@@ -1,6 +1,10 @@
 use serde_json::json;
 
-use super::{bound_request_payload, bound_request_payload_after_known_fields, serialized_size};
+use super::{
+    MAX_ORDINARY_MESSAGE_BYTES, MAX_SOLITARY_MESSAGE_BYTES, MAX_TOTAL_CONTENT_BYTES,
+    bound_request_payload, bound_request_payload_after_known_fields, serialized_size,
+};
+use crate::redaction::MAX_INLINE_REQUEST_BYTES;
 
 #[test]
 fn under_cap_payload_is_unchanged() {
@@ -157,4 +161,205 @@ fn compacts_tool_envelope_before_hard_fallback() {
             .as_u64()
             .is_some_and(|count| count >= 3)
     );
+}
+
+#[test]
+fn absolute_inline_ceiling_applies_above_configured_limit() {
+    let payload = json!({
+        "headers": {"session_id": "session-absolute"},
+        "body": {
+            "model": "gpt-test",
+            "input": [{"type": "message", "role": "user", "content": "x".repeat(400 * 1024)}]
+        }
+    });
+    let original_size = serialized_size(&payload).expect("original size");
+
+    let (stored, truncated) = bound_request_payload(payload, 512 * 1024);
+    let stored_size = serialized_size(&stored).expect("stored size");
+
+    assert!(truncated);
+    assert!(stored_size <= MAX_INLINE_REQUEST_BYTES);
+    assert_eq!(stored["headers"]["session_id"], "session-absolute");
+    assert_eq!(stored["body"]["model"], "gpt-test");
+    assert_eq!(
+        stored["truncation"]["strategy_version"],
+        "structured-request-v2"
+    );
+    assert_eq!(stored["truncation"]["original_size_bytes"], original_size);
+    assert_eq!(stored["truncation"]["stored_size_bytes"], stored_size);
+    assert_eq!(
+        stored["truncation"]["omitted_bytes"],
+        original_size - stored_size
+    );
+    assert!(
+        stored["truncation"]["truncated_field_count"]
+            .as_u64()
+            .is_some_and(|count| count > 0)
+    );
+    assert!(
+        stored["truncation"]["affected_paths"]
+            .as_array()
+            .is_some_and(|paths| !paths.is_empty())
+    );
+}
+
+#[test]
+fn solitary_message_can_use_the_larger_content_budget() {
+    let payload = json!({
+        "headers": {"session_id": "session-solitary"},
+        "body": {
+            "model": "gpt-test",
+            "input": [{"type": "message", "role": "user", "content": "x".repeat(200 * 1024)}]
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 128 * 1024);
+    let retained = stored["body"]["input"][0]["content"]
+        .as_str()
+        .expect("retained content");
+
+    assert!(truncated);
+    assert!(retained.contains("gateway truncated"));
+    assert!(retained.len() > MAX_ORDINARY_MESSAGE_BYTES);
+    assert!(retained.len() <= MAX_SOLITARY_MESSAGE_BYTES + 64);
+    assert!(serialized_size(&stored).expect("stored size") <= 128 * 1024);
+}
+
+#[test]
+fn many_messages_share_the_total_content_budget() {
+    let input = (0..12)
+        .map(|index| {
+            json!({
+                "type": "message",
+                "id": format!("item-{index}"),
+                "role": "user",
+                "content": "x".repeat(32 * 1024),
+            })
+        })
+        .collect::<Vec<_>>();
+    let payload = json!({
+        "headers": {"session_id": "session-many"},
+        "body": {"model": "gpt-test", "input": input}
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 128 * 1024);
+    let retained_content_bytes = stored["body"]["input"]
+        .as_array()
+        .expect("input array")
+        .iter()
+        .map(|item| item["content"].as_str().expect("message content").len())
+        .sum::<usize>();
+
+    assert!(truncated);
+    assert!(retained_content_bytes <= MAX_TOTAL_CONTENT_BYTES + (12 * 64));
+    assert!(
+        stored["body"]["input"]
+            .as_array()
+            .expect("input array")
+            .iter()
+            .all(|item| item["id"].as_str().is_some())
+    );
+    assert!(serialized_size(&stored).expect("stored size") <= 128 * 1024);
+}
+
+#[test]
+fn important_message_can_use_the_larger_content_budget() {
+    let payload = json!({
+        "headers": {"session_id": "session-important"},
+        "body": {
+            "model": "gpt-test",
+            "messages": [
+                {"role": "system", "content": "s".repeat(160 * 1024)},
+                {"role": "user", "content": "u".repeat(160 * 1024)},
+                {"role": "assistant", "content": "a".repeat(160 * 1024)}
+            ]
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 128 * 1024);
+    let messages = stored["body"]["messages"]
+        .as_array()
+        .expect("message array");
+    let system_bytes = messages[0]["content"]
+        .as_str()
+        .expect("system content")
+        .len();
+    let user_bytes = messages[1]["content"].as_str().expect("user content").len();
+
+    assert!(truncated);
+    assert!(system_bytes > MAX_ORDINARY_MESSAGE_BYTES);
+    assert!(system_bytes <= MAX_SOLITARY_MESSAGE_BYTES + 64);
+    assert!(user_bytes <= MAX_ORDINARY_MESSAGE_BYTES + 64);
+    assert!(serialized_size(&stored).expect("stored size") <= 128 * 1024);
+}
+
+#[test]
+fn oversized_envelope_compacts_verbose_tool_fields_before_content() {
+    let payload = json!({
+        "headers": {
+            "session_id": "session-envelope",
+            "x-client-request-id": "lineage-envelope"
+        },
+        "body": {
+            "model": "gpt-test",
+            "reasoning": {"effort": "high"},
+            "tool_choice": "auto",
+            "stream": true,
+            "include": ["reasoning.encrypted_content"],
+            "input": [{"type": "message", "id": "item-1", "role": "user", "content": "prompt".repeat(20 * 1024)}],
+            "tools": [{
+                "type": "function",
+                "name": "search",
+                "description": "description ".repeat(2000),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "query description ".repeat(1000),
+                            "examples": ["example ".repeat(1000)]
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }]
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 128 * 1024);
+
+    assert!(truncated);
+    assert_eq!(stored["headers"]["session_id"], "session-envelope");
+    assert_eq!(stored["headers"]["x-client-request-id"], "lineage-envelope");
+    assert_eq!(stored["body"]["model"], "gpt-test");
+    assert_eq!(stored["body"]["reasoning"]["effort"], "high");
+    assert_eq!(stored["body"]["tools"][0]["name"], "search");
+    assert_eq!(
+        stored["body"]["tools"][0]["parameters"]["properties"]["query"]["type"],
+        "string"
+    );
+    assert!(
+        stored["truncation"]["tool_fields_compacted"]
+            .as_u64()
+            .is_some_and(|count| count >= 3)
+    );
+    assert!(serialized_size(&stored).expect("stored size") <= 128 * 1024);
+}
+
+#[test]
+fn hard_fallback_is_reserved_for_an_envelope_that_cannot_fit() {
+    let payload = json!({
+        "headers": {"session_id": "x".repeat(48 * 1024)},
+        "body": {
+            "model": "gpt-test",
+            "input": [{"type": "future_item", "id": "unknown", "metadata": "y".repeat(48 * 1024)}]
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 32 * 1024);
+
+    assert!(truncated);
+    assert_eq!(stored["truncated"], true);
+    assert!(stored.get("preview").is_some());
+    assert!(serialized_size(&stored).expect("stored size") <= 32 * 1024);
 }

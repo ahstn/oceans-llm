@@ -1298,7 +1298,7 @@ mod tests {
             "payload_policy".to_string(),
             json!({
                 "capture_mode": "redacted_payloads",
-                "request_max_bytes": 65536,
+                "request_max_bytes": 131072,
                 "response_max_bytes": 65536,
                 "stream_max_events": 128,
                 "version": "builtin:v1"

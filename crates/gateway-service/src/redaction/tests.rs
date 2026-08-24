@@ -1,10 +1,24 @@
 use serde_json::json;
 
 use super::{
-    RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, is_sensitive_json_key,
-    mask_secret_leaf_values, parse_payload_path, redact_header_value, redact_json_value,
-    redact_json_value_with_policy, truncate_large_payload_fields,
+    MAX_INLINE_REQUEST_BYTES, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
+    is_sensitive_json_key, mask_secret_leaf_values, parse_payload_path, redact_header_value,
+    redact_json_value, redact_json_value_with_policy, truncate_large_payload_fields,
 };
+
+#[test]
+fn request_policy_enforces_the_absolute_inline_ceiling() {
+    let policy = RequestLogPayloadPolicy::new(
+        RequestLogPayloadCaptureMode::RedactedPayloads,
+        MAX_INLINE_REQUEST_BYTES * 2,
+        64 * 1024,
+        128,
+        Vec::new(),
+    );
+
+    assert_eq!(policy.request_max_bytes, MAX_INLINE_REQUEST_BYTES);
+    assert_eq!(policy.response_max_bytes, 64 * 1024);
+}
 
 #[test]
 fn redacts_nested_sensitive_json_keys() {
