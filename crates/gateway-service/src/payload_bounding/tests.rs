@@ -117,6 +117,48 @@ fn bounds_function_call_output_without_discarding_the_envelope() {
 }
 
 #[test]
+fn bounds_responses_function_call_arguments_without_discarding_the_envelope() {
+    let arguments = format!(r#"{{"query":"{}"}}"#, "🙂".repeat(3000));
+    let payload = json!({
+        "headers": {"session_id": "session-function-call"},
+        "body": {
+            "model": "gpt-test",
+            "input": [{
+                "type": "function_call",
+                "id": "item-1",
+                "call_id": "call-1",
+                "name": "lookup",
+                "arguments": arguments
+            }],
+            "reasoning": {"effort": "high"}
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 4096);
+
+    assert!(truncated);
+    assert!(serialized_size(&stored).expect("stored size") <= 4096);
+    assert_eq!(stored["headers"]["session_id"], "session-function-call");
+    assert_eq!(stored["body"]["model"], "gpt-test");
+    assert_eq!(stored["body"]["reasoning"]["effort"], "high");
+    assert_eq!(stored["body"]["input"][0]["type"], "function_call");
+    assert_eq!(stored["body"]["input"][0]["id"], "item-1");
+    assert_eq!(stored["body"]["input"][0]["call_id"], "call-1");
+    assert_eq!(stored["body"]["input"][0]["name"], "lookup");
+    assert!(
+        stored["body"]["input"][0]["arguments"]
+            .as_str()
+            .expect("function arguments")
+            .contains("gateway truncated")
+    );
+    assert!(
+        stored["truncation"]["affected_paths"]
+            .as_array()
+            .is_some_and(|paths| paths.iter().any(|path| path == "/body/input/0/arguments"))
+    );
+}
+
+#[test]
 fn bounds_embeddings_input_strings_without_discarding_the_envelope() {
     let payload = json!({
         "headers": {"x-client-request-id": "embedding-request"},
@@ -283,6 +325,64 @@ fn bounds_chat_message_content_and_preserves_message_shape() {
             .as_str()
             .expect("user text")
             .contains("gateway truncated")
+    );
+}
+
+#[test]
+fn bounds_chat_tool_call_arguments_without_discarding_the_envelope() {
+    let arguments = format!(r#"{{"payload":"{}"}}"#, "🙂".repeat(3000));
+    let payload = json!({
+        "headers": {"x-client-request-id": "chat-tool-history"},
+        "body": {
+            "model": "gpt-test",
+            "messages": [{
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {
+                        "name": "lookup",
+                        "arguments": arguments
+                    }
+                }]
+            }],
+            "reasoning_effort": "high"
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 4096);
+
+    assert!(truncated);
+    assert!(serialized_size(&stored).expect("stored size") <= 4096);
+    assert_eq!(
+        stored["headers"]["x-client-request-id"],
+        "chat-tool-history"
+    );
+    assert_eq!(stored["body"]["model"], "gpt-test");
+    assert_eq!(stored["body"]["reasoning_effort"], "high");
+    assert_eq!(stored["body"]["messages"][0]["role"], "assistant");
+    assert_eq!(stored["body"]["messages"][0]["content"], Value::Null);
+    assert_eq!(
+        stored["body"]["messages"][0]["tool_calls"][0]["id"],
+        "call-1"
+    );
+    assert_eq!(
+        stored["body"]["messages"][0]["tool_calls"][0]["function"]["name"],
+        "lookup"
+    );
+    assert!(
+        stored["body"]["messages"][0]["tool_calls"][0]["function"]["arguments"]
+            .as_str()
+            .expect("tool arguments")
+            .contains("gateway truncated")
+    );
+    assert!(
+        stored["truncation"]["affected_paths"]
+            .as_array()
+            .is_some_and(|paths| paths
+                .iter()
+                .any(|path| { path == "/body/messages/0/tool_calls/0/function/arguments" }))
     );
 }
 

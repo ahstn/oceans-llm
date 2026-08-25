@@ -357,23 +357,20 @@ fn content_items(value: &Value, max_bytes: usize) -> Option<Vec<ContentItem>> {
             continue;
         }
         for (index, item) in items.iter().enumerate() {
-            let content_field = if let Some(content) = item.get("content") {
-                Some(("content", content))
-            } else if item.get("type").and_then(Value::as_str) == Some("function_call_output") {
-                item.get("output").map(|output| ("output", output))
-            } else {
-                None
-            };
-            let Some((field, content)) = content_field else {
-                continue;
-            };
             let mut leaves = Vec::new();
-            collect_content_leaves(
-                content,
-                &format!("/body/{collection}/{index}/{field}"),
-                None,
-                &mut leaves,
-            );
+            if let Some(content) = item.get("content") {
+                collect_content_leaves(
+                    content,
+                    &format!("/body/{collection}/{index}/content"),
+                    None,
+                    &mut leaves,
+                );
+            }
+            if collection == "messages" {
+                collect_chat_tool_call_arguments(item, index, &mut leaves);
+            } else {
+                collect_responses_tool_content(item, index, &mut leaves);
+            }
             if !leaves.is_empty() {
                 let important = matches!(
                     item.get("role").and_then(Value::as_str),
@@ -394,6 +391,57 @@ fn content_items(value: &Value, max_bytes: usize) -> Option<Vec<ContentItem>> {
         content_items[0].max_retained_bytes = MAX_SOLITARY_MESSAGE_BYTES;
     }
     Some(content_items)
+}
+
+fn collect_chat_tool_call_arguments(
+    item: &Value,
+    message_index: usize,
+    leaves: &mut Vec<ContentLeaf>,
+) {
+    let Some(tool_calls) = item.get("tool_calls").and_then(Value::as_array) else {
+        return;
+    };
+    for (call_index, call) in tool_calls.iter().enumerate() {
+        if call.get("type").and_then(Value::as_str) != Some("function") {
+            continue;
+        }
+        push_string_leaf(
+            call.pointer("/function/arguments"),
+            format!("/body/messages/{message_index}/tool_calls/{call_index}/function/arguments"),
+            leaves,
+        );
+    }
+}
+
+fn collect_responses_tool_content(item: &Value, item_index: usize, leaves: &mut Vec<ContentLeaf>) {
+    match item.get("type").and_then(Value::as_str) {
+        Some("function_call") => push_string_leaf(
+            item.get("arguments"),
+            format!("/body/input/{item_index}/arguments"),
+            leaves,
+        ),
+        Some("function_call_output") => {
+            if let Some(output) = item.get("output") {
+                collect_content_leaves(
+                    output,
+                    &format!("/body/input/{item_index}/output"),
+                    None,
+                    leaves,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_string_leaf(value: Option<&Value>, pointer: String, leaves: &mut Vec<ContentLeaf>) {
+    let Some(text) = value.and_then(Value::as_str) else {
+        return;
+    };
+    leaves.push(ContentLeaf {
+        pointer,
+        serialized_size: serialized_string_size(text),
+    });
 }
 
 fn minimum_string_array_size(item_count: usize) -> usize {
