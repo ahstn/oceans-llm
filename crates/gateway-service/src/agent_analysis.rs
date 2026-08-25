@@ -98,7 +98,9 @@ fn tool_inventory_is_estimated(
     retained_tool_count: usize,
 ) -> bool {
     let retained_tool_count = u32::try_from(retained_tool_count).unwrap_or(u32::MAX);
-    supplied_tool_count.is_some_and(|supplied_count| supplied_count > retained_tool_count)
+    supplied_tool_count
+        .map(|supplied_count| supplied_count > retained_tool_count)
+        .unwrap_or(true)
 }
 
 #[cfg(test)]

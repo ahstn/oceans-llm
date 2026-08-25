@@ -628,13 +628,19 @@ mod tests {
     fn legacy_tool_inventory_notice_is_kept_only_for_incomplete_inventory() {
         let complete = metadata_observation(1, 1);
         let incomplete = metadata_observation(2, 1);
-        let mut observations = vec![complete, incomplete];
+        let mut unknown = metadata_observation(0, 0);
+        unknown.facts.supplied_tool_count = None;
+        let mut observations = vec![complete, incomplete, unknown];
 
         normalize_legacy_tool_inventory_limitations(&mut observations);
 
         assert!(observations[0].limitations.is_empty());
         assert_eq!(
             observations[1].limitations,
+            vec![LimitationCode::ToolInventoryPotentialOnly]
+        );
+        assert_eq!(
+            observations[2].limitations,
             vec![LimitationCode::ToolInventoryPotentialOnly]
         );
     }
