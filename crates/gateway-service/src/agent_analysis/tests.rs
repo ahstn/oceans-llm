@@ -91,6 +91,15 @@ fn metadata_accepts_direct_and_nested_tool_name_shapes() {
         tool_inventory_limitations(&partial),
         vec![LimitationCode::ToolInventoryPotentialOnly]
     );
+
+    let no_tools = extract_request_metadata(
+        &json!({"messages": [{"role": "user", "content": "hello"}]}),
+        &BTreeMap::new(),
+        true,
+        "opencode",
+    );
+    assert_eq!(no_tools.supplied_tool_count, None);
+    assert!(tool_inventory_limitations(&no_tools).is_empty());
 }
 
 #[test]

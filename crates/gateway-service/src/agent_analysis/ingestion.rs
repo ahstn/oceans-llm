@@ -634,7 +634,9 @@ fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredOb
 }
 
 pub(super) fn tool_inventory_limitations(metadata: &PassiveRequestMetadata) -> Vec<LimitationCode> {
-    if tool_inventory_is_estimated(metadata.supplied_tool_count, metadata.supplied_tools.len()) {
+    if tool_inventory_is_estimated(metadata.supplied_tool_count, metadata.supplied_tools.len())
+        == Some(true)
+    {
         vec![LimitationCode::ToolInventoryPotentialOnly]
     } else {
         Vec::new()

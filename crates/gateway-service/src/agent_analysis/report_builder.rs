@@ -346,10 +346,10 @@ fn response_payload_was_captured(coverage: &Value) -> bool {
 fn normalize_legacy_tool_inventory_limitations(observations: &mut [InferredObservation]) {
     for observation in observations {
         if observation.kind == InferredObservationKind::SessionMetadataClassified
-            && !tool_inventory_is_estimated(
+            && tool_inventory_is_estimated(
                 observation.facts.supplied_tool_count,
                 observation.facts.supplied_tools.len(),
-            )
+            ) == Some(false)
         {
             observation
                 .limitations
