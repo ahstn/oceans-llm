@@ -335,13 +335,20 @@ fn content_items(value: &Value) -> Vec<ContentItem> {
             continue;
         };
         for (index, item) in items.iter().enumerate() {
-            let Some(content) = item.get("content") else {
+            let content_field = if let Some(content) = item.get("content") {
+                Some(("content", content))
+            } else if item.get("type").and_then(Value::as_str) == Some("function_call_output") {
+                item.get("output").map(|output| ("output", output))
+            } else {
+                None
+            };
+            let Some((field, content)) = content_field else {
                 continue;
             };
             let mut leaves = Vec::new();
             collect_content_leaves(
                 content,
-                &format!("/body/{collection}/{index}/content"),
+                &format!("/body/{collection}/{index}/{field}"),
                 None,
                 &mut leaves,
             );

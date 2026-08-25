@@ -77,6 +77,46 @@ fn bounds_responses_instructions_without_discarding_the_envelope() {
 }
 
 #[test]
+fn bounds_function_call_output_without_discarding_the_envelope() {
+    let payload = json!({
+        "headers": {"session_id": "session-function-output"},
+        "body": {
+            "model": "gpt-test",
+            "input": [
+                {"type": "message", "role": "user", "content": "short user input"},
+                {
+                    "type": "function_call_output",
+                    "call_id": "call-1",
+                    "output": "tool result 🙂 ".repeat(3000)
+                }
+            ],
+            "reasoning": {"effort": "high"}
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 4096);
+
+    assert!(truncated);
+    assert!(serialized_size(&stored).expect("stored size") <= 4096);
+    assert_eq!(stored["headers"]["session_id"], "session-function-output");
+    assert_eq!(stored["body"]["model"], "gpt-test");
+    assert_eq!(stored["body"]["reasoning"]["effort"], "high");
+    assert_eq!(stored["body"]["input"][1]["type"], "function_call_output");
+    assert_eq!(stored["body"]["input"][1]["call_id"], "call-1");
+    assert!(
+        stored["body"]["input"][1]["output"]
+            .as_str()
+            .expect("function output")
+            .contains("gateway truncated")
+    );
+    assert!(
+        stored["truncation"]["affected_paths"]
+            .as_array()
+            .is_some_and(|paths| paths.iter().any(|path| path == "/body/input/1/output"))
+    );
+}
+
+#[test]
 fn known_large_field_truncation_gets_top_level_metadata_under_cap() {
     let payload = json!({
         "headers": {},
