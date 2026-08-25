@@ -130,7 +130,9 @@ pub(crate) fn bound_request_payload_after_known_fields(
     {
         return (value, true);
     }
-    let items = content_items(&value);
+    let Some(items) = content_items(&value, max_bytes) else {
+        return hard_fallback(value, original_size, max_bytes);
+    };
     if essential_envelope_size(current_size, &items) > ESSENTIAL_ENVELOPE_TARGET_BYTES {
         compact_tool_envelope(&mut value, &mut facts);
     }
@@ -307,7 +309,7 @@ fn serialized_string_size(text: &str) -> usize {
     serialized_size(text).unwrap_or(usize::MAX)
 }
 
-fn content_items(value: &Value) -> Vec<ContentItem> {
+fn content_items(value: &Value, max_bytes: usize) -> Option<Vec<ContentItem>> {
     let mut content_items = Vec::new();
     if let Some(instructions) = value.pointer("/body/instructions").and_then(Value::as_str) {
         content_items.push(ContentItem {
@@ -334,19 +336,27 @@ fn content_items(value: &Value) -> Vec<ContentItem> {
         else {
             continue;
         };
-        for (index, item) in items.iter().enumerate() {
-            if collection == "input"
-                && let Some(text) = item.as_str()
-            {
-                content_items.push(ContentItem {
-                    leaves: vec![ContentLeaf {
-                        pointer: format!("/body/input/{index}"),
-                        serialized_size: serialized_string_size(text),
-                    }],
-                    max_retained_bytes: MAX_ORDINARY_MESSAGE_BYTES,
-                });
-                continue;
+        if collection == "input" && items.iter().all(Value::is_string) {
+            if minimum_string_array_size(items.len()) > max_bytes {
+                return None;
             }
+            let mut leaves = Vec::with_capacity(items.len());
+            for (index, item) in items.iter().enumerate() {
+                let text = item.as_str().expect("input items were checked as strings");
+                leaves.push(ContentLeaf {
+                    pointer: format!("/body/input/{index}"),
+                    serialized_size: serialized_string_size(text),
+                });
+            }
+            if !leaves.is_empty() {
+                content_items.push(ContentItem {
+                    leaves,
+                    max_retained_bytes: MAX_TOTAL_CONTENT_BYTES,
+                });
+            }
+            continue;
+        }
+        for (index, item) in items.iter().enumerate() {
             let content_field = if let Some(content) = item.get("content") {
                 Some(("content", content))
             } else if item.get("type").and_then(Value::as_str) == Some("function_call_output") {
@@ -383,7 +393,11 @@ fn content_items(value: &Value) -> Vec<ContentItem> {
     if content_items.len() == 1 {
         content_items[0].max_retained_bytes = MAX_SOLITARY_MESSAGE_BYTES;
     }
-    content_items
+    Some(content_items)
+}
+
+fn minimum_string_array_size(item_count: usize) -> usize {
+    item_count.saturating_mul(3).saturating_add(1)
 }
 
 fn collect_content_leaves(

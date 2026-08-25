@@ -152,6 +152,25 @@ fn bounds_embeddings_input_strings_without_discarding_the_envelope() {
 }
 
 #[test]
+fn embedding_array_uses_hard_fallback_when_empty_structure_cannot_fit() {
+    let max_bytes = 4096;
+    let payload = json!({
+        "headers": {"x-client-request-id": "high-cardinality-embedding"},
+        "body": {
+            "model": "embedding-test",
+            "input": vec!["x"; max_bytes / 3 + 1]
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, max_bytes);
+
+    assert!(truncated);
+    assert!(serialized_size(&stored).expect("stored size") <= max_bytes);
+    assert_eq!(stored["truncated"], true);
+    assert!(stored.get("preview").is_some());
+}
+
+#[test]
 fn known_large_field_truncation_gets_top_level_metadata_under_cap() {
     let payload = json!({
         "headers": {},
