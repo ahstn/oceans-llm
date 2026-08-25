@@ -68,6 +68,7 @@ pub(crate) use ingestion::{
 use report_builder::generate_report;
 pub(crate) use session_resolution::{
     PassiveRequestMetadata, SessionCorrelationLimitation, extract_request_metadata,
+    serialized_request_prompt_bytes,
 };
 use session_resolution::{hash_identifier, hash_lineage_candidate, stable_uuid};
 use worker::ensure_supported_versions;

@@ -13,7 +13,9 @@ use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::agent_analysis::{PassiveRequestMetadata, extract_request_metadata};
+use crate::agent_analysis::{
+    PassiveRequestMetadata, extract_request_metadata, serialized_request_prompt_bytes,
+};
 use crate::payload_bounding::{bound_request_payload, bound_request_payload_after_known_fields};
 
 use crate::redaction::{
@@ -302,7 +304,7 @@ where
             };
         }
 
-        let original_prompt_bytes = request_prompt_bytes(&request_body);
+        let original_prompt_bytes = serialized_request_prompt_bytes(&request_body);
         let redacted = redact_json_value_with_policy(
             &json!({
                 "headers": sanitize_diagnostic_headers(request_headers),
@@ -626,13 +628,6 @@ where
             analysis_response,
         })
     }
-}
-
-fn request_prompt_bytes(body: &Value) -> Option<u64> {
-    let prompt = body.get("messages").or_else(|| body.get("input"))?;
-    crate::payload_bounding::serialized_size(prompt)
-        .ok()
-        .and_then(|bytes| u64::try_from(bytes).ok())
 }
 
 pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {

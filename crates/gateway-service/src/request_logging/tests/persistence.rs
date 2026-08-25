@@ -571,6 +571,7 @@ async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() 
             ]
         }
     ]);
+    let instructions = "system instructions 🙂 ".repeat(900);
     let tools = json!([{
         "type": "function",
         "name": "search",
@@ -585,7 +586,7 @@ async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() 
         model: "gpt-test".to_string(),
         input: input.clone(),
         stream: false,
-        instructions: None,
+        instructions: Some(json!(instructions.clone())),
         tools: Some(tools),
         tool_choice: Some(json!("auto")),
         reasoning: Some(json!({"effort": "high"})),
@@ -606,7 +607,10 @@ async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() 
         ("x-client-request-id".to_string(), session_id.to_string()),
         ("x-auth-token".to_string(), "header-secret".to_string()),
     ]);
-    let original_prompt_bytes = serde_json::to_vec(&input).expect("serialize input").len();
+    let original_prompt_bytes = serde_json::to_vec(&input).expect("serialize input").len()
+        + serde_json::to_vec(&instructions)
+            .expect("serialize instructions")
+            .len();
 
     let context = logging.begin_responses_request(
         "req_pi_oversized",
@@ -659,6 +663,12 @@ async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() 
     assert_eq!(stored["body"]["include"][0], "reasoning.encrypted_content");
     assert_eq!(stored["body"]["prompt_cache_key"], "cache-key-1");
     assert_eq!(stored["body"]["metadata"]["trace"], "kept");
+    assert!(
+        stored["body"]["instructions"]
+            .as_str()
+            .expect("instructions")
+            .contains("gateway truncated")
+    );
     assert_eq!(stored["body"]["input"][0]["role"], "user");
     assert_eq!(stored["body"]["input"][1]["type"], "future_input_item");
     assert_eq!(stored["body"]["input"][1]["name"], "preserved-item");

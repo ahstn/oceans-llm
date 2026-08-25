@@ -44,6 +44,39 @@ fn bounds_string_responses_input_without_discarding_the_envelope() {
 }
 
 #[test]
+fn bounds_responses_instructions_without_discarding_the_envelope() {
+    let payload = json!({
+        "headers": {"session_id": "session-instructions"},
+        "body": {
+            "model": "gpt-test",
+            "instructions": "system prompt 🙂 ".repeat(3000),
+            "input": "short user input",
+            "reasoning": {"effort": "high"}
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 4096);
+
+    assert!(truncated);
+    assert!(serialized_size(&stored).expect("stored size") <= 4096);
+    assert_eq!(stored["headers"]["session_id"], "session-instructions");
+    assert_eq!(stored["body"]["model"], "gpt-test");
+    assert_eq!(stored["body"]["reasoning"]["effort"], "high");
+    assert_eq!(stored["body"]["input"], "short user input");
+    assert!(
+        stored["body"]["instructions"]
+            .as_str()
+            .expect("instructions")
+            .contains("gateway truncated")
+    );
+    assert!(
+        stored["truncation"]["affected_paths"]
+            .as_array()
+            .is_some_and(|paths| paths.iter().any(|path| path == "/body/instructions"))
+    );
+}
+
+#[test]
 fn known_large_field_truncation_gets_top_level_metadata_under_cap() {
     let payload = json!({
         "headers": {},

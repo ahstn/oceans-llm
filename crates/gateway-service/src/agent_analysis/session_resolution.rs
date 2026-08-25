@@ -117,7 +117,7 @@ pub(crate) fn extract_request_metadata(
         .and_then(Value::as_array)
         .or_else(|| body.get("input").and_then(Value::as_array))
         .and_then(|values| u32::try_from(values.len()).ok());
-    let prompt_bytes = prompt_bytes(body);
+    let prompt_bytes = serialized_request_prompt_bytes(body);
     let supplied_tools = body.get("tools").and_then(Value::as_array);
     let supplied_tool_count = supplied_tools.and_then(|values| u32::try_from(values.len()).ok());
     let tool_schema_bytes = supplied_tools.and_then(serialized_json_bytes);
@@ -509,9 +509,19 @@ fn extract_codex_lineage(
     (execution_id, resolved_lineage_value(parent))
 }
 
-fn prompt_bytes(body: &Value) -> Option<u64> {
-    let prompt = body.get("messages").or_else(|| body.get("input"))?;
-    serialized_json_bytes(prompt)
+pub(crate) fn serialized_request_prompt_bytes(body: &Value) -> Option<u64> {
+    let primary_prompt = body.get("messages").or_else(|| body.get("input"));
+    let mut total = 0_u64;
+    let mut found = false;
+    for prompt in [body.get("instructions"), primary_prompt]
+        .into_iter()
+        .flatten()
+        .filter(|prompt| !prompt.is_null())
+    {
+        found = true;
+        total = total.checked_add(serialized_json_bytes(prompt)?)?;
+    }
+    found.then_some(total)
 }
 
 fn bounded_supplied_tools(tools: &[Value]) -> Vec<BoundedToolDefinitionFact> {

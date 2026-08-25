@@ -277,7 +277,7 @@ Request processing uses a structured analysis projection and a separate storage 
 5. reserve the diagnostic envelope before allocating input-content bytes; it retains sanitized session and lineage headers, model and reasoning configuration, tool names and choice, bounded tool schema shape, stream and include settings, cache keys, metadata, and message or item identity fields
 6. aim for a 16 KiB essential envelope, with 32 KiB as a soft limit; when an oversized request has an envelope above the target, compact verbose tool and schema descriptions, examples, and defaults while retaining essential identifiers, tool names, and schema shape
 7. allocate at most 96 KiB in total to retained input content; ordinary messages use an adaptive target of 8-16 KiB each, while a solitary message can retain up to 32 KiB when the total request budget permits
-8. for Chat requests, bound `body.messages[*].content` text leaves; for Responses requests, bound a string-valued `body.input` or the text leaves under `body.input[*].content`; preserve every message, item, content array, unknown item type, and non-bulky field
+8. for Chat requests, bound `body.messages[*].content` text leaves; for Responses requests, bound a string-valued `body.instructions`, a string-valued `body.input`, or the text leaves under `body.input[*].content`; preserve every message, item, content array, unknown item type, and non-bulky field
 9. truncate text-bearing leaves independently with a UTF-8-safe head and tail plus an explicit omitted-byte marker, then enforce the final serialized request cap
 10. use the complete-payload `{ truncated, size_bytes, preview }` marker only when the bounded essential envelope cannot fit
 

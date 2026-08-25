@@ -309,6 +309,15 @@ fn serialized_string_size(text: &str) -> usize {
 
 fn content_items(value: &Value) -> Vec<ContentItem> {
     let mut content_items = Vec::new();
+    if let Some(instructions) = value.pointer("/body/instructions").and_then(Value::as_str) {
+        content_items.push(ContentItem {
+            leaves: vec![ContentLeaf {
+                pointer: "/body/instructions".to_string(),
+                serialized_size: serialized_string_size(instructions),
+            }],
+            max_retained_bytes: MAX_SOLITARY_MESSAGE_BYTES,
+        });
+    }
     if let Some(input) = value.pointer("/body/input").and_then(Value::as_str) {
         content_items.push(ContentItem {
             leaves: vec![ContentLeaf {
