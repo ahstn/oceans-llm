@@ -117,6 +117,41 @@ fn bounds_function_call_output_without_discarding_the_envelope() {
 }
 
 #[test]
+fn bounds_embeddings_input_strings_without_discarding_the_envelope() {
+    let payload = json!({
+        "headers": {"x-client-request-id": "embedding-request"},
+        "body": {
+            "model": "embedding-test",
+            "input": ["short input", "embedding input 🙂 ".repeat(3000)],
+            "encoding_format": "float"
+        }
+    });
+
+    let (stored, truncated) = bound_request_payload(payload, 4096);
+
+    assert!(truncated);
+    assert!(serialized_size(&stored).expect("stored size") <= 4096);
+    assert_eq!(
+        stored["headers"]["x-client-request-id"],
+        "embedding-request"
+    );
+    assert_eq!(stored["body"]["model"], "embedding-test");
+    assert_eq!(stored["body"]["encoding_format"], "float");
+    assert_eq!(stored["body"]["input"][0], "short input");
+    assert!(
+        stored["body"]["input"][1]
+            .as_str()
+            .expect("embedding input")
+            .contains("gateway truncated")
+    );
+    assert!(
+        stored["truncation"]["affected_paths"]
+            .as_array()
+            .is_some_and(|paths| paths.iter().any(|path| path == "/body/input/1"))
+    );
+}
+
+#[test]
 fn known_large_field_truncation_gets_top_level_metadata_under_cap() {
     let payload = json!({
         "headers": {},

@@ -335,6 +335,18 @@ fn content_items(value: &Value) -> Vec<ContentItem> {
             continue;
         };
         for (index, item) in items.iter().enumerate() {
+            if collection == "input"
+                && let Some(text) = item.as_str()
+            {
+                content_items.push(ContentItem {
+                    leaves: vec![ContentLeaf {
+                        pointer: format!("/body/input/{index}"),
+                        serialized_size: serialized_string_size(text),
+                    }],
+                    max_retained_bytes: MAX_ORDINARY_MESSAGE_BYTES,
+                });
+                continue;
+            }
             let content_field = if let Some(content) = item.get("content") {
                 Some(("content", content))
             } else if item.get("type").and_then(Value::as_str) == Some("function_call_output") {
