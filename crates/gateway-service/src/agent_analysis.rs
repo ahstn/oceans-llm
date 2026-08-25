@@ -33,6 +33,20 @@ const MAX_DIRECT_MCP_SCAN_PAGES: u32 = 100;
 const MAX_COHORT_SCAN_PAGES: u32 = 25;
 const MAX_COHORT_SAMPLES_PER_LEVEL: usize = 2_000;
 const COHORT_LOOKBACK: Duration = Duration::days(90);
+pub(crate) const SESSION_ANALYSIS_DIAGNOSTIC_HEADERS: &[&str] = &[
+    "session-id",
+    "session_id",
+    "thread-id",
+    "x-claude-code-agent-id",
+    "x-claude-code-parent-agent-id",
+    "x-claude-code-session-id",
+    "x-client-request-id",
+    "x-codex-turn-metadata",
+    "x-opencode-session",
+    "x-parent-session-id",
+    "x-session-affinity",
+    "x-session-id",
+];
 use uuid::Uuid;
 
 use crate::redaction::REDACTED_VALUE;
@@ -54,6 +68,7 @@ pub(crate) use ingestion::{
 use report_builder::generate_report;
 pub(crate) use session_resolution::{
     PassiveRequestMetadata, SessionCorrelationLimitation, extract_request_metadata,
+    serialized_request_prompt_bytes,
 };
 use session_resolution::{hash_identifier, hash_lineage_candidate, stable_uuid};
 use worker::ensure_supported_versions;
@@ -65,7 +80,7 @@ pub use worker::{
 #[cfg(test)]
 use ingestion::{
     ToolCall, classify_tool_call, collect_tool_calls, response_finish_reasons,
-    scope_file_identifiers,
+    scope_file_identifiers, tool_inventory_limitations,
 };
 const SESSION_SOURCE_ID_NAMESPACE: Uuid = Uuid::from_u128(0xc3fc5f3b_56a6_4d1f_99fe_f8ba6d1cc9e1);
 const SESSION_ID_NAMESPACE: Uuid = Uuid::from_u128(0x1674a48a_0679_4983_848a_9f6fb626e40d);
@@ -78,6 +93,14 @@ const MAX_TURN_METADATA_BYTES: usize = 4_096;
 const MAX_INFERRED_TOOL_CALLS: usize = 128;
 const MAX_TOOL_CALL_SCAN_DEPTH: usize = 32;
 const MAX_TOOL_CALL_SCAN_NODES: usize = 4_096;
+
+fn tool_inventory_is_estimated(
+    supplied_tool_count: Option<u32>,
+    retained_tool_count: usize,
+) -> Option<bool> {
+    let retained_tool_count = u32::try_from(retained_tool_count).unwrap_or(u32::MAX);
+    supplied_tool_count.map(|supplied_count| supplied_count > retained_tool_count)
+}
 
 #[cfg(test)]
 mod tests;

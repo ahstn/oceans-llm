@@ -19,6 +19,7 @@ pub mod mcp_token_overhead;
 pub mod mcp_upstream_auth;
 pub mod model_access;
 pub mod model_resolution;
+mod payload_bounding;
 pub mod pricing_catalog;
 pub mod redaction;
 pub mod request_logging;
@@ -94,7 +95,8 @@ pub use pricing_catalog::{
     is_supported_pricing_provider_id, snapshot_to_pretty_json,
 };
 pub use redaction::{
-    PayloadPath, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, parse_payload_path,
+    MAX_INLINE_REQUEST_BYTES, PayloadPath, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
+    parse_payload_path,
 };
 pub use request_logging::{
     LoggedRequest, RequestAttemptOutcome, RequestLogContext, RequestLogging, StreamFailureSummary,

@@ -14,10 +14,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-pub const REPORT_SCHEMA_VERSION: &str = "agent-session-report-v5";
+pub const REPORT_SCHEMA_VERSION: &str = "agent-session-report-v6";
 pub const SESSION_BOUNDARY_POLICY_VERSION: &str = "passive-gap-v2";
 pub const OBSERVATION_PARSER_VERSION: &str = "passive-observations-v3";
-pub const ANALYZER_VERSION: &str = "session-efficiency-v4";
+pub const ANALYZER_VERSION: &str = "session-efficiency-v5";
 pub const SCORE_POLICY_VERSION: &str = "outcome-cost-time-context-v2";
 pub const DEFAULT_ORCHESTRATION_GAP: Duration = Duration::minutes(2);
 pub const MIN_EXACT_COHORT_SIZE: usize = 6;
@@ -201,6 +201,8 @@ pub struct SessionUsageFact {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionRequestFact {
     pub request_id: String,
+    #[serde(default)]
+    pub ordinal: i64,
     pub occurred_at: OffsetDateTime,
     pub completed_at: Option<OffsetDateTime>,
     pub terminal_success: Option<bool>,
@@ -334,6 +336,10 @@ pub struct TelemetryCoverage {
     pub cost_percent: u8,
     pub timing_percent: u8,
     pub payload_percent: u8,
+    #[serde(default)]
+    pub response_payload_count: u32,
+    #[serde(default)]
+    pub truncated_response_count: u32,
     pub cohort_percent: u8,
     pub overall_percent: u8,
 }
@@ -370,8 +376,8 @@ pub struct TokenAndCacheDiagnostics {
     pub cache_write_amplification_basis_points: Option<i32>,
     #[serde(default)]
     pub silent_cache_threshold_miss_requests: Option<u32>,
-    #[serde(default)]
-    pub cache_key_switches: u32,
+    #[serde(default, alias = "cache_key_switches")]
+    pub provider_model_switches: u32,
     #[serde(default)]
     pub reasoning_config_switches: Option<u32>,
     pub pricing_policy_versions: Vec<String>,

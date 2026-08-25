@@ -7687,6 +7687,8 @@
           "cost_percent",
           "timing_percent",
           "payload_percent",
+          "response_payload_count",
+          "truncated_response_count",
           "cohort_percent",
           "overall_percent"
         ],
@@ -7716,7 +7718,17 @@
             "format": "int32",
             "minimum": 0
           },
+          "response_payload_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
           "timing_percent": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "truncated_response_count": {
             "type": "integer",
             "format": "int32",
             "minimum": 0
@@ -7726,6 +7738,7 @@
       "AgentTokenAndCacheDiagnosticsView": {
         "type": "object",
         "required": [
+          "provider_model_switches",
           "cache_key_switches",
           "pricing_policy_versions"
         ],
@@ -7768,6 +7781,7 @@
           "cache_key_switches": {
             "type": "integer",
             "format": "int32",
+            "deprecated": true,
             "minimum": 0
           },
           "cache_read_cost_10000": {
@@ -7845,6 +7859,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "provider_model_switches": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           },
           "provider_total_tokens": {
             "type": [

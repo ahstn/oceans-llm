@@ -1,5 +1,14 @@
 use super::*;
 
+fn serialized_json_bytes<T>(value: &T) -> Option<u64>
+where
+    T: serde::Serialize + ?Sized,
+{
+    crate::payload_bounding::serialized_size(value)
+        .ok()
+        .and_then(|bytes| u64::try_from(bytes).ok())
+}
+
 #[derive(Debug, Clone, Copy)]
 struct HarnessAdapter {
     version: &'static str,
@@ -108,12 +117,10 @@ pub(crate) fn extract_request_metadata(
         .and_then(Value::as_array)
         .or_else(|| body.get("input").and_then(Value::as_array))
         .and_then(|values| u32::try_from(values.len()).ok());
-    let prompt_bytes = prompt_bytes(body);
+    let prompt_bytes = serialized_request_prompt_bytes(body);
     let supplied_tools = body.get("tools").and_then(Value::as_array);
     let supplied_tool_count = supplied_tools.and_then(|values| u32::try_from(values.len()).ok());
-    let tool_schema_bytes = supplied_tools
-        .and_then(|values| serde_json::to_vec(values).ok())
-        .and_then(|bytes| u64::try_from(bytes.len()).ok());
+    let tool_schema_bytes = supplied_tools.and_then(serialized_json_bytes);
     let supplied_tools =
         supplied_tools.map_or_else(Vec::new, |tools| bounded_supplied_tools(tools.as_slice()));
     let instrumentation = analysis_instrumentation(body);
@@ -502,11 +509,19 @@ fn extract_codex_lineage(
     (execution_id, resolved_lineage_value(parent))
 }
 
-fn prompt_bytes(body: &Value) -> Option<u64> {
-    let prompt = body.get("messages").or_else(|| body.get("input"))?;
-    serde_json::to_vec(prompt)
-        .ok()
-        .and_then(|bytes| u64::try_from(bytes.len()).ok())
+pub(crate) fn serialized_request_prompt_bytes(body: &Value) -> Option<u64> {
+    let primary_prompt = body.get("messages").or_else(|| body.get("input"));
+    let mut total = 0_u64;
+    let mut found = false;
+    for prompt in [body.get("instructions"), primary_prompt]
+        .into_iter()
+        .flatten()
+        .filter(|prompt| !prompt.is_null())
+    {
+        found = true;
+        total = total.checked_add(serialized_json_bytes(prompt)?)?;
+    }
+    found.then_some(total)
 }
 
 fn bounded_supplied_tools(tools: &[Value]) -> Vec<BoundedToolDefinitionFact> {
@@ -524,10 +539,7 @@ fn bounded_supplied_tools(tools: &[Value]) -> Vec<BoundedToolDefinitionFact> {
             if name.is_empty() {
                 return None;
             }
-            let token_estimate = serde_json::to_vec(tool)
-                .ok()
-                .and_then(|bytes| u64::try_from(bytes.len()).ok())?
-                .div_ceil(4);
+            let token_estimate = serialized_json_bytes(tool)?.div_ceil(4);
             Some(BoundedToolDefinitionFact {
                 server_key: tool_server_key(&name),
                 name,

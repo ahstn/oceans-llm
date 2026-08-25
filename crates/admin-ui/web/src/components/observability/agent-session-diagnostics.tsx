@@ -42,7 +42,15 @@ export function AgentSessionDiagnostics({
       <DiagnosticSection title="Session identity">
         <DiagnosticRow label="Model" value={detail.session.requested_model_key} />
         <DiagnosticRow label="Harness" value={detail.session.harness_label ?? 'Unknown'} />
-        <DiagnosticRow label="Session ID" value={detail.session.session_id} />
+        <DiagnosticRow label="Gateway analysis session ID" value={detail.session.session_id} />
+        <DiagnosticRow
+          label="External session source"
+          value={detail.session.session_source_observed ? 'Observed' : 'Not observed'}
+        />
+        <DiagnosticRow
+          label="External session source hash"
+          value={detail.session.session_source_hash ?? 'Not available'}
+        />
       </DiagnosticSection>
 
       <DiagnosticSection title="Score components">
@@ -119,8 +127,11 @@ export function AgentSessionDiagnostics({
           )}
         />
         <DiagnosticRow
-          label="Provider or model cache-key switches"
-          value={formatNullable(diagnostics?.token_and_cache.cache_key_switches)}
+          label="Provider/model switches"
+          value={formatNullable(
+            diagnostics?.token_and_cache.provider_model_switches ??
+              diagnostics?.token_and_cache.cache_key_switches,
+          )}
         />
         <DiagnosticRow
           label="Reasoning configuration switches"
@@ -314,7 +325,7 @@ function DiagnosticRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium">{value}</span>
+      <span className="max-w-full min-w-0 text-right font-medium break-all">{value}</span>
     </div>
   )
 }
