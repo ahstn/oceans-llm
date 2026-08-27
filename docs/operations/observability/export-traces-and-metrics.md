@@ -60,6 +60,8 @@ The fields have these effects:
 
 Trace sampling does not sample metrics. A value of `0.5` keeps about half of new root traces. All metric instruments remain active.
 
+The gateway uses parent-based head sampling. If you need to retain all errors, slow requests, client cancellations, or budget failures while you reduce normal trace volume, configure tail sampling in the OpenTelemetry Collector. The collector must receive a trace before it can make that final-outcome decision.
+
 Restart the gateway after you change these values. An invalid endpoint URI stops config validation. A sampling ratio outside `0.0` through `1.0` also stops validation.
 
 ## Send Data to an OpenTelemetry Collector
@@ -132,6 +134,10 @@ Gateway metric names include:
 - `gateway.chat.tokens`
 - `gateway.chat.cost.usd`
 - `gateway.mcp.tool_invocations`
+
+For a streaming model request, confirm that the trace contains `http.server.request`, `gateway.provider.operation`, `http.client.request`, and `gateway.provider.stream`. The stream span reports first-chunk and first-output latency, chunk and byte totals, terminal-event presence, and its termination reason. Model access, routing, budget, usage, ledger, and request-log spans appear when the request reaches those phases.
+
+Trace attributes do not contain prompt content, tool arguments, credentials, full request headers, or URL query values. Use the governed request-log store when you need captured payload data.
 
 For Datadog, check APM for the `oceans-llm-gateway` service. Use Metrics Explorer to find the gateway metrics. Datadog can map OpenTelemetry metric names during intake. Inspect the received names if an exact search returns no result.
 

@@ -38,6 +38,13 @@ pub struct StreamResponseCollector {
     truncated: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StreamChunkObservation {
+    pub has_output: bool,
+    pub has_usage: bool,
+    pub has_terminal_event: bool,
+}
+
 impl StreamResponseCollector {
     pub(super) fn with_payload_policy(payload_policy: RequestLogPayloadPolicy) -> Self {
         Self {
@@ -46,9 +53,10 @@ impl StreamResponseCollector {
         }
     }
 
-    pub fn observe_chunk(&mut self, chunk: &[u8]) {
+    pub fn observe_chunk(&mut self, chunk: &[u8]) -> StreamChunkObservation {
+        let mut observation = StreamChunkObservation::default();
         if self.finished {
-            return;
+            return observation;
         }
 
         let events = match self.parser.push_bytes(chunk) {
@@ -59,13 +67,17 @@ impl StreamResponseCollector {
                     status_code: 502,
                     error_code: "stream_parse_error".to_string(),
                 });
-                return;
+                return observation;
             }
         };
 
         for event in events {
             let payload = event.data.trim();
-            if payload.is_empty() || payload == "[DONE]" {
+            if payload.is_empty() {
+                continue;
+            }
+            if payload == "[DONE]" {
+                observation.has_terminal_event = true;
                 continue;
             }
 
@@ -75,13 +87,17 @@ impl StreamResponseCollector {
                 .and_then(usage_value_from_stream_event)
                 .filter(|usage| !usage.is_null())
             {
+                observation.has_usage = true;
                 merge_usage_observation(&mut self.usage, usage);
             }
             if let Some(failure) = parsed.as_ref().and_then(stream_failure_from_value) {
                 self.failure = Some(failure);
+                observation.has_terminal_event = true;
             }
             if let Some(parsed) = parsed.as_ref() {
                 self.observe_tool_calls(parsed);
+                observation.has_output |= stream_event_has_output(parsed);
+                observation.has_terminal_event |= stream_event_is_terminal(parsed);
             }
 
             if self.events.len() >= self.payload_policy.stream_max_events {
@@ -92,6 +108,8 @@ impl StreamResponseCollector {
             self.events
                 .push(parsed.unwrap_or_else(|| json!({ "raw": payload })));
         }
+
+        observation
     }
 
     pub fn finish(&mut self) {
@@ -154,6 +172,72 @@ impl StreamResponseCollector {
         )
         .map_truncated(self.truncated)
     }
+}
+
+fn stream_event_has_output(value: &Value) -> bool {
+    if value
+        .get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|event_type| {
+            event_type.ends_with(".delta") || event_type == "content_block_delta"
+        })
+        && value.get("delta").is_some_and(non_empty_value)
+    {
+        return true;
+    }
+
+    value
+        .get("choices")
+        .and_then(Value::as_array)
+        .is_some_and(|choices| choices.iter().any(choice_has_output))
+}
+
+fn choice_has_output(choice: &Value) -> bool {
+    if choice.get("text").is_some_and(non_empty_value) {
+        return true;
+    }
+    let Some(delta) = choice.get("delta") else {
+        return false;
+    };
+    ["content", "refusal", "tool_calls", "function_call"]
+        .iter()
+        .any(|key| delta.get(*key).is_some_and(non_empty_value))
+}
+
+fn non_empty_value(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::String(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::Object(value) => !value.is_empty(),
+        Value::Bool(_) | Value::Number(_) => true,
+    }
+}
+
+fn stream_event_is_terminal(value: &Value) -> bool {
+    if value
+        .get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|event_type| {
+            matches!(
+                event_type,
+                "response.completed" | "response.incomplete" | "response.failed" | "message_stop"
+            )
+        })
+    {
+        return true;
+    }
+
+    value
+        .get("choices")
+        .and_then(Value::as_array)
+        .is_some_and(|choices| {
+            choices.iter().any(|choice| {
+                choice
+                    .get("finish_reason")
+                    .is_some_and(|value| !value.is_null())
+            })
+        })
 }
 
 fn stream_failure_from_value(value: &Value) -> Option<StreamFailureSummary> {

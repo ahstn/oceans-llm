@@ -1,7 +1,7 @@
 use std::{fmt, future::Future, time::Duration};
 
 use gateway_core::{AuthenticatedApiKey, ModelRoute, ProviderClient, ProviderError};
-use gateway_service::ResolvedGatewayRequest;
+use gateway_service::{ResolvedGatewayRequest, StreamChunkObservation};
 use http::{Request, Response};
 use opentelemetry::global;
 use opentelemetry_http::HeaderExtractor;
@@ -26,6 +26,7 @@ pub(super) fn make_http_request_span<B>(request: &Request<B>) -> Span {
         http.response.status_code = tracing::field::Empty,
         url.path = %request.uri().path(),
         error.type = tracing::field::Empty,
+        gateway.error.type = tracing::field::Empty,
         method = %method,
         uri = %request.uri().path(),
         request_id = %request_id,
@@ -128,5 +129,121 @@ fn provider_error_type(error: &ProviderError) -> &'static str {
         ProviderError::Transport(_) => "transport",
         ProviderError::PartialUsage { .. } => "partial_usage",
         ProviderError::NotImplemented(_) => "not_implemented",
+    }
+}
+
+pub(super) struct StreamTrace {
+    span: Span,
+    started_at: std::time::Instant,
+    first_chunk_seen: bool,
+    first_output_seen: bool,
+    terminal_event_seen: bool,
+    chunk_count: u64,
+    byte_count: u64,
+    finished: bool,
+}
+
+impl StreamTrace {
+    pub fn new(
+        operation: &'static str,
+        request_id: &str,
+        route: &ModelRoute,
+        provider: &dyn ProviderClient,
+        started_at: std::time::Instant,
+    ) -> Self {
+        Self {
+            span: tracing::info_span!(
+                "gateway.provider.stream",
+                request_id = %request_id,
+                gen_ai.operation.name = operation,
+                gen_ai.request.model = %route.upstream_model,
+                gen_ai.provider.name = %provider.provider_type(),
+                gateway.provider.key = %route.provider_key,
+                gateway.stream.time_to_first_chunk_ms = tracing::field::Empty,
+                gateway.stream.time_to_first_output_ms = tracing::field::Empty,
+                gateway.stream.duration_ms = tracing::field::Empty,
+                gateway.stream.chunk_count = tracing::field::Empty,
+                gateway.stream.byte_count = tracing::field::Empty,
+                gateway.stream.terminal_event_seen = tracing::field::Empty,
+                gateway.stream.termination_reason = tracing::field::Empty,
+                error.type = tracing::field::Empty,
+                otel.status_code = tracing::field::Empty,
+            ),
+            started_at,
+            first_chunk_seen: false,
+            first_output_seen: false,
+            terminal_event_seen: false,
+            chunk_count: 0,
+            byte_count: 0,
+            finished: false,
+        }
+    }
+
+    pub fn observe_chunk(&mut self, byte_count: usize, observation: StreamChunkObservation) {
+        self.chunk_count = self.chunk_count.saturating_add(1);
+        self.byte_count = self.byte_count.saturating_add(byte_count as u64);
+
+        if !self.first_chunk_seen {
+            self.first_chunk_seen = true;
+            let elapsed_ms = self.started_at.elapsed().as_secs_f64() * 1_000.0;
+            self.span
+                .record("gateway.stream.time_to_first_chunk_ms", elapsed_ms);
+            self.span.in_scope(|| {
+                tracing::info!(elapsed_ms, "provider stream received first chunk");
+            });
+        }
+        if observation.has_output && !self.first_output_seen {
+            self.first_output_seen = true;
+            let elapsed_ms = self.started_at.elapsed().as_secs_f64() * 1_000.0;
+            self.span
+                .record("gateway.stream.time_to_first_output_ms", elapsed_ms);
+            self.span.in_scope(|| {
+                tracing::info!(elapsed_ms, "provider stream received first semantic output");
+            });
+        }
+        if observation.has_usage {
+            self.span.in_scope(|| {
+                tracing::info!("provider stream received usage");
+            });
+        }
+        if observation.has_terminal_event {
+            self.terminal_event_seen = true;
+        }
+    }
+
+    pub fn finish(&mut self, termination_reason: &'static str, error_type: Option<&'static str>) {
+        if self.finished {
+            return;
+        }
+        self.finished = true;
+        self.span.record(
+            "gateway.stream.duration_ms",
+            self.started_at.elapsed().as_secs_f64() * 1_000.0,
+        );
+        self.span
+            .record("gateway.stream.chunk_count", self.chunk_count);
+        self.span
+            .record("gateway.stream.byte_count", self.byte_count);
+        self.span.record(
+            "gateway.stream.terminal_event_seen",
+            self.terminal_event_seen,
+        );
+        self.span
+            .record("gateway.stream.termination_reason", termination_reason);
+        if let Some(error_type) = error_type {
+            self.span.record("error.type", error_type);
+            self.span.record("otel.status_code", "ERROR");
+        }
+        self.span.in_scope(|| {
+            tracing::info!(termination_reason, "provider stream terminated");
+        });
+    }
+}
+
+impl Drop for StreamTrace {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.finish("client_cancelled", Some("client_cancelled"));
+        }
     }
 }

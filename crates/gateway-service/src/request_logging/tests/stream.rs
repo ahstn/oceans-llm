@@ -138,6 +138,56 @@ fn collector_accepts_data_prefix_without_space() {
 }
 
 #[test]
+fn collector_reports_first_output_usage_and_terminal_events() {
+    let mut collector = StreamResponseCollector::default();
+
+    let role = collector.observe_chunk(
+        br#"data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}
+
+"#,
+    );
+    assert!(!role.has_output);
+
+    let output = collector.observe_chunk(
+        br#"data: {"choices":[{"delta":{"content":"hello"},"finish_reason":null}],"usage":{"prompt_tokens":2}}
+
+"#,
+    );
+    assert!(output.has_output);
+    assert!(output.has_usage);
+    assert!(!output.has_terminal_event);
+
+    let terminal = collector.observe_chunk(
+        br#"data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
+"#,
+    );
+    assert!(terminal.has_terminal_event);
+}
+
+#[test]
+fn collector_reports_responses_and_anthropic_output_deltas() {
+    let mut collector = StreamResponseCollector::default();
+
+    let responses = collector.observe_chunk(
+        br#"data: {"type":"response.output_text.delta","delta":"hello"}
+
+"#,
+    );
+    assert!(responses.has_output);
+
+    let anthropic = collector.observe_chunk(
+        br#"event: content_block_delta
+data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"world"}}
+
+"#,
+    );
+    assert!(anthropic.has_output);
+}
+
+#[test]
 fn stream_collector_counts_invoked_tools_from_sse_events() {
     let mut collector = StreamResponseCollector::default();
 

@@ -34,7 +34,9 @@ pub use attempts::{
     successful_attempt_outcome,
 };
 pub use harness::{AgentHarness, classify_agent_harness};
-pub use stream::{StreamFailureSummary, StreamLogResultInput, StreamResponseCollector};
+pub use stream::{
+    StreamChunkObservation, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
+};
 pub use tool_cardinality::invoked_tool_count_from_response_body;
 
 use harness::{normalized_user_agent, request_user_agent};

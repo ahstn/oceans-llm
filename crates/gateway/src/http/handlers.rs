@@ -34,7 +34,7 @@ use crate::http::{
     anthropic_stream::anthropic_messages_stream_from_openai,
     error::AppError,
     request_tags::extract_request_tags,
-    request_tracing::{provider_operation_span, trace_provider_operation},
+    request_tracing::{StreamTrace, provider_operation_span, trace_provider_operation},
     state::{AppGatewayService, AppState},
 };
 use crate::observability::{ChatMetricLabels, ChatRequestMetric};
@@ -459,6 +459,7 @@ pub async fn v1_chat_completions(
     );
 
     if core_request.stream {
+        let stream_started_at = Instant::now();
         let provider_execution_span = provider_operation_span(
             &request_id,
             "chat",
@@ -545,6 +546,13 @@ pub async fn v1_chat_completions(
             attempt_started_at,
             finished: false,
             collector: state.service.new_stream_response_collector(),
+            stream_trace: StreamTrace::new(
+                "chat",
+                &request_id,
+                &route,
+                provider.as_ref(),
+                stream_started_at,
+            ),
         });
 
         let response = Response::builder()
@@ -797,6 +805,7 @@ pub async fn v1_responses(
     );
 
     if core_request.stream {
+        let stream_started_at = Instant::now();
         let provider_execution_span = provider_operation_span(
             &request_id,
             "responses",
@@ -878,6 +887,13 @@ pub async fn v1_responses(
             attempt_started_at,
             finished: false,
             collector: state.service.new_stream_response_collector(),
+            stream_trace: StreamTrace::new(
+                "responses",
+                &request_id,
+                &route,
+                provider.as_ref(),
+                stream_started_at,
+            ),
         });
 
         let response = Response::builder()
@@ -1363,6 +1379,87 @@ struct LoggingBodyStreamState {
     attempt_started_at: OffsetDateTime,
     finished: bool,
     collector: gateway_service::StreamResponseCollector,
+    stream_trace: StreamTrace,
+}
+
+impl Drop for LoggingBodyStreamState {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        self.finished = true;
+        self.stream_trace
+            .finish("client_cancelled", Some("client_cancelled"));
+        record_cancelled_stream_metrics(self);
+        spawn_cancelled_stream_log(self);
+    }
+}
+
+fn record_cancelled_stream_metrics(state: &LoggingBodyStreamState) {
+    let labels = ChatMetricLabels {
+        requested_model: &state.requested_model_key,
+        resolved_model: &state.resolved_model_key,
+        provider_key: &state.provider_key,
+        stream: true,
+    };
+    state.metrics.record_chat_request(&ChatRequestMetric {
+        labels: labels.clone(),
+        status_code: 499,
+        outcome: "client_cancelled",
+        latency_seconds: latency_seconds_since(state.started_at),
+    });
+    state.metrics.record_tool_cardinality(
+        &labels,
+        state.request_log_context.operation,
+        &RequestToolCardinality {
+            invoked_tool_count: Some(state.collector.invoked_tool_count()),
+            ..state.request_log_context.tool_cardinality
+        },
+    );
+}
+
+fn spawn_cancelled_stream_log(state: &LoggingBodyStreamState) {
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        tracing::warn!(
+            request_id = %state.request_log_context.request_id,
+            provider_key = %state.provider_key,
+            "cannot persist cancelled stream outside a Tokio runtime"
+        );
+        return;
+    };
+
+    let service = state.service.clone();
+    let auth = state.auth.clone();
+    let context = state.request_log_context.clone();
+    let stream_result = gateway_service::StreamLogResultInput {
+        provider_key: state.provider_key.clone(),
+        icon_metadata: state.icon_metadata.clone(),
+        latency_ms: latency_ms_since(state.started_at),
+        collector: state.collector.clone(),
+        failure: Some(gateway_service::StreamFailureSummary {
+            status_code: 499,
+            error_code: "client_cancelled".to_string(),
+        }),
+        attempts: vec![gateway_service::build_request_attempt(
+            &state.request_log_context,
+            &state.route,
+            1,
+            true,
+            state.attempt_started_at,
+            gateway_service::offset_now(),
+            gateway_service::RequestAttemptOutcome {
+                status: RequestAttemptStatus::StreamError,
+                status_code: Some(499),
+                error_code: Some("client_cancelled".to_string()),
+                error_detail: None,
+                retryable: false,
+                produced_final_response: false,
+            },
+        )],
+    };
+    runtime.spawn(async move {
+        best_effort_log_stream_result(&service, &auth, &context, stream_result).await;
+    });
 }
 
 struct UsageAccountingContext<'a> {
@@ -1389,6 +1486,7 @@ async fn anthropic_messages_stream_response(
     icon_metadata: RequestLogIconMetadata,
     requirements: CoreRequestRequirements,
 ) -> Result<Response, AppError> {
+    let stream_started_at = Instant::now();
     let provider_execution_span = provider_operation_span(
         request_id,
         "chat",
@@ -1456,6 +1554,13 @@ async fn anthropic_messages_stream_response(
         attempt_started_at,
         finished: false,
         collector: state.service.new_stream_response_collector(),
+        stream_trace: StreamTrace::new(
+            "chat",
+            request_id,
+            route,
+            provider.as_ref(),
+            stream_started_at,
+        ),
     });
 
     Response::builder()
@@ -1480,11 +1585,16 @@ fn wrap_stream_with_request_logging(
 
         match state.upstream.next().await {
             Some(Ok(chunk)) => {
-                state.collector.observe_chunk(chunk.as_ref());
+                let observation = state.collector.observe_chunk(chunk.as_ref());
+                state.stream_trace.observe_chunk(chunk.len(), observation);
 
                 Some((Ok(chunk), state))
             }
             Some(Err(error)) => {
+                state.finished = true;
+                state
+                    .stream_trace
+                    .finish("stream_transport_error", Some("stream_transport_error"));
                 let error_message = error.to_string();
                 let retryable = error.is_retryable();
                 let gateway_error = GatewayError::from(error);
@@ -1550,12 +1660,20 @@ fn wrap_stream_with_request_logging(
                         ..state.request_log_context.tool_cardinality
                     },
                 );
-                state.finished = true;
                 Some((Err(std::io::Error::other(error_message)), state))
             }
             None => {
+                state.finished = true;
                 state.collector.finish();
                 let failure = state.collector.failure().cloned();
+                state.stream_trace.finish(
+                    if failure.is_some() {
+                        "stream_error_event"
+                    } else {
+                        "complete"
+                    },
+                    failure.as_ref().map(|_| "stream_error_event"),
+                );
                 if failure.is_none() {
                     let labels = ChatMetricLabels {
                         requested_model: &state.requested_model_key,
@@ -1596,7 +1714,7 @@ fn wrap_stream_with_request_logging(
                         provider_key: state.provider_key.clone(),
                         icon_metadata: state.icon_metadata.clone(),
                         latency_ms: latency_ms_since(state.started_at),
-                        collector: state.collector,
+                        collector: state.collector.clone(),
                         failure: failure.clone(),
                         attempts: match failure.as_ref() {
                             Some(failure) => vec![stream_failure_attempt(
