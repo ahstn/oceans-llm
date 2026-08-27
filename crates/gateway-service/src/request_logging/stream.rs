@@ -175,21 +175,27 @@ impl StreamResponseCollector {
 }
 
 fn stream_event_has_output(value: &Value) -> bool {
-    if value
-        .get("type")
-        .and_then(Value::as_str)
-        .is_some_and(|event_type| {
-            event_type.ends_with(".delta") || event_type == "content_block_delta"
-        })
-        && value.get("delta").is_some_and(non_empty_value)
-    {
-        return true;
+    if let Some(event_type) = value.get("type").and_then(Value::as_str) {
+        if event_type == "content_block_delta"
+            && value.get("delta").is_some_and(anthropic_delta_has_output)
+        {
+            return true;
+        }
+        if event_type.ends_with(".delta") && value.get("delta").is_some_and(non_empty_value) {
+            return true;
+        }
     }
 
     value
         .get("choices")
         .and_then(Value::as_array)
         .is_some_and(|choices| choices.iter().any(choice_has_output))
+}
+
+fn anthropic_delta_has_output(delta: &Value) -> bool {
+    ["text", "thinking", "signature", "partial_json"]
+        .iter()
+        .any(|key| delta.get(*key).is_some_and(non_empty_value))
 }
 
 fn choice_has_output(choice: &Value) -> bool {

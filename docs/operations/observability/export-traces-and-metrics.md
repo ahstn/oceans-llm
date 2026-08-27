@@ -1,6 +1,6 @@
 # Export Traces and Metrics
 
-`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [Request Logs](request-logs.md), [Kubernetes and Helm](../../setup/kubernetes-and-helm.md), [Configuration Reference](../../configuration/configuration-reference.md), [Admin Runbooks](../operator-runbooks.md)
+`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [Request Logs](request-logs.md), [LLM Request Trace Boundaries](../../adr/2026-08-27-llm-request-trace-boundaries.md), [Kubernetes and Helm](../../setup/kubernetes-and-helm.md), [Configuration Reference](../../configuration/configuration-reference.md), [Admin Runbooks](../operator-runbooks.md)
 
 Oceans LLM sends traces and metrics with the OpenTelemetry Protocol (OTLP). Admins can send this data to an OpenTelemetry Collector or to a Datadog Agent that accepts OTLP.
 
@@ -60,7 +60,7 @@ The fields have these effects:
 
 Trace sampling does not sample metrics. A value of `0.5` keeps about half of new root traces. All metric instruments remain active.
 
-The gateway uses parent-based head sampling. If you need to retain all errors, slow requests, client cancellations, or budget failures while you reduce normal trace volume, configure tail sampling in the OpenTelemetry Collector. The collector must receive a trace before it can make that final-outcome decision.
+The gateway uses parent-based head sampling. A collector can apply tail sampling only to traces that the gateway exports. It cannot recover a root trace that gateway head sampling dropped. To make all gateway root traces eligible for final-outcome rules, keep `otel_trace_sample_ratio` at `1.0` and configure the collector to retain errors, slow requests, client cancellations, or budget failures while it reduces normal trace volume.
 
 Restart the gateway after you change these values. An invalid endpoint URI stops config validation. A sampling ratio outside `0.0` through `1.0` also stops validation.
 

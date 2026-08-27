@@ -460,6 +460,13 @@ pub async fn v1_chat_completions(
 
     if core_request.stream {
         let stream_started_at = Instant::now();
+        let mut stream_trace = StreamTrace::new(
+            "chat",
+            &request_id,
+            &route,
+            provider.as_ref(),
+            stream_started_at,
+        );
         let provider_execution_span = provider_operation_span(
             &request_id,
             "chat",
@@ -478,6 +485,7 @@ pub async fn v1_chat_completions(
         {
             Ok(stream) => stream,
             Err(error) => {
+                stream_trace.finish("stream_start_error", Some("stream_start_error"));
                 let (gateway_error, attempt) = provider_error_attempt(
                     &request_log_context,
                     &route,
@@ -546,13 +554,7 @@ pub async fn v1_chat_completions(
             attempt_started_at,
             finished: false,
             collector: state.service.new_stream_response_collector(),
-            stream_trace: StreamTrace::new(
-                "chat",
-                &request_id,
-                &route,
-                provider.as_ref(),
-                stream_started_at,
-            ),
+            stream_trace,
         });
 
         let response = Response::builder()
@@ -806,6 +808,13 @@ pub async fn v1_responses(
 
     if core_request.stream {
         let stream_started_at = Instant::now();
+        let mut stream_trace = StreamTrace::new(
+            "responses",
+            &request_id,
+            &route,
+            provider.as_ref(),
+            stream_started_at,
+        );
         let provider_execution_span = provider_operation_span(
             &request_id,
             "responses",
@@ -824,6 +833,7 @@ pub async fn v1_responses(
         {
             Ok(stream) => stream,
             Err(error) => {
+                stream_trace.finish("stream_start_error", Some("stream_start_error"));
                 let (gateway_error, attempt) = provider_error_attempt(
                     &request_log_context,
                     &route,
@@ -887,13 +897,7 @@ pub async fn v1_responses(
             attempt_started_at,
             finished: false,
             collector: state.service.new_stream_response_collector(),
-            stream_trace: StreamTrace::new(
-                "responses",
-                &request_id,
-                &route,
-                provider.as_ref(),
-                stream_started_at,
-            ),
+            stream_trace,
         });
 
         let response = Response::builder()
@@ -1021,6 +1025,7 @@ pub async fn v1_embeddings(
     Json(request): Json<EmbeddingsRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
+    let request_span = Span::current();
     let request_id = canonical_request_id(request_id)?;
     let auth = state
         .service
@@ -1032,6 +1037,7 @@ pub async fn v1_embeddings(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
+    record_request_span_fields(&request_span, &auth, &resolved, false, "/v1/embeddings");
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
     let mut request_log_context = state.service.begin_embeddings_request_log(
@@ -1060,6 +1066,11 @@ pub async fn v1_embeddings(
             return Err(AppError(no_compatible_route_error(requirements)));
         }
     };
+    record_provider_execution_span_fields(
+        &request_span,
+        &route.provider_key,
+        provider.provider_type(),
+    );
     let icon_metadata = request_log_icon_metadata(
         &route,
         resolved.provider_connections.get(&route.provider_key),
@@ -1100,7 +1111,21 @@ pub async fn v1_embeddings(
     );
 
     let attempt_started_at = gateway_service::offset_now();
-    let value = match provider.embeddings(&core_request, &context).await {
+    let provider_execution_span = provider_operation_span(
+        &request_id,
+        "embeddings",
+        &auth,
+        &resolved,
+        &route,
+        provider.as_ref(),
+        false,
+    );
+    let value = match trace_provider_operation(
+        provider_execution_span,
+        provider.embeddings(&core_request, &context),
+    )
+    .await
+    {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
             let (provider_error, partial_provider_usage) = split_partial_provider_error(error);
@@ -1493,6 +1518,13 @@ async fn anthropic_messages_stream_response(
     requirements: CoreRequestRequirements,
 ) -> Result<Response, AppError> {
     let stream_started_at = Instant::now();
+    let mut stream_trace = StreamTrace::new(
+        "chat",
+        request_id,
+        route,
+        provider.as_ref(),
+        stream_started_at,
+    );
     let provider_execution_span = provider_operation_span(
         request_id,
         "chat",
@@ -1514,6 +1546,7 @@ async fn anthropic_messages_stream_response(
             resolved.selection.requested_model.model_key.clone(),
         ),
         Err(error) => {
+            stream_trace.finish("stream_start_error", Some("stream_start_error"));
             let (gateway_error, attempt) = provider_error_attempt(
                 request_log_context,
                 route,
@@ -1560,13 +1593,7 @@ async fn anthropic_messages_stream_response(
         attempt_started_at,
         finished: false,
         collector: state.service.new_stream_response_collector(),
-        stream_trace: StreamTrace::new(
-            "chat",
-            request_id,
-            route,
-            provider.as_ref(),
-            stream_started_at,
-        ),
+        stream_trace,
     });
 
     Response::builder()
@@ -2110,27 +2137,43 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{
+        collections::BTreeMap,
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
     use async_trait::async_trait;
     use axum::Extension;
-    use axum::body::to_bytes;
+    use axum::body::{Bytes, to_bytes};
     use axum::http::{HeaderMap, HeaderValue};
+    use futures_util::{StreamExt, stream};
+    use gateway_core::protocol::openai::ChatMessage;
     use gateway_core::{
-        CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, CoreRequestRequirements,
-        CoreResponsesRequest, GatewayError, GitHubCopilotChatApi, GitHubCopilotRouteCompatibility,
-        GitHubCopilotUpstreamSupports, ModelRoute, ProviderCapabilities, ProviderClient,
-        ProviderError, ProviderRegistry, ProviderRequestContext, ProviderStream,
+        BudgetCadence, BudgetRepository, ChatCompletionsRequest, CoreChatMessage, CoreChatRequest,
+        CoreEmbeddingsRequest, CoreRequestRequirements, CoreResponsesRequest, GatewayError,
+        GitHubCopilotChatApi, GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports,
+        ModelRoute, Money4, ProviderCapabilities, ProviderClient, ProviderError, ProviderRegistry,
+        ProviderRequestContext, ProviderStream, RequestAttemptStatus, RequestTags,
+        RouteCompatibility, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider,
+        SeedServiceAccount, SeedTeam, hash_gateway_key_secret,
+    };
+    use gateway_service::{GatewayService, WeightedRoutePlanner};
+    use gateway_store::{
+        AnyStore, GatewayStore, StoreConnectionOptions, run_migrations_with_options,
     };
     use serde_json::{Value, json};
     use tower_http::request_id::RequestId;
 
     use super::{
-        anthropic_error_response, api_health, canonical_request_id,
-        extract_anthropic_authorization_header, route_capabilities_for_request,
-        route_effective_provider_capabilities, select_first_eligible_route,
-        split_partial_provider_error,
+        LoggingBodyStreamState, anthropic_error_response, api_health, canonical_request_id,
+        extract_anthropic_authorization_header, request_log_icon_metadata,
+        route_capabilities_for_request, route_effective_provider_capabilities,
+        select_first_eligible_route, split_partial_provider_error,
+        wrap_stream_with_request_logging,
     };
+    use crate::http::request_tracing::StreamTrace;
+    use crate::observability::GatewayMetrics;
 
     #[tokio::test]
     async fn api_health_reports_running_gateway_version() {
@@ -2199,6 +2242,188 @@ mod tests {
         ) -> Result<ProviderStream, ProviderError> {
             Err(ProviderError::NotImplemented("test provider".to_string()))
         }
+    }
+
+    #[tokio::test]
+    async fn dropping_stream_records_one_cancellation_without_usage() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let options = StoreConnectionOptions::Libsql {
+            path: directory.path().join("gateway.db"),
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("migrations");
+        let store = AnyStore::connect(&options).await.expect("store");
+        seed_stream_cancellation_test(&store).await;
+        let service = Arc::new(GatewayService::new(
+            Arc::new(store.clone()),
+            Arc::new(WeightedRoutePlanner::default()),
+        ));
+        let auth = service
+            .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
+            .await
+            .expect("authenticate test key");
+        let request_id = "stream-cancel-test";
+        let request = ChatCompletionsRequest {
+            model: "fast".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: Value::String("hello".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: true,
+            extra: BTreeMap::new(),
+        };
+        let resolved = service
+            .resolve_request(&auth, &request.model)
+            .await
+            .expect("resolve request");
+        let route = resolved.routes[0].clone();
+        let context = service.begin_chat_request_log(
+            request_id,
+            &resolved.selection.requested_model.model_key,
+            &resolved.selection.execution_model.model_key,
+            &request,
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+        let provider = StaticProvider {
+            provider_type: "openai_compat",
+            capabilities: ProviderCapabilities::all_enabled(),
+        };
+        let metrics = Arc::new(GatewayMetrics::new());
+        let upstream: ProviderStream = Box::pin(stream::iter([Ok(Bytes::from_static(
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n",
+        ))]));
+        let icon_metadata = request_log_icon_metadata(
+            &route,
+            resolved.provider_connections.get(&route.provider_key),
+            &resolved.selection.execution_model.model_key,
+            &resolved.selection.requested_model.model_key,
+        );
+        let mut body_stream = Box::pin(wrap_stream_with_request_logging(LoggingBodyStreamState {
+            upstream,
+            service: service.clone(),
+            metrics: metrics.clone(),
+            auth: auth.clone(),
+            request_log_context: context.clone(),
+            requested_model_key: resolved.selection.requested_model.model_key.clone(),
+            resolved_model_key: resolved.selection.execution_model.model_key.clone(),
+            execution_model: resolved.selection.execution_model.clone(),
+            route: route.clone(),
+            provider_key: route.provider_key.clone(),
+            icon_metadata,
+            started_at: Instant::now(),
+            attempt_started_at: gateway_service::offset_now(),
+            finished: false,
+            collector: service.new_stream_response_collector(),
+            stream_trace: StreamTrace::new("chat", request_id, &route, &provider, Instant::now()),
+        }));
+
+        assert!(body_stream.next().await.is_some());
+        drop(body_stream);
+
+        let detail = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Ok(detail) = service.get_request_log_detail(context.request_log_id).await {
+                    break detail;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("cancelled stream log persisted");
+
+        let snapshot = metrics.test_snapshot();
+        assert_eq!(snapshot.requests, 1);
+        assert_eq!(snapshot.request_outcomes.get("client_cancelled"), Some(&1));
+        assert_eq!(detail.log.status_code, Some(499));
+        assert_eq!(detail.log.error_code.as_deref(), Some("client_cancelled"));
+        assert_eq!(detail.log.prompt_tokens, None);
+        assert_eq!(detail.log.completion_tokens, None);
+        assert_eq!(detail.log.total_tokens, None);
+        assert_eq!(detail.attempts.len(), 1);
+        assert_eq!(detail.attempts[0].status, RequestAttemptStatus::StreamError);
+        assert_eq!(detail.attempts[0].status_code, Some(499));
+        assert_eq!(
+            detail.attempts[0].error_code.as_deref(),
+            Some("client_cancelled")
+        );
+
+        let ownership_scope_key = format!(
+            "service_account:{}",
+            auth.owner_service_account_id
+                .expect("service account owner")
+        );
+        let ledger = store
+            .get_usage_ledger_by_request_and_scope(request_id, &ownership_scope_key)
+            .await
+            .expect("read usage ledger");
+        assert!(ledger.is_none());
+    }
+
+    async fn seed_stream_cancellation_test(store: &AnyStore) {
+        store
+            .seed_from_inputs(
+                &[SeedProvider {
+                    provider_key: "vertex".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({}),
+                    secrets: None,
+                }],
+                &[SeedModel {
+                    model_key: "fast".to_string(),
+                    alias_target_model_key: None,
+                    description: None,
+                    tags: Vec::new(),
+                    rank: 0,
+                    routes: vec![SeedModelRoute {
+                        provider_key: "vertex".to_string(),
+                        upstream_model: "fast-upstream".to_string(),
+                        priority: 0,
+                        weight: 1.0,
+                        enabled: true,
+                        context_window_tokens: None,
+                        pricing_override: None,
+                        extra_headers: Default::default(),
+                        extra_body: Default::default(),
+                        capabilities: ProviderCapabilities::all_enabled(),
+                        compatibility: RouteCompatibility::default(),
+                    }],
+                    allowlist: None,
+                }],
+                &[SeedApiKey {
+                    name: "Stream Test Key".to_string(),
+                    public_id: "streamtest".to_string(),
+                    secret_hash: hash_gateway_key_secret("cancel-secret").expect("hash test key"),
+                    service_account_key: "stream-test".to_string(),
+                    allowed_models: vec!["fast".to_string()],
+                }],
+                &[SeedServiceAccount {
+                    service_account_key: "stream-test".to_string(),
+                    service_account_name: "Stream Test".to_string(),
+                    team_key: "stream-test".to_string(),
+                    tags: None,
+                    budget: SeedBudget {
+                        cadence: BudgetCadence::Daily,
+                        amount_usd: Money4::from_scaled(250_000),
+                        hard_limit: true,
+                        timezone: "UTC".to_string(),
+                    },
+                    managed_api_keys: Vec::new(),
+                }],
+                &[],
+                &[],
+                &[SeedTeam {
+                    team_key: "stream-test".to_string(),
+                    team_name: "Stream Test".to_string(),
+                    tags: None,
+                }],
+                &[],
+            )
+            .await
+            .expect("seed cancellation test");
     }
 
     fn route(upstream_model: &str, capabilities: ProviderCapabilities) -> ModelRoute {

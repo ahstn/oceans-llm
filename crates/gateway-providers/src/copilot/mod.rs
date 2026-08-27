@@ -14,7 +14,9 @@ use crate::bedrock::{
     AnthropicMessagesTarget, map_chat_request_to_anthropic_messages, merge_object_overrides,
     normalize_anthropic_messages_response, normalize_anthropic_messages_stream,
 };
-use crate::http::{execute_request as execute_http_request, join_base_url, map_reqwest_error};
+use crate::http::{
+    TracedResponse, execute_request as execute_http_request, join_base_url, map_reqwest_error,
+};
 use crate::openai_compat::{
     apply_openai_compat_empty_tools_profile, apply_openai_compat_request_profile,
 };
@@ -418,7 +420,7 @@ impl CopilotProvider {
     async fn execute_request(
         &self,
         request: reqwest::Request,
-    ) -> Result<reqwest::Response, ProviderError> {
+    ) -> Result<TracedResponse, ProviderError> {
         let response = execute_http_request(
             &self.client,
             request,
@@ -450,7 +452,7 @@ impl CopilotProvider {
     async fn execute_stream_request(
         &self,
         request: reqwest::Request,
-    ) -> Result<reqwest::Response, ProviderError> {
+    ) -> Result<TracedResponse, ProviderError> {
         self.execute_request(request).await
     }
 }

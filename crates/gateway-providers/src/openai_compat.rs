@@ -11,7 +11,7 @@ use gateway_core::{
 };
 use serde_json::{Map, Value, json};
 
-use crate::http::{execute_request, join_base_url, map_reqwest_error};
+use crate::http::{TracedResponse, execute_request, join_base_url, map_reqwest_error};
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTokenSource};
 
@@ -469,7 +469,7 @@ impl OpenAiCompatProvider {
     async fn execute_stream_request(
         &self,
         request: reqwest::Request,
-    ) -> Result<reqwest::Response, ProviderError> {
+    ) -> Result<TracedResponse, ProviderError> {
         let response = execute_request(
             &self.client,
             request,

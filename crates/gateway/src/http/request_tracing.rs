@@ -143,7 +143,7 @@ fn provider_error_type(error: &ProviderError) -> &'static str {
 }
 
 pub(super) struct StreamTrace {
-    span: Span,
+    span: Option<Span>,
     started_at: std::time::Instant,
     first_chunk_seen: bool,
     first_output_seen: bool,
@@ -163,7 +163,7 @@ impl StreamTrace {
         started_at: std::time::Instant,
     ) -> Self {
         Self {
-            span: tracing::info_span!(
+            span: Some(tracing::info_span!(
                 "gateway.provider.stream",
                 request_id = %request_id,
                 gen_ai.operation.name = operation,
@@ -179,7 +179,7 @@ impl StreamTrace {
                 gateway.stream.termination_reason = tracing::field::Empty,
                 error.type = tracing::field::Empty,
                 otel.status_code = tracing::field::Empty,
-            ),
+            )),
             started_at,
             first_chunk_seen: false,
             first_output_seen: false,
@@ -192,30 +192,31 @@ impl StreamTrace {
     }
 
     pub fn observe_chunk(&mut self, byte_count: usize, observation: StreamChunkObservation) {
+        let Some(span) = self.span.as_ref() else {
+            return;
+        };
         self.chunk_count = self.chunk_count.saturating_add(1);
         self.byte_count = self.byte_count.saturating_add(byte_count as u64);
 
         if !self.first_chunk_seen {
             self.first_chunk_seen = true;
             let elapsed_ms = self.started_at.elapsed().as_secs_f64() * 1_000.0;
-            self.span
-                .record("gateway.stream.time_to_first_chunk_ms", elapsed_ms);
-            self.span.in_scope(|| {
+            span.record("gateway.stream.time_to_first_chunk_ms", elapsed_ms);
+            span.in_scope(|| {
                 tracing::info!(elapsed_ms, "provider stream received first chunk");
             });
         }
         if observation.has_output && !self.first_output_seen {
             self.first_output_seen = true;
             let elapsed_ms = self.started_at.elapsed().as_secs_f64() * 1_000.0;
-            self.span
-                .record("gateway.stream.time_to_first_output_ms", elapsed_ms);
-            self.span.in_scope(|| {
+            span.record("gateway.stream.time_to_first_output_ms", elapsed_ms);
+            span.in_scope(|| {
                 tracing::info!(elapsed_ms, "provider stream received first semantic output");
             });
         }
         if observation.has_usage && !self.usage_seen {
             self.usage_seen = true;
-            self.span.in_scope(|| {
+            span.in_scope(|| {
                 tracing::info!("provider stream received usage");
             });
         }
@@ -229,25 +230,25 @@ impl StreamTrace {
             return;
         }
         self.finished = true;
-        self.span.record(
+        let Some(span) = self.span.take() else {
+            return;
+        };
+        span.record(
             "gateway.stream.duration_ms",
             self.started_at.elapsed().as_secs_f64() * 1_000.0,
         );
-        self.span
-            .record("gateway.stream.chunk_count", self.chunk_count);
-        self.span
-            .record("gateway.stream.byte_count", self.byte_count);
-        self.span.record(
+        span.record("gateway.stream.chunk_count", self.chunk_count);
+        span.record("gateway.stream.byte_count", self.byte_count);
+        span.record(
             "gateway.stream.terminal_event_seen",
             self.terminal_event_seen,
         );
-        self.span
-            .record("gateway.stream.termination_reason", termination_reason);
+        span.record("gateway.stream.termination_reason", termination_reason);
         if let Some(error_type) = error_type {
-            self.span.record("error.type", error_type);
-            self.span.record("otel.status_code", "ERROR");
+            span.record("error.type", error_type);
+            span.record("otel.status_code", "ERROR");
         }
-        self.span.in_scope(|| {
+        span.in_scope(|| {
             tracing::info!(termination_reason, "provider stream terminated");
         });
     }

@@ -48,7 +48,7 @@ The span also records chunk count, byte count, total duration, terminal-event pr
 
 The gateway keeps parent-based head sampling with the configured root sample ratio. Tail sampling belongs in the OpenTelemetry Collector because the gateway does not know the final trace outcome when it makes a head-sampling decision.
 
-Deployments that reduce the gateway sample ratio should configure the collector to retain slow traces, error traces, stream cancellations, and budget failures. This collector policy is an operating choice and is not part of the gateway process.
+A collector can retain slow traces, error traces, stream cancellations, and budget failures only from traces that it receives. Gateway head sampling drops unsampled root traces before export, so collector tail sampling cannot recover them. To make all gateway root traces eligible for collector tail sampling, keep the gateway sample ratio at `1.0` and reduce volume in the collector. This collector policy is an operating choice and is not part of the gateway process.
 
 ## Why
 

@@ -157,14 +157,15 @@ fn collector_reports_first_output_usage_and_terminal_events() {
     assert!(output.has_usage);
     assert!(!output.has_terminal_event);
 
-    let terminal = collector.observe_chunk(
+    let finish_reason = collector.observe_chunk(
         br#"data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
-
-data: [DONE]
 
 "#,
     );
-    assert!(terminal.has_terminal_event);
+    assert!(finish_reason.has_terminal_event);
+
+    let done = collector.observe_chunk(b"data: [DONE]\n\n");
+    assert!(done.has_terminal_event);
 }
 
 #[test]
@@ -185,6 +186,43 @@ data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"world"}
 "#,
     );
     assert!(anthropic.has_output);
+}
+
+#[test]
+fn collector_ignores_empty_anthropic_delta_metadata() {
+    let mut collector = StreamResponseCollector::default();
+
+    let empty_thinking = collector.observe_chunk(
+        br#"event: content_block_delta
+data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":""}}
+
+"#,
+    );
+    assert!(!empty_thinking.has_output);
+
+    let unknown_metadata = collector.observe_chunk(
+        br#"event: content_block_delta
+data: {"type":"content_block_delta","delta":{"type":"metadata_delta","sequence":1}}
+
+"#,
+    );
+    assert!(!unknown_metadata.has_output);
+
+    let thinking = collector.observe_chunk(
+        br#"event: content_block_delta
+data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"reason"}}
+
+"#,
+    );
+    assert!(thinking.has_output);
+
+    let tool_input = collector.observe_chunk(
+        br#"event: content_block_delta
+data: {"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{}"}}
+
+"#,
+    );
+    assert!(tool_input.has_output);
 }
 
 #[test]

@@ -1,5 +1,66 @@
+use std::pin::Pin;
+
+use bytes::Bytes;
+use futures_util::{Stream, StreamExt};
 use gateway_core::ProviderError;
-use tracing::Instrument;
+use tracing::{Instrument, Span};
+
+pub type TracedResponseStream = Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>;
+
+pub struct TracedResponse {
+    response: reqwest::Response,
+    span: Span,
+}
+
+impl TracedResponse {
+    pub fn status(&self) -> reqwest::StatusCode {
+        self.response.status()
+    }
+
+    pub fn headers(&self) -> &reqwest::header::HeaderMap {
+        self.response.headers()
+    }
+
+    pub async fn text(self) -> Result<String, reqwest::Error> {
+        let Self { response, span } = self;
+        let result = response.text().instrument(span.clone()).await;
+        if let Err(error) = &result {
+            record_reqwest_error(&span, error);
+        }
+        result
+    }
+
+    pub fn bytes_stream(self) -> TracedResponseStream {
+        let Self { response, span } = self;
+        let state = TracedResponseStreamState {
+            stream: Box::pin(response.bytes_stream()),
+            span: Some(span),
+        };
+        Box::pin(futures_util::stream::unfold(
+            state,
+            |mut state| async move {
+                match state.stream.next().await {
+                    Some(Ok(bytes)) => Some((Ok(bytes), state)),
+                    Some(Err(error)) => {
+                        if let Some(span) = state.span.take() {
+                            record_reqwest_error(&span, &error);
+                        }
+                        Some((Err(error), state))
+                    }
+                    None => {
+                        state.span.take();
+                        None
+                    }
+                }
+            },
+        ))
+    }
+}
+
+struct TracedResponseStreamState {
+    stream: TracedResponseStream,
+    span: Option<Span>,
+}
 
 pub fn join_base_url(base_url: &str, suffix: &str) -> Result<String, ProviderError> {
     let base = base_url.trim_end_matches('/');
@@ -23,7 +84,7 @@ pub async fn execute_request(
     request: reqwest::Request,
     provider_type: &str,
     provider_key: &str,
-) -> Result<reqwest::Response, reqwest::Error> {
+) -> Result<TracedResponse, reqwest::Error> {
     let method = request.method().as_str().to_string();
     let url = request.url();
     let server_address = url.host_str().unwrap_or("unknown").to_string();
@@ -44,27 +105,27 @@ pub async fn execute_request(
         gateway.provider.key = %provider_key,
     );
 
-    async move {
-        match client.execute(request).await {
-            Ok(response) => {
-                let status = response.status();
-                tracing::Span::current().record("http.response.status_code", status.as_u16());
-                if status.is_client_error() || status.is_server_error() {
-                    let error_type = status.as_u16().to_string();
-                    tracing::Span::current().record("error.type", error_type);
-                    tracing::Span::current().record("otel.status_code", "ERROR");
-                }
-                Ok(response)
+    match client.execute(request).instrument(span.clone()).await {
+        Ok(response) => {
+            let status = response.status();
+            span.record("http.response.status_code", status.as_u16());
+            if status.is_client_error() || status.is_server_error() {
+                let error_type = status.as_u16().to_string();
+                span.record("error.type", error_type);
+                span.record("otel.status_code", "ERROR");
             }
-            Err(error) => {
-                tracing::Span::current().record("error.type", reqwest_error_type(&error));
-                tracing::Span::current().record("otel.status_code", "ERROR");
-                Err(error)
-            }
+            Ok(TracedResponse { response, span })
+        }
+        Err(error) => {
+            record_reqwest_error(&span, &error);
+            Err(error)
         }
     }
-    .instrument(span)
-    .await
+}
+
+fn record_reqwest_error(span: &Span, error: &reqwest::Error) {
+    span.record("error.type", reqwest_error_type(error));
+    span.record("otel.status_code", "ERROR");
 }
 
 fn safe_url(url: &url::Url) -> String {

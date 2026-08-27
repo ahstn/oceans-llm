@@ -28,7 +28,7 @@ use tokio::sync::OnceCell;
 use url::Url;
 use uuid::Uuid;
 
-use crate::http::{execute_request, join_base_url, map_reqwest_error};
+use crate::http::{TracedResponse, execute_request, join_base_url, map_reqwest_error};
 use crate::streaming::{
     done_sse_chunk, normalize_openai_compat_responses_stream, normalize_openai_compat_stream,
     openai_sse_error_chunk, render_sse_event_chunk,
@@ -582,7 +582,7 @@ impl BedrockProvider {
     async fn execute_stream_request(
         &self,
         request: reqwest::Request,
-    ) -> Result<reqwest::Response, ProviderError> {
+    ) -> Result<TracedResponse, ProviderError> {
         let response = execute_request(
             &self.client,
             request,
