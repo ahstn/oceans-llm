@@ -64,6 +64,10 @@ Stable ownership also reduces trace drift. Authentication spans live with authen
 - Cancellation persistence is best effort because a dropped response body cannot wait for database work.
 - The stream byte count measures normalized bytes forwarded by the gateway, not the provider's compressed network bytes.
 
+## Follow-up
+
+The LLM HTTP handlers remain in one large file. This change keeps request logging and stream finalization in their existing workflow to avoid a mixed tracing and handler refactor. A separate change should extract operation-specific chat, Responses, embeddings, and stream-lifecycle modules after focused handler tests exist. The shared trace vocabulary and provider HTTP helper added here are already separate from the handlers.
+
 ## Rejected Alternatives
 
 ### Add all phase timers to HTTP handlers

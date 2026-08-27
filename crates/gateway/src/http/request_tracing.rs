@@ -1,11 +1,14 @@
-use std::{fmt, future::Future, time::Duration};
+use std::{future::Future, time::Duration};
 
 use gateway_core::{AuthenticatedApiKey, ModelRoute, ProviderClient, ProviderError};
 use gateway_service::{ResolvedGatewayRequest, StreamChunkObservation};
 use http::{Request, Response};
 use opentelemetry::global;
 use opentelemetry_http::HeaderExtractor;
-use tower_http::trace::{OnFailure, OnResponse};
+use tower_http::{
+    classify::ServerErrorsFailureClass,
+    trace::{OnFailure, OnResponse},
+};
 use tracing::{Instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -66,18 +69,25 @@ impl<B> OnResponse<B> for RecordHttpResponse {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct RecordHttpFailure;
 
-impl<FailureClass> OnFailure<FailureClass> for RecordHttpFailure
-where
-    FailureClass: fmt::Display,
-{
+impl OnFailure<ServerErrorsFailureClass> for RecordHttpFailure {
     fn on_failure(
         &mut self,
-        failure_classification: FailureClass,
+        failure_classification: ServerErrorsFailureClass,
         _latency: Duration,
         span: &Span,
     ) {
-        span.record("error.type", failure_classification.to_string());
+        span.record(
+            "error.type",
+            server_failure_error_type(&failure_classification),
+        );
         span.record("otel.status_code", "ERROR");
+    }
+}
+
+fn server_failure_error_type(failure: &ServerErrorsFailureClass) -> String {
+    match failure {
+        ServerErrorsFailureClass::StatusCode(status) => status.as_u16().to_string(),
+        ServerErrorsFailureClass::Error(_) => "request_failure".to_string(),
     }
 }
 
@@ -137,6 +147,7 @@ pub(super) struct StreamTrace {
     started_at: std::time::Instant,
     first_chunk_seen: bool,
     first_output_seen: bool,
+    usage_seen: bool,
     terminal_event_seen: bool,
     chunk_count: u64,
     byte_count: u64,
@@ -172,6 +183,7 @@ impl StreamTrace {
             started_at,
             first_chunk_seen: false,
             first_output_seen: false,
+            usage_seen: false,
             terminal_event_seen: false,
             chunk_count: 0,
             byte_count: 0,
@@ -201,7 +213,8 @@ impl StreamTrace {
                 tracing::info!(elapsed_ms, "provider stream received first semantic output");
             });
         }
-        if observation.has_usage {
+        if observation.has_usage && !self.usage_seen {
+            self.usage_seen = true;
             self.span.in_scope(|| {
                 tracing::info!("provider stream received usage");
             });
@@ -245,5 +258,28 @@ impl Drop for StreamTrace {
         if !self.finished {
             self.finish("client_cancelled", Some("client_cancelled"));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::StatusCode;
+
+    use super::*;
+
+    #[test]
+    fn server_failure_error_type_does_not_export_error_details() {
+        assert_eq!(
+            server_failure_error_type(&ServerErrorsFailureClass::StatusCode(
+                StatusCode::SERVICE_UNAVAILABLE,
+            )),
+            "503"
+        );
+        assert_eq!(
+            server_failure_error_type(&ServerErrorsFailureClass::Error(
+                "secret upstream detail".to_string(),
+            )),
+            "request_failure"
+        );
     }
 }

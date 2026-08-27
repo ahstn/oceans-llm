@@ -27,12 +27,11 @@ pub async fn execute_request(
     let method = request.method().as_str().to_string();
     let url = request.url();
     let server_address = url.host_str().unwrap_or("unknown").to_string();
-    let server_port = url.port_or_known_default().map(u64::from);
+    let server_port = url.port().map(u64::from);
     let safe_url = safe_url(url);
-    let span_name = format!("{method} {server_address}");
     let span = tracing::info_span!(
         "http.client.request",
-        otel.name = %span_name,
+        otel.name = %method,
         otel.kind = "client",
         otel.status_code = tracing::field::Empty,
         http.request.method = %method,

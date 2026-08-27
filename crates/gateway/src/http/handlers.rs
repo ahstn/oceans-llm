@@ -1382,6 +1382,17 @@ struct LoggingBodyStreamState {
     stream_trace: StreamTrace,
 }
 
+impl LoggingBodyStreamState {
+    fn metric_labels(&self) -> ChatMetricLabels<'_> {
+        ChatMetricLabels {
+            requested_model: &self.requested_model_key,
+            resolved_model: &self.resolved_model_key,
+            provider_key: &self.provider_key,
+            stream: true,
+        }
+    }
+}
+
 impl Drop for LoggingBodyStreamState {
     fn drop(&mut self) {
         if self.finished {
@@ -1396,12 +1407,7 @@ impl Drop for LoggingBodyStreamState {
 }
 
 fn record_cancelled_stream_metrics(state: &LoggingBodyStreamState) {
-    let labels = ChatMetricLabels {
-        requested_model: &state.requested_model_key,
-        resolved_model: &state.resolved_model_key,
-        provider_key: &state.provider_key,
-        stream: true,
-    };
+    let labels = state.metric_labels();
     state.metrics.record_chat_request(&ChatRequestMetric {
         labels: labels.clone(),
         status_code: 499,
@@ -1637,23 +1643,13 @@ fn wrap_stream_with_request_logging(
                 )
                 .await;
                 state.metrics.record_chat_request(&ChatRequestMetric {
-                    labels: ChatMetricLabels {
-                        requested_model: &state.requested_model_key,
-                        resolved_model: &state.resolved_model_key,
-                        provider_key: &state.provider_key,
-                        stream: true,
-                    },
+                    labels: state.metric_labels(),
                     status_code: i64::from(gateway_error.http_status_code()),
                     outcome: gateway_error.error_type(),
                     latency_seconds: latency_seconds_since(state.started_at),
                 });
                 state.metrics.record_tool_cardinality(
-                    &ChatMetricLabels {
-                        requested_model: &state.requested_model_key,
-                        resolved_model: &state.resolved_model_key,
-                        provider_key: &state.provider_key,
-                        stream: true,
-                    },
+                    &state.metric_labels(),
                     state.request_log_context.operation,
                     &RequestToolCardinality {
                         invoked_tool_count: Some(state.collector.invoked_tool_count()),
@@ -1675,12 +1671,7 @@ fn wrap_stream_with_request_logging(
                     failure.as_ref().map(|_| "stream_error_event"),
                 );
                 if failure.is_none() {
-                    let labels = ChatMetricLabels {
-                        requested_model: &state.requested_model_key,
-                        resolved_model: &state.resolved_model_key,
-                        provider_key: &state.provider_key,
-                        stream: true,
-                    };
+                    let labels = state.metric_labels();
                     finalize_successful_usage_accounting_from_parts(
                         &state.service,
                         &state.metrics,
@@ -1738,23 +1729,13 @@ fn wrap_stream_with_request_logging(
                     None => (200, "success"),
                 };
                 state.metrics.record_chat_request(&ChatRequestMetric {
-                    labels: ChatMetricLabels {
-                        requested_model: &state.requested_model_key,
-                        resolved_model: &state.resolved_model_key,
-                        provider_key: &state.provider_key,
-                        stream: true,
-                    },
+                    labels: state.metric_labels(),
                     status_code,
                     outcome,
                     latency_seconds: latency_seconds_since(state.started_at),
                 });
                 state.metrics.record_tool_cardinality(
-                    &ChatMetricLabels {
-                        requested_model: &state.requested_model_key,
-                        resolved_model: &state.resolved_model_key,
-                        provider_key: &state.provider_key,
-                        stream: true,
-                    },
+                    &state.metric_labels(),
                     state.request_log_context.operation,
                     &tool_cardinality,
                 );
@@ -1992,6 +1973,10 @@ fn record_request_span_fields(
     stream: bool,
     route_path: &str,
 ) {
+    span.record(
+        "otel.name",
+        field::display(format_args!("POST {route_path}")),
+    );
     span.record("http.route", field::display(route_path));
     span.record(
         "requested_model",
