@@ -11,7 +11,7 @@ use gateway_core::{
 };
 use serde_json::{Map, Value, json};
 
-use crate::http::{join_base_url, map_reqwest_error};
+use crate::http::{execute_request, join_base_url, map_reqwest_error};
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTokenSource};
 
@@ -439,11 +439,14 @@ impl OpenAiCompatProvider {
         &self,
         request: reqwest::Request,
     ) -> Result<Value, ProviderError> {
-        let response = self
-            .client
-            .execute(request)
-            .await
-            .map_err(map_reqwest_error)?;
+        let response = execute_request(
+            &self.client,
+            request,
+            &self.config.provider_type,
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
         let status = response.status();
         let text = response.text().await.map_err(map_reqwest_error)?;
 
@@ -461,11 +464,14 @@ impl OpenAiCompatProvider {
         &self,
         request: reqwest::Request,
     ) -> Result<reqwest::Response, ProviderError> {
-        let response = self
-            .client
-            .execute(request)
-            .await
-            .map_err(map_reqwest_error)?;
+        let response = execute_request(
+            &self.client,
+            request,
+            &self.config.provider_type,
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.map_err(map_reqwest_error)?;

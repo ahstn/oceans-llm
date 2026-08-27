@@ -16,7 +16,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
-    http::map_reqwest_error,
+    http::{execute_request, map_reqwest_error},
     media::{infer_media_type_from_path, is_valid_media_type},
     streaming::{done_sse_chunk, openai_sse_error_chunk},
     token::{
@@ -259,11 +259,14 @@ impl ProviderClient for VertexProvider {
         };
 
         let request = self.build_request(&endpoint, &body, context).await?;
-        let response = self
-            .client
-            .execute(request)
-            .await
-            .map_err(map_reqwest_error)?;
+        let response = execute_request(
+            &self.client,
+            request,
+            "gcp_vertex",
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
         let status = response.status();
         let text = response.text().await.map_err(map_reqwest_error)?;
         if !status.is_success() {
@@ -305,11 +308,14 @@ impl ProviderClient for VertexProvider {
         };
 
         let request = self.build_request(&endpoint, &body, context).await?;
-        let response = self
-            .client
-            .execute(request)
-            .await
-            .map_err(map_reqwest_error)?;
+        let response = execute_request(
+            &self.client,
+            request,
+            "gcp_vertex",
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.map_err(map_reqwest_error)?;
@@ -353,7 +359,14 @@ impl ProviderClient for VertexProvider {
         let mut outputs = Vec::with_capacity(mapped.bodies.len());
         for (index, body) in mapped.bodies.iter().enumerate() {
             let request = self.build_request(&endpoint, body, context).await?;
-            let response = match self.client.execute(request).await {
+            let response = match execute_request(
+                &self.client,
+                request,
+                "gcp_vertex",
+                &self.config.provider_key,
+            )
+            .await
+            {
                 Ok(response) => response,
                 Err(error) => {
                     return Err(partial_google_embedding_failure(

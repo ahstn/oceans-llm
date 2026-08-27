@@ -172,7 +172,11 @@ async fn v1_messages_inner(
         provider_key: &route.provider_key,
         stream: core_request.stream,
     };
-    record_provider_execution_span_fields(&request_span, &route.provider_key);
+    record_provider_execution_span_fields(
+        &request_span,
+        &route.provider_key,
+        provider.provider_type(),
+    );
 
     if let Err(error) = state
         .service
@@ -419,7 +423,11 @@ pub async fn v1_chat_completions(
         provider_key: &route.provider_key,
         stream: core_request.stream,
     };
-    record_provider_execution_span_fields(&request_span, &route.provider_key);
+    record_provider_execution_span_fields(
+        &request_span,
+        &route.provider_key,
+        provider.provider_type(),
+    );
 
     if let Err(error) = state
         .service
@@ -751,7 +759,11 @@ pub async fn v1_responses(
         provider_key: &route.provider_key,
         stream: core_request.stream,
     };
-    record_provider_execution_span_fields(&request_span, &route.provider_key);
+    record_provider_execution_span_fields(
+        &request_span,
+        &route.provider_key,
+        provider.provider_type(),
+    );
 
     if let Err(error) = state
         .service
@@ -1854,12 +1866,22 @@ fn record_request_span_fields(
         "resolved_model",
         field::display(&resolved.selection.execution_model.model_key),
     );
+    span.record(
+        "gen_ai.request.model",
+        field::display(&resolved.selection.requested_model.model_key),
+    );
+    span.record(
+        "gen_ai.response.model",
+        field::display(&resolved.selection.execution_model.model_key),
+    );
     span.record("stream", stream);
     span.record("ownership_kind", field::display(auth.owner_kind.as_str()));
 }
 
-fn record_provider_execution_span_fields(span: &Span, provider_key: &str) {
+fn record_provider_execution_span_fields(span: &Span, provider_key: &str, provider_type: &str) {
     span.record("provider", field::display(provider_key));
+    span.record("gateway.provider.key", field::display(provider_key));
+    span.record("gen_ai.provider.name", field::display(provider_type));
 }
 
 fn record_usage_metrics_from_ref(
