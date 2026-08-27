@@ -155,7 +155,7 @@ export function AgentSessionsPage() {
             </div>
             <ClearFiltersButton
               visible={hasActiveSearch(search)}
-              onClear={() => navigate({ page: 1, page_size: 50 })}
+              onClear={() => updateRouteSearch({ page: 1, page_size: 50 })}
             />
           </div>
 
@@ -178,7 +178,9 @@ export function AgentSessionsPage() {
             showScore={showScore}
             loading={isListPending}
             onOpen={openDetail}
-            onPageChange={(page, pageSize) => navigate({ ...search, page, page_size: pageSize })}
+            onPageChange={(page, pageSize) =>
+              updateRouteSearch({ ...search, page, page_size: pageSize })
+            }
           />
         </CardContent>
       </Card>
@@ -187,7 +189,7 @@ export function AgentSessionsPage() {
         open={selectedSessionId !== null}
         onOpenChange={(open) => {
           if (!open) {
-            navigate({ ...search, session_id: undefined })
+            updateRouteSearch({ ...search, session_id: undefined })
           }
         }}
       >
