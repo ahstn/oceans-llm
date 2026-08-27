@@ -382,6 +382,7 @@ impl BedrockProvider {
         .await
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_json_request(
         &self,
         url: String,
@@ -420,6 +421,7 @@ impl BedrockProvider {
             .await
     }
 
+    #[tracing::instrument(name = "gateway.provider.credentials", skip_all)]
     async fn apply_auth(
         &self,
         mut request: reqwest::Request,

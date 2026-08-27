@@ -201,6 +201,7 @@ impl OpenAiCompatProvider {
         )
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_authenticated_chat_request(
         &self,
         request: &CoreChatRequest,
@@ -210,6 +211,7 @@ impl OpenAiCompatProvider {
         self.build_chat_request_with_token(request, context, token.as_deref())
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_authenticated_chat_stream_request(
         &self,
         request: &CoreChatRequest,
@@ -219,6 +221,7 @@ impl OpenAiCompatProvider {
         self.build_chat_stream_request_with_token(request, context, token.as_deref())
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_authenticated_embeddings_request(
         &self,
         request: &CoreEmbeddingsRequest,
@@ -228,6 +231,7 @@ impl OpenAiCompatProvider {
         self.build_embeddings_request_with_token(request, context, token.as_deref())
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_authenticated_responses_request(
         &self,
         request: &CoreResponsesRequest,
@@ -237,6 +241,7 @@ impl OpenAiCompatProvider {
         self.build_responses_request_with_token(request, context, token.as_deref())
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_authenticated_responses_stream_request(
         &self,
         request: &CoreResponsesRequest,
@@ -350,6 +355,7 @@ impl OpenAiCompatProvider {
         self.build_request("responses", body, context, true, false, bearer_token)
     }
 
+    #[tracing::instrument(name = "gateway.provider.credentials", skip_all)]
     async fn auth_token(&self) -> Result<Option<String>, ProviderError> {
         if let Some(source) = &self.config.identity_token_source {
             return source.token().await.map(Some);

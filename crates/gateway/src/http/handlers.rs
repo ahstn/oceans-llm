@@ -28,12 +28,13 @@ use gateway_service::{
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use tower_http::request_id::RequestId;
-use tracing::{Instrument, Span, field};
+use tracing::{Span, field};
 
 use crate::http::{
     anthropic_stream::anthropic_messages_stream_from_openai,
     error::AppError,
     request_tags::extract_request_tags,
+    request_tracing::{provider_operation_span, trace_provider_operation},
     state::{AppGatewayService, AppState},
 };
 use crate::observability::{ChatMetricLabels, ChatRequestMetric};
@@ -217,20 +218,21 @@ async fn v1_messages_inner(
         .await;
     }
 
-    let provider_execution_span = tracing::info_span!(
-        "provider_execution",
-        request_id = %request_id,
-        requested_model = %resolved.selection.requested_model.model_key,
-        resolved_model = %resolved.selection.execution_model.model_key,
-        provider = %route.provider_key,
-        stream = false,
-        ownership_kind = %auth.owner_kind.as_str(),
+    let provider_execution_span = provider_operation_span(
+        &request_id,
+        "chat",
+        &auth,
+        &resolved,
+        &route,
+        provider.as_ref(),
+        false,
     );
     let attempt_started_at = gateway_service::offset_now();
-    let openai_value = match provider
-        .chat_completions(&core_request, &context)
-        .instrument(provider_execution_span)
-        .await
+    let openai_value = match trace_provider_operation(
+        provider_execution_span,
+        provider.chat_completions(&core_request, &context),
+    )
+    .await
     {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
@@ -457,20 +459,21 @@ pub async fn v1_chat_completions(
     );
 
     if core_request.stream {
-        let provider_execution_span = tracing::info_span!(
-            "provider_execution",
-            request_id = %request_id,
-            requested_model = %resolved.selection.requested_model.model_key,
-            resolved_model = %resolved.selection.execution_model.model_key,
-            provider = %route.provider_key,
-            stream = true,
-            ownership_kind = %auth.owner_kind.as_str(),
+        let provider_execution_span = provider_operation_span(
+            &request_id,
+            "chat",
+            &auth,
+            &resolved,
+            &route,
+            provider.as_ref(),
+            true,
         );
         let attempt_started_at = gateway_service::offset_now();
-        let stream = match provider
-            .chat_completions_stream(&core_request, &context)
-            .instrument(provider_execution_span)
-            .await
+        let stream = match trace_provider_operation(
+            provider_execution_span,
+            provider.chat_completions_stream(&core_request, &context),
+        )
+        .await
         {
             Ok(stream) => stream,
             Err(error) => {
@@ -558,20 +561,21 @@ pub async fn v1_chat_completions(
         return Ok(response);
     }
 
-    let provider_execution_span = tracing::info_span!(
-        "provider_execution",
-        request_id = %request_id,
-        requested_model = %resolved.selection.requested_model.model_key,
-        resolved_model = %resolved.selection.execution_model.model_key,
-        provider = %route.provider_key,
-        stream = false,
-        ownership_kind = %auth.owner_kind.as_str(),
+    let provider_execution_span = provider_operation_span(
+        &request_id,
+        "chat",
+        &auth,
+        &resolved,
+        &route,
+        provider.as_ref(),
+        false,
     );
     let attempt_started_at = gateway_service::offset_now();
-    let value = match provider
-        .chat_completions(&core_request, &context)
-        .instrument(provider_execution_span)
-        .await
+    let value = match trace_provider_operation(
+        provider_execution_span,
+        provider.chat_completions(&core_request, &context),
+    )
+    .await
     {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
@@ -793,20 +797,21 @@ pub async fn v1_responses(
     );
 
     if core_request.stream {
-        let provider_execution_span = tracing::info_span!(
-            "provider_execution",
-            request_id = %request_id,
-            requested_model = %resolved.selection.requested_model.model_key,
-            resolved_model = %resolved.selection.execution_model.model_key,
-            provider = %route.provider_key,
-            stream = true,
-            ownership_kind = %auth.owner_kind.as_str(),
+        let provider_execution_span = provider_operation_span(
+            &request_id,
+            "responses",
+            &auth,
+            &resolved,
+            &route,
+            provider.as_ref(),
+            true,
         );
         let attempt_started_at = gateway_service::offset_now();
-        let stream = match provider
-            .responses_stream(&core_request, &context)
-            .instrument(provider_execution_span)
-            .await
+        let stream = match trace_provider_operation(
+            provider_execution_span,
+            provider.responses_stream(&core_request, &context),
+        )
+        .await
         {
             Ok(stream) => stream,
             Err(error) => {
@@ -889,20 +894,21 @@ pub async fn v1_responses(
         return Ok(response);
     }
 
-    let provider_execution_span = tracing::info_span!(
-        "provider_execution",
-        request_id = %request_id,
-        requested_model = %resolved.selection.requested_model.model_key,
-        resolved_model = %resolved.selection.execution_model.model_key,
-        provider = %route.provider_key,
-        stream = false,
-        ownership_kind = %auth.owner_kind.as_str(),
+    let provider_execution_span = provider_operation_span(
+        &request_id,
+        "responses",
+        &auth,
+        &resolved,
+        &route,
+        provider.as_ref(),
+        false,
     );
     let attempt_started_at = gateway_service::offset_now();
-    let value = match provider
-        .responses(&core_request, &context)
-        .instrument(provider_execution_span)
-        .await
+    let value = match trace_provider_operation(
+        provider_execution_span,
+        provider.responses(&core_request, &context),
+    )
+    .await
     {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
@@ -1153,6 +1159,11 @@ pub async fn v1_embeddings(
     Ok(response)
 }
 
+#[tracing::instrument(
+    name = "gateway.route.select",
+    skip_all,
+    fields(gateway.routes.candidate_count = routes.len())
+)]
 fn select_first_eligible_route(
     providers: &gateway_core::ProviderRegistry,
     routes: &[gateway_core::ModelRoute],
@@ -1378,20 +1389,21 @@ async fn anthropic_messages_stream_response(
     icon_metadata: RequestLogIconMetadata,
     requirements: CoreRequestRequirements,
 ) -> Result<Response, AppError> {
-    let provider_execution_span = tracing::info_span!(
-        "provider_execution",
-        request_id = %request_id,
-        requested_model = %resolved.selection.requested_model.model_key,
-        resolved_model = %resolved.selection.execution_model.model_key,
-        provider = %route.provider_key,
-        stream = true,
-        ownership_kind = %auth.owner_kind.as_str(),
+    let provider_execution_span = provider_operation_span(
+        request_id,
+        "chat",
+        auth,
+        resolved,
+        route,
+        provider.as_ref(),
+        true,
     );
     let attempt_started_at = gateway_service::offset_now();
-    let stream = match provider
-        .chat_completions_stream(core_request, context)
-        .instrument(provider_execution_span)
-        .await
+    let stream = match trace_provider_operation(
+        provider_execution_span,
+        provider.chat_completions_stream(core_request, context),
+    )
+    .await
     {
         Ok(stream) => anthropic_messages_stream_from_openai(
             stream,
@@ -1719,6 +1731,11 @@ async fn best_effort_log_stream_result(
     }
 }
 
+#[tracing::instrument(
+    name = "gateway.mcp.telemetry",
+    skip_all,
+    fields(gateway.operation.name = context.operation)
+)]
 async fn best_effort_record_mcp_request_telemetry(
     state: &AppState,
     auth: &AuthenticatedApiKey,

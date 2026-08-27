@@ -28,6 +28,11 @@ where
         self.effective_models_for_api_key(api_key).await
     }
 
+    #[tracing::instrument(
+        name = "gateway.model.access",
+        skip_all,
+        fields(gen_ai.request.model = requested_model)
+    )]
     pub async fn resolve_requested_model(
         &self,
         api_key: &AuthenticatedApiKey,

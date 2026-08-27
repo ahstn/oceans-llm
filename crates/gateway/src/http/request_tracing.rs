@@ -1,10 +1,12 @@
-use std::{fmt, time::Duration};
+use std::{fmt, future::Future, time::Duration};
 
+use gateway_core::{AuthenticatedApiKey, ModelRoute, ProviderClient, ProviderError};
+use gateway_service::ResolvedGatewayRequest;
 use http::{Request, Response};
 use opentelemetry::global;
 use opentelemetry_http::HeaderExtractor;
 use tower_http::trace::{OnFailure, OnResponse};
-use tracing::Span;
+use tracing::{Instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 pub(super) fn make_http_request_span<B>(request: &Request<B>) -> Span {
@@ -75,5 +77,56 @@ where
     ) {
         span.record("error.type", failure_classification.to_string());
         span.record("otel.status_code", "ERROR");
+    }
+}
+
+pub(super) fn provider_operation_span(
+    request_id: &str,
+    operation: &'static str,
+    auth: &AuthenticatedApiKey,
+    resolved: &ResolvedGatewayRequest,
+    route: &ModelRoute,
+    provider: &dyn ProviderClient,
+    stream: bool,
+) -> Span {
+    tracing::info_span!(
+        "gateway.provider.operation",
+        request_id = %request_id,
+        gen_ai.operation.name = operation,
+        gen_ai.request.model = %route.upstream_model,
+        gen_ai.provider.name = %provider.provider_type(),
+        gateway.requested_model = %resolved.selection.requested_model.model_key,
+        gateway.resolved_model = %resolved.selection.execution_model.model_key,
+        gateway.provider.key = %route.provider_key,
+        gateway.request.stream = stream,
+        gateway.ownership.kind = %auth.owner_kind.as_str(),
+        error.type = tracing::field::Empty,
+        otel.status_code = tracing::field::Empty,
+    )
+}
+
+pub(super) async fn trace_provider_operation<F, T>(
+    span: Span,
+    operation: F,
+) -> Result<T, ProviderError>
+where
+    F: Future<Output = Result<T, ProviderError>>,
+{
+    let result = operation.instrument(span.clone()).await;
+    if let Err(error) = &result {
+        span.record("error.type", provider_error_type(error));
+        span.record("otel.status_code", "ERROR");
+    }
+    result
+}
+
+fn provider_error_type(error: &ProviderError) -> &'static str {
+    match error {
+        ProviderError::InvalidRequest(_) => "invalid_request",
+        ProviderError::UpstreamHttp { .. } => "upstream_http",
+        ProviderError::Timeout => "timeout",
+        ProviderError::Transport(_) => "transport",
+        ProviderError::PartialUsage { .. } => "partial_usage",
+        ProviderError::NotImplemented(_) => "not_implemented",
     }
 }

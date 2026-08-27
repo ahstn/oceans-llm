@@ -88,6 +88,7 @@ impl VertexProvider {
         })
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_request(
         &self,
         endpoint_suffix: &str,
