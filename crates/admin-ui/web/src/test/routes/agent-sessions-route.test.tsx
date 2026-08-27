@@ -489,6 +489,60 @@ describe('AgentSessionsPage', () => {
     })
   })
 
+  it('closes session diagnostics by removing the session ID from search', async () => {
+    routeMock.useSearch.mockReturnValue({
+      page: 1,
+      page_size: 50,
+      harness_key: 'opencode',
+      session_id: 'session_1',
+    })
+    getAgentSessionDetailMock.mockResolvedValue({ data: detail })
+
+    render(<AgentSessionsPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/agent-sessions',
+        search: { page: 1, page_size: 50, harness_key: 'opencode' },
+      })
+    })
+  })
+
+  it('clears active filters through route search', async () => {
+    routeMock.useSearch.mockReturnValue({
+      page: 3,
+      page_size: 25,
+      harness_key: 'opencode',
+    })
+
+    render(<AgentSessionsPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/agent-sessions',
+        search: { page: 1, page_size: 50 },
+      })
+    })
+  })
+
+  it('changes pages through route search', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [session], page: 1, page_size: 50, total: 51 },
+    })
+
+    render(<AgentSessionsPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/agent-sessions',
+        search: { page: 2, page_size: 50 },
+      })
+    })
+  })
+
   it('deep-links to session diagnostics with request outcomes and retained observations', async () => {
     setCapabilities(false, true)
     routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, session_id: 'session_1' })
