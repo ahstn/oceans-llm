@@ -24,7 +24,7 @@ Preconditions:
 - The browser viewport is at least 768 pixels wide for the desktop table.
 - `control-oceans-admin doctor` passes.
 
-- **Automated proof.** Run `control-oceans-admin drive models`. It signs in, follows the `Models` link, checks the displayed count against rendered rows and the total count against `/api/v1/admin/models?page=1&page_size=100`, checks all four platform-admin information sections, enables the optional columns, and opens client configuration for `gpt-5.6-sol`.
+- **Automated proof.** Run `control-oceans-admin drive models`. It ensures Playwright Chromium is installed, signs in, follows the `Models` link, checks the displayed count against rendered rows and the total count against `/api/v1/admin/models?page=1&page_size=100`, checks all four platform-admin information sections, enables the optional columns, and opens client configuration for `gpt-5.6-sol`.
 - **Known model.** Locate `models-desktop-cell-gpt-5.6-sol`. The cell shows `gpt-5.6-sol` and a status indicator.
 - **Model detail.** In the same table row, choose `Info`. A dialog headed `Model info` contains `gpt-5.6-sol` and navigation named `Model info sections`.
 - **Columns.** Choose `Columns`, then select `Context window` or `Capabilities`. The matching table header becomes visible without a route change.
