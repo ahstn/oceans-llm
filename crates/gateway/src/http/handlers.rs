@@ -2449,18 +2449,22 @@ mod tests {
             .await
             .expect("finish chunk")
             .expect("finish chunk succeeds");
-        assert!(finish_chunk.windows(b"finish_reason".len()).any(|window| {
-            window == b"finish_reason"
-        }));
+        assert!(
+            finish_chunk
+                .windows(b"finish_reason".len())
+                .any(|window| { window == b"finish_reason" })
+        );
         assert_eq!(harness.metrics.test_snapshot().requests, 0);
         let usage_chunk = body_stream
             .next()
             .await
             .expect("usage chunk")
             .expect("usage chunk succeeds");
-        assert!(usage_chunk.windows(b"prompt_tokens".len()).any(|window| {
-            window == b"prompt_tokens"
-        }));
+        assert!(
+            usage_chunk
+                .windows(b"prompt_tokens".len())
+                .any(|window| { window == b"prompt_tokens" })
+        );
         assert_eq!(harness.metrics.test_snapshot().requests, 0);
         assert_eq!(
             body_stream
