@@ -1619,9 +1619,9 @@ fn wrap_stream_with_request_logging(
         match state.upstream.next().await {
             Some(Ok(chunk)) => {
                 let observation = state.collector.observe_chunk(chunk.as_ref());
-                let terminal_event = observation.has_terminal_event;
+                let ends_stream = observation.ends_stream;
                 state.stream_trace.observe_chunk(chunk.len(), observation);
-                if terminal_event {
+                if ends_stream {
                     finalize_stream(&mut state).await;
                 }
 
@@ -2255,89 +2255,147 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn stream_drop_distinguishes_cancellation_from_terminal_completion() {
-        let directory = tempfile::tempdir().expect("tempdir");
-        let options = StoreConnectionOptions::Libsql {
-            path: directory.path().join("gateway.db"),
-        };
-        run_migrations_with_options(&options)
-            .await
-            .expect("migrations");
-        let store = AnyStore::connect(&options).await.expect("store");
-        seed_stream_cancellation_test(&store).await;
-        let service = Arc::new(GatewayService::new(
-            Arc::new(store.clone()),
-            Arc::new(WeightedRoutePlanner::default()),
-        ));
-        let auth = service
-            .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
-            .await
-            .expect("authenticate test key");
-        let request_id = "stream-cancel-test";
-        let request = ChatCompletionsRequest {
-            model: "fast".to_string(),
-            messages: vec![ChatMessage {
-                role: "user".to_string(),
-                content: Value::String("hello".to_string()),
-                name: None,
+    struct StreamTestHarness {
+        _directory: tempfile::TempDir,
+        store: AnyStore,
+        service: Arc<crate::http::state::AppGatewayService>,
+        auth: gateway_core::AuthenticatedApiKey,
+        request: ChatCompletionsRequest,
+        resolved: gateway_service::ResolvedGatewayRequest,
+        route: ModelRoute,
+        provider: StaticProvider,
+        metrics: Arc<GatewayMetrics>,
+    }
+
+    impl StreamTestHarness {
+        async fn new() -> Self {
+            let directory = tempfile::tempdir().expect("tempdir");
+            let options = StoreConnectionOptions::Libsql {
+                path: directory.path().join("gateway.db"),
+            };
+            run_migrations_with_options(&options)
+                .await
+                .expect("migrations");
+            let store = AnyStore::connect(&options).await.expect("store");
+            seed_stream_cancellation_test(&store).await;
+            let service = Arc::new(GatewayService::new(
+                Arc::new(store.clone()),
+                Arc::new(WeightedRoutePlanner::default()),
+            ));
+            let auth = service
+                .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
+                .await
+                .expect("authenticate test key");
+            let request = ChatCompletionsRequest {
+                model: "fast".to_string(),
+                messages: vec![ChatMessage {
+                    role: "user".to_string(),
+                    content: Value::String("hello".to_string()),
+                    name: None,
+                    extra: BTreeMap::new(),
+                }],
+                stream: true,
                 extra: BTreeMap::new(),
-            }],
-            stream: true,
-            extra: BTreeMap::new(),
-        };
-        let resolved = service
-            .resolve_request(&auth, &request.model)
-            .await
-            .expect("resolve request");
-        let route = resolved.routes[0].clone();
-        let context = service.begin_chat_request_log(
-            request_id,
-            &resolved.selection.requested_model.model_key,
-            &resolved.selection.execution_model.model_key,
-            &request,
-            &BTreeMap::new(),
-            RequestTags::default(),
-        );
-        let provider = StaticProvider {
-            provider_type: "openai_compat",
-            capabilities: ProviderCapabilities::all_enabled(),
-        };
-        let metrics = Arc::new(GatewayMetrics::new());
+            };
+            let resolved = service
+                .resolve_request(&auth, &request.model)
+                .await
+                .expect("resolve request");
+            let route = resolved.routes[0].clone();
+            Self {
+                _directory: directory,
+                store,
+                service,
+                auth,
+                request,
+                resolved,
+                route,
+                provider: StaticProvider {
+                    provider_type: "openai_compat",
+                    capabilities: ProviderCapabilities::all_enabled(),
+                },
+                metrics: Arc::new(GatewayMetrics::new()),
+            }
+        }
+
+        fn logging_state(
+            &self,
+            request_id: &str,
+            upstream: ProviderStream,
+        ) -> (gateway_service::RequestLogContext, LoggingBodyStreamState) {
+            let context = self.service.begin_chat_request_log(
+                request_id,
+                &self.resolved.selection.requested_model.model_key,
+                &self.resolved.selection.execution_model.model_key,
+                &self.request,
+                &BTreeMap::new(),
+                RequestTags::default(),
+            );
+            let icon_metadata = request_log_icon_metadata(
+                &self.route,
+                self.resolved
+                    .provider_connections
+                    .get(&self.route.provider_key),
+                &self.resolved.selection.execution_model.model_key,
+                &self.resolved.selection.requested_model.model_key,
+            );
+            let state = LoggingBodyStreamState {
+                upstream,
+                service: self.service.clone(),
+                metrics: self.metrics.clone(),
+                auth: self.auth.clone(),
+                request_log_context: context.clone(),
+                requested_model_key: self.resolved.selection.requested_model.model_key.clone(),
+                resolved_model_key: self.resolved.selection.execution_model.model_key.clone(),
+                execution_model: self.resolved.selection.execution_model.clone(),
+                route: self.route.clone(),
+                provider_key: self.route.provider_key.clone(),
+                icon_metadata,
+                started_at: Instant::now(),
+                attempt_started_at: gateway_service::offset_now(),
+                finished: false,
+                collector: self.service.new_stream_response_collector(),
+                stream_trace: StreamTrace::new(
+                    "chat",
+                    request_id,
+                    &self.route,
+                    &self.provider,
+                    Instant::now(),
+                ),
+            };
+            (context, state)
+        }
+
+        fn ownership_scope_key(&self) -> String {
+            format!(
+                "service_account:{}",
+                self.auth
+                    .owner_service_account_id
+                    .expect("service account owner")
+            )
+        }
+    }
+
+    #[tokio::test]
+    async fn dropping_partial_stream_records_cancellation_without_usage() {
+        let harness = StreamTestHarness::new().await;
+        let request_id = "stream-cancel-test";
         let upstream: ProviderStream = Box::pin(stream::iter([Ok(Bytes::from_static(
             b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n",
         ))]));
-        let icon_metadata = request_log_icon_metadata(
-            &route,
-            resolved.provider_connections.get(&route.provider_key),
-            &resolved.selection.execution_model.model_key,
-            &resolved.selection.requested_model.model_key,
-        );
-        let mut body_stream = Box::pin(wrap_stream_with_request_logging(LoggingBodyStreamState {
-            upstream,
-            service: service.clone(),
-            metrics: metrics.clone(),
-            auth: auth.clone(),
-            request_log_context: context.clone(),
-            requested_model_key: resolved.selection.requested_model.model_key.clone(),
-            resolved_model_key: resolved.selection.execution_model.model_key.clone(),
-            execution_model: resolved.selection.execution_model.clone(),
-            route: route.clone(),
-            provider_key: route.provider_key.clone(),
-            icon_metadata,
-            started_at: Instant::now(),
-            attempt_started_at: gateway_service::offset_now(),
-            finished: false,
-            collector: service.new_stream_response_collector(),
-            stream_trace: StreamTrace::new("chat", request_id, &route, &provider, Instant::now()),
-        }));
+        let (context, state) = harness.logging_state(request_id, upstream);
+        let mut body_stream = Box::pin(wrap_stream_with_request_logging(state));
 
         assert!(body_stream.next().await.is_some());
         drop(body_stream);
 
         let detail = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                if let Ok(detail) = service.get_request_log_detail(context.request_log_id).await {
+                if let Ok(detail) = harness
+                    .service
+                    .get_request_log_detail(context.request_log_id)
+                    .await
+                {
                     break detail;
                 }
                 tokio::task::yield_now().await;
@@ -2346,7 +2404,7 @@ mod tests {
         .await
         .expect("cancelled stream log persisted");
 
-        let snapshot = metrics.test_snapshot();
+        let snapshot = harness.metrics.test_snapshot();
         assert_eq!(snapshot.requests, 1);
         assert_eq!(snapshot.request_outcomes.get("client_cancelled"), Some(&1));
         assert_eq!(detail.log.status_code, Some(499));
@@ -2362,95 +2420,80 @@ mod tests {
             Some("client_cancelled")
         );
 
-        let ownership_scope_key = format!(
-            "service_account:{}",
-            auth.owner_service_account_id
-                .expect("service account owner")
-        );
-        let ledger = store
-            .get_usage_ledger_by_request_and_scope(request_id, &ownership_scope_key)
+        let ledger = harness
+            .store
+            .get_usage_ledger_by_request_and_scope(request_id, &harness.ownership_scope_key())
             .await
             .expect("read usage ledger");
         assert!(ledger.is_none());
+    }
 
-        let completed_request_id = "stream-terminal-test";
-        let completed_context = service.begin_chat_request_log(
-            completed_request_id,
-            &resolved.selection.requested_model.model_key,
-            &resolved.selection.execution_model.model_key,
-            &request,
-            &BTreeMap::new(),
-            RequestTags::default(),
+    #[tokio::test]
+    async fn terminal_stream_forwards_trailing_usage_before_completion() {
+        let harness = StreamTestHarness::new().await;
+        let request_id = "stream-terminal-test";
+        let upstream: ProviderStream = Box::pin(stream::iter([
+            Ok(Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            )),
+            Ok(Bytes::from_static(
+                b"data: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n",
+            )),
+            Ok(Bytes::from_static(b"data: [DONE]\n\n")),
+        ]));
+        let (context, state) = harness.logging_state(request_id, upstream);
+        let mut body_stream = Box::pin(wrap_stream_with_request_logging(state));
+
+        let finish_chunk = body_stream
+            .next()
+            .await
+            .expect("finish chunk")
+            .expect("finish chunk succeeds");
+        assert!(finish_chunk.windows(b"finish_reason".len()).any(|window| {
+            window == b"finish_reason"
+        }));
+        assert_eq!(harness.metrics.test_snapshot().requests, 0);
+        let usage_chunk = body_stream
+            .next()
+            .await
+            .expect("usage chunk")
+            .expect("usage chunk succeeds");
+        assert!(usage_chunk.windows(b"prompt_tokens".len()).any(|window| {
+            window == b"prompt_tokens"
+        }));
+        assert_eq!(harness.metrics.test_snapshot().requests, 0);
+        assert_eq!(
+            body_stream
+                .next()
+                .await
+                .expect("done chunk")
+                .expect("done chunk succeeds"),
+            Bytes::from_static(b"data: [DONE]\n\n")
         );
-        let completed_upstream: ProviderStream = Box::pin(stream::iter([Ok(Bytes::from_static(
-            br#"data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}
+        drop(body_stream);
 
-data: [DONE]
-
-"#,
-        ))]));
-        let completed_icon_metadata = request_log_icon_metadata(
-            &route,
-            resolved.provider_connections.get(&route.provider_key),
-            &resolved.selection.execution_model.model_key,
-            &resolved.selection.requested_model.model_key,
-        );
-        let mut completed_stream =
-            Box::pin(wrap_stream_with_request_logging(LoggingBodyStreamState {
-                upstream: completed_upstream,
-                service: service.clone(),
-                metrics: metrics.clone(),
-                auth: auth.clone(),
-                request_log_context: completed_context.clone(),
-                requested_model_key: resolved.selection.requested_model.model_key.clone(),
-                resolved_model_key: resolved.selection.execution_model.model_key.clone(),
-                execution_model: resolved.selection.execution_model.clone(),
-                route: route.clone(),
-                provider_key: route.provider_key.clone(),
-                icon_metadata: completed_icon_metadata,
-                started_at: Instant::now(),
-                attempt_started_at: gateway_service::offset_now(),
-                finished: false,
-                collector: service.new_stream_response_collector(),
-                stream_trace: StreamTrace::new(
-                    "chat",
-                    completed_request_id,
-                    &route,
-                    &provider,
-                    Instant::now(),
-                ),
-            }));
-
-        assert!(completed_stream.next().await.is_some());
-        drop(completed_stream);
-
-        let completed_detail = service
-            .get_request_log_detail(completed_context.request_log_id)
+        let detail = harness
+            .service
+            .get_request_log_detail(context.request_log_id)
             .await
             .expect("terminal stream log persisted before chunk delivery");
-        let completed_snapshot = metrics.test_snapshot();
-        assert_eq!(completed_snapshot.requests, 2);
-        assert_eq!(
-            completed_snapshot.request_outcomes.get("client_cancelled"),
-            Some(&1)
-        );
-        assert_eq!(completed_snapshot.request_outcomes.get("success"), Some(&1));
-        assert_eq!(completed_detail.log.status_code, Some(200));
-        assert_eq!(completed_detail.log.error_code, None);
-        assert_eq!(completed_detail.log.prompt_tokens, Some(2));
-        assert_eq!(completed_detail.log.completion_tokens, Some(1));
-        assert_eq!(completed_detail.log.total_tokens, Some(3));
-        assert_eq!(completed_detail.attempts.len(), 1);
-        assert_eq!(
-            completed_detail.attempts[0].status,
-            RequestAttemptStatus::Success
-        );
+        let snapshot = harness.metrics.test_snapshot();
+        assert_eq!(snapshot.requests, 1);
+        assert_eq!(snapshot.request_outcomes.get("success"), Some(&1));
+        assert_eq!(detail.log.status_code, Some(200));
+        assert_eq!(detail.log.error_code, None);
+        assert_eq!(detail.log.prompt_tokens, Some(2));
+        assert_eq!(detail.log.completion_tokens, Some(1));
+        assert_eq!(detail.log.total_tokens, Some(3));
+        assert_eq!(detail.attempts.len(), 1);
+        assert_eq!(detail.attempts[0].status, RequestAttemptStatus::Success);
 
-        let completed_ledger = store
-            .get_usage_ledger_by_request_and_scope(completed_request_id, &ownership_scope_key)
+        let ledger = harness
+            .store
+            .get_usage_ledger_by_request_and_scope(request_id, &harness.ownership_scope_key())
             .await
             .expect("read completed usage ledger");
-        assert!(completed_ledger.is_some());
+        assert!(ledger.is_some());
     }
 
     async fn seed_stream_cancellation_test(store: &AnyStore) {

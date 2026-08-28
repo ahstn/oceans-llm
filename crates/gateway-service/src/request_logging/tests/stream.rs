@@ -79,6 +79,7 @@ data: {"type":"response.failed","response":{"status":"failed","error":{"code":"s
     );
 
     assert!(observation.has_terminal_event);
+    assert!(observation.ends_stream);
     assert_eq!(
         collector.failure(),
         Some(&StreamFailureSummary {
@@ -86,6 +87,42 @@ data: {"type":"response.failed","response":{"status":"failed","error":{"code":"s
             error_code: "server_error".to_string(),
         })
     );
+}
+
+#[test]
+fn collector_defaults_responses_failure_without_error_details() {
+    let mut collector = StreamResponseCollector::default();
+
+    let observation = collector.observe_chunk(
+        br#"data: {"type":"response.failed","response":{"status":"failed"}}
+
+"#,
+    );
+
+    assert!(observation.ends_stream);
+    assert_eq!(
+        collector.failure(),
+        Some(&StreamFailureSummary {
+            status_code: 502,
+            error_code: "stream_error".to_string(),
+        })
+    );
+}
+
+#[test]
+fn collector_waits_for_done_after_responses_completion() {
+    let mut collector = StreamResponseCollector::default();
+
+    let completed = collector.observe_chunk(
+        br#"data: {"type":"response.completed","response":{"status":"completed"}}
+
+"#,
+    );
+    assert!(completed.has_terminal_event);
+    assert!(!completed.ends_stream);
+
+    let done = collector.observe_chunk(b"data: [DONE]\n\n");
+    assert!(done.ends_stream);
 }
 
 #[test]
@@ -109,7 +146,7 @@ fn request_summary_uses_provider_totals_without_cache_accounting() {
 fn collector_ignores_synthetic_anthropic_zero_usage_fallback() {
     let mut collector = StreamResponseCollector::default();
 
-    collector.observe_chunk(
+    let observation = collector.observe_chunk(
         br#"event: message_delta
 data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":0,"output_tokens":0}}
 
@@ -118,6 +155,7 @@ data: {"type":"message_stop"}
 
 "#,
     );
+    assert!(observation.ends_stream);
     collector.finish();
 
     assert_eq!(collector.usage(), None);
@@ -184,9 +222,11 @@ fn collector_reports_first_output_usage_and_terminal_events() {
 "#,
     );
     assert!(finish_reason.has_terminal_event);
+    assert!(!finish_reason.ends_stream);
 
     let done = collector.observe_chunk(b"data: [DONE]\n\n");
     assert!(done.has_terminal_event);
+    assert!(done.ends_stream);
 }
 
 #[test]

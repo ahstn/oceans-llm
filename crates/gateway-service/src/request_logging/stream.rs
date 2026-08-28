@@ -43,6 +43,7 @@ pub struct StreamChunkObservation {
     pub has_output: bool,
     pub has_usage: bool,
     pub has_terminal_event: bool,
+    pub ends_stream: bool,
 }
 
 impl StreamResponseCollector {
@@ -78,6 +79,7 @@ impl StreamResponseCollector {
             }
             if payload == "[DONE]" {
                 observation.has_terminal_event = true;
+                observation.ends_stream = true;
                 continue;
             }
 
@@ -93,11 +95,13 @@ impl StreamResponseCollector {
             if let Some(failure) = parsed.as_ref().and_then(stream_failure_from_value) {
                 self.failure = Some(failure);
                 observation.has_terminal_event = true;
+                observation.ends_stream = true;
             }
             if let Some(parsed) = parsed.as_ref() {
                 self.observe_tool_calls(parsed);
                 observation.has_output |= stream_event_has_output(parsed);
                 observation.has_terminal_event |= stream_event_is_terminal(parsed);
+                observation.ends_stream |= stream_event_ends_stream(parsed);
             }
 
             if self.events.len() >= self.payload_policy.stream_max_events {
@@ -244,6 +248,10 @@ fn stream_event_is_terminal(value: &Value) -> bool {
                     .is_some_and(|value| !value.is_null())
             })
         })
+}
+
+fn stream_event_ends_stream(value: &Value) -> bool {
+    value.get("type").and_then(Value::as_str) == Some("message_stop")
 }
 
 fn stream_failure_from_value(value: &Value) -> Option<StreamFailureSummary> {
