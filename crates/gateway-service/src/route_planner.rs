@@ -34,6 +34,11 @@ impl Default for WeightedRoutePlanner {
 }
 
 impl RoutePlanner for WeightedRoutePlanner {
+    #[tracing::instrument(
+        name = "gateway.route.plan",
+        skip_all,
+        fields(gateway.routes.candidate_count = routes.len())
+    )]
     fn plan_routes(&self, routes: &[ModelRoute]) -> Result<Vec<ModelRoute>, RouteError> {
         let mut by_priority: BTreeMap<i32, Vec<ModelRoute>> = BTreeMap::new();
 

@@ -68,6 +68,64 @@ data: {"type":"error","error":{"code":"upstream_failed"}}
 }
 
 #[test]
+fn collector_reads_nested_responses_failure() {
+    let mut collector = StreamResponseCollector::default();
+
+    let observation = collector.observe_chunk(
+        br#"event: response.failed
+data: {"type":"response.failed","response":{"status":"failed","error":{"code":"server_error","message":"boom"}}}
+
+"#,
+    );
+
+    assert!(observation.has_terminal_event);
+    assert!(observation.ends_stream);
+    assert_eq!(
+        collector.failure(),
+        Some(&StreamFailureSummary {
+            status_code: 502,
+            error_code: "server_error".to_string(),
+        })
+    );
+}
+
+#[test]
+fn collector_defaults_responses_failure_without_error_details() {
+    let mut collector = StreamResponseCollector::default();
+
+    let observation = collector.observe_chunk(
+        br#"data: {"type":"response.failed","response":{"status":"failed"}}
+
+"#,
+    );
+
+    assert!(observation.ends_stream);
+    assert_eq!(
+        collector.failure(),
+        Some(&StreamFailureSummary {
+            status_code: 502,
+            error_code: "stream_error".to_string(),
+        })
+    );
+}
+
+#[test]
+fn collector_waits_for_done_after_responses_completion() {
+    let mut collector = StreamResponseCollector::default();
+
+    let completed = collector.observe_chunk(
+        br#"data: {"type":"response.completed","response":{"status":"completed"}}
+
+"#,
+    );
+    assert!(completed.has_terminal_event);
+    assert!(!completed.ends_stream);
+
+    let done = collector.observe_chunk(b"data: [DONE]\n\n");
+    assert!(done.ends_stream);
+}
+
+#[test]
 fn request_summary_uses_provider_totals_without_cache_accounting() {
     assert_eq!(
         usage_summary_from_value(Some(&json!({
@@ -88,7 +146,7 @@ fn request_summary_uses_provider_totals_without_cache_accounting() {
 fn collector_ignores_synthetic_anthropic_zero_usage_fallback() {
     let mut collector = StreamResponseCollector::default();
 
-    collector.observe_chunk(
+    let observation = collector.observe_chunk(
         br#"event: message_delta
 data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":0,"output_tokens":0}}
 
@@ -97,6 +155,7 @@ data: {"type":"message_stop"}
 
 "#,
     );
+    assert!(observation.ends_stream);
     collector.finish();
 
     assert_eq!(collector.usage(), None);
@@ -135,6 +194,96 @@ fn collector_accepts_data_prefix_without_space() {
     let (payload, truncated) = collector.into_payload(None);
     assert!(!truncated);
     assert_eq!(payload["events"][0]["value"], 1);
+}
+
+#[test]
+fn collector_reports_first_output_usage_and_terminal_events() {
+    let mut collector = StreamResponseCollector::default();
+
+    let role = collector.observe_chunk(
+        br#"data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}
+
+"#,
+    );
+    assert!(!role.has_output);
+
+    let output = collector.observe_chunk(
+        br#"data: {"choices":[{"delta":{"content":"hello"},"finish_reason":null}],"usage":{"prompt_tokens":2}}
+
+"#,
+    );
+    assert!(output.has_output);
+    assert!(output.has_usage);
+    assert!(!output.has_terminal_event);
+
+    let finish_reason = collector.observe_chunk(
+        br#"data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+"#,
+    );
+    assert!(finish_reason.has_terminal_event);
+    assert!(!finish_reason.ends_stream);
+
+    let done = collector.observe_chunk(b"data: [DONE]\n\n");
+    assert!(done.has_terminal_event);
+    assert!(done.ends_stream);
+}
+
+#[test]
+fn collector_reports_responses_and_anthropic_output_deltas() {
+    let mut collector = StreamResponseCollector::default();
+
+    let responses = collector.observe_chunk(
+        br#"data: {"type":"response.output_text.delta","delta":"hello"}
+
+"#,
+    );
+    assert!(responses.has_output);
+
+    let anthropic = collector.observe_chunk(
+        br#"event: content_block_delta
+data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"world"}}
+
+"#,
+    );
+    assert!(anthropic.has_output);
+}
+
+#[test]
+fn collector_ignores_empty_anthropic_delta_metadata() {
+    let mut collector = StreamResponseCollector::default();
+
+    let empty_thinking = collector.observe_chunk(
+        br#"event: content_block_delta
+data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":""}}
+
+"#,
+    );
+    assert!(!empty_thinking.has_output);
+
+    let unknown_metadata = collector.observe_chunk(
+        br#"event: content_block_delta
+data: {"type":"content_block_delta","delta":{"type":"metadata_delta","sequence":1}}
+
+"#,
+    );
+    assert!(!unknown_metadata.has_output);
+
+    let thinking = collector.observe_chunk(
+        br#"event: content_block_delta
+data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"reason"}}
+
+"#,
+    );
+    assert!(thinking.has_output);
+
+    let tool_input = collector.observe_chunk(
+        br#"event: content_block_delta
+data: {"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{}"}}
+
+"#,
+    );
+    assert!(tool_input.has_output);
 }
 
 #[test]

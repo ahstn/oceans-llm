@@ -251,6 +251,11 @@ where
         self.model_access.list_models_for_api_key(auth).await
     }
 
+    #[tracing::instrument(
+        name = "gateway.request.resolve",
+        skip_all,
+        fields(gen_ai.request.model = requested_model)
+    )]
     pub async fn resolve_request(
         &self,
         auth: &AuthenticatedApiKey,
@@ -853,6 +858,17 @@ where
             .await
     }
 
+    #[tracing::instrument(
+        name = "gateway.usage.accounting",
+        skip_all,
+        fields(
+            gen_ai.response.model = %model.model_key,
+            gateway.provider.key = %route.provider_key,
+            gateway.usage.pricing_status = tracing::field::Empty,
+            gateway.usage.total_tokens = tracing::field::Empty,
+            gateway.usage.cost_usd = tracing::field::Empty,
+        )
+    )]
     pub async fn record_chat_usage(
         &self,
         auth: &AuthenticatedApiKey,
@@ -950,7 +966,7 @@ where
             );
         }
 
-        Ok(RecordedChatUsage {
+        let recorded = RecordedChatUsage {
             pricing_status: record.pricing_status,
             unpriced_reason: record.unpriced_reason.clone(),
             prompt_tokens: record.prompt_tokens,
@@ -960,7 +976,18 @@ where
             completion_tokens: record.completion_tokens,
             total_tokens: record.total_tokens,
             cost_usd: money_to_f64(record.computed_cost_usd),
-        })
+        };
+        let span = tracing::Span::current();
+        span.record(
+            "gateway.usage.pricing_status",
+            tracing::field::display(recorded.pricing_status.as_str()),
+        );
+        if let Some(total_tokens) = recorded.total_tokens {
+            span.record("gateway.usage.total_tokens", total_tokens);
+        }
+        span.record("gateway.usage.cost_usd", recorded.cost_usd);
+
+        Ok(recorded)
     }
 
     pub async fn record_batch_usage(

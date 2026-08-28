@@ -15,6 +15,7 @@ pub mod mcp_registry;
 pub mod models;
 pub mod observability;
 pub mod request_tags;
+mod request_tracing;
 pub mod response_cache;
 pub mod review_agent;
 pub mod spend;
@@ -28,13 +29,10 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use http::HeaderName;
-use opentelemetry::global;
-use opentelemetry_http::HeaderExtractor;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
 };
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use self::{
     api_keys::*, batches::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*,
@@ -355,47 +353,27 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             identity_guard_state,
             enforce_identity_mutation_admin,
         ))
-        .layer(TraceLayer::new_for_http().make_span_with(make_http_request_span))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(request_tracing::make_http_request_span)
+                .on_response(request_tracing::RecordHttpResponse)
+                .on_failure(request_tracing::RecordHttpFailure),
+        )
         .layer(PropagateRequestIdLayer::new(request_id_header.clone()))
         .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid));
 
     mount_admin_ui(api_router, admin_ui)
 }
 
-fn make_http_request_span<B>(request: &http::Request<B>) -> tracing::Span {
-    let request_id = request
-        .headers()
-        .get("x-request-id")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("missing");
-
-    let span = tracing::info_span!(
-        "http_request",
-        method = %request.method(),
-        uri = %request.uri().path(),
-        request_id = %request_id,
-        http.route = tracing::field::Empty,
-        requested_model = tracing::field::Empty,
-        resolved_model = tracing::field::Empty,
-        provider = tracing::field::Empty,
-        stream = tracing::field::Empty,
-        ownership_kind = tracing::field::Empty
-    );
-    let parent_context = global::get_text_map_propagator(|propagator| {
-        propagator.extract(&HeaderExtractor(request.headers()))
-    });
-    let _ = span.set_parent(parent_context);
-
-    span
-}
-
 #[cfg(test)]
 mod tests {
+    use opentelemetry::global;
     use opentelemetry::trace::{TraceContextExt, TracerProvider as _};
     use opentelemetry_sdk::{
         propagation::TraceContextPropagator,
         trace::{Sampler, SdkTracerProvider},
     };
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
     use tracing_subscriber::{Registry, layer::SubscriberExt};
 
     use super::*;
@@ -423,7 +401,7 @@ mod tests {
                 )
                 .body(())
                 .expect("request");
-            let span = make_http_request_span(&request);
+            let span = request_tracing::make_http_request_span(&request);
             let context = span.context();
             let otel_span = context.span();
             let span_context = otel_span.span_context();

@@ -26,6 +26,7 @@ impl From<AuthError> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        tracing::Span::current().record("gateway.error.type", self.0.error_type());
         let status = axum::http::StatusCode::from_u16(self.0.http_status_code())
             .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
 

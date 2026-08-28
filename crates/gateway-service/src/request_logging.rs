@@ -34,7 +34,9 @@ pub use attempts::{
     successful_attempt_outcome,
 };
 pub use harness::{AgentHarness, classify_agent_harness};
-pub use stream::{StreamFailureSummary, StreamLogResultInput, StreamResponseCollector};
+pub use stream::{
+    StreamChunkObservation, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
+};
 pub use tool_cardinality::invoked_tool_count_from_response_body;
 
 use harness::{normalized_user_agent, request_user_agent};
@@ -244,6 +246,11 @@ where
         })
     }
 
+    #[tracing::instrument(
+        name = "gateway.request.prepare",
+        skip_all,
+        fields(gateway.operation.name = input.operation)
+    )]
     fn begin_operation_request<T>(
         &self,
         input: OperationRequestLogInput<'_, T>,
@@ -283,6 +290,7 @@ where
         }
     }
 
+    #[tracing::instrument(name = "gateway.request.redact_and_bound", skip_all)]
     fn prepare_request_payload(
         &self,
         request_body: Value,
@@ -542,6 +550,17 @@ where
             .map_err(Into::into)
     }
 
+    #[tracing::instrument(
+        name = "gateway.request_log.persist",
+        skip_all,
+        fields(
+            gateway.operation.name = context.operation,
+            gateway.provider.key = %summary.provider_key,
+            gateway.request.stream = summary.stream,
+            http.response.status_code = summary.status_code,
+            gateway.request_log.wrote = tracing::field::Empty,
+        )
+    )]
     async fn persist_chat_log(
         &self,
         api_key: &AuthenticatedApiKey,
@@ -554,6 +573,7 @@ where
         if self.payload_policy.capture_mode == RequestLogPayloadCaptureMode::Disabled
             || !self.should_log_request(api_key).await?
         {
+            tracing::Span::current().record("gateway.request_log.wrote", false);
             return Ok(LoggedRequest {
                 request_log_id: context.request_log_id,
                 wrote: false,
@@ -620,6 +640,7 @@ where
         self.repo
             .insert_request_log_with_attempts(&log, payload.as_ref(), &attempts)
             .await?;
+        tracing::Span::current().record("gateway.request_log.wrote", true);
 
         Ok(LoggedRequest {
             request_log_id: context.request_log_id,

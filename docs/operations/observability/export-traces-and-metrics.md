@@ -1,6 +1,6 @@
 # Export Traces and Metrics
 
-`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [Request Logs](request-logs.md), [Kubernetes and Helm](../../setup/kubernetes-and-helm.md), [Configuration Reference](../../configuration/configuration-reference.md), [Admin Runbooks](../operator-runbooks.md)
+`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [Request Logs](request-logs.md), [LLM Request Trace Boundaries](../../adr/2026-08-27-llm-request-trace-boundaries.md), [Kubernetes and Helm](../../setup/kubernetes-and-helm.md), [Configuration Reference](../../configuration/configuration-reference.md), [Admin Runbooks](../operator-runbooks.md)
 
 Oceans LLM sends traces and metrics with the OpenTelemetry Protocol (OTLP). Admins can send this data to an OpenTelemetry Collector or to a Datadog Agent that accepts OTLP.
 
@@ -59,6 +59,8 @@ The fields have these effects:
 | `otel_export_interval_secs` | Sets the interval for metric export batches. |
 
 Trace sampling does not sample metrics. A value of `0.5` keeps about half of new root traces. All metric instruments remain active.
+
+The gateway uses parent-based head sampling. See [LLM Request Trace Boundaries](../../adr/2026-08-27-llm-request-trace-boundaries.md) for the sampling contract. To make all gateway root traces eligible for collector final-outcome rules, keep `otel_trace_sample_ratio` at `1.0` and configure the collector to retain errors, slow requests, client cancellations, or budget failures while it reduces normal trace volume.
 
 Restart the gateway after you change these values. An invalid endpoint URI stops config validation. A sampling ratio outside `0.0` through `1.0` also stops validation.
 
@@ -132,6 +134,10 @@ Gateway metric names include:
 - `gateway.chat.tokens`
 - `gateway.chat.cost.usd`
 - `gateway.mcp.tool_invocations`
+
+For a streaming model request, confirm that the trace contains `http.server.request`, `gateway.provider.operation`, `http.client.request`, and `gateway.provider.stream`. The stream span reports first-chunk and first-output latency, chunk and byte totals, terminal-event presence, and its termination reason. Model access, routing, budget, usage, ledger, and request-log spans appear when the request reaches those phases.
+
+Trace attributes do not contain prompt content, tool arguments, credentials, full request headers, or URL query values. Use the governed request-log store when you need captured payload data.
 
 For Datadog, check APM for the `oceans-llm-gateway` service. Use Metrics Explorer to find the gateway metrics. Datadog can map OpenTelemetry metric names during intake. Inspect the received names if an exact search returns no result.
 

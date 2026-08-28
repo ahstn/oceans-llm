@@ -11,7 +11,7 @@ use gateway_core::{
 };
 use serde_json::{Map, Value, json};
 
-use crate::http::{join_base_url, map_reqwest_error};
+use crate::http::{TracedResponse, execute_request, join_base_url, map_reqwest_error};
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTokenSource};
 
@@ -201,6 +201,7 @@ impl OpenAiCompatProvider {
         )
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_authenticated_chat_request(
         &self,
         request: &CoreChatRequest,
@@ -210,6 +211,7 @@ impl OpenAiCompatProvider {
         self.build_chat_request_with_token(request, context, token.as_deref())
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_authenticated_chat_stream_request(
         &self,
         request: &CoreChatRequest,
@@ -219,6 +221,7 @@ impl OpenAiCompatProvider {
         self.build_chat_stream_request_with_token(request, context, token.as_deref())
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_authenticated_embeddings_request(
         &self,
         request: &CoreEmbeddingsRequest,
@@ -228,6 +231,7 @@ impl OpenAiCompatProvider {
         self.build_embeddings_request_with_token(request, context, token.as_deref())
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_authenticated_responses_request(
         &self,
         request: &CoreResponsesRequest,
@@ -237,6 +241,7 @@ impl OpenAiCompatProvider {
         self.build_responses_request_with_token(request, context, token.as_deref())
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_authenticated_responses_stream_request(
         &self,
         request: &CoreResponsesRequest,
@@ -350,6 +355,7 @@ impl OpenAiCompatProvider {
         self.build_request("responses", body, context, true, false, bearer_token)
     }
 
+    #[tracing::instrument(name = "gateway.provider.credentials", skip_all)]
     async fn auth_token(&self) -> Result<Option<String>, ProviderError> {
         if let Some(source) = &self.config.identity_token_source {
             return source.token().await.map(Some);
@@ -439,11 +445,14 @@ impl OpenAiCompatProvider {
         &self,
         request: reqwest::Request,
     ) -> Result<Value, ProviderError> {
-        let response = self
-            .client
-            .execute(request)
-            .await
-            .map_err(map_reqwest_error)?;
+        let response = execute_request(
+            &self.client,
+            request,
+            &self.config.provider_type,
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
         let status = response.status();
         let text = response.text().await.map_err(map_reqwest_error)?;
 
@@ -460,12 +469,15 @@ impl OpenAiCompatProvider {
     async fn execute_stream_request(
         &self,
         request: reqwest::Request,
-    ) -> Result<reqwest::Response, ProviderError> {
-        let response = self
-            .client
-            .execute(request)
-            .await
-            .map_err(map_reqwest_error)?;
+    ) -> Result<TracedResponse, ProviderError> {
+        let response = execute_request(
+            &self.client,
+            request,
+            &self.config.provider_type,
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.map_err(map_reqwest_error)?;
