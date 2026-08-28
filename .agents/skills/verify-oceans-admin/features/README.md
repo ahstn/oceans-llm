@@ -8,7 +8,7 @@ This directory is the maintained source for verification of the user-facing Ocea
 - Use only the stack started for the current `OCEANS_VERIFY_RUN_ID`.
 - Require `control-oceans-admin doctor` to report the recorded gateway PID, ready state, and gateway version.
 - Use the seeded `admin@local` / `admin` platform-admin account unless a feature requires a narrower role.
-- Treat Agent Sessions as verified-unreachable under the current `gateway.yaml`, which does not grant `agent_sessions` to any permission group. Do not change product configuration during a maintenance pass.
+- Verify Agent Sessions with the seeded platform administrator. The current `gateway.yaml` grants `agent_sessions` directly to platform administrators.
 - Expect `dev-stack` to refresh the demo data in this checkout's `gateway.db`.
 - Do not run a second stack from this checkout. It would share `gateway.db` even if its ports differ.
 

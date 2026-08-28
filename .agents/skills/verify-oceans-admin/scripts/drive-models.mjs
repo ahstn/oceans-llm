@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..')
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
 const requireFromAdminUi = createRequire(path.join(repoRoot, 'crates/admin-ui/web/package.json'))
 const { chromium } = requireFromAdminUi('playwright')
 
@@ -70,7 +71,12 @@ try {
   if (!showingText) throw new Error('The Models page did not report a visible model count.')
   const match = /^Showing (\d+) of (\d+) models$/.exec(showingText)
   if (!match) throw new Error(`Unexpected Models count text: ${showingText}`)
-  const visibleCount = Number(match[2])
+  const displayedCount = Number(match[1])
+  const totalCount = Number(match[2])
+  const renderedCount = await page.locator('[data-testid^="models-desktop-cell-"]').count()
+  if (displayedCount !== renderedCount) {
+    throw new Error(`UI reported ${displayedCount} displayed models but rendered ${renderedCount} model rows.`)
+  }
   actions.push({ action: 'follow Models sidebar link', result: showingText })
   await capture(page, '02-models')
 
@@ -80,8 +86,8 @@ try {
     return response.json()
   })
   const apiCount = adminModels.data.total
-  if (apiCount !== visibleCount) {
-    throw new Error(`UI model count ${visibleCount} did not match admin API count ${apiCount}.`)
+  if (apiCount !== totalCount) {
+    throw new Error(`UI total model count ${totalCount} did not match admin API count ${apiCount}.`)
   }
 
   const modelCell = page.getByTestId('models-desktop-cell-gpt-5.6-sol')
@@ -125,13 +131,15 @@ try {
     finalUrl: page.url(),
     gatewayVersion,
     modelId: 'gpt-5.6-sol',
-    visibleCount,
+    displayedCount,
+    renderedCount,
+    totalCount,
     apiCount,
     actions,
     generatedAt: new Date().toISOString(),
   }
   await fs.writeFile(path.join(evidenceDir, 'models-proof.json'), `${JSON.stringify(proof, null, 2)}\n`)
-  console.log(`models proof passed: ${visibleCount} UI models matched ${apiCount} API models`)
+  console.log(`models proof passed: ${displayedCount} displayed and ${totalCount} total UI models matched the rendered rows and API total`)
   console.log(`evidence: ${evidenceDir}`)
 } finally {
   await browser.close()

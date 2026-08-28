@@ -21,7 +21,7 @@ export OCEANS_VERIFY_UI_PORT=33010
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin launch
 ```
 
-`launch` runs the existing `mise run dev-stack` task with alternate ports. The task derives a temporary runtime config from `gateway.yaml` with the selected bind port, refreshes this checkout's gitignored `gateway.db` with the local demo seed, and records process IDs under `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/`. It refuses to start if either selected port is in use or another gateway process has this repository as its working directory.
+`launch` requires `lsof` for listener and checkout ownership checks. It runs the existing `mise run dev-stack` task with alternate ports. The task derives a temporary runtime config from `gateway.yaml` with the selected bind port, refreshes this checkout's gitignored `gateway.db` with the local demo seed, and records process IDs under `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/`. It refuses to start if either selected port is in use or another gateway process has this repository as its working directory.
 
 The instance is ready when `launch` prints `ready` and both `/readyz` and `/api/v1/health` answer. The sign-in URL is `http://127.0.0.1:$OCEANS_VERIFY_GATEWAY_PORT/admin/login`. Protected feature routes remain under `/admin/*`.
 
@@ -53,9 +53,9 @@ Prove the Models path:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive models
 ```
 
-The Models driver opens the protected `/admin/api-keys` route, captures its redirect to sign-in, signs in as the seeded `admin@local` user, follows the `Models` sidebar link, compares the visible model count with the read-only admin models response, checks every platform-admin `Model info` section, enables `Context window` and `Capabilities`, and opens `Client config` for `gpt-5.6-sol`.
+The Models driver opens the protected `/admin/api-keys` route, captures its redirect to sign-in, signs in as the seeded `admin@local` user, follows the `Models` sidebar link, checks the displayed count against rendered rows and the total count against the read-only admin models response, checks every platform-admin `Model info` section, enables `Context window` and `Capabilities`, and opens `Client config` for `gpt-5.6-sol`.
 
-The current `gateway.yaml` does not grant the `agent_sessions` page to any permission group. Under the unchanged `dev-stack` baseline, report Agent Sessions as verified-unreachable with the attempted `/admin/observability/agent-sessions` route and the missing page permission. Do not change product configuration to make a maintenance proof pass.
+The current `gateway.yaml` grants the `agent_sessions` page to platform administrators. Verify the list, filtering, pagination, and a matching detail sheet against the seeded demo data.
 
 For other features, follow the exact stable handles in the feature map. Extend the driver with a named command before you report a new path as automated.
 
@@ -68,7 +68,7 @@ Evidence is written to `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/evi
 - `03-model-info.png` and `03-model-info.aria.txt` for the selected model Access detail.
 - `04-model-columns.png` and `04-model-columns.aria.txt` for the optional desktop columns.
 - `05-model-client-config.png` and `05-model-client-config.aria.txt` for generated client configuration.
-- `models-proof.json` with the visited URLs, visible count, API count, model ID, gateway version, and action log.
+- `models-proof.json` with the visited URLs, displayed, rendered, total, and API counts, model ID, gateway version, and action log.
 - `stack.log` beside the evidence directory for launch and runtime diagnostics. Cleanup redacts seeded passwords and raw demo API-key secrets from this log.
 
 A valid proof exercises the real browser path. It captures the action and resulting state, not only a final screenshot. It also confirms the model list through the production admin API used by the UI. Do not use internal state setters or test-only endpoints. The local demo seed is the production seed boundary for this development command; no provider call is required to list models.

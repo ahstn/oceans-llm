@@ -211,25 +211,37 @@ WEB_DIR="$ROOT_DIR/crates/admin-ui/web"
 GATEWAY_PORT="${PORT:-8080}"
 ADMIN_UI_INTERNAL_PORT="${ADMIN_UI_INTERNAL_PORT:-3001}"
 ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_PORT}}"
-
-export OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
-export AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED="${AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED:-true}"
-
-cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo
-
+GATEWAY_RUNTIME_CONFIG="$(mktemp "${TMPDIR:-/tmp}/oceans-gateway-dev.XXXXXX")"
 
 cleanup() {
   if [[ -n "${UI_PID:-}" ]]; then
     kill "$UI_PID" >/dev/null 2>&1 || true
   fi
+  rm -f "$GATEWAY_RUNTIME_CONFIG"
 }
 
 trap cleanup EXIT INT TERM
 
+awk -v gateway_bind="0.0.0.0:${GATEWAY_PORT}" '
+  BEGIN { in_server = 0; replaced = 0 }
+  /^server:$/ { in_server = 1 }
+  in_server && !replaced && /^  bind:/ {
+    printf "  bind: %c%s%c%c", 34, gateway_bind, 34, 10
+    replaced = 1
+    next
+  }
+  { print }
+' gateway.yaml >"$GATEWAY_RUNTIME_CONFIG"
+
+export OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
+export AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED="${AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED:-true}"
+
+cargo run -p gateway --bin gateway -- --config "$GATEWAY_RUNTIME_CONFIG" seed-local-demo
+
 bun run --cwd "$WEB_DIR" dev -- --port "$ADMIN_UI_INTERNAL_PORT" &
 UI_PID=$!
 
-ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" PORT="$GATEWAY_PORT" cargo run -p gateway --bin gateway -- --config gateway.yaml serve
+ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" cargo run -p gateway --bin gateway -- --config "$GATEWAY_RUNTIME_CONFIG" serve
 """
 
 [tasks.prod-stack]

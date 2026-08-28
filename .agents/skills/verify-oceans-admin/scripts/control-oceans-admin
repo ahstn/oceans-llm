@@ -9,7 +9,7 @@ state_base="${OCEANS_VERIFY_STATE_BASE:-/tmp/oceans-admin-verification}"
 checkout_key="$(printf '%s' "$repo_root" | shasum -a 256 | cut -c1-16)"
 lock_dir="$state_base/checkout-$checkout_key.lock"
 
-if [[ -z "$run_id" || ! "$run_id" =~ ^[A-Za-z0-9._-]+$ ]]; then
+if [[ -z "$run_id" || "$run_id" == "." || "$run_id" == ".." || ! "$run_id" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "Set OCEANS_VERIFY_RUN_ID to a unique value containing letters, numbers, dots, underscores, or hyphens." >&2
   exit 2
 fi
@@ -21,6 +21,16 @@ gateway_pid_file="$run_dir/gateway.pid"
 ui_pid_file="$run_dir/ui.pid"
 log_file="$run_dir/stack.log"
 base_url="http://127.0.0.1:$gateway_port"
+stack_start_file="$run_dir/stack.start-time"
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "Required command '$1' is not available. Install it before running this verification control." >&2
+    exit 1
+  }
+}
+
+require_command lsof
 
 activate_mise() {
   eval "$(/Users/ahstn/.local/bin/mise activate bash)"
@@ -39,9 +49,33 @@ gateway_uses_this_checkout() {
 
 remove_lock_if_owned() {
   if [[ -f "$lock_dir/run-id" ]] && [[ "$(<"$lock_dir/run-id")" == "$run_id" ]]; then
-    rm -f "$lock_dir/run-id"
+    rm -f "$lock_dir/run-id" "$lock_dir/pid" "$lock_dir/start-time"
     rmdir "$lock_dir" 2>/dev/null || true
   fi
+}
+
+process_start_time() {
+  ps -p "$1" -o lstart= 2>/dev/null | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+lock_is_live() {
+  local owner_pid owner_start current_start
+  [[ -f "$lock_dir/pid" && -f "$lock_dir/start-time" ]] || return 1
+  owner_pid="$(<"$lock_dir/pid")"
+  owner_start="$(<"$lock_dir/start-time")"
+  current_start="$(process_start_time "$owner_pid")"
+  [[ -n "$current_start" && "$current_start" == "$owner_start" ]]
+}
+
+record_lock_owner() {
+  local owner_pid="$1" owner_start
+  owner_start="$(process_start_time "$owner_pid")"
+  [[ -n "$owner_start" ]] || {
+    echo "Could not record process identity for PID $owner_pid." >&2
+    return 1
+  }
+  printf '%s\n' "$owner_pid" >"$lock_dir/pid"
+  printf '%s\n' "$owner_start" >"$lock_dir/start-time"
 }
 
 redact_log() {
@@ -56,10 +90,12 @@ redact_log() {
 }
 
 cleanup() {
-  local stored current
-  if [[ -f "$stack_pid_file" ]]; then
+  local stored current stored_start current_start
+  if [[ -f "$stack_pid_file" && -f "$stack_start_file" ]]; then
     stored="$(<"$stack_pid_file")"
-    if kill -0 "$stored" 2>/dev/null; then
+    stored_start="$(<"$stack_start_file")"
+    current_start="$(process_start_time "$stored" || true)"
+    if [[ -n "$current_start" && "$current_start" == "$stored_start" ]]; then
       kill -TERM "$stored" 2>/dev/null || true
       for _ in {1..40}; do
         kill -0 "$stored" 2>/dev/null || break
@@ -79,30 +115,47 @@ cleanup() {
     fi
   done
 
-  rm -f "$stack_pid_file" "$gateway_pid_file" "$ui_pid_file" "$run_dir/base-url" "$run_dir/gateway-port" "$run_dir/ui-port" "$run_dir/gateway-version"
+  rm -f "$stack_pid_file" "$stack_start_file" "$gateway_pid_file" "$ui_pid_file" "$run_dir/base-url" "$run_dir/gateway-port" "$run_dir/ui-port" "$run_dir/gateway-version"
   remove_lock_if_owned
   redact_log
   echo "cleanup complete; evidence retained at $evidence_dir"
 }
 
 launch() {
-  local existing pid
+  local existing pid start_time
   mkdir -p "$state_base" "$run_dir" "$evidence_dir"
   if ! mkdir "$lock_dir" 2>/dev/null; then
-    echo "Refusing to share this checkout database. Active lock: $lock_dir" >&2
-    exit 1
+    if lock_is_live; then
+      echo "Refusing to share this checkout database. Active lock: $lock_dir" >&2
+      exit 1
+    fi
+    rm -f "$lock_dir/run-id" "$lock_dir/pid" "$lock_dir/start-time"
+    rmdir "$lock_dir" 2>/dev/null || {
+      echo "Refusing to replace lock with unexpected contents: $lock_dir" >&2
+      exit 1
+    }
+    mkdir "$lock_dir"
   fi
   printf '%s\n' "$run_id" >"$lock_dir/run-id"
+  record_lock_owner "$$"
+
+  abort_launch() {
+    local status="${1:-1}"
+    trap - EXIT INT TERM
+    cleanup
+    exit "$status"
+  }
+  trap 'abort_launch $?' EXIT
+  trap 'abort_launch 130' INT
+  trap 'abort_launch 143' TERM
 
   if [[ -n "$(listener_pid "$gateway_port" || true)" || -n "$(listener_pid "$ui_port" || true)" ]]; then
-    remove_lock_if_owned
     echo "Refusing to start because port $gateway_port or $ui_port is already in use." >&2
     exit 1
   fi
 
   existing="$(gateway_uses_this_checkout || true)"
   if [[ -n "$existing" ]]; then
-    remove_lock_if_owned
     echo "Refusing to double-drive this checkout. Gateway PID $existing already uses $repo_root." >&2
     exit 1
   fi
@@ -114,15 +167,24 @@ launch() {
   activate_mise
   (
     cd "$repo_root"
-    PORT="$gateway_port" ADMIN_UI_INTERNAL_PORT="$ui_port" ADMIN_UI_UPSTREAM="http://localhost:$ui_port" mise run dev-stack
+    export PORT="$gateway_port"
+    export ADMIN_UI_INTERNAL_PORT="$ui_port"
+    export ADMIN_UI_UPSTREAM="http://localhost:$ui_port"
+    exec mise run dev-stack
   ) >"$log_file" 2>&1 &
   pid=$!
+  start_time="$(process_start_time "$pid")"
+  [[ -n "$start_time" ]] || {
+    echo "Could not record process identity for the launched dev stack." >&2
+    exit 1
+  }
   printf '%s\n' "$pid" >"$stack_pid_file"
+  printf '%s\n' "$start_time" >"$stack_start_file"
+  record_lock_owner "$pid"
 
   for _ in {1..600}; do
     if ! kill -0 "$pid" 2>/dev/null; then
       echo "The dev stack exited before it became ready. See $log_file" >&2
-      cleanup
       exit 1
     fi
     if curl --silent --fail "$base_url/readyz" >/dev/null 2>&1; then
@@ -133,14 +195,12 @@ launch() {
 
   if ! curl --silent --fail "$base_url/readyz" >/dev/null; then
     echo "The dev stack did not become ready. See $log_file" >&2
-    cleanup
     exit 1
   fi
 
   pid="$(listener_pid "$gateway_port" || true)"
   if [[ -z "$pid" ]]; then
     echo "Ready endpoint answered, but no gateway listener owns port $gateway_port." >&2
-    cleanup
     exit 1
   fi
   printf '%s\n' "$pid" >"$gateway_pid_file"
@@ -148,12 +208,12 @@ launch() {
   pid="$(listener_pid "$ui_port" || true)"
   if [[ -z "$pid" ]]; then
     echo "Gateway is ready, but no admin UI listener owns port $ui_port." >&2
-    cleanup
     exit 1
   fi
   printf '%s\n' "$pid" >"$ui_pid_file"
 
   doctor
+  trap - EXIT INT TERM
   echo "ready: $base_url/admin/login"
 }
 

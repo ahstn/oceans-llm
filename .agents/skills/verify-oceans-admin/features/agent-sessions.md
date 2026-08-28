@@ -21,8 +21,7 @@ Preconditions:
 
 - `control-oceans-admin doctor` passes.
 - `mise run dev-stack` completed its local demo seed.
-- The signed-in session includes the `agent_sessions` page permission.
-- The current `gateway.yaml` grants no permission group the `agent_sessions` page. Under the unchanged baseline, this feature is verified-unreachable: the sidebar omits `Agent Sessions`, and `/admin/observability/agent-sessions` returns the user to the configured default page.
+- Sign in as the seeded `admin@local` platform administrator. The current `gateway.yaml` grants platform administrators the `agent_sessions` page.
 
 - **Open list.** Choose the `Agent Sessions` link. The `Agent sessions` heading, `Session explorer`, and a session count badge are visible.
 - **Filter.** Expand `Filters`. Fill the `Harness`, `Model`, or another labeled field, or choose a value under `Session state`, `Outcome`, `Score maturity`, or `Score confidence`. The URL search changes and the table settles with `aria-busy=false`.
@@ -37,4 +36,4 @@ Preconditions:
 - The demo worker can update report state after startup. Wait for the expected row or detail state, not a fixed delay.
 - Table rows are keyboard accessible but are not links. Use the visible row text or press Enter on the focused row.
 - Page access depends on the permission set in `gateway.yaml` and the signed-in role.
-- Do not add `agent_sessions` to `gateway.yaml` during a maintenance run. Record the attempted route and missing page permission as the concrete prerequisite.
+- If the page is absent, inspect the signed-in session's permissions before you diagnose routing or seeded-data faults.
