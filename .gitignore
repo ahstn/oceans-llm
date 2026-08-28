@@ -20,5 +20,7 @@ gateway.db*
 .omp/mcp.json
 .codex/config.toml
 .claude/*
-.agents/skills/
+.agents/skills/*
+!.agents/skills/verify-oceans-admin/
+!.agents/skills/verify-oceans-admin/**
 .claude/settings.local.json

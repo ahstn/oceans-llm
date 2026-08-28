@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
+run_id="${OCEANS_VERIFY_RUN_ID:-}"
+gateway_port="${OCEANS_VERIFY_GATEWAY_PORT:-38090}"
+ui_port="${OCEANS_VERIFY_UI_PORT:-33010}"
+state_base="${OCEANS_VERIFY_STATE_BASE:-/tmp/oceans-admin-verification}"
+checkout_key="$(printf '%s' "$repo_root" | shasum -a 256 | cut -c1-16)"
+lock_dir="$state_base/checkout-$checkout_key.lock"
+
+if [[ -z "$run_id" || "$run_id" == "." || "$run_id" == ".." || ! "$run_id" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "Set OCEANS_VERIFY_RUN_ID to a unique value containing letters, numbers, dots, underscores, or hyphens." >&2
+  exit 2
+fi
+
+run_dir="$state_base/$run_id"
+evidence_dir="$run_dir/evidence"
+stack_pid_file="$run_dir/stack.pid"
+gateway_pid_file="$run_dir/gateway.pid"
+ui_pid_file="$run_dir/ui.pid"
+log_file="$run_dir/stack.log"
+base_url="http://127.0.0.1:$gateway_port"
+stack_start_file="$run_dir/stack.start-time"
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "Required command '$1' is not available. Install it before running this verification control." >&2
+    exit 1
+  }
+}
+
+require_command lsof
+
+activate_mise() {
+  eval "$(/Users/ahstn/.local/bin/mise activate bash)"
+}
+
+listener_pid() {
+  lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | head -1
+}
+
+gateway_uses_this_checkout() {
+  lsof -a -c gateway -d cwd -Fn 2>/dev/null | awk -v root="$repo_root" '
+    /^p/ { pid=substr($0, 2) }
+    /^n/ && substr($0, 2) == root { print pid }
+  ' | head -1
+}
+
+remove_lock_if_owned() {
+  if [[ -f "$lock_dir/run-id" ]] && [[ "$(<"$lock_dir/run-id")" == "$run_id" ]]; then
+    rm -f "$lock_dir/run-id" "$lock_dir/pid" "$lock_dir/start-time"
+    rmdir "$lock_dir" 2>/dev/null || true
+  fi
+}
+
+process_start_time() {
+  ps -p "$1" -o lstart= 2>/dev/null | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+lock_is_live() {
+  local owner_pid owner_start current_start
+  [[ -f "$lock_dir/pid" && -f "$lock_dir/start-time" ]] || return 1
+  owner_pid="$(<"$lock_dir/pid")"
+  owner_start="$(<"$lock_dir/start-time")"
+  current_start="$(process_start_time "$owner_pid")"
+  [[ -n "$current_start" && "$current_start" == "$owner_start" ]]
+}
+
+record_lock_owner() {
+  local owner_pid="$1" owner_start
+  owner_start="$(process_start_time "$owner_pid")"
+  [[ -n "$owner_start" ]] || {
+    echo "Could not record process identity for PID $owner_pid." >&2
+    return 1
+  }
+  printf '%s\n' "$owner_pid" >"$lock_dir/pid"
+  printf '%s\n' "$owner_start" >"$lock_dir/start-time"
+}
+
+redact_log() {
+  local redacted_log
+  [[ -f "$log_file" ]] || return 0
+  redacted_log="$log_file.redacted"
+  sed -E \
+    -e 's/^(sample user password:).*/\1 [REDACTED]/' \
+    -e 's/(gwk_[A-Za-z0-9]+\.)[^[:space:]]+/\1[REDACTED]/g' \
+    "$log_file" >"$redacted_log"
+  mv "$redacted_log" "$log_file"
+}
+
+cleanup() {
+  local stored current stored_start current_start
+  if [[ -f "$stack_pid_file" && -f "$stack_start_file" ]]; then
+    stored="$(<"$stack_pid_file")"
+    stored_start="$(<"$stack_start_file")"
+    current_start="$(process_start_time "$stored" || true)"
+    if [[ -n "$current_start" && "$current_start" == "$stored_start" ]]; then
+      kill -TERM "$stored" 2>/dev/null || true
+      for _ in {1..40}; do
+        kill -0 "$stored" 2>/dev/null || break
+        sleep 0.25
+      done
+    fi
+  fi
+
+  for spec in "$gateway_pid_file:$gateway_port" "$ui_pid_file:$ui_port"; do
+    local pid_file="${spec%%:*}"
+    local port="${spec##*:}"
+    [[ -f "$pid_file" ]] || continue
+    stored="$(<"$pid_file")"
+    current="$(listener_pid "$port" || true)"
+    if [[ -n "$current" && "$current" == "$stored" ]]; then
+      kill -TERM "$stored" 2>/dev/null || true
+    fi
+  done
+
+  rm -f "$stack_pid_file" "$stack_start_file" "$gateway_pid_file" "$ui_pid_file" "$run_dir/base-url" "$run_dir/gateway-port" "$run_dir/ui-port" "$run_dir/gateway-version"
+  remove_lock_if_owned
+  redact_log
+  echo "cleanup complete; evidence retained at $evidence_dir"
+}
+
+launch() {
+  local existing pid start_time current_gateway current_ui
+  mkdir -p "$state_base" "$run_dir" "$evidence_dir"
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    if lock_is_live; then
+      echo "Refusing to share this checkout database. Active lock: $lock_dir" >&2
+      exit 1
+    fi
+    rm -f "$lock_dir/run-id" "$lock_dir/pid" "$lock_dir/start-time"
+    rmdir "$lock_dir" 2>/dev/null || {
+      echo "Refusing to replace lock with unexpected contents: $lock_dir" >&2
+      exit 1
+    }
+    mkdir "$lock_dir"
+  fi
+  printf '%s\n' "$run_id" >"$lock_dir/run-id"
+  record_lock_owner "$$"
+
+  abort_launch() {
+    local status="${1:-1}"
+    trap - EXIT INT TERM
+    cleanup
+    exit "$status"
+  }
+  trap 'abort_launch $?' EXIT
+  trap 'abort_launch 130' INT
+  trap 'abort_launch 143' TERM
+
+  if [[ -n "$(listener_pid "$gateway_port" || true)" || -n "$(listener_pid "$ui_port" || true)" ]]; then
+    echo "Refusing to start because port $gateway_port or $ui_port is already in use." >&2
+    exit 1
+  fi
+
+  existing="$(gateway_uses_this_checkout || true)"
+  if [[ -n "$existing" ]]; then
+    echo "Refusing to double-drive this checkout. Gateway PID $existing already uses $repo_root." >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$base_url" >"$run_dir/base-url"
+  printf '%s\n' "$gateway_port" >"$run_dir/gateway-port"
+  printf '%s\n' "$ui_port" >"$run_dir/ui-port"
+
+  activate_mise
+  (
+    cd "$repo_root"
+    export PORT="$gateway_port"
+    export ADMIN_UI_INTERNAL_PORT="$ui_port"
+    export ADMIN_UI_UPSTREAM="http://localhost:$ui_port"
+    exec mise run dev-stack
+  ) >"$log_file" 2>&1 &
+  pid=$!
+  start_time="$(process_start_time "$pid")"
+  [[ -n "$start_time" ]] || {
+    echo "Could not record process identity for the launched dev stack." >&2
+    exit 1
+  }
+  printf '%s\n' "$pid" >"$stack_pid_file"
+  printf '%s\n' "$start_time" >"$stack_start_file"
+  record_lock_owner "$pid"
+
+  for _ in {1..600}; do
+    current_gateway="$(listener_pid "$gateway_port" || true)"
+    current_ui="$(listener_pid "$ui_port" || true)"
+    [[ -z "$current_gateway" ]] || printf '%s\n' "$current_gateway" >"$gateway_pid_file"
+    [[ -z "$current_ui" ]] || printf '%s\n' "$current_ui" >"$ui_pid_file"
+
+    if ! kill -0 "$pid" 2>/dev/null && [[ -z "$current_gateway" && -z "$current_ui" ]]; then
+      echo "The dev stack exited before it became ready. See $log_file" >&2
+      exit 1
+    fi
+    if curl --silent --fail "$base_url/readyz" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+  done
+
+  if ! curl --silent --fail "$base_url/readyz" >/dev/null; then
+    echo "The dev stack did not become ready. See $log_file" >&2
+    exit 1
+  fi
+
+  pid="$(listener_pid "$gateway_port" || true)"
+  if [[ -z "$pid" ]]; then
+    echo "Ready endpoint answered, but no gateway listener owns port $gateway_port." >&2
+    exit 1
+  fi
+  printf '%s\n' "$pid" >"$gateway_pid_file"
+
+  pid="$(listener_pid "$ui_port" || true)"
+  if [[ -z "$pid" ]]; then
+    echo "Gateway is ready, but no admin UI listener owns port $ui_port." >&2
+    exit 1
+  fi
+  printf '%s\n' "$pid" >"$ui_pid_file"
+
+  doctor
+  trap - EXIT INT TERM
+  echo "ready: $base_url/admin/login"
+}
+
+doctor() {
+  local recorded_gateway current_gateway recorded_ui current_ui health version
+  [[ -f "$gateway_pid_file" && -f "$ui_pid_file" ]] || {
+    echo "No launched verification instance is recorded for run $run_id." >&2
+    exit 1
+  }
+  recorded_gateway="$(<"$gateway_pid_file")"
+  recorded_ui="$(<"$ui_pid_file")"
+  current_gateway="$(listener_pid "$gateway_port" || true)"
+  current_ui="$(listener_pid "$ui_port" || true)"
+  [[ "$current_gateway" == "$recorded_gateway" ]] || {
+    echo "Port $gateway_port is not owned by recorded gateway PID $recorded_gateway." >&2
+    exit 1
+  }
+  [[ "$current_ui" == "$recorded_ui" ]] || {
+    echo "Port $ui_port is not owned by recorded UI PID $recorded_ui." >&2
+    exit 1
+  }
+  curl --silent --fail "$base_url/readyz" | grep -q '"status":"ready"'
+  health="$(curl --silent --fail "$base_url/api/v1/health")"
+  version="$(printf '%s' "$health" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
+  [[ -n "$version" ]] || {
+    echo "Gateway health did not include a version: $health" >&2
+    exit 1
+  }
+  printf '%s\n' "$version" >"$run_dir/gateway-version"
+  echo "doctor ok: gateway $version at $base_url, gateway PID $recorded_gateway, UI PID $recorded_ui"
+}
+
+drive() {
+  [[ "${1:-}" == "models" ]] || {
+    echo "Supported drive target: models" >&2
+    exit 2
+  }
+  doctor
+  activate_mise
+  mise run e2e-install
+  OCEANS_VERIFY_BASE_URL="$base_url" \
+    OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" \
+    OCEANS_VERIFY_GATEWAY_VERSION="$(<"$run_dir/gateway-version")" \
+    OCEANS_VERIFY_ADMIN_EMAIL="${OCEANS_VERIFY_ADMIN_EMAIL:-admin@local}" \
+    OCEANS_VERIFY_ADMIN_PASSWORD="${OCEANS_VERIFY_ADMIN_PASSWORD:-admin}" \
+    mise exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/drive-models.mjs"
+}
+
+evidence() {
+  [[ -d "$evidence_dir" ]] || {
+    echo "No evidence directory exists for run $run_id." >&2
+    exit 1
+  }
+  find "$evidence_dir" -maxdepth 1 -type f -print | sort
+  [[ -f "$evidence_dir/models-proof.json" ]] || {
+    echo "Models proof is missing from $evidence_dir." >&2
+    exit 1
+  }
+}
+
+case "${1:-}" in
+  launch) launch ;;
+  doctor) doctor ;;
+  drive) drive "${2:-}" ;;
+  evidence) evidence ;;
+  cleanup) cleanup ;;
+  *)
+    echo "Usage: $0 {launch|doctor|drive models|evidence|cleanup}" >&2
+    exit 2
+    ;;
+esac
