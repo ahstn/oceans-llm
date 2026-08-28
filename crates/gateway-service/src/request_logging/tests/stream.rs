@@ -68,6 +68,27 @@ data: {"type":"error","error":{"code":"upstream_failed"}}
 }
 
 #[test]
+fn collector_reads_nested_responses_failure() {
+    let mut collector = StreamResponseCollector::default();
+
+    let observation = collector.observe_chunk(
+        br#"event: response.failed
+data: {"type":"response.failed","response":{"status":"failed","error":{"code":"server_error","message":"boom"}}}
+
+"#,
+    );
+
+    assert!(observation.has_terminal_event);
+    assert_eq!(
+        collector.failure(),
+        Some(&StreamFailureSummary {
+            status_code: 502,
+            error_code: "server_error".to_string(),
+        })
+    );
+}
+
+#[test]
 fn request_summary_uses_provider_totals_without_cache_accounting() {
     assert_eq!(
         usage_summary_from_value(Some(&json!({

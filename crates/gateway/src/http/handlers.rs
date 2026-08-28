@@ -1619,7 +1619,11 @@ fn wrap_stream_with_request_logging(
         match state.upstream.next().await {
             Some(Ok(chunk)) => {
                 let observation = state.collector.observe_chunk(chunk.as_ref());
+                let terminal_event = observation.has_terminal_event;
                 state.stream_trace.observe_chunk(chunk.len(), observation);
+                if terminal_event {
+                    finalize_stream(&mut state).await;
+                }
 
                 Some((Ok(chunk), state))
             }
@@ -1686,90 +1690,97 @@ fn wrap_stream_with_request_logging(
                 Some((Err(std::io::Error::other(error_message)), state))
             }
             None => {
-                state.finished = true;
-                state.collector.finish();
-                let failure = state.collector.failure().cloned();
-                state.stream_trace.finish(
-                    if failure.is_some() {
-                        "stream_error_event"
-                    } else {
-                        "complete"
-                    },
-                    failure.as_ref().map(|_| "stream_error_event"),
-                );
-                if failure.is_none() {
-                    let labels = state.metric_labels();
-                    finalize_successful_usage_accounting_from_parts(
-                        &state.service,
-                        &state.metrics,
-                        UsageAccountingContext {
-                            auth: &state.auth,
-                            model: &state.execution_model,
-                            route: &state.route,
-                            request_id: &state.request_log_context.request_id,
-                            labels,
-                            operation: state.request_log_context.operation,
-                        },
-                        state.collector.usage().cloned(),
-                    )
-                    .await;
-                }
-                tracing::info!(
-                    request_id = %state.request_log_context.request_id,
-                    provider_key = %state.provider_key,
-                    termination_reason = if failure.is_some() { "stream_error_chunk" } else { "complete" },
-                    "chat completion stream terminated"
-                );
-                let tool_cardinality = RequestToolCardinality {
-                    invoked_tool_count: Some(state.collector.invoked_tool_count()),
-                    ..state.request_log_context.tool_cardinality
-                };
-                best_effort_log_stream_result(
-                    &state.service,
-                    &state.auth,
-                    &state.request_log_context,
-                    gateway_service::StreamLogResultInput {
-                        provider_key: state.provider_key.clone(),
-                        icon_metadata: state.icon_metadata.clone(),
-                        latency_ms: latency_ms_since(state.started_at),
-                        collector: state.collector.clone(),
-                        failure: failure.clone(),
-                        attempts: match failure.as_ref() {
-                            Some(failure) => vec![stream_failure_attempt(
-                                &state.request_log_context,
-                                &state.route,
-                                state.attempt_started_at,
-                                failure,
-                            )],
-                            None => vec![success_attempt(
-                                &state.request_log_context,
-                                &state.route,
-                                true,
-                                state.attempt_started_at,
-                            )],
-                        },
-                    },
-                )
-                .await;
-                let (status_code, outcome) = match failure.as_ref() {
-                    Some(failure) => (failure.status_code, "upstream_error"),
-                    None => (200, "success"),
-                };
-                state.metrics.record_chat_request(&ChatRequestMetric {
-                    labels: state.metric_labels(),
-                    status_code,
-                    outcome,
-                    latency_seconds: latency_seconds_since(state.started_at),
-                });
-                state.metrics.record_tool_cardinality(
-                    &state.metric_labels(),
-                    state.request_log_context.operation,
-                    &tool_cardinality,
-                );
+                finalize_stream(&mut state).await;
                 None
             }
         }
     })
+}
+
+async fn finalize_stream(state: &mut LoggingBodyStreamState) {
+    if state.finished {
+        return;
+    }
+    state.finished = true;
+    state.collector.finish();
+    let failure = state.collector.failure().cloned();
+    state.stream_trace.finish(
+        if failure.is_some() {
+            "stream_error_event"
+        } else {
+            "complete"
+        },
+        failure.as_ref().map(|_| "stream_error_event"),
+    );
+    if failure.is_none() {
+        let labels = state.metric_labels();
+        finalize_successful_usage_accounting_from_parts(
+            &state.service,
+            &state.metrics,
+            UsageAccountingContext {
+                auth: &state.auth,
+                model: &state.execution_model,
+                route: &state.route,
+                request_id: &state.request_log_context.request_id,
+                labels,
+                operation: state.request_log_context.operation,
+            },
+            state.collector.usage().cloned(),
+        )
+        .await;
+    }
+    tracing::info!(
+        request_id = %state.request_log_context.request_id,
+        provider_key = %state.provider_key,
+        termination_reason = if failure.is_some() { "stream_error_chunk" } else { "complete" },
+        "chat completion stream terminated"
+    );
+    let tool_cardinality = RequestToolCardinality {
+        invoked_tool_count: Some(state.collector.invoked_tool_count()),
+        ..state.request_log_context.tool_cardinality
+    };
+    best_effort_log_stream_result(
+        &state.service,
+        &state.auth,
+        &state.request_log_context,
+        gateway_service::StreamLogResultInput {
+            provider_key: state.provider_key.clone(),
+            icon_metadata: state.icon_metadata.clone(),
+            latency_ms: latency_ms_since(state.started_at),
+            collector: state.collector.clone(),
+            failure: failure.clone(),
+            attempts: match failure.as_ref() {
+                Some(failure) => vec![stream_failure_attempt(
+                    &state.request_log_context,
+                    &state.route,
+                    state.attempt_started_at,
+                    failure,
+                )],
+                None => vec![success_attempt(
+                    &state.request_log_context,
+                    &state.route,
+                    true,
+                    state.attempt_started_at,
+                )],
+            },
+        },
+    )
+    .await;
+    let (status_code, outcome) = match failure.as_ref() {
+        Some(failure) => (failure.status_code, "upstream_error"),
+        None => (200, "success"),
+    };
+    state.metrics.record_chat_request(&ChatRequestMetric {
+        labels: state.metric_labels(),
+        status_code,
+        outcome,
+        latency_seconds: latency_seconds_since(state.started_at),
+    });
+    state.metrics.record_tool_cardinality(
+        &state.metric_labels(),
+        state.request_log_context.operation,
+        &tool_cardinality,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2245,7 +2256,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dropping_stream_records_one_cancellation_without_usage() {
+    async fn stream_drop_distinguishes_cancellation_from_terminal_completion() {
         let directory = tempfile::tempdir().expect("tempdir");
         let options = StoreConnectionOptions::Libsql {
             path: directory.path().join("gateway.db"),
@@ -2361,6 +2372,85 @@ mod tests {
             .await
             .expect("read usage ledger");
         assert!(ledger.is_none());
+
+        let completed_request_id = "stream-terminal-test";
+        let completed_context = service.begin_chat_request_log(
+            completed_request_id,
+            &resolved.selection.requested_model.model_key,
+            &resolved.selection.execution_model.model_key,
+            &request,
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+        let completed_upstream: ProviderStream = Box::pin(stream::iter([Ok(Bytes::from_static(
+            br#"data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}
+
+data: [DONE]
+
+"#,
+        ))]));
+        let completed_icon_metadata = request_log_icon_metadata(
+            &route,
+            resolved.provider_connections.get(&route.provider_key),
+            &resolved.selection.execution_model.model_key,
+            &resolved.selection.requested_model.model_key,
+        );
+        let mut completed_stream =
+            Box::pin(wrap_stream_with_request_logging(LoggingBodyStreamState {
+                upstream: completed_upstream,
+                service: service.clone(),
+                metrics: metrics.clone(),
+                auth: auth.clone(),
+                request_log_context: completed_context.clone(),
+                requested_model_key: resolved.selection.requested_model.model_key.clone(),
+                resolved_model_key: resolved.selection.execution_model.model_key.clone(),
+                execution_model: resolved.selection.execution_model.clone(),
+                route: route.clone(),
+                provider_key: route.provider_key.clone(),
+                icon_metadata: completed_icon_metadata,
+                started_at: Instant::now(),
+                attempt_started_at: gateway_service::offset_now(),
+                finished: false,
+                collector: service.new_stream_response_collector(),
+                stream_trace: StreamTrace::new(
+                    "chat",
+                    completed_request_id,
+                    &route,
+                    &provider,
+                    Instant::now(),
+                ),
+            }));
+
+        assert!(completed_stream.next().await.is_some());
+        drop(completed_stream);
+
+        let completed_detail = service
+            .get_request_log_detail(completed_context.request_log_id)
+            .await
+            .expect("terminal stream log persisted before chunk delivery");
+        let completed_snapshot = metrics.test_snapshot();
+        assert_eq!(completed_snapshot.requests, 2);
+        assert_eq!(
+            completed_snapshot.request_outcomes.get("client_cancelled"),
+            Some(&1)
+        );
+        assert_eq!(completed_snapshot.request_outcomes.get("success"), Some(&1));
+        assert_eq!(completed_detail.log.status_code, Some(200));
+        assert_eq!(completed_detail.log.error_code, None);
+        assert_eq!(completed_detail.log.prompt_tokens, Some(2));
+        assert_eq!(completed_detail.log.completion_tokens, Some(1));
+        assert_eq!(completed_detail.log.total_tokens, Some(3));
+        assert_eq!(completed_detail.attempts.len(), 1);
+        assert_eq!(
+            completed_detail.attempts[0].status,
+            RequestAttemptStatus::Success
+        );
+
+        let completed_ledger = store
+            .get_usage_ledger_by_request_and_scope(completed_request_id, &ownership_scope_key)
+            .await
+            .expect("read completed usage ledger");
+        assert!(completed_ledger.is_some());
     }
 
     async fn seed_stream_cancellation_test(store: &AnyStore) {

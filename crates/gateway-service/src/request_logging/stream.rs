@@ -247,11 +247,22 @@ fn stream_event_is_terminal(value: &Value) -> bool {
 }
 
 fn stream_failure_from_value(value: &Value) -> Option<StreamFailureSummary> {
-    let error = value.get("error")?.as_object()?;
+    let error = value
+        .get("error")
+        .filter(|error| error.is_object())
+        .or_else(|| {
+            value
+                .get("response")
+                .and_then(|response| response.get("error"))
+                .filter(|error| error.is_object())
+        });
+    if error.is_none() && value.get("type").and_then(Value::as_str) != Some("response.failed") {
+        return None;
+    }
     Some(StreamFailureSummary {
         status_code: 502,
         error_code: error
-            .get("code")
+            .and_then(|error| error.get("code"))
             .and_then(Value::as_str)
             .unwrap_or("stream_error")
             .to_string(),
