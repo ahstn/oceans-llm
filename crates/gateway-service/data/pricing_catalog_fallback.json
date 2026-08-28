@@ -1,8 +1,8 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"06f82ba3f1d932637e1b812e31544534\"",
-    "fetched_at": "2026-08-25T08:06:08.874472Z"
+    "etag": "\"bafa884700ca3a7ccf5685e0c806b342\"",
+    "fetched_at": "2026-08-28T08:09:43.001502Z"
   },
   "providers": {
     "amazon-bedrock": {
@@ -1311,10 +1311,10 @@
           "release_date": "2026-07-09",
           "last_updated": "2026-07-09",
           "cost": {
-            "input": "0.2200",
-            "output": "1.3200",
-            "cache_read": "0.0220",
-            "cache_write": "0.2750",
+            "input": "0.2000",
+            "output": "1.2000",
+            "cache_read": "0.0200",
+            "cache_write": "0.2500",
             "input_audio": null,
             "output_audio": null
           },
@@ -1340,10 +1340,10 @@
           "release_date": "2026-07-09",
           "last_updated": "2026-07-09",
           "cost": {
-            "input": "5.5000",
-            "output": "33.0000",
-            "cache_read": "0.5500",
-            "cache_write": "6.8750",
+            "input": "4.0000",
+            "output": "20.0000",
+            "cache_read": "0.4000",
+            "cache_write": "5.0000",
             "input_audio": null,
             "output_audio": null
           },
@@ -1369,10 +1369,10 @@
           "release_date": "2026-07-09",
           "last_updated": "2026-07-09",
           "cost": {
-            "input": "2.2000",
-            "output": "13.2000",
-            "cache_read": "0.2200",
-            "cache_write": "2.7500",
+            "input": "2.0000",
+            "output": "12.0000",
+            "cache_read": "0.2000",
+            "cache_write": "2.5000",
             "input_audio": null,
             "output_audio": null
           },
@@ -2403,10 +2403,10 @@
           "release_date": "2026-07-09",
           "last_updated": "2026-07-09",
           "cost": {
-            "input": "5.5000",
-            "output": "33.0000",
-            "cache_read": "0.5500",
-            "cache_write": "6.8750",
+            "input": "4.4000",
+            "output": "22.0000",
+            "cache_read": "0.4400",
+            "cache_write": "5.5000",
             "input_audio": null,
             "output_audio": null
           },
@@ -6479,7 +6479,7 @@
           "limit": {
             "context": 32768,
             "input": null,
-            "output": 32768
+            "output": 29491
           },
           "modalities": {
             "input": [
@@ -6506,7 +6506,7 @@
           "limit": {
             "context": 65536,
             "input": null,
-            "output": 65536
+            "output": 58982
           },
           "modalities": {
             "input": [
@@ -7193,7 +7193,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -7333,7 +7333,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -7666,7 +7666,7 @@
           "limit": {
             "context": 163840,
             "input": null,
-            "output": 163840
+            "output": 147456
           },
           "modalities": {
             "input": [
@@ -7693,7 +7693,7 @@
           "limit": {
             "context": 163840,
             "input": null,
-            "output": 161000
+            "output": 144900
           },
           "modalities": {
             "input": [
@@ -7774,7 +7774,7 @@
           "limit": {
             "context": 8192,
             "input": null,
-            "output": 8192
+            "output": 7372
           },
           "modalities": {
             "input": [
@@ -7828,7 +7828,7 @@
           "limit": {
             "context": 163840,
             "input": null,
-            "output": 163840
+            "output": 147456
           },
           "modalities": {
             "input": [
@@ -7899,9 +7899,9 @@
           "release_date": "2026-07-31",
           "last_updated": "2026-07-31",
           "cost": {
-            "input": "0.1400",
-            "output": "0.2800",
-            "cache_read": "0.0280",
+            "input": "0.0700",
+            "output": "0.1400",
+            "cache_read": "0.0140",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -7909,7 +7909,7 @@
           "limit": {
             "context": 1310720,
             "input": null,
-            "output": 131072
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -7954,9 +7954,9 @@
           "release_date": "2026-04-24",
           "last_updated": "2026-04-24",
           "cost": {
-            "input": "0.7903",
-            "output": "1.5806",
-            "cache_read": "0.0659",
+            "input": "0.8700",
+            "output": "1.7400",
+            "cache_read": "0.0725",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -7981,9 +7981,9 @@
           "release_date": "2026-08-12",
           "last_updated": "2026-08-22",
           "cost": {
-            "input": "1.1220",
-            "output": "3.3660",
-            "cache_read": "0.0374",
+            "input": "1.3200",
+            "output": "3.9600",
+            "cache_read": "0.0440",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -8018,7 +8018,7 @@
           "limit": {
             "context": 512000,
             "input": null,
-            "output": 512000
+            "output": 460800
           },
           "modalities": {
             "input": [
@@ -8347,7 +8347,7 @@
           "limit": {
             "context": 65536,
             "input": null,
-            "output": 65536
+            "output": 58982
           },
           "modalities": {
             "input": [
@@ -8407,7 +8407,7 @@
           "limit": {
             "context": 65536,
             "input": null,
-            "output": 65536
+            "output": 58982
           },
           "modalities": {
             "input": [
@@ -8708,7 +8708,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 131072
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -8742,33 +8742,6 @@
             "input": [
               "text",
               "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "google/gemma-3n-e4b-it": {
-          "id": "google/gemma-3n-e4b-it",
-          "display_name": "Gemma 3n 4B",
-          "release_date": "2025-05-20",
-          "last_updated": "2025-05-20",
-          "cost": {
-            "input": "0.0600",
-            "output": "0.1200",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 32768,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "text"
             ],
             "output": [
               "text"
@@ -8839,9 +8812,9 @@
           "release_date": "2026-04-02",
           "last_updated": "2026-04-02",
           "cost": {
-            "input": "0.1000",
+            "input": "0.0900",
             "output": "0.3400",
-            "cache_read": "0.1000",
+            "cache_read": "0.0500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -8849,7 +8822,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -8965,7 +8938,7 @@
           "limit": {
             "context": 8192,
             "input": null,
-            "output": 4096
+            "output": 3686
           },
           "modalities": {
             "input": [
@@ -8992,7 +8965,7 @@
           "limit": {
             "context": 131000,
             "input": null,
-            "output": 131000
+            "output": 117900
           },
           "modalities": {
             "input": [
@@ -9019,7 +8992,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -9066,6 +9039,33 @@
             "input": "0.0210",
             "output": "0.0630",
             "cache_read": "0.0042",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 32768
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "inclusionai/ling-3.0-flash-fin:free": {
+          "id": "inclusionai/ling-3.0-flash-fin:free",
+          "display_name": "Ling 3.0 Flash Fin (free)",
+          "release_date": "2026-08-27",
+          "last_updated": "2026-08-27",
+          "cost": {
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -9152,7 +9152,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 256000,
+            "context": 262144,
             "input": null,
             "output": 80000
           },
@@ -9289,7 +9289,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -9316,7 +9316,7 @@
           "limit": {
             "context": 60000,
             "input": null,
-            "output": 60000
+            "output": 54000
           },
           "modalities": {
             "input": [
@@ -9343,7 +9343,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -9360,9 +9360,9 @@
           "release_date": "2024-12-06",
           "last_updated": "2024-12-06",
           "cost": {
-            "input": "0.1000",
-            "output": "0.3200",
-            "cache_read": null,
+            "input": "0.7100",
+            "output": "0.7100",
+            "cache_read": "0.7100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -9370,7 +9370,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 16384
+            "output": 115200
           },
           "modalities": {
             "input": [
@@ -9415,9 +9415,9 @@
           "release_date": "2025-04-05",
           "last_updated": "2025-04-05",
           "cost": {
-            "input": "0.1000",
-            "output": "0.3000",
-            "cache_read": null,
+            "input": "0.1100",
+            "output": "0.3400",
+            "cache_read": "0.0550",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -9425,7 +9425,7 @@
           "limit": {
             "context": 1310720,
             "input": null,
-            "output": 16384
+            "output": 8192
           },
           "modalities": {
             "input": [
@@ -9451,7 +9451,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 1048576,
+            "context": 163840,
             "input": null,
             "output": 16384
           },
@@ -9481,7 +9481,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -9509,7 +9509,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 1048576
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -9540,7 +9540,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 1048576
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -9571,7 +9571,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 1048576
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -9602,7 +9602,7 @@
           "limit": {
             "context": 16384,
             "input": null,
-            "output": 16384
+            "output": 14745
           },
           "modalities": {
             "input": [
@@ -9656,7 +9656,7 @@
           "limit": {
             "context": 1000192,
             "input": null,
-            "output": 1000192
+            "output": 900172
           },
           "modalities": {
             "input": [
@@ -9846,7 +9846,7 @@
           "limit": {
             "context": 196608,
             "input": null,
-            "output": 196608
+            "output": 176947
           },
           "modalities": {
             "input": [
@@ -9902,7 +9902,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 1048576
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -9931,7 +9931,7 @@
           "limit": {
             "context": 256000,
             "input": null,
-            "output": 256000
+            "output": 204800
           },
           "modalities": {
             "input": [
@@ -9959,7 +9959,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 209715
           },
           "modalities": {
             "input": [
@@ -9987,7 +9987,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 209715
           },
           "modalities": {
             "input": [
@@ -10015,39 +10015,12 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 104857
           },
           "modalities": {
             "input": [
               "text",
               "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "mistralai/ministral-8b": {
-          "id": "mistralai/ministral-8b",
-          "display_name": "Ministral 8B",
-          "release_date": "2024-10-17",
-          "last_updated": "2024-10-17",
-          "cost": {
-            "input": "0.1100",
-            "output": "0.1100",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 128000,
-            "input": null,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text"
             ],
             "output": [
               "text"
@@ -10070,7 +10043,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 209715
           },
           "modalities": {
             "input": [
@@ -10098,7 +10071,7 @@
           "limit": {
             "context": 128000,
             "input": null,
-            "output": 128000
+            "output": 102400
           },
           "modalities": {
             "input": [
@@ -10126,7 +10099,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 104857
           },
           "modalities": {
             "input": [
@@ -10154,7 +10127,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 209715
           },
           "modalities": {
             "input": [
@@ -10183,7 +10156,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 104857
           },
           "modalities": {
             "input": [
@@ -10212,7 +10185,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 209715
           },
           "modalities": {
             "input": [
@@ -10241,7 +10214,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 262144
+            "output": 104857
           },
           "modalities": {
             "input": [
@@ -10297,7 +10270,7 @@
           "limit": {
             "context": 32768,
             "input": null,
-            "output": 32768
+            "output": 26214
           },
           "modalities": {
             "input": [
@@ -10352,7 +10325,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 209715
           },
           "modalities": {
             "input": [
@@ -10380,7 +10353,7 @@
           "limit": {
             "context": 128000,
             "input": null,
-            "output": 128000
+            "output": 102400
           },
           "modalities": {
             "input": [
@@ -10436,7 +10409,7 @@
           "limit": {
             "context": 65536,
             "input": null,
-            "output": 65536
+            "output": 52428
           },
           "modalities": {
             "input": [
@@ -10464,7 +10437,7 @@
           "limit": {
             "context": 32000,
             "input": null,
-            "output": 32000
+            "output": 25600
           },
           "modalities": {
             "input": [
@@ -10574,7 +10547,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -10602,7 +10575,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -10620,9 +10593,9 @@
           "release_date": "2026-06-12",
           "last_updated": "2026-06-12",
           "cost": {
-            "input": "0.6700",
+            "input": "0.6600",
             "output": "3.4000",
-            "cache_read": "0.1900",
+            "cache_read": "0.1800",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -10630,7 +10603,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -10658,7 +10631,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 1048576
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -10741,7 +10714,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -10769,7 +10742,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -10851,7 +10824,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -10878,7 +10851,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -10897,7 +10870,7 @@
           "cost": {
             "input": "0.0500",
             "output": "0.2000",
-            "cache_read": "0.0300",
+            "cache_read": "0.0250",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -10905,7 +10878,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 228000
           },
           "modalities": {
             "input": [
@@ -10989,7 +10962,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -11006,15 +10979,15 @@
           "release_date": "2026-06-04",
           "last_updated": "2026-06-04",
           "cost": {
-            "input": "0.6000",
-            "output": "3.6000",
-            "cache_read": "0.2000",
+            "input": "0.5000",
+            "output": "2.2000",
+            "cache_read": "0.1000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
           },
           "limit": {
-            "context": 512288,
+            "context": 262144,
             "input": null,
             "output": 16384
           },
@@ -11088,9 +11061,9 @@
           "release_date": "2026-08-11",
           "last_updated": "2026-08-11",
           "cost": {
-            "input": "0.0800",
-            "output": "0.2000",
-            "cache_read": "0.0400",
+            "input": "0.1000",
+            "output": "0.2500",
+            "cache_read": "0.0500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -11098,7 +11071,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 131072
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -11179,7 +11152,7 @@
           "limit": {
             "context": 4095,
             "input": null,
-            "output": 4096
+            "output": 3685
           },
           "modalities": {
             "input": [
@@ -11233,7 +11206,7 @@
           "limit": {
             "context": 4095,
             "input": null,
-            "output": 4096
+            "output": 3685
           },
           "modalities": {
             "input": [
@@ -12501,7 +12474,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -12528,7 +12501,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -12982,7 +12955,7 @@
           "limit": {
             "context": 127072,
             "input": null,
-            "output": 127072
+            "output": 114364
           },
           "modalities": {
             "input": [
@@ -13010,7 +12983,7 @@
           "limit": {
             "context": 128000,
             "input": null,
-            "output": 128000
+            "output": 115200
           },
           "modalities": {
             "input": [
@@ -13093,7 +13066,7 @@
           "limit": {
             "context": 128000,
             "input": null,
-            "output": 128000
+            "output": 115200
           },
           "modalities": {
             "input": [
@@ -13256,7 +13229,7 @@
           "limit": {
             "context": 32768,
             "input": null,
-            "output": 32768
+            "output": 29491
           },
           "modalities": {
             "input": [
@@ -13283,7 +13256,7 @@
           "limit": {
             "context": 32768,
             "input": null,
-            "output": 32768
+            "output": 29491
           },
           "modalities": {
             "input": [
@@ -13348,42 +13321,15 @@
             ]
           }
         },
-        "qwen/qwen-plus-2025-07-28:thinking": {
-          "id": "qwen/qwen-plus-2025-07-28:thinking",
-          "display_name": "Qwen Plus 0728 (thinking)",
-          "release_date": "2025-09-08",
-          "last_updated": "2025-09-08",
-          "cost": {
-            "input": "0.2600",
-            "output": "0.7800",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 1000000,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "qwen/qwen2.5-vl-72b-instruct": {
           "id": "qwen/qwen2.5-vl-72b-instruct",
           "display_name": "Qwen2.5 VL 72B Instruct",
           "release_date": "2025-02-01",
           "last_updated": "2025-02-01",
           "cost": {
-            "input": "0.8000",
-            "output": "1.0000",
-            "cache_read": "0.4000",
+            "input": "0.2500",
+            "output": "0.7500",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -13391,7 +13337,7 @@
           "limit": {
             "context": 128000,
             "input": null,
-            "output": 128000
+            "output": 28800
           },
           "modalities": {
             "input": [
@@ -13463,9 +13409,9 @@
           "release_date": "2025-07-21",
           "last_updated": "2025-07-21",
           "cost": {
-            "input": "0.0900",
-            "output": "0.5500",
-            "cache_read": null,
+            "input": "0.0875",
+            "output": "0.3500",
+            "cache_read": "0.0175",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -13473,7 +13419,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 16384
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -13500,7 +13446,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 32768
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -13689,7 +13635,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -13743,7 +13689,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -13851,7 +13797,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -14101,7 +14047,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -14159,7 +14105,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -14178,9 +14124,9 @@
           "release_date": "2026-02-15",
           "last_updated": "2026-02-15",
           "cost": {
-            "input": "0.5000",
-            "output": "3.6000",
-            "cache_read": "0.3000",
+            "input": "0.3900",
+            "output": "2.3400",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -14188,7 +14134,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 65536
           },
           "modalities": {
             "input": [
@@ -14217,7 +14163,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -14323,9 +14269,9 @@
           "release_date": "2026-04-22",
           "last_updated": "2026-04-22",
           "cost": {
-            "input": "0.3200",
-            "output": "3.2000",
-            "cache_read": null,
+            "input": "0.6000",
+            "output": "3.6000",
+            "cache_read": "0.1200",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -14333,7 +14279,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 81920
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -14352,8 +14298,8 @@
           "release_date": "2026-04-17",
           "last_updated": "2026-04-17",
           "cost": {
-            "input": "0.1400",
-            "output": "1.0000",
+            "input": "0.1000",
+            "output": "0.9000",
             "cache_read": "0.0500",
             "cache_write": null,
             "input_audio": null,
@@ -14362,7 +14308,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -14560,7 +14506,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 131072
+            "output": 262144
           },
           "modalities": {
             "input": [
@@ -14581,6 +14527,35 @@
             "output": "2.5500",
             "cache_read": "0.0850",
             "cache_write": "0.5313",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "qwen/qwen3.8-flash": {
+          "id": "qwen/qwen3.8-flash",
+          "display_name": "Qwen3.8 Flash",
+          "release_date": "2026-08-26",
+          "last_updated": "2026-08-26",
+          "cost": {
+            "input": "0.1500",
+            "output": "0.4700",
+            "cache_read": "0.0160",
+            "cache_write": "0.2000",
             "input_audio": null,
             "output_audio": null
           },
@@ -14645,7 +14620,7 @@
           "limit": {
             "context": 16384,
             "input": null,
-            "output": 16384
+            "output": 14745
           },
           "modalities": {
             "input": [
@@ -14674,7 +14649,7 @@
           "limit": {
             "context": 65536,
             "input": null,
-            "output": 65536
+            "output": 58982
           },
           "modalities": {
             "input": [
@@ -14812,7 +14787,7 @@
           "limit": {
             "context": 8192,
             "input": null,
-            "output": 16384
+            "output": 7372
           },
           "modalities": {
             "input": [
@@ -14877,35 +14852,6 @@
             ]
           }
         },
-        "stealth/ox-alpha": {
-          "id": "stealth/ox-alpha",
-          "display_name": "Ox Alpha",
-          "release_date": "2026-08-20",
-          "last_updated": "2026-08-20",
-          "cost": {
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 1048576,
-            "input": null,
-            "output": 131072
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "stepfun/step-3.5-flash": {
           "id": "stepfun/step-3.5-flash",
           "display_name": "Step 3.5 Flash",
@@ -14949,7 +14895,7 @@
           "limit": {
             "context": 262144,
             "input": 256000,
-            "output": 256000
+            "output": 230400
           },
           "modalities": {
             "input": [
@@ -14978,7 +14924,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -15113,7 +15059,34 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 235929
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "tencent/hy4-preview": {
+          "id": "tencent/hy4-preview",
+          "display_name": "Hy4 preview",
+          "release_date": "2026-08-28",
+          "last_updated": "2026-08-28",
+          "cost": {
+            "input": "0.8340",
+            "output": "2.5010",
+            "cache_read": "0.0420",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 64000
           },
           "modalities": {
             "input": [
@@ -15140,34 +15113,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "thedrummer/rocinante-12b": {
-          "id": "thedrummer/rocinante-12b",
-          "display_name": "Rocinante 12B",
-          "release_date": "2024-09-30",
-          "last_updated": "2024-09-30",
-          "cost": {
-            "input": "0.2500",
-            "output": "0.5000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 65536,
-            "input": null,
-            "output": 65536
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -15194,7 +15140,7 @@
           "limit": {
             "context": 32768,
             "input": null,
-            "output": 32768
+            "output": 29491
           },
           "modalities": {
             "input": [
@@ -15221,7 +15167,7 @@
           "limit": {
             "context": 1024000,
             "input": null,
-            "output": 32768
+            "output": 26214
           },
           "modalities": {
             "input": [
@@ -15391,7 +15337,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 131072
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -15472,7 +15418,7 @@
           "limit": {
             "context": 2000000,
             "input": null,
-            "output": 2000000
+            "output": 1800000
           },
           "modalities": {
             "input": [
@@ -15501,7 +15447,7 @@
           "limit": {
             "context": 2000000,
             "input": null,
-            "output": 2000000
+            "output": 1800000
           },
           "modalities": {
             "input": [
@@ -15530,7 +15476,7 @@
           "limit": {
             "context": 1000000,
             "input": null,
-            "output": 1000000
+            "output": 900000
           },
           "modalities": {
             "input": [
@@ -15559,7 +15505,7 @@
           "limit": {
             "context": 500000,
             "input": null,
-            "output": 500000
+            "output": 450000
           },
           "modalities": {
             "input": [
@@ -15588,7 +15534,7 @@
           "limit": {
             "context": 500000,
             "input": null,
-            "output": 500000
+            "output": 450000
           },
           "modalities": {
             "input": [
@@ -15617,7 +15563,7 @@
           "limit": {
             "context": 256000,
             "input": null,
-            "output": 256000
+            "output": 230400
           },
           "modalities": {
             "input": [
@@ -15775,9 +15721,9 @@
           "release_date": "2025-09-30",
           "last_updated": "2025-09-30",
           "cost": {
-            "input": "0.5000",
-            "output": "2.0000",
-            "cache_read": "0.1000",
+            "input": "0.4300",
+            "output": "1.7500",
+            "cache_read": "0.0800",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -15785,7 +15731,7 @@
           "limit": {
             "context": 204800,
             "input": null,
-            "output": 131072
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -15949,7 +15895,7 @@
           "limit": {
             "context": 204800,
             "input": null,
-            "output": 202752
+            "output": 182476
           },
           "modalities": {
             "input": [
@@ -16003,7 +15949,7 @@
           "limit": {
             "context": 256000,
             "input": null,
-            "output": 256000
+            "output": 230400
           },
           "modalities": {
             "input": [
@@ -16035,6 +15981,35 @@
           "modalities": {
             "input": [
               "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "z-ai/glm-5.3-flash": {
+          "id": "z-ai/glm-5.3-flash",
+          "display_name": "GLM-5.3-Flash",
+          "release_date": "2026-08-26",
+          "last_updated": "2026-08-26",
+          "cost": {
+            "input": "0.0750",
+            "output": "0.2500",
+            "cache_read": "0.0150",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1310720,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
             ],
             "output": [
               "text"
@@ -16192,9 +16167,9 @@
           "release_date": "2026-08-01",
           "last_updated": "2026-08-01",
           "cost": {
-            "input": "0.0350",
+            "input": "0.0300",
             "output": "0.1000",
-            "cache_read": "0.0080",
+            "cache_read": "0.0070",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -16202,7 +16177,7 @@
           "limit": {
             "context": 1310720,
             "input": null,
-            "output": 1048576
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -16281,9 +16256,9 @@
           "release_date": "2026-04-27",
           "last_updated": "2026-04-27",
           "cost": {
-            "input": "2.8000",
-            "output": "14.0000",
-            "cache_read": "0.2900",
+            "input": "2.5500",
+            "output": "12.7500",
+            "cache_read": "0.2560",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -16291,7 +16266,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 1048576
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -16378,7 +16353,7 @@
           "limit": {
             "context": 500000,
             "input": null,
-            "output": 1000000
+            "output": 450000
           },
           "modalities": {
             "input": [
