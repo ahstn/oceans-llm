@@ -121,7 +121,7 @@ async fn github_user_tokens_are_selected_by_trusted_user_id() {
             "github-copilot-user".to_string(),
             CopilotAuthConfig::GitHubUser,
         ),
-        Some(resolver),
+        resolver,
     )
     .expect("user-token provider");
 

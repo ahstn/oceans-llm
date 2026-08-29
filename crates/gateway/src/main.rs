@@ -449,15 +449,17 @@ fn build_provider_registry(
     }
 
     for provider_config in config.copilot_provider_configs()? {
-        let resolver = if matches!(provider_config.auth, CopilotAuthConfig::GitHubUser) {
+        let provider = if matches!(provider_config.auth, CopilotAuthConfig::GitHubUser) {
             ProviderCredentialService::<AnyStore>::validate_runtime_configuration()
                 .context("invalid provider credential runtime configuration")?;
-            Some(Arc::new(ProviderCredentialService::new(store.clone())) as Arc<_>)
+            CopilotProvider::new_with_user_token_resolver(
+                provider_config,
+                Arc::new(ProviderCredentialService::new(store.clone())),
+            )
         } else {
-            None
-        };
-        let provider = CopilotProvider::new_with_user_token_resolver(provider_config, resolver)
-            .map_err(|error| anyhow::anyhow!("failed building github_copilot provider: {error}"))?;
+            CopilotProvider::new(provider_config)
+        }
+        .map_err(|error| anyhow::anyhow!("failed building github_copilot provider: {error}"))?;
         providers.register(Arc::new(provider));
     }
 

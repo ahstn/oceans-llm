@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use gateway_core::{
-    GatewayError, ProviderError, ProviderUserCredentialRepository, ProviderUserTokenResolver,
+    GatewayError, ProviderError, ProviderUserCredentialRepository,
+    ProviderUserCredentialStatusRecord, ProviderUserTokenResolver,
     UpsertProviderUserCredentialRecord, decrypt_secret_with_key_and_aad,
     encrypt_secret_with_key_and_aad, validate_secret_key_env,
 };
@@ -15,6 +16,7 @@ pub const PROVIDER_CREDENTIAL_KEY_ID: &str = "env/OCEANS_PROVIDER_CREDENTIAL_ENC
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ProviderCredentialStatus {
     pub provider_key: String,
+    pub user_id: Uuid,
     pub configured: bool,
     pub updated_at: Option<OffsetDateTime>,
     pub last_used_at: Option<OffsetDateTime>,
@@ -45,14 +47,29 @@ where
     ) -> Result<ProviderCredentialStatus, GatewayError> {
         let credential = self
             .store
-            .get_provider_user_credential(provider_key, user_id)
+            .get_provider_user_credential_status(provider_key, user_id)
             .await?;
         Ok(ProviderCredentialStatus {
             provider_key: provider_key.to_string(),
+            user_id,
             configured: credential.is_some(),
             updated_at: credential.as_ref().map(|value| value.updated_at),
             last_used_at: credential.and_then(|value| value.last_used_at),
         })
+    }
+
+    pub async fn list_statuses(
+        &self,
+        provider_key: &str,
+    ) -> Result<Vec<ProviderCredentialStatus>, GatewayError> {
+        let statuses = self
+            .store
+            .list_provider_user_credential_statuses(provider_key)
+            .await?
+            .into_iter()
+            .map(ProviderCredentialStatus::from)
+            .collect();
+        Ok(statuses)
     }
 
     pub async fn upsert(
@@ -88,6 +105,7 @@ where
             .await?;
         Ok(ProviderCredentialStatus {
             provider_key: record.provider_key,
+            user_id: record.user_id,
             configured: true,
             updated_at: Some(record.updated_at),
             last_used_at: record.last_used_at,
@@ -99,6 +117,18 @@ where
             .delete_provider_user_credential(provider_key, user_id)
             .await
             .map_err(Into::into)
+    }
+}
+
+impl From<ProviderUserCredentialStatusRecord> for ProviderCredentialStatus {
+    fn from(record: ProviderUserCredentialStatusRecord) -> Self {
+        Self {
+            provider_key: record.provider_key,
+            user_id: record.user_id,
+            configured: true,
+            updated_at: Some(record.updated_at),
+            last_used_at: record.last_used_at,
+        }
     }
 }
 
@@ -165,7 +195,8 @@ mod tests {
     use std::{collections::HashMap, sync::Mutex};
 
     use gateway_core::{
-        ProviderUserCredentialRecord, ProviderUserCredentialRepository, StoreError,
+        ProviderUserCredentialRecord, ProviderUserCredentialRepository,
+        ProviderUserCredentialStatusRecord, StoreError,
     };
 
     use super::*;
@@ -193,7 +224,7 @@ mod tests {
         async fn upsert_provider_user_credential(
             &self,
             input: &UpsertProviderUserCredentialRecord,
-        ) -> Result<ProviderUserCredentialRecord, StoreError> {
+        ) -> Result<ProviderUserCredentialStatusRecord, StoreError> {
             let record = ProviderUserCredentialRecord {
                 credential_id: Uuid::new_v4(),
                 provider_key: input.provider_key.clone(),
@@ -209,7 +240,34 @@ mod tests {
                 .lock()
                 .expect("credential records")
                 .insert((input.provider_key.clone(), input.user_id), record.clone());
-            Ok(record)
+            Ok(status(&record))
+        }
+
+        async fn get_provider_user_credential_status(
+            &self,
+            provider_key: &str,
+            user_id: Uuid,
+        ) -> Result<Option<ProviderUserCredentialStatusRecord>, StoreError> {
+            Ok(self
+                .records
+                .lock()
+                .expect("credential records")
+                .get(&(provider_key.to_string(), user_id))
+                .map(status))
+        }
+
+        async fn list_provider_user_credential_statuses(
+            &self,
+            provider_key: &str,
+        ) -> Result<Vec<ProviderUserCredentialStatusRecord>, StoreError> {
+            Ok(self
+                .records
+                .lock()
+                .expect("credential records")
+                .values()
+                .filter(|record| record.provider_key == provider_key)
+                .map(status)
+                .collect())
         }
 
         async fn get_provider_user_credential(
@@ -252,6 +310,15 @@ mod tests {
             };
             record.last_used_at = Some(last_used_at);
             Ok(true)
+        }
+    }
+
+    fn status(record: &ProviderUserCredentialRecord) -> ProviderUserCredentialStatusRecord {
+        ProviderUserCredentialStatusRecord {
+            provider_key: record.provider_key.clone(),
+            user_id: record.user_id,
+            updated_at: record.updated_at,
+            last_used_at: record.last_used_at,
         }
     }
 

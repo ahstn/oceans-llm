@@ -2006,7 +2006,7 @@ pub(crate) mod tests {
             )
             .await
             .expect("create provider credential user");
-        let stored = store
+        let stored_status = store
             .upsert_provider_user_credential(&UpsertProviderUserCredentialRecord {
                 provider_key: "copilot-user-test".to_string(),
                 user_id: user.user_id,
@@ -2017,10 +2017,15 @@ pub(crate) mod tests {
             })
             .await
             .expect("store provider credential");
-        assert_eq!(stored.user_id, user.user_id);
+        assert_eq!(stored_status.user_id, user.user_id);
+        let stored = store
+            .get_provider_user_credential("copilot-user-test", user.user_id)
+            .await
+            .expect("load stored provider credential")
+            .expect("stored provider credential");
         assert_eq!(stored.secret_ciphertext, "ciphertext-a");
 
-        let replaced = store
+        let replaced_status = store
             .upsert_provider_user_credential(&UpsertProviderUserCredentialRecord {
                 provider_key: "copilot-user-test".to_string(),
                 user_id: user.user_id,
@@ -2031,8 +2036,21 @@ pub(crate) mod tests {
             })
             .await
             .expect("replace provider credential");
+        assert_eq!(replaced_status.user_id, user.user_id);
+        let replaced = store
+            .get_provider_user_credential("copilot-user-test", user.user_id)
+            .await
+            .expect("load replaced provider credential")
+            .expect("replaced provider credential");
         assert_eq!(replaced.credential_id, stored.credential_id);
         assert_eq!(replaced.secret_ciphertext, "ciphertext-b");
+
+        let statuses = store
+            .list_provider_user_credential_statuses("copilot-user-test")
+            .await
+            .expect("list provider credential statuses");
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].user_id, user.user_id);
 
         assert!(
             store

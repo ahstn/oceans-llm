@@ -167,70 +167,70 @@ impl CopilotProviderConfig {
 pub struct CopilotProvider {
     config: CopilotProviderConfig,
     client: reqwest::Client,
-    access_token_source: Option<CachedAccessTokenSource>,
-    user_token_resolver: Option<Arc<dyn ProviderUserTokenResolver>>,
+    token_source: CopilotTokenSource,
+}
+
+#[derive(Clone)]
+enum CopilotTokenSource {
+    Shared(CachedAccessTokenSource),
+    PerUser(Arc<dyn ProviderUserTokenResolver>),
 }
 
 impl CopilotProvider {
     pub fn new(config: CopilotProviderConfig) -> Result<Self, ProviderError> {
-        Self::new_with_user_token_resolver(config, None)
+        if matches!(config.auth, CopilotAuthConfig::GitHubUser) {
+            return Err(ProviderError::InvalidRequest(
+                "GitHub user authentication requires a per-user token resolver".to_string(),
+            ));
+        }
+        let token_source = CopilotTokenSource::Shared(CachedAccessTokenSource::new(
+            config.auth.build_source(config.github_api_url.as_deref())?,
+        ));
+        Self::build(config, token_source)
     }
 
     pub fn new_with_user_token_resolver(
         config: CopilotProviderConfig,
-        user_token_resolver: Option<Arc<dyn ProviderUserTokenResolver>>,
+        user_token_resolver: Arc<dyn ProviderUserTokenResolver>,
+    ) -> Result<Self, ProviderError> {
+        if !matches!(config.auth, CopilotAuthConfig::GitHubUser) {
+            return Err(ProviderError::InvalidRequest(
+                "a per-user token resolver requires GitHub user authentication".to_string(),
+            ));
+        }
+        Self::build(config, CopilotTokenSource::PerUser(user_token_resolver))
+    }
+
+    fn build(
+        config: CopilotProviderConfig,
+        token_source: CopilotTokenSource,
     ) -> Result<Self, ProviderError> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(config.request_timeout_ms))
             .build()
             .map_err(map_reqwest_error)?;
-
-        let access_token_source = if matches!(config.auth, CopilotAuthConfig::GitHubUser) {
-            if user_token_resolver.is_none() {
-                return Err(ProviderError::InvalidRequest(
-                    "GitHub user authentication requires a per-user token resolver".to_string(),
-                ));
-            }
-            None
-        } else {
-            Some(CachedAccessTokenSource::new(
-                config.auth.build_source(config.github_api_url.as_deref())?,
-            ))
-        };
-
         Ok(Self {
             config,
             client,
-            access_token_source,
-            user_token_resolver,
+            token_source,
         })
     }
 
     async fn token(&self, context: &ProviderRequestContext) -> Result<String, ProviderError> {
-        if matches!(&self.config.auth, CopilotAuthConfig::GitHubUser) {
-            let resolver = self.user_token_resolver.as_ref().ok_or_else(|| {
-                ProviderError::InvalidRequest(
-                    "GitHub user authentication requires a per-user token resolver".to_string(),
-                )
-            })?;
-            let user_id = context.owner_user_id.ok_or_else(|| {
-                ProviderError::InvalidRequest(
-                    "GitHub user authentication requires a user-owned gateway API key".to_string(),
-                )
-            })?;
-            return resolver
-                .resolve_provider_user_token(&self.config.provider_key, user_id)
-                .await;
+        match &self.token_source {
+            CopilotTokenSource::Shared(source) => source.token().await,
+            CopilotTokenSource::PerUser(resolver) => {
+                let user_id = context.owner_user_id.ok_or_else(|| {
+                    ProviderError::InvalidRequest(
+                        "GitHub user authentication requires a user-owned gateway API key"
+                            .to_string(),
+                    )
+                })?;
+                resolver
+                    .resolve_provider_user_token(&self.config.provider_key, user_id)
+                    .await
+            }
         }
-        self.access_token_source
-            .as_ref()
-            .ok_or_else(|| {
-                ProviderError::Transport(
-                    "non-user Copilot authentication has no token source".to_string(),
-                )
-            })?
-            .token()
-            .await
     }
 
     /// Selects the configured chat API and fails closed when metadata is absent.

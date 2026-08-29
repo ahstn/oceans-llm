@@ -2324,6 +2324,14 @@ pub struct ProviderUserCredentialRecord {
     pub last_used_at: Option<OffsetDateTime>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ProviderUserCredentialStatusRecord {
+    pub provider_key: String,
+    pub user_id: Uuid,
+    pub updated_at: OffsetDateTime,
+    pub last_used_at: Option<OffsetDateTime>,
+}
+
 #[derive(Clone)]
 pub struct UpsertProviderUserCredentialRecord {
     pub provider_key: String,

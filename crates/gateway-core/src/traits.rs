@@ -35,17 +35,17 @@ use crate::{
         NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
         NewReviewAgentRunRecord, PricingCatalogCacheRecord, ProviderCapabilities,
         ProviderConnection, ProviderRequestContext, ProviderUserCredentialRecord,
-        RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord, RequestLogDetail,
-        RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
-        RequestLogRecord, RequestMcpTokenOverheadRecord, ReviewAgentProvider,
-        ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
-        ReviewAgentRunRecord, ServiceAccountRecord, SpendDailyAggregateRecord,
-        SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord,
-        UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
-        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-        UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
-        UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord,
-        UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
+        ProviderUserCredentialStatusRecord, RefreshMcpOauthCredentialBindingRecord,
+        RequestAttemptRecord, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+        RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord,
+        ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord,
+        ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ServiceAccountRecord,
+        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
+        TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
+        UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+        UpsertMcpToolGrantRecord, UpsertMcpUpstreamCredentialBindingRecord,
+        UpsertProviderUserCredentialRecord, UpsertReviewAgentPullRequestRecord,
+        UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
@@ -1023,7 +1023,18 @@ pub trait ProviderUserCredentialRepository: Send + Sync {
     async fn upsert_provider_user_credential(
         &self,
         input: &UpsertProviderUserCredentialRecord,
-    ) -> Result<ProviderUserCredentialRecord, StoreError>;
+    ) -> Result<ProviderUserCredentialStatusRecord, StoreError>;
+
+    async fn get_provider_user_credential_status(
+        &self,
+        provider_key: &str,
+        user_id: Uuid,
+    ) -> Result<Option<ProviderUserCredentialStatusRecord>, StoreError>;
+
+    async fn list_provider_user_credential_statuses(
+        &self,
+        provider_key: &str,
+    ) -> Result<Vec<ProviderUserCredentialStatusRecord>, StoreError>;
 
     async fn get_provider_user_credential(
         &self,

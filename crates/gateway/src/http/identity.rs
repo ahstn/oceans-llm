@@ -140,18 +140,17 @@ pub async fn list_identity_users(
     let credential_service = gateway_service::ProviderCredentialService::new(state.store.clone());
     let mut copilot_user_providers = Vec::new();
     for provider_key in state.copilot_user_provider_keys.iter() {
-        let mut credentials = Vec::with_capacity(user_views.len());
-        for user in &user_views {
-            let user_id = Uuid::parse_str(&user.id)
-                .map_err(|error| GatewayError::Internal(error.to_string()))?;
-            let status = credential_service.status(provider_key, user_id).await?;
-            credentials.push(AdminProviderCredentialStatusView {
-                user_id: user.id.clone(),
+        let credentials = credential_service
+            .list_statuses(provider_key)
+            .await?
+            .into_iter()
+            .map(|status| AdminProviderCredentialStatusView {
+                user_id: status.user_id.to_string(),
                 configured: status.configured,
                 updated_at: status.updated_at.map(format_timestamp),
                 last_used_at: status.last_used_at.map(format_timestamp),
-            });
-        }
+            })
+            .collect();
         copilot_user_providers.push(AdminCopilotUserProviderView {
             provider_key: provider_key.clone(),
             credentials,
