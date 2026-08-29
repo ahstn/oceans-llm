@@ -501,6 +501,11 @@ impl BedrockProvider {
         request.headers_mut().remove("x-amz-date");
         request.headers_mut().remove("x-amz-security-token");
 
+        // Keep the diagnostic request ID, but do not sign it. Intermediaries can
+        // replace this header, which would invalidate an otherwise valid SigV4
+        // signature before the request reaches Bedrock.
+        let request_id = request.headers_mut().remove("x-request-id");
+
         let method = request.method().as_str().to_string();
         let uri = request.url().as_str().to_string();
         let body = request
@@ -574,6 +579,10 @@ impl BedrockProvider {
                 })?,
                 value,
             );
+        }
+
+        if let Some(request_id) = request_id {
+            request.headers_mut().insert("x-request-id", request_id);
         }
 
         Ok(request)

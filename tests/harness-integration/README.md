@@ -14,7 +14,7 @@ Required environment variable:
 
 Optional environment variable:
 
-- `OPENROUTER_TEST_MODEL`: upstream OpenRouter model ID. Defaults to `deepseek/deepseek-v4-flash`.
+- `OPENROUTER_TEST_MODEL`: upstream OpenRouter model ID. Defaults to `deepseek/deepseek-v4-flash-0731`.
 
 The harness processes receive an Oceans API key, local gateway URL, and isolated HOME/XDG directories. They do not receive the OpenRouter key, gateway administrator credentials, or unrelated parent-process environment variables. Shell access and filesystem access outside each temporary workspace are denied.
 

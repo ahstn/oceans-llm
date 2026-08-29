@@ -823,6 +823,8 @@ async fn mantle_openai_responses_default_chain_uses_mantle_sigv4_service() {
 
     assert!(authorization.contains("Credential=chain-access-key/"));
     assert!(authorization.contains("/us-east-2/bedrock-mantle/aws4_request"));
+    assert!(!authorization.contains("x-request-id"));
+    assert_eq!(built.headers().get("x-request-id").unwrap(), "req-test");
     assert!(built.headers().get("x-api-key").is_none());
 }
 

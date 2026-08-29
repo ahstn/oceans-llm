@@ -268,25 +268,40 @@ drive() {
 }
 
 evidence() {
+  local target="${1:-models}"
   [[ -d "$evidence_dir" ]] || {
     echo "No evidence directory exists for run $run_id." >&2
     exit 1
   }
   find "$evidence_dir" -maxdepth 1 -type f -print | sort
-  [[ -f "$evidence_dir/models-proof.json" ]] || {
-    echo "Models proof is missing from $evidence_dir." >&2
-    exit 1
-  }
+  case "$target" in
+    models)
+      [[ -f "$evidence_dir/models-proof.json" ]] || {
+        echo "Models proof is missing from $evidence_dir." >&2
+        exit 1
+      }
+      ;;
+    live-llm)
+      find "$evidence_dir" -maxdepth 1 -type f -name '*-canary-proof.json' -print -quit | grep -q . || {
+        echo "Live LLM canary proof is missing from $evidence_dir." >&2
+        exit 1
+      }
+      ;;
+    *)
+      echo "Supported evidence targets: models, live-llm" >&2
+      exit 2
+      ;;
+  esac
 }
 
 case "${1:-}" in
   launch) launch ;;
   doctor) doctor ;;
   drive) drive "${2:-}" ;;
-  evidence) evidence ;;
+  evidence) evidence "${2:-models}" ;;
   cleanup) cleanup ;;
   *)
-    echo "Usage: $0 {launch|doctor|drive models|evidence|cleanup}" >&2
+    echo "Usage: $0 {launch|doctor|drive models|evidence [models|live-llm]|cleanup}" >&2
     exit 2
     ;;
 esac

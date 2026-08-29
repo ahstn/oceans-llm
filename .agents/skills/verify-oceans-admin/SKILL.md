@@ -5,7 +5,7 @@ description: Verify the Oceans LLM browser admin control plane against the real 
 
 # Verify Oceans Admin
 
-Use this skill to drive the embedded TanStack Start admin UI through the gateway. The primary surface is the browser UI at `/admin`. The gateway API is a secondary surface used only for health checks and read-only confirmation.
+Use this skill to drive the embedded TanStack Start admin UI through the gateway. The primary surface is the browser UI at `/admin`. The gateway API is a secondary surface for health checks, read-only confirmation, and bounded live LLM requests when the change affects the request path.
 
 Read [features/README.md](./features/README.md) before you choose a proof. Use the exact feature recipe for the path under test.
 
@@ -59,6 +59,16 @@ The current `gateway.yaml` grants the `agent_sessions` page to platform administ
 
 For other features, follow the exact stable handles in the feature map. Extend the driver with a named command before you report a new path as automated.
 
+## Live LLM requests
+
+Read-only control-plane verification is the default and does not call an upstream provider. Add one short, paid live request when the change affects request routing, provider authentication, request or response translation, streaming, tool calls, usage accounting, request logging, provider error mapping, or another behavior that a configured model list cannot prove. Do not add a paid request for UI-only, documentation-only, seed-only, or unrelated configuration changes.
+
+Use [features/live-llm-requests.md](./features/live-llm-requests.md) for the exact recipe. Prefer `deepseek-v4-flash-0731` through OpenRouter for generic request-path changes. For Bedrock-specific request-path testing, use gateway model `gpt-oss-120b-bedrock`, which routes to Bedrock Mantle model `openai.gpt-oss-120b`. Do not use `openai.gpt-5.6-luna`; it is not enabled for this AWS account. Run both providers only when provider parity is the behavior under test.
+
+Keep each prompt synthetic and small. Limit the output, create a temporary gateway API key with access only to the selected model, and revoke it after the proof. Never print or save raw gateway or provider credentials. For Bedrock Responses requests, set `store: false` unless stored-response behavior is the subject of the test.
+
+A request to verify a request-path or provider change permits one bounded canary when the required local credential is available. Credential presence alone does not justify paid calls for other work. If a canary is outside the stated task, report it as an available paid check instead of running it.
+
 ## Evidence
 
 Evidence is written to `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/evidence/`. Keep the run ID in the verification report. The Models proof produces:
@@ -72,6 +82,8 @@ Evidence is written to `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/evi
 - `stack.log` beside the evidence directory for launch and runtime diagnostics. Cleanup redacts seeded passwords and raw demo API-key secrets from this log.
 
 A valid proof exercises the real browser path. It captures the action and resulting state, not only a final screenshot. It also confirms the model list through the production admin API used by the UI. Do not use internal state setters or test-only endpoints. The local demo seed is the production seed boundary for this development command; no provider call is required to list models.
+
+A live canary is separate evidence. Name the gateway model, provider, endpoint family, and observed request-log record. A rendered configured provider or successful health check is not live-provider proof.
 
 Mocks are valid only when the production boundary already isolates an external system. This Models proof uses no mock. Do not interpret a rendered configured provider as proof that its credentials or live upstream service work.
 
@@ -99,7 +111,7 @@ The executable helper is [scripts/control-oceans-admin](./scripts/control-oceans
 control-oceans-admin launch
 control-oceans-admin doctor
 control-oceans-admin drive models
-control-oceans-admin evidence
+control-oceans-admin evidence [models|live-llm]
 control-oceans-admin cleanup
 ```
 

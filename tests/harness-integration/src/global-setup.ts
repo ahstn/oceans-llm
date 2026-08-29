@@ -14,7 +14,7 @@ import type { GatewayRuntime } from "./types.js";
 const GATEWAY_MODEL = "harness-openrouter";
 const ALLOWLISTED_GATEWAY_MODEL = "harness-openrouter-user-allowlist";
 const ALLOWLISTED_USER_EMAIL = "allowlisted.harness@example.com";
-const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-flash";
+const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-flash-0731";
 const MANAGED_API_KEY = "gwk_harness.integration-secret";
 const MANAGED_ADMIN_EMAIL = "harness-admin@local";
 const MANAGED_ADMIN_PASSWORD = "harness-admin-password";
