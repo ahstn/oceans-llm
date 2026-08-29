@@ -2077,7 +2077,11 @@ export interface components {
             /** Format: int32 */
             payload_percent: number;
             /** Format: int32 */
+            response_payload_count: number;
+            /** Format: int32 */
             timing_percent: number;
+            /** Format: int32 */
+            truncated_response_count: number;
         };
         AgentTokenAndCacheDiagnosticsView: {
             /** Format: int64 */
@@ -2090,7 +2094,10 @@ export interface components {
             cache_creation_cost_10000?: number | null;
             /** Format: int64 */
             cache_creation_tokens?: number | null;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @deprecated
+             */
             cache_key_switches: number;
             /** Format: int64 */
             cache_read_cost_10000?: number | null;
@@ -2113,6 +2120,8 @@ export interface components {
             /** Format: int64 */
             output_tokens?: number | null;
             pricing_policy_versions: string[];
+            /** Format: int32 */
+            provider_model_switches: number;
             /** Format: int64 */
             provider_total_tokens?: number | null;
             /** Format: int32 */

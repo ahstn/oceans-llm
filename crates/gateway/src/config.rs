@@ -26,9 +26,9 @@ use gateway_providers::{
     VertexBatchConfig, VertexProviderConfig,
 };
 use gateway_service::{
-    McpOauthProvider, McpOauthRuntime, PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode,
-    RequestLogPayloadPolicy, encrypt_gateway_api_key_secret, is_supported_pricing_provider_id,
-    parse_payload_path,
+    MAX_INLINE_REQUEST_BYTES, McpOauthProvider, McpOauthRuntime, PayloadPath, ProviderIconKey,
+    RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, encrypt_gateway_api_key_secret,
+    is_supported_pricing_provider_id, parse_payload_path,
 };
 use gateway_store::StoreConnectionOptions;
 use serde::{Deserialize, Deserializer, de};
@@ -2425,6 +2425,11 @@ impl RequestLogPayloadConfig {
         if self.request_max_bytes == 0 {
             bail!("request_logging.payloads.request_max_bytes must be > 0");
         }
+        if self.request_max_bytes > MAX_INLINE_REQUEST_BYTES {
+            bail!(
+                "request_logging.payloads.request_max_bytes must be <= {MAX_INLINE_REQUEST_BYTES}"
+            );
+        }
         if self.response_max_bytes == 0 {
             bail!("request_logging.payloads.response_max_bytes must be > 0");
         }
@@ -3664,7 +3669,7 @@ fn default_github_oauth_scopes() -> Vec<String> {
 }
 
 const fn default_request_log_request_max_bytes() -> usize {
-    64 * 1024
+    128 * 1024
 }
 
 const fn default_request_log_response_max_bytes() -> usize {
@@ -3904,7 +3909,7 @@ mod tests {
             policy.capture_mode,
             RequestLogPayloadCaptureMode::RedactedPayloads
         );
-        assert_eq!(policy.request_max_bytes, 64 * 1024);
+        assert_eq!(policy.request_max_bytes, 128 * 1024);
         assert_eq!(policy.response_max_bytes, 64 * 1024);
         assert_eq!(policy.stream_max_events, 128);
     }
@@ -4027,6 +4032,22 @@ request_logging:
         let error_text = format!("{error:#}");
         assert!(
             error_text.contains("request_logging.payloads.request_max_bytes must be > 0"),
+            "unexpected error: {error_text}"
+        );
+
+        write_config(
+            &config_path,
+            r#"
+request_logging:
+  payloads:
+    request_max_bytes: 262145
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("request_logging.payloads.request_max_bytes must be <= 262144"),
             "unexpected error: {error_text}"
         );
 

@@ -272,7 +272,7 @@ Important defaults from config parsing and domain deserialization:
 - Vertex `location` defaults to `global`
 - Vertex `api_host` defaults to `aiplatform.googleapis.com`
 - `request_logging.payloads.capture_mode` defaults to `redacted_payloads`
-- `request_logging.payloads.request_max_bytes` defaults to `65536`
+- `request_logging.payloads.request_max_bytes` defaults to `131072` and cannot exceed the `262144` absolute inline ceiling
 - `request_logging.payloads.response_max_bytes` defaults to `65536`
 - `request_logging.payloads.stream_max_events` defaults to `128`
 - `request_logging.purge.enabled` defaults to `false`
@@ -372,7 +372,7 @@ For collector and Datadog setup, see [Export Traces and Metrics](../operations/o
 request_logging:
   payloads:
     capture_mode: redacted_payloads
-    request_max_bytes: 65536
+    request_max_bytes: 131072
     response_max_bytes: 65536
     stream_max_events: 128
     redaction_paths: []
@@ -388,7 +388,7 @@ Important fields:
   - `disabled`: skip chat-completion request-log persistence
   - `summary_only`: write summary rows with `has_payload=false` and no payload row
   - `redacted_payloads`: write summary rows and sanitized payload rows
-- `request_max_bytes`: final persisted request payload budget
+- `request_max_bytes`: final persisted request payload budget, measured as uncompressed serialized JSON bytes; valid range is `1-262144`
 - `response_max_bytes`: final persisted response payload budget
 - `stream_max_events`: maximum stored stream events; stream usage and error parsing still sees later frames
 - `redaction_paths`: additive admin-configured redaction paths anchored from the wrapped payload root

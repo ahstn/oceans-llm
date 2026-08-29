@@ -74,6 +74,10 @@ export function SessionDetail({
   const report = detail.report
   const components = report?.components
   const diagnostics = report?.diagnostics
+  const dataLimitations = detail.session.limitations.filter(isDataLimitation)
+  const analysisNotices = detail.session.limitations.filter(
+    (limitation) => !isDataLimitation(limitation),
+  )
   return (
     <>
       <div>
@@ -96,12 +100,19 @@ export function SessionDetail({
           </Alert>
         ) : null}
 
-        {detail.session.limitations.length > 0 ? (
+        {dataLimitations.length > 0 ? (
           <Alert>
             <AlertTitle>Data limits</AlertTitle>
             <AlertDescription>
-              {detail.session.limitations.map(formatLimitation).join(' · ')}
+              {dataLimitations.map((value) => formatDataLimitation(value, detail)).join(' · ')}
             </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {analysisNotices.length > 0 ? (
+          <Alert>
+            <AlertTitle>Analysis context</AlertTitle>
+            <AlertDescription>{analysisNotices.map(formatLimitation).join(' · ')}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -541,6 +552,37 @@ const limitationLabels: Record<string, string> = {
   session_unobserved: 'An external session ID was not observed',
   tool_inventory_potential_only: 'The available tool list is estimated',
   usage_unavailable: 'Usage data is not available',
+}
+
+const analysisNoticeCodes = new Set([
+  'cohort_fallback',
+  'semantic_verification_unavailable',
+  'tool_inventory_potential_only',
+])
+
+function isDataLimitation(value: string) {
+  return !analysisNoticeCodes.has(value)
+}
+
+function formatDataLimitation(value: string, detail: AgentSessionDetailView) {
+  if (value === 'payload_truncated') {
+    const count = detail.report?.coverage.truncated_response_count
+    if (count !== undefined && count > 0) {
+      const responseCount = detail.report?.coverage.response_payload_count
+      const total =
+        responseCount !== undefined && responseCount > 0
+          ? responseCount
+          : detail.session.request_count
+      return `${count.toLocaleString()} of ${total.toLocaleString()} ${count === 1 ? 'response was' : 'responses were'} truncated`
+    }
+  }
+  if (value === 'request_incomplete') {
+    const count = detail.report?.components.outcome.incomplete_requests
+    if (count !== undefined && count > 0) {
+      return `${count.toLocaleString()} of ${detail.session.request_count.toLocaleString()} ${count === 1 ? 'request did' : 'requests did'} not complete`
+    }
+  }
+  return formatLimitation(value)
 }
 
 function formatLimitation(value: string) {

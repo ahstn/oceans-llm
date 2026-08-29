@@ -62,6 +62,11 @@ where
         Self { repo }
     }
 
+    #[tracing::instrument(
+        name = "gateway.model.alias_resolution",
+        skip_all,
+        fields(gen_ai.request.model = %requested_model.model_key)
+    )]
     pub async fn canonicalize_requested_model(
         &self,
         requested_model: GatewayModel,

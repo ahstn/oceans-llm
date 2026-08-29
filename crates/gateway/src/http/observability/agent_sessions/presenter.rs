@@ -47,6 +47,8 @@ pub(super) fn agent_session_efficiency_report(
             cost_percent: report.coverage.cost_percent,
             timing_percent: report.coverage.timing_percent,
             payload_percent: report.coverage.payload_percent,
+            response_payload_count: report.coverage.response_payload_count,
+            truncated_response_count: report.coverage.truncated_response_count,
             cohort_percent: report.coverage.cohort_percent,
             overall_percent: report.coverage.overall_percent,
         },
@@ -100,7 +102,8 @@ pub(super) fn agent_session_efficiency_report(
                 silent_cache_threshold_miss_requests: diagnostics
                     .token_and_cache
                     .silent_cache_threshold_miss_requests,
-                cache_key_switches: diagnostics.token_and_cache.cache_key_switches,
+                provider_model_switches: diagnostics.token_and_cache.provider_model_switches,
+                cache_key_switches: diagnostics.token_and_cache.provider_model_switches,
                 reasoning_config_switches: diagnostics.token_and_cache.reasoning_config_switches,
                 pricing_policy_versions: diagnostics
                     .token_and_cache

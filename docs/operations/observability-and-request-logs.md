@@ -182,7 +182,7 @@ Default config:
 request_logging:
   payloads:
     capture_mode: redacted_payloads
-    request_max_bytes: 65536
+    request_max_bytes: 131072
     response_max_bytes: 65536
     stream_max_events: 128
     redaction_paths: []
@@ -206,6 +206,7 @@ This is why a user-owned request can be absent from request logs while a service
 Validation rules:
 
 - `request_max_bytes` must be greater than zero
+- `request_max_bytes` must not exceed `262144`, the absolute inline request ceiling
 - `response_max_bytes` must be greater than zero
 - `stream_max_events` must be greater than zero
 - `redaction_paths` must use dot-separated object keys, with `*` as a full-segment wildcard
@@ -219,7 +220,7 @@ Each request-log row persists lightweight policy metadata in `request_logs.metad
   "stream": false,
   "payload_policy": {
     "capture_mode": "redacted_payloads",
-    "request_max_bytes": 65536,
+    "request_max_bytes": 131072,
     "response_max_bytes": 65536,
     "stream_max_events": 128,
     "version": "builtin:v2"
@@ -237,14 +238,7 @@ Payloads are wrapped before policy application:
 
 Redaction applies one explicit built-in policy plus additive admin-configured paths from `request_logging.payloads.redaction_paths`.
 
-Sensitive built-in headers include:
-
-- `authorization`
-- `anthropic-api-key`
-- `cookie`
-- `set-cookie`
-- `x-goog-api-key`
-- `x-api-key`
+Stored request headers use an explicit diagnostic allow-list. The gateway keeps `session-id`, `session_id`, `thread-id`, `x-claude-code-agent-id`, `x-claude-code-parent-agent-id`, `x-claude-code-session-id`, `x-client-request-id`, `x-codex-turn-metadata`, `x-opencode-session`, `x-parent-session-id`, `x-session-affinity`, and `x-session-id`. It drops all other headers from the stored payload, including unknown credential headers. Within `x-codex-turn-metadata`, it keeps only string-valued session and lineage fields used by Agent Session Analysis.
 
 Sensitive built-in JSON keys include:
 
@@ -263,12 +257,35 @@ Built-in URL query redaction preserves the scheme, authority, and path while rep
 
 Known bulky provider fields are shape-preserving truncated before the whole-payload byte budget is applied. Built-ins cover OpenAI-compatible image/audio/file payloads, Vertex Gemini inline data, and Vertex Anthropic base64 source data.
 
-Processing order:
+Request budgets use the uncompressed serialized JSON byte count. Database compression does not reduce gateway serialization work, API transfer size, JSON parsing work, or admin UI rendering work. The default persisted-request cap is 128 KiB, and 256 KiB is the absolute inline ceiling even for policies constructed outside YAML validation. These are gateway engineering levels, not database limits:
 
-1. wrap the payload
-2. apply built-in and admin-configured redaction rules
-3. truncate known bulky fields while preserving JSON shape where possible
-4. apply `request_max_bytes` or `response_max_bytes` as a final guardrail
+- at or below 64 KiB is the preferred interactive and debugging range, with an operational P95 target at or below this level
+- 64-128 KiB is accepted and uses structured content budgeting when the configured cap requires it
+- 128-256 KiB is exceptional and must be reduced to the configured persisted cap
+- above 256 KiB is never retained inline in full
+
+These levels are an evidence-based gateway design inference, not a limit copied from one vendor. [PostgreSQL TOAST](https://www.postgresql.org/docs/current/storage-toast.html) and [SQLite limits](https://www.sqlite.org/limits.html) show why database capacity is not a useful operational target. [Datadog](https://docs.datadoghq.com/logs/log_collection/) recommends much smaller individual logs than its maximum, while [Google Cloud Logging](https://docs.cloud.google.com/logging/quotas), [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/cloudwatch_limits_cwl.html), and [Sentry](https://develop.sentry.dev/sdk/foundations/envelopes/event-payloads/) use several lower limits for structured or interactive paths. The [OpenTelemetry log data model](https://opentelemetry.io/docs/specs/otel/logs/data-model/) also requires structured semantics while accounting for serialization cost and space.
+
+The request remains one bounded JSON value. This policy does not add split payload columns, a tool-schema table, or tool-schema deduplication.
+
+Request processing uses a structured analysis projection and a separate storage representation:
+
+1. wrap the request and apply built-in and admin-configured redaction rules
+2. extract Agent Session Analysis metadata from the structured redacted request, including permitted session headers, original prompt size, reasoning settings, and supplied-tool facts
+3. truncate known bulky binary fields while preserving JSON shape
+4. count the serialized size and return without adaptive work when the request is within `request_max_bytes`
+5. reserve the diagnostic envelope before allocating input-content bytes; it retains sanitized session and lineage headers, model and reasoning configuration, tool names and choice, bounded tool schema shape, stream and include settings, cache keys, metadata, and message or item identity fields
+6. aim for a 16 KiB essential envelope, with 32 KiB as a soft limit; when an oversized request has an envelope above the target, compact verbose tool and schema descriptions, examples, and defaults while retaining essential identifiers, tool names, and schema shape
+7. allocate at most 96 KiB in total to retained input content; ordinary messages use an adaptive target of 8-16 KiB each, while a solitary message can retain up to 32 KiB when the total request budget permits
+8. for Chat requests, bound `body.messages[*].content` text leaves; for Responses requests, bound a string-valued `body.instructions`, a string-valued `body.input`, or the text leaves under `body.input[*].content`; preserve every message, item, content array, unknown item type, and non-bulky field
+9. truncate text-bearing leaves independently with a UTF-8-safe head and tail plus an explicit omitted-byte marker, then enforce the final serialized request cap
+10. use the complete-payload `{ truncated, size_bytes, preview }` marker only when the bounded essential envelope cannot fit
+
+Structured request truncation adds a top-level `truncation` object beside `headers` and `body`. It records the strategy version, original and stored serialized sizes, omitted bytes, truncated-field count, a bounded affected-path list, known-large-field count, and tool-field compaction count. `request_payload_truncated=true` means that at least one request field was truncated or the hard fallback was required. Analysis metadata does not depend on this stored representation, so storage truncation does not remove an observed external session source or reduce the original prompt and tool facts used by Agent Session Analysis.
+
+Response storage keeps the existing 64 KiB default and behavior: known bulky fields are reduced first, then `response_max_bytes` applies the complete-payload hard guardrail. The existing `response_payload_truncated=true` signal records a response that hit the whole-response or stream storage limit. Agent session reports count affected responses, and the admin UI shows that count separately from permanent analysis capability notices.
+
+The adaptive request path mutates the already redacted storage value and uses `serde_json::to_writer` with a counting writer when it only needs a size. It does not clone the full JSON tree again. The manual measurement harness covers 8 KiB, 64 KiB, 256 KiB, and 1 MiB requests with long messages, many small messages, tool-heavy envelopes, content arrays, binary blocks, and multibyte UTF-8. Run it with `mise exec -- cargo test -p gateway-service measures_payload_helper_and_request_setup_matrix -- --ignored --nocapture`. The harness reports uncompressed input and stored sizes, the stress-fixture P95 stored size, the pure bounding-helper time, and complete gateway request-setup time. The equal-weight stress matrix is not a production traffic distribution, so its P95 is a guard against the 128 KiB normal cap rather than proof of the operational 64 KiB P95 target. It does not enforce a machine-dependent latency threshold.
 
 For streams, the gateway keeps parsing every frame for usage and provider errors. Only stored event payloads are capped by `stream_max_events`; if the cap is hit, `response_payload_truncated=true`.
 

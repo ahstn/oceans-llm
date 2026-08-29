@@ -28,7 +28,7 @@ use tokio::sync::OnceCell;
 use url::Url;
 use uuid::Uuid;
 
-use crate::http::{join_base_url, map_reqwest_error};
+use crate::http::{TracedResponse, execute_request, join_base_url, map_reqwest_error};
 use crate::streaming::{
     done_sse_chunk, normalize_openai_compat_responses_stream, normalize_openai_compat_stream,
     openai_sse_error_chunk, render_sse_event_chunk,
@@ -382,6 +382,7 @@ impl BedrockProvider {
         .await
     }
 
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_json_request(
         &self,
         url: String,
@@ -420,6 +421,7 @@ impl BedrockProvider {
             .await
     }
 
+    #[tracing::instrument(name = "gateway.provider.credentials", skip_all)]
     async fn apply_auth(
         &self,
         mut request: reqwest::Request,
@@ -499,6 +501,11 @@ impl BedrockProvider {
         request.headers_mut().remove("x-amz-date");
         request.headers_mut().remove("x-amz-security-token");
 
+        // Keep the diagnostic request ID, but do not sign it. Intermediaries can
+        // replace this header, which would invalidate an otherwise valid SigV4
+        // signature before the request reaches Bedrock.
+        let request_id = request.headers_mut().remove("x-request-id");
+
         let method = request.method().as_str().to_string();
         let uri = request.url().as_str().to_string();
         let body = request
@@ -574,18 +581,25 @@ impl BedrockProvider {
             );
         }
 
+        if let Some(request_id) = request_id {
+            request.headers_mut().insert("x-request-id", request_id);
+        }
+
         Ok(request)
     }
 
     async fn execute_stream_request(
         &self,
         request: reqwest::Request,
-    ) -> Result<reqwest::Response, ProviderError> {
-        let response = self
-            .client
-            .execute(request)
-            .await
-            .map_err(map_reqwest_error)?;
+    ) -> Result<TracedResponse, ProviderError> {
+        let response = execute_request(
+            &self.client,
+            request,
+            "aws_bedrock",
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.map_err(map_reqwest_error)?;
@@ -629,11 +643,14 @@ impl ProviderClient for BedrockProvider {
     ) -> Result<Value, ProviderError> {
         let api_style = self.api_style(context)?;
         let request = self.build_chat_request(request, context).await?;
-        let response = self
-            .client
-            .execute(request)
-            .await
-            .map_err(map_reqwest_error)?;
+        let response = execute_request(
+            &self.client,
+            request,
+            "aws_bedrock",
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
         let status = response.status();
         let text = response.text().await.map_err(map_reqwest_error)?;
 
@@ -711,11 +728,14 @@ impl ProviderClient for BedrockProvider {
         let request = self
             .build_responses_request(request, context, false)
             .await?;
-        let response = self
-            .client
-            .execute(request)
-            .await
-            .map_err(map_reqwest_error)?;
+        let response = execute_request(
+            &self.client,
+            request,
+            "aws_bedrock",
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
         let status = response.status();
         let text = response.text().await.map_err(map_reqwest_error)?;
 

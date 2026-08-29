@@ -40,6 +40,7 @@ permissions:
       - mcp
       - review_agent
       - spend_controls
+      - agent_sessions
     actions: []
     default_page: api_keys
 
@@ -65,7 +66,7 @@ guardrails:
 request_logging:
   payloads:
     capture_mode: redacted_payloads
-    request_max_bytes: 65536
+    request_max_bytes: 131072
     response_max_bytes: 65536
     stream_max_events: 128
     redaction_paths: []
@@ -315,6 +316,16 @@ providers:
       label: AWS Bedrock
       icon_key: aws
 
+  - id: bedrock-mantle-us-east-1
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_mantle
+    auth:
+      mode: default_chain
+    display:
+      label: AWS Bedrock Mantle
+      icon_key: aws
+
 models:
   - id: gpt-5.6-sol
     description: OpenAI via compatible adapter with weighted route selection
@@ -338,6 +349,15 @@ models:
     routes:
       - provider: openrouter
         upstream_model: deepseek/deepseek-v4-pro
+
+  - id: deepseek-v4-flash-0731
+    description: Low-cost OpenRouter model for generic live request verification
+    routes:
+      - provider: openrouter
+        upstream_model: deepseek/deepseek-v4-flash-0731
+        pricing_override:
+          input_usd_per_million_tokens: "0.0300"
+          output_usd_per_million_tokens: "0.1000"
 
   - id: qwen-3.6-27b
     routes:
@@ -399,6 +419,27 @@ models:
           aws_bedrock:
             api_style: runtime_openai_chat
             openai_base_path: /openai/v1
+
+  - id: gpt-oss-120b-bedrock
+    description: Low-cost OpenAI GPT OSS 120B on AWS Bedrock Mantle
+    routes:
+      - provider: bedrock-mantle-us-east-1
+        upstream_model: openai.gpt-oss-120b
+        pricing_override:
+          input_usd_per_million_tokens: "0.1500"
+          output_usd_per_million_tokens: "0.6000"
+        capabilities:
+          chat_completions: false
+          responses: true
+          stream: true
+          embeddings: false
+          tools: true
+          vision: false
+          json_schema: false
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_responses
+            openai_base_path: /v1
 
   - id: gemini-pro-preview
     description: Gemini preview on Vertex

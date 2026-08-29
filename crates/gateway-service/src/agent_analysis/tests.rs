@@ -1,6 +1,18 @@
 use super::*;
 
 #[test]
+fn report_artifacts_advance_without_reparsing_retained_observations() {
+    let versions = desired_versions_for_policy(&AnalysisPolicy::default());
+
+    assert_eq!(versions.report_schema_version, "agent-session-report-v6");
+    assert_eq!(versions.analyzer_version, "session-efficiency-v5");
+    assert_eq!(
+        versions.observation_parser_version,
+        "passive-observations-v3"
+    );
+}
+
+#[test]
 fn metadata_keeps_only_policy_permitted_bounded_dimensions() {
     let request = json!({
         "messages": [{"role": "user", "content": "secret"}],
@@ -64,6 +76,80 @@ fn metadata_accepts_direct_and_nested_tool_name_shapes() {
             .supplied_tools
             .iter()
             .all(|tool| tool.token_estimate > 0)
+    );
+    assert_eq!(metadata.supplied_tool_count, Some(2));
+    assert!(tool_inventory_limitations(&metadata).is_empty());
+
+    let partial = extract_request_metadata(
+        &json!({"tools": [{"name": "search"}, {"type": "unknown"}]}),
+        &BTreeMap::new(),
+        true,
+        "opencode",
+    );
+    assert_eq!(partial.supplied_tool_count, Some(2));
+    assert_eq!(
+        tool_inventory_limitations(&partial),
+        vec![LimitationCode::ToolInventoryPotentialOnly]
+    );
+
+    let no_tools = extract_request_metadata(
+        &json!({"messages": [{"role": "user", "content": "hello"}]}),
+        &BTreeMap::new(),
+        true,
+        "opencode",
+    );
+    assert_eq!(no_tools.supplied_tool_count, None);
+    assert!(tool_inventory_limitations(&no_tools).is_empty());
+}
+
+#[test]
+fn metadata_size_facts_match_serialized_json_bytes() {
+    let request = json!({
+        "messages": [{
+            "role": "user",
+            "content": "quote: \" newline:\n multibyte: 🙂"
+        }],
+        "tools": [
+            {
+                "name": "search",
+                "description": "line one\nline two 🙂",
+                "input_schema": {"type": "object"}
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "edit",
+                    "parameters": {"type": "object", "description": "use \\ safely"}
+                }
+            }
+        ]
+    });
+
+    let metadata = extract_request_metadata(&request, &BTreeMap::new(), true, "opencode");
+    let expected_prompt_bytes =
+        u64::try_from(serde_json::to_vec(&request["messages"]).unwrap().len()).unwrap();
+    let expected_tool_schema_bytes =
+        u64::try_from(serde_json::to_vec(&request["tools"]).unwrap().len()).unwrap();
+    let expected_tool_tokens = request["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| {
+            u64::try_from(serde_json::to_vec(tool).unwrap().len())
+                .unwrap()
+                .div_ceil(4)
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(metadata.prompt_bytes, Some(expected_prompt_bytes));
+    assert_eq!(metadata.tool_schema_bytes, Some(expected_tool_schema_bytes));
+    assert_eq!(
+        metadata
+            .supplied_tools
+            .iter()
+            .map(|tool| tool.token_estimate)
+            .collect::<Vec<_>>(),
+        expected_tool_tokens
     );
 }
 

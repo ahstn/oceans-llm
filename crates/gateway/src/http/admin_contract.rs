@@ -1465,6 +1465,8 @@ pub struct AgentTelemetryCoverageView {
     pub cost_percent: u8,
     pub timing_percent: u8,
     pub payload_percent: u8,
+    pub response_payload_count: u32,
+    pub truncated_response_count: u32,
     pub cohort_percent: u8,
     pub overall_percent: u8,
 }
@@ -1492,6 +1494,8 @@ pub struct AgentTokenAndCacheDiagnosticsView {
     pub cache_read_write_ratio_basis_points: Option<i32>,
     pub cache_write_amplification_basis_points: Option<i32>,
     pub silent_cache_threshold_miss_requests: Option<u32>,
+    pub provider_model_switches: u32,
+    #[schema(deprecated)]
     pub cache_key_switches: u32,
     pub reasoning_config_switches: Option<u32>,
     pub pricing_policy_versions: Vec<String>,

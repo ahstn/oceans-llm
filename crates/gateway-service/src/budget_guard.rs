@@ -23,6 +23,7 @@ where
         Self { repo }
     }
 
+    #[tracing::instrument(name = "gateway.budget.precheck", skip_all)]
     pub async fn enforce_pre_provider_budget(
         &self,
         api_key: &AuthenticatedApiKey,
@@ -52,6 +53,11 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(
+        name = "gateway.usage.ledger",
+        skip_all,
+        fields(gateway.provider.key = %ledger.provider_key)
+    )]
     pub async fn enforce_and_record_usage(
         &self,
         api_key: &AuthenticatedApiKey,

@@ -49,6 +49,7 @@ vi.mock('@/server/admin-data.functions', () => ({
 const session: AgentSessionSummaryView = {
   session_id: 'session_1',
   session_source_id: 'session_source_1',
+  session_source_hash: 'sha256:safe-session-source',
   session_source_observed: true,
   ownership_scope_key: 'user:user_1',
   user_id: 'user_1',
@@ -205,6 +206,8 @@ const detail: AgentSessionDetailView = {
       cost_percent: 100,
       timing_percent: 100,
       payload_percent: 67,
+      response_payload_count: 1,
+      truncated_response_count: 0,
       cohort_percent: 100,
       overall_percent: 93,
     },
@@ -231,6 +234,7 @@ const detail: AgentSessionDetailView = {
         cache_read_write_ratio_basis_points: 40_000,
         cache_write_amplification_basis_points: 2_500,
         silent_cache_threshold_miss_requests: 0,
+        provider_model_switches: 1,
         cache_key_switches: 1,
         reasoning_config_switches: 0,
         pricing_policy_versions: ['cache-aware-v1'],
@@ -485,6 +489,60 @@ describe('AgentSessionsPage', () => {
     })
   })
 
+  it('closes session diagnostics by removing the session ID from search', async () => {
+    routeMock.useSearch.mockReturnValue({
+      page: 1,
+      page_size: 50,
+      harness_key: 'opencode',
+      session_id: 'session_1',
+    })
+    getAgentSessionDetailMock.mockResolvedValue({ data: detail })
+
+    render(<AgentSessionsPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/agent-sessions',
+        search: { page: 1, page_size: 50, harness_key: 'opencode' },
+      })
+    })
+  })
+
+  it('clears active filters through route search', async () => {
+    routeMock.useSearch.mockReturnValue({
+      page: 3,
+      page_size: 25,
+      harness_key: 'opencode',
+    })
+
+    render(<AgentSessionsPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/agent-sessions',
+        search: { page: 1, page_size: 50 },
+      })
+    })
+  })
+
+  it('changes pages through route search', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [session], page: 1, page_size: 50, total: 51 },
+    })
+
+    render(<AgentSessionsPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/agent-sessions',
+        search: { page: 2, page_size: 50 },
+      })
+    })
+  })
+
   it('deep-links to session diagnostics with request outcomes and retained observations', async () => {
     setCapabilities(false, true)
     routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, session_id: 'session_1' })
@@ -543,7 +601,15 @@ describe('AgentSessionsPage', () => {
     fireEvent.click(identityTrigger)
     expect(within(detailSheet).getByText('Model')).toBeInTheDocument()
     expect(within(detailSheet).getByText('Harness')).toBeInTheDocument()
-    expect(within(detailSheet).getByText('Session ID')).toBeInTheDocument()
+    expect(within(detailSheet).getByText('Gateway analysis session ID')).toBeInTheDocument()
+    expect(within(detailSheet).getByText('External session source')).toBeInTheDocument()
+    expect(within(detailSheet).getByText('Observed')).toBeInTheDocument()
+    expect(within(detailSheet).getByText('External session source hash')).toBeInTheDocument()
+    expect(within(detailSheet).getByText('sha256:safe-session-source')).toHaveClass(
+      'min-w-0',
+      'max-w-full',
+      'break-all',
+    )
     expect(within(detailSheet).queryByText('Operation')).not.toBeInTheDocument()
     expect(within(detailSheet).queryByText('Caller class')).not.toBeInTheDocument()
     expect(within(detailSheet).queryByText('External session ID')).not.toBeInTheDocument()
@@ -557,6 +623,7 @@ describe('AgentSessionsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Token and cache use' }))
     expect(screen.getByText('Cache read cost')).toBeInTheDocument()
     expect(screen.getByText('Cache write cost')).toBeInTheDocument()
+    expect(screen.getByText('Provider/model switches')).toBeInTheDocument()
     expect(screen.queryByText('Cache creation by lifetime')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Tools and changes' }))
@@ -583,6 +650,35 @@ describe('AgentSessionsPage', () => {
     expect(screen.queryByRole('button', { name: 'Outcome evidence' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Finish reasons' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Analysis versions' })).not.toBeInTheDocument()
+  })
+
+  it('separates quantified data defects from analysis capability notices', async () => {
+    const limitedDetail = structuredClone(detail)
+    limitedDetail.session.request_count = 155
+    limitedDetail.session.limitations = [
+      'payload_truncated',
+      'request_incomplete',
+      'semantic_verification_unavailable',
+    ]
+    limitedDetail.report!.coverage.response_payload_count = 155
+    limitedDetail.report!.coverage.truncated_response_count = 1
+    limitedDetail.report!.components.outcome.incomplete_requests = 1
+    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, session_id: 'session_1' })
+    getAgentSessionDetailMock.mockResolvedValue({ data: limitedDetail })
+
+    render(<AgentSessionsPage />)
+
+    const dataLimits = await screen.findByText('Data limits')
+    const dataAlert = dataLimits.closest('[data-slot="alert"]')
+    expect(dataAlert).not.toBeNull()
+    expect(dataAlert).toHaveTextContent('1 of 155 response was truncated')
+    expect(dataAlert).toHaveTextContent('1 of 155 request did not complete')
+    expect(dataAlert).not.toHaveTextContent('Answer verification is not available')
+
+    const analysisContext = screen.getByText('Analysis context')
+    const contextAlert = analysisContext.closest('[data-slot="alert"]')
+    expect(contextAlert).not.toBeNull()
+    expect(contextAlert).toHaveTextContent('Answer verification is not available')
   })
 
   it('does not link team admins to platform-only request logs', async () => {

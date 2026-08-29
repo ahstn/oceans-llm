@@ -28,6 +28,7 @@ where
         }
     }
 
+    #[tracing::instrument(name = "gateway.auth.authenticate", skip_all)]
     pub async fn authenticate_authorization_header(
         &self,
         authorization_header: Option<&str>,
@@ -37,6 +38,7 @@ where
         self.authenticate_bearer_token(token).await
     }
 
+    #[tracing::instrument(name = "gateway.auth.verify_api_key", skip_all)]
     pub async fn authenticate_bearer_token(
         &self,
         bearer_token: &str,
