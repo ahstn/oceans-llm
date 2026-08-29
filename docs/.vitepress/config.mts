@@ -54,11 +54,9 @@ const primarySidebar = [
           { text: "OpenAI Models", link: "/providers/aws-bedrock-openai-gpt-55" },
         ],
       },
-      {
-        text: "Google Cloud Run",
-        link: "/providers/gcp-cloud-run-openai-compat",
-      },
+      { text: "GitHub Copilot", link: "/providers/github-copilot" },
       { text: "Google Vertex AI", link: "/providers/gcp-vertex" },
+      { text: "Google Cloud Run", link: "/providers/gcp-cloud-run-openai-compat" },
     ],
   },
   {
@@ -101,14 +99,6 @@ const primarySidebar = [
         link: "/operations/gateway-guardrails",
       },
       { text: "Admin Runbooks", link: "/operations/operator-runbooks" },
-      {
-        text: "GitHub Copilot User Tokens",
-        link: "/operations/github-copilot-user-tokens",
-      },
-      {
-        text: "GitHub Copilot Installation-Token Canary",
-        link: "/operations/github-copilot-installation-canary",
-      },
     ],
   },
   {
