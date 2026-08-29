@@ -19,7 +19,7 @@ This directory is the maintained source for verification of the user-facing Ocea
 - Treat each command and quoted label as literal.
 - Use `control-oceans-admin drive models` for the automated Models proof.
 - Extend the harness before reporting another path as automated. Manual Playwright steps in this map remain the contract for that extension.
-- Do not mutate provider credentials or call a live provider during read-only control-plane verification.
+- Do not mutate provider credentials or call a live provider during read-only control-plane verification. Use the live LLM request recipe only when the changed request behavior warrants paid integration proof.
 
 ## Proof and skip reporting
 
@@ -48,3 +48,4 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [API keys](./api-keys.md) covers the scoped key list, create and manage flows, one-time user-key secrets, and authorized service-account reveal controls.
 - [Agent sessions](./agent-sessions.md) covers the seeded session list, filters, and detail sheet.
 - [Request logs](./request-logs.md) covers the seeded request list, filters, and request detail.
+- [Live LLM requests](./live-llm-requests.md) covers bounded paid canaries through OpenRouter or Bedrock and their request-log evidence.
