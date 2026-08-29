@@ -70,6 +70,8 @@ Each request follows this sequence:
 
 If any step cannot prove a user-owned credential, the request fails closed. There is no provider-level user token and no cross-user fallback.
 
+A disabled Oceans user cannot use an existing user-owned gateway API key. The encrypted credential remains stored until a platform admin removes it or the user record is deleted.
+
 ## Rotate or remove a token
 
 Use `gh auth refresh` or the GitHub settings page to rotate the GitHub credential. Then replace the stored token in **Provider Configuration**. Remove the Oceans copy before you remove a managed user or disable their Copilot access.

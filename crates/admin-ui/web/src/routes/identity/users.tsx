@@ -83,6 +83,7 @@ import {
 } from '@/routes/identity/-entity-tags'
 import { ReadOnlyUsersDirectory } from '@/routes/identity/-read-only-directory'
 import { sanitizeOnboardingUpdateForm } from '@/routes/identity/-user-form'
+import { ProviderConfiguration } from '@/routes/identity/-provider-configuration'
 import type {
   CreateUserInput,
   CreateUserResult,
@@ -1366,123 +1367,17 @@ export function UsersPage() {
                     ) : null}
 
                     {selectedUserSection === 'provider-configuration' ? (
-                      <div className="flex flex-col gap-5">
-                        <div>
-                          <h3 className="text-sm font-semibold text-[var(--color-text)]">
-                            GitHub Copilot user tokens
-                          </h3>
-                          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                            Each token is encrypted at rest and used only for requests made with
-                            this user&apos;s gateway API keys.
-                          </p>
-                        </div>
-
-                        <Alert>
-                          <AlertTitle>Get a token with GitHub CLI</AlertTitle>
-                          <AlertDescription className="flex flex-col gap-2">
-                            <p>
-                              Direct Copilot authentication needs no extra GitHub OAuth scope. If
-                              GitHub CLI asks you to refresh its authorization, run:
-                            </p>
-                            <code className="block overflow-x-auto rounded bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-text)]">
-                              gh auth refresh --hostname github.com
-                            </code>
-                            <p>
-                              Then copy the token with <code>gh auth token</code>. The user must
-                              have an active GitHub Copilot entitlement.
-                            </p>
-                          </AlertDescription>
-                        </Alert>
-
-                        {copilotUserProviders.length === 0 ? (
-                          <Alert>
-                            <AlertTitle>No user-token Copilot provider configured</AlertTitle>
-                            <AlertDescription>
-                              Add a GitHub Copilot provider with <code>auth.mode: github_user</code>
-                              to the gateway configuration.
-                            </AlertDescription>
-                          </Alert>
-                        ) : (
-                          copilotUserProviders.map((provider) => {
-                            const status = provider.credentials.find(
-                              (credential) => credential.user_id === selectedUser.id,
-                            )
-                            const token = providerTokens[provider.provider_key] ?? ''
-                            return (
-                              <section
-                                key={provider.provider_key}
-                                className="flex flex-col gap-4 border-t border-[color:var(--color-border)] pt-5 first:border-t-0 first:pt-0"
-                              >
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div>
-                                    <h4 className="font-mono text-sm font-semibold text-[var(--color-text)]">
-                                      {provider.provider_key}
-                                    </h4>
-                                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                                      {status?.updated_at
-                                        ? `Updated ${formatDateTime(status.updated_at)}`
-                                        : 'No token has been stored.'}
-                                    </p>
-                                  </div>
-                                  <Badge variant={status?.configured ? 'success' : 'default'}>
-                                    {status?.configured ? 'Configured' : 'Not configured'}
-                                  </Badge>
-                                </div>
-
-                                <Field>
-                                  <FieldLabel htmlFor={`provider-token-${provider.provider_key}`}>
-                                    GitHub token
-                                  </FieldLabel>
-                                  <Input
-                                    id={`provider-token-${provider.provider_key}`}
-                                    type="password"
-                                    autoComplete="off"
-                                    value={token}
-                                    placeholder={
-                                      status?.configured
-                                        ? 'Enter a new token to replace the stored token'
-                                        : 'Paste the output of gh auth token'
-                                    }
-                                    onChange={(event) =>
-                                      setProviderTokens((current) => ({
-                                        ...current,
-                                        [provider.provider_key]: event.target.value,
-                                      }))
-                                    }
-                                  />
-                                  <FieldDescription>
-                                    The stored value is never returned to the browser after save.
-                                  </FieldDescription>
-                                </Field>
-
-                                <div className="flex flex-wrap gap-2">
-                                  <Button
-                                    type="button"
-                                    onClick={() =>
-                                      handleSaveProviderCredential(provider.provider_key)
-                                    }
-                                    disabled={isPending || token.trim().length === 0}
-                                  >
-                                    {isPending ? 'Saving…' : 'Save token'}
-                                  </Button>
-                                  {status?.configured ? (
-                                    <Button
-                                      type="button"
-                                      variant="secondary"
-                                      onClick={() =>
-                                        handleRemoveProviderCredential(provider.provider_key)
-                                      }
-                                      disabled={isPending}
-                                    >
-                                      Remove token
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              </section>
-                            )
-                          })
-                        )}
-                      </div>
+                      <ProviderConfiguration
+                        userId={selectedUser.id}
+                        providers={copilotUserProviders}
+                        tokens={providerTokens}
+                        isPending={isPending}
+                        onTokenChange={(providerKey, token) =>
+                          setProviderTokens((current) => ({ ...current, [providerKey]: token }))
+                        }
+                        onSave={handleSaveProviderCredential}
+                        onRemove={handleRemoveProviderCredential}
+                      />
                     ) : null}
 
                     {selectedUserSection === 'usage' ? (
@@ -1585,13 +1480,6 @@ function formatRole(role: string) {
     .filter(Boolean)
     .map((part) => part[0]?.toUpperCase() + part.slice(1))
     .join(' ')
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
 }
 
 function sanitizeForm(form: CreateUserInput): CreateUserInput {

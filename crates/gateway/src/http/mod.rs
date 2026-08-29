@@ -14,6 +14,7 @@ pub mod mcp_oauth;
 pub mod mcp_registry;
 pub mod models;
 pub mod observability;
+pub mod provider_credentials;
 pub mod request_tags;
 mod request_tracing;
 pub mod response_cache;
@@ -36,7 +37,8 @@ use tower_http::{
 
 use self::{
     api_keys::*, batches::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*,
-    mcp_registry::*, models::*, observability::*, review_agent::*, spend::*, state::AppState,
+    mcp_registry::*, models::*, observability::*, provider_credentials::*, review_agent::*,
+    spend::*, state::AppState,
 };
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
