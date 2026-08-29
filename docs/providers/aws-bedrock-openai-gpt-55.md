@@ -2,7 +2,7 @@
 
 `See also`: [AWS Bedrock](aws-bedrock.md), [Configuration Reference](../configuration/configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md)
 
-This page shows how to configure OpenAI GPT-5.5 through Amazon Bedrock Mantle. It is for admins configuring gateway routes for users.
+This page shows admins how to configure OpenAI GPT-5.5 through Amazon Bedrock Mantle for gateway users.
 
 AWS lists GPT-5.5 with the following configuration:
 - model ID `openai.gpt-5.5`,
@@ -116,7 +116,7 @@ Projects apply to OpenAI-compatible Mantle routes. Do not rely on caller-supplie
 
 ## Hosted Tool Compatibility
 
-GPT-5.5 on Bedrock Mantle is configured as a Responses-first route through `api_style: mantle_openai_responses`. The `tools: true` capability in the examples means the route can attempt supported tool-bearing Responses workflows; it does not mean Bedrock supports every OpenAI-hosted tool.
+This configuration makes GPT-5.5 on Bedrock Mantle a Responses-first route through `api_style: mantle_openai_responses`. The `tools: true` capability in the examples means the route can attempt supported tool-bearing Responses workflows; it does not mean Bedrock supports every OpenAI-hosted tool.
 
 Bedrock Mantle currently does not support the OpenAI-hosted `image_generation` Responses tool. Direct OpenAI GPT-5.5 can support hosted image generation, but the Bedrock OpenAI-compatible path has a narrower feature set.
 
@@ -137,7 +137,7 @@ Call the gateway's `/v1/responses` endpoint with the configured gateway model id
 }
 ```
 
-Use `/v1/chat/completions` only for routes configured with a Chat Completions API style. GPT-5.5 on Bedrock is configured here as Responses-first with `mantle_openai_responses`.
+Use `/v1/chat/completions` only when a route uses a Chat Completions API style. This example configures GPT-5.5 on Bedrock as Responses-first with `mantle_openai_responses`.
 
 [GPT-5.5 | AWS Bedrock Documentation]: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-55.html
 [Get started with OpenAI Models on Amazon Bedrock | AWS Blog]: https://aws.amazon.com/blogs/aws/get-started-with-openai-gpt-5-5-gpt-5-4-models-and-codex-on-amazon-bedrock/

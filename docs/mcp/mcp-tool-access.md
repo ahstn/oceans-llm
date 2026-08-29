@@ -4,11 +4,11 @@
 
 MCP tool access controls which discovered tools an Oceans API key can find through `/mcp` and see or call through `/mcp/{server_key}`.
 
-There is no implicit access to every discovered MCP tool. A tool is callable only when an active grant resolves to that tool for the authenticated API key, owner user, owner service account, or team.
+No implicit access exists for every discovered MCP tool. A caller can use a tool only when an active grant resolves to that tool for the authenticated API key, owner user, owner service account, or team.
 
 ## Toolsets
 
-A toolset is a named collection of discovered MCP tools. Use toolsets when several API keys, users, service accounts, or teams should receive the same tool bundle.
+A toolset is a named collection of discovered MCP tools. Use toolsets when API keys, users, service accounts, or teams need the same tool bundle.
 
 Toolsets contain stable `mcp_tool_id` values from discovery. If an upstream tool changes schema, the tool keeps the same id and gets a new schema version. If discovery later marks a tool inactive, grants and toolset membership remain auditable, but the inactive tool is not callable.
 
@@ -66,8 +66,8 @@ The Access tab supports:
 - revoking existing grants
 - previewing effective access for a subject, optionally scoped to one server
 
-Use direct tool grants for exceptions. Prefer toolset grants when the same
-bundle will be reused across teams, service accounts, users, or API keys.
+Use direct tool grants for exceptions. Prefer toolset grants when teams, service
+accounts, users, or API keys need the same bundle.
 
 ## Runtime Behavior
 
@@ -75,7 +75,7 @@ For aggregate `/mcp`, `tools/list` exposes only gateway-owned tools: `search_too
 
 For direct `/mcp/{server_key}`, Oceans filters the upstream `tools/list` response to only granted, active tools on the requested server. The gateway supports JSON responses and finite `text/event-stream` responses for this rewrite.
 
-For direct `tools/call`, Oceans checks access before contacting the upstream MCP server. Unauthorized calls return a deterministic MCP JSON-RPC error and are logged as policy-denied invocations.
+For direct `tools/call`, Oceans checks access before contacting the upstream MCP server. Unauthorized calls return a deterministic MCP JSON-RPC error, and the gateway logs them as policy-denied invocations.
 
 `call_tool` input uses:
 
@@ -87,20 +87,20 @@ For direct `tools/call`, Oceans checks access before contacting the upstream MCP
 }
 ```
 
-If `schema_hash` is supplied and no longer matches the persisted tool schema, the gateway returns `tool_schema_changed` without contacting the upstream server. Missing upstream credentials return `credential_required`; expired bindings return `credential_expired`.
+If the caller supplies `schema_hash` and it no longer matches the persisted tool schema, the gateway returns `tool_schema_changed` without contacting the upstream server. Missing upstream credentials return `credential_required`; expired bindings return `credential_expired`.
 
 Disabled servers, disabled toolsets, inactive tools, revoked grants, and inactive team memberships do not resolve as callable access.
 
 ## What Clients Can See
 
-MCP clients never see the global registry. Their visible tools are derived from
-effective access at request time:
+MCP clients never see the global registry. The gateway derives their visible
+tools from effective access at request time:
 
 - aggregate `/mcp` exposes the gateway tools `search_tools`, `describe_tool`,
   and `call_tool`; search and describe return only granted active catalog tools
 - direct `/mcp/{server_key}` exposes only granted active upstream tools on that
   server
-- denied direct calls are rejected before the upstream MCP server is contacted
+- the gateway rejects denied direct calls before it contacts the upstream MCP server
 - missing or expired upstream credentials fail after grant checks, so denied
   callers do not learn whether a credential exists
 
@@ -108,6 +108,6 @@ effective access at request time:
 
 MCP grants decide tool visibility and call permission. They do not create spend budgets.
 
-Service-account MCP credentials and service-account budgets are separate controls. A service account can have an upstream credential binding and still be blocked by budget policy elsewhere, or have budget capacity but no MCP credential for a particular upstream server. User-facing budget setup remains in [Budgets](../access/budgets.md).
+Service-account MCP credentials and service-account budgets are separate controls. A service account can have an upstream credential binding while another budget policy blocks it. It can also have budget capacity but no MCP credential for a particular upstream server. User-facing budget setup remains in [Budgets](../access/budgets.md).
 
 MCP token-overhead estimates are context-window telemetry. They estimate how many prompt-context tokens granted tool definitions and tool results may consume, but they are not billing truth and do not count toward spend-budget accounting.

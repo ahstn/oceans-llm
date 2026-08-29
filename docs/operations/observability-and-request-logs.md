@@ -264,7 +264,7 @@ Request budgets use the uncompressed serialized JSON byte count. Database compre
 - 128-256 KiB is exceptional and must be reduced to the configured persisted cap
 - above 256 KiB is never retained inline in full
 
-These levels are an evidence-based gateway design inference, not a limit copied from one vendor. [PostgreSQL TOAST](https://www.postgresql.org/docs/current/storage-toast.html) and [SQLite limits](https://www.sqlite.org/limits.html) show why database capacity is not a useful operational target. [Datadog](https://docs.datadoghq.com/logs/log_collection/) recommends much smaller individual logs than its maximum, while [Google Cloud Logging](https://docs.cloud.google.com/logging/quotas), [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/cloudwatch_limits_cwl.html), and [Sentry](https://develop.sentry.dev/sdk/foundations/envelopes/event-payloads/) use several lower limits for structured or interactive paths. The [OpenTelemetry log data model](https://opentelemetry.io/docs/specs/otel/logs/data-model/) also requires structured semantics while accounting for serialization cost and space.
+These levels are an evidence-based gateway design inference, not a limit copied from one vendor. [PostgreSQL TOAST](https://www.postgresql.org/docs/current/storage-toast.html) and [SQLite limits](https://www.sqlite.org/limits.html) show why database capacity is not a useful operational target. [Datadog](https://docs.datadoghq.com/logs/log_collection/) recommends much smaller individual logs than its maximum. [Google Cloud Logging](https://docs.cloud.google.com/logging/quotas), [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/cloudwatch_limits_cwl.html), and [Sentry](https://develop.sentry.dev/sdk/foundations/envelopes/event-payloads/) use lower limits for structured or interactive paths. The [OpenTelemetry log data model](https://opentelemetry.io/docs/specs/otel/logs/data-model/) also requires structured semantics while accounting for serialization cost and space.
 
 The request remains one bounded JSON value. This policy does not add split payload columns, a tool-schema table, or tool-schema deduplication.
 
@@ -275,7 +275,7 @@ Request processing uses a structured analysis projection and a separate storage 
 3. truncate known bulky binary fields while preserving JSON shape
 4. count the serialized size and return without adaptive work when the request is within `request_max_bytes`
 5. reserve the diagnostic envelope before allocating input-content bytes; it retains sanitized session and lineage headers, model and reasoning configuration, tool names and choice, bounded tool schema shape, stream and include settings, cache keys, metadata, and message or item identity fields
-6. aim for a 16 KiB essential envelope, with 32 KiB as a soft limit; when an oversized request has an envelope above the target, compact verbose tool and schema descriptions, examples, and defaults while retaining essential identifiers, tool names, and schema shape
+6. aim for a 16 KiB essential envelope, with 32 KiB as a soft limit; when an oversize request has an envelope above the target, compact verbose tool and schema descriptions, examples, and defaults while retaining essential identifiers, tool names, and schema shape
 7. allocate at most 96 KiB in total to retained input content; ordinary messages use an adaptive target of 8-16 KiB each, while a solitary message can retain up to 32 KiB when the total request budget permits
 8. for Chat requests, bound `body.messages[*].content` text leaves; for Responses requests, bound a string-valued `body.instructions`, a string-valued `body.input`, or the text leaves under `body.input[*].content`; preserve every message, item, content array, unknown item type, and non-bulky field
 9. truncate text-bearing leaves independently with a UTF-8-safe head and tail plus an explicit omitted-byte marker, then enforce the final serialized request cap
@@ -313,7 +313,7 @@ Platform admins can inspect request logs through:
 - `GET /api/v1/admin/observability/request-logs`
 - `GET /api/v1/admin/observability/request-logs/{request_log_id}`
 
-Request-log list and detail responses include the row metadata, so admins can see the public operation for each row, such as `chat_completions`, `responses`, or `embeddings`, alongside the typed payload policy and truncation fields.
+Request-log list and detail responses include the row metadata, so admins can see the public operation for each row, such as `chat_completions`, `responses`, or `embeddings`, alongside the typed payload policy. They also include truncation fields.
 
 The MCP invocation admin UI consumes these generated admin API endpoints:
 

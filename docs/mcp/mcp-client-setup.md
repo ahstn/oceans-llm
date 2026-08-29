@@ -43,7 +43,7 @@ Use an Oceans API key for inbound auth. The gateway does not accept provider tok
 
 Ask an admin to confirm:
 
-- the upstream MCP server is registered and discovery is successful
+- an admin registered the upstream MCP server and discovery succeeded
 - the required tools are active in the server's **Tools** dialog
 - a toolset or direct tool grant exists for the API key owner
 - any required upstream credential binding exists for the user, team, or service
@@ -68,7 +68,7 @@ Secondary explicit header:
 x-oceans-api-key: <oceans-api-key>
 ```
 
-If both headers are present, they must contain the same raw Oceans key after Bearer extraction. A malformed `Authorization` header is rejected even when `x-oceans-api-key` is valid.
+If both headers are present, they must contain the same raw Oceans key after Bearer extraction. The gateway rejects a malformed `Authorization` header even when `x-oceans-api-key` is valid.
 
 Valid user-owned and service-account-owned Oceans API keys can use `/mcp`. Direct `/mcp/{server_key}` proxy calls can target active servers with gateway-managed credentials or principal-bound upstream credential bindings.
 
@@ -130,7 +130,7 @@ Accept: application/json, text/event-stream
 MCP-Protocol-Version: 2025-03-26
 ```
 
-The aggregate endpoint issues an `MCP-Session-Id` during `initialize`. Clients must send that header on later aggregate requests. The session is bound to the authenticated Oceans API key, so a session id copied to another principal is treated as not found.
+The aggregate endpoint issues an `MCP-Session-Id` during `initialize`. Clients must send that header on later aggregate requests. The gateway binds the session to the authenticated Oceans API key, so it reports a session id copied to another principal as not found.
 
 For direct proxying, send requests to `/mcp/{server_key}`. The gateway preserves MCP response status, content type, and upstream MCP session headers. It strips inbound `Authorization` and `x-oceans-api-key` before proxying upstream.
 
@@ -138,7 +138,7 @@ For direct proxying, send requests to `/mcp/{server_key}`. The gateway preserves
 
 Use aggregate `/mcp` when:
 
-- an agent should search across multiple registered MCP servers
+- an agent should search across registered MCP servers
 - admins want a small, stable tool surface for clients
 - the client can call `search_tools`, `describe_tool`, and `call_tool`
 

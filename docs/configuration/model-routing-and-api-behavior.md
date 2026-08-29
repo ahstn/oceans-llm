@@ -94,7 +94,7 @@ Current runtime nuance:
 - the planner produces an ordered route list
 - the handler executes only the first eligible route
 
-Weight affects selection inside a single priority bucket. It does not mean the gateway sends one request to several providers, retries the next route, or falls back after an upstream error. Configurable retry and fallback remains separate follow-up work in [issue #118](https://github.com/ahstn/oceans-llm/issues/118).
+Weight affects selection inside a single priority bucket. It does not mean the gateway sends one request to many providers, retries the next route, or falls back after an upstream error. Configurable retry and fallback remains separate follow-up work in [issue #118](https://github.com/ahstn/oceans-llm/issues/118).
 
 ## Effective Route Metadata
 
@@ -111,7 +111,7 @@ The Models admin API exposes logical-model limits conservatively:
 
 Generated client configurations use the same conservative logical-model limits. The OpenAI-compatible `/v1/models` response remains an identity/discovery contract and does not gain Oceans-specific metadata.
 
-This first slice governs advertised and internally consumed model metadata only. It does not count request tokens or reject oversized prompts before provider execution; request-time preflight enforcement remains follow-up work until Oceans has a canonical tokenizer contract.
+This first slice governs advertised and internally consumed model metadata only. It does not count request tokens or reject oversize prompts before provider execution; request-time preflight enforcement remains follow-up work until Oceans has a canonical tokenizer contract.
 
 ## Capability-Aware Gating
 

@@ -43,7 +43,7 @@ Common patterns:
 - `env.OPENAI_API_KEY`
 - `env.POSTGRES_URL`
 
-The YAML holds structure. Secrets and deploy-specific values usually come from the environment.
+The YAML holds structure. Secrets and deploy-specific values come from the environment by default.
 
 ## Minimal Local Example
 
@@ -508,7 +508,7 @@ Important managed-key fields:
 - `id`: stable config key for the managed key under the service account
 - `name`: display name; defaults to `id`
 - `auto_create`: defaults to `true`; generated material is used only when no managed key exists yet
-- `value`: optional `env.*` or `literal.*` gateway API key value, used to import or rotate a known value
+- `value`: optional `env.*` or `literal.*` gateway API key value for importing or rotating a known value
 - `allowed_models`: reconciled model grants for the key
 
 Managed key material is encrypted before storage so it can be revealed later to authenticated platform admins or active team owners/admins of the owning team. Set `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` to a base64-encoded 32-byte key before using config-created managed keys or creating service-account-owned keys in the admin UI.
@@ -1099,7 +1099,7 @@ Do not use `extra_body` for compatibility transforms. `extra_body` remains for a
 
 ## Route Examples
 
-OpenAI direct routes usually need no compatibility overrides:
+OpenAI direct routes need no compatibility overrides by default:
 
 ```yaml
 models:
@@ -1213,14 +1213,14 @@ models:
 
 ## Validation and Failure Boundaries
 
-Config load catches several classes of failure up front:
+Config load catches these failure classes up front:
 
 - invalid or empty provider fields
 - unsupported pricing-provider mappings
 - invalid alias references
 - invalid route or provider wiring
 
-Later failures are usually runtime problems such as:
+Later failures are runtime problems such as:
 
 - request resolution failure
 - missing providers
@@ -1230,7 +1230,7 @@ Later failures are usually runtime problems such as:
 ## Current Boundaries
 
 - Declarative teams, password users, OIDC users, memberships, active budgets, and OIDC providers are part of the current seed contract.
-- OIDC JIT defaults are provider configuration, not claim or group mapping.
+- OIDC JIT defaults are provider configuration. They do not map claims or groups.
 - Existing password users are not auto-linked to SSO users by email.
 
 ## What This Page Does Not Own

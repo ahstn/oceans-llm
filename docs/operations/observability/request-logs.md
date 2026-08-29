@@ -44,7 +44,7 @@ Current list filters:
 
 ## Storage Boundary
 
-Request-log data is split across:
+The gateway splits request-log data across:
 
 - `request_logs` for hot summary fields
 - `request_log_payloads` for sanitized payload bodies
@@ -53,7 +53,7 @@ Request-log data is split across:
 
 MCP tool execution rows are intentionally separate from request logs. Request logs keep cardinality counts and correlation ids; MCP invocation records own per-tool status, policy result, latency, and redacted argument/result metadata.
 
-Registry-backed execution uses stable external MCP server/tool ids for invocation records. MCP token-overhead summaries are stored in `request_mcp_token_overheads` by `request_id` and optional `request_log_id`; they describe context-window pressure, not spend.
+Registry-backed execution uses stable external MCP server/tool ids for invocation records. The gateway stores MCP token-overhead summaries in `request_mcp_token_overheads` by `request_id` and optional `request_log_id`; they describe context-window pressure, not spend.
 
 ## Failure Reading
 

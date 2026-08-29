@@ -55,12 +55,12 @@ The fields have these effects:
 | --- | --- |
 | `otel_endpoint` | Enables trace export and sets the OTLP/gRPC trace endpoint. |
 | `otel_metrics_endpoint` | Enables metric export and sets the OTLP/gRPC metric endpoint. If absent, metrics use `otel_endpoint`. |
-| `otel_trace_sample_ratio` | Samples root traces from `0.0` through `1.0`. The default is `1.0`. An upstream parent decision is kept. |
+| `otel_trace_sample_ratio` | Samples root traces from `0.0` through `1.0`. The default is `1.0`. The sampler keeps an upstream parent decision. |
 | `otel_export_interval_secs` | Sets the interval for metric export batches. |
 
 Trace sampling does not sample metrics. A value of `0.5` keeps about half of new root traces. All metric instruments remain active.
 
-The gateway uses parent-based head sampling. See [LLM Request Trace Boundaries](../../adr/2026-08-27-llm-request-trace-boundaries.md) for the sampling contract. To make all gateway root traces eligible for collector final-outcome rules, keep `otel_trace_sample_ratio` at `1.0` and configure the collector to retain errors, slow requests, client cancellations, or budget failures while it reduces normal trace volume.
+The gateway uses parent-based head sampling. See [LLM Request Trace Boundaries](../../adr/2026-08-27-llm-request-trace-boundaries.md) for the sampling contract. To make all gateway root traces eligible for collector final-outcome rules, keep `otel_trace_sample_ratio` at `1.0`. Configure the collector to keep errors, slow requests, client cancellations, or budget failures while it reduces normal trace volume.
 
 Restart the gateway after you change these values. An invalid endpoint URI stops config validation. A sampling ratio outside `0.0` through `1.0` also stops validation.
 
@@ -107,7 +107,7 @@ Use [observability-datadog-values.yaml](../../../deploy/helm/oceans-llm/examples
 
 For a Datadog Agent DaemonSet, route each gateway pod to an Agent on the same node when possible. A `Service` with `internalTrafficPolicy: Local` can provide this route. Confirm that every node that can run the gateway also runs an Agent pod.
 
-Set the trace ratio in Oceans LLM when the Agent is shared with other services. An Agent-wide sampler can change trace intake for every service that sends data to that Agent. The gateway ratio changes only new root traces from Oceans LLM.
+Set the trace ratio in Oceans LLM when other services share the Agent. An Agent-wide sampler can change trace intake for every service that sends data to that Agent. The gateway ratio changes only new root traces from Oceans LLM.
 
 The gateway sets these OpenTelemetry resource attributes:
 

@@ -19,7 +19,7 @@ Supported budget types:
 - Service account budget: applies to all spend from one service account.
 - User model budget: applies to one user's spend for one gateway model or, when no gateway model id is available, one exact trimmed upstream model name.
 
-There is no standalone global model budget. Model-specific spend control is scoped to users. Admins can define config defaults that create a user model budget for every user for selected expensive models.
+No standalone global model budget exists. Model-specific spend control applies to users. Admins can define config defaults that create a user model budget for every user for selected expensive models.
 
 This is why model-specific defaults are configured under `budgets.users.model_defaults`, not under `models[*]`. A `models[*].budget` field would read like one shared cap for the model across the whole platform, or like a cap that also applies to service accounts. The actual behavior is narrower: each human user receives their own budget for that gateway model. Service-account spend remains controlled by that service account's own budget.
 
@@ -109,7 +109,7 @@ curl -sS "$OCEANS_BASE_URL/api/v1/admin/spend/budgets" \
 Budget list and upsert responses include `budget_source` with:
 
 - `kind`: `manual`, `config_user_override`, `config_user_default`, or `config_user_model_default`
-- `key`: source-specific metadata, such as the config path or seeded user email
+- `key`: source-specific metadata that can identify the config path or seeded user email
 
 Any `PUT /api/v1/admin/spend/budgets` request writes a manual budget, even when the previous row was inherited from config.
 

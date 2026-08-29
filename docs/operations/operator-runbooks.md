@@ -164,7 +164,7 @@ If the environment relies on SSO, also review [oidc-and-sso-status.md](../access
 
 ## Provider Auth Failure
 
-Provider auth failures usually come from config shape or missing secrets.
+Provider auth failures often come from config shape or missing secrets.
 
 - confirm the provider exists in the active config
 - confirm the secret references resolve in the runtime environment
@@ -214,7 +214,7 @@ Supported windows are `1d`, `3d`, and `7d`; set `RETENTION=1d|3d|7d` before the 
 
 The purge removes old parent request-log rows and their detail children, including payloads, caller tags, and provider execution attempts. It does not remove `usage_cost_events`, so spend and budget reporting remain ledger-backed after old request-log detail is gone.
 
-Recurring purge is off by default. If enabled in config, use `request_logging.purge.schedule` with a daily 5-field cron expression and rely on the runtime UTC-day guard as a backstop, not as the primary scheduler. Each gateway process starts its own recurring purge loop, so HA deployments should enable recurring purge on only the intended process or accept that every replica will independently evaluate the same retention schedule.
+Recurring purge is off by default. If you enable it in config, use `request_logging.purge.schedule` with a daily 5-field cron expression. Use the runtime UTC-day guard as a backstop, not as the primary scheduler. Each gateway process starts its own recurring purge loop. HA deployments should enable recurring purge on only the intended process or accept that every replica independently checks the same retention schedule.
 
 ## Secret Rotation Checkpoints
 

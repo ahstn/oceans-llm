@@ -8,7 +8,7 @@ This page owns provider-specific configuration examples for private Cloud Run se
 
 Use `gcp_cloud_run_openai_compat` when the upstream service:
 
-- is deployed on [Cloud Run | Google Cloud]
+- runs on [Cloud Run | Google Cloud]
 - exposes OpenAI-compatible endpoints such as `/v1/chat/completions`
 - requires Cloud Run IAM authentication with a Google-signed OIDC ID token
 
@@ -31,7 +31,7 @@ providers:
       icon_key: vertexai
 ```
 
-`base_url` must use `https`. When `audience` is omitted, the gateway derives the Cloud Run audience from the service origin. For example, `https://gemma-service-abc-uc.a.run.app/v1` becomes `https://gemma-service-abc-uc.a.run.app/`.
+`base_url` must use `https`. When the configuration omits `audience`, the gateway derives the Cloud Run audience from the service origin. For example, `https://gemma-service-abc-uc.a.run.app/v1` becomes `https://gemma-service-abc-uc.a.run.app/`.
 
 Set `audience` when the service uses a Cloud Run custom audience:
 
@@ -73,7 +73,7 @@ auth:
 
 ### Bearer Token
 
-`bearer` should only be used in constrained, debugging environments where an admin has already minted an ID token. The token is treated as static and is not refreshed.
+Use `bearer` only in constrained debugging environments where an admin has already minted an ID token. The gateway treats the token as static and does not refresh it.
 
 ```yaml
 auth:
@@ -126,8 +126,8 @@ Keep route capability flags aligned with the deployed vLLM server and tested gat
 
 - Grant the calling gateway identity `roles/run.invoker` on the receiving Cloud Run service.
 - The ID-token audience must match the Cloud Run service URL or a configured custom audience.
-- Tokens are cached and refreshed before expiry.
-- `auth.mode: adc` is preferred for workloads running on Google Cloud.
+- The gateway caches tokens and refreshes them before expiry.
+- Prefer `auth.mode: adc` for workloads running on Google Cloud.
 - `auth.mode: service_account` is useful when a mounted JSON key is the deployment constraint.
 
 ## Pricing And Budgets

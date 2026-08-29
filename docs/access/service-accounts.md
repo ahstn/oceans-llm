@@ -17,11 +17,11 @@ Service accounts are first-class gateway principals for automation, applications
 
 API keys remain credentials. They are not the principal for team automation. A non-human team caller authenticates with a credential attached to a service account.
 
-V1 caveat: service-account-owned API keys are denied for gateway models that declare a model-level `allowlist`. Model-level allowlists list human user email refs and team keys, but they do not grant service-account access in this slice.
+V1 caveat: the gateway denies service-account-owned API keys for models that declare a model-level `allowlist`. Model-level allowlists list human user email refs and team keys, but they do not grant service-account access in this slice.
 
 ## No Legacy Team-Owned Runtime Keys
 
-Direct team-owned runtime API keys are removed from the product contract.
+The product contract no longer includes direct team-owned runtime API keys.
 
 Removed compatibility paths:
 
@@ -34,7 +34,7 @@ Teams own service accounts. Service accounts own their runtime credentials.
 
 ## Access Control
 
-Service-account management is scoped by the acting admin.
+The acting admin's scope limits service-account management.
 
 Platform admins can:
 
@@ -62,7 +62,7 @@ Deactivation means:
 - the service account remains in historical records
 - active runtime credentials stop authenticating
 - historical request logs and spend rows keep their service-account attribution
-- the service account cannot be used for new runtime calls unless it is explicitly reactivated by an allowed admin workflow
+- the service account cannot make new runtime calls unless an allowed admin workflow explicitly reactivates it
 
 Credential revocation remains separate from service-account deactivation. Revoking one credential blocks that secret only. Deactivating the service account blocks the principal.
 
@@ -79,7 +79,7 @@ Recipients are:
 - active team owners
 - active team admins
 
-Recipients are resolved when alert delivery rows are created. Disabled users, removed team members, ordinary members, and non-members do not receive service-account budget alerts.
+The gateway resolves recipients when it creates alert delivery rows. Disabled users, removed team members, ordinary members, and non-members do not receive service-account budget alerts.
 
 ## Provider Credential Boundary
 
@@ -96,4 +96,4 @@ providers:
       credentials_path: /var/run/secrets/gcp/service-account.json
 ```
 
-That `service_account` mode is upstream Google Cloud authentication. It lets the gateway call Vertex. It does not create a gateway service account, grant a caller access to `/v1/*`, or participate in gateway team membership rules.
+That `service_account` mode is upstream Google Cloud authentication. It lets the gateway call Vertex. It does not create a gateway service account, grant a caller access to `/v1/*`, or take part in gateway team membership rules.
