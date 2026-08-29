@@ -256,10 +256,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 48,
+        name: "guardrail_decisions",
+        checksum: "V48__guardrail_decisions.sql",
+        libsql_sql: include_str!("../migrations/V48__guardrail_decisions.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V48__guardrail_decisions.sql"),
+    },
+    MigrationManifest {
+        version: 49,
         name: "provider_user_credentials",
-        checksum: "V48__provider_user_credentials.sql",
-        libsql_sql: include_str!("../migrations/V48__provider_user_credentials.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V48__provider_user_credentials.sql"),
+        checksum: "V49__provider_user_credentials.sql",
+        libsql_sql: include_str!("../migrations/V49__provider_user_credentials.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V49__provider_user_credentials.sql"),
     },
 ];
 

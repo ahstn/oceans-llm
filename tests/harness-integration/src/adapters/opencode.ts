@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,6 +23,13 @@ export class OpenCodeAdapter implements HarnessAdapter {
   async run(workspace: string, prompt: string): Promise<HarnessRun> {
     const requestTag = randomUUID();
     const isolated = await createIsolatedPaths(workspace, this.key);
+    const pluginDirectory = join(isolated.config, "plugins");
+    await mkdir(pluginDirectory, { recursive: true });
+    await writeFile(
+      join(pluginDirectory, "oceans-guardrails.js"),
+      guardrailPluginSource(workspace),
+      "utf8",
+    );
     const config = {
       agent: {
         build: {
@@ -39,7 +47,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
         },
       },
       permission: {
-        bash: "deny",
+        bash: "allow",
         external_directory: "deny",
         task: "deny",
       },
@@ -64,6 +72,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
     };
     const environment = createHarnessEnvironment(isolated, {
       OCEANS_API_KEY: this.#runtime.apiKey,
+      OCEANS_BASE_URL: this.#runtime.baseUrl,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
       OPENCODE_CONFIG_DIR: isolated.config,
       OPENCODE_DISABLE_AUTOUPDATE: "true",
@@ -114,6 +123,85 @@ export class OpenCodeAdapter implements HarnessAdapter {
       toolCalls: parseToolCalls(result.stdout),
     };
   }
+}
+
+export function guardrailPluginSource(workspace: string): string {
+  return `
+const guardrailUrl = new URL("/api/v1/guardrails/evaluate", process.env.OCEANS_BASE_URL).toString();
+const guardrailTimeoutMs = Number(process.env.OCEANS_GUARDRAIL_TIMEOUT_MS ?? "2000");
+const workspace = ${JSON.stringify(workspace)};
+
+function validateGuardrailDecision(value) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    typeof value.allowed !== "boolean" ||
+    typeof value.transformed !== "boolean" ||
+    typeof value.decision_id !== "string" ||
+    value.decision_id.length === 0 ||
+    (!value.allowed && (typeof value.reason_code !== "string" || value.reason_code.length === 0))
+  ) {
+    throw new Error("Guardrail evaluation returned an invalid response");
+  }
+  return value;
+}
+
+
+function shellQuote(value) {
+  return "'" + value.replaceAll("'", "'\\"'\\"'") + "'";
+}
+
+function confineShell(command) {
+  if (process.platform === "linux") {
+    return "bwrap --die-with-parent --unshare-all --new-session --tmpfs / --proc /proc --dev /dev --tmpfs /tmp --ro-bind-try /usr /usr --ro-bind-try /bin /bin --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 --bind " +
+      shellQuote(workspace) + " /workspace --chdir /workspace /bin/sh -c " + shellQuote(command);
+  }
+  if (process.platform === "darwin") {
+    const profile = '(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/dev") (subpath ' +
+      JSON.stringify(workspace) + '))(allow file-write* (subpath ' + JSON.stringify(workspace) + '))';
+    return "/usr/bin/sandbox-exec -p " + shellQuote(profile) + " /bin/sh -c " + shellQuote(command);
+  }
+  return null;
+}
+export const OceansGuardrails = async () => ({
+  "tool.execute.before": async (input, output) => {
+    if (input.tool !== "bash") return;
+    let command = output.args?.command;
+    if (typeof command !== "string") {
+      throw new Error("Shell command is missing");
+    }
+    const response = await fetch(guardrailUrl, {
+      signal: AbortSignal.timeout(guardrailTimeoutMs),
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + process.env.OCEANS_API_KEY,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ tool_name: "bash", command }),
+    });
+    if (!response.ok) {
+      throw new Error("Guardrail evaluation failed with HTTP " + response.status);
+    }
+    const decision = validateGuardrailDecision(await response.json());
+    console.error("oceans_guardrail_decision_id=" + decision.decision_id);
+    if (!decision.allowed) {
+      throw new Error("Oceans guardrail denied shell execution: " + decision.reason_code);
+    }
+    if (decision.transformed) {
+      if (typeof decision.output_command !== "string") {
+        throw new Error("Oceans guardrail returned an invalid shell transformation");
+      }
+      command = decision.output_command;
+    }
+    const confinedCommand = confineShell(command);
+    if (confinedCommand === null) {
+      throw new Error("Shell sandboxing is unavailable on this platform");
+    }
+    output.args.command = confinedCommand;
+    return;
+  },
+});
+`;
 }
 
 function stripAnsi(value: string): string {

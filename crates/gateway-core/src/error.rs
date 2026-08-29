@@ -130,6 +130,11 @@ pub enum GatewayError {
     UnprocessableEntity(String),
     #[error("request body exceeds {limit_bytes} bytes")]
     PayloadTooLarge { limit_bytes: usize },
+    #[error("guardrail policy denied the operation ({reason_code}, decision {decision_id})")]
+    GuardrailDenied {
+        decision_id: String,
+        reason_code: String,
+    },
     #[error("feature not implemented: {0}")]
     NotImplemented(String),
     #[error("MCP upstream auth requires user-scoped credentials for server `{server_key}`")]
@@ -165,6 +170,7 @@ impl GatewayError {
             Self::InvalidRequest(_) => 400,
             Self::UnprocessableEntity(_) => 422,
             Self::PayloadTooLarge { .. } => 413,
+            Self::GuardrailDenied { .. } => 403,
             Self::Store(StoreError::NotFound(_)) => 404,
             Self::Store(
                 StoreError::Conflict(_)
@@ -203,6 +209,7 @@ impl GatewayError {
             Self::BudgetExceeded { .. } => "budget_error",
             Self::IdentityConstraint(_) => "identity_error",
             Self::InvalidRequest(_) | Self::UnprocessableEntity(_) => "invalid_request_error",
+            Self::GuardrailDenied { .. } => "policy_error",
             Self::Route(RouteError::ModelNotFound(_)) => "not_found_error",
             Self::Route(_) => "routing_error",
             Self::Store(StoreError::NotFound(_)) => "not_found_error",
@@ -272,6 +279,7 @@ impl GatewayError {
             Self::InvalidRequest(_) => "invalid_request",
             Self::UnprocessableEntity(_) => "validation_failed",
             Self::PayloadTooLarge { .. } => "request_body_too_large",
+            Self::GuardrailDenied { .. } => "guardrail_policy_denied",
             Self::NotImplemented(_) => "not_implemented",
             Self::McpUpstreamAuthRequired { .. } => "mcp_upstream_auth_required",
             Self::McpCredentialRequired { .. } => "credential_required",

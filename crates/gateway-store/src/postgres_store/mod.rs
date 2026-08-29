@@ -3,6 +3,7 @@ mod api_keys;
 mod batches;
 mod budget_alerts;
 mod budgets;
+mod guardrail_decisions;
 mod identity;
 mod mcp_access;
 mod mcp_aggregate_sessions;

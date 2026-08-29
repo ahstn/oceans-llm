@@ -1,11 +1,14 @@
-use std::{collections::BTreeSet, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use futures_util::{StreamExt, stream};
 use gateway_core::{
     AdminApiKeyRepository, AuthenticatedApiKey, BatchPollUpdate, BatchPricingStatus,
     BatchRepository, BatchStatus, ModelRepository, Money4, ProviderBatchRequest,
     ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchSubmission, ProviderError,
-    ProviderRegistry,
 };
 use gateway_service::{BatchPricer, BatchPricingPolicy, BatchUsageInput};
 use serde_json::json;
@@ -13,7 +16,12 @@ use time::OffsetDateTime;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::http::state::AppGatewayService;
+use crate::http::{
+    inference_guardrails::{
+        batch_guard_context, guard_model_response, guard_prompt, model_route_key,
+    },
+    state::{AppGatewayService, AppState},
+};
 
 const WORKER_INTERVAL: Duration = Duration::from_secs(5);
 const LEASE_DURATION: time::Duration = time::Duration::minutes(2);
@@ -22,24 +30,21 @@ const MAX_IN_FLIGHT_JOBS: usize = 8;
 const POLL_INTERVAL: time::Duration = time::Duration::seconds(30);
 const ERROR_RETRY_INTERVAL: time::Duration = time::Duration::minutes(2);
 
-pub fn spawn(service: Arc<AppGatewayService>, providers: ProviderRegistry) {
+pub fn spawn(state: AppState) {
     let worker_id = format!("{}:{}", std::process::id(), Uuid::new_v4());
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(WORKER_INTERVAL);
         loop {
             interval.tick().await;
-            if let Err(error) = run_once(&service, &providers, &worker_id).await {
+            if let Err(error) = run_once(&state, &worker_id).await {
                 error!(error = %error, "batch worker iteration failed");
             }
         }
     });
 }
 
-async fn run_once(
-    service: &Arc<AppGatewayService>,
-    providers: &ProviderRegistry,
-    worker_id: &str,
-) -> Result<(), gateway_core::GatewayError> {
+async fn run_once(state: &AppState, worker_id: &str) -> Result<(), gateway_core::GatewayError> {
+    let service = &state.service;
     let now = OffsetDateTime::now_utc();
     let stale = service
         .store()
@@ -59,13 +64,12 @@ async fn run_once(
         )
         .await?;
     let results = stream::iter(jobs.into_iter().map(|job| {
-        let service = Arc::clone(service);
-        let providers = providers.clone();
+        let state = state.clone();
         let lease_owner = lease_owner.clone();
         async move {
             (
                 job.batch_id,
-                process_job_with_lease(&service, &providers, &lease_owner, &job).await,
+                process_job_with_lease(&state, &lease_owner, &job).await,
             )
         }
     }))
@@ -81,12 +85,12 @@ async fn run_once(
 }
 
 async fn process_job_with_lease(
-    service: &Arc<AppGatewayService>,
-    providers: &ProviderRegistry,
+    state: &AppState,
     lease_owner: &str,
     job: &gateway_core::BatchJobRecord,
 ) -> Result<(), gateway_core::GatewayError> {
-    let work = process_job(service, providers, lease_owner, job);
+    let service = &state.service;
+    let work = process_job(state, lease_owner, job);
     tokio::pin!(work);
     let mut renewals = tokio::time::interval(LEASE_RENEW_INTERVAL);
     renewals.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -110,12 +114,12 @@ async fn process_job_with_lease(
 }
 
 async fn process_job(
-    service: &Arc<AppGatewayService>,
-    providers: &ProviderRegistry,
+    state: &AppState,
     worker_id: &str,
     job: &gateway_core::BatchJobRecord,
 ) -> Result<(), gateway_core::GatewayError> {
-    let Some(provider) = providers.get(&job.provider_key) else {
+    let service = &state.service;
+    let Some(provider) = state.providers.get(&job.provider_key) else {
         return fail_claimed_job(
             service,
             worker_id,
@@ -126,7 +130,7 @@ async fn process_job(
         .await;
     };
     match job.status {
-        BatchStatus::Submitting => submit_job(service, provider.as_ref(), worker_id, job).await,
+        BatchStatus::Submitting => submit_job(state, provider.as_ref(), worker_id, job).await,
         BatchStatus::CancelRequested => {
             let Some(provider_batch_id) = job.provider_batch_id.as_deref() else {
                 return fail_claimed_job(
@@ -142,7 +146,9 @@ async fn process_job(
                 .cancel_batch(provider_batch_id, &job.provider_context)
                 .await
             {
-                Ok(state) => apply_state(service, provider.as_ref(), worker_id, job, state).await,
+                Ok(state_update) => {
+                    apply_state(state, provider.as_ref(), worker_id, job, state_update).await
+                }
                 Err(error) if error.is_retryable() => {
                     handle_provider_error(service, worker_id, job, error).await
                 }
@@ -151,8 +157,9 @@ async fn process_job(
                         .inspect_batch(provider_batch_id, &job.provider_context)
                         .await
                     {
-                        Ok(state) => {
-                            apply_state(service, provider.as_ref(), worker_id, job, state).await
+                        Ok(state_update) => {
+                            apply_state(state, provider.as_ref(), worker_id, job, state_update)
+                                .await
                         }
                         Err(inspect_error) => {
                             handle_provider_error(service, worker_id, job, inspect_error).await
@@ -179,7 +186,9 @@ async fn process_job(
                 .inspect_batch(provider_batch_id, &job.provider_context)
                 .await
             {
-                Ok(state) => apply_state(service, provider.as_ref(), worker_id, job, state).await,
+                Ok(state_update) => {
+                    apply_state(state, provider.as_ref(), worker_id, job, state_update).await
+                }
                 Err(error) => handle_provider_error(service, worker_id, job, error).await,
             }
         }
@@ -188,30 +197,56 @@ async fn process_job(
 }
 
 async fn submit_job(
-    service: &Arc<AppGatewayService>,
+    state: &AppState,
     provider: &dyn gateway_core::ProviderClient,
     worker_id: &str,
     job: &gateway_core::BatchJobRecord,
 ) -> Result<(), gateway_core::GatewayError> {
+    let service = &state.service;
     let items = service
         .store()
         .get_batch_items_for_worker(job.batch_id)
         .await?;
+    let route_key = model_route_key(
+        &job.resolved_model_key,
+        &job.provider_key,
+        &job.upstream_model,
+    );
+    let mut guarded_items = Vec::with_capacity(items.len());
+    for item in items {
+        let mut body = item.request_body;
+        let request_id = format!("batch:{}:{}", job.batch_id, item.custom_id);
+        if let Err(error) = guard_prompt(state, &request_id, route_key.clone(), &mut body).await {
+            return fail_claimed_job(
+                service,
+                worker_id,
+                job,
+                BatchStatus::Failed,
+                &format!(
+                    "batch prompt rejected by guardrails: {}",
+                    error.error_code()
+                ),
+            )
+            .await;
+        }
+        guarded_items.push(ProviderBatchRequestItem {
+            custom_id: item.custom_id,
+            body,
+        });
+    }
     let request = ProviderBatchRequest {
         batch_id: job.batch_id,
         endpoint: job.endpoint,
         upstream_model: job.upstream_model.clone(),
-        items: items
-            .into_iter()
-            .map(|item| ProviderBatchRequestItem {
-                custom_id: item.custom_id,
-                body: item.request_body,
-            })
-            .collect(),
+        items: guarded_items,
         context: job.provider_context.clone(),
     };
     match provider.submit_batch(&request).await {
         ProviderBatchSubmission::Submitted(state) => {
+            service
+                .store()
+                .replace_batch_item_requests(job.batch_id, &request.items)
+                .await?;
             let state = prepare_submitted_state(state);
             service
                 .store()
@@ -263,12 +298,13 @@ fn prepare_submitted_state(
 }
 
 async fn apply_state(
-    service: &Arc<AppGatewayService>,
+    app_state: &AppState,
     provider: &dyn gateway_core::ProviderClient,
     worker_id: &str,
     job: &gateway_core::BatchJobRecord,
     mut state: gateway_core::ProviderBatchState,
 ) -> Result<(), gateway_core::GatewayError> {
+    let service = &app_state.service;
     let mut results = Vec::new();
     let mut pricing_status = None;
     let complete = state.status == BatchStatus::Completed;
@@ -311,6 +347,7 @@ async fn apply_state(
             )
             .await?,
         );
+        guard_batch_results(app_state, job, &mut results).await?;
         record_batch_usage(
             service,
             job,
@@ -337,6 +374,49 @@ async fn apply_state(
             },
         )
         .await?;
+    Ok(())
+}
+
+async fn guard_batch_results(
+    state: &AppState,
+    job: &gateway_core::BatchJobRecord,
+    results: &mut [ProviderBatchResult],
+) -> Result<(), gateway_core::GatewayError> {
+    let requests = state
+        .service
+        .store()
+        .get_batch_items_for_worker(job.batch_id)
+        .await?
+        .into_iter()
+        .map(|item| (item.custom_id, item.request_body))
+        .collect::<BTreeMap<_, _>>();
+    let route_key = model_route_key(
+        &job.resolved_model_key,
+        &job.provider_key,
+        &job.upstream_model,
+    );
+    for result in results {
+        let Some(request) = requests.get(&result.custom_id) else {
+            continue;
+        };
+        let guarded_payload = if let Some(response) = result.response_body.as_mut() {
+            response
+        } else if let Some(error) = result.error.as_mut() {
+            error
+        } else {
+            continue;
+        };
+        let request_id = format!("batch:{}:{}", job.batch_id, result.custom_id);
+        let context = batch_guard_context(state, request_id, route_key.clone(), request);
+        if let Err(error) = guard_model_response(state, &context, guarded_payload).await {
+            result.response_body = None;
+            result.error = Some(json!({
+                "message": "Batch result was rejected by guardrails",
+                "type": error.error_type(),
+                "code": error.error_code(),
+            }));
+        }
+    }
     Ok(())
 }
 

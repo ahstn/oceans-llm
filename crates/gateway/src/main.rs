@@ -10,7 +10,7 @@ use gateway::{
     http::{build_router, response_cache::ResponseCache, state::AppState},
     observability,
 };
-use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
+use gateway_core::{McpRegistryRepository, ProviderRegistry, SeedHumanBudgetDefaults};
 use gateway_providers::{
     BedrockProvider, CopilotAuthConfig, CopilotProvider, OpenAiCompatProvider, VertexProvider,
 };
@@ -219,6 +219,23 @@ async fn run_serve_with_store(
         .validate_route_context_overrides()
         .await
         .context("invalid route context-window override")?;
+    let known_mcp_servers = service
+        .store()
+        .list_external_mcp_servers(true)
+        .await
+        .context("failed loading MCP servers for guardrail validation")?
+        .into_iter()
+        .map(|server| server.server_key)
+        .collect();
+    config
+        .validate_guardrail_mcp_server_keys(&known_mcp_servers)
+        .context("invalid guardrail MCP-server override")?;
+    let guardrail_engine = Arc::new(
+        config
+            .guardrail_engine()
+            .context("failed to initialize guardrail evaluators")?,
+    );
+    let guardrail_config = Arc::new(config.guardrails.clone());
     spawn_pricing_catalog_refresh_loop(service.clone());
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     if agent_analysis.capabilities.passive_analysis_enabled {
@@ -235,7 +252,6 @@ async fn run_serve_with_store(
             .map(|provider| provider.provider_key)
             .collect(),
     );
-    gateway::batch_worker::spawn(service.clone(), providers.clone());
     McpCredentialService::<AnyStore>::validate_runtime_configuration(
         !config.mcp.oauth.providers.is_empty(),
     )
@@ -243,51 +259,52 @@ async fn run_serve_with_store(
 
     let bind_address = config.server.bind_address()?;
 
-    let app = build_router(
-        AppState {
-            service: service.clone(),
-            store: service.store().clone(),
-            providers,
-            copilot_user_provider_keys,
-            metrics,
-            mcp_http_client: reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .expect("MCP HTTP client configuration must be valid"),
-            mcp_oauth_runtime: Arc::new(
-                config
-                    .mcp
-                    .oauth
-                    .runtime()
-                    .context("failed resolving MCP OAuth configuration")?,
-            ),
-            identity_token_secret: Arc::new(load_identity_token_secret()),
-            oidc_public_base_url: Arc::new(
-                config
-                    .auth
-                    .oidc
-                    .resolved_public_base_url()
-                    .context("failed resolving OIDC public base URL")?,
-            ),
-            oauth_public_base_url: Arc::new(
-                config
-                    .auth
-                    .oauth
-                    .resolved_public_base_url()
-                    .context("failed resolving OAuth public base URL")?,
-            ),
-            client_config_gateway_base_url: Arc::new(
-                load_client_config_gateway_base_url()
-                    .context("failed resolving client config gateway base URL")?,
-            ),
-            budget_defaults: human_budget_defaults,
-            agent_analysis: agent_analysis.capabilities,
-            admin_permissions,
-            leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
-            harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
-        },
-        load_admin_ui_config(),
-    );
+    let state = AppState {
+        service: service.clone(),
+        store: service.store().clone(),
+        providers,
+        copilot_user_provider_keys,
+        guardrail_engine,
+        guardrail_config,
+        metrics,
+        mcp_http_client: reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("MCP HTTP client configuration must be valid"),
+        mcp_oauth_runtime: Arc::new(
+            config
+                .mcp
+                .oauth
+                .runtime()
+                .context("failed resolving MCP OAuth configuration")?,
+        ),
+        identity_token_secret: Arc::new(load_identity_token_secret()),
+        oidc_public_base_url: Arc::new(
+            config
+                .auth
+                .oidc
+                .resolved_public_base_url()
+                .context("failed resolving OIDC public base URL")?,
+        ),
+        oauth_public_base_url: Arc::new(
+            config
+                .auth
+                .oauth
+                .resolved_public_base_url()
+                .context("failed resolving OAuth public base URL")?,
+        ),
+        client_config_gateway_base_url: Arc::new(
+            load_client_config_gateway_base_url()
+                .context("failed resolving client config gateway base URL")?,
+        ),
+        budget_defaults: human_budget_defaults,
+        agent_analysis: agent_analysis.capabilities,
+        admin_permissions,
+        leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
+        harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
+    };
+    gateway::batch_worker::spawn(state.clone());
+    let app = build_router(state, load_admin_ui_config());
 
     let listener = TcpListener::bind(bind_address)
         .await

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
+use gateway_guardrails::{GuardrailConfig, GuardrailEngine};
 use gateway_service::{GatewayService, McpOauthRuntime, WeightedRoutePlanner};
 use gateway_store::AnyStore;
 
@@ -21,6 +22,8 @@ pub struct AppState {
     pub store: Arc<AnyStore>,
     pub providers: ProviderRegistry,
     pub copilot_user_provider_keys: Arc<Vec<String>>,
+    pub guardrail_engine: Arc<GuardrailEngine>,
+    pub guardrail_config: Arc<GuardrailConfig>,
     pub metrics: Arc<GatewayMetrics>,
     pub mcp_http_client: reqwest::Client,
     pub mcp_oauth_runtime: Arc<McpOauthRuntime>,

@@ -3,6 +3,7 @@ members = [
     "crates/agent-session-analysis",
     "crates/admin-ui",
     "crates/gateway-client-config",
+    "crates/gateway-guardrails",
     "crates/gateway",
     "crates/gateway-core",
     "crates/gateway-mcp",
@@ -16,6 +17,7 @@ resolver = "2"
 agent-session-analysis = { path = "crates/agent-session-analysis" }
 admin-ui = { path = "crates/admin-ui" }
 gateway-core = { path = "crates/gateway-core" }
+gateway-guardrails = { path = "crates/gateway-guardrails" }
 gateway-client-config = { path = "crates/gateway-client-config" }
 gateway-mcp = { path = "crates/gateway-mcp" }
 gateway-providers = { path = "crates/gateway-providers" }
@@ -26,6 +28,10 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
+aws-config = "1.8"
+aws-credential-types = "1.2"
+aws-sigv4 = { version = "1.4", features = ["sign-http", "http1"] }
+aws-smithy-runtime-api = "1.12"
 base64 = "0.22"
 bytes = "1"
 chrono = "0.4"

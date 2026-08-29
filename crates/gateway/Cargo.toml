@@ -12,6 +12,7 @@ async-trait.workspace = true
 axum.workspace = true
 futures-util.workspace = true
 gateway-core.workspace = true
+gateway-guardrails.workspace = true
 gateway-mcp.workspace = true
 gateway-providers.workspace = true
 gateway-service.workspace = true

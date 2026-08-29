@@ -68,6 +68,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/guardrails/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_guardrail_decisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/guardrails/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_guardrail_policies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/identity/service-accounts": {
         parameters: {
             query?: never;
@@ -1118,6 +1150,22 @@ export interface paths {
         get: operations["get_batch_results"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/guardrails/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["evaluate_guardrail"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2376,6 +2424,10 @@ export interface components {
             kind: components["schemas"]["BudgetUserScopeKind"];
             user_id: string;
         };
+        BuiltInPackView: {
+            id: string;
+            version: string;
+        };
         ChangePasswordRequest: {
             current_password: string;
             new_password: string;
@@ -2484,6 +2536,14 @@ export interface components {
             deactivated: boolean;
             scope: components["schemas"]["BudgetScopeView"];
             scope_key: string;
+        };
+        EffectiveGuardrailPolicyView: {
+            enabled: boolean;
+            managed_checks: string[];
+            mode: string;
+            packs: string[];
+            scope: string;
+            stream_buffer_bytes: number;
         };
         /** @enum {string} */
         EffectiveMetadataSourceKindView: "configured_override" | "catalog" | "mixed";
@@ -2687,6 +2747,32 @@ export interface components {
         Envelope_GenerateModelClientConfigsResponse: {
             data: {
                 client_configurations: components["schemas"]["AdminModelClientConfigView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_GuardrailDecisionPageView: {
+            data: {
+                items: components["schemas"]["GuardrailDecisionView"][];
+                /** Format: int32 */
+                page: number;
+                /** Format: int32 */
+                page_size: number;
+                /** Format: int64 */
+                total: number;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_GuardrailPoliciesView: {
+            data: {
+                built_in_packs: components["schemas"]["BuiltInPackView"][];
+                default: components["schemas"]["EffectiveGuardrailPolicyView"];
+                managed_checks: components["schemas"]["ManagedCheckView"][];
+                mcp_servers: {
+                    [key: string]: components["schemas"]["EffectiveGuardrailPolicyView"];
+                };
+                model_routes: {
+                    [key: string]: components["schemas"]["EffectiveGuardrailPolicyView"];
+                };
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -2994,6 +3080,61 @@ export interface components {
         GenerateModelClientConfigsResponse: {
             client_configurations: components["schemas"]["AdminModelClientConfigView"][];
         };
+        GuardEvaluationRequest: {
+            arguments?: unknown;
+            command?: string | null;
+            tool_name: string;
+        };
+        GuardEvaluationResponse: {
+            action: string;
+            allowed: boolean;
+            decision_id: string;
+            failure_disposition?: string | null;
+            matched_rule?: null | components["schemas"]["MatchedRuleResponse"];
+            output_arguments?: unknown;
+            output_command?: string | null;
+            reason_code?: string | null;
+            transformed: boolean;
+        };
+        GuardrailDecisionPageView: {
+            items: components["schemas"]["GuardrailDecisionView"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
+        GuardrailDecisionView: {
+            action: string;
+            content_hash: string;
+            decision_id: string;
+            effective_scope: string;
+            evaluator: string;
+            failure_disposition?: string | null;
+            /** Format: int64 */
+            latency_micros: number;
+            managed_service?: string | null;
+            mcp_tool_invocation_id?: string | null;
+            occurred_at: string;
+            pack_id?: string | null;
+            phase: string;
+            reason_code: string;
+            request_id?: string | null;
+            rule_id?: string | null;
+            transformed: boolean;
+        };
+        GuardrailPoliciesView: {
+            built_in_packs: components["schemas"]["BuiltInPackView"][];
+            default: components["schemas"]["EffectiveGuardrailPolicyView"];
+            managed_checks: components["schemas"]["ManagedCheckView"][];
+            mcp_servers: {
+                [key: string]: components["schemas"]["EffectiveGuardrailPolicyView"];
+            };
+            model_routes: {
+                [key: string]: components["schemas"]["EffectiveGuardrailPolicyView"];
+            };
+        };
         HarnessUsageChartHarnessView: {
             agent_harness_key: string;
             agent_harness_label: string;
@@ -3099,6 +3240,25 @@ export interface components {
             series: components["schemas"]["LeaderboardSeriesPointView"][];
             window_end: string;
             window_start: string;
+        };
+        ManagedCheckView: {
+            failure_disposition: string;
+            kind: string;
+            max_content_bytes: number;
+            name: string;
+            phases: string[];
+            prompt_resource?: string | null;
+            resource: string;
+            response_resource?: string | null;
+            /** Format: int64 */
+            timeout_ms: number;
+        };
+        MatchedRuleResponse: {
+            description: string;
+            matched_field: string;
+            pack_id: string;
+            rule_id: string;
+            safer_action: string;
         };
         McpCredentialBindingPayload: {
             binding: components["schemas"]["McpCredentialBindingView"];
@@ -3938,6 +4098,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_RevealApiKeySecretResponse"];
+                };
+            };
+        };
+    };
+    list_guardrail_decisions: {
+        parameters: {
+            query?: {
+                page?: number | null;
+                page_size?: number | null;
+                request_id?: string | null;
+                phase?: string | null;
+                action?: string | null;
+                evaluator?: string | null;
+                occurred_at_start?: string | null;
+                occurred_at_end?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_GuardrailDecisionPageView"];
+                };
+            };
+        };
+    };
+    get_guardrail_policies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_GuardrailPoliciesView"];
                 };
             };
         };
@@ -5961,6 +6168,44 @@ export interface operations {
                     "application/json": components["schemas"]["BatchResultsResponse"];
                     "application/x-ndjson": string;
                 };
+            };
+        };
+    };
+    evaluate_guardrail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuardEvaluationRequest"];
+            };
+        };
+        responses: {
+            /** @description Guardrail decision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardEvaluationResponse"];
+                };
+            };
+            /** @description Invalid evaluation request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

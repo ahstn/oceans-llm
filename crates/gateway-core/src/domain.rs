@@ -2130,6 +2130,48 @@ pub struct McpToolInvocationDetail {
     pub payload: Option<McpToolInvocationPayloadRecord>,
 }
 
+pub const MAX_GUARDRAIL_DECISION_PAGE_SIZE: u32 = 500;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GuardrailDecisionEventRecord {
+    pub decision_id: Uuid,
+    pub request_id: Option<String>,
+    pub mcp_tool_invocation_id: Option<Uuid>,
+    pub phase: String,
+    pub effective_scope: String,
+    pub evaluator: String,
+    pub managed_service: Option<String>,
+    pub pack_id: Option<String>,
+    pub rule_id: Option<String>,
+    pub action: String,
+    pub reason_code: String,
+    pub latency_micros: i64,
+    pub failure_disposition: Option<String>,
+    pub transformed: bool,
+    pub content_hash: String,
+    pub occurred_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GuardrailDecisionQuery {
+    pub page: u32,
+    pub page_size: u32,
+    pub request_id: Option<String>,
+    pub phase: Option<String>,
+    pub action: Option<String>,
+    pub evaluator: Option<String>,
+    pub occurred_at_start: Option<OffsetDateTime>,
+    pub occurred_at_end: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GuardrailDecisionPage {
+    pub items: Vec<GuardrailDecisionEventRecord>,
+    pub page: u32,
+    pub page_size: u32,
+    pub total: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PricingCatalogCacheRecord {
     pub catalog_key: String,

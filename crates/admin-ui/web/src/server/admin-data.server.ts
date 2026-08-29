@@ -35,6 +35,9 @@ import type {
   HarnessUsageRange,
   HarnessUsageView,
   LogoutResult,
+  GuardrailDecisionFiltersInput,
+  GuardrailDecisionPageView,
+  GuardrailPoliciesView,
   McpInvocationDetailView,
   McpInvocationFiltersInput,
   McpInvocationPageView,
@@ -390,6 +393,22 @@ export async function listMcpInvocations(
       params: {
         query: filters,
       },
+    }),
+  )
+}
+
+export async function getGuardrailPolicies(): Promise<ApiEnvelope<GuardrailPoliciesView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/admin/guardrails/policies'))
+}
+
+export async function listGuardrailDecisions(
+  filters: GuardrailDecisionFiltersInput = {},
+): Promise<ApiEnvelope<GuardrailDecisionPageView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/guardrails/decisions', {
+      params: { query: filters },
     }),
   )
 }

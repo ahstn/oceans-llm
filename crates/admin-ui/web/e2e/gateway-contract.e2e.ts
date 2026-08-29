@@ -94,6 +94,12 @@ test('gateway exposes the seeded model and forwards chat completions to the stub
     object: 'list',
     data: [
       {
+        id: 'audit-fast',
+        object: 'model',
+        created: 0,
+        owned_by: 'gateway',
+      },
+      {
         id: 'fast',
         object: 'model',
         created: 0,
@@ -297,6 +303,23 @@ test('service-account budget update triggers hard-limit enforcement for service-
   expect(capturedResponse.ok()).toBe(true)
   const capturedBody = (await capturedResponse.json()) as { requests: Array<unknown> }
   expect(capturedBody.requests).toHaveLength(0)
+  const restoreBudgetResponse = await request.put(`${root}/api/v1/admin/spend/budgets`, {
+    headers: {
+      cookie: adminCookie,
+      'content-type': 'application/json',
+    },
+    data: {
+      scope: {
+        kind: 'service_account',
+        service_account_id: serviceAccountId,
+      },
+      cadence: 'daily',
+      amount_usd: '25.0000',
+      hard_limit: true,
+      timezone: 'UTC',
+    },
+  })
+  expect(restoreBudgetResponse.status()).toBe(200)
 })
 
 test('request log detail returns 404 for a missing row', async ({ request, page, baseURL }) => {
@@ -615,7 +638,7 @@ test('admin ui can create, manage, and revoke an api key that gates live gateway
   await page.getByRole('combobox', { name: 'Owner service account' }).click()
   await page.getByRole('option', { name: /Seed API Keys/ }).click()
   await page.getByRole('button', { name: /Select models/ }).click()
-  await page.locator('[data-slot="command-item"]').filter({ hasText: /fast/ }).click()
+  await page.getByRole('option', { name: 'fast E2E test route', exact: true }).click()
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Create API key' }).last().click()
 
@@ -657,7 +680,7 @@ test('admin ui can create, manage, and revoke an api key that gates live gateway
     .locator('[data-slot="command-item"]')
     .filter({ hasText: /reasoning/ })
     .click()
-  await page.locator('[data-slot="command-item"]').filter({ hasText: /fast/ }).click()
+  await page.locator('[data-slot="command-item"][data-value="fast E2E test route"]').click()
   await page.keyboard.press('Escape')
   await dialog.getByRole('button', { name: 'Save access' }).click()
 

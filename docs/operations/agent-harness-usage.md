@@ -68,3 +68,11 @@ The page shows self-reported `User-Agent` classifications:
 - a ranked table of normalized harness usage
 
 Request-log detail also shows the normalized harness label and raw `User-Agent` value for debugging classifier behavior.
+
+## Shell guardrails
+
+The first-party Pi and OpenCode harness adapters install a local pre-tool hook. Immediately before a `bash` tool starts a process, the hook sends an authenticated `POST /api/v1/guardrails/evaluate` request with `tool_name`, the command, and optional structured arguments.
+
+An `allow` or `audit` response permits execution. The adapter retains the returned decision ID with the harness result. A `deny` response throws before the process runner is called. Network and invalid-response failures also stop execution so a missing policy decision cannot become a local bypass.
+
+The hook does not contain a second copy of the built-in rules. The gateway remains the policy authority. Hook errors and logs contain stable decision or reason codes, not credentials or full sensitive command payloads. See [Gateway Guardrails](gateway-guardrails.md) for policy configuration and rollout.

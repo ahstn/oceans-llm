@@ -22,6 +22,7 @@ import {
   getRequestLogDetail,
   getBatchResults,
   getHarnessUsage,
+  getGuardrailPolicies,
   getMcpInvocationDetail,
   previewMcpEffectiveAccess,
   listRecommendedMcpServers,
@@ -32,6 +33,7 @@ import {
   getGatewayVersion,
   listRequestLogs,
   listBatches,
+  listGuardrailDecisions,
   listMcpInvocations,
   listMcpOauthConnections,
   listMcpServers,
@@ -148,6 +150,44 @@ function optionalString(value: unknown, label: string): string | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'string') throw new Error(`${label} must be a string`)
   return value
+}
+
+function optionalRfc3339(value: unknown, label: string): string | undefined {
+  const timestamp = optionalString(value, label)
+  if (timestamp === undefined) return undefined
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.exec(
+      timestamp,
+    )
+  if (!match || Number.isNaN(Date.parse(timestamp))) {
+    throw new Error(`${label} must be an RFC 3339 timestamp`)
+  }
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) {
+    throw new Error(`${label} must be an RFC 3339 timestamp`)
+  }
+  return timestamp
+}
+
+type GuardrailDecisionFilters = NonNullable<Parameters<typeof listGuardrailDecisions>[0]>
+
+function validateGuardrailDecisionFilters(data: unknown): GuardrailDecisionFilters {
+  if (data === undefined) return {}
+  const input = requireObject(data, 'Guardrail decision filters')
+  return {
+    page: optionalPositiveInteger(input.page, 'page'),
+    page_size: optionalPositiveInteger(input.page_size, 'page_size'),
+    request_id: optionalString(input.request_id, 'request_id'),
+    phase: optionalString(input.phase, 'phase'),
+    action: optionalString(input.action, 'action'),
+    evaluator: optionalString(input.evaluator, 'evaluator'),
+    occurred_at_start: optionalRfc3339(input.occurred_at_start, 'occurred_at_start'),
+    occurred_at_end: optionalRfc3339(input.occurred_at_end, 'occurred_at_end'),
+  }
 }
 
 function validateBatchFilters(data: unknown): BatchFilters {
@@ -399,6 +439,16 @@ export const getMcpInvocations = createServerFn({ method: 'POST' }).handler(
     return listMcpInvocations(data)
   },
 )
+
+export const getGuardrailPolicyView = createServerFn({ method: 'GET' }).handler(async () => {
+  return getGuardrailPolicies()
+})
+
+export const getGuardrailDecisionPage = createServerFn({ method: 'POST' })
+  .validator(validateGuardrailDecisionFilters)
+  .handler(async ({ data }) => {
+    return listGuardrailDecisions(data)
+  })
 
 export const getMcpOauthConnections = createServerFn({ method: 'GET' }).handler(async () => {
   return listMcpOauthConnections()

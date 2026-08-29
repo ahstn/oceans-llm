@@ -259,6 +259,14 @@ The current runtime executes one selected route. Priority and weight affect rout
 - Check the model card before adding a new `upstream_model`; Bedrock model IDs and inference profile support differ by model and Region.
 - Prefer `default_chain` for production IAM roles and IRSA. Use `static_credentials` only for constrained local or controlled deployment cases where credential rotation is handled outside the gateway.
 
+## Standalone Guardrails
+
+Gateway guardrails use the standalone Bedrock Runtime `ApplyGuardrail` API. This is separate from route-level Converse `guardrailConfig`. A standalone Bedrock guardrail can protect a route on AWS, Google Cloud, OpenAI, or another provider because evaluation occurs at the gateway boundary.
+
+The gateway references an existing guardrail identifier and version. It does not create, update, version, or delete Bedrock guardrail resources. The runtime identity needs `bedrock:ApplyGuardrail` for the selected resource. Use `auth.kind: default_chain` in production and set the guardrail Region explicitly.
+
+See [Gateway Guardrails](../operations/gateway-guardrails.md) for phase selection, failure behavior, configuration, rollout, and incident handling.
+
 ## Validation
 
 Validate documentation-only edits with `mise run //docs:build`. For runtime Bedrock adapter changes, run `mise run lint` and the focused provider tests such as `cargo test -p gateway-providers bedrock`.

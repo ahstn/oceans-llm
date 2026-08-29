@@ -351,6 +351,14 @@ Troubleshooting:
 - Anthropic-on-Vertex routes may set `tools: true` for tested Claude tool-use models. Keep `vision: false` unless you have gateway fixtures for multimodal Anthropic content blocks. Upstream Claude model capability is not enough by itself; route capability flags should reflect the gateway mapper and tests.
 - Check Anthropic and Google Cloud model pages before adding a new Claude route; model IDs, endpoint availability, context windows, and retirement dates vary by model and location.
 
+## Model Armor
+
+Gateway guardrails call the standalone Model Armor `sanitizeUserPrompt` and `sanitizeModelResponse` methods. This is separate from Vertex model routing. A Model Armor template can protect a route on Google Cloud, AWS, OpenAI, or another provider because evaluation occurs at the gateway boundary.
+
+The gateway references existing prompt and response templates. It does not create, update, or delete Model Armor resources. The runtime identity needs `modelarmor.templates.useToSanitizeUserPrompt` or `modelarmor.templates.useToSanitizeModelResponse` on each template. For production, supply the OAuth access token through a protected `file./path` secret reference. The gateway reads the file before each Model Armor evaluation, so an external credential process can rotate the token. An `env.NAME` reference is also supported, but it does not refresh while the process runs.
+
+See [Gateway Guardrails](../operations/gateway-guardrails.md) for phase selection, failure behavior, configuration, rollout, and incident handling.
+
 ## Validation
 
 Validate documentation-only edits with `mise run //docs:build`. For runtime Vertex adapter changes, run `cargo test -p gateway-providers vertex::tests` and `cargo clippy -p gateway-providers --all-targets -- -D warnings`.

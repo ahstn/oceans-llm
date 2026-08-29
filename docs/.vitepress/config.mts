@@ -96,6 +96,10 @@ const primarySidebar = [
         text: "Agent Harness Usage",
         link: "/operations/agent-harness-usage",
       },
+      {
+        text: "Gateway Guardrails",
+        link: "/operations/gateway-guardrails",
+      },
       { text: "Admin Runbooks", link: "/operations/operator-runbooks" },
       {
         text: "GitHub Copilot User Tokens",
