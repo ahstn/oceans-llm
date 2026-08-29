@@ -1,6 +1,6 @@
 use aes_gcm::{
     Aes256Gcm, KeyInit,
-    aead::{Aead, OsRng, rand_core::RngCore},
+    aead::{Aead, OsRng, Payload, rand_core::RngCore},
 };
 use argon2::{
     Argon2,
@@ -68,13 +68,29 @@ pub fn encrypt_secret_with_key(
     key_id: &'static str,
     label: &'static str,
 ) -> Result<EncryptedSecret, GatewayError> {
+    encrypt_secret_with_key_and_aad(secret, &[], key_env, key_id, label)
+}
+
+pub fn encrypt_secret_with_key_and_aad(
+    secret: &str,
+    associated_data: &[u8],
+    key_env: &'static str,
+    key_id: &'static str,
+    label: &'static str,
+) -> Result<EncryptedSecret, GatewayError> {
     let key = cipher_key(key_env)?;
     let cipher = Aes256Gcm::new_from_slice(&key)
         .map_err(|error| GatewayError::Internal(format!("invalid {label} cipher key: {error}")))?;
     let mut nonce_bytes = [0_u8; 12];
     OsRng.fill_bytes(&mut nonce_bytes);
     let ciphertext = cipher
-        .encrypt((&nonce_bytes).into(), secret.as_bytes())
+        .encrypt(
+            (&nonce_bytes).into(),
+            Payload {
+                msg: secret.as_bytes(),
+                aad: associated_data,
+            },
+        )
         .map_err(|error| GatewayError::Internal(format!("failed encrypting {label}: {error}")))?;
 
     Ok(EncryptedSecret {
@@ -88,6 +104,26 @@ pub fn decrypt_secret_with_key(
     ciphertext: &str,
     nonce: &str,
     key_id: &str,
+    key_env: &'static str,
+    expected_key_id: &'static str,
+    label: &'static str,
+) -> Result<String, GatewayError> {
+    decrypt_secret_with_key_and_aad(
+        ciphertext,
+        nonce,
+        key_id,
+        &[],
+        key_env,
+        expected_key_id,
+        label,
+    )
+}
+
+pub fn decrypt_secret_with_key_and_aad(
+    ciphertext: &str,
+    nonce: &str,
+    key_id: &str,
+    associated_data: &[u8],
     key_env: &'static str,
     expected_key_id: &'static str,
     label: &'static str,
@@ -113,7 +149,13 @@ pub fn decrypt_secret_with_key(
     let cipher = Aes256Gcm::new_from_slice(&key)
         .map_err(|error| GatewayError::Internal(format!("invalid {label} cipher key: {error}")))?;
     let plaintext = cipher
-        .decrypt(nonce.as_slice().into(), ciphertext.as_ref())
+        .decrypt(
+            nonce.as_slice().into(),
+            Payload {
+                msg: ciphertext.as_ref(),
+                aad: associated_data,
+            },
+        )
         .map_err(|_| GatewayError::InvalidRequest(format!("{label} could not be decrypted")))?;
     String::from_utf8(plaintext)
         .map_err(|error| GatewayError::InvalidRequest(format!("{label} is not UTF-8: {error}")))
@@ -144,7 +186,10 @@ fn cipher_key(key_env: &'static str) -> Result<Vec<u8>, GatewayError> {
 mod tests {
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
-    use super::{decrypt_secret_with_key, encrypt_secret_with_key, validate_secret_key_env};
+    use super::{
+        decrypt_secret_with_key, decrypt_secret_with_key_and_aad, encrypt_secret_with_key,
+        encrypt_secret_with_key_and_aad, validate_secret_key_env,
+    };
 
     const TEST_KEY_ENV: &str = "OCEANS_TEST_SECRET_STORAGE_KEY";
     const TEST_KEY_ID: &str = "env/OCEANS_TEST_SECRET_STORAGE_KEY";
@@ -216,5 +261,45 @@ mod tests {
         .expect_err("short nonce should fail");
 
         assert!(error.to_string().contains("exactly 12 bytes"));
+    }
+
+    #[test]
+    fn associated_data_prevents_secret_rebinding() {
+        unsafe {
+            std::env::set_var(TEST_KEY_ENV, TEST_KEY);
+        }
+
+        let encrypted = encrypt_secret_with_key_and_aad(
+            "github-token",
+            b"provider-a:user-a",
+            TEST_KEY_ENV,
+            TEST_KEY_ID,
+            "test secret",
+        )
+        .expect("encrypt");
+
+        let decrypted = decrypt_secret_with_key_and_aad(
+            &encrypted.ciphertext,
+            &encrypted.nonce,
+            encrypted.key_id,
+            b"provider-a:user-a",
+            TEST_KEY_ENV,
+            TEST_KEY_ID,
+            "test secret",
+        )
+        .expect("matching associated data");
+        assert_eq!(decrypted, "github-token");
+
+        let error = decrypt_secret_with_key_and_aad(
+            &encrypted.ciphertext,
+            &encrypted.nonce,
+            encrypted.key_id,
+            b"provider-a:user-b",
+            TEST_KEY_ENV,
+            TEST_KEY_ID,
+            "test secret",
+        )
+        .expect_err("different owner must not decrypt");
+        assert!(error.to_string().contains("could not be decrypted"));
     }
 }

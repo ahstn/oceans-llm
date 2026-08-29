@@ -17,6 +17,8 @@ const createIdentityUserMock = vi.fn()
 const resendInviteMock = vi.fn()
 const resetOnboardingMock = vi.fn()
 const updateIdentityUserMock = vi.fn()
+const saveProviderCredentialMock = vi.fn()
+const removeProviderCredentialMock = vi.fn()
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -37,6 +39,9 @@ vi.mock('@/server/admin-data.functions', () => ({
   getUserDirectory: vi.fn(),
   reactivateIdentityUser: vi.fn(),
   resetIdentityUserOnboarding: (...args: unknown[]) => resetOnboardingMock(...args),
+  saveIdentityUserProviderCredential: (...args: unknown[]) => saveProviderCredentialMock(...args),
+  removeIdentityUserProviderCredential: (...args: unknown[]) =>
+    removeProviderCredentialMock(...args),
   resendIdentityUserPasswordInvite: (...args: unknown[]) => resendInviteMock(...args),
   updateIdentityUser: (...args: unknown[]) => updateIdentityUserMock(...args),
 }))
@@ -46,6 +51,7 @@ const basePayload: IdentityUsersPayload = {
   teams: [],
   oidc_providers: [],
   oauth_providers: [],
+  copilot_user_providers: [],
 }
 
 type UserPayload = IdentityUsersPayload['users'][number]
@@ -66,6 +72,14 @@ function invitedUser(overrides: Partial<UserPayload> = {}): UserPayload {
     onboarding: null,
     ...overrides,
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }
 
 describe('UsersPage', () => {
@@ -95,6 +109,8 @@ describe('UsersPage', () => {
     resendInviteMock.mockReset()
     resetOnboardingMock.mockReset()
     updateIdentityUserMock.mockReset()
+    saveProviderCredentialMock.mockReset()
+    removeProviderCredentialMock.mockReset()
   })
 
   afterEach(() => {
@@ -237,6 +253,7 @@ describe('UsersPage', () => {
         teams: [{ id: 'team_1', name: 'Core Platform' }],
         oidc_providers: [],
         oauth_providers: [],
+        copilot_user_providers: [],
       } satisfies IdentityUsersPayload,
     })
 
@@ -383,6 +400,299 @@ describe('UsersPage', () => {
     expect(
       screen.getByText('Share this URL with the user so they can finish SSO onboarding.'),
     ).toBeInTheDocument()
+  })
+
+  it('submits a Copilot token through its own form without updating the user', async () => {
+    const user = invitedUser({ status: 'active' })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [user],
+        copilot_user_providers: [
+          {
+            provider_key: 'github-copilot-user',
+            credentials: [
+              {
+                user_id: user.id,
+                configured: false,
+                updated_at: null,
+                last_used_at: null,
+              },
+            ],
+          },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({
+      user_id: user.id,
+      user_section: 'provider-configuration',
+    })
+    saveProviderCredentialMock.mockResolvedValue({ data: { configured: true } })
+
+    const { UsersPage } = await import('@/routes/identity/users')
+    render(<UsersPage />)
+
+    expect(screen.getAllByText('Provider Configuration').length).toBeGreaterThan(0)
+    expect(screen.getByText(/no extra GitHub OAuth scope/i)).toBeInTheDocument()
+    expect(screen.getByText('gh auth refresh --hostname github.com')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'gho_secret-user-token' },
+    })
+    fireEvent.submit(screen.getByLabelText('GitHub token').closest('form')!)
+
+    await waitFor(() =>
+      expect(saveProviderCredentialMock).toHaveBeenCalledWith({
+        data: {
+          userId: user.id,
+          providerKey: 'github-copilot-user',
+          token: 'gho_secret-user-token',
+        },
+      }),
+    )
+    await waitFor(() => expect(screen.getByLabelText('GitHub token')).toHaveValue(''))
+    expect(screen.queryByDisplayValue('gho_secret-user-token')).not.toBeInTheDocument()
+    expect(updateIdentityUserMock).not.toHaveBeenCalled()
+  })
+
+  it('removes the selected user provider credential', async () => {
+    const user = invitedUser({ status: 'active' })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [user],
+        copilot_user_providers: [
+          {
+            provider_key: 'github-copilot-user',
+            credentials: [
+              {
+                user_id: user.id,
+                configured: true,
+                updated_at: '2026-08-29T09:00:00Z',
+                last_used_at: null,
+              },
+            ],
+          },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({
+      user_id: user.id,
+      user_section: 'provider-configuration',
+    })
+    removeProviderCredentialMock.mockResolvedValue({ data: { status: 'deleted' } })
+
+    const { UsersPage } = await import('@/routes/identity/users')
+    render(<UsersPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove token' }))
+
+    await waitFor(() =>
+      expect(removeProviderCredentialMock).toHaveBeenCalledWith({
+        data: {
+          userId: user.id,
+          providerKey: 'github-copilot-user',
+        },
+      }),
+    )
+    expect(screen.getByLabelText('GitHub token')).toHaveValue('')
+  })
+
+  it('does not clear another user draft when a save completes', async () => {
+    const firstUser = invitedUser({ status: 'active' })
+    const secondUser = invitedUser({
+      id: 'user_2',
+      name: 'Second User',
+      email: 'second@example.com',
+      status: 'active',
+    })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [firstUser, secondUser],
+        copilot_user_providers: [
+          {
+            provider_key: 'github-copilot-user',
+            credentials: [firstUser, secondUser].map((user) => ({
+              user_id: user.id,
+              configured: false,
+              updated_at: null,
+              last_used_at: null,
+            })),
+          },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({
+      user_id: firstUser.id,
+      user_section: 'provider-configuration',
+    })
+    const saveRequest = deferred<{ data: { configured: boolean } }>()
+    saveProviderCredentialMock.mockReturnValue(saveRequest.promise)
+
+    const { UsersPage } = await import('@/routes/identity/users')
+    const { rerender } = render(<UsersPage />)
+
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'first-user-token' },
+    })
+    fireEvent.submit(screen.getByLabelText('GitHub token').closest('form')!)
+    await waitFor(() => expect(saveProviderCredentialMock).toHaveBeenCalled())
+
+    routeMock.useSearch.mockReturnValue({
+      user_id: secondUser.id,
+      user_section: 'provider-configuration',
+    })
+    rerender(<UsersPage />)
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'second-user-draft' },
+    })
+
+    saveRequest.resolve({ data: { configured: true } })
+    await waitFor(() =>
+      expect(screen.getByLabelText('GitHub token')).toHaveValue('second-user-draft'),
+    )
+  })
+
+  it('does not clear another user draft when a removal completes', async () => {
+    const firstUser = invitedUser({ status: 'active' })
+    const secondUser = invitedUser({
+      id: 'user_2',
+      name: 'Second User',
+      email: 'second@example.com',
+      status: 'active',
+    })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [firstUser, secondUser],
+        copilot_user_providers: [
+          {
+            provider_key: 'github-copilot-user',
+            credentials: [firstUser, secondUser].map((user) => ({
+              user_id: user.id,
+              configured: true,
+              updated_at: '2026-08-29T09:00:00Z',
+              last_used_at: null,
+            })),
+          },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({
+      user_id: firstUser.id,
+      user_section: 'provider-configuration',
+    })
+    const removeRequest = deferred<{ data: { status: string } }>()
+    removeProviderCredentialMock.mockReturnValue(removeRequest.promise)
+
+    const { UsersPage } = await import('@/routes/identity/users')
+    const { rerender } = render(<UsersPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove token' }))
+    await waitFor(() => expect(removeProviderCredentialMock).toHaveBeenCalled())
+
+    routeMock.useSearch.mockReturnValue({
+      user_id: secondUser.id,
+      user_section: 'provider-configuration',
+    })
+    rerender(<UsersPage />)
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'second-user-draft' },
+    })
+
+    removeRequest.resolve({ data: { status: 'deleted' } })
+    await waitFor(() =>
+      expect(screen.getByLabelText('GitHub token')).toHaveValue('second-user-draft'),
+    )
+  })
+
+  it('does not clear a newer draft when a save completes', async () => {
+    const user = invitedUser({ status: 'active' })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [user],
+        copilot_user_providers: [
+          {
+            provider_key: 'github-copilot-user',
+            credentials: [
+              {
+                user_id: user.id,
+                configured: false,
+                updated_at: null,
+                last_used_at: null,
+              },
+            ],
+          },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({
+      user_id: user.id,
+      user_section: 'provider-configuration',
+    })
+    const saveRequest = deferred<{ data: { configured: boolean } }>()
+    saveProviderCredentialMock.mockReturnValue(saveRequest.promise)
+
+    const { UsersPage } = await import('@/routes/identity/users')
+    render(<UsersPage />)
+
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'submitted-token' },
+    })
+    fireEvent.submit(screen.getByLabelText('GitHub token').closest('form')!)
+    await waitFor(() => expect(saveProviderCredentialMock).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'newer-draft' },
+    })
+
+    saveRequest.resolve({ data: { configured: true } })
+    await waitFor(() => expect(screen.getByLabelText('GitHub token')).toHaveValue('newer-draft'))
+  })
+
+  it('does not clear a newer draft when a removal completes', async () => {
+    const user = invitedUser({ status: 'active' })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [user],
+        copilot_user_providers: [
+          {
+            provider_key: 'github-copilot-user',
+            credentials: [
+              {
+                user_id: user.id,
+                configured: true,
+                updated_at: '2026-08-29T09:00:00Z',
+                last_used_at: null,
+              },
+            ],
+          },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({
+      user_id: user.id,
+      user_section: 'provider-configuration',
+    })
+    const removeRequest = deferred<{ data: { status: string } }>()
+    removeProviderCredentialMock.mockReturnValue(removeRequest.promise)
+
+    const { UsersPage } = await import('@/routes/identity/users')
+    render(<UsersPage />)
+
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'draft-before-removal' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove token' }))
+    await waitFor(() => expect(removeProviderCredentialMock).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'newer-draft' },
+    })
+
+    removeRequest.resolve({ data: { status: 'deleted' } })
+    await waitFor(() => expect(screen.getByLabelText('GitHub token')).toHaveValue('newer-draft'))
   })
 
   it('sanitizes onboarding updates to auth fields and persisted role/team membership', async () => {

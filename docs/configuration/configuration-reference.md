@@ -136,16 +136,28 @@ Unknown fields fail parsing. Retention can be at most 36,500 days. The input bou
 Calibrated scores need a trimmed `calibration_approval_id`. It can use at most 256 bytes. Team-admin access needs calibrated scores. Older `AGENT_ANALYSIS_*` environment variables can override some fields. They cover collection, access, approval, and retention. Use YAML while new metric settings roll out. Metric, context, and cache-profile changes create a new report version. Use `mise run gateway-recompute-agent-analysis` to queue retained reports.
 
 See [Agent Session Analysis](../operations/agent-session-analysis.md) for operator behavior. See [Agent Session Analysis Architecture](../contributing/reference/agent-session-analysis.md) for code ownership.
+
 ### GitHub Copilot provider and route evidence
 
 GitHub App authentication requires all four identity and scope fields. `repository_id` is the numeric ID of the one repository placed in each installation-token request. It is required and must be greater than zero. If it is absent, config parsing stops with `missing field repository_id`.
 
 `private_key` accepts a mounted file path. An `env.*` or `literal.*` value can resolve to either a PEM value or a file path. The gateway reads and parses the key when it builds the provider during startup.
 
+Use `auth.mode: github_user` when Copilot usage must use each Oceans user's GitHub identity and entitlement. Do not put a token in provider YAML. A platform admin stores the token for a managed user in **Identity > Users > Provider Configuration**. The gateway encrypts the token with `OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY` and selects it from the trusted user owner on the gateway API key.
+
+`OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY` must be a base64-encoded 32-byte key. Set it before startup when any `github_user` provider is configured. Keep the same value across gateway replicas. If it changes, existing provider credentials cannot be decrypted.
+
+User-token mode has no fallback credential. A service-account key, an unowned key, or a user without a stored token fails before the Copilot request. One user's token is never selected from a request header or supplied for another user's API key. See [GitHub Copilot User Tokens](../operations/github-copilot-user-tokens.md) for the setup flow.
+
 Copilot route compatibility is fail-closed. Copy support only from a current `/models` response for the exact `upstream_model`. The [GitHub Copilot Installation-Token Canary](../operations/github-copilot-installation-canary.md) produces the required safe projection.
 
 ```yaml
 providers:
+  - id: copilot-user
+    type: github_copilot
+    auth:
+      mode: github_user
+
   - id: copilot-org
     type: github_copilot
     auth:
@@ -737,6 +749,7 @@ Supported provider types in the checked-in configs:
 - `gcp_cloud_run_openai_compat`
 - `gcp_vertex`
 - `aws_bedrock`
+- `github_copilot`
 
 ### Provider Auth Modes
 
@@ -749,6 +762,9 @@ Supported provider types in the checked-in configs:
 | `gcp_vertex` | `auth.mode: adc` | ADC available in the runtime environment |
 | `gcp_vertex` | `auth.mode: service_account` | upstream Google Cloud service-account JSON through `credentials_path` or an equivalent mounted secret path |
 | `aws_bedrock` | `auth.mode: bearer` | Bedrock bearer token, often `env.AWS_BEARER_TOKEN_BEDROCK` |
+| `github_copilot` | `auth.mode: github_user` | Encrypted token stored per managed user in the admin UI |
+| `github_copilot` | `auth.mode: github_app` | GitHub App identity, private key, installation ID, and repository ID |
+| `github_copilot` | `auth.mode: bearer` | Shared static token for constrained testing only |
 
 Provider auth config controls how the gateway authenticates to upstream providers. It is separate from gateway API keys, which authenticate callers to the gateway.
 

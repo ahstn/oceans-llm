@@ -291,6 +291,15 @@ providers:
       kind: bearer
       token: env.OPENROUTER_API_KEY
 
+  - id: github-copilot-user
+    type: github_copilot
+    pricing_provider_id: openai
+    auth:
+      mode: github_user
+    display:
+      label: GitHub Copilot (user token)
+      icon_key: openai
+
   - id: vertex-adc
     type: gcp_vertex
     project_id: your-gcp-project
@@ -344,6 +353,30 @@ models:
   - id: openai-fast-v2
     description: Legacy local demo alias
     alias_of: gpt-5.6-sol
+
+  - id: copilot-gpt-5.6-luna
+    description: GPT-5.6 Luna through GitHub Copilot user-token authentication
+    routes:
+      - provider: github-copilot-user
+        upstream_model: gpt-5.6-luna
+        context_window_tokens: 1050000
+        capabilities:
+          chat_completions: false
+          responses: true
+          stream: true
+          embeddings: false
+          tools: true
+          vision: true
+          json_schema: true
+          developer_role: false
+        compatibility:
+          github_copilot:
+            supports_responses: true
+            upstream_supports:
+              streaming: true
+              tool_calls: true
+              vision: true
+              structured_outputs: true
 
   - id: deepseek-v4-pro
     routes:

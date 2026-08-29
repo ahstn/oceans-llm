@@ -21,6 +21,7 @@ pub struct AppState {
     pub service: Arc<AppGatewayService>,
     pub store: Arc<AnyStore>,
     pub providers: ProviderRegistry,
+    pub copilot_user_provider_keys: Arc<Vec<String>>,
     pub guardrail_engine: Arc<GuardrailEngine>,
     pub guardrail_config: Arc<GuardrailConfig>,
     pub metrics: Arc<GatewayMetrics>,

@@ -708,6 +708,7 @@ mod tests {
                 model_key: "fast".to_string(),
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-5.6-sol".to_string(),
+                owner_user_id: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
                 request_headers: BTreeMap::new(),

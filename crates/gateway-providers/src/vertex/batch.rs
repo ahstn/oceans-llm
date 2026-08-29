@@ -807,6 +807,7 @@ mod tests {
             provider_key: "vertex".to_string(),
             upstream_model: "projects/p/locations/us/publishers/google/models/gemini-test"
                 .to_string(),
+            owner_user_id: None,
             extra_headers: Map::new(),
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),

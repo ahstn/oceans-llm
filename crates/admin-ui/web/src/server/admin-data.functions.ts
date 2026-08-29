@@ -75,6 +75,8 @@ import {
   updateMcpToolset,
   updateTeam,
   updateUser,
+  upsertUserProviderCredential,
+  deleteUserProviderCredential,
   upsertMcpCredentialBinding,
   upsertMcpGrant,
   startMcpOauthConnection,
@@ -228,6 +230,38 @@ function validateBatchIdInput(data: unknown): { batchId: string } {
   const batchId = optionalString(input.batchId, 'batchId')
   if (!batchId?.trim()) throw new Error('batchId is required')
   return { batchId }
+}
+
+function requiredString(input: Record<string, unknown>, key: string): string {
+  const value = input[key]
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`${key} is required`)
+  }
+  return value
+}
+
+function validateProviderCredentialInput(data: unknown): {
+  userId: string
+  providerKey: string
+  token: string
+} {
+  const input = requireObject(data, 'Provider credential input')
+  return {
+    userId: requiredString(input, 'userId'),
+    providerKey: requiredString(input, 'providerKey'),
+    token: requiredString(input, 'token'),
+  }
+}
+
+function validateProviderCredentialRemovalInput(data: unknown): {
+  userId: string
+  providerKey: string
+} {
+  const input = requireObject(data, 'Provider credential removal input')
+  return {
+    userId: requiredString(input, 'userId'),
+    providerKey: requiredString(input, 'providerKey'),
+  }
 }
 
 export const getOceansVersion = createServerFn({ method: 'GET' }).handler(async () => {
@@ -692,6 +726,18 @@ export const updateIdentityUser = createServerFn({ method: 'POST' }).handler(
     return updateUser(data.userId, data.input)
   },
 )
+
+export const saveIdentityUserProviderCredential = createServerFn({ method: 'POST' })
+  .validator(validateProviderCredentialInput)
+  .handler(async ({ data }) => {
+    return upsertUserProviderCredential(data.userId, data.providerKey, data.token)
+  })
+
+export const removeIdentityUserProviderCredential = createServerFn({ method: 'POST' })
+  .validator(validateProviderCredentialRemovalInput)
+  .handler(async ({ data }) => {
+    return deleteUserProviderCredential(data.userId, data.providerKey)
+  })
 
 export const deactivateIdentityUser = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: { userId: string } }) => {

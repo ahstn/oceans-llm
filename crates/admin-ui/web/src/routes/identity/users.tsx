@@ -72,6 +72,8 @@ import {
   getUsers,
   reactivateIdentityUser,
   resetIdentityUserOnboarding,
+  removeIdentityUserProviderCredential,
+  saveIdentityUserProviderCredential,
   updateIdentityUser,
 } from '@/server/admin-data.functions'
 import {
@@ -81,6 +83,7 @@ import {
 } from '@/routes/identity/-entity-tags'
 import { ReadOnlyUsersDirectory } from '@/routes/identity/-read-only-directory'
 import { sanitizeOnboardingUpdateForm } from '@/routes/identity/-user-form'
+import { ProviderConfiguration } from '@/routes/identity/-provider-configuration'
 import type {
   CreateUserInput,
   CreateUserResult,
@@ -123,11 +126,14 @@ const emptyAdminUsers: IdentityUsersPayload['users'] = []
 const emptyAdminTeams: IdentityUsersPayload['teams'] = []
 const emptyOidcProviders: IdentityUsersPayload['oidc_providers'] = []
 const emptyOauthProviders: IdentityUsersPayload['oauth_providers'] = []
+const emptyCopilotUserProviders: IdentityUsersPayload['copilot_user_providers'] = []
+const emptyProviderTokens: Record<string, string> = {}
 
 const userDetailsSections = [
   { id: 'overview', label: 'Overview', icon: UserCircleIcon },
   { id: 'configuration', label: 'Configuration', icon: Configuration01Icon },
   { id: 'auth', label: 'Auth & onboarding', icon: ShieldKeyIcon },
+  { id: 'provider-configuration', label: 'Provider Configuration', icon: ShieldKeyIcon },
   { id: 'usage', label: 'Usage', icon: ChartLineData01Icon },
 ] as const
 
@@ -144,6 +150,7 @@ export function UsersPage() {
   const teams = adminData?.teams ?? emptyAdminTeams
   const oidcProviders = adminData?.oidc_providers ?? emptyOidcProviders
   const oauthProviders = adminData?.oauth_providers ?? emptyOauthProviders
+  const copilotUserProviders = adminData?.copilot_user_providers ?? emptyCopilotUserProviders
   const [isOpen, setIsOpen] = useState(false)
   const [form, setForm] = useState<CreateUserInput>(initialForm)
   const [result, setResult] = useState<CreateUserResult | null>(null)
@@ -151,11 +158,17 @@ export function UsersPage() {
   const [updateForm, setUpdateForm] = useState<UpdateUserInput>(initialUpdateForm)
   const [onboardingResult, setOnboardingResult] = useState<CreateUserResult | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [providerTokensByUser, setProviderTokensByUser] = useState<
+    Record<string, Record<string, string>>
+  >({})
   const selectedUser = search.user_id
     ? (users.find((user) => user.id === search.user_id) ?? null)
     : null
   const selectedUserId = selectedUser?.id ?? null
   const selectedUserSection = search.user_section
+  const providerTokens = selectedUserId
+    ? (providerTokensByUser[selectedUserId] ?? emptyProviderTokens)
+    : emptyProviderTokens
 
   useEffect(() => {
     if (!selectedUser) {
@@ -214,6 +227,28 @@ export function UsersPage() {
     })
     setUpdateForm(initialUpdateForm)
     setOnboardingResult(null)
+    setProviderTokensByUser({})
+  }
+
+  function updateProviderToken(userId: string, providerKey: string, token: string) {
+    setProviderTokensByUser((current) => ({
+      ...current,
+      [userId]: { ...current[userId], [providerKey]: token },
+    }))
+  }
+
+  function clearProviderTokenIfUnchanged(
+    userId: string,
+    providerKey: string,
+    expectedToken: string,
+  ) {
+    setProviderTokensByUser((current) => {
+      const userTokens = current[userId]
+      if ((userTokens?.[providerKey] ?? '') !== expectedToken) {
+        return current
+      }
+      return { ...current, [userId]: { ...userTokens, [providerKey]: '' } }
+    })
   }
 
   function setAuthMode(authMode: CreateUserInput['auth_mode']) {
@@ -308,6 +343,47 @@ export function UsersPage() {
         toast.success('User updated')
         await refreshUsers()
         resetUserDialog()
+      } catch (error) {
+        toast.error(getErrorMessage(error))
+      }
+    })
+  }
+
+  function handleSaveProviderCredential(providerKey: string) {
+    if (!selectedUser) return
+    const userId = selectedUser.id
+    const tokenDraft = providerTokens[providerKey] ?? ''
+    const token = tokenDraft.trim()
+    if (!token) {
+      toast.error('Enter a GitHub token')
+      return
+    }
+    startTransition(async () => {
+      try {
+        await saveIdentityUserProviderCredential({
+          data: { userId, providerKey, token },
+        })
+        clearProviderTokenIfUnchanged(userId, providerKey, tokenDraft)
+        toast.success('Provider token saved')
+        await refreshUsers()
+      } catch (error) {
+        toast.error(getErrorMessage(error))
+      }
+    })
+  }
+
+  function handleRemoveProviderCredential(providerKey: string) {
+    if (!selectedUser) return
+    const userId = selectedUser.id
+    const tokenDraft = providerTokens[providerKey] ?? ''
+    startTransition(async () => {
+      try {
+        await removeIdentityUserProviderCredential({
+          data: { userId, providerKey },
+        })
+        clearProviderTokenIfUnchanged(userId, providerKey, tokenDraft)
+        toast.success('Provider token removed')
+        await refreshUsers()
       } catch (error) {
         toast.error(getErrorMessage(error))
       }
@@ -978,7 +1054,34 @@ export function UsersPage() {
                   </div>
                 </header>
 
-                <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleUpdateUser}>
+                {selectedUserSection === 'provider-configuration' ? (
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <div className="flex-1 overflow-y-auto p-6">
+                      <ProviderConfiguration
+                        userId={selectedUser.id}
+                        providers={copilotUserProviders}
+                        tokens={providerTokens}
+                        isPending={isPending}
+                        onTokenChange={(providerKey, token) =>
+                          updateProviderToken(selectedUser.id, providerKey, token)
+                        }
+                        onSave={handleSaveProviderCredential}
+                        onRemove={handleRemoveProviderCredential}
+                      />
+                    </div>
+                    <DialogFooter className="mx-0 mb-0 rounded-none border-t border-[color:var(--color-border)] px-6 py-4">
+                      <Button type="button" variant="secondary" onClick={resetUserDialog}>
+                        Close
+                      </Button>
+                    </DialogFooter>
+                  </div>
+                ) : null}
+
+                <form
+                  className="flex min-h-0 flex-1 flex-col"
+                  hidden={selectedUserSection === 'provider-configuration'}
+                  onSubmit={handleUpdateUser}
+                >
                   <div className="flex-1 overflow-y-auto p-6">
                     {selectedUserSection === 'overview' ? (
                       <div>
@@ -1365,18 +1468,20 @@ export function UsersPage() {
                     <Button type="button" variant="secondary" onClick={resetUserDialog}>
                       Close
                     </Button>
-                    <Button
-                      type="submit"
-                      disabled={
-                        isPending ||
-                        (updateForm.auth_mode === 'oidc' &&
-                          (oidcProviders.length === 0 || !updateForm.oidc_provider_key)) ||
-                        (updateForm.auth_mode === 'oauth' &&
-                          (oauthProviders.length === 0 || !updateForm.oauth_provider_key))
-                      }
-                    >
-                      {isPending ? 'Saving…' : 'Save changes'}
-                    </Button>
+                    {selectedUserSection === 'configuration' || selectedUserSection === 'auth' ? (
+                      <Button
+                        type="submit"
+                        disabled={
+                          isPending ||
+                          (updateForm.auth_mode === 'oidc' &&
+                            (oidcProviders.length === 0 || !updateForm.oidc_provider_key)) ||
+                          (updateForm.auth_mode === 'oauth' &&
+                            (oauthProviders.length === 0 || !updateForm.oauth_provider_key))
+                        }
+                      >
+                        {isPending ? 'Saving…' : 'Save changes'}
+                      </Button>
+                    ) : null}
                   </DialogFooter>
                 </form>
               </main>

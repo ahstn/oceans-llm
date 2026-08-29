@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use gateway_core::{
     CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, GitHubCopilotChatApi,
     ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
-    core_chat_request_to_openai, core_embeddings_request_to_openai,
+    ProviderUserTokenResolver, core_chat_request_to_openai, core_embeddings_request_to_openai,
     core_responses_request_to_openai,
 };
 use serde_json::Value;
@@ -166,28 +167,70 @@ impl CopilotProviderConfig {
 pub struct CopilotProvider {
     config: CopilotProviderConfig,
     client: reqwest::Client,
-    access_token_source: CachedAccessTokenSource,
+    token_source: CopilotTokenSource,
+}
+
+#[derive(Clone)]
+enum CopilotTokenSource {
+    Shared(CachedAccessTokenSource),
+    PerUser(Arc<dyn ProviderUserTokenResolver>),
 }
 
 impl CopilotProvider {
     pub fn new(config: CopilotProviderConfig) -> Result<Self, ProviderError> {
+        if matches!(config.auth, CopilotAuthConfig::GitHubUser) {
+            return Err(ProviderError::InvalidRequest(
+                "GitHub user authentication requires a per-user token resolver".to_string(),
+            ));
+        }
+        let token_source = CopilotTokenSource::Shared(CachedAccessTokenSource::new(
+            config.auth.build_source(config.github_api_url.as_deref())?,
+        ));
+        Self::build(config, token_source)
+    }
+
+    pub fn new_with_user_token_resolver(
+        config: CopilotProviderConfig,
+        user_token_resolver: Arc<dyn ProviderUserTokenResolver>,
+    ) -> Result<Self, ProviderError> {
+        if !matches!(config.auth, CopilotAuthConfig::GitHubUser) {
+            return Err(ProviderError::InvalidRequest(
+                "a per-user token resolver requires GitHub user authentication".to_string(),
+            ));
+        }
+        Self::build(config, CopilotTokenSource::PerUser(user_token_resolver))
+    }
+
+    fn build(
+        config: CopilotProviderConfig,
+        token_source: CopilotTokenSource,
+    ) -> Result<Self, ProviderError> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(config.request_timeout_ms))
             .build()
             .map_err(map_reqwest_error)?;
-
-        let source = config.auth.build_source(config.github_api_url.as_deref())?;
-
         Ok(Self {
             config,
             client,
-            access_token_source: CachedAccessTokenSource::new(source),
+            token_source,
         })
     }
 
-    /// Direct token accessor (retrieves cached token or fetches a fresh one).
-    pub async fn token(&self) -> Result<String, ProviderError> {
-        self.access_token_source.token().await
+    async fn token(&self, context: &ProviderRequestContext) -> Result<String, ProviderError> {
+        match &self.token_source {
+            CopilotTokenSource::Shared(source) => source.token().await,
+            CopilotTokenSource::PerUser(resolver) => {
+                let user_id = context.owner_user_id.ok_or_else(|| {
+                    ProviderError::InvalidRequest(
+                        "GitHub user authentication requires a user-owned gateway API key"
+                            .to_string(),
+                    )
+                })?;
+                resolver
+                    .resolve_provider_user_token(&self.config.provider_key, user_id)
+                    .await
+            }
+        }
     }
 
     /// Selects the configured chat API and fails closed when metadata is absent.
@@ -216,13 +259,11 @@ impl CopilotProvider {
     fn apply_copilot_headers(
         &self,
         mut request: reqwest::RequestBuilder,
-        token: &str,
         context: &ProviderRequestContext,
         chat_api: Option<GitHubCopilotChatApi>,
     ) -> reqwest::RequestBuilder {
         let profile = VSCODE_CHAT_2026_06_01_PROFILE;
         request = request
-            .bearer_auth(token)
             .header("editor-version", &self.config.editor_version)
             .header("editor-plugin-version", profile.plugin_version)
             .header("copilot-integration-id", &self.config.integration_id)
@@ -257,11 +298,24 @@ impl CopilotProvider {
         chat_api: Option<GitHubCopilotChatApi>,
         initiator: CopilotInitiator,
     ) -> Result<reqwest::Request, ProviderError> {
-        let token = self.token().await?;
+        let token = self.token(context).await?;
         let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
         let req_builder = self.client.post(url).json(&body);
-        let req_builder = self.apply_copilot_headers(req_builder, &token, context, chat_api);
+        let req_builder = self.apply_copilot_headers(req_builder, context, chat_api);
         let mut request = req_builder.build().map_err(map_reqwest_error)?;
+        let mut authorization =
+            reqwest::header::HeaderValue::from_bytes(format!("Bearer {token}").as_bytes())
+                .map_err(|_| {
+                    ProviderError::InvalidRequest(
+                        "GitHub Copilot credential cannot be encoded as an Authorization header"
+                            .to_string(),
+                    )
+                })?;
+        authorization.set_sensitive(true);
+        // Insert after configurable headers so one resolved credential is authoritative.
+        request
+            .headers_mut()
+            .insert(reqwest::header::AUTHORIZATION, authorization);
         request.headers_mut().insert(
             "x-initiator",
             reqwest::header::HeaderValue::from_static(initiator.as_str()),

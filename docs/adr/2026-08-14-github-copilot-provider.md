@@ -6,6 +6,8 @@ Accepted.
 
 > **Supersession note (2026-08-16):** [GitHub Copilot Compatibility Evidence and Production Acceptance](2026-08-16-github-copilot-compatibility-and-acceptance.md) supersedes the model-family routing, fixed request-header profile, and direct-token production-acceptance parts of this decision. The original decision remains below as history.
 
+> **Implementation note (2026-08-29):** `github_user` now means an encrypted credential stored for one managed Oceans user. The gateway selects it from the authenticated API key's trusted user owner. Provider-level user tokens are no longer part of this mode. See [GitHub Copilot User Tokens](../operations/github-copilot-user-tokens.md).
+
 ## Context
 
 Organizations use GitHub Copilot for model access, but cannot currently route Copilot requests through `oceans-llm` with centralized policy, observability, spend control, and provider routing.
@@ -42,6 +44,7 @@ Add a first-class provider type named `github_copilot` in `gateway-providers` an
 
 ### Authentication Modes
 - `github_app`: Authenticates using `app_id`, `private_key` (PEM string or file path), `installation_id`, and `repository_id`. Generates short-lived JWTs and mints/caches `ghs_` installation tokens with automatic refresh.
+- `github_user`: Loads one encrypted GitHub token for the user who owns the authenticated gateway API key. It fails when the key is not user-owned or the user has no credential for that provider.
 - `bearer`: Static bearer token for testing, development, or fixed token environments.
 
 ### Usage & Cost Accounting
@@ -67,3 +70,4 @@ Add a first-class provider type named `github_copilot` in `gateway-providers` an
 
 - Add dynamic `/models` discovery refresh to update supported endpoints per model family automatically.
 - Support multi-tenant GitHub App installation resolution per request if dynamic credential routing is required in the future.
+- Split `crates/admin-ui/web/src/routes/identity/users.tsx` by manage-user dialog section. The file was already over 1,500 lines before provider credentials were added. Keep route loading and selection in `UsersPage`, move the dialog shell to a sibling component, and move each section's state and actions into cohesive section modules. Do this as a separate UI refactor with route-level regression coverage so it does not obscure the credential isolation and encryption changes in this decision.

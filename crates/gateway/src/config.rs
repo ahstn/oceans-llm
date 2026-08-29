@@ -532,6 +532,7 @@ impl GatewayConfig {
                                     )
                                 })?;
                         }
+                        GitHubCopilotAuthConfig::GitHubUser => {}
                         GitHubCopilotAuthConfig::Bearer { token } => {
                             if token.trim().is_empty() {
                                 bail!(
@@ -1136,6 +1137,7 @@ impl GatewayConfig {
                         GitHubCopilotAuthConfig::GitHubApp { private_key, .. } => {
                             validate_env_reference_if_needed(private_key)?;
                         }
+                        GitHubCopilotAuthConfig::GitHubUser => {}
                         GitHubCopilotAuthConfig::Bearer { token } => {
                             validate_env_reference_if_needed(token)?;
                         }
@@ -1150,26 +1152,32 @@ impl GatewayConfig {
                         "default_headers": provider.default_headers,
                         "timeouts": provider.timeouts,
                         "display": provider.display,
+                        "auth_mode": match &provider.auth {
+                            GitHubCopilotAuthConfig::GitHubApp { .. } => "github_app",
+                            GitHubCopilotAuthConfig::GitHubUser => "github_user",
+                            GitHubCopilotAuthConfig::Bearer { .. } => "bearer",
+                        },
                     });
 
-                    let secrets = Some(match &provider.auth {
+                    let secrets = match &provider.auth {
                         GitHubCopilotAuthConfig::GitHubApp {
                             app_id,
                             private_key,
                             installation_id,
                             repository_id,
-                        } => json!({
+                        } => Some(json!({
                             "mode": "github_app",
                             "app_id": app_id,
                             "private_key": private_key,
                             "installation_id": installation_id,
                             "repository_id": repository_id,
-                        }),
-                        GitHubCopilotAuthConfig::Bearer { token } => json!({
+                        })),
+                        GitHubCopilotAuthConfig::GitHubUser => None,
+                        GitHubCopilotAuthConfig::Bearer { token } => Some(json!({
                             "mode": "bearer",
                             "token": token,
-                        }),
-                    });
+                        })),
+                    };
 
                     providers.push(SeedProvider {
                         provider_key: provider.id.clone(),
@@ -1650,6 +1658,7 @@ impl GatewayConfig {
                         }
                     }
                 },
+                GitHubCopilotAuthConfig::GitHubUser => CopilotAuthConfig::GitHubUser,
                 GitHubCopilotAuthConfig::Bearer { token } => CopilotAuthConfig::Bearer {
                     token: resolve_secret_reference(token)?,
                 },

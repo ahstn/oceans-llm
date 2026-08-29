@@ -118,7 +118,7 @@ depends = ["rust-build", "ui-build"]
 
 [tasks.run]
 description = "Run `gateway serve`"
-run = "cargo run -p gateway --bin gateway -- serve"
+run = 'OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="${OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY:-$(scripts/local-provider-credential-key.sh)}" cargo run -p gateway --bin gateway -- serve'
 
 [tasks.test]
 description = "Run repository unit tests"
@@ -131,7 +131,7 @@ depends = [
 
 [tasks.gateway-serve]
 description = "Run local `gateway serve` against `gateway.yaml`"
-run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- serve'
+run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="${OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY:-$(scripts/local-provider-credential-key.sh)}" cargo run -p gateway --bin gateway -- serve'
 
 [tasks.gateway-migrate]
 description = "Run local `gateway migrate --apply` against `gateway.yaml`"
@@ -234,6 +234,7 @@ awk -v gateway_bind="0.0.0.0:${GATEWAY_PORT}" '
 ' gateway.yaml >"$GATEWAY_RUNTIME_CONFIG"
 
 export OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
+export OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="${OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY:-$(scripts/local-provider-credential-key.sh)}"
 export AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED="${AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED:-true}"
 
 cargo run -p gateway --bin gateway -- --config "$GATEWAY_RUNTIME_CONFIG" seed-local-demo

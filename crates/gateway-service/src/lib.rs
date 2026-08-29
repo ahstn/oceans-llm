@@ -21,6 +21,7 @@ pub mod model_access;
 pub mod model_resolution;
 mod payload_bounding;
 pub mod pricing_catalog;
+pub mod provider_credentials;
 pub mod redaction;
 pub mod request_logging;
 pub mod review_agent;
@@ -93,6 +94,10 @@ pub use pricing_catalog::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, DEFAULT_PRICING_CATALOG_SOURCE_URL,
     PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogSnapshotFile, fetch_vendored_snapshot,
     is_supported_pricing_provider_id, snapshot_to_pretty_json,
+};
+pub use provider_credentials::{
+    PROVIDER_CREDENTIAL_KEY_ENV, PROVIDER_CREDENTIAL_KEY_ID, ProviderCredentialService,
+    ProviderCredentialStatus,
 };
 pub use redaction::{
     MAX_INLINE_REQUEST_BYTES, PayloadPath, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,

@@ -33,8 +33,9 @@ use crate::{
             require_active_session, require_authenticated_session, require_platform_admin,
         },
         admin_contract::{
-            AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload,
-            AdminOauthProviderView, AdminOidcProviderView, AdminServiceAccountView,
+            AddTeamMembersRequest, AdminCopilotUserProviderView, AdminEntityTagView,
+            AdminIdentityPayload, AdminOauthProviderView, AdminOidcProviderView,
+            AdminProviderCredentialStatusView, AdminServiceAccountView,
             AdminServiceAccountsPayload, AdminTeamManagementView, AdminTeamView, AdminTeamsPayload,
             AuthSessionCapabilitiesView, AuthSessionPermissionsView, AuthSessionUserView,
             AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
@@ -136,6 +137,26 @@ pub async fn list_identity_users(
         );
     }
 
+    let credential_service = gateway_service::ProviderCredentialService::new(state.store.clone());
+    let mut copilot_user_providers = Vec::new();
+    for provider_key in state.copilot_user_provider_keys.iter() {
+        let credentials = credential_service
+            .list_statuses(provider_key)
+            .await?
+            .into_iter()
+            .map(|status| AdminProviderCredentialStatusView {
+                user_id: status.user_id.to_string(),
+                configured: status.configured,
+                updated_at: status.updated_at.map(format_timestamp),
+                last_used_at: status.last_used_at.map(format_timestamp),
+            })
+            .collect();
+        copilot_user_providers.push(AdminCopilotUserProviderView {
+            provider_key: provider_key.clone(),
+            credentials,
+        });
+    }
+
     Ok(Json(envelope(AdminIdentityPayload {
         users: user_views,
         teams: teams
@@ -161,6 +182,7 @@ pub async fn list_identity_users(
                 label: provider.provider_key,
             })
             .collect(),
+        copilot_user_providers,
     })))
 }
 

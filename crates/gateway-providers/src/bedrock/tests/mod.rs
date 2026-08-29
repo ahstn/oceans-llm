@@ -42,6 +42,7 @@ fn context(upstream_model: &str) -> ProviderRequestContext {
         model_key: "gateway-model".to_string(),
         provider_key: "bedrock".to_string(),
         upstream_model: upstream_model.to_string(),
+        owner_user_id: None,
         extra_headers: Map::new(),
         extra_body: Map::new(),
         request_headers: BTreeMap::new(),

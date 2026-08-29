@@ -6,6 +6,8 @@ Accepted for implementation. Production use of GitHub App authentication require
 
 This decision supersedes the model-family routing, fixed request-header profile, and direct-token production-acceptance parts of [GitHub Copilot Gateway Provider Architecture](2026-08-14-github-copilot-provider.md).
 
+> **Registration availability disclaimer (2026-08-29):** GitHub's current documentation and App registration surfaces are inconsistent. The Copilot SDK describes `copilot_requests` as a repository permission, GitHub's generic permission list classifies it as an account permission, and the standard installation-token REST schema does not list it. Current personal-account and organization-account registration forms also do not expose either form of the permission. This can indicate a staged rollout, private enablement, or a documentation defect. Until a target account can register the exact `copilot_requests: write` permission and pass the live canary, treat GitHub App authentication as unavailable. Do not substitute the unrelated **Copilot agent settings** permission.
+
 ## Context
 
 Copilot model names do not prove which HTTP endpoints or request features an upstream model supports. GitHub can also change its editor compatibility profile independently of the gateway. Direct GitHub App installation-token use has documented support, but organization ownership and billing evidence still need a target-specific live check.

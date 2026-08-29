@@ -41,6 +41,7 @@ fn context(upstream_model: &str) -> ProviderRequestContext {
         model_key: "fast".to_string(),
         provider_key: "vertex-prod".to_string(),
         upstream_model: upstream_model.to_string(),
+        owner_user_id: None,
         extra_headers: Map::new(),
         extra_body: Map::new(),
         request_headers: std::collections::BTreeMap::new(),

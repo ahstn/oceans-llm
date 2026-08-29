@@ -276,6 +276,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/identity/users/{user_id}/provider-credentials/{provider_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["upsert_identity_user_provider_credential"];
+        post?: never;
+        delete: operations["delete_identity_user_provider_credential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/identity/users/{user_id}/reactivate": {
         parameters: {
             query?: never;
@@ -1502,11 +1518,16 @@ export interface components {
             service_accounts: components["schemas"]["AdminApiKeyServiceAccountOwnerView"][];
             users: components["schemas"]["AdminApiKeyUserOwnerView"][];
         };
+        AdminCopilotUserProviderView: {
+            credentials: components["schemas"]["AdminProviderCredentialStatusView"][];
+            provider_key: string;
+        };
         AdminEntityTagView: {
             key: string;
             value: string;
         };
         AdminIdentityPayload: {
+            copilot_user_providers: components["schemas"]["AdminCopilotUserProviderView"][];
             oauth_providers: components["schemas"]["AdminOauthProviderView"][];
             oidc_providers: components["schemas"]["AdminOidcProviderView"][];
             teams: components["schemas"]["AdminTeamView"][];
@@ -1630,6 +1651,12 @@ export interface components {
         AdminPage: "api_keys" | "models" | "mcp" | "review_agent" | "usage_costs" | "spend_controls" | "leaderboard" | "agent_harnesses" | "agent_sessions" | "request_logs" | "mcp_invocations" | "teams" | "users" | "service_accounts";
         /** @enum {string} */
         AdminPermissionGroup: "platform_admins" | "team_admins" | "users";
+        AdminProviderCredentialStatusView: {
+            configured: boolean;
+            last_used_at?: string | null;
+            updated_at?: string | null;
+            user_id: string;
+        };
         AdminServiceAccountView: {
             id: string;
             key: string;
@@ -2554,6 +2581,7 @@ export interface components {
         };
         Envelope_AdminIdentityPayload: {
             data: {
+                copilot_user_providers: components["schemas"]["AdminCopilotUserProviderView"][];
                 oauth_providers: components["schemas"]["AdminOauthProviderView"][];
                 oidc_providers: components["schemas"]["AdminOidcProviderView"][];
                 teams: components["schemas"]["AdminTeamView"][];
@@ -2570,6 +2598,15 @@ export interface components {
                 page_size: number;
                 /** Format: int64 */
                 total: number;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_AdminProviderCredentialStatusView: {
+            data: {
+                configured: boolean;
+                last_used_at?: string | null;
+                updated_at?: string | null;
+                user_id: string;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -3936,6 +3973,9 @@ export interface components {
             target_id: string;
             target_kind: string;
         };
+        UpsertProviderCredentialRequest: {
+            token: string;
+        };
         WorkflowRenderRequest: {
             action_ref?: string | null;
             api_key_secret_name?: string | null;
@@ -4453,6 +4493,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_PasswordInviteResponse"];
+                };
+            };
+        };
+    };
+    upsert_identity_user_provider_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                provider_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertProviderCredentialRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AdminProviderCredentialStatusView"];
+                };
+            };
+        };
+    };
+    delete_identity_user_provider_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                provider_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_IdentityActionStatus"];
                 };
             };
         };

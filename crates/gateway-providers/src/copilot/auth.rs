@@ -218,6 +218,7 @@ pub enum CopilotAuthConfig {
         installation_id: u64,
         repository_id: u64,
     },
+    GitHubUser,
     Bearer {
         token: String,
     },
@@ -263,6 +264,9 @@ impl CopilotAuthConfig {
                 }
                 Ok(Arc::new(source))
             }
+            Self::GitHubUser => Err(ProviderError::InvalidRequest(
+                "GitHub user authentication requires a per-user token resolver".to_string(),
+            )),
             Self::Bearer { token } => Ok(Arc::new(crate::token::StaticBearerTokenSource::new(
                 token.clone(),
             ))),

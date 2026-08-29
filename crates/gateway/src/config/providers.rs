@@ -201,6 +201,8 @@ pub enum GitHubCopilotAuthConfig {
         installation_id: u64,
         repository_id: u64,
     },
+    #[serde(rename = "github_user")]
+    GitHubUser,
     Bearer {
         token: String,
     },

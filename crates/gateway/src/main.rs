@@ -11,10 +11,12 @@ use gateway::{
     observability,
 };
 use gateway_core::{McpRegistryRepository, ProviderRegistry, SeedHumanBudgetDefaults};
-use gateway_providers::{BedrockProvider, CopilotProvider, OpenAiCompatProvider, VertexProvider};
+use gateway_providers::{
+    BedrockProvider, CopilotAuthConfig, CopilotProvider, OpenAiCompatProvider, VertexProvider,
+};
 use gateway_service::{
     AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
-    WeightedRoutePlanner, hash_gateway_key_secret,
+    ProviderCredentialService, WeightedRoutePlanner, hash_gateway_key_secret,
 };
 use gateway_store::{
     AnyStore, GatewayStore, MigrationStatus, check_migrations_with_options,
@@ -241,7 +243,15 @@ async fn run_serve_with_store(
     }
     spawn_agent_analysis_retention_loop(service.clone());
     request_log_purge::spawn_loop(service.clone(), &config.request_logging.purge);
-    let providers = build_provider_registry(config)?;
+    let providers = build_provider_registry(config, service.store().clone())?;
+    let copilot_user_provider_keys = Arc::new(
+        config
+            .copilot_provider_configs()?
+            .into_iter()
+            .filter(|provider| matches!(provider.auth, CopilotAuthConfig::GitHubUser))
+            .map(|provider| provider.provider_key)
+            .collect(),
+    );
     McpCredentialService::<AnyStore>::validate_runtime_configuration(
         !config.mcp.oauth.providers.is_empty(),
     )
@@ -253,6 +263,7 @@ async fn run_serve_with_store(
         service: service.clone(),
         store: service.store().clone(),
         providers,
+        copilot_user_provider_keys,
         guardrail_engine,
         guardrail_config,
         metrics,
@@ -428,7 +439,10 @@ async fn ensure_bootstrap_admin(
     Ok(())
 }
 
-fn build_provider_registry(config: &GatewayConfig) -> anyhow::Result<ProviderRegistry> {
+fn build_provider_registry(
+    config: &GatewayConfig,
+    store: Arc<AnyStore>,
+) -> anyhow::Result<ProviderRegistry> {
     let mut providers = ProviderRegistry::new();
 
     for provider_config in config.openai_compatible_provider_configs()? {
@@ -452,8 +466,17 @@ fn build_provider_registry(config: &GatewayConfig) -> anyhow::Result<ProviderReg
     }
 
     for provider_config in config.copilot_provider_configs()? {
-        let provider = CopilotProvider::new(provider_config)
-            .map_err(|error| anyhow::anyhow!("failed building github_copilot provider: {error}"))?;
+        let provider = if matches!(provider_config.auth, CopilotAuthConfig::GitHubUser) {
+            ProviderCredentialService::<AnyStore>::validate_runtime_configuration()
+                .context("invalid provider credential runtime configuration")?;
+            CopilotProvider::new_with_user_token_resolver(
+                provider_config,
+                Arc::new(ProviderCredentialService::new(store.clone())),
+            )
+        } else {
+            CopilotProvider::new(provider_config)
+        }
+        .map_err(|error| anyhow::anyhow!("failed building github_copilot provider: {error}"))?;
         providers.register(Arc::new(provider));
     }
 

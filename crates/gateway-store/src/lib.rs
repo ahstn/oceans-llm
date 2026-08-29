@@ -11,6 +11,7 @@ mod any_store_mcp_aggregate_sessions;
 mod any_store_mcp_credentials;
 mod any_store_mcp_registry;
 mod any_store_mcp_token_overhead;
+mod any_store_provider_user_credentials;
 mod any_store_review_agent;
 mod libsql_store;
 mod migrate;
@@ -62,17 +63,18 @@ pub(crate) mod tests {
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
         PricingProvenance, ProviderCapabilities, ProviderRequestContext,
-        RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord, RequestAttemptStatus,
-        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        RequestTag, RequestTags, RequestToolCardinality, ReviewAgentProvider,
-        ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryStatus,
-        ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, RoutePricingOverride,
-        SeedApiKey, SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
-        SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
-        SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
-        SeedUserModelBudgetDefault, ServiceAccountStatus, SessionLifecycleState, StoreError,
-        StoreHealth, UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord,
-        UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord,
+        ProviderUserCredentialRepository, RefreshMcpOauthCredentialBindingRecord,
+        RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord, RequestLogQuery,
+        RequestLogRecord, RequestLogRepository, RequestTag, RequestTags, RequestToolCardinality,
+        ReviewAgentProvider, ReviewAgentPullRequestState, ReviewAgentRepository,
+        ReviewAgentRepositoryStatus, ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility,
+        RoutePricingOverride, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
+        SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
+        SeedOauthProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+        SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountStatus,
+        SessionLifecycleState, StoreError, StoreHealth, UpdateExternalMcpServerRecord,
+        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
         UpsertReviewAgentPullRequestRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
@@ -1971,6 +1973,140 @@ pub(crate) mod tests {
         );
     }
 
+    async fn exercise_provider_user_credential_repository<S>(store: &S)
+    where
+        S: GatewayStore + ProviderUserCredentialRepository + Sync,
+    {
+        let now = OffsetDateTime::now_utc();
+        store
+            .seed_from_inputs(
+                &[SeedProvider {
+                    provider_key: "copilot-user-test".to_string(),
+                    provider_type: "github_copilot".to_string(),
+                    config: json!({"auth_mode": "github_user"}),
+                    secrets: None,
+                }],
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
+            )
+            .await
+            .expect("seed provider for user credential");
+        let user = store
+            .create_identity_user(
+                "Provider Credential User",
+                "provider-credential-user@example.com",
+                "provider-credential-user@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("create provider credential user");
+        let stored_status = store
+            .upsert_provider_user_credential(&UpsertProviderUserCredentialRecord {
+                provider_key: "copilot-user-test".to_string(),
+                user_id: user.user_id,
+                secret_ciphertext: "ciphertext-a".to_string(),
+                secret_nonce: "nonce-a".to_string(),
+                secret_key_id: "key-a".to_string(),
+                updated_at: now,
+            })
+            .await
+            .expect("store provider credential");
+        assert_eq!(stored_status.user_id, user.user_id);
+        let stored = store
+            .get_provider_user_credential("copilot-user-test", user.user_id)
+            .await
+            .expect("load stored provider credential")
+            .expect("stored provider credential");
+        assert_eq!(stored.secret_ciphertext, "ciphertext-a");
+
+        let replaced_status = store
+            .upsert_provider_user_credential(&UpsertProviderUserCredentialRecord {
+                provider_key: "copilot-user-test".to_string(),
+                user_id: user.user_id,
+                secret_ciphertext: "ciphertext-b".to_string(),
+                secret_nonce: "nonce-b".to_string(),
+                secret_key_id: "key-b".to_string(),
+                updated_at: now + Duration::seconds(1),
+            })
+            .await
+            .expect("replace provider credential");
+        assert_eq!(replaced_status.user_id, user.user_id);
+        let replaced = store
+            .get_provider_user_credential("copilot-user-test", user.user_id)
+            .await
+            .expect("load replaced provider credential")
+            .expect("replaced provider credential");
+        assert_ne!(replaced.credential_id, stored.credential_id);
+        assert_eq!(replaced.secret_ciphertext, "ciphertext-b");
+
+        let statuses = store
+            .list_provider_user_credential_statuses("copilot-user-test")
+            .await
+            .expect("list provider credential statuses");
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].user_id, user.user_id);
+
+        assert!(
+            !store
+                .touch_provider_user_credential(stored.credential_id, now + Duration::seconds(2),)
+                .await
+                .expect("reject stale provider credential touch")
+        );
+        assert!(
+            store
+                .touch_provider_user_credential(replaced.credential_id, now + Duration::seconds(2),)
+                .await
+                .expect("touch provider credential")
+        );
+        let touched = store
+            .get_provider_user_credential("copilot-user-test", user.user_id)
+            .await
+            .expect("load provider credential")
+            .expect("provider credential");
+        assert_eq!(
+            touched.last_used_at.map(OffsetDateTime::unix_timestamp),
+            Some((now + Duration::seconds(2)).unix_timestamp())
+        );
+        assert!(
+            store
+                .touch_provider_user_credential(replaced.credential_id, now + Duration::seconds(1),)
+                .await
+                .expect("accept out-of-order provider credential touch")
+        );
+        let touched_out_of_order = store
+            .get_provider_user_credential("copilot-user-test", user.user_id)
+            .await
+            .expect("load provider credential after out-of-order touch")
+            .expect("provider credential after out-of-order touch");
+        assert_eq!(
+            touched_out_of_order
+                .last_used_at
+                .map(OffsetDateTime::unix_timestamp),
+            Some((now + Duration::seconds(2)).unix_timestamp())
+        );
+
+        assert!(
+            store
+                .delete_provider_user_credential("copilot-user-test", user.user_id)
+                .await
+                .expect("delete provider credential")
+        );
+        assert!(
+            store
+                .get_provider_user_credential("copilot-user-test", user.user_id)
+                .await
+                .expect("load deleted provider credential")
+                .is_none()
+        );
+    }
+
     async fn exercise_usage_leaderboard_reporting<S>(store: &S)
     where
         S: ApiKeyRepository
@@ -3405,6 +3541,7 @@ pub(crate) mod tests {
                         model_key: seeded_model.model_key.clone(),
                         provider_key: seeded_route.provider_key.clone(),
                         upstream_model: seeded_route.upstream_model.clone(),
+                        owner_user_id: None,
                         extra_headers: seeded_route.extra_headers.clone(),
                         extra_body: seeded_route.extra_body.clone(),
                         request_headers: BTreeMap::new(),
@@ -3767,6 +3904,20 @@ pub(crate) mod tests {
             .expect("store");
 
         exercise_mcp_upstream_credential_repository(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_provider_user_credentials_round_trip_and_delete() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_provider_user_credential_repository(&store).await;
     }
 
     #[tokio::test]
@@ -9181,6 +9332,34 @@ pub(crate) mod tests {
             .expect("postgres store");
 
         exercise_mcp_upstream_credential_repository(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_provider_user_credentials_round_trip_and_delete() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres provider user credential test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_provider_user_credential_repository(&store).await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;

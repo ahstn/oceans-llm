@@ -2,7 +2,7 @@
 
 `See also`: [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Deploy](../../deploy/README.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Observability and Request Logs](observability-and-request-logs.md)
 
-Provider-specific live validation: [GitHub Copilot Installation-Token Canary](github-copilot-installation-canary.md).
+Provider-specific guidance: [GitHub Copilot User Tokens](github-copilot-user-tokens.md) and [GitHub Copilot Installation-Token Canary](github-copilot-installation-canary.md).
 
 This page is action-oriented. It is not the place for broad topology or config reference detail.
 
