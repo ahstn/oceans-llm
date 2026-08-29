@@ -44,7 +44,7 @@ The start URL is stable, but each request creates fresh state and PKCE values. D
 
 The query parameters have these roles:
 
-- `provider_key` is required for a direct start URL and must identify an enabled provider.
+- A direct start URL requires `provider_key`, which must identify an enabled provider.
 - `login_hint` is optional. It can help the provider preselect an account, but the provider may ignore it. Oceans does not use it as proof of identity or permission.
 - `redirect_to` is optional and must be a local `/admin` path. The login page uses `/admin` so the UI can select the correct page for the signed-in role.
 
@@ -57,10 +57,10 @@ The current flow preserves the same-origin browser session cookie model. Success
 Account linking is intentionally conservative:
 
 - existing `(provider, sub)` links win
-- invited/config-declared OIDC and OAuth users with a matching accepted provider email and seeded provider association are activated and linked
+- Oceans activates and links invited/config-declared OIDC and OAuth users with a matching accepted provider email and seeded provider association
 - unmatched identities use the provider's explicit JIT policy
-- GitHub OAuth `sso_email_verification_enabled` and `allowed_email_domains` are enforced before account linking, invite activation, JIT creation, or session issuance
-- existing password/local users with the same email are rejected instead of auto-linked
+- Oceans enforces GitHub OAuth `sso_email_verification_enabled` and `allowed_email_domains` before account linking, invite activation, JIT creation, or session issuance
+- Oceans rejects existing password/local users with the same email instead of linking them automatically
 
 ## Practical Admin Impact
 
@@ -97,7 +97,7 @@ The fixture defaults are:
 - OIDC client secret: `oceans-llm-local-secret`
 - tested Authentik version: `2025.4.4`
 
-Existing local Docker volumes keep the bootstrap admin password that was first seeded. If the volume was created before this fixture used `admin`, sign in with the old configured password or recreate the local gateway database volume when it is safe to discard local data.
+Existing local Docker volumes keep the first bootstrap admin password. If you created the volume before this fixture used `admin`, sign in with the old configured password or recreate the local gateway database volume when you can safely discard local data.
 
 The local compose config seeds an enabled Authentik provider for manual testing. The checked-in deploy config also defines the provider, but leaves it disabled until a maintainer opts in for the target environment.
 
@@ -138,7 +138,7 @@ The matching local Authentik application must use:
 - public base URL env ref: `GATEWAY_PUBLIC_BASE_URL`
 - client secret env ref: `AUTHENTIK_OCEANS_LLM_CLIENT_SECRET`
 - local JIT: enabled with `platform_admin`, team `platform` / `admin`
-- deploy JIT: disabled by default and must be enabled explicitly per environment
+- deploy JIT: off by default; an admin must enable it for each environment
 
 ## Manual Validation
 
@@ -153,7 +153,7 @@ The matching local Authentik application must use:
 - provider policy owns JIT defaults
 - group or claim-to-role mapping is outside the current contract
 - Okta is a later benchmark provider, not the local fixture
-- discovery and JWKS metadata are fetched during login
+- the gateway fetches discovery and JWKS metadata during login
 - Authentik browser automation is still manual-first
 
 ## What This Page Does Not Own

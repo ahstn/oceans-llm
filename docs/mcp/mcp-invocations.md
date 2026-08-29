@@ -8,7 +8,7 @@ MCP invocation logs are the durable audit view for individual MCP tool calls. Th
 
 Use `/admin/observability/mcp-invocations`.
 
-The page is intended to support filters for:
+The page supports filters for:
 
 - request id
 - MCP server display key/name
@@ -73,9 +73,9 @@ Each invocation record should carry:
 - payload state: `has_payload`, argument/result redaction flags, and argument/result truncation flags
 - occurrence time
 
-Arguments and results must be redacted and bounded before persistence. Sensitive headers, tokens, provider credentials, OAuth material, and API keys must never be stored in MCP invocation payloads.
+The gateway must redact and bound arguments and results before persistence. It must never store sensitive headers, tokens, provider credentials, OAuth material, or API keys in MCP invocation payloads.
 
-`server_id` and `tool_id` are nullable so policy-denied, unknown, or inactive tool names can still be audited. Successful registry-backed `tools/call` executions populate stable server and tool ids.
+`server_id` and `tool_id` are nullable so admins can still audit policy-denied, unknown, or inactive tool names. Successful registry-backed `tools/call` executions populate stable server and tool ids.
 
 Aggregate `/mcp` `search_tools` and `describe_tool` calls are discovery operations and do not create MCP invocation rows. Aggregate `call_tool` and direct `/mcp/{server_key}` mediated `tools/call` executions create invocation rows.
 
@@ -83,11 +83,11 @@ Aggregate `/mcp` `search_tools` and `describe_tool` calls are discovery operatio
 
 Request logs keep the request-level outcome and tool cardinality. MCP invocation logs keep per-tool audit detail.
 
-`request_id` is the durable correlation key. `request_log_id` is an optional non-owning link when the request-log row is known; it is not required for insertion because request-log summaries are written at final outcome and may be absent or purged independently.
+`request_id` is the durable correlation key. `request_log_id` is an optional non-owning link when a request-log row exists. Insertion does not require it because the gateway writes request-log summaries at the final outcome and may omit or purge them separately.
 
-Use request logs first when debugging the model/API request. Use MCP invocation logs when the question is which tool ran, whether access policy allowed it, how long it took, and whether the tool result failed or was truncated.
+Use request logs first when debugging the model/API request. Use MCP invocation logs to find which tool ran, whether access policy allowed it, how long it took, and whether truncation or another error affected the tool result.
 
-Policy-denied `tools/call` requests are logged before upstream execution. Allowed calls are logged with `allowed`; upstream failures, timeouts, and invalid requests keep their distinct status values.
+The gateway logs policy-denied `tools/call` requests before upstream execution. It logs permitted calls with `allowed`; upstream failures, timeouts, and invalid requests keep their distinct status values.
 
 ## What This Page Does Not Own
 

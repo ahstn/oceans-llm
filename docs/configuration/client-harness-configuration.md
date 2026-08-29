@@ -4,7 +4,7 @@
 
 ![Model Config Page](../public/images/screenshot-model-client-config-opencode.jpeg)
 
-Oceans generates client configuration snippets from the live model catalog so users can point local agent harnesses at the gateway without hand-writing model metadata.
+Oceans generates client config snippets from the live model catalog. Users can point local agent harnesses at the gateway without writing model data by hand.
 
 Open `/admin/models`, select one or more configurable models, then click **Generate config**. You can also use the row-level client config action to generate a one-model snippet.
 
@@ -15,7 +15,7 @@ Generated snippets are available for:
 - [Claude Code]
 - [Codex]
 
-The snippets use the gateway model ids shown in the Models table. API keys are still created and governed in Oceans; the local client config only tells the harness which gateway URL, key variable, and model ids to use.
+The snippets use the gateway model ids shown in the Models table. Users still create and manage API keys in Oceans. The local client config only tells the harness which gateway URL, key variable, and model ids to use.
 
 By default, snippets use the local development gateway base URL `http://127.0.0.1:3000`. Production deployments should set `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway process, or `gateway.clientConfigGatewayBaseUrl` in the Helm chart, to the public gateway URL users can reach, for example `https://api.oceans-llm.com`.
 
@@ -32,7 +32,7 @@ For a gateway hosted at `https://api.oceans-llm.com`, generated client configs u
 | Pi | `anthropic-messages` | `https://api.oceans-llm.com` |
 | Pi | `openai-completions` | `https://api.oceans-llm.com/v1` |
 
-OpenCode and Pi can include multiple selected models in one generated file. When the selection mixes Anthropic Messages models and OpenAI-compatible models, Oceans emits separate provider entries so each provider keeps the correct client adapter. Claude Code only includes selected models that use Anthropic Messages; non-Anthropic selections are ignored for the Claude Code tab instead of generating invalid overrides. Codex snippets require a single Responses-capable model selection.
+OpenCode and Pi can include many selected models in one generated file. When the selection mixes Anthropic Messages and OpenAI-compatible models, Oceans emits a provider entry for each client adapter. Claude Code includes only selected models that use Anthropic Messages. The Claude Code tab skips other selections instead of creating invalid overrides. Codex snippets require one Responses-capable model.
 
 ## OpenCode
 
@@ -42,7 +42,7 @@ The OpenCode tab emits `opencode.json` content for the user-level OpenCode confi
 
 The Pi tab emits `models.json` content for Pi custom provider/model configuration. Pi settings are separate configuration: use `~/.pi/agent/settings.json` for global settings and `.pi/settings.json` for project overrides. The dialog shows those paths together with the generated provider configuration path and links to the [Pi settings docs].
 
-Generated model metadata uses effective route pricing and conservative logical-model context limits from the Models API. Pi receives `cost.cacheRead` and `cost.cacheWrite` when those rates are available; either value falls back to zero only when the effective route pricing omits it. OpenCode receives its supported input, output, and cache-read fields. If selectable routes differ in pricing, the Models API marks `pricing_varies_by_route`; generated snippets use the primary display route's effective rates.
+Generated model data uses effective route pricing and conservative logical-model context limits from the Models API. Pi receives `cost.cacheRead` and `cost.cacheWrite` when those rates exist. A missing rate falls back to zero only when the effective route pricing omits it. OpenCode receives its supported input, output, and cache-read fields. If selectable routes have different prices, the Models API marks `pricing_varies_by_route`. Generated snippets use the primary display route's effective rates.
 
 ### Shell guardrail hook
 
@@ -74,12 +74,12 @@ Responses-compatible Bedrock routes can still support only a subset of OpenAI-ho
 
 ## Budgets And Access
 
-Client snippets do not grant access by themselves. A request is accepted only when the gateway API key is active, the caller has model access, and any applicable hard budget still has room.
+Client snippets do not grant access by themselves. The gateway accepts a request only when the API key is active, the caller has model access, and each hard budget still has room.
 
 Budget scopes are independent of the client harness:
 
-- human users can have an overall user budget
-- service accounts must have an active service-account budget before active service-account API keys can be used
+- human users can have a user budget
+- service accounts must have an active service-account budget before their active API keys can make calls
 - human users can also have user model budgets for one gateway model or one upstream model name
 
 Use `/admin/spend-controls` to configure those budgets. For the full taxonomy and setup workflow, see [Budgets](../access/budgets.md).

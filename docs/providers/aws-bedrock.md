@@ -24,17 +24,17 @@ Supported route API styles:
 
 For OpenAI specific guidance, see [OpenAI GPT-5.5 on Bedrock Mantle](aws-bedrock-openai-gpt-55.md).
 
-Only `mantle_openai_responses` routes can enable the route `responses` and `json_schema` capabilities. Those Responses routes must set `capabilities.chat_completions: false`. For Runtime routes, Mantle Chat Completions routes, and Mantle Anthropic Messages routes, set `capabilities.responses: false` and `capabilities.json_schema: false` so requests cannot select an incompatible wire API.
+Only `mantle_openai_responses` routes can enable `responses` and `json_schema`. Those routes must set `capabilities.chat_completions: false`. Runtime, Mantle Chat Completions, and Mantle Anthropic Messages routes must turn off `responses` and `json_schema`. This prevents requests from selecting the wrong wire API.
 
 ## Authentication
 
 Currently both bearer-token auth and IAM SigV4 request signing are supported.
 
-AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable recognized by Bedrock API-key auth and direct HTTP calls can pass the same value as `Authorization: Bearer ${TOKEN}`: [Use an Amazon Bedrock API key](https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/api-keys-use.html).
+AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable for Bedrock API-key auth. Direct HTTP calls can pass the same value as `Authorization: Bearer ${TOKEN}`. See [Use an Amazon Bedrock API key](https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/api-keys-use.html).
 
 For IAM auth, `auth.mode: default_chain` uses the AWS SDK default credential provider chain. In EKS, IRSA works through that chain when the pod environment includes `AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE`, and optional `AWS_ROLE_SESSION_NAME`; earlier sources in the default chain can still win, matching AWS SDK behavior. `auth.mode: static_credentials` signs with the configured access key, secret key, and optional session token.
 
-AWS IAM roles, static credentials, and Bedrock bearer tokens are provider credentials for the gateway process. They are separate from gateway API keys used by clients. A workload calling Oceans LLM should still use a gateway API key attached to a service account with an active service-account budget.
+AWS IAM roles, static credentials, and Bedrock bearer tokens are provider credentials for the gateway process. They are separate from the gateway API keys that clients use. A workload calling Oceans LLM should use a gateway API key. Attach that key to a service account with an active budget.
 
 ## Provider
 
@@ -93,10 +93,10 @@ Examples verified against AWS model cards on 2026-04-30:
 
 | Use case | Gateway model id | Bedrock `upstream_model` | Notes |
 | --- | --- | --- | --- |
-| Latest high-capability Claude | `claude-opus-bedrock` | `global.anthropic.claude-opus-4-7` | [Claude Opus 4.7](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-4-7.html) launched on 2026-04-16. AWS lists `anthropic.claude-opus-4-7` plus US, EU, JP, and global inference IDs. |
+| Latest high-capability Claude | `claude-opus-bedrock` | `global.anthropic.claude-opus-4-7` | [Claude Opus 4.7](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-4-7.html) launched on 2026-04-16. AWS lists `anthropic.claude-opus-4-7` plus U.S., EU, JP, and global inference IDs. |
 | Claude regional profile | `claude-sonnet-bedrock` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | [Claude Sonnet 4.5](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-5.html) supports base, geo, and global IDs on Bedrock Runtime. |
-| Amazon low-cost multimodal | `nova-lite-bedrock` | `global.amazon.nova-2-lite-v1:0` | [Nova 2 Lite](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html) supports `amazon.nova-2-lite-v1:0`, US/EU geo IDs, and a global inference ID. |
-| Amazon reasoning and distillation | `nova-premier-bedrock` | `us.amazon.nova-premier-v1:0` | [Nova Premier](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-premier.html) supports `amazon.nova-premier-v1:0` and a US geo inference ID; AWS does not list a global inference ID for this model. |
+| Amazon low-cost multimodal | `nova-lite-bedrock` | `global.amazon.nova-2-lite-v1:0` | [Nova 2 Lite](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html) supports `amazon.nova-2-lite-v1:0`, U.S. and EU geo IDs, and a global inference ID. |
+| Amazon reasoning and distillation | `nova-premier-bedrock` | `us.amazon.nova-premier-v1:0` | [Nova Premier](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-premier.html) supports `amazon.nova-premier-v1:0` and a U.S. geo inference ID; AWS does not list a global inference ID for this model. |
 
 Prefer geo or global inference profile IDs when your AWS account and residency policy allow them. They let Bedrock route within the selected geography or globally for higher throughput. Use in-region base model IDs when data residency requires one specific Region.
 

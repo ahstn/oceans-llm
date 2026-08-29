@@ -4,7 +4,7 @@
 
 Implementation references: [`request_logging.rs`](../../crates/gateway-service/src/request_logging.rs), [`observability.rs`](../../crates/gateway/src/http/observability.rs), [`agent-harnesses.tsx`](../../crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx)
 
-Agent harness usage is an admin observability surface for understanding which coding-agent clients self-report data-plane requests through the gateway. It is derived from inbound HTTP `User-Agent` headers, so it is operational classification evidence, not authenticated client identity or abuse attribution.
+Agent harness usage helps admins understand which coding-agent clients self-report data-plane requests through the gateway. The gateway derives it from inbound HTTP `User-Agent` headers. It provides operational classification evidence. It does not prove client identity or support abuse attribution.
 
 ## What Gets Stored
 
@@ -14,7 +14,7 @@ For each persisted request-log row, the gateway stores:
 - `agent_harness_key`: a stable low-cardinality key used for grouping
 - `agent_harness_label`: the display label shown in admin surfaces
 
-The bounded raw `User-Agent` is preserved for request-log debugging and future reclassification. It is not used as a metric label and is not used for chart grouping.
+The gateway keeps the bounded raw `User-Agent` for request-log debugging and future reclassification. Metrics and chart groups do not use this value.
 
 Agent task analysis may use the normalized harness key plus bounded, allowlisted request metadata as correlation evidence. `User-Agent` alone never establishes a session or identity. Raw `User-Agent` values remain request-log debugging data and are not copied into analysis observations or score reports.
 
@@ -24,7 +24,7 @@ The classifier is explicit and conservative. Known coding-agent patterns map to 
 
 | Raw signal | Key | Label |
 | --- | --- | --- |
-| `opencode/...`, `Agent/opencode` | `opencode` | Opencode |
+| `opencode/...`, `Agent/opencode` | `opencode` | OpenCode |
 | `pi/...` with platform/runtime metadata | `pi` | Pi |
 | `claude-code/...`, `Claude-User (claude-code/...)`, `Agent/claude-code` | `claude_code` | Claude Code |
 | `GeminiCLI/...`, `GeminiCLI-.../...`, `CloudCodeVSCode/...`, `Agent/gemini-cli` | `gemini_cli` | Gemini CLI |
@@ -73,6 +73,6 @@ Request-log detail also shows the normalized harness label and raw `User-Agent` 
 
 The first-party Pi and OpenCode harness adapters install a local pre-tool hook. Immediately before a `bash` tool starts a process, the hook sends an authenticated `POST /api/v1/guardrails/evaluate` request with `tool_name`, the command, and optional structured arguments.
 
-An `allow` or `audit` response permits execution. The adapter retains the returned decision ID with the harness result. A `deny` response throws before the process runner is called. Network and invalid-response failures also stop execution so a missing policy decision cannot become a local bypass.
+An `allow` or `audit` response permits execution. The adapter keeps the returned decision ID with the harness result. A `deny` response throws before the adapter calls the process runner. Network and invalid-response failures also stop execution so a missing policy decision cannot become a local bypass.
 
-The hook does not contain a second copy of the built-in rules. The gateway remains the policy authority. Hook errors and logs contain stable decision or reason codes, not credentials or full sensitive command payloads. See [Gateway Guardrails](gateway-guardrails.md) for policy configuration and rollout.
+The hook does not contain a second copy of the built-in rules. The gateway remains the policy authority. Hook errors and logs contain stable decision or reason codes. They exclude credentials and full sensitive command payloads. See [Gateway Guardrails](gateway-guardrails.md) for policy configuration and rollout.

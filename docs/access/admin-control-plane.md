@@ -49,7 +49,7 @@ The Models page also shows model-level allowlists read-only when present. `Unres
 The current product contract is mixed on purpose:
 
 - identity, service accounts, spend, API keys, request logs, leaderboard, and Models are live gateway-backed surfaces
-- Models still needs richer runtime capability visibility, including Responses and embeddings support
+- The Models page still needs richer runtime capability visibility. This includes Responses and embeddings support.
 
 Tracked follow-up:
 

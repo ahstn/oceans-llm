@@ -8,7 +8,7 @@ This page explains how Oceans LLM turns provider usage into spend records, why s
 
 Oceans LLM charges only when it has both:
 
-- usage from the provider, such as input and output token counts
+- provider usage: input token counts and output token counts
 - an exact pricing match for the selected provider, model, location, and supported billing shape
 
 When both are present, the request is recorded as `priced` and counts toward spend reports and hard or soft budget windows.
@@ -44,7 +44,7 @@ The effective-dated rows are what matter for durable accounting. They let Oceans
 
 Startup, scheduled refreshes, and manual refreshes own catalog reconciliation. Request-time accounting first checks the selected route for an admin-authored pricing override. Without one, it looks up the persisted effective catalog row for the selected provider, model, location, and billing shape. It does not fetch `models.dev`, read a catalog snapshot, or reconcile pricing rows while handling a request.
 
-At request time, Oceans copies the selected rates and provenance onto the spend event. Catalog-priced events include the pricing provider, pricing model, source, ETag, and fetched-at timestamp. Configured-price events identify `configured_override`, leave catalog-only identity and generation fields absent, and retain the selected route id. Historical spend therefore stays explainable and immutable after either catalog or route configuration changes.
+Oceans copies the selected rates and provenance onto the spend event at request time. Catalog-priced events include the pricing provider and model. They also include the source, ETag, and fetch time. Configured-price events identify `configured_override` and omit catalog-only identity and generation fields. They also keep the selected route id. Historical spend remains explainable and immutable after catalog or route config changes.
 
 ## Route Pricing Overrides
 

@@ -58,7 +58,7 @@ auth:
           request_logging_enabled: true
 ```
 
-`allowed_email_domains` is optional. Leave it empty or omit it to allow the existing invite/JIT rules to decide access without an email-domain guardrail. When it is set, GitHub OAuth can only complete for accounts whose selected primary email domain exactly matches one of the configured domains.
+`allowed_email_domains` is optional. Leave it empty or omit it to let the existing invite/JIT rules decide access without an email-domain guardrail. When you set it, GitHub OAuth can only complete for accounts whose selected primary email domain exactly matches one of the configured domains.
 
 `sso_email_verification_enabled` defaults to `true`. With the default, Oceans only accepts the GitHub account's primary email when GitHub marks that email as verified. If GitHub returns no primary verified email, sign-in redirects with `github_unverified_email` and the gateway logs `github account has no primary verified email`; ask the user to verify their primary email in [GitHub email settings](https://github.com/settings/emails), then retry sign-in.
 
@@ -74,7 +74,7 @@ Direct GitHub OAuth uses:
 
 Oceans does **not** auto-link existing password users by email.
 
-## Provision and Validate Sign-In
+## Provision and Verify Sign-In
 
 For pre-provisioned access, declare the user in config or create the user in the control plane with OAuth provider key `github`. Apply provider and user config through the deployment-specific seed path in [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md#config-seeded-sso-users). A gateway pod restart does not seed config in the Helm deployment.
 
@@ -84,7 +84,7 @@ Before asking the user to sign in, confirm that `/api/v1/auth/oauth/providers` i
 
 - Keep `jit.enabled: false` unless you explicitly want auto-provisioning.
 - Keep `sso_email_verification_enabled: true` unless your deployment has an explicit reason to trust unverified GitHub primary emails.
-- When `jit.enabled: true`, set `allowed_email_domains` unless every eligible GitHub primary email should be allowed for JIT provisioning.
+- When `jit.enabled: true`, set `allowed_email_domains` unless you want to allow every eligible GitHub primary email for JIT provisioning.
 - Domain checks run after GitHub returns the selected primary email and before OAuth link creation, invited-user activation, JIT user creation, or session cookie issuance.
 - Domain matching is case-insensitive and exact on the email domain. `alice@example.com` matches `example.com`; `alice@evil-example.com` does not.
 - Do not grant broad admin roles through JIT unless constrained by your org policy.

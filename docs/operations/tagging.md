@@ -2,7 +2,7 @@
 
 `See also`: [Observability and Request Logs](observability-and-request-logs.md), [Request Logs](observability/request-logs.md), [Identity and Access](../access/identity-and-access.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Data Relationships](../contributing/reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md)
 
-Tags are bounded key/value metadata that admins and callers can use to connect Oceans activity to their own systems. They are intended for attribution, filtering, export, and reconciliation, not for authorization or secret storage.
+Tags are bounded key/value metadata that admins and callers can use to connect Oceans activity to their own systems. Use them for attribution, filtering, export, and reconciliation. Do not use them for authorization or secret storage.
 
 Tags add admin and user controlled dimensions such as cost center, application, workload, deployment, environment, or external owner id.
 

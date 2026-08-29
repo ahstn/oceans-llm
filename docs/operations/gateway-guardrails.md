@@ -181,7 +181,7 @@ Run `mise run guardrail-release-gate` before an audit-to-deny change. The gate u
 | --- | --- | --- |
 | OpenAI Chat Completions, Anthropic Messages, and OpenAI Responses prompts | Audit-mode managed intervention reaches the provider; an allowed mask reaches the provider in protocol-valid form | Deny mode returns the stable policy error and the mock provider request count remains zero |
 | Non-stream model response | Safe text reaches the caller | A destructive generated tool call returns the stable policy error without executable arguments |
-| Stream model response | Safe SSE is released after the final decision | Split, parallel, malformed, and destructive tool-call fixtures release no guarded stream bytes; an oversized stream returns `413` with a bounded JSON error |
+| Stream model response | Safe SSE is released after the final decision | Split, parallel, malformed, and destructive tool-call fixtures release no guarded stream bytes; an oversize stream returns `413` with a bounded JSON error |
 | Direct MCP call and result | Safe calls execute; managed result masking preserves JSON | Deterministic and managed call denies leave the upstream execution count at zero |
 | Aggregate MCP call and result | Safe calls execute; managed result masking preserves the aggregate response | The aggregate policy-denied JSON-RPC result leaves the upstream execution count at zero |
 | Pi and OpenCode | Allow and audit decisions retain the decision ID | The pre-tool hook rejects before the shell implementation or process handoff runs |

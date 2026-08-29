@@ -24,7 +24,7 @@ The product uses first-class users, teams, service accounts, and API-key credent
 - Direct team-owned runtime API keys are not part of the product contract.
 - One user belongs to at most one team in this slice.
 - Users can exist without a team.
-- There is no reserved `system-legacy` team or system-legacy runtime-key compatibility.
+- No reserved `system-legacy` team or system-legacy runtime-key compatibility exists.
 
 Gateway service-account callers are modeled as service-account principals with API-key credentials.
 
