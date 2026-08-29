@@ -539,23 +539,219 @@ fn match_aws(invocation: &CommandInvocation) -> Option<MatchedRule> {
     if invocation.executable != "aws" {
         return None;
     }
-    let destructive = invocation.arguments.iter().any(|argument| {
-        argument.starts_with("delete-")
-            || argument.starts_with("terminate-")
-            || argument.starts_with("deregister-")
-    }) || (invocation.arguments.iter().any(|argument| argument == "s3")
-        && invocation.arguments.iter().any(|argument| argument == "rm")
-        && has_option(&invocation.arguments, "--recursive", None));
-    destructive.then(|| {
-        rule(
-            "cloud.aws",
-            "destructive-operation",
-            "command.arguments",
-            "aws.destructive_operation",
-            "Runs a destructive AWS operation",
-            "Use a read-only describe command and follow the approved cloud change process",
-        )
-    })
+    let (service, operation) = aws_service_operation(&invocation.arguments)?;
+    if aws_read_only_operation(service, operation) {
+        return None;
+    }
+    if service == "athena"
+        && operation == "start-query-execution"
+        && let Some(matched) = match_aws_athena_cli(&invocation.arguments)
+    {
+        return Some(matched);
+    }
+    let destructive = operation.starts_with("delete-")
+        || operation.starts_with("terminate-")
+        || operation.starts_with("deregister-")
+        || operation.starts_with("batch-delete-")
+        || (service == "s3" && operation == "rb")
+        || (service == "kms" && operation == "schedule-key-deletion")
+        || (service == "s3"
+            && operation == "rm"
+            && has_option(&invocation.arguments, "--recursive", None));
+    destructive.then(|| aws_destructive_rule("command.arguments"))
+}
+
+fn aws_service_operation(arguments: &[String]) -> Option<(&str, &str)> {
+    let mut index = 0;
+    while let Some(argument) = arguments.get(index) {
+        if argument == "--" {
+            index += 1;
+            break;
+        }
+        if !argument.starts_with('-') {
+            break;
+        }
+        let option = argument
+            .split_once('=')
+            .map_or(argument.as_str(), |(name, _)| name);
+        index += 1;
+        if !argument.contains('=') && aws_global_option_takes_value(option) {
+            index += usize::from(index < arguments.len());
+        }
+    }
+    Some((
+        arguments.get(index)?.as_str(),
+        arguments.get(index + 1)?.as_str(),
+    ))
+}
+
+fn aws_global_option_takes_value(option: &str) -> bool {
+    matches!(
+        option,
+        "--endpoint-url"
+            | "--output"
+            | "--query"
+            | "--profile"
+            | "--region"
+            | "--version"
+            | "--color"
+            | "--ca-bundle"
+            | "--cli-read-timeout"
+            | "--cli-connect-timeout"
+            | "--cli-binary-format"
+            | "--cli-error-format"
+    )
+}
+
+fn aws_read_only_operation(service: &str, operation: &str) -> bool {
+    operation.starts_with("describe-")
+        || operation.starts_with("list-")
+        || operation.starts_with("get-")
+        || (service == "s3" && matches!(operation, "ls" | "cp"))
+}
+
+fn match_aws_athena_cli(arguments: &[String]) -> Option<MatchedRule> {
+    for names in [
+        &["--query-string"][..],
+        &["--cli-input-json", "--cli-input-yaml"][..],
+    ] {
+        if let Some(value) = option_value(arguments, names)
+            && is_file_reference(value)
+        {
+            return Some(aws_uninspectable_rule("command.arguments"));
+        }
+    }
+    option_value(arguments, &["--query-string"])
+        .filter(|sql| match_destructive_sql(sql, "command.arguments").is_some())
+        .map(|_| aws_destructive_rule("command.arguments"))
+}
+
+fn is_file_reference(value: &str) -> bool {
+    value
+        .get(..7)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("file://"))
+        || value
+            .get(..8)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("fileb://"))
+}
+
+fn aws_destructive_rule(field: &str) -> MatchedRule {
+    rule(
+        "cloud.aws",
+        "destructive-operation",
+        field,
+        "aws.destructive_operation",
+        "Runs a destructive AWS operation",
+        "Use a read-only describe command and follow the approved cloud change process",
+    )
+}
+
+fn aws_uninspectable_rule(field: &str) -> MatchedRule {
+    rule(
+        "cloud.aws",
+        "uninspectable-query",
+        field,
+        "aws.uninspectable_query",
+        "Loads an AWS query from content that guardrails cannot inspect",
+        "Provide the query inline so guardrails can inspect it before execution",
+    )
+}
+
+fn match_aws_mcp(call: &McpCall) -> Option<MatchedRule> {
+    if !server_has_identity(&call.server, &["aws", "amazon"]) {
+        return None;
+    }
+    let tool = normalize_identity(&call.tool);
+    if aws_read_only_identity(&tool) {
+        return None;
+    }
+    if let Some(matched) = match_aws_athena_mcp(&tool, &call.arguments) {
+        return Some(matched);
+    }
+    if aws_destructive_identity(&tool) {
+        return Some(aws_destructive_rule("tool"));
+    }
+    for path in ["$.operation", "$.action", "$.method"] {
+        let Some(operation) = first_string(&call.arguments, path) else {
+            continue;
+        };
+        let operation = normalize_identity(operation);
+        if aws_read_only_identity(&operation) {
+            return None;
+        }
+        if let Some(matched) = match_aws_athena_mcp(&operation, &call.arguments) {
+            return Some(matched);
+        }
+        if aws_destructive_identity(&operation) {
+            return Some(aws_destructive_rule(path));
+        }
+    }
+    None
+}
+
+fn aws_read_only_identity(identity: &str) -> bool {
+    identity
+        .split(['.', '_', '/', ':'])
+        .any(|part| matches!(part, "describe" | "list" | "get"))
+        || identity_has_sequence(identity, "s3", "ls")
+        || identity_has_sequence(identity, "s3", "cp")
+}
+
+fn aws_destructive_identity(identity: &str) -> bool {
+    ["delete", "terminate", "destroy", "remove", "deregister"]
+        .iter()
+        .any(|operation| identity_has_operation(identity, operation))
+        || identity_has_sequence(identity, "s3", "rb")
+        || identity.contains("schedule_key_deletion")
+}
+
+fn identity_has_sequence(identity: &str, first: &str, second: &str) -> bool {
+    let mut previous = None;
+    for part in identity.split(['.', '_', '/', ':']) {
+        if previous == Some(first) && part == second {
+            return true;
+        }
+        previous = Some(part);
+    }
+    false
+}
+
+fn match_aws_athena_mcp(identity: &str, arguments: &Value) -> Option<MatchedRule> {
+    if !identity.contains("athena") || !identity.contains("start_query_execution") {
+        return None;
+    }
+    for path in [
+        "$.query_string",
+        "$.queryString",
+        "$.input.query_string",
+        "$.input.queryString",
+        "$.cli_input_json",
+        "$.cliInputJson",
+        "$.cli_input_yaml",
+        "$.cliInputYaml",
+    ] {
+        if first_string(arguments, path).is_some_and(is_file_reference) {
+            return Some(aws_uninspectable_rule(path));
+        }
+    }
+    for path in [
+        "$.query_string",
+        "$.queryString",
+        "$.query",
+        "$.sql",
+        "$.statement",
+        "$.input.query_string",
+        "$.input.queryString",
+        "$.input.query",
+        "$.input.sql",
+    ] {
+        if first_string(arguments, path)
+            .is_some_and(|sql| match_destructive_sql(sql, path).is_some())
+        {
+            return Some(aws_destructive_rule(path));
+        }
+    }
+    None
 }
 
 fn match_gcp(invocation: &CommandInvocation) -> Option<MatchedRule> {
@@ -585,15 +781,7 @@ fn match_mcp_pack(pack: &str, call: &McpCall) -> Option<MatchedRule> {
     }
     match pack {
         "database.postgresql" => match_postgresql_mcp(call),
-        "cloud.aws" => match_operation_mcp(
-            call,
-            &["aws", "amazon"],
-            &["delete", "terminate", "destroy", "remove", "deregister"],
-            "cloud.aws",
-            "destructive-operation",
-            "aws.destructive_operation",
-            "Runs a destructive AWS operation",
-        ),
+        "cloud.aws" => match_aws_mcp(call),
         "cloud.gcp" => match_operation_mcp(
             call,
             &["gcp", "google_cloud", "google"],
@@ -1100,11 +1288,26 @@ mod tests {
                     "aws ec2 terminate-instances --instance-ids i-1",
                     "bash -c 'aws s3 rm s3://bucket --recursive'",
                     "aws --region us-east-1 ec2 delete-vpc --vpc-id vpc-1",
+                    "aws s3 rb s3://prod-bucket",
+                    "aws kms schedule-key-deletion --key-id key-1",
+                    "aws ecr batch-delete-image --repository-name app --image-ids imageTag=old",
+                    "aws glue batch-delete-table --database-name prod --tables-to-delete old",
+                    "aws glue batch-delete-partition --database-name prod --table-name events",
+                    "aws athena start-query-execution --query-string 'DROP TABLE prod.customers'",
+                    "aws athena start-query-execution --query-string file:///tmp/query.sql",
+                    "aws athena start-query-execution --cli-input-json file://request.json",
                 ],
                 vec![
                     "echo 'aws ec2 terminate-instances'",
                     "aws ec2 describe-instances",
                     "aws s3 ls s3://bucket",
+                    "aws s3 cp local.txt s3://bucket/local.txt",
+                    "aws s3 rm s3://bucket/path",
+                    "aws ec2 describe-instances --filters Name=tag:job,Values=delete-old",
+                    "aws s3api list-buckets --cli-input-json delete-me.json",
+                    "aws --profile delete-old ec2 describe-instances",
+                    "aws athena start-query-execution --query-string 'SELECT * FROM prod.customers'",
+                    "aws athena start-query-execution --query-string 'DELETE FROM prod.customers WHERE id = 1'",
                 ],
             ),
             (
@@ -1283,6 +1486,70 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn aws_mcp_pack_covers_destructive_operations_queries_and_near_misses() {
+        for (tool, arguments, reason_code) in [
+            (
+                "ecr.batch_delete_image",
+                json!({"repository_name": "app"}),
+                "aws.destructive_operation",
+            ),
+            (
+                "athena.start_query_execution",
+                json!({"query_string": "DROP TABLE prod.customers"}),
+                "aws.destructive_operation",
+            ),
+            (
+                "athena.start_query_execution",
+                json!({"query_string": "file:///tmp/query.sql"}),
+                "aws.uninspectable_query",
+            ),
+            (
+                "resource.execute",
+                json!({"action": "kms.schedule_key_deletion"}),
+                "aws.destructive_operation",
+            ),
+        ] {
+            let matched = evaluate(
+                "cloud.aws",
+                EvaluationPayload::McpCall {
+                    call: McpCall {
+                        server: "production-aws".into(),
+                        tool: tool.into(),
+                        arguments,
+                    },
+                },
+            )
+            .expect("destructive AWS MCP operation");
+            assert_eq!(matched.reason_code.as_str(), reason_code);
+        }
+
+        for (tool, arguments) in [
+            (
+                "ec2.describe_instances",
+                json!({"filter": "delete-old", "action": "delete_old"}),
+            ),
+            (
+                "athena.start_query_execution",
+                json!({"query_string": "SELECT * FROM prod.customers"}),
+            ),
+        ] {
+            assert!(
+                evaluate(
+                    "cloud.aws",
+                    EvaluationPayload::McpCall {
+                        call: McpCall {
+                            server: "production-aws".into(),
+                            tool: tool.into(),
+                            arguments,
+                        },
+                    },
+                )
+                .is_none()
+            );
+        }
     }
 
     #[test]
