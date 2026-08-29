@@ -18,7 +18,7 @@ use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, PkceCodeChallenge,
     PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
-    reqwest,
+    reqwest as oidc_reqwest,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -1798,7 +1798,16 @@ fn normalize_oidc_redirect(value: Option<&str>, default: &str) -> String {
     }
 }
 
-fn oidc_http_client() -> Result<reqwest::Client, AppError> {
+fn oidc_http_client() -> Result<oidc_reqwest::Client, AppError> {
+    oidc_reqwest::ClientBuilder::new()
+        .redirect(oidc_reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|error| AppError(GatewayError::Internal(error.to_string())))
+}
+
+fn oauth_http_client() -> Result<reqwest::Client, AppError> {
     reqwest::ClientBuilder::new()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(std::time::Duration::from_secs(5))
@@ -1886,7 +1895,7 @@ async fn github_exchange_oauth_code(
     redirect_uri: &str,
     pkce_verifier: &str,
 ) -> Result<String, AppError> {
-    let client = oidc_http_client()?;
+    let client = oauth_http_client()?;
     let client_secret = oauth_client_secret(provider)?;
     let response = client
         .post("https://github.com/login/oauth/access_token")
@@ -1931,7 +1940,7 @@ async fn github_exchange_oauth_code(
 }
 
 async fn github_user_subject(access_token: &str) -> Result<String, AppError> {
-    let client = oidc_http_client()?;
+    let client = oauth_http_client()?;
     let user = client
         .get("https://api.github.com/user")
         .header("Accept", "application/vnd.github+json")
@@ -1960,7 +1969,7 @@ async fn github_primary_email(
     access_token: &str,
     sso_email_verification_enabled: bool,
 ) -> Result<String, GithubEmailLookupError> {
-    let client = oidc_http_client()?;
+    let client = oauth_http_client()?;
     let response = client
         .get("https://api.github.com/user/emails")
         .header("Accept", "application/vnd.github+json")
