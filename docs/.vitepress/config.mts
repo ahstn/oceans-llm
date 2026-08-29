@@ -98,6 +98,10 @@ const primarySidebar = [
       },
       { text: "Admin Runbooks", link: "/operations/operator-runbooks" },
       {
+        text: "GitHub Copilot User Tokens",
+        link: "/operations/github-copilot-user-tokens",
+      },
+      {
         text: "GitHub Copilot Installation-Token Canary",
         link: "/operations/github-copilot-installation-canary",
       },

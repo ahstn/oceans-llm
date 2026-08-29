@@ -1,5 +1,7 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
+use async_trait::async_trait;
 use axum::Router;
 use axum::extract::Json;
 use axum::routing::post;
@@ -7,7 +9,7 @@ use gateway_core::{
     CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
     GitHubCopilotChatApi, GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports,
     OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatRouteCompatibility,
-    ProviderClient, ProviderRequestContext,
+    ProviderClient, ProviderError, ProviderRequestContext, ProviderUserTokenResolver,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -17,6 +19,24 @@ use tokio::sync::mpsc;
 use super::*;
 use crate::copilot::auth::{CopilotAuthConfig, GitHubAppInstallationTokenSource};
 use crate::token::AccessTokenSource;
+
+struct TestUserTokenResolver {
+    tokens: HashMap<uuid::Uuid, String>,
+}
+
+#[async_trait]
+impl ProviderUserTokenResolver for TestUserTokenResolver {
+    async fn resolve_provider_user_token(
+        &self,
+        _provider_key: &str,
+        user_id: uuid::Uuid,
+    ) -> Result<String, ProviderError> {
+        self.tokens
+            .get(&user_id)
+            .cloned()
+            .ok_or_else(|| ProviderError::InvalidRequest("missing test token".to_string()))
+    }
+}
 
 // Note: This RSA private key is a throwaway fixture used strictly for unit testing
 // JWT signature generation and is not used in any production environment.
@@ -55,6 +75,7 @@ fn dummy_context(upstream_model: &str) -> ProviderRequestContext {
         model_key: "test-model".to_string(),
         provider_key: "github_copilot".to_string(),
         upstream_model: upstream_model.to_string(),
+        owner_user_id: None,
         extra_headers: Map::new(),
         extra_body: Map::new(),
         request_headers: BTreeMap::new(),
@@ -83,6 +104,41 @@ fn messages_context(upstream_model: &str) -> ProviderRequestContext {
         .expect("Copilot compatibility")
         .chat_api = Some(GitHubCopilotChatApi::AnthropicMessages);
     context
+}
+
+#[tokio::test]
+async fn github_user_tokens_are_selected_by_trusted_user_id() {
+    let user_a = uuid::Uuid::new_v4();
+    let user_b = uuid::Uuid::new_v4();
+    let resolver = Arc::new(TestUserTokenResolver {
+        tokens: HashMap::from([
+            (user_a, "token-a".to_string()),
+            (user_b, "token-b".to_string()),
+        ]),
+    });
+    let provider = CopilotProvider::new_with_user_token_resolver(
+        CopilotProviderConfig::new(
+            "github-copilot-user".to_string(),
+            CopilotAuthConfig::GitHubUser,
+        ),
+        Some(resolver),
+    )
+    .expect("user-token provider");
+
+    let mut context = dummy_context("gpt-5.6-luna");
+    context.owner_user_id = Some(user_a);
+    assert_eq!(provider.token(&context).await.unwrap(), "token-a");
+    context.owner_user_id = Some(user_b);
+    assert_eq!(provider.token(&context).await.unwrap(), "token-b");
+    context.owner_user_id = None;
+    assert!(
+        provider
+            .token(&context)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("user-owned gateway API key")
+    );
 }
 
 #[test]

@@ -53,6 +53,21 @@ pub struct AdminIdentityPayload {
     pub teams: Vec<AdminTeamView>,
     pub oidc_providers: Vec<AdminOidcProviderView>,
     pub oauth_providers: Vec<AdminOauthProviderView>,
+    pub copilot_user_providers: Vec<AdminCopilotUserProviderView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminCopilotUserProviderView {
+    pub provider_key: String,
+    pub credentials: Vec<AdminProviderCredentialStatusView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminProviderCredentialStatusView {
+    pub user_id: String,
+    pub configured: bool,
+    pub updated_at: Option<String>,
+    pub last_used_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -508,6 +523,11 @@ pub struct UpdateUserRequest {
     pub oidc_provider_key: Option<String>,
     pub oauth_provider_key: Option<String>,
     pub tags: Option<Vec<AdminEntityTagView>>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpsertProviderCredentialRequest {
+    pub token: String,
 }
 
 fn deserialize_optional_nullable_string<'de, D>(
@@ -1740,6 +1760,8 @@ pub struct AgentSessionDetailView {
         crate::http::identity::change_password,
         crate::http::identity::create_identity_user,
         crate::http::identity::update_identity_user,
+        crate::http::identity::upsert_identity_user_provider_credential,
+        crate::http::identity::delete_identity_user_provider_credential,
         crate::http::identity::deactivate_identity_user,
         crate::http::identity::reactivate_identity_user,
         crate::http::identity::reset_identity_user_onboarding,

@@ -853,6 +853,30 @@ export async function updateUser(
   )
 }
 
+export async function upsertUserProviderCredential(
+  userId: string,
+  providerKey: string,
+  token: string,
+) {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PUT('/api/v1/admin/identity/users/{user_id}/provider-credentials/{provider_key}', {
+      params: { path: { user_id: userId, provider_key: providerKey } },
+      body: { token },
+    }),
+  )
+}
+
+export async function deleteUserProviderCredential(userId: string, providerKey: string) {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.DELETE(
+      '/api/v1/admin/identity/users/{user_id}/provider-credentials/{provider_key}',
+      { params: { path: { user_id: userId, provider_key: providerKey } } },
+    ),
+  )
+}
+
 export async function deactivateUser(userId: string): Promise<ApiEnvelope<IdentityActionResult>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(

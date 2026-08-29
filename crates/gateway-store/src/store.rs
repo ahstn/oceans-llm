@@ -9,11 +9,11 @@ use gateway_core::{
     McpTokenOverheadRepository, McpToolInvocationRepository, McpUpstreamCredentialRepository,
     MembershipRole, ModelRepository, OauthLoginStateRecord, OauthProviderRecord,
     OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogRepository,
-    ProviderRepository, RequestLogRepository, RequestTag, ReviewAgentRepository, SeedApiKey,
-    SeedHumanBudgetDefaults, SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider,
-    SeedServiceAccount, SeedTeam, SeedUser, StoreError, StoreHealth, TeamMembershipRecord,
-    TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
-    UserSessionRecord, UserStatus,
+    ProviderRepository, ProviderUserCredentialRepository, RequestLogRepository, RequestTag,
+    ReviewAgentRepository, SeedApiKey, SeedHumanBudgetDefaults, SeedModel, SeedOauthProvider,
+    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, StoreError,
+    StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -47,6 +47,7 @@ pub trait GatewayStore:
     + BatchRepository
     + ModelRepository
     + ProviderRepository
+    + ProviderUserCredentialRepository
     + IdentityRepository
     + BudgetRepository
     + BudgetAlertRepository

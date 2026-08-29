@@ -197,6 +197,7 @@ async fn v1_messages_inner(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &route,
+        &auth,
         request_headers,
     );
 
@@ -455,6 +456,7 @@ pub async fn v1_chat_completions(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &route,
+        &auth,
         request_headers,
     );
 
@@ -803,6 +805,7 @@ pub async fn v1_responses(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &route,
+        &auth,
         request_headers,
     );
 
@@ -1107,6 +1110,7 @@ pub async fn v1_embeddings(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &route,
+        &auth,
         request_headers,
     );
 
@@ -1374,6 +1378,7 @@ fn build_provider_context(
     request_id: &str,
     model_key: &str,
     route: &gateway_core::ModelRoute,
+    auth: &AuthenticatedApiKey,
     request_headers: BTreeMap<String, String>,
 ) -> ProviderRequestContext {
     ProviderRequestContext {
@@ -1381,6 +1386,7 @@ fn build_provider_context(
         model_key: model_key.to_string(),
         provider_key: route.provider_key.clone(),
         upstream_model: route.upstream_model.clone(),
+        owner_user_id: auth.owner_user_id,
         extra_headers: route.extra_headers.clone(),
         extra_body: route.extra_body.clone(),
         request_headers,

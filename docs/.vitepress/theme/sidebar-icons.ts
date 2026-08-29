@@ -59,6 +59,8 @@ const sidebarIcons: Record<string, readonly HugeIconNode[]> = {
   "/operations/observability/request-logs": FileSearchIcon,
   "/operations/agent-harness-usage": RoboticIcon,
   "/operations/operator-runbooks": Book02Icon,
+  "/operations/github-copilot-user-tokens": GithubIcon,
+  "/operations/github-copilot-installation-canary": TestTube01Icon,
   "/access/identity-and-access": UserLock01Icon,
   "/access/service-accounts": Key01Icon,
   "/access/budgets": SaveMoneyDollarIcon,

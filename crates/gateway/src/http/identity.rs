@@ -33,8 +33,9 @@ use crate::{
             require_active_session, require_authenticated_session, require_platform_admin,
         },
         admin_contract::{
-            AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload,
-            AdminOauthProviderView, AdminOidcProviderView, AdminServiceAccountView,
+            AddTeamMembersRequest, AdminCopilotUserProviderView, AdminEntityTagView,
+            AdminIdentityPayload, AdminOauthProviderView, AdminOidcProviderView,
+            AdminProviderCredentialStatusView, AdminServiceAccountView,
             AdminServiceAccountsPayload, AdminTeamManagementView, AdminTeamView, AdminTeamsPayload,
             AuthSessionCapabilitiesView, AuthSessionPermissionsView, AuthSessionUserView,
             AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
@@ -45,7 +46,7 @@ use crate::{
             PasswordInviteResponse, PasswordLoginRequest, PublicOauthProviderView,
             PublicOauthProvidersPayload, PublicOidcProviderView, PublicOidcProvidersPayload,
             TransferTeamMemberRequest, UpdateServiceAccountRequest, UpdateTeamRequest,
-            UpdateUserRequest, envelope, format_timestamp,
+            UpdateUserRequest, UpsertProviderCredentialRequest, envelope, format_timestamp,
         },
         error::AppError,
         identity_lifecycle::{
@@ -136,6 +137,27 @@ pub async fn list_identity_users(
         );
     }
 
+    let credential_service = gateway_service::ProviderCredentialService::new(state.store.clone());
+    let mut copilot_user_providers = Vec::new();
+    for provider_key in state.copilot_user_provider_keys.iter() {
+        let mut credentials = Vec::with_capacity(user_views.len());
+        for user in &user_views {
+            let user_id = Uuid::parse_str(&user.id)
+                .map_err(|error| GatewayError::Internal(error.to_string()))?;
+            let status = credential_service.status(provider_key, user_id).await?;
+            credentials.push(AdminProviderCredentialStatusView {
+                user_id: user.id.clone(),
+                configured: status.configured,
+                updated_at: status.updated_at.map(format_timestamp),
+                last_used_at: status.last_used_at.map(format_timestamp),
+            });
+        }
+        copilot_user_providers.push(AdminCopilotUserProviderView {
+            provider_key: provider_key.clone(),
+            credentials,
+        });
+    }
+
     Ok(Json(envelope(AdminIdentityPayload {
         users: user_views,
         teams: teams
@@ -161,6 +183,73 @@ pub async fn list_identity_users(
                 label: provider.provider_key,
             })
             .collect(),
+        copilot_user_providers,
+    })))
+}
+
+fn ensure_copilot_user_provider(state: &AppState, provider_key: &str) -> Result<(), AppError> {
+    if state
+        .copilot_user_provider_keys
+        .iter()
+        .any(|key| key == provider_key)
+    {
+        Ok(())
+    } else {
+        Err(AppError(GatewayError::InvalidRequest(format!(
+            "provider `{provider_key}` is not configured for GitHub user authentication"
+        ))))
+    }
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/admin/identity/users/{user_id}/provider-credentials/{provider_key}",
+    request_body = UpsertProviderCredentialRequest,
+    responses((status = 200, body = Envelope<AdminProviderCredentialStatusView>)),
+    security(("session_cookie" = []))
+)]
+pub async fn upsert_identity_user_provider_credential(
+    State(state): State<AppState>,
+    Path((user_id, provider_key)): Path<(Uuid, String)>,
+    headers: HeaderMap,
+    Json(input): Json<UpsertProviderCredentialRequest>,
+) -> Result<Json<Envelope<AdminProviderCredentialStatusView>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    ensure_copilot_user_provider(&state, &provider_key)?;
+    if state.store.get_identity_user(user_id).await?.is_none() {
+        return Err(AppError(GatewayError::InvalidRequest(format!(
+            "user `{user_id}` does not exist"
+        ))));
+    }
+    let status = gateway_service::ProviderCredentialService::new(state.store.clone())
+        .upsert(&provider_key, user_id, &input.token)
+        .await?;
+    Ok(Json(envelope(AdminProviderCredentialStatusView {
+        user_id: user_id.to_string(),
+        configured: true,
+        updated_at: status.updated_at.map(format_timestamp),
+        last_used_at: status.last_used_at.map(format_timestamp),
+    })))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/identity/users/{user_id}/provider-credentials/{provider_key}",
+    responses((status = 200, body = Envelope<IdentityActionStatus>)),
+    security(("session_cookie" = []))
+)]
+pub async fn delete_identity_user_provider_credential(
+    State(state): State<AppState>,
+    Path((user_id, provider_key)): Path<(Uuid, String)>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    ensure_copilot_user_provider(&state, &provider_key)?;
+    let deleted = gateway_service::ProviderCredentialService::new(state.store.clone())
+        .delete(&provider_key, user_id)
+        .await?;
+    Ok(Json(envelope(IdentityActionStatus {
+        status: if deleted { "deleted" } else { "not_found" },
     })))
 }
 

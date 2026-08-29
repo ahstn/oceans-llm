@@ -2298,6 +2298,9 @@ pub struct ProviderRequestContext {
     pub model_key: String,
     pub provider_key: String,
     pub upstream_model: String,
+    /// Trusted user identity derived from the authenticated gateway API key.
+    #[serde(default)]
+    pub owner_user_id: Option<Uuid>,
     #[serde(default)]
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
@@ -2306,6 +2309,29 @@ pub struct ProviderRequestContext {
     pub request_headers: BTreeMap<String, String>,
     #[serde(default)]
     pub compatibility: RouteCompatibility,
+}
+
+#[derive(Clone)]
+pub struct ProviderUserCredentialRecord {
+    pub credential_id: Uuid,
+    pub provider_key: String,
+    pub user_id: Uuid,
+    pub secret_ciphertext: String,
+    pub secret_nonce: String,
+    pub secret_key_id: String,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub last_used_at: Option<OffsetDateTime>,
+}
+
+#[derive(Clone)]
+pub struct UpsertProviderUserCredentialRecord {
+    pub provider_key: String,
+    pub user_id: Uuid,
+    pub secret_ciphertext: String,
+    pub secret_nonce: String,
+    pub secret_key_id: String,
+    pub updated_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

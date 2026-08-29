@@ -73,6 +73,8 @@ import {
   updateMcpToolset,
   updateTeam,
   updateUser,
+  upsertUserProviderCredential,
+  deleteUserProviderCredential,
   upsertMcpCredentialBinding,
   upsertMcpGrant,
   startMcpOauthConnection,
@@ -640,6 +642,18 @@ export const createIdentityUser = createServerFn({ method: 'POST' }).handler(
 export const updateIdentityUser = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: { userId: string; input: Parameters<typeof updateUser>[1] } }) => {
     return updateUser(data.userId, data.input)
+  },
+)
+
+export const saveIdentityUserProviderCredential = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { userId: string; providerKey: string; token: string } }) => {
+    return upsertUserProviderCredential(data.userId, data.providerKey, data.token)
+  },
+)
+
+export const removeIdentityUserProviderCredential = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { userId: string; providerKey: string } }) => {
+    return deleteUserProviderCredential(data.userId, data.providerKey)
   },
 )
 

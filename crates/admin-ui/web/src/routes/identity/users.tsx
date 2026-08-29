@@ -72,6 +72,8 @@ import {
   getUsers,
   reactivateIdentityUser,
   resetIdentityUserOnboarding,
+  removeIdentityUserProviderCredential,
+  saveIdentityUserProviderCredential,
   updateIdentityUser,
 } from '@/server/admin-data.functions'
 import {
@@ -123,11 +125,13 @@ const emptyAdminUsers: IdentityUsersPayload['users'] = []
 const emptyAdminTeams: IdentityUsersPayload['teams'] = []
 const emptyOidcProviders: IdentityUsersPayload['oidc_providers'] = []
 const emptyOauthProviders: IdentityUsersPayload['oauth_providers'] = []
+const emptyCopilotUserProviders: IdentityUsersPayload['copilot_user_providers'] = []
 
 const userDetailsSections = [
   { id: 'overview', label: 'Overview', icon: UserCircleIcon },
   { id: 'configuration', label: 'Configuration', icon: Configuration01Icon },
   { id: 'auth', label: 'Auth & onboarding', icon: ShieldKeyIcon },
+  { id: 'provider-configuration', label: 'Provider Configuration', icon: ShieldKeyIcon },
   { id: 'usage', label: 'Usage', icon: ChartLineData01Icon },
 ] as const
 
@@ -144,6 +148,7 @@ export function UsersPage() {
   const teams = adminData?.teams ?? emptyAdminTeams
   const oidcProviders = adminData?.oidc_providers ?? emptyOidcProviders
   const oauthProviders = adminData?.oauth_providers ?? emptyOauthProviders
+  const copilotUserProviders = adminData?.copilot_user_providers ?? emptyCopilotUserProviders
   const [isOpen, setIsOpen] = useState(false)
   const [form, setForm] = useState<CreateUserInput>(initialForm)
   const [result, setResult] = useState<CreateUserResult | null>(null)
@@ -151,6 +156,7 @@ export function UsersPage() {
   const [updateForm, setUpdateForm] = useState<UpdateUserInput>(initialUpdateForm)
   const [onboardingResult, setOnboardingResult] = useState<CreateUserResult | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [providerTokens, setProviderTokens] = useState<Record<string, string>>({})
   const selectedUser = search.user_id
     ? (users.find((user) => user.id === search.user_id) ?? null)
     : null
@@ -182,6 +188,7 @@ export function UsersPage() {
 
   useEffect(() => {
     setOnboardingResult(null)
+    setProviderTokens({})
   }, [selectedUserId])
 
   const pageHeader = (
@@ -308,6 +315,43 @@ export function UsersPage() {
         toast.success('User updated')
         await refreshUsers()
         resetUserDialog()
+      } catch (error) {
+        toast.error(getErrorMessage(error))
+      }
+    })
+  }
+
+  function handleSaveProviderCredential(providerKey: string) {
+    if (!selectedUser) return
+    const token = providerTokens[providerKey]?.trim()
+    if (!token) {
+      toast.error('Enter a GitHub token')
+      return
+    }
+    startTransition(async () => {
+      try {
+        await saveIdentityUserProviderCredential({
+          data: { userId: selectedUser.id, providerKey, token },
+        })
+        setProviderTokens((current) => ({ ...current, [providerKey]: '' }))
+        toast.success('Provider token saved')
+        await refreshUsers()
+      } catch (error) {
+        toast.error(getErrorMessage(error))
+      }
+    })
+  }
+
+  function handleRemoveProviderCredential(providerKey: string) {
+    if (!selectedUser) return
+    startTransition(async () => {
+      try {
+        await removeIdentityUserProviderCredential({
+          data: { userId: selectedUser.id, providerKey },
+        })
+        setProviderTokens((current) => ({ ...current, [providerKey]: '' }))
+        toast.success('Provider token removed')
+        await refreshUsers()
       } catch (error) {
         toast.error(getErrorMessage(error))
       }
@@ -1321,6 +1365,126 @@ export function UsersPage() {
                       </div>
                     ) : null}
 
+                    {selectedUserSection === 'provider-configuration' ? (
+                      <div className="flex flex-col gap-5">
+                        <div>
+                          <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                            GitHub Copilot user tokens
+                          </h3>
+                          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                            Each token is encrypted at rest and used only for requests made with
+                            this user&apos;s gateway API keys.
+                          </p>
+                        </div>
+
+                        <Alert>
+                          <AlertTitle>Get a token with GitHub CLI</AlertTitle>
+                          <AlertDescription className="flex flex-col gap-2">
+                            <p>
+                              Direct Copilot authentication needs no extra GitHub OAuth scope. If
+                              GitHub CLI asks you to refresh its authorization, run:
+                            </p>
+                            <code className="block overflow-x-auto rounded bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-text)]">
+                              gh auth refresh --hostname github.com
+                            </code>
+                            <p>
+                              Then copy the token with <code>gh auth token</code>. The user must
+                              have an active GitHub Copilot entitlement.
+                            </p>
+                          </AlertDescription>
+                        </Alert>
+
+                        {copilotUserProviders.length === 0 ? (
+                          <Alert>
+                            <AlertTitle>No user-token Copilot provider configured</AlertTitle>
+                            <AlertDescription>
+                              Add a GitHub Copilot provider with <code>auth.mode: github_user</code>
+                              to the gateway configuration.
+                            </AlertDescription>
+                          </Alert>
+                        ) : (
+                          copilotUserProviders.map((provider) => {
+                            const status = provider.credentials.find(
+                              (credential) => credential.user_id === selectedUser.id,
+                            )
+                            const token = providerTokens[provider.provider_key] ?? ''
+                            return (
+                              <section
+                                key={provider.provider_key}
+                                className="flex flex-col gap-4 border-t border-[color:var(--color-border)] pt-5 first:border-t-0 first:pt-0"
+                              >
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <h4 className="font-mono text-sm font-semibold text-[var(--color-text)]">
+                                      {provider.provider_key}
+                                    </h4>
+                                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                                      {status?.updated_at
+                                        ? `Updated ${formatDateTime(status.updated_at)}`
+                                        : 'No token has been stored.'}
+                                    </p>
+                                  </div>
+                                  <Badge variant={status?.configured ? 'success' : 'default'}>
+                                    {status?.configured ? 'Configured' : 'Not configured'}
+                                  </Badge>
+                                </div>
+
+                                <Field>
+                                  <FieldLabel htmlFor={`provider-token-${provider.provider_key}`}>
+                                    GitHub token
+                                  </FieldLabel>
+                                  <Input
+                                    id={`provider-token-${provider.provider_key}`}
+                                    type="password"
+                                    autoComplete="off"
+                                    value={token}
+                                    placeholder={
+                                      status?.configured
+                                        ? 'Enter a new token to replace the stored token'
+                                        : 'Paste the output of gh auth token'
+                                    }
+                                    onChange={(event) =>
+                                      setProviderTokens((current) => ({
+                                        ...current,
+                                        [provider.provider_key]: event.target.value,
+                                      }))
+                                    }
+                                  />
+                                  <FieldDescription>
+                                    The stored value is never returned to the browser after save.
+                                  </FieldDescription>
+                                </Field>
+
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    type="button"
+                                    onClick={() =>
+                                      handleSaveProviderCredential(provider.provider_key)
+                                    }
+                                    disabled={isPending || token.trim().length === 0}
+                                  >
+                                    {isPending ? 'Saving…' : 'Save token'}
+                                  </Button>
+                                  {status?.configured ? (
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      onClick={() =>
+                                        handleRemoveProviderCredential(provider.provider_key)
+                                      }
+                                      disabled={isPending}
+                                    >
+                                      Remove token
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </section>
+                            )
+                          })
+                        )}
+                      </div>
+                    ) : null}
+
                     {selectedUserSection === 'usage' ? (
                       <div className="grid gap-4 md:grid-cols-3">
                         <section className="rounded-lg border border-[color:var(--color-border)] p-4">
@@ -1365,18 +1529,20 @@ export function UsersPage() {
                     <Button type="button" variant="secondary" onClick={resetUserDialog}>
                       Close
                     </Button>
-                    <Button
-                      type="submit"
-                      disabled={
-                        isPending ||
-                        (updateForm.auth_mode === 'oidc' &&
-                          (oidcProviders.length === 0 || !updateForm.oidc_provider_key)) ||
-                        (updateForm.auth_mode === 'oauth' &&
-                          (oauthProviders.length === 0 || !updateForm.oauth_provider_key))
-                      }
-                    >
-                      {isPending ? 'Saving…' : 'Save changes'}
-                    </Button>
+                    {selectedUserSection === 'configuration' || selectedUserSection === 'auth' ? (
+                      <Button
+                        type="submit"
+                        disabled={
+                          isPending ||
+                          (updateForm.auth_mode === 'oidc' &&
+                            (oidcProviders.length === 0 || !updateForm.oidc_provider_key)) ||
+                          (updateForm.auth_mode === 'oauth' &&
+                            (oauthProviders.length === 0 || !updateForm.oauth_provider_key))
+                        }
+                      >
+                        {isPending ? 'Saving…' : 'Save changes'}
+                      </Button>
+                    ) : null}
                   </DialogFooter>
                 </form>
               </main>
@@ -1419,6 +1585,13 @@ function formatRole(role: string) {
     .filter(Boolean)
     .map((part) => part[0]?.toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
 }
 
 function sanitizeForm(form: CreateUserInput): CreateUserInput {

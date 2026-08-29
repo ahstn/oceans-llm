@@ -324,6 +324,7 @@ fn demo_batch_job(
             model_key: requested_model_key.to_string(),
             provider_key: route.provider_key.clone(),
             upstream_model: route.upstream_model.clone(),
+            owner_user_id: None,
             extra_headers: route.extra_headers.clone(),
             extra_body: route.extra_body.clone(),
             request_headers: BTreeMap::new(),

@@ -605,6 +605,7 @@ mod tests {
                     model_key: "analysis".to_string(),
                     provider_key: "openai".to_string(),
                     upstream_model: "gpt-test".to_string(),
+                    owner_user_id: None,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     request_headers: BTreeMap::new(),

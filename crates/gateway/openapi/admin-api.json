@@ -749,6 +749,102 @@
         ]
       }
     },
+    "/api/v1/admin/identity/users/{user_id}/provider-credentials/{provider_key}": {
+      "put": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "upsert_identity_user_provider_credential",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "provider_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertProviderCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AdminProviderCredentialStatusView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "delete_identity_user_provider_credential",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "provider_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_IdentityActionStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/identity/users/{user_id}/reactivate": {
       "post": {
         "tags": [
@@ -5282,6 +5378,24 @@
           }
         }
       },
+      "AdminCopilotUserProviderView": {
+        "type": "object",
+        "required": [
+          "provider_key",
+          "credentials"
+        ],
+        "properties": {
+          "credentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminProviderCredentialStatusView"
+            }
+          },
+          "provider_key": {
+            "type": "string"
+          }
+        }
+      },
       "AdminEntityTagView": {
         "type": "object",
         "required": [
@@ -5303,9 +5417,16 @@
           "users",
           "teams",
           "oidc_providers",
-          "oauth_providers"
+          "oauth_providers",
+          "copilot_user_providers"
         ],
         "properties": {
+          "copilot_user_providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCopilotUserProviderView"
+            }
+          },
           "oauth_providers": {
             "type": "array",
             "items": {
@@ -5895,6 +6016,33 @@
           "team_admins",
           "users"
         ]
+      },
+      "AdminProviderCredentialStatusView": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "configured"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_id": {
+            "type": "string"
+          }
+        }
       },
       "AdminServiceAccountView": {
         "type": "object",
@@ -9522,9 +9670,16 @@
               "users",
               "teams",
               "oidc_providers",
-              "oauth_providers"
+              "oauth_providers",
+              "copilot_user_providers"
             ],
             "properties": {
+              "copilot_user_providers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminCopilotUserProviderView"
+                }
+              },
               "oauth_providers": {
                 "type": "array",
                 "items": {
@@ -9592,6 +9747,45 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_AdminProviderCredentialStatusView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "user_id",
+              "configured"
+            ],
+            "properties": {
+              "configured": {
+                "type": "boolean"
+              },
+              "last_used_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "updated_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "user_id": {
+                "type": "string"
               }
             }
           },
@@ -14777,6 +14971,17 @@
             "format": "uuid"
           },
           "target_kind": {
+            "type": "string"
+          }
+        }
+      },
+      "UpsertProviderCredentialRequest": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
             "type": "string"
           }
         }

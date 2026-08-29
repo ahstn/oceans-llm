@@ -34,15 +34,16 @@ use crate::{
         ModelPricingSyncChanges, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
         NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
         NewReviewAgentRunRecord, PricingCatalogCacheRecord, ProviderCapabilities,
-        ProviderConnection, ProviderRequestContext, RefreshMcpOauthCredentialBindingRecord,
-        RequestAttemptRecord, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-        RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord,
-        ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord,
-        ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ServiceAccountRecord,
-        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
-        TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
-        UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
-        UpsertMcpToolGrantRecord, UpsertMcpUpstreamCredentialBindingRecord,
+        ProviderConnection, ProviderRequestContext, ProviderUserCredentialRecord,
+        RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord, RequestLogDetail,
+        RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
+        RequestLogRecord, RequestMcpTokenOverheadRecord, ReviewAgentProvider,
+        ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
+        ReviewAgentRunRecord, ServiceAccountRecord, SpendDailyAggregateRecord,
+        SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord,
+        UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
+        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
         UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord,
         UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
@@ -1015,6 +1016,41 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         credential_binding_id: Uuid,
         lease_token: Uuid,
     ) -> Result<bool, StoreError>;
+}
+
+#[async_trait]
+pub trait ProviderUserCredentialRepository: Send + Sync {
+    async fn upsert_provider_user_credential(
+        &self,
+        input: &UpsertProviderUserCredentialRecord,
+    ) -> Result<ProviderUserCredentialRecord, StoreError>;
+
+    async fn get_provider_user_credential(
+        &self,
+        provider_key: &str,
+        user_id: Uuid,
+    ) -> Result<Option<ProviderUserCredentialRecord>, StoreError>;
+
+    async fn delete_provider_user_credential(
+        &self,
+        provider_key: &str,
+        user_id: Uuid,
+    ) -> Result<bool, StoreError>;
+
+    async fn touch_provider_user_credential(
+        &self,
+        credential_id: Uuid,
+        last_used_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+}
+
+#[async_trait]
+pub trait ProviderUserTokenResolver: Send + Sync {
+    async fn resolve_provider_user_token(
+        &self,
+        provider_key: &str,
+        user_id: Uuid,
+    ) -> Result<String, ProviderError>;
 }
 
 #[async_trait]

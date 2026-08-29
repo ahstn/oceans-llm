@@ -12,6 +12,7 @@ mod mcp_token_overhead;
 mod mcp_tool_invocations;
 mod models;
 mod pricing_catalog;
+mod provider_user_credentials;
 mod providers;
 mod request_logs;
 mod review_agent;
@@ -52,22 +53,22 @@ use gateway_core::{
     OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,
     OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
     PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-    ProviderBatchState, ProviderConnection, ProviderRepository,
-    RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord, RequestAttemptRepository,
-    RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord,
-    RequestTag, ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentPullRequestState,
-    ReviewAgentRepository, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
-    ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
+    ProviderBatchState, ProviderConnection, ProviderRepository, ProviderUserCredentialRecord,
+    ProviderUserCredentialRepository, RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord,
+    RequestAttemptRepository, RequestAttemptStatus, RequestLogDetail, RequestLogPage,
+    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+    RequestMcpTokenOverheadRecord, RequestTag, ReviewAgentProvider, ReviewAgentPullRequestRecord,
+    ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryRecord,
+    ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
     SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountRecord, ServiceAccountStatus,
     SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
     StoreHealth, TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
     UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
     UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-    UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
-    UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
-    UserRecord, UserSessionRecord, UserStatus,
+    UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
+    UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
+    UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use sqlx::{
     PgPool, Row,

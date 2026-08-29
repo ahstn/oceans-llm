@@ -17,6 +17,8 @@ const createIdentityUserMock = vi.fn()
 const resendInviteMock = vi.fn()
 const resetOnboardingMock = vi.fn()
 const updateIdentityUserMock = vi.fn()
+const saveProviderCredentialMock = vi.fn()
+const removeProviderCredentialMock = vi.fn()
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -37,6 +39,9 @@ vi.mock('@/server/admin-data.functions', () => ({
   getUserDirectory: vi.fn(),
   reactivateIdentityUser: vi.fn(),
   resetIdentityUserOnboarding: (...args: unknown[]) => resetOnboardingMock(...args),
+  saveIdentityUserProviderCredential: (...args: unknown[]) => saveProviderCredentialMock(...args),
+  removeIdentityUserProviderCredential: (...args: unknown[]) =>
+    removeProviderCredentialMock(...args),
   resendIdentityUserPasswordInvite: (...args: unknown[]) => resendInviteMock(...args),
   updateIdentityUser: (...args: unknown[]) => updateIdentityUserMock(...args),
 }))
@@ -46,6 +51,7 @@ const basePayload: IdentityUsersPayload = {
   teams: [],
   oidc_providers: [],
   oauth_providers: [],
+  copilot_user_providers: [],
 }
 
 type UserPayload = IdentityUsersPayload['users'][number]
@@ -95,6 +101,8 @@ describe('UsersPage', () => {
     resendInviteMock.mockReset()
     resetOnboardingMock.mockReset()
     updateIdentityUserMock.mockReset()
+    saveProviderCredentialMock.mockReset()
+    removeProviderCredentialMock.mockReset()
   })
 
   afterEach(() => {
@@ -237,6 +245,7 @@ describe('UsersPage', () => {
         teams: [{ id: 'team_1', name: 'Core Platform' }],
         oidc_providers: [],
         oauth_providers: [],
+        copilot_user_providers: [],
       } satisfies IdentityUsersPayload,
     })
 
@@ -383,6 +392,58 @@ describe('UsersPage', () => {
     expect(
       screen.getByText('Share this URL with the user so they can finish SSO onboarding.'),
     ).toBeInTheDocument()
+  })
+
+  it('stores a Copilot token without rendering the stored value', async () => {
+    const user = invitedUser({ status: 'active' })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [user],
+        copilot_user_providers: [
+          {
+            provider_key: 'github-copilot-user',
+            credentials: [
+              {
+                user_id: user.id,
+                configured: false,
+                updated_at: null,
+                last_used_at: null,
+              },
+            ],
+          },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({
+      user_id: user.id,
+      user_section: 'provider-configuration',
+    })
+    saveProviderCredentialMock.mockResolvedValue({ data: { configured: true } })
+
+    const { UsersPage } = await import('@/routes/identity/users')
+    render(<UsersPage />)
+
+    expect(screen.getAllByText('Provider Configuration').length).toBeGreaterThan(0)
+    expect(screen.getByText(/no extra GitHub OAuth scope/i)).toBeInTheDocument()
+    expect(screen.getByText('gh auth refresh --hostname github.com')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'gho_secret-user-token' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save token' }))
+
+    await waitFor(() =>
+      expect(saveProviderCredentialMock).toHaveBeenCalledWith({
+        data: {
+          userId: user.id,
+          providerKey: 'github-copilot-user',
+          token: 'gho_secret-user-token',
+        },
+      }),
+    )
+    await waitFor(() => expect(screen.getByLabelText('GitHub token')).toHaveValue(''))
+    expect(screen.queryByDisplayValue('gho_secret-user-token')).not.toBeInTheDocument()
   })
 
   it('sanitizes onboarding updates to auth fields and persisted role/team membership', async () => {

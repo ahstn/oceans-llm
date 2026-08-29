@@ -91,6 +91,11 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             patch(update_identity_user),
         )
         .route(
+            "/api/v1/admin/identity/users/{user_id}/provider-credentials/{provider_key}",
+            axum::routing::put(upsert_identity_user_provider_credential)
+                .delete(delete_identity_user_provider_credential),
+        )
+        .route(
             "/api/v1/admin/identity/users/{user_id}/deactivate",
             post(deactivate_identity_user),
         )
