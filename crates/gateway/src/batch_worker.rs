@@ -234,10 +234,6 @@ async fn submit_job(
             body,
         });
     }
-    service
-        .store()
-        .replace_batch_item_requests(job.batch_id, &guarded_items)
-        .await?;
     let request = ProviderBatchRequest {
         batch_id: job.batch_id,
         endpoint: job.endpoint,
@@ -247,6 +243,10 @@ async fn submit_job(
     };
     match provider.submit_batch(&request).await {
         ProviderBatchSubmission::Submitted(state) => {
+            service
+                .store()
+                .replace_batch_item_requests(job.batch_id, &request.items)
+                .await?;
             let state = prepare_submitted_state(state);
             service
                 .store()
@@ -335,7 +335,6 @@ async fn apply_state(
                 .await?;
             return Ok(());
         }
-        guard_batch_results(app_state, job, &mut results).await?;
     }
     if complete || !results.is_empty() || state.provider_cost_usd.is_some() {
         pricing_status = Some(
@@ -348,6 +347,7 @@ async fn apply_state(
             )
             .await?,
         );
+        guard_batch_results(app_state, job, &mut results).await?;
         record_batch_usage(
             service,
             job,

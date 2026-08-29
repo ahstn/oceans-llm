@@ -198,18 +198,22 @@ async fn guard_sse_payload(
         let event_index = blocks.len();
         let mut lines = Vec::new();
         let mut data = Vec::new();
+        let mut raw_data = Vec::new();
         let mut data_index = None;
         for line in block.split(separator) {
             let Some(payload) = line.strip_prefix("data:") else {
                 lines.push(StreamLine::Other(line.to_string()));
                 continue;
             };
+            raw_data.push(line.to_string());
             data_index.get_or_insert(lines.len());
             data.push(payload.strip_prefix(' ').unwrap_or(payload));
         }
         if let Some(data_index) = data_index {
             let payload = data.join("\n");
-            let stream_line = if payload == "[DONE]" {
+            let stream_line = if payload.trim().is_empty() {
+                StreamLine::Other(raw_data.join(separator))
+            } else if payload == "[DONE]" {
                 StreamLine::Done
             } else {
                 let value = parse_guarded_sse_json(&payload)?;
@@ -247,53 +251,38 @@ async fn guard_sse_payload(
         blocks.push(lines);
     }
 
-    if text_locations.is_empty() {
-        text_locations.clone_from(&snapshot_text_locations);
-    }
     for fragments in tool_fragments.values() {
         if fragments.name.is_empty() {
             continue;
         }
-        let arguments = serde_json::from_str(&fragments.arguments)
-            .unwrap_or_else(|_| Value::String(fragments.arguments.clone()));
-        let payload = shell_command(&fragments.name, &arguments)
-            .map(|command| EvaluationPayload::ShellCommand { command })
-            .unwrap_or_else(|| EvaluationPayload::ToolCall {
-                name: fragments.name.clone(),
-                arguments: arguments.clone(),
-            });
-        let mut input = EvaluationInput::new(GuardPhase::GeneratedToolCall, payload);
-        if let Some(prompt) = &context.associated_prompt {
-            input = input.with_associated_prompt(prompt);
-        }
-        let evaluation =
-            evaluate(state, &context.route_key, Some(&context.request_id), input).await;
-        ensure_allowed(&evaluation)?;
-        if evaluation
-            .decisions
-            .iter()
-            .any(|decision| decision.transformed)
-            && let Some(arguments) = transformed_tool_arguments(&evaluation.output, &arguments)
-        {
-            let replacement = if fragments.shell_command_locations {
-                arguments
-                    .get("command")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
+        let streamed_arguments =
+            (!fragments.arguments.is_empty()).then_some(fragments.arguments.as_str());
+        let streamed_replacement = if let Some(arguments) = streamed_arguments {
+            let replacement =
+                guard_stream_tool_arguments(state, context, fragments, arguments).await?;
+            if let Some(replacement) = &replacement {
+                replace_stream_arguments(
+                    &mut blocks,
+                    &fragments.argument_locations,
+                    replacement,
+                    fragments.shell_command_locations,
+                    true,
+                );
+            }
+            replacement
+        } else {
+            None
+        };
+        for (arguments, location) in &fragments.terminal_arguments {
+            let replacement = if streamed_arguments == Some(arguments.as_str()) {
+                streamed_replacement.clone()
             } else {
-                serde_json::to_string(&arguments).ok()
+                guard_stream_tool_arguments(state, context, fragments, arguments).await?
             };
             if let Some(replacement) = replacement {
                 replace_stream_arguments(
                     &mut blocks,
-                    &fragments.argument_locations,
-                    &replacement,
-                    fragments.shell_command_locations,
-                    true,
-                );
-                replace_stream_arguments(
-                    &mut blocks,
-                    &fragments.terminal_argument_locations,
+                    std::slice::from_ref(location),
                     &replacement,
                     fragments.shell_command_locations,
                     false,
@@ -317,39 +306,30 @@ async fn guard_sse_payload(
             .push((event_index, pointer));
     }
     for (group, locations) in text_locations_by_group {
-        let combined_text = locations
-            .iter()
-            .filter_map(|(event_index, pointer)| {
-                blocks[*event_index].iter().find_map(|line| match line {
-                    StreamLine::Json(value) => value.pointer(pointer).and_then(Value::as_str),
-                    _ => None,
-                })
-            })
-            .collect::<String>();
+        let combined_text = stream_text_at_locations(&blocks, &locations);
         if combined_text.is_empty() {
             continue;
         }
-        let mut input = EvaluationInput::new(
-            GuardPhase::ModelResponse,
-            EvaluationPayload::Text {
-                text: combined_text.clone(),
-            },
-        );
-        if let Some(prompt) = &context.associated_prompt {
-            input = input.with_associated_prompt(prompt);
-        }
-        let evaluation =
-            evaluate(state, &context.route_key, Some(&context.request_id), input).await;
-        ensure_allowed(&evaluation)?;
-        if let Some(transformed) = evaluation.output.text_content()
-            && transformed != combined_text
-        {
+        let replacement = guard_stream_text(state, context, &combined_text).await?;
+        if let Some(transformed) = &replacement {
             replace_stream_text(&mut blocks, &locations, transformed, true);
-            if let Some(snapshot_locations) = snapshot_locations_by_group.get(&group)
-                && locations != *snapshot_locations
-            {
-                replace_stream_text(&mut blocks, snapshot_locations, transformed, true);
+        }
+        let Some(snapshot_locations) = snapshot_locations_by_group.remove(&group) else {
+            continue;
+        };
+        let snapshot_text = stream_text_at_locations(&blocks, &snapshot_locations);
+        if snapshot_text == combined_text {
+            if let Some(transformed) = &replacement {
+                replace_stream_text(&mut blocks, &snapshot_locations, transformed, true);
             }
+        } else if let Some(transformed) = guard_stream_text(state, context, &snapshot_text).await? {
+            replace_stream_text(&mut blocks, &snapshot_locations, &transformed, true);
+        }
+    }
+    for locations in snapshot_locations_by_group.values() {
+        let snapshot_text = stream_text_at_locations(&blocks, locations);
+        if let Some(transformed) = guard_stream_text(state, context, &snapshot_text).await? {
+            replace_stream_text(&mut blocks, locations, &transformed, true);
         }
     }
 
@@ -372,6 +352,85 @@ async fn guard_sse_payload(
         .collect::<Vec<_>>()
         .join(&event_separator);
     Ok(rendered.into_bytes())
+}
+
+async fn guard_stream_tool_arguments(
+    state: &AppState,
+    context: &InferenceGuardContext,
+    fragments: &ToolCallFragments,
+    argument_text: &str,
+) -> Result<Option<String>, GatewayError> {
+    let arguments = serde_json::from_str(argument_text)
+        .unwrap_or_else(|_| Value::String(argument_text.to_string()));
+    let payload = shell_command(&fragments.name, &arguments)
+        .map(|command| EvaluationPayload::ShellCommand { command })
+        .unwrap_or_else(|| EvaluationPayload::ToolCall {
+            name: fragments.name.clone(),
+            arguments: arguments.clone(),
+        });
+    let mut input = EvaluationInput::new(GuardPhase::GeneratedToolCall, payload);
+    if let Some(prompt) = &context.associated_prompt {
+        input = input.with_associated_prompt(prompt);
+    }
+    let evaluation = evaluate(state, &context.route_key, Some(&context.request_id), input).await;
+    ensure_allowed(&evaluation)?;
+    if !evaluation
+        .decisions
+        .iter()
+        .any(|decision| decision.transformed)
+    {
+        return Ok(None);
+    }
+    let Some(arguments) = transformed_tool_arguments(&evaluation.output, &arguments) else {
+        return Ok(None);
+    };
+    let replacement = if fragments.shell_command_locations {
+        arguments
+            .get("command")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    } else {
+        serde_json::to_string(&arguments).ok()
+    };
+    Ok(replacement)
+}
+
+fn stream_text_at_locations(blocks: &[Vec<StreamLine>], locations: &[(usize, String)]) -> String {
+    locations
+        .iter()
+        .filter_map(|(event_index, pointer)| {
+            blocks[*event_index].iter().find_map(|line| match line {
+                StreamLine::Json(value) => value.pointer(pointer).and_then(Value::as_str),
+                _ => None,
+            })
+        })
+        .collect()
+}
+
+async fn guard_stream_text(
+    state: &AppState,
+    context: &InferenceGuardContext,
+    text: &str,
+) -> Result<Option<String>, GatewayError> {
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let mut input = EvaluationInput::new(
+        GuardPhase::ModelResponse,
+        EvaluationPayload::Text {
+            text: text.to_string(),
+        },
+    );
+    if let Some(prompt) = &context.associated_prompt {
+        input = input.with_associated_prompt(prompt);
+    }
+    let evaluation = evaluate(state, &context.route_key, Some(&context.request_id), input).await;
+    ensure_allowed(&evaluation)?;
+    Ok(evaluation
+        .output
+        .text_content()
+        .filter(|transformed| *transformed != text)
+        .map(str::to_string))
 }
 fn parse_guarded_sse_json(payload: &str) -> Result<Value, GatewayError> {
     serde_json::from_str(payload).map_err(|error| {
@@ -488,8 +547,8 @@ enum StreamLine {
 struct ToolCallFragments {
     name: String,
     arguments: String,
+    terminal_arguments: Vec<(String, (usize, String))>,
     argument_locations: Vec<(usize, String)>,
-    terminal_argument_locations: Vec<(usize, String)>,
     shell_command_locations: bool,
 }
 
@@ -518,10 +577,6 @@ fn collect_stream_tool_fragments(
                 let fragments = output.entry(key).or_default();
                 fragments.name = name;
                 let arguments = serialized_arguments(&arguments);
-                if fragments.arguments.is_empty() || event_type == Some("response.output_item.done")
-                {
-                    fragments.arguments = arguments;
-                }
                 let shell_call = is_responses_shell_call(item);
                 fragments.shell_command_locations |= shell_call;
                 let argument_pointer = if shell_call {
@@ -533,12 +588,17 @@ fn collect_stream_tool_fragments(
                 };
                 if event_type == Some("response.output_item.done") {
                     fragments
-                        .terminal_argument_locations
-                        .push((event_index, argument_pointer));
-                } else if event_type != Some("response.output_item.added") {
-                    fragments
-                        .argument_locations
-                        .push((event_index, argument_pointer));
+                        .terminal_arguments
+                        .push((arguments, (event_index, argument_pointer)));
+                } else {
+                    if fragments.arguments.is_empty() {
+                        fragments.arguments = arguments;
+                    }
+                    if event_type != Some("response.output_item.added") {
+                        fragments
+                            .argument_locations
+                            .push((event_index, argument_pointer));
+                    }
                 }
             }
 
@@ -627,10 +687,10 @@ fn collect_stream_tool_fragments(
                     .unwrap_or_else(|| "default".to_string());
                 if let Some(arguments) = object.get("arguments").and_then(Value::as_str) {
                     let fragments = output.entry(key).or_default();
-                    fragments.arguments = arguments.to_string();
-                    fragments
-                        .terminal_argument_locations
-                        .push((event_index, format!("{pointer}/arguments")));
+                    fragments.terminal_arguments.push((
+                        arguments.to_string(),
+                        (event_index, format!("{pointer}/arguments")),
+                    ));
                 }
             }
 
@@ -861,20 +921,41 @@ fn collect_string_pointers(
     field_names: &[&str],
     output: &mut Vec<String>,
 ) {
+    collect_string_pointers_inner(value, pointer, field_names, false, output);
+}
+
+fn collect_string_pointers_inner(
+    value: &Value,
+    pointer: &str,
+    field_names: &[&str],
+    matched_array: bool,
+    output: &mut Vec<String>,
+) {
     match value {
+        Value::String(_) if matched_array => output.push(pointer.to_string()),
         Value::Object(object) => {
             for (key, child) in object {
                 let child_pointer = format!("{pointer}/{}", escape_pointer(key));
-                if child.is_string() && field_names.contains(&key.as_str()) {
-                    output.push(child_pointer.clone());
-                } else {
-                    collect_string_pointers(child, &child_pointer, field_names, output);
-                }
+                let child_matches =
+                    field_names.contains(&key.as_str()) && (child.is_string() || child.is_array());
+                collect_string_pointers_inner(
+                    child,
+                    &child_pointer,
+                    field_names,
+                    child_matches,
+                    output,
+                );
             }
         }
         Value::Array(array) => {
             for (index, child) in array.iter().enumerate() {
-                collect_string_pointers(child, &format!("{pointer}/{index}"), field_names, output);
+                collect_string_pointers_inner(
+                    child,
+                    &format!("{pointer}/{index}"),
+                    field_names,
+                    matched_array && !child.is_object(),
+                    output,
+                );
             }
         }
         _ => {}
@@ -1382,7 +1463,49 @@ mod tests {
             "{\"cmd\":\"git reset --hard\"}"
         );
         assert_eq!(fragments["item-1"].name, "shell");
-        assert_eq!(fragments["item-1"].terminal_argument_locations.len(), 2);
+        assert_eq!(fragments["item-1"].terminal_arguments.len(), 2);
+        assert!(
+            fragments["item-1"]
+                .terminal_arguments
+                .iter()
+                .all(|(arguments, _)| arguments == "{\"cmd\":\"git reset --hard\"}")
+        );
+    }
+
+    #[test]
+    fn keeps_streamed_and_terminal_tool_arguments_separate() {
+        let mut fragments = BTreeMap::new();
+        for (event_index, event) in [
+            json!({
+                "type": "response.output_item.added",
+                "item": {"type": "function_call", "id": "item-1", "name": "shell", "arguments": ""}
+            }),
+            json!({
+                "type": "response.function_call_arguments.delta",
+                "item_id": "item-1",
+                "delta": "{\"cmd\":\"rm -rf /tmp/work\"}"
+            }),
+            json!({
+                "type": "response.function_call_arguments.done",
+                "item_id": "item-1",
+                "arguments": "{\"cmd\":\"echo safe\"}"
+            }),
+        ]
+        .iter()
+        .enumerate()
+        {
+            collect_stream_tool_fragments(event, "", event_index, &mut fragments);
+        }
+
+        assert_eq!(
+            fragments["item-1"].arguments,
+            "{\"cmd\":\"rm -rf /tmp/work\"}"
+        );
+        assert_eq!(fragments["item-1"].terminal_arguments.len(), 1);
+        assert_eq!(
+            fragments["item-1"].terminal_arguments[0].0,
+            "{\"cmd\":\"echo safe\"}"
+        );
     }
 
     #[test]
@@ -1562,6 +1685,22 @@ mod tests {
             ]
         );
         assert!(!pointers.iter().any(|pointer| pointer == "/model"));
+    }
+
+    #[test]
+    fn prompt_pointers_keep_matched_string_arrays_scoped() {
+        let value = json!({
+            "input": ["first", ["second"]],
+            "metadata": ["ignore"],
+            "messages": [{"content": "third", "ids": ["ignore"]}]
+        });
+        let mut pointers = Vec::new();
+        collect_string_pointers(&value, "", PROMPT_TEXT_FIELDS, &mut pointers);
+
+        assert_eq!(
+            pointers,
+            vec!["/input/0", "/input/1/0", "/messages/0/content"]
+        );
     }
 
     #[test]

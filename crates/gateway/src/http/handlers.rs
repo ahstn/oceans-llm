@@ -1582,6 +1582,24 @@ fn success_attempt(
     )
 }
 
+fn guarded_failure_attempt(
+    context: &gateway_service::RequestLogContext,
+    route: &gateway_core::ModelRoute,
+    started_at: OffsetDateTime,
+) -> RequestAttemptRecord {
+    let mut outcome = gateway_service::successful_attempt_outcome();
+    outcome.produced_final_response = false;
+    gateway_service::build_request_attempt(
+        context,
+        route,
+        1,
+        false,
+        started_at,
+        gateway_service::offset_now(),
+        outcome,
+    )
+}
+
 fn stream_failure_attempt(
     context: &gateway_service::RequestLogContext,
     route: &gateway_core::ModelRoute,
@@ -1829,10 +1847,9 @@ async fn record_guarded_non_stream_failure(
         icon_metadata,
         latency_ms_since(request_started_at),
         error,
-        vec![success_attempt(
+        vec![guarded_failure_attempt(
             request_log_context,
             route,
-            false,
             attempt_started_at,
         )],
     )

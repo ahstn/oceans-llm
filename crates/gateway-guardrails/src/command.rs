@@ -128,6 +128,16 @@ pub(crate) fn nested_shell_command(invocation: &CommandInvocation) -> Option<Str
         return (index < invocation.arguments.len())
             .then(|| invocation.arguments[index..].join(" "));
     }
+    if invocation.executable == "watch" {
+        let mut index = 0;
+        skip_wrapper_options(
+            &invocation.arguments,
+            &mut index,
+            &["-n", "--interval", "-q", "--equexit", "--shotsdir"],
+        );
+        return (index < invocation.arguments.len())
+            .then(|| invocation.arguments[index..].join(" "));
+    }
     if invocation.executable == "timeout" {
         let mut index = 0;
         skip_wrapper_options(
@@ -679,6 +689,7 @@ mod tests {
             "nice -n 5 rm -rf /tmp/work",
             "setsid --fork rm -rf /tmp/work",
             "sudo -u root FOO=bar rm -rf /tmp/work",
+            "watch -n 1 -- rm -rf /tmp/work",
         ] {
             let parsed = parse_command_line(command);
             assert!(

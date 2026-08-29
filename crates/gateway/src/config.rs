@@ -100,13 +100,30 @@ struct SecretReferenceBearerTokenProvider {
 #[async_trait::async_trait]
 impl BearerTokenProvider for SecretReferenceBearerTokenProvider {
     async fn bearer_token(&self) -> Result<String, EvaluationError> {
-        resolve_model_armor_token_reference(&self.reference)
+        resolve_model_armor_token_reference_async(&self.reference)
+            .await
             .map_err(|error| EvaluationError::Unavailable(error.to_string()))
     }
 }
 
 fn resolve_model_armor_token_reference(value: &str) -> anyhow::Result<String> {
     let token = resolve_secret_reference(value)?.trim().to_string();
+    if token.is_empty() {
+        bail!("Model Armor bearer token cannot be empty");
+    }
+    Ok(token)
+}
+
+async fn resolve_model_armor_token_reference_async(value: &str) -> anyhow::Result<String> {
+    let token = if let Some(path) = value.strip_prefix("file.") {
+        tokio::fs::read_to_string(path)
+            .await
+            .with_context(|| format!("failed to read secret file `{path}`"))?
+    } else {
+        resolve_secret_reference(value)?
+    }
+    .trim()
+    .to_string();
     if token.is_empty() {
         bail!("Model Armor bearer token cannot be empty");
     }

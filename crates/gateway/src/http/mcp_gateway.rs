@@ -433,8 +433,6 @@ async fn enforce_direct_mcp_result(
             (Some("result"), result.clone())
         } else if let Some(error) = parsed.get("error") {
             (Some("error"), error.clone())
-        } else if parsed.is_object() {
-            return (Response::from_parts(parts, Body::from(bytes)), None, false);
         } else {
             (None, parsed.clone())
         };
@@ -521,9 +519,7 @@ async fn guard_mcp_sse_result(
             continue;
         }
         let parsed = parse_guarded_mcp_sse_json(&data).map_err(|_| None)?;
-        let Some((payload_field, payload)) = guarded_mcp_sse_payload(&parsed) else {
-            continue;
-        };
+        let (payload_field, payload) = guarded_mcp_sse_payload(&parsed);
         event_by_block[block_index] = Some(event_values.len());
         event_values.push(payload);
         event_envelopes.push(parsed);
@@ -569,7 +565,11 @@ async fn guard_mcp_sse_result(
                 return block.to_string();
             };
             let mut envelope = event_envelopes[event_index].clone();
-            envelope[event_payload_fields[event_index]] = replacements[event_index].clone();
+            if let Some(payload_field) = event_payload_fields[event_index] {
+                envelope[payload_field] = replacements[event_index].clone();
+            } else {
+                envelope = replacements[event_index].clone();
+            }
             let replacement =
                 serde_json::to_string(&envelope).expect("guardrail MCP envelope is valid JSON");
             let mut replaced = false;
@@ -597,11 +597,16 @@ fn parse_guarded_mcp_sse_json(data: &str) -> serde_json::Result<Value> {
     serde_json::from_str(data)
 }
 
-fn guarded_mcp_sse_payload(value: &Value) -> Option<(&'static str, Value)> {
+fn guarded_mcp_sse_payload(value: &Value) -> (Option<&'static str>, Value) {
     value
         .get("result")
-        .map(|result| ("result", result.clone()))
-        .or_else(|| value.get("error").map(|error| ("error", error.clone())))
+        .map(|result| (Some("result"), result.clone()))
+        .or_else(|| {
+            value
+                .get("error")
+                .map(|error| (Some("error"), error.clone()))
+        })
+        .unwrap_or_else(|| (None, value.clone()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -960,18 +965,20 @@ mod tests {
     }
 
     #[test]
-    fn guarded_mcp_sse_extracts_result_and_error_payloads() {
+    fn guarded_mcp_sse_extracts_enveloped_and_bare_payloads() {
         let result = json!({"jsonrpc": "2.0", "id": 1, "result": {"content": "allowed"}});
         let error = json!({"jsonrpc": "2.0", "id": 1, "error": {"message": "private content"}});
+        let bare = json!({"content": "non-standard"});
 
         assert_eq!(
             guarded_mcp_sse_payload(&result),
-            Some(("result", json!({"content": "allowed"})))
+            (Some("result"), json!({"content": "allowed"}))
         );
         assert_eq!(
             guarded_mcp_sse_payload(&error),
-            Some(("error", json!({"message": "private content"})))
+            (Some("error"), json!({"message": "private content"}))
         );
+        assert_eq!(guarded_mcp_sse_payload(&bare), (None, bare));
     }
 
     #[test]
