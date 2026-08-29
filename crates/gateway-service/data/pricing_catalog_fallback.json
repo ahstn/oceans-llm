@@ -1,8 +1,8 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"bafa884700ca3a7ccf5685e0c806b342\"",
-    "fetched_at": "2026-08-28T08:22:44.18012Z"
+    "etag": "\"b5c63422de18f44ea9f809dbcd58846b\"",
+    "fetched_at": "2026-08-29T22:40:26.309419Z"
   },
   "providers": {
     "amazon-bedrock": {
@@ -6490,33 +6490,6 @@
             ]
           }
         },
-        "allenai/olmo-3-32b-think": {
-          "id": "allenai/olmo-3-32b-think",
-          "display_name": "Olmo 3 32B Think",
-          "release_date": "2025-11-21",
-          "last_updated": "2025-11-21",
-          "cost": {
-            "input": "0.1500",
-            "output": "0.5000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 65536,
-            "input": null,
-            "output": 58982
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "amazon/nova-2-lite-v1": {
           "id": "amazon/nova-2-lite-v1",
           "display_name": "Nova 2 Lite",
@@ -7204,33 +7177,6 @@
             ]
           }
         },
-        "arcee-ai/virtuoso-large": {
-          "id": "arcee-ai/virtuoso-large",
-          "display_name": "Virtuoso Large",
-          "release_date": "2025-05-05",
-          "last_updated": "2025-05-05",
-          "cost": {
-            "input": "0.7500",
-            "output": "1.2000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 131072,
-            "input": null,
-            "output": 64000
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "baidu/ernie-4.5-vl-424b-a47b": {
           "id": "baidu/ernie-4.5-vl-424b-a47b",
           "display_name": "ERNIE 4.5 VL 424B A47B ",
@@ -7818,9 +7764,9 @@
           "release_date": "2025-12-01",
           "last_updated": "2025-12-01",
           "cost": {
-            "input": "0.2600",
-            "output": "0.3800",
-            "cache_read": "0.1300",
+            "input": "0.2690",
+            "output": "0.4000",
+            "cache_read": "0.1345",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -7828,7 +7774,7 @@
           "limit": {
             "context": 163840,
             "input": null,
-            "output": 147456
+            "output": 65536
           },
           "modalities": {
             "input": [
@@ -7872,9 +7818,9 @@
           "release_date": "2026-04-24",
           "last_updated": "2026-04-24",
           "cost": {
-            "input": "0.0886",
-            "output": "0.1772",
-            "cache_read": "0.0177",
+            "input": "0.0818",
+            "output": "0.1635",
+            "cache_read": "0.0164",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -7899,9 +7845,9 @@
           "release_date": "2026-07-31",
           "last_updated": "2026-07-31",
           "cost": {
-            "input": "0.0700",
-            "output": "0.1400",
-            "cache_read": "0.0140",
+            "input": "0.0650",
+            "output": "0.1800",
+            "cache_read": "0.0160",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -7926,9 +7872,9 @@
           "release_date": "2026-08-21",
           "last_updated": "2026-08-21",
           "cost": {
-            "input": "0.4400",
-            "output": "1.3200",
-            "cache_read": "0.0140",
+            "input": "0.2200",
+            "output": "0.6600",
+            "cache_read": "0.0070",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -7954,9 +7900,9 @@
           "release_date": "2026-04-24",
           "last_updated": "2026-04-24",
           "cost": {
-            "input": "0.8700",
-            "output": "1.7400",
-            "cache_read": "0.0725",
+            "input": "0.5389",
+            "output": "1.0778",
+            "cache_read": "0.0449",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -7981,9 +7927,9 @@
           "release_date": "2026-08-12",
           "last_updated": "2026-08-22",
           "cost": {
-            "input": "1.3200",
-            "output": "3.9600",
-            "cache_read": "0.0440",
+            "input": "0.6600",
+            "output": "1.9800",
+            "cache_read": "0.0220",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -8612,10 +8558,10 @@
           "release_date": "2026-08-13",
           "last_updated": "2026-08-13",
           "cost": {
-            "input": "0.3750",
-            "output": "1.8750",
-            "cache_read": "0.0375",
-            "cache_write": "0.0208",
+            "input": "0.7500",
+            "output": "3.7500",
+            "cache_read": "0.0750",
+            "cache_write": "0.0417",
             "input_audio": null,
             "output_audio": null
           },
@@ -8706,7 +8652,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 262144,
+            "context": 131072,
             "input": null,
             "output": 117964
           },
@@ -9471,8 +9417,8 @@
           "release_date": "2026-08-10",
           "last_updated": "2026-08-10",
           "cost": {
-            "input": "0.3500",
-            "output": "1.5000",
+            "input": "0.3000",
+            "output": "1.2000",
             "cache_read": "0.0400",
             "cache_write": null,
             "input_audio": null,
@@ -9481,7 +9427,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 117964
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -10435,9 +10381,9 @@
             "output_audio": null
           },
           "limit": {
-            "context": 32000,
+            "context": 32768,
             "input": null,
-            "output": 25600
+            "output": 26214
           },
           "modalities": {
             "input": [
@@ -11061,9 +11007,9 @@
           "release_date": "2026-08-11",
           "last_updated": "2026-08-11",
           "cost": {
-            "input": "0.1000",
-            "output": "0.2500",
-            "cache_read": "0.0500",
+            "input": "0.0800",
+            "output": "0.2000",
+            "cache_read": "0.0400",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -11071,7 +11017,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 235929
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -11365,7 +11311,7 @@
           "cost": {
             "input": "0.1000",
             "output": "0.4000",
-            "cache_read": "0.0250",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -11373,7 +11319,7 @@
           "limit": {
             "context": 1047576,
             "input": null,
-            "output": 32768
+            "output": 942818
           },
           "modalities": {
             "input": [
@@ -13897,8 +13843,8 @@
           "release_date": "2025-10-06",
           "last_updated": "2025-10-06",
           "cost": {
-            "input": "0.1300",
-            "output": "0.5200",
+            "input": "0.1500",
+            "output": "0.6000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -13907,7 +13853,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 32768
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -14037,8 +13983,8 @@
           "release_date": "2026-02-23",
           "last_updated": "2026-02-23",
           "cost": {
-            "input": "0.2600",
-            "output": "2.0800",
+            "input": "0.2900",
+            "output": "2.4000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -14047,7 +13993,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 235929
+            "output": 81920
           },
           "modalities": {
             "input": [
@@ -15022,9 +14968,9 @@
           "release_date": "2026-07-06",
           "last_updated": "2026-07-06",
           "cost": {
-            "input": "0.1320",
-            "output": "0.5280",
-            "cache_read": "0.0330",
+            "input": "0.0825",
+            "output": "0.3300",
+            "cache_read": "0.0206",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -15974,7 +15920,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 1048576,
+            "context": 1310720,
             "input": null,
             "output": 131072
           },
@@ -16177,7 +16123,7 @@
           "limit": {
             "context": 1310720,
             "input": null,
-            "output": 131072
+            "output": 393216
           },
           "modalities": {
             "input": [
@@ -16194,10 +16140,10 @@
           "release_date": "2026-04-27",
           "last_updated": "2026-04-27",
           "cost": {
-            "input": "0.3750",
-            "output": "1.8750",
-            "cache_read": "0.0375",
-            "cache_write": "0.0208",
+            "input": "0.7500",
+            "output": "3.7500",
+            "cache_read": "0.0750",
+            "cache_write": "0.0417",
             "input_audio": null,
             "output_audio": null
           },
@@ -16372,15 +16318,15 @@
           "release_date": "2026-08-19",
           "last_updated": "2026-08-19",
           "cost": {
-            "input": "1.4000",
-            "output": "4.4000",
-            "cache_read": "0.2600",
+            "input": "1.1875",
+            "output": "4.1800",
+            "cache_read": "0.2470",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
           },
           "limit": {
-            "context": 1048576,
+            "context": 1310720,
             "input": null,
             "output": 131072
           },
