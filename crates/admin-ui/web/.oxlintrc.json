@@ -4,7 +4,11 @@
     "browser": true,
     "es2024": true
   },
-  "ignorePatterns": ["node_modules", "dist", ".output"],
+  "options": {
+    "typeAware": true // npm add -D oxlint-tsgolint@latest
+  },
+  "plugins": [ "eslint", "typescript", "react", "react-perf", "unicorn" ],
+  "ignorePatterns": [ "node_modules", "dist", ".output" ],
   "rules": {
     "react/jsx-props-no-spread-multi": "error",
     "react/jsx-no-duplicate-props": "error",
@@ -18,6 +22,29 @@
     "react-perf/jsx-no-new-function-as-prop": "error",
     "react-perf/jsx-no-new-object-as-prop": "error",
     "react-perf/jsx-no-new-array-as-prop": "error",
-    "react-perf/jsx-no-jsx-as-prop": "error"
+    "react-perf/jsx-no-jsx-as-prop": "error",
+
+    // eslint rules
+    "complexity": [ "error", { "max": 30 } ],
+    "eqeqeq": [ "error", "always", { "null": "ignore" } ],
+    "no-lonely-if": "error",
+    "no-await-in-loop": "error",
+    "max-lines": [ "error", { "max": 1500, "skipBlankLines": true, "skipComments": true } ],
+    "max-depth": [ "error", { "max": 3 } ],
+    "max-lines-per-function": [ "error", { "max": 80, "skipBlankLines": true, "skipComments": true } ],
+
+    // oxc rules
+    "oxc/no-accumulating-spread": "error",
+    "oxc/no-map-spread": "error",
+    "oxc/branches-sharing-code": "error",
+
+    // unicorn rules
+    "unicorn/error-message": "error", // no bare errors
+    "unicorn/filename-case": [ "error", { "case": "kebabCase" } ],
+    "unicorn/prefer-set-has": "error",
+    "unicorn/prefer-array-find": "error",
+    "unicorn/prefer-array-flat-map": "error",
+    "unicorn/prefer-logical-operator-over-ternary": "error"
+
   }
 }
