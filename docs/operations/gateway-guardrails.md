@@ -19,6 +19,8 @@ Supported phases are:
 
 A guarded stream is buffered up to `stream_buffer_bytes`. The gateway releases no guarded bytes before the final decision. Streams for disabled policies keep their normal streaming behavior.
 
+A guarded MCP result is buffered for at most `stream_buffer_timeout_ms` (default `120000`, maximum `600000`). An upstream MCP tool that holds its event stream open past that bound is answered with `504` and a JSON-RPC guardrail error instead of holding the caller connection open.
+
 ## Built-in packs
 
 The versioned built-in pack IDs are `core.shell`, `core.git`, `core.filesystem`, `database.postgresql`, `cloud.aws`, `cloud.gcp`, and `saas.notion`. Shell checks parse command structure. MCP checks use the server identity, tool identity and aliases, parsed JSON arguments, and typed JSON-path predicates. They do not match a regular expression against serialized JSON.
@@ -42,6 +44,7 @@ guardrails:
       - saas.notion
     managed_checks: []
     stream_buffer_bytes: 4194304
+    stream_buffer_timeout_ms: 120000
   managed_checks: {}
   model_routes: {}
   mcp_servers: {}

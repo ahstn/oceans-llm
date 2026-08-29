@@ -57,6 +57,7 @@ guardrails:
       - saas.notion
     managed_checks: []
     stream_buffer_bytes: 4194304
+    stream_buffer_timeout_ms: 120000
   managed_checks: {}
   model_routes: {}
   mcp_servers: {}

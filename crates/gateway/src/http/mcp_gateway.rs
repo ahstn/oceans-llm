@@ -2,7 +2,10 @@ mod aggregate;
 mod json_rpc;
 mod upstream;
 
-use std::{error::Error as _, time::Instant};
+use std::{
+    error::Error as _,
+    time::{Duration, Instant},
+};
 
 use axum::{
     Json,
@@ -26,6 +29,7 @@ use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput, McpIn
 use json_rpc::{McpRpcRequest, mcp_jsonrpc_error_response, mcp_request_id, parse_mcp_rpc_request};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
+use tokio::time::timeout;
 use upstream::{proxy_tools_list, proxy_upstream};
 use uuid::Uuid;
 
@@ -361,15 +365,28 @@ async fn enforce_direct_mcp_result(
         return (response, None, false);
     }
     let (mut parts, body) = response.into_parts();
-    let bytes = match to_bytes(body, policy.stream_buffer_bytes).await {
-        Ok(bytes) => bytes,
-        Err(_) => {
+    let buffer_timeout = Duration::from_millis(policy.stream_buffer_timeout_ms);
+    let bytes = match timeout(buffer_timeout, to_bytes(body, policy.stream_buffer_bytes)).await {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(_)) => {
             return (
                 mcp_jsonrpc_error_response(
                     StatusCode::PAYLOAD_TOO_LARGE,
                     id,
                     GUARDRAIL_POLICY_DENIED_CODE,
                     "MCP result exceeded the configured guardrail buffer",
+                ),
+                None,
+                true,
+            );
+        }
+        Err(_) => {
+            return (
+                mcp_jsonrpc_error_response(
+                    StatusCode::GATEWAY_TIMEOUT,
+                    id,
+                    GUARDRAIL_POLICY_DENIED_CODE,
+                    "MCP result did not complete within the guardrail buffer timeout",
                 ),
                 None,
                 true,

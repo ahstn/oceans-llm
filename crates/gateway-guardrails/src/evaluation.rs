@@ -444,6 +444,7 @@ mod tests {
             packs: vec![PackId::new("core.git").unwrap()],
             managed_checks,
             stream_buffer_bytes: 1024,
+            stream_buffer_timeout_ms: 1_000,
             scope: EffectiveScope::Global,
         }
     }

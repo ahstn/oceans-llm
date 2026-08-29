@@ -1009,6 +1009,7 @@ mod tests {
                     packs: vec![PackId::new(pack).unwrap()],
                     managed_checks: Vec::new(),
                     stream_buffer_bytes: 1024,
+                    stream_buffer_timeout_ms: 1_000,
                     scope: EffectiveScope::Global,
                 },
             )
@@ -1334,6 +1335,7 @@ mod tests {
                     packs: vec![PackId::new("core.shell").unwrap()],
                     managed_checks: Vec::new(),
                     stream_buffer_bytes: 1024,
+                    stream_buffer_timeout_ms: 1_000,
                     scope: EffectiveScope::Global,
                 },
             )

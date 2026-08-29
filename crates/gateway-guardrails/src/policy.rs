@@ -10,6 +10,8 @@ use crate::{
 const DEFAULT_TIMEOUT_MS: u64 = 2_000;
 const DEFAULT_MAX_CONTENT_BYTES: usize = 256 * 1024;
 const DEFAULT_STREAM_BUFFER_BYTES: usize = 4 * 1024 * 1024;
+const DEFAULT_STREAM_BUFFER_TIMEOUT_MS: u64 = 120_000;
+const MAX_STREAM_BUFFER_TIMEOUT_MS: u64 = 600_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -94,6 +96,8 @@ pub struct PolicyConfig {
     pub managed_checks: Vec<String>,
     #[serde(default = "default_stream_buffer_bytes")]
     pub stream_buffer_bytes: usize,
+    #[serde(default = "default_stream_buffer_timeout_ms")]
+    pub stream_buffer_timeout_ms: u64,
 }
 
 impl Default for PolicyConfig {
@@ -104,6 +108,7 @@ impl Default for PolicyConfig {
             packs: Vec::new(),
             managed_checks: Vec::new(),
             stream_buffer_bytes: default_stream_buffer_bytes(),
+            stream_buffer_timeout_ms: default_stream_buffer_timeout_ms(),
         }
     }
 }
@@ -121,6 +126,8 @@ pub struct PolicyOverride {
     pub managed_checks: Option<Vec<String>>,
     #[serde(default)]
     pub stream_buffer_bytes: Option<usize>,
+    #[serde(default)]
+    pub stream_buffer_timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -196,6 +203,7 @@ pub struct EffectivePolicy {
     pub packs: Vec<PackId>,
     pub managed_checks: Vec<String>,
     pub stream_buffer_bytes: usize,
+    pub stream_buffer_timeout_ms: u64,
     pub scope: crate::EffectiveScope,
 }
 
@@ -244,6 +252,9 @@ impl<'a> PolicyResolver<'a> {
             stream_buffer_bytes: policy_override
                 .and_then(|policy| policy.stream_buffer_bytes)
                 .unwrap_or(default.stream_buffer_bytes),
+            stream_buffer_timeout_ms: policy_override
+                .and_then(|policy| policy.stream_buffer_timeout_ms)
+                .unwrap_or(default.stream_buffer_timeout_ms),
             scope,
         }
     }
@@ -256,7 +267,8 @@ fn validate_policy(
 ) -> Result<(), GuardrailConfigError> {
     validate_pack_ids(label, &policy.packs)?;
     validate_managed_references(label, &policy.managed_checks, managed)?;
-    validate_stream_buffer(label, policy.stream_buffer_bytes)
+    validate_stream_buffer(label, policy.stream_buffer_bytes)?;
+    validate_stream_buffer_timeout(label, policy.stream_buffer_timeout_ms)
 }
 
 fn validate_override(
@@ -276,6 +288,12 @@ fn validate_override(
         policy
             .stream_buffer_bytes
             .unwrap_or(default.stream_buffer_bytes),
+    )?;
+    validate_stream_buffer_timeout(
+        label,
+        policy
+            .stream_buffer_timeout_ms
+            .unwrap_or(default.stream_buffer_timeout_ms),
     )
 }
 
@@ -413,6 +431,19 @@ fn validate_stream_buffer(label: &str, bytes: usize) -> Result<(), GuardrailConf
     Ok(())
 }
 
+fn validate_stream_buffer_timeout(
+    label: &str,
+    timeout_ms: u64,
+) -> Result<(), GuardrailConfigError> {
+    if !(1..=MAX_STREAM_BUFFER_TIMEOUT_MS).contains(&timeout_ms) {
+        return Err(GuardrailConfigError::InvalidStreamBufferTimeout {
+            policy: label.to_string(),
+            timeout_ms,
+        });
+    }
+    Ok(())
+}
+
 const fn default_timeout_ms() -> u64 {
     DEFAULT_TIMEOUT_MS
 }
@@ -423,6 +454,10 @@ const fn default_max_content_bytes() -> usize {
 
 const fn default_stream_buffer_bytes() -> usize {
     DEFAULT_STREAM_BUFFER_BYTES
+}
+
+const fn default_stream_buffer_timeout_ms() -> u64 {
+    DEFAULT_STREAM_BUFFER_TIMEOUT_MS
 }
 
 const fn default_managed_retries() -> u8 {
@@ -453,6 +488,10 @@ pub enum GuardrailConfigError {
     UnknownMcpServer(String),
     #[error("guardrail policy `{0}` stream buffer must be greater than zero")]
     InvalidStreamBuffer(String),
+    #[error(
+        "guardrail policy `{policy}` stream buffer timeout {timeout_ms}ms is outside 1..=600000"
+    )]
+    InvalidStreamBufferTimeout { policy: String, timeout_ms: u64 },
     #[error("managed guardrail check `{check}` is invalid: {message}")]
     InvalidManagedSettings { check: String, message: String },
 }
@@ -474,6 +513,7 @@ mod tests {
                 packs: vec![pack("core.shell")],
                 managed_checks: Vec::new(),
                 stream_buffer_bytes: 100,
+                stream_buffer_timeout_ms: 1_000,
             },
             model_routes: BTreeMap::from([(
                 "openai/gpt".into(),
@@ -605,6 +645,21 @@ mod tests {
         assert_eq!(
             config.validate(&BTreeSet::new(), &BTreeSet::new()),
             Err(GuardrailConfigError::InvalidStreamBuffer("default".into()))
+        );
+
+        let config = GuardrailConfig {
+            default: PolicyConfig {
+                stream_buffer_timeout_ms: 0,
+                ..PolicyConfig::default()
+            },
+            ..GuardrailConfig::default()
+        };
+        assert_eq!(
+            config.validate(&BTreeSet::new(), &BTreeSet::new()),
+            Err(GuardrailConfigError::InvalidStreamBufferTimeout {
+                policy: "default".into(),
+                timeout_ms: 0,
+            })
         );
 
         let config = GuardrailConfig {

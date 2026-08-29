@@ -586,12 +586,14 @@ fn collect_stream_tool_fragments(
                 "function_call"
             };
             if let Some(function) = object.get(function_field).and_then(Value::as_object) {
-                let identity = object
+                let key = object
                     .get("index")
                     .or_else(|| object.get("id"))
                     .map(identity_key)
-                    .unwrap_or_else(|| "default".to_string());
-                let key = format!("{pointer}:{identity}");
+                    .map_or_else(
+                        || format!("{pointer}:default"),
+                        |identity| format!("{}:{identity}", tool_call_container(pointer)),
+                    );
                 let fragments = output.entry(key).or_default();
                 if let Some(name) = function.get("name").and_then(Value::as_str) {
                     fragments.name.push_str(name);
@@ -688,6 +690,15 @@ fn collect_stream_tool_fragments(
         }
         _ => {}
     }
+}
+
+fn tool_call_container(pointer: &str) -> &str {
+    pointer
+        .rsplit_once('/')
+        .filter(|(_, position)| {
+            !position.is_empty() && position.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        .map_or(pointer, |(container, _)| container)
 }
 
 fn identity_key(value: &Value) -> String {
@@ -1252,12 +1263,64 @@ mod tests {
         }
 
         assert_eq!(fragments.len(), 2);
-        let first = &fragments["/choices/0/delta/tool_calls/0:0"];
-        let second = &fragments["/choices/0/delta/tool_calls/1:1"];
+        let first = &fragments["/choices/0/delta/tool_calls:0"];
+        let second = &fragments["/choices/0/delta/tool_calls:1"];
         assert_eq!(first.name, "bash");
         assert_eq!(first.arguments, "{\"command\":\"rm -rf /tmp/x\"}");
         assert_eq!(second.arguments, "{\"value\":1}");
         assert_eq!(first.argument_locations.len(), 2);
+    }
+
+    #[test]
+    fn joins_stream_tool_deltas_that_change_array_position() {
+        let mut fragments = BTreeMap::new();
+        for (event_index, event) in [
+            json!({"choices": [{"delta": {"tool_calls": [
+                {"index": 0, "id": "call-1", "function": {"name": "bash", "arguments": "{\"command\":\"rm "}},
+                {"index": 1, "id": "call-2", "function": {"name": "safe", "arguments": "{\"value\":"}}
+            ]}}]}),
+            json!({"choices": [{"delta": {"tool_calls": [
+                {"index": 1, "function": {"arguments": "1}"}}
+            ]}}]}),
+            json!({"choices": [{"delta": {"tool_calls": [
+                {"index": 0, "function": {"arguments": "-rf /tmp/x\"}"}}
+            ]}}]}),
+        ]
+        .iter()
+        .enumerate()
+        {
+            collect_stream_tool_fragments(event, "", event_index, &mut fragments);
+        }
+
+        assert_eq!(fragments.len(), 2);
+        assert_eq!(
+            fragments["/choices/0/delta/tool_calls:0"].arguments,
+            "{\"command\":\"rm -rf /tmp/x\"}"
+        );
+        assert_eq!(
+            fragments["/choices/0/delta/tool_calls:1"].arguments,
+            "{\"value\":1}"
+        );
+    }
+
+    #[test]
+    fn keeps_positional_keys_for_tool_deltas_without_identity() {
+        let mut fragments = BTreeMap::new();
+        let event = json!({"choices": [{"delta": {"tool_calls": [
+            {"function": {"name": "bash", "arguments": "{}"}},
+            {"function": {"name": "safe", "arguments": "{}"}}
+        ]}}]});
+        collect_stream_tool_fragments(&event, "", 0, &mut fragments);
+
+        assert_eq!(fragments.len(), 2);
+        assert_eq!(
+            fragments["/choices/0/delta/tool_calls/0:default"].name,
+            "bash"
+        );
+        assert_eq!(
+            fragments["/choices/0/delta/tool_calls/1:default"].name,
+            "safe"
+        );
     }
 
     #[test]
