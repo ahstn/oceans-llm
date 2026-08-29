@@ -16,7 +16,8 @@ use crate::{
     batch::{
         BatchAccessScope, BatchCapabilities, BatchItemPage, BatchItemQuery, BatchItemRecord,
         BatchJobRecord, BatchPage, BatchPollUpdate, BatchQuery, BatchStatus, NewBatchJob,
-        ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderBatchSubmission,
+        ProviderBatchRequest, ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchState,
+        ProviderBatchSubmission,
     },
     budgets::{BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource},
     domain::{
@@ -24,7 +25,8 @@ use crate::{
         BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord,
         CacheUsageAggregateRecord, ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord,
         ExternalMcpToolRecord, FocusExportAggregateRecord, FocusExportDiagnosticsRecord,
-        GatewayModel, HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
+        GatewayModel, GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
+        HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
         McpAggregateSessionRecord, McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord,
         McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
         McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
@@ -773,10 +775,29 @@ pub trait BatchRepository: Send + Sync {
         requested_at: OffsetDateTime,
     ) -> Result<BatchJobRecord, StoreError>;
 
+    async fn replace_batch_item_requests(
+        &self,
+        batch_id: Uuid,
+        requests: &[ProviderBatchRequestItem],
+    ) -> Result<(), StoreError>;
+
     async fn get_batch_items_for_worker(
         &self,
         batch_id: Uuid,
     ) -> Result<Vec<BatchItemRecord>, StoreError>;
+}
+
+#[async_trait]
+pub trait GuardrailDecisionRepository: Send + Sync {
+    async fn insert_guardrail_decision(
+        &self,
+        decision: &GuardrailDecisionEventRecord,
+    ) -> Result<(), StoreError>;
+
+    async fn list_guardrail_decisions(
+        &self,
+        query: &GuardrailDecisionQuery,
+    ) -> Result<GuardrailDecisionPage, StoreError>;
 }
 
 #[async_trait]

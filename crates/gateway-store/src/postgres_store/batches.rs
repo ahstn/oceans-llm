@@ -559,6 +559,27 @@ impl BatchRepository for PostgresStore {
         load_job(&self.pool, batch_id, scope).await
     }
 
+    async fn replace_batch_item_requests(
+        &self,
+        batch_id: Uuid,
+        requests: &[gateway_core::ProviderBatchRequestItem],
+    ) -> Result<(), StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        for request in requests {
+            sqlx::query(
+                "UPDATE batch_items SET request_body_json=$1,updated_at=$2 WHERE batch_id=$3 AND custom_id=$4",
+            )
+            .bind(serialize_json(&request.body)?)
+            .bind(OffsetDateTime::now_utc().unix_timestamp())
+            .bind(batch_id.to_string())
+            .bind(&request.custom_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(to_query_error)?;
+        }
+        tx.commit().await.map_err(to_query_error)
+    }
+
     async fn get_batch_items_for_worker(
         &self,
         batch_id: Uuid,

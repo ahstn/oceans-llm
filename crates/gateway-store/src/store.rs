@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, AgentSessionAnalysisRepository,
     ApiKeyRepository, AuthMode, BatchRepository, BudgetAlertRepository, BudgetRepository,
-    GlobalRole, IdentityRepository, IdentityUserRecord, McpAccessRepository,
-    McpAggregateSessionRepository, McpOauthStateRecord, McpRegistryRepository,
+    GlobalRole, GuardrailDecisionRepository, IdentityRepository, IdentityUserRecord,
+    McpAccessRepository, McpAggregateSessionRepository, McpOauthStateRecord, McpRegistryRepository,
     McpTokenOverheadRepository, McpToolInvocationRepository, McpUpstreamCredentialRepository,
     MembershipRole, ModelRepository, OauthLoginStateRecord, OauthProviderRecord,
     OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogRepository,
@@ -51,6 +51,7 @@ pub trait GatewayStore:
     + BudgetRepository
     + BudgetAlertRepository
     + RequestLogRepository
+    + GuardrailDecisionRepository
     + ReviewAgentRepository
     + McpRegistryRepository
     + McpAccessRepository

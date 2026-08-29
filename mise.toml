@@ -359,6 +359,16 @@ description = "Run gateway and admin UI end-to-end contract tests"
 depends = ["ui-build", "e2e-install", "e2e-gateway-build"]
 run = "bun run --cwd crates/admin-ui/web test:e2e"
 
+[tasks.guardrail-release-gate]
+description = "Run guardrail security, load, harness, and end-to-end release gates"
+depends = ["ui-build", "e2e-install", "e2e-gateway-build", "harness-integration-install"]
+run = """
+cargo test -p gateway-guardrails
+cargo test -p gateway-store decision_event_persistence_load_gate_stays_within_release_budget
+npm run test --prefix tests/harness-integration -- guardrails-hook.test.ts
+E2E_GATEWAY_PORT=49380 E2E_UI_PORT=49381 E2E_UPSTREAM_PORT=49382 E2E_BASE_URL=http://127.0.0.1:49380 bun run --cwd crates/admin-ui/web playwright test e2e/guardrails.e2e.ts
+"""
+
 [tasks.harness-integration-install]
 description = "Install native coding-harness integration test dependencies"
 sources = [

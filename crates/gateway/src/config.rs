@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, env, fs, net::SocketAddr, path::Path};
+use std::{collections::BTreeMap, env, fs, net::SocketAddr, path::Path, sync::Arc};
 
 use anyhow::{Context, bail};
 use gateway_core::{
@@ -14,6 +14,11 @@ use gateway_core::{
     SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
     SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
     hash_gateway_key_secret, parse_gateway_api_key, validate_entity_tags,
+};
+use gateway_guardrails::{
+    BearerTokenProvider, BedrockApplyGuardrail, BedrockApplyGuardrailConfig, BedrockAuth,
+    BedrockManagedAuthConfig, BuiltInEvaluator, EvaluationError, GuardrailConfig, GuardrailEngine,
+    ManagedCheckKind, ManagedEvaluator, ModelArmor, ModelArmorAuthConfig, ModelArmorConfig,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
@@ -73,6 +78,8 @@ pub struct GatewayConfig {
     #[serde(default)]
     pub agent_analysis: AgentAnalysisConfig,
     #[serde(default)]
+    pub guardrails: GuardrailConfig,
+    #[serde(default)]
     pub permissions: PermissionsConfig,
     #[serde(default)]
     pub providers: Vec<ProviderConfig>,
@@ -84,6 +91,43 @@ pub struct GatewayConfig {
     pub service_accounts: Vec<ServiceAccountConfig>,
     #[serde(default)]
     pub users: Vec<UserConfig>,
+}
+
+struct SecretReferenceBearerTokenProvider {
+    reference: String,
+}
+
+#[async_trait::async_trait]
+impl BearerTokenProvider for SecretReferenceBearerTokenProvider {
+    async fn bearer_token(&self) -> Result<String, EvaluationError> {
+        resolve_model_armor_token_reference_async(&self.reference)
+            .await
+            .map_err(|error| EvaluationError::Unavailable(error.to_string()))
+    }
+}
+
+fn resolve_model_armor_token_reference(value: &str) -> anyhow::Result<String> {
+    let token = resolve_secret_reference(value)?.trim().to_string();
+    if token.is_empty() {
+        bail!("Model Armor bearer token cannot be empty");
+    }
+    Ok(token)
+}
+
+async fn resolve_model_armor_token_reference_async(value: &str) -> anyhow::Result<String> {
+    let token = if let Some(path) = value.strip_prefix("file.") {
+        tokio::fs::read_to_string(path)
+            .await
+            .with_context(|| format!("failed to read secret file `{path}`"))?
+    } else {
+        resolve_secret_reference(value)?
+    }
+    .trim()
+    .to_string();
+    if token.is_empty() {
+        bail!("Model Armor bearer token cannot be empty");
+    }
+    Ok(token)
 }
 
 impl GatewayConfig {
@@ -110,6 +154,11 @@ impl GatewayConfig {
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
         self.agent_analysis.validate()?;
+        let model_route_keys = self.guardrail_model_route_keys();
+        // MCP server references are checked against the seeded registry during startup.
+        let configured_mcp_server_keys = self.guardrails.mcp_servers.keys().cloned().collect();
+        self.guardrails
+            .validate(&model_route_keys, &configured_mcp_server_keys)?;
         let _ = self.permissions.resolve()?;
         self.auth.oidc.validate(&self.teams)?;
         self.auth.oauth.validate(&self.teams)?;
@@ -781,6 +830,96 @@ impl GatewayConfig {
 
     pub fn resolved_admin_permissions(&self) -> anyhow::Result<ResolvedAdminPermissions> {
         self.permissions.resolve()
+    }
+
+    pub fn guardrail_model_route_keys(&self) -> std::collections::BTreeSet<String> {
+        self.models
+            .iter()
+            .flat_map(|model| {
+                model.routes.iter().map(move |route| {
+                    format!("{}/{}/{}", model.id, route.provider, route.upstream_model)
+                })
+            })
+            .collect()
+    }
+
+    pub fn validate_guardrail_mcp_server_keys(
+        &self,
+        known_mcp_servers: &std::collections::BTreeSet<String>,
+    ) -> anyhow::Result<()> {
+        self.guardrails
+            .validate(&self.guardrail_model_route_keys(), known_mcp_servers)
+            .map_err(Into::into)
+    }
+
+    pub fn guardrail_engine(&self) -> anyhow::Result<GuardrailEngine> {
+        let mut managed = BTreeMap::<String, Arc<dyn ManagedEvaluator>>::new();
+        for (name, check) in &self.guardrails.managed_checks {
+            let evaluator: Arc<dyn ManagedEvaluator> = match check.kind {
+                ManagedCheckKind::AmazonBedrock => {
+                    let config = check.bedrock.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "managed guardrail check `{name}` is missing bedrock config"
+                        )
+                    })?;
+                    let auth = match &config.auth {
+                        BedrockManagedAuthConfig::DefaultChain => BedrockAuth::DefaultChain,
+                        BedrockManagedAuthConfig::StaticCredentials {
+                            access_key_id,
+                            secret_access_key,
+                            session_token,
+                        } => BedrockAuth::StaticCredentials {
+                            access_key_id: resolve_secret_reference(access_key_id)?,
+                            secret_access_key: resolve_secret_reference(secret_access_key)?,
+                            session_token: session_token
+                                .as_deref()
+                                .map(resolve_secret_reference)
+                                .transpose()?,
+                        },
+                    };
+                    Arc::new(BedrockApplyGuardrail::new(BedrockApplyGuardrailConfig {
+                        evaluator_id: name.clone(),
+                        region: config.region.clone(),
+                        guardrail_identifier: config.guardrail_identifier.clone(),
+                        guardrail_version: config.guardrail_version.clone(),
+                        endpoint_url: config.endpoint_url.clone(),
+                        auth,
+                        max_retries: config.max_retries,
+                    })?)
+                }
+                ManagedCheckKind::GoogleModelArmor => {
+                    let config = check.model_armor.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "managed guardrail check `{name}` is missing model_armor config"
+                        )
+                    })?;
+                    let token_provider: Arc<dyn BearerTokenProvider> = match &config.auth {
+                        ModelArmorAuthConfig::BearerToken { token } => {
+                            resolve_model_armor_token_reference(token)?;
+                            Arc::new(SecretReferenceBearerTokenProvider {
+                                reference: token.clone(),
+                            })
+                        }
+                    };
+                    Arc::new(ModelArmor::new(
+                        ModelArmorConfig {
+                            evaluator_id: name.clone(),
+                            project: config.project.clone(),
+                            location: config.location.clone(),
+                            prompt_template: config.prompt_template.clone(),
+                            response_template: config.response_template.clone(),
+                            endpoint_url: config.endpoint_url.clone(),
+                        },
+                        token_provider,
+                    )?)
+                }
+            };
+            managed.insert(name.clone(), evaluator);
+        }
+        Ok(GuardrailEngine::new(
+            vec![Arc::new(BuiltInEvaluator)],
+            managed,
+        ))
     }
 
     fn validate_budget_defaults(
@@ -2874,8 +3013,14 @@ pub(crate) fn resolve_secret_reference(value: &str) -> anyhow::Result<String> {
         resolve_env_reference(value)
     } else if let Some(literal) = value.strip_prefix("literal.") {
         Ok(literal.to_string())
+    } else if let Some(path) = value.strip_prefix("file.") {
+        fs::read_to_string(path)
+            .with_context(|| format!("failed to read secret file `{path}`"))
+            .map(|secret| secret.trim_end_matches(['\r', '\n']).to_string())
     } else {
-        bail!("unsupported secret reference `{value}`; use env.* or literal.* for this phase")
+        bail!(
+            "unsupported secret reference `{value}`; use env.*, file.*, or literal.* for this phase"
+        )
     }
 }
 
@@ -3647,12 +3792,54 @@ mod tests {
 
     use super::{
         AgentAnalysisCacheTtlConfig, AwsBedrockRouteCompatibilityConfig, GatewayConfig,
-        McpOauthConfig, McpOauthProviderConfig, default_google_authorization_url,
-        default_google_token_url,
+        McpOauthConfig, McpOauthProviderConfig, SecretReferenceBearerTokenProvider,
+        default_google_authorization_url, default_google_token_url, resolve_secret_reference,
     };
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
+    }
+
+    #[test]
+    fn managed_bedrock_credentials_accept_file_references() {
+        let temporary = tempdir().expect("tempdir");
+        for (name, expected) in [
+            ("access-key", "test-access-key"),
+            ("secret-key", "test-secret-key"),
+            ("session-token", "test-session-token"),
+        ] {
+            let path = temporary.path().join(name);
+            std::fs::write(&path, format!("{expected}\n")).expect("write credential");
+            assert_eq!(
+                resolve_secret_reference(&format!("file.{}", path.display()))
+                    .expect("resolve file credential"),
+                expected
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn model_armor_token_provider_reloads_file_references() {
+        let temporary = tempdir().expect("tempdir");
+        let token_path = temporary.path().join("model-armor-token");
+        std::fs::write(&token_path, "first-token\n").expect("write first token");
+        let provider = SecretReferenceBearerTokenProvider {
+            reference: format!("file.{}", token_path.display()),
+        };
+
+        assert_eq!(
+            gateway_guardrails::BearerTokenProvider::bearer_token(&provider)
+                .await
+                .expect("first token"),
+            "first-token"
+        );
+        std::fs::write(&token_path, "second-token\n").expect("rotate token");
+        assert_eq!(
+            gateway_guardrails::BearerTokenProvider::bearer_token(&provider)
+                .await
+                .expect("rotated token"),
+            "second-token"
+        );
     }
 
     #[test]

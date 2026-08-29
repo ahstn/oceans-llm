@@ -31,6 +31,8 @@ pub struct GatewayMetrics {
     tool_cardinality: Histogram<u64>,
     mcp_tool_invocations: Counter<u64>,
     mcp_tool_invocation_duration: Histogram<f64>,
+    guardrail_decisions: Counter<u64>,
+    guardrail_decision_duration: Histogram<f64>,
     mcp_discovery_refreshes: Counter<u64>,
     mcp_discovery_refresh_duration: Histogram<f64>,
     usage_records: Counter<u64>,
@@ -134,6 +136,15 @@ impl GatewayMetrics {
                 .with_unit("s")
                 .with_description("MCP tool invocation duration in seconds")
                 .build(),
+            guardrail_decisions: meter
+                .u64_counter("gateway.guardrails.decisions")
+                .with_description("Guardrail decisions by phase, action, and evaluator")
+                .build(),
+            guardrail_decision_duration: meter
+                .f64_histogram("gateway.guardrails.decision.duration")
+                .with_unit("s")
+                .with_description("Guardrail evaluator duration in seconds")
+                .build(),
             mcp_discovery_refreshes: meter
                 .u64_counter("gateway.mcp.discovery.refreshes")
                 .with_description("MCP discovery refresh attempts")
@@ -230,6 +241,28 @@ impl GatewayMetrics {
         let mut attrs = base_attrs(labels);
         attrs.push(KeyValue::new("operation", operation.to_string()));
         self.usage_record_failures.add(1, &attrs);
+    }
+
+    pub fn record_guardrail_decision(
+        &self,
+        phase: &str,
+        action: &str,
+        evaluator: &str,
+        failure_disposition: Option<&str>,
+        latency_micros: u64,
+    ) {
+        let attributes = [
+            KeyValue::new("guardrail.phase", phase.to_string()),
+            KeyValue::new("guardrail.action", action.to_string()),
+            KeyValue::new("guardrail.evaluator", evaluator.to_string()),
+            KeyValue::new(
+                "guardrail.failure_disposition",
+                failure_disposition.unwrap_or("none").to_string(),
+            ),
+        ];
+        self.guardrail_decisions.add(1, &attributes);
+        self.guardrail_decision_duration
+            .record(latency_micros as f64 / 1_000_000.0, &attributes);
     }
 
     pub fn record_admin_view_cache_request(&self, view: &str, result: &str) {

@@ -185,6 +185,150 @@
         ]
       }
     },
+    "/api/v1/admin/guardrails/decisions": {
+      "get": {
+        "tags": [
+          "Guardrails"
+        ],
+        "operationId": "list_guardrail_decisions",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "phase",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "evaluator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "occurred_at_start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "occurred_at_end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_GuardrailDecisionPageView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/guardrails/policies": {
+      "get": {
+        "tags": [
+          "Guardrails"
+        ],
+        "operationId": "get_guardrail_policies",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_GuardrailPoliciesView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/identity/service-accounts": {
       "get": {
         "tags": [
@@ -4047,6 +4191,47 @@
           {
             "session_cookie": []
           },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/guardrails/evaluate": {
+      "post": {
+        "tags": [
+          "Guardrails"
+        ],
+        "operationId": "evaluate_guardrail",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuardEvaluationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Guardrail decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuardEvaluationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid evaluation request"
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          }
+        },
+        "security": [
           {
             "gateway_api_key": []
           }
@@ -8903,6 +9088,21 @@
           }
         }
       },
+      "BuiltInPackView": {
+        "type": "object",
+        "required": [
+          "id",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "required": [
@@ -9364,6 +9564,44 @@
           },
           "scope_key": {
             "type": "string"
+          }
+        }
+      },
+      "EffectiveGuardrailPolicyView": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "mode",
+          "packs",
+          "managed_checks",
+          "stream_buffer_bytes",
+          "scope"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "managed_checks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string"
+          },
+          "packs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scope": {
+            "type": "string"
+          },
+          "stream_buffer_bytes": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -10207,6 +10445,107 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/AdminModelClientConfigView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_GuardrailDecisionPageView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items",
+              "page",
+              "page_size",
+              "total"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/GuardrailDecisionView"
+                }
+              },
+              "page": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "page_size": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "total": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_GuardrailPoliciesView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "default",
+              "model_routes",
+              "mcp_servers",
+              "managed_checks",
+              "built_in_packs"
+            ],
+            "properties": {
+              "built_in_packs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BuiltInPackView"
+                }
+              },
+              "default": {
+                "$ref": "#/components/schemas/EffectiveGuardrailPolicyView"
+              },
+              "managed_checks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ManagedCheckView"
+                }
+              },
+              "mcp_servers": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/EffectiveGuardrailPolicyView"
+                },
+                "propertyNames": {
+                  "type": "string"
+                }
+              },
+              "model_routes": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/EffectiveGuardrailPolicyView"
+                },
+                "propertyNames": {
+                  "type": "string"
                 }
               }
             }
@@ -11497,6 +11836,238 @@
           }
         }
       },
+      "GuardEvaluationRequest": {
+        "type": "object",
+        "required": [
+          "tool_name"
+        ],
+        "properties": {
+          "arguments": {},
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tool_name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GuardEvaluationResponse": {
+        "type": "object",
+        "required": [
+          "decision_id",
+          "action",
+          "allowed",
+          "transformed"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "allowed": {
+            "type": "boolean"
+          },
+          "decision_id": {
+            "type": "string"
+          },
+          "failure_disposition": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "matched_rule": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MatchedRuleResponse"
+              }
+            ]
+          },
+          "output_arguments": {},
+          "output_command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transformed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GuardrailDecisionPageView": {
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GuardrailDecisionView"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "GuardrailDecisionView": {
+        "type": "object",
+        "required": [
+          "decision_id",
+          "phase",
+          "effective_scope",
+          "evaluator",
+          "action",
+          "reason_code",
+          "latency_micros",
+          "transformed",
+          "content_hash",
+          "occurred_at"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "content_hash": {
+            "type": "string"
+          },
+          "decision_id": {
+            "type": "string"
+          },
+          "effective_scope": {
+            "type": "string"
+          },
+          "evaluator": {
+            "type": "string"
+          },
+          "failure_disposition": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latency_micros": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "managed_service": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mcp_tool_invocation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "pack_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phase": {
+            "type": "string"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rule_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transformed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GuardrailPoliciesView": {
+        "type": "object",
+        "required": [
+          "default",
+          "model_routes",
+          "mcp_servers",
+          "managed_checks",
+          "built_in_packs"
+        ],
+        "properties": {
+          "built_in_packs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BuiltInPackView"
+            }
+          },
+          "default": {
+            "$ref": "#/components/schemas/EffectiveGuardrailPolicyView"
+          },
+          "managed_checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedCheckView"
+            }
+          },
+          "mcp_servers": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/EffectiveGuardrailPolicyView"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "model_routes": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/EffectiveGuardrailPolicyView"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "HarnessUsageChartHarnessView": {
         "type": "object",
         "required": [
@@ -11916,6 +12487,86 @@
             "type": "string"
           },
           "window_start": {
+            "type": "string"
+          }
+        }
+      },
+      "ManagedCheckView": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "phases",
+          "timeout_ms",
+          "failure_disposition",
+          "max_content_bytes",
+          "resource"
+        ],
+        "properties": {
+          "failure_disposition": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "max_content_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prompt_resource": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource": {
+            "type": "string"
+          },
+          "response_resource": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "MatchedRuleResponse": {
+        "type": "object",
+        "required": [
+          "pack_id",
+          "rule_id",
+          "matched_field",
+          "description",
+          "safer_action"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "matched_field": {
+            "type": "string"
+          },
+          "pack_id": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "safer_action": {
             "type": "string"
           }
         }

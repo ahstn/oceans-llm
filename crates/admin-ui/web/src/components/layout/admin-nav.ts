@@ -19,6 +19,7 @@ export type AdminRouteId = AdminPage | 'batches'
 export interface AdminNavItem {
   page?: AdminRouteId
   requiredPage?: AdminPage
+  platformAdminOnly?: boolean
   label: string
   to: string
   icon: unknown
@@ -126,6 +127,13 @@ export const adminNavSections: AdminNavSection[] = [
         to: '/observability/mcp-invocations',
         icon: McpServerIcon,
       },
+      {
+        requiredPage: 'mcp_invocations',
+        platformAdminOnly: true,
+        label: 'Guardrails',
+        to: '/observability/guardrails',
+        icon: Notification03Icon,
+      },
     ],
   },
   {
@@ -161,13 +169,15 @@ export function normalizeAdminPath(pathname: string) {
   return pathname.replace(/^\/admin(?=\/|$)/, '') || '/'
 }
 
-export function getAdminNavSections(pages: AdminPage[]) {
+export function getAdminNavSections(pages: AdminPage[], platformAdmin = false) {
   const allowedPages = new Set(pages)
   return adminNavSections
     .map((section) => ({
       ...section,
       items: section.items.filter(
-        (item) => !item.requiredPage || allowedPages.has(item.requiredPage),
+        (item) =>
+          (!item.requiredPage || allowedPages.has(item.requiredPage)) &&
+          (!item.platformAdminOnly || platformAdmin),
       ),
     }))
     .filter((section) => section.items.length > 0)
@@ -180,6 +190,11 @@ export function getAdminPagePath(page: AdminPage) {
 export function getAdminPageForPath(path: string) {
   const currentPath = normalizeAdminPath(path.split(/[?#]/, 1)[0])
   return adminNavItems().find((item) => matchesAdminPath(currentPath, item.to))?.requiredPage
+}
+
+export function isPlatformAdminOnlyPath(path: string) {
+  const currentPath = normalizeAdminPath(path.split(/[?#]/, 1)[0])
+  return adminNavItems().find((item) => matchesAdminPath(currentPath, item.to))?.platformAdminOnly
 }
 
 export function canAccessPage(session: AuthSessionView, page: AdminPage) {

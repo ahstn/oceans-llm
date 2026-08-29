@@ -58,6 +58,7 @@ const sidebarIcons: Record<string, readonly HugeIconNode[]> = {
   "/operations/observability/export-traces-and-metrics": Activity01Icon,
   "/operations/observability/request-logs": FileSearchIcon,
   "/operations/agent-harness-usage": RoboticIcon,
+  "/operations/gateway-guardrails": Shield01Icon,
   "/operations/operator-runbooks": Book02Icon,
   "/access/identity-and-access": UserLock01Icon,
   "/access/service-accounts": Key01Icon,
