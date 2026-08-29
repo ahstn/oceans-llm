@@ -2074,6 +2074,23 @@ pub(crate) mod tests {
             touched.last_used_at.map(OffsetDateTime::unix_timestamp),
             Some((now + Duration::seconds(2)).unix_timestamp())
         );
+        assert!(
+            store
+                .touch_provider_user_credential(replaced.credential_id, now + Duration::seconds(1),)
+                .await
+                .expect("accept out-of-order provider credential touch")
+        );
+        let touched_out_of_order = store
+            .get_provider_user_credential("copilot-user-test", user.user_id)
+            .await
+            .expect("load provider credential after out-of-order touch")
+            .expect("provider credential after out-of-order touch");
+        assert_eq!(
+            touched_out_of_order
+                .last_used_at
+                .map(OffsetDateTime::unix_timestamp),
+            Some((now + Duration::seconds(2)).unix_timestamp())
+        );
 
         assert!(
             store

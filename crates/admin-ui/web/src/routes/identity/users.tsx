@@ -237,6 +237,20 @@ export function UsersPage() {
     }))
   }
 
+  function clearProviderTokenIfUnchanged(
+    userId: string,
+    providerKey: string,
+    expectedToken: string,
+  ) {
+    setProviderTokensByUser((current) => {
+      const userTokens = current[userId]
+      if ((userTokens?.[providerKey] ?? '') !== expectedToken) {
+        return current
+      }
+      return { ...current, [userId]: { ...userTokens, [providerKey]: '' } }
+    })
+  }
+
   function setAuthMode(authMode: CreateUserInput['auth_mode']) {
     setForm((current) => ({
       ...current,
@@ -338,7 +352,8 @@ export function UsersPage() {
   function handleSaveProviderCredential(providerKey: string) {
     if (!selectedUser) return
     const userId = selectedUser.id
-    const token = providerTokens[providerKey]?.trim()
+    const tokenDraft = providerTokens[providerKey] ?? ''
+    const token = tokenDraft.trim()
     if (!token) {
       toast.error('Enter a GitHub token')
       return
@@ -348,7 +363,7 @@ export function UsersPage() {
         await saveIdentityUserProviderCredential({
           data: { userId, providerKey, token },
         })
-        updateProviderToken(userId, providerKey, '')
+        clearProviderTokenIfUnchanged(userId, providerKey, tokenDraft)
         toast.success('Provider token saved')
         await refreshUsers()
       } catch (error) {
@@ -360,12 +375,13 @@ export function UsersPage() {
   function handleRemoveProviderCredential(providerKey: string) {
     if (!selectedUser) return
     const userId = selectedUser.id
+    const tokenDraft = providerTokens[providerKey] ?? ''
     startTransition(async () => {
       try {
         await removeIdentityUserProviderCredential({
           data: { userId, providerKey },
         })
-        updateProviderToken(userId, providerKey, '')
+        clearProviderTokenIfUnchanged(userId, providerKey, tokenDraft)
         toast.success('Provider token removed')
         await refreshUsers()
       } catch (error) {

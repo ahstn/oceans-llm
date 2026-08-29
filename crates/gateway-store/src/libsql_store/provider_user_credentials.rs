@@ -152,7 +152,12 @@ impl ProviderUserCredentialRepository for LibsqlStore {
     ) -> Result<bool, StoreError> {
         self.connection
             .execute(
-                "UPDATE provider_user_credentials SET last_used_at = ?1 WHERE credential_id = ?2",
+                "UPDATE provider_user_credentials
+                 SET last_used_at = CASE
+                     WHEN last_used_at IS NULL OR last_used_at < ?1 THEN ?1
+                     ELSE last_used_at
+                 END
+                 WHERE credential_id = ?2",
                 libsql::params![last_used_at.unix_timestamp(), credential_id.to_string()],
             )
             .await

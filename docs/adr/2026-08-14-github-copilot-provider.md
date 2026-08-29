@@ -70,3 +70,4 @@ Add a first-class provider type named `github_copilot` in `gateway-providers` an
 
 - Add dynamic `/models` discovery refresh to update supported endpoints per model family automatically.
 - Support multi-tenant GitHub App installation resolution per request if dynamic credential routing is required in the future.
+- Split `crates/admin-ui/web/src/routes/identity/users.tsx` by manage-user dialog section. The file was already over 1,500 lines before provider credentials were added. Keep route loading and selection in `UsersPage`, move the dialog shell to a sibling component, and move each section's state and actions into cohesive section modules. Do this as a separate UI refactor with route-level regression coverage so it does not obscure the credential isolation and encryption changes in this decision.

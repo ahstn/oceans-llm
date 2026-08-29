@@ -62,7 +62,6 @@ pub async fn delete_identity_user_provider_credential(
     headers: HeaderMap,
 ) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
     require_platform_admin(&state, &headers).await?;
-    ensure_copilot_user_provider(&state, &provider_key)?;
     let deleted = gateway_service::ProviderCredentialService::new(state.store.clone())
         .delete(&provider_key, user_id)
         .await?;

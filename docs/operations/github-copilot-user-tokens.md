@@ -60,6 +60,8 @@ Treat the output of `gh auth token` as a password. Do not place it in shell hist
 
 The UI does not return the stored token. Enter a new token to replace it. Select **Remove token** to revoke the Oceans copy. Removing it does not revoke the token at GitHub.
 
+If the provider is removed or changed to another authentication mode before its stored tokens are removed, a platform admin can still delete a retained credential with `DELETE /api/v1/admin/identity/users/{user_id}/provider-credentials/{provider_key}`. Creation and replacement remain limited to active `github_user` providers. This separation prevents an old token from becoming active again if the provider mode is later restored.
+
 ## Request isolation
 
 Each request follows this sequence:

@@ -127,7 +127,9 @@ impl ProviderUserCredentialRepository for PostgresStore {
         last_used_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
         sqlx::query(
-            "UPDATE provider_user_credentials SET last_used_at = $1 WHERE credential_id = $2",
+            "UPDATE provider_user_credentials
+             SET last_used_at = GREATEST(COALESCE(last_used_at, $1), $1)
+             WHERE credential_id = $2",
         )
         .bind(last_used_at.unix_timestamp())
         .bind(credential_id.to_string())
