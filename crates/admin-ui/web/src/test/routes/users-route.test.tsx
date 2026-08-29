@@ -74,6 +74,14 @@ function invitedUser(overrides: Partial<UserPayload> = {}): UserPayload {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 describe('UsersPage', () => {
   beforeEach(() => {
     if (!Element.prototype.hasPointerCapture) {
@@ -488,6 +496,115 @@ describe('UsersPage', () => {
       }),
     )
     expect(screen.getByLabelText('GitHub token')).toHaveValue('')
+  })
+
+  it('does not clear another user draft when a save completes', async () => {
+    const firstUser = invitedUser({ status: 'active' })
+    const secondUser = invitedUser({
+      id: 'user_2',
+      name: 'Second User',
+      email: 'second@example.com',
+      status: 'active',
+    })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [firstUser, secondUser],
+        copilot_user_providers: [
+          {
+            provider_key: 'github-copilot-user',
+            credentials: [firstUser, secondUser].map((user) => ({
+              user_id: user.id,
+              configured: false,
+              updated_at: null,
+              last_used_at: null,
+            })),
+          },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({
+      user_id: firstUser.id,
+      user_section: 'provider-configuration',
+    })
+    const saveRequest = deferred<{ data: { configured: boolean } }>()
+    saveProviderCredentialMock.mockReturnValue(saveRequest.promise)
+
+    const { UsersPage } = await import('@/routes/identity/users')
+    const { rerender } = render(<UsersPage />)
+
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'first-user-token' },
+    })
+    fireEvent.submit(screen.getByLabelText('GitHub token').closest('form')!)
+    await waitFor(() => expect(saveProviderCredentialMock).toHaveBeenCalled())
+
+    routeMock.useSearch.mockReturnValue({
+      user_id: secondUser.id,
+      user_section: 'provider-configuration',
+    })
+    rerender(<UsersPage />)
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'second-user-draft' },
+    })
+
+    saveRequest.resolve({ data: { configured: true } })
+    await waitFor(() =>
+      expect(screen.getByLabelText('GitHub token')).toHaveValue('second-user-draft'),
+    )
+  })
+
+  it('does not clear another user draft when a removal completes', async () => {
+    const firstUser = invitedUser({ status: 'active' })
+    const secondUser = invitedUser({
+      id: 'user_2',
+      name: 'Second User',
+      email: 'second@example.com',
+      status: 'active',
+    })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [firstUser, secondUser],
+        copilot_user_providers: [
+          {
+            provider_key: 'github-copilot-user',
+            credentials: [firstUser, secondUser].map((user) => ({
+              user_id: user.id,
+              configured: true,
+              updated_at: '2026-08-29T09:00:00Z',
+              last_used_at: null,
+            })),
+          },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({
+      user_id: firstUser.id,
+      user_section: 'provider-configuration',
+    })
+    const removeRequest = deferred<{ data: { status: string } }>()
+    removeProviderCredentialMock.mockReturnValue(removeRequest.promise)
+
+    const { UsersPage } = await import('@/routes/identity/users')
+    const { rerender } = render(<UsersPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove token' }))
+    await waitFor(() => expect(removeProviderCredentialMock).toHaveBeenCalled())
+
+    routeMock.useSearch.mockReturnValue({
+      user_id: secondUser.id,
+      user_section: 'provider-configuration',
+    })
+    rerender(<UsersPage />)
+    fireEvent.change(screen.getByLabelText('GitHub token'), {
+      target: { value: 'second-user-draft' },
+    })
+
+    removeRequest.resolve({ data: { status: 'deleted' } })
+    await waitFor(() =>
+      expect(screen.getByLabelText('GitHub token')).toHaveValue('second-user-draft'),
+    )
   })
 
   it('sanitizes onboarding updates to auth fields and persisted role/team membership', async () => {

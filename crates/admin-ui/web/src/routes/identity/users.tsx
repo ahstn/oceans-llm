@@ -127,6 +127,7 @@ const emptyAdminTeams: IdentityUsersPayload['teams'] = []
 const emptyOidcProviders: IdentityUsersPayload['oidc_providers'] = []
 const emptyOauthProviders: IdentityUsersPayload['oauth_providers'] = []
 const emptyCopilotUserProviders: IdentityUsersPayload['copilot_user_providers'] = []
+const emptyProviderTokens: Record<string, string> = {}
 
 const userDetailsSections = [
   { id: 'overview', label: 'Overview', icon: UserCircleIcon },
@@ -157,12 +158,17 @@ export function UsersPage() {
   const [updateForm, setUpdateForm] = useState<UpdateUserInput>(initialUpdateForm)
   const [onboardingResult, setOnboardingResult] = useState<CreateUserResult | null>(null)
   const [isPending, startTransition] = useTransition()
-  const [providerTokens, setProviderTokens] = useState<Record<string, string>>({})
+  const [providerTokensByUser, setProviderTokensByUser] = useState<
+    Record<string, Record<string, string>>
+  >({})
   const selectedUser = search.user_id
     ? (users.find((user) => user.id === search.user_id) ?? null)
     : null
   const selectedUserId = selectedUser?.id ?? null
   const selectedUserSection = search.user_section
+  const providerTokens = selectedUserId
+    ? (providerTokensByUser[selectedUserId] ?? emptyProviderTokens)
+    : emptyProviderTokens
 
   useEffect(() => {
     if (!selectedUser) {
@@ -189,7 +195,6 @@ export function UsersPage() {
 
   useEffect(() => {
     setOnboardingResult(null)
-    setProviderTokens({})
   }, [selectedUserId])
 
   const pageHeader = (
@@ -222,6 +227,14 @@ export function UsersPage() {
     })
     setUpdateForm(initialUpdateForm)
     setOnboardingResult(null)
+    setProviderTokensByUser({})
+  }
+
+  function updateProviderToken(userId: string, providerKey: string, token: string) {
+    setProviderTokensByUser((current) => ({
+      ...current,
+      [userId]: { ...current[userId], [providerKey]: token },
+    }))
   }
 
   function setAuthMode(authMode: CreateUserInput['auth_mode']) {
@@ -324,6 +337,7 @@ export function UsersPage() {
 
   function handleSaveProviderCredential(providerKey: string) {
     if (!selectedUser) return
+    const userId = selectedUser.id
     const token = providerTokens[providerKey]?.trim()
     if (!token) {
       toast.error('Enter a GitHub token')
@@ -332,9 +346,9 @@ export function UsersPage() {
     startTransition(async () => {
       try {
         await saveIdentityUserProviderCredential({
-          data: { userId: selectedUser.id, providerKey, token },
+          data: { userId, providerKey, token },
         })
-        setProviderTokens((current) => ({ ...current, [providerKey]: '' }))
+        updateProviderToken(userId, providerKey, '')
         toast.success('Provider token saved')
         await refreshUsers()
       } catch (error) {
@@ -345,12 +359,13 @@ export function UsersPage() {
 
   function handleRemoveProviderCredential(providerKey: string) {
     if (!selectedUser) return
+    const userId = selectedUser.id
     startTransition(async () => {
       try {
         await removeIdentityUserProviderCredential({
-          data: { userId: selectedUser.id, providerKey },
+          data: { userId, providerKey },
         })
-        setProviderTokens((current) => ({ ...current, [providerKey]: '' }))
+        updateProviderToken(userId, providerKey, '')
         toast.success('Provider token removed')
         await refreshUsers()
       } catch (error) {
@@ -1032,7 +1047,7 @@ export function UsersPage() {
                         tokens={providerTokens}
                         isPending={isPending}
                         onTokenChange={(providerKey, token) =>
-                          setProviderTokens((current) => ({ ...current, [providerKey]: token }))
+                          updateProviderToken(selectedUser.id, providerKey, token)
                         }
                         onSave={handleSaveProviderCredential}
                         onRemove={handleRemoveProviderCredential}

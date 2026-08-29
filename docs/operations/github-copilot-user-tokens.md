@@ -33,6 +33,8 @@ export OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 
 Store this value in the deployment secret manager. All gateway replicas must use the same value. Back up the key before an upgrade. The database contains only ciphertext, a nonce, and a key ID. Authenticated encryption binds each ciphertext to its provider and user IDs, so a copied row cannot be decrypted for a different user or provider.
 
+The local `mise run gateway-serve`, `mise run dev-stack`, and `mise run run` tasks create a random key in `.local/provider-credential-encryption-key` when the environment variable is not set. The file is excluded from Git and is created with owner-only permissions. Keep this file with the local database if you must decrypt stored tokens after a restart. Do not copy it into a deployment or commit it.
+
 ## Get a GitHub token
 
 Sign in to GitHub CLI as the user who owns the Copilot entitlement:
