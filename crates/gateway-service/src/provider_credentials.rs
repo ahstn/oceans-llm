@@ -79,9 +79,12 @@ where
         token: &str,
     ) -> Result<ProviderCredentialStatus, GatewayError> {
         let token = token.trim();
-        if token.is_empty() || token.len() > 4096 || token.chars().any(char::is_whitespace) {
+        if token.is_empty()
+            || token.len() > 4096
+            || !token.bytes().all(|byte| byte.is_ascii_graphic())
+        {
             return Err(GatewayError::InvalidRequest(
-                "GitHub token must be a non-empty token without whitespace".to_string(),
+                "GitHub token must contain only printable ASCII without whitespace".to_string(),
             ));
         }
         let associated_data = credential_associated_data(provider_key, user_id);
@@ -171,7 +174,10 @@ where
                 "failed decrypting provider user credential: {error}"
             ))
         })?;
-        self.store
+        // The touch also confirms that this credential generation was not replaced or
+        // deleted after it was read.
+        let credential_is_current = self
+            .store
             .touch_provider_user_credential(credential.credential_id, OffsetDateTime::now_utc())
             .await
             .map_err(|error| {
@@ -179,6 +185,11 @@ where
                     "failed updating provider user credential usage: {error}"
                 ))
             })?;
+        if !credential_is_current {
+            return Err(ProviderError::InvalidRequest(format!(
+                "credential for user `{user_id}` and provider `{provider_key}` changed while it was being resolved"
+            )));
+        }
         Ok(token)
     }
 }
@@ -192,7 +203,7 @@ fn credential_associated_data(provider_key: &str, user_id: Uuid) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Mutex};
+    use std::{collections::HashMap, ffi::OsString, sync::Mutex};
 
     use gateway_core::{
         ProviderUserCredentialRecord, ProviderUserCredentialRepository,
@@ -201,9 +212,42 @@ mod tests {
 
     use super::*;
 
-    #[derive(Default)]
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => unsafe { std::env::set_var(self.key, value) },
+                None => unsafe { std::env::remove_var(self.key) },
+            }
+        }
+    }
+
     struct TestCredentialStore {
         records: Mutex<HashMap<(String, Uuid), ProviderUserCredentialRecord>>,
+        touch_succeeds: Mutex<bool>,
+    }
+
+    impl Default for TestCredentialStore {
+        fn default() -> Self {
+            Self {
+                records: Mutex::new(HashMap::new()),
+                touch_succeeds: Mutex::new(true),
+            }
+        }
     }
 
     impl TestCredentialStore {
@@ -216,6 +260,10 @@ mod tests {
             record.credential_id = Uuid::new_v4();
             record.user_id = to;
             records.insert((provider_key.to_string(), to), record);
+        }
+
+        fn reject_touches(&self) {
+            *self.touch_succeeds.lock().expect("touch flag") = false;
         }
     }
 
@@ -301,6 +349,9 @@ mod tests {
             credential_id: Uuid,
             last_used_at: OffsetDateTime,
         ) -> Result<bool, StoreError> {
+            if !*self.touch_succeeds.lock().expect("touch flag") {
+                return Ok(false);
+            }
             let mut records = self.records.lock().expect("credential records");
             let Some(record) = records
                 .values_mut()
@@ -323,13 +374,12 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn rejects_ciphertext_copied_to_another_user() {
-        unsafe {
-            std::env::set_var(
-                PROVIDER_CREDENTIAL_KEY_ENV,
-                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-            );
-        }
+        let _key = EnvVarGuard::set(
+            PROVIDER_CREDENTIAL_KEY_ENV,
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        );
 
         let store = Arc::new(TestCredentialStore::default());
         let service = ProviderCredentialService::new(store.clone());
@@ -354,5 +404,47 @@ mod tests {
             .await
             .expect_err("copied ciphertext must fail");
         assert!(error.to_string().contains("could not be decrypted"));
+    }
+
+    #[tokio::test]
+    async fn rejects_tokens_that_cannot_be_used_as_bearer_credentials() {
+        let service = ProviderCredentialService::new(Arc::new(TestCredentialStore::default()));
+        let user_id = Uuid::new_v4();
+
+        for token in ["github\0token", "github-tokén", "github\ntoken"] {
+            let error = service
+                .upsert("github-copilot-user", user_id, token)
+                .await
+                .expect_err("invalid bearer token must be rejected");
+            assert!(error.to_string().contains("printable ASCII"));
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn rejects_a_credential_that_changes_during_resolution() {
+        let _key = EnvVarGuard::set(
+            PROVIDER_CREDENTIAL_KEY_ENV,
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        );
+        let store = Arc::new(TestCredentialStore::default());
+        let service = ProviderCredentialService::new(store.clone());
+        let user_id = Uuid::new_v4();
+        service
+            .upsert("github-copilot-user", user_id, "github-token")
+            .await
+            .expect("store token");
+        store.reject_touches();
+
+        let error = service
+            .resolve_provider_user_token("github-copilot-user", user_id)
+            .await
+            .expect_err("stale credential must not be returned");
+
+        assert!(
+            error
+                .to_string()
+                .contains("changed while it was being resolved")
+        );
     }
 }

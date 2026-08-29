@@ -394,7 +394,7 @@ describe('UsersPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('stores a Copilot token without rendering the stored value', async () => {
+  it('submits a Copilot token through its own form without updating the user', async () => {
     const user = invitedUser({ status: 'active' })
     routeMock.useLoaderData.mockReturnValue({
       data: {
@@ -431,7 +431,7 @@ describe('UsersPage', () => {
     fireEvent.change(screen.getByLabelText('GitHub token'), {
       target: { value: 'gho_secret-user-token' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Save token' }))
+    fireEvent.submit(screen.getByLabelText('GitHub token').closest('form')!)
 
     await waitFor(() =>
       expect(saveProviderCredentialMock).toHaveBeenCalledWith({
@@ -444,6 +444,50 @@ describe('UsersPage', () => {
     )
     await waitFor(() => expect(screen.getByLabelText('GitHub token')).toHaveValue(''))
     expect(screen.queryByDisplayValue('gho_secret-user-token')).not.toBeInTheDocument()
+    expect(updateIdentityUserMock).not.toHaveBeenCalled()
+  })
+
+  it('removes the selected user provider credential', async () => {
+    const user = invitedUser({ status: 'active' })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [user],
+        copilot_user_providers: [
+          {
+            provider_key: 'github-copilot-user',
+            credentials: [
+              {
+                user_id: user.id,
+                configured: true,
+                updated_at: '2026-08-29T09:00:00Z',
+                last_used_at: null,
+              },
+            ],
+          },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({
+      user_id: user.id,
+      user_section: 'provider-configuration',
+    })
+    removeProviderCredentialMock.mockResolvedValue({ data: { status: 'deleted' } })
+
+    const { UsersPage } = await import('@/routes/identity/users')
+    render(<UsersPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove token' }))
+
+    await waitFor(() =>
+      expect(removeProviderCredentialMock).toHaveBeenCalledWith({
+        data: {
+          userId: user.id,
+          providerKey: 'github-copilot-user',
+        },
+      }),
+    )
+    expect(screen.getByLabelText('GitHub token')).toHaveValue('')
   })
 
   it('sanitizes onboarding updates to auth fields and persisted role/team membership', async () => {

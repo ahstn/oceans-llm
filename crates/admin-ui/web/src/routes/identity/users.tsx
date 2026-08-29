@@ -1023,7 +1023,34 @@ export function UsersPage() {
                   </div>
                 </header>
 
-                <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleUpdateUser}>
+                {selectedUserSection === 'provider-configuration' ? (
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <div className="flex-1 overflow-y-auto p-6">
+                      <ProviderConfiguration
+                        userId={selectedUser.id}
+                        providers={copilotUserProviders}
+                        tokens={providerTokens}
+                        isPending={isPending}
+                        onTokenChange={(providerKey, token) =>
+                          setProviderTokens((current) => ({ ...current, [providerKey]: token }))
+                        }
+                        onSave={handleSaveProviderCredential}
+                        onRemove={handleRemoveProviderCredential}
+                      />
+                    </div>
+                    <DialogFooter className="mx-0 mb-0 rounded-none border-t border-[color:var(--color-border)] px-6 py-4">
+                      <Button type="button" variant="secondary" onClick={resetUserDialog}>
+                        Close
+                      </Button>
+                    </DialogFooter>
+                  </div>
+                ) : null}
+
+                <form
+                  className="flex min-h-0 flex-1 flex-col"
+                  hidden={selectedUserSection === 'provider-configuration'}
+                  onSubmit={handleUpdateUser}
+                >
                   <div className="flex-1 overflow-y-auto p-6">
                     {selectedUserSection === 'overview' ? (
                       <div>
@@ -1364,20 +1391,6 @@ export function UsersPage() {
                           ) : null}
                         </section>
                       </div>
-                    ) : null}
-
-                    {selectedUserSection === 'provider-configuration' ? (
-                      <ProviderConfiguration
-                        userId={selectedUser.id}
-                        providers={copilotUserProviders}
-                        tokens={providerTokens}
-                        isPending={isPending}
-                        onTokenChange={(providerKey, token) =>
-                          setProviderTokens((current) => ({ ...current, [providerKey]: token }))
-                        }
-                        onSave={handleSaveProviderCredential}
-                        onRemove={handleRemoveProviderCredential}
-                      />
                     ) : null}
 
                     {selectedUserSection === 'usage' ? (

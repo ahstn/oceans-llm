@@ -2167,7 +2167,8 @@ mod tests {
     use futures_util::{StreamExt, stream};
     use gateway_core::protocol::openai::ChatMessage;
     use gateway_core::{
-        BudgetCadence, BudgetRepository, ChatCompletionsRequest, CoreChatMessage, CoreChatRequest,
+        ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence,
+        BudgetRepository, ChatCompletionsRequest, CoreChatMessage, CoreChatRequest,
         CoreEmbeddingsRequest, CoreRequestRequirements, CoreResponsesRequest, GatewayError,
         GitHubCopilotChatApi, GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports,
         ModelRoute, Money4, ProviderCapabilities, ProviderClient, ProviderError, ProviderRegistry,
@@ -2183,8 +2184,8 @@ mod tests {
     use tower_http::request_id::RequestId;
 
     use super::{
-        LoggingBodyStreamState, anthropic_error_response, api_health, canonical_request_id,
-        extract_anthropic_authorization_header, request_log_icon_metadata,
+        LoggingBodyStreamState, anthropic_error_response, api_health, build_provider_context,
+        canonical_request_id, extract_anthropic_authorization_header, request_log_icon_metadata,
         route_capabilities_for_request, route_effective_provider_capabilities,
         select_first_eligible_route, split_partial_provider_error,
         wrap_stream_with_request_logging,
@@ -2585,6 +2586,45 @@ mod tests {
             capabilities,
             compatibility: Default::default(),
         }
+    }
+
+    fn authenticated_key(
+        owner_kind: ApiKeyOwnerKind,
+        owner_user_id: Option<uuid::Uuid>,
+    ) -> AuthenticatedApiKey {
+        AuthenticatedApiKey {
+            id: uuid::Uuid::new_v4(),
+            public_id: "test-key".to_string(),
+            name: "Test key".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::All,
+            owner_kind,
+            owner_user_id,
+            owner_team_id: None,
+            owner_service_account_id: None,
+        }
+    }
+
+    #[test]
+    fn provider_context_uses_only_the_authenticated_key_owner_user() {
+        let user_id = uuid::Uuid::new_v4();
+        let route = route("gpt-5.6-luna", ProviderCapabilities::all_enabled());
+        let user_context = build_provider_context(
+            "req-user",
+            "copilot",
+            &route,
+            &authenticated_key(ApiKeyOwnerKind::User, Some(user_id)),
+            BTreeMap::new(),
+        );
+        let service_account_context = build_provider_context(
+            "req-service-account",
+            "copilot",
+            &route,
+            &authenticated_key(ApiKeyOwnerKind::ServiceAccount, None),
+            BTreeMap::new(),
+        );
+
+        assert_eq!(user_context.owner_user_id, Some(user_id));
+        assert_eq!(service_account_context.owner_user_id, None);
     }
 
     #[test]

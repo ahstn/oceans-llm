@@ -43,9 +43,11 @@ impl ProviderUserCredentialRepository for LibsqlStore {
                 secret_key_id, created_at, updated_at
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
             ON CONFLICT(provider_key, user_id) DO UPDATE SET
+                credential_id = excluded.credential_id,
                 secret_ciphertext = excluded.secret_ciphertext,
                 secret_nonce = excluded.secret_nonce,
                 secret_key_id = excluded.secret_key_id,
+                created_at = excluded.created_at,
                 updated_at = excluded.updated_at,
                 last_used_at = NULL"#,
                 libsql::params![

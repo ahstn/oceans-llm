@@ -7,6 +7,11 @@ import type { IdentityUsersPayload } from '@/types/api'
 
 type CopilotUserProviders = IdentityUsersPayload['copilot_user_providers']
 
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+
 interface ProviderConfigurationProps {
   userId: string
   providers: CopilotUserProviders
@@ -68,9 +73,15 @@ export function ProviderConfiguration({
           const status = provider.credentials.find((credential) => credential.user_id === userId)
           const token = tokens[provider.provider_key] ?? ''
           return (
-            <section
+            <form
               key={provider.provider_key}
               className="flex flex-col gap-4 border-t border-[color:var(--color-border)] pt-5 first:border-t-0 first:pt-0"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (!isPending && token.trim().length > 0) {
+                  onSave(provider.provider_key)
+                }
+              }}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -110,11 +121,7 @@ export function ProviderConfiguration({
               </Field>
 
               <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  onClick={() => onSave(provider.provider_key)}
-                  disabled={isPending || token.trim().length === 0}
-                >
+                <Button type="submit" disabled={isPending || token.trim().length === 0}>
                   {isPending ? 'Saving…' : 'Save token'}
                 </Button>
                 {status?.configured ? (
@@ -128,7 +135,7 @@ export function ProviderConfiguration({
                   </Button>
                 ) : null}
               </div>
-            </section>
+            </form>
           )
         })
       )}
@@ -137,8 +144,5 @@ export function ProviderConfiguration({
 }
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
+  return dateTimeFormatter.format(new Date(value))
 }

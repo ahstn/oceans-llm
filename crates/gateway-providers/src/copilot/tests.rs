@@ -174,6 +174,50 @@ async fn github_user_tokens_are_selected_by_trusted_user_id() {
     );
 }
 
+#[tokio::test]
+async fn resolved_user_token_replaces_configured_authorization_headers() {
+    let user_id = uuid::Uuid::new_v4();
+    let resolver = Arc::new(TestUserTokenResolver {
+        tokens: HashMap::from([(user_id, "resolved-user-token".to_string())]),
+    });
+    let mut config = CopilotProviderConfig::new(
+        "github-copilot-user".to_string(),
+        CopilotAuthConfig::GitHubUser,
+    );
+    config.default_headers.insert(
+        "Authorization".to_string(),
+        "Bearer configured-default".to_string(),
+    );
+    let provider = CopilotProvider::new_with_user_token_resolver(config, resolver)
+        .expect("user-token provider");
+    let mut context = dummy_context("gpt-5.6-luna");
+    context.owner_user_id = Some(user_id);
+    context.extra_headers.insert(
+        "authorization".to_string(),
+        json!("Bearer configured-route"),
+    );
+
+    let request = provider
+        .build_copilot_request(
+            "chat/completions",
+            json!({"messages": []}),
+            &context,
+            Some(GitHubCopilotChatApi::ChatCompletions),
+            CopilotInitiator::User,
+        )
+        .await
+        .expect("Copilot request");
+    let authorization_values = request
+        .headers()
+        .get_all(reqwest::header::AUTHORIZATION)
+        .iter()
+        .collect::<Vec<_>>();
+
+    assert_eq!(authorization_values.len(), 1);
+    assert_eq!(authorization_values[0], "Bearer resolved-user-token");
+    assert!(authorization_values[0].is_sensitive());
+}
+
 #[test]
 fn github_user_auth_requires_a_user_token_resolver() {
     let error = CopilotProvider::new(CopilotProviderConfig::new(

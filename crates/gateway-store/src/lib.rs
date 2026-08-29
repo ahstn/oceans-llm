@@ -2042,7 +2042,7 @@ pub(crate) mod tests {
             .await
             .expect("load replaced provider credential")
             .expect("replaced provider credential");
-        assert_eq!(replaced.credential_id, stored.credential_id);
+        assert_ne!(replaced.credential_id, stored.credential_id);
         assert_eq!(replaced.secret_ciphertext, "ciphertext-b");
 
         let statuses = store
@@ -2053,8 +2053,14 @@ pub(crate) mod tests {
         assert_eq!(statuses[0].user_id, user.user_id);
 
         assert!(
-            store
+            !store
                 .touch_provider_user_credential(stored.credential_id, now + Duration::seconds(2),)
+                .await
+                .expect("reject stale provider credential touch")
+        );
+        assert!(
+            store
+                .touch_provider_user_credential(replaced.credential_id, now + Duration::seconds(2),)
                 .await
                 .expect("touch provider credential")
         );

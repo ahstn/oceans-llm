@@ -39,8 +39,9 @@ impl ProviderUserCredentialRepository for PostgresStore {
             credential_id, provider_key, user_id, secret_ciphertext, secret_nonce, secret_key_id, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
         ON CONFLICT(provider_key, user_id) DO UPDATE SET
-            secret_ciphertext = excluded.secret_ciphertext, secret_nonce = excluded.secret_nonce,
-            secret_key_id = excluded.secret_key_id, updated_at = excluded.updated_at, last_used_at = NULL"#)
+            credential_id = excluded.credential_id, secret_ciphertext = excluded.secret_ciphertext,
+            secret_nonce = excluded.secret_nonce, secret_key_id = excluded.secret_key_id,
+            created_at = excluded.created_at, updated_at = excluded.updated_at, last_used_at = NULL"#)
             .bind(Uuid::new_v4().to_string()).bind(&input.provider_key).bind(input.user_id.to_string())
             .bind(&input.secret_ciphertext).bind(&input.secret_nonce).bind(&input.secret_key_id)
             .bind(input.updated_at.unix_timestamp()).execute(&self.pool).await.map_err(to_write_error)?;

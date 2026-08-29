@@ -259,13 +259,11 @@ impl CopilotProvider {
     fn apply_copilot_headers(
         &self,
         mut request: reqwest::RequestBuilder,
-        token: &str,
         context: &ProviderRequestContext,
         chat_api: Option<GitHubCopilotChatApi>,
     ) -> reqwest::RequestBuilder {
         let profile = VSCODE_CHAT_2026_06_01_PROFILE;
         request = request
-            .bearer_auth(token)
             .header("editor-version", &self.config.editor_version)
             .header("editor-plugin-version", profile.plugin_version)
             .header("copilot-integration-id", &self.config.integration_id)
@@ -303,8 +301,21 @@ impl CopilotProvider {
         let token = self.token(context).await?;
         let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
         let req_builder = self.client.post(url).json(&body);
-        let req_builder = self.apply_copilot_headers(req_builder, &token, context, chat_api);
+        let req_builder = self.apply_copilot_headers(req_builder, context, chat_api);
         let mut request = req_builder.build().map_err(map_reqwest_error)?;
+        let mut authorization =
+            reqwest::header::HeaderValue::from_bytes(format!("Bearer {token}").as_bytes())
+                .map_err(|_| {
+                    ProviderError::InvalidRequest(
+                        "GitHub Copilot credential cannot be encoded as an Authorization header"
+                            .to_string(),
+                    )
+                })?;
+        authorization.set_sensitive(true);
+        // Insert after configurable headers so one resolved credential is authoritative.
+        request
+            .headers_mut()
+            .insert(reqwest::header::AUTHORIZATION, authorization);
         request.headers_mut().insert(
             "x-initiator",
             reqwest::header::HeaderValue::from_static(initiator.as_str()),
