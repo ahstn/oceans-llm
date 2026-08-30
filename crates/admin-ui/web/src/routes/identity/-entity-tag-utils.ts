@@ -4,7 +4,12 @@ export type EntityTag = {
 }
 
 export function sanitizeEntityTags(tags: EntityTag[]) {
-  return tags
-    .map((tag) => ({ key: tag.key.trim(), value: tag.value.trim() }))
-    .filter((tag) => tag.key.length > 0 || tag.value.length > 0)
+  const sanitizedTags: EntityTag[] = []
+  for (const tag of tags) {
+    const sanitizedTag = { key: tag.key.trim(), value: tag.value.trim() }
+    if (sanitizedTag.key.length > 0 || sanitizedTag.value.length > 0) {
+      sanitizedTags.push(sanitizedTag)
+    }
+  }
+  return sanitizedTags
 }
