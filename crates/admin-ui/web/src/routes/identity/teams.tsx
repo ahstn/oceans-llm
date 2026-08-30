@@ -1092,7 +1092,7 @@ export function TeamsPage() {
               className="flex flex-col gap-5"
               onSubmit={(event) => {
                 event.preventDefault()
-                handleTransferMember()
+                void handleTransferMember()
               }}
             >
               {memberDialogUser.team_role === 'owner' ? (

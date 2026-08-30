@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -96,15 +96,18 @@ export function useApiKeysPageState({
     setIsCreateOpen(false)
   }
 
-  function openManageDialog(apiKeyId: string) {
-    const target = items.find((item) => item.id === apiKeyId)
-    setManageForm({
-      model_grant_mode: target?.model_grant_mode ?? 'explicit',
-      model_keys: target?.model_keys ?? [],
-    })
-    setRevealedManageKey(null)
-    setManageDialog({ mode: 'open', apiKeyId })
-  }
+  const openManageDialog = useCallback(
+    (apiKeyId: string) => {
+      const target = items.find((item) => item.id === apiKeyId)
+      setManageForm({
+        model_grant_mode: target?.model_grant_mode ?? 'explicit',
+        model_keys: target?.model_keys ?? [],
+      })
+      setRevealedManageKey(null)
+      setManageDialog({ mode: 'open', apiKeyId })
+    },
+    [items],
+  )
 
   function closeManageDialog() {
     setManageForm(initialManageForm)
@@ -127,7 +130,7 @@ export function useApiKeysPageState({
 
     handledFocusedApiKeyId.current = focusedApiKeyId
     openManageDialog(focusedApiKeyId)
-  }, [focusedApiKeyId, items])
+  }, [focusedApiKeyId, items, openManageDialog])
 
   function updateOwnerKind(ownerKind: CreateApiKeyInput['owner_kind']) {
     setForm((current) => ({

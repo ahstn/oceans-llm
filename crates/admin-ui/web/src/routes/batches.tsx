@@ -39,7 +39,7 @@ import type {
 
 const defaultPageSize = 30
 const resultPageSize = 100
-const batchStatuses: BatchStatus[] = [
+const batchStatuses = new Set<BatchStatus>([
   'queued',
   'submitting',
   'submission_unknown',
@@ -52,7 +52,7 @@ const batchStatuses: BatchStatus[] = [
   'cancel_requested',
   'cancelling',
   'cancelled',
-]
+])
 
 export const Route = createFileRoute('/batches')({
   validateSearch: (search: Record<string, unknown>) => normalizeBatchSearch(search),
@@ -309,7 +309,7 @@ function normalizeBatchSearch(search: Record<string, unknown>): BatchFiltersInpu
 }
 
 function isBatchStatus(value: string): value is BatchStatus {
-  return batchStatuses.includes(value as BatchStatus)
+  return batchStatuses.has(value as BatchStatus)
 }
 
 function positiveInteger(value: unknown, fallback: number) {

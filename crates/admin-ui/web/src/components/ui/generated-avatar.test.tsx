@@ -6,7 +6,7 @@ vi.mock('boring-avatars', () => ({
     <svg
       data-testid={String(props['data-testid'])}
       data-name={String(name)}
-      data-variant={variant ? String(variant) : ''}
+      data-variant={typeof variant === 'string' ? variant : ''}
       data-colors={Array.isArray(colors) ? colors.join(',') : ''}
       aria-label={String(props['aria-label'])}
     />

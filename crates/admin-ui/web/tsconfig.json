@@ -9,7 +9,6 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": false,
     "allowSyntheticDefaultImports": true,
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     },

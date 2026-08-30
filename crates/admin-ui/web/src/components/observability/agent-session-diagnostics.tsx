@@ -352,5 +352,14 @@ function formatScaledCost(
 }
 
 function formatNullable(value: unknown, fallback = '—') {
-  return value === null || value === undefined ? fallback : String(value)
+  if (value === null || value === undefined) return fallback
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value)
+  }
+  try {
+    return JSON.stringify(value) ?? fallback
+  } catch {
+    return fallback
+  }
 }

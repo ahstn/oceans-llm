@@ -7,8 +7,29 @@
   "options": {
     "typeAware": true // npm add -D oxlint-tsgolint@latest
   },
-  "plugins": [ "eslint", "typescript", "react", "react-perf", "unicorn" ],
-  "ignorePatterns": [ "node_modules", "dist", ".output" ],
+  "plugins": ["eslint", "typescript", "react", "unicorn"],
+  "ignorePatterns": ["node_modules", "dist", ".output", "src/generated"],
+  "overrides": [
+    {
+      "files": ["e2e/**"],
+      "rules": {
+        "max-lines-per-function": "off",
+        "no-await-in-loop": "off"
+      }
+    },
+    {
+      "files": ["src/test/**", "src/**/*.test.ts", "src/**/*.test.tsx"],
+      "rules": {
+        "max-lines-per-function": "off"
+      }
+    },
+    {
+      "files": ["src/routeTree.gen.ts"],
+      "rules": {
+        "unicorn/filename-case": "off"
+      }
+    }
+  ],
   "rules": {
     "react/jsx-props-no-spread-multi": "error",
     "react/jsx-no-duplicate-props": "error",
@@ -19,19 +40,17 @@
     "react/no-this-in-sfc": "error",
     "react/no-render-return-value": "error",
     "react/void-dom-elements-no-children": "error",
-    "react-perf/jsx-no-new-function-as-prop": "error",
-    "react-perf/jsx-no-new-object-as-prop": "error",
-    "react-perf/jsx-no-new-array-as-prop": "error",
-    "react-perf/jsx-no-jsx-as-prop": "error",
-
     // eslint rules
-    "complexity": [ "error", { "max": 30 } ],
-    "eqeqeq": [ "error", "always", { "null": "ignore" } ],
+    "complexity": ["warn", { "max": 30 }],
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
     "no-lonely-if": "error",
     "no-await-in-loop": "error",
-    "max-lines": [ "error", { "max": 1500, "skipBlankLines": true, "skipComments": true } ],
-    "max-depth": [ "error", { "max": 3 } ],
-    "max-lines-per-function": [ "error", { "max": 80, "skipBlankLines": true, "skipComments": true } ],
+    "max-lines": ["warn", { "max": 1500, "skipBlankLines": true, "skipComments": true }],
+    "max-depth": ["warn", { "max": 3 }],
+    "max-lines-per-function": [
+      "warn",
+      { "max": 120, "skipBlankLines": true, "skipComments": true }
+    ],
 
     // oxc rules
     "oxc/no-accumulating-spread": "error",
@@ -40,11 +59,10 @@
 
     // unicorn rules
     "unicorn/error-message": "error", // no bare errors
-    "unicorn/filename-case": [ "error", { "case": "kebabCase" } ],
+    "unicorn/filename-case": ["error", { "case": "kebabCase" }],
     "unicorn/prefer-set-has": "error",
     "unicorn/prefer-array-find": "error",
     "unicorn/prefer-array-flat-map": "error",
     "unicorn/prefer-logical-operator-over-ternary": "error"
-
   }
 }

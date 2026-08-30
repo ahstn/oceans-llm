@@ -26,6 +26,8 @@ export function EntityTagsField({
       <FieldLabel>{label}</FieldLabel>
       <div className="flex flex-col gap-2">
         {tags.map((tag, index) => (
+          // The API tag shape has no ID, and its array position is its edit identity.
+          // oxlint-disable-next-line react/no-array-index-key
           <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
             <Input
               value={tag.key}

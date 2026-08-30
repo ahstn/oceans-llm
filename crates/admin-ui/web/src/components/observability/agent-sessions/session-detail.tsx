@@ -507,12 +507,14 @@ function Metric({ label, value }: { label: string; value: string }) {
   )
 }
 
+const detailSkeletonMetrics = Array.from({ length: 4 }, (_, index) => `metric-${index}`)
+
 export function DetailSkeleton() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <Skeleton key={index} className="h-20" />
+        {detailSkeletonMetrics.map((metric) => (
+          <Skeleton key={metric} className="h-20" />
         ))}
       </div>
       <Skeleton className="h-36" />
@@ -538,7 +540,16 @@ function formatTimestamp(value: string) {
 }
 
 function formatNullable(value: unknown, fallback = '—') {
-  return value === null || value === undefined ? fallback : String(value)
+  if (value === null || value === undefined) return fallback
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value)
+  }
+  try {
+    return JSON.stringify(value) ?? fallback
+  } catch {
+    return fallback
+  }
 }
 
 const limitationLabels: Record<string, string> = {

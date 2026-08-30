@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useEffectEvent,
   useState,
   useTransition,
   type CSSProperties,
@@ -216,6 +217,10 @@ export function ReviewAgentPage() {
     setWorkflowForm(initialWorkflowForm)
   }, [selectedRepo])
 
+  const generateInitialWorkflow = useEffectEvent(() => {
+    void generateWorkflow(initialWorkflowForm)
+  })
+
   useEffect(() => {
     if (
       selectedRepo &&
@@ -224,7 +229,7 @@ export function ReviewAgentPage() {
       !isWorkflowPending &&
       !workflowError
     ) {
-      void generateWorkflow()
+      generateInitialWorkflow()
     }
   }, [selectedRepo, selectedRepoSection, workflow, isWorkflowPending, workflowError])
 
@@ -364,10 +369,10 @@ export function ReviewAgentPage() {
     }
 
     event.preventDefault()
-    void generateWorkflow()
+    void generateWorkflow(workflowForm)
   }
 
-  async function generateWorkflow() {
+  async function generateWorkflow(form: WorkflowForm) {
     if (!selectedRepo) {
       return
     }
@@ -379,8 +384,8 @@ export function ReviewAgentPage() {
         data: {
           repositoryId: selectedRepo.id,
           input: {
-            action_ref: workflowForm.action_ref.trim() || null,
-            api_key_secret_name: workflowForm.api_key_secret_name.trim() || null,
+            action_ref: form.action_ref.trim() || null,
+            api_key_secret_name: form.api_key_secret_name.trim() || null,
           },
         },
       })
@@ -1149,7 +1154,7 @@ export function ReviewAgentPage() {
                             <Button
                               type="button"
                               variant="secondary"
-                              onClick={generateWorkflow}
+                              onClick={() => void generateWorkflow(workflowForm)}
                               disabled={isWorkflowPending}
                             >
                               {isWorkflowPending

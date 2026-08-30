@@ -23,6 +23,7 @@ const createGatewayApiKeyMock = vi.fn()
 const revealGatewayApiKeySecretMock = vi.fn()
 const revokeGatewayApiKeyMock = vi.fn()
 const updateGatewayApiKeyMock = vi.fn()
+const writeClipboardTextMock = vi.fn(async () => {})
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -137,9 +138,10 @@ describe('ApiKeysPage', () => {
     revealGatewayApiKeySecretMock.mockReset()
     revokeGatewayApiKeyMock.mockReset()
     updateGatewayApiKeyMock.mockReset()
+    writeClipboardTextMock.mockReset()
     Object.assign(navigator, {
       clipboard: {
-        writeText: vi.fn(async () => {}),
+        writeText: writeClipboardTextMock,
       },
     })
   })
@@ -483,9 +485,7 @@ describe('ApiKeysPage', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Copy API key' }))
 
     await waitFor(() =>
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        'gwk_service_account.secret-value',
-      ),
+      expect(writeClipboardTextMock).toHaveBeenCalledWith('gwk_service_account.secret-value'),
     )
   })
 

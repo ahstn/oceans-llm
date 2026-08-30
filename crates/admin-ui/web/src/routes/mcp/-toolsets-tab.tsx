@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useTransition, type FormEvent } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, useTransition, type FormEvent } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -68,13 +68,16 @@ export function ToolsetsTab({
     }))
     .filter((group) => group.tools.length > 0)
 
-  useEffect(() => {
+  const consumeSeedToolIds = useEffectEvent(() => {
     if (seedToolIds.length > 0) {
       seedAppliedRef.current = true
       setMemberIds(seedToolIds)
       onSeedConsumed()
     }
-    // Apply the Servers-tab hand-off once on mount; tabs remount on switch.
+  })
+
+  useEffect(() => {
+    consumeSeedToolIds()
   }, [])
 
   useEffect(() => {
@@ -436,5 +439,5 @@ function ToolsetList({
 
 function emptyToNull(value: string) {
   const trimmed = value.trim()
-  return trimmed ? trimmed : null
+  return trimmed || null
 }

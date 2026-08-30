@@ -279,11 +279,13 @@ function LeaderboardChartSkeleton() {
   )
 }
 
+const leaderboardSkeletonRows = Array.from({ length: 6 }, (_, index) => `leaderboard-row-${index}`)
+
 function LeaderboardTableSkeleton() {
   return (
     <div className="flex flex-col gap-3" data-testid="leaderboard-table-skeleton">
-      {Array.from({ length: 6 }).map((_, index) => (
-        <Skeleton key={index} className="h-11 w-full rounded-md" />
+      {leaderboardSkeletonRows.map((row) => (
+        <Skeleton key={row} className="h-11 w-full rounded-md" />
       ))}
     </div>
   )

@@ -10,7 +10,7 @@ export type ActiveRegularUser = {
 }
 
 export function invitationToken(inviteUrl: string, root: string): string {
-  const token = new URL(inviteUrl, root).pathname.split('/').filter(Boolean).pop()
+  const token = new URL(inviteUrl, root).pathname.split('/').findLast(Boolean)
   if (!token) {
     throw new Error(`expected password invite URL to include a token: ${inviteUrl}`)
   }

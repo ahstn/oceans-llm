@@ -362,7 +362,7 @@ function formatToolSchema(schema: unknown) {
   try {
     return JSON.stringify(schema, null, 2)
   } catch {
-    return String(schema)
+    return 'Unable to format schema'
   }
 }
 

@@ -92,7 +92,7 @@ test('correlates a live agent request and exposes it through the admin session e
       session: { session_id: string; session_source_hash: string | null }
       requests: Array<{ request_id: string }>
       observations: unknown[]
-      report: unknown | null
+      report: unknown
     }
   }
   expect(detailBody.data.session).toMatchObject({

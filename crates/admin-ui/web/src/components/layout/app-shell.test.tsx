@@ -15,6 +15,7 @@ vi.mock('@tanstack/react-router', async () => ({
 }))
 
 const logoutAdminSession = vi.fn()
+const replaceLocation = vi.fn()
 
 vi.mock('@/server/admin-data.functions', () => ({
   logoutAdminSession: () => logoutAdminSession(),
@@ -27,9 +28,10 @@ describe('AppShell', () => {
     routerPath = '/admin/api-keys'
     logoutAdminSession.mockReset()
     logoutAdminSession.mockResolvedValue({ data: { status: 'ok' } })
+    replaceLocation.mockReset()
     Object.defineProperty(window, 'location', {
       configurable: true,
-      value: { ...originalLocation, replace: vi.fn() },
+      value: { href: originalLocation.href, replace: replaceLocation },
     })
   })
 
@@ -111,7 +113,7 @@ describe('AppShell', () => {
 
     await waitFor(() => {
       expect(logoutAdminSession).toHaveBeenCalledTimes(1)
-      expect(window.location.replace).toHaveBeenCalledWith('/admin/login')
+      expect(replaceLocation).toHaveBeenCalledWith('/admin/login')
     })
   })
 
