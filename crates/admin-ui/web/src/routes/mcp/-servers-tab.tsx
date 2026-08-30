@@ -86,6 +86,8 @@ import {
   ServerOverviewPanel,
   ServerStatusBadge,
   ServerToolsPanel,
+} from './-components'
+import {
   emptyCredentialBindingForm,
   emptyServerForm,
   formFromRecommended,
@@ -95,7 +97,7 @@ import {
   formToUpdateInput,
   type CredentialBindingFormState,
   type ServerFormState,
-} from './-components'
+} from './-server-forms'
 
 type ServerSection = 'overview' | 'configuration' | 'tools' | 'credentials'
 

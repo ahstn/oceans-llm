@@ -2,11 +2,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-
-export type EntityTag = {
-  key: string
-  value: string
-}
+import type { EntityTag } from '@/routes/identity/-entity-tag-utils'
 
 export function EntityTagsField({
   label,
@@ -78,10 +74,4 @@ export function EntityTagBadges({ tags }: { tags: EntityTag[] }) {
       ))}
     </div>
   )
-}
-
-export function sanitizeEntityTags(tags: EntityTag[]) {
-  return tags
-    .map((tag) => ({ key: tag.key.trim(), value: tag.value.trim() }))
-    .filter((tag) => tag.key.length > 0 || tag.value.length > 0)
 }
