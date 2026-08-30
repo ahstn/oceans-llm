@@ -12,7 +12,7 @@
   "overrides": [
     {
       // Loosen rules for test files.
-      "files": [ "src/test/**", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.spec.ts", "src/**/*.spec.tsx" ],
+      "files": [ "e2e/**/*.ts", "e2e/**/*.tsx", "src/test/**", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.spec.ts", "src/**/*.spec.tsx" ],
       "rules": {
         "max-lines-per-function": "off",
         "no-await-in-loop": "off"
