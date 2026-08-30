@@ -168,6 +168,8 @@ const featureToggles = [
   },
 ] as const
 
+// Repository selection coordinates setup, workflow generation, settings, runs, and lifecycle state.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function ReviewAgentPage() {
   const router = useRouter()
   const {

@@ -73,6 +73,8 @@ export const Route = createFileRoute('/batches')({
   component: BatchesPage,
 })
 
+// Batch selection, polling, cancellation, and detail loading share one route-level state machine.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function BatchesPage() {
   const { session } = Route.useRouteContext()
   const { batchPage, users, serviceAccounts } = Route.useLoaderData() as {

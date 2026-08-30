@@ -108,6 +108,8 @@ ${colorConfig
 
 const ChartTooltip = RechartsPrimitive.Tooltip
 
+// Keep generic Recharts label, payload, indicator, and formatter handling in one adapter.
+// oxlint-disable-next-line eslint/max-lines-per-function
 function ChartTooltipContent({
   active,
   payload,

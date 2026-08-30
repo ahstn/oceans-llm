@@ -21,6 +21,8 @@ interface SessionTableProps {
   onPageChange: (page: number, pageSize: number) => void
 }
 
+// Keep the session rows and their tightly coupled pagination controls in one table component.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function SessionTable({
   items,
   total,

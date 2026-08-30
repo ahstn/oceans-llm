@@ -59,6 +59,8 @@ const sessionFilterFields = [
   'request_tag_value',
 ] as const satisfies readonly (keyof AgentSessionFiltersInput)[]
 
+// Session filtering, selection, and detail loading form one explorer workflow.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function AgentSessionsPage() {
   const { data: sessionPage } = Route.useLoaderData()
   const { session } = Route.useRouteContext()

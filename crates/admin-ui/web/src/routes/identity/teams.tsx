@@ -121,6 +121,8 @@ type TeamMemberDialogState =
   | { mode: 'remove'; teamId: string; userId: string }
   | { mode: 'transfer'; teamId: string; userId: string }
 
+// Team selection coordinates editor, roster, invitation, removal, and transfer transitions.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function TeamsPage() {
   const router = useRouter()
   const { session } = Route.useRouteContext()

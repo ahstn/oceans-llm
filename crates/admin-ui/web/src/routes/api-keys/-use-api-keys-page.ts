@@ -32,6 +32,8 @@ const initialManageForm: UpdateApiKeyInput = {
 
 export type ManageDialogState = { mode: 'closed' } | { mode: 'open'; apiKeyId: string }
 
+// Create and manage flows share route focus, refresh, owner options, and clipboard behavior.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function useApiKeysPageState({
   items,
   users,

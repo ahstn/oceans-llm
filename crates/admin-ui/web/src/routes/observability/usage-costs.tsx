@@ -31,6 +31,8 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 })
 
+// The cost reports are ordered projections of one loaded range and shared pricing totals.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function UsageCostsPage() {
   const loaderData = Route.useLoaderData()
   const { session } = Route.useRouteContext()

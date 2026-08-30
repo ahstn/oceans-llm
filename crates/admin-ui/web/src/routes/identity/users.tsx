@@ -139,6 +139,8 @@ const userDetailsSections = [
 
 type UserDetailsSection = (typeof userDetailsSections)[number]['id']
 
+// User selection coordinates creation, onboarding, provider credentials, and lifecycle transitions.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function UsersPage() {
   const router = useRouter()
   const { session } = Route.useRouteContext()

@@ -48,7 +48,7 @@
     "max-lines": ["warn", { "max": 1500, "skipBlankLines": true, "skipComments": true }],
     "max-depth": ["warn", { "max": 3 }],
     "max-lines-per-function": [
-      "warn",
+      "error",
       { "max": 120, "skipBlankLines": true, "skipComments": true }
     ],
 

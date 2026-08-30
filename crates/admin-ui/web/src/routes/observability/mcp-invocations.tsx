@@ -57,6 +57,8 @@ const initialFilters: McpInvocationFiltersInput = {
   occurred_at_end: '',
 }
 
+// Filters, selection, and detail loading share one MCP invocation explorer state.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function McpInvocationsPage() {
   const { data: invocationPage } = Route.useLoaderData()
   const search = Route.useSearch()

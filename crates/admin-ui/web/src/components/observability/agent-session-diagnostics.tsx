@@ -18,6 +18,8 @@ type AgentSessionDiagnosticsProps = {
 
 const tokenCountFormatter = new Intl.NumberFormat('en-GB')
 
+// Diagnostic sections are ordered projections of one report and its shared availability rules.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function AgentSessionDiagnostics({
   detail,
   formatCost,

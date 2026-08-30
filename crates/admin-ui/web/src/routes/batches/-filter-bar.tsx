@@ -37,6 +37,8 @@ interface BatchFilterDraft {
   endDate: string
 }
 
+// Keep this low-branching controlled form together so its filter fields remain easy to audit.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function BatchFilterBar({
   initialFilters,
   users,

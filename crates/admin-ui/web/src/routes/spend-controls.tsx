@@ -94,6 +94,8 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 })
 
+// Budget lists and editor dialogs share scope resolution, drafts, and mutation transitions.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function SpendControlsPage() {
   const router = useRouter()
   const {

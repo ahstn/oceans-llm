@@ -392,6 +392,8 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   )
 }
 
+// Credential form and binding rows share owner, material, storage, and revocation invariants.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function CredentialBindingsPanel({
   bindings,
   form,

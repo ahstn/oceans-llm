@@ -66,6 +66,8 @@ const requestLogRowEstimatePx = 56
 const requestLogDesktopPreviewRows = 12
 const requestLogDesktopTableHeightPx = requestLogRowEstimatePx * requestLogDesktopPreviewRows
 
+// Filters, virtualization, selection, and detail loading share one request-log explorer state.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function RequestLogsPage() {
   const { data: logPage } = Route.useLoaderData()
   const search = Route.useSearch()

@@ -33,6 +33,8 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 4,
 })
 
+// Keep the parallel mobile and desktop projections together so their batch data stays in sync.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function BatchList({
   batches,
   onInspect,
