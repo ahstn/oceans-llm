@@ -3,10 +3,6 @@
 Use `mise` for all repo tooling and task execution.
 
 ## Mise
-- Activate mise in your shell before running tools:
-  - `eval "$(/Users/ahstn/.local/bin/mise activate zsh)"`
-- Install configured tool versions:
-  - `mise install`
 - Tool versions and shared tasks live in [`mise.toml`](/Users/ahstn/git/oceans-llm/mise.toml).
 - When code changes are introduced, run linting before handing work off:
   - `mise run lint` for mixed Rust/UI changes.
