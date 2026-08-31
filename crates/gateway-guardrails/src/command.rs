@@ -14,7 +14,7 @@ pub(crate) fn parse_command_line(source: &str) -> Vec<CommandInvocation> {
 
     for token in tokens {
         match token {
-            Token::Operator(Operator::Separator) => {
+            Token::Operator(Operator::Separator | Operator::Pipe) => {
                 push_invocation(&mut invocations, &mut words, &mut assignments);
             }
             Token::Operator(Operator::Redirect) => {
@@ -84,6 +84,28 @@ pub(crate) fn has_truncating_redirection(source: &str) -> bool {
         index += 1;
     }
     false
+}
+pub(crate) fn has_pipeline_to(source: &str, executables: &[&str]) -> bool {
+    let tokens = tokenize(source);
+    tokens.iter().enumerate().any(|(index, token)| {
+        if *token != Token::Operator(Operator::Pipe) {
+            return false;
+        }
+        let mut words = Vec::new();
+        let mut skip_redirect_target = false;
+        for token in &tokens[index + 1..] {
+            match token {
+                Token::Operator(Operator::Separator | Operator::Pipe) => break,
+                Token::Operator(Operator::Redirect) => skip_redirect_target = true,
+                Token::Word(_) if skip_redirect_target => skip_redirect_target = false,
+                Token::Word(word) => words.push(word.clone()),
+            }
+        }
+        executable_index(&words)
+            .and_then(|index| words.get(index))
+            .map(|executable| basename(executable).to_ascii_lowercase())
+            .is_some_and(|executable| executables.contains(&executable.as_str()))
+    })
 }
 
 fn push_invocation(
@@ -487,6 +509,7 @@ fn basename(value: &str) -> &str {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Operator {
     Separator,
+    Pipe,
     Redirect,
 }
 
@@ -524,9 +547,18 @@ fn tokenize(source: &str) -> Vec<Token> {
                 }
             }
             ' ' | '\t' | '\r' => push_word(&mut tokens, &mut word),
-            '\n' | ';' | '|' | '&' | '(' | ')' | '{' | '}' => {
+            '|' => {
                 push_word(&mut tokens, &mut word);
-                if matches!(character, '|' | '&') && chars.peek() == Some(&character) {
+                if chars.peek() == Some(&'|') {
+                    chars.next();
+                    tokens.push(Token::Operator(Operator::Separator));
+                } else {
+                    tokens.push(Token::Operator(Operator::Pipe));
+                }
+            }
+            '\n' | ';' | '&' | '(' | ')' | '{' | '}' => {
+                push_word(&mut tokens, &mut word);
+                if character == '&' && chars.peek() == Some(&character) {
                     chars.next();
                 }
                 tokens.push(Token::Operator(Operator::Separator));

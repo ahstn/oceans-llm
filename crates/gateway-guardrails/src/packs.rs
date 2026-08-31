@@ -15,7 +15,7 @@ mod snowflake;
 use crate::{
     DeterministicEvaluator, EffectivePolicy, EvaluationError, EvaluationInput, EvaluationPayload,
     MatchedRule, ReasonCode,
-    command::{CommandInvocation, has_truncating_redirection, parse_command_line},
+    command::{CommandInvocation, has_pipeline_to, has_truncating_redirection, parse_command_line},
     selectors::{JsonPath, McpCall},
 };
 
@@ -244,6 +244,16 @@ fn match_shell_pack(pack: &str, command: &str) -> Option<MatchedRule> {
             "filesystem.truncate_redirection",
             "Truncates or replaces the contents of a redirected output file",
             "Write to a new reviewed path or preserve the existing file first",
+        ));
+    }
+    if pack == "database.postgresql" && has_pipeline_to(command, &["psql", "pgcli"]) {
+        return Some(rule(
+            "database.postgresql",
+            "uninspectable-sql-input",
+            "command.pipeline",
+            "postgresql.uninspectable_sql_input",
+            "Pipes PostgreSQL statements from input that guardrails cannot inspect",
+            "Provide the reviewed SQL through --command",
         ));
     }
     let invocations = parse_command_line(command);
@@ -1757,6 +1767,8 @@ mod tests {
                     "psql -c 'DROP VIEW current_users'",
                     "psql -c 'ALTER TABLE users DROP COLUMN legacy'",
                     "psql -f migration.sql",
+                    "cat migration.sql | psql",
+                    "printf 'DROP TABLE users' | sudo -u postgres psql",
                 ],
                 vec![
                     "echo 'DROP DATABASE app'",
@@ -1764,6 +1776,7 @@ mod tests {
                     "psql -c 'SELECT drop_database_hint FROM docs'",
                     "psql -c 'WITH x AS (SELECT 1) SELECT * FROM x'",
                     "psql -c 'EXPLAIN SELECT \"delete\" FROM docs'",
+                    "printf safe | cat",
                 ],
             ),
             (
