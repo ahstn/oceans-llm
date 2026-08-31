@@ -766,7 +766,8 @@ fn match_aws_structured_delete_cli(
         ("route53", "change-resource-record-sets") => "--change-batch",
         _ => return None,
     };
-    let value = option_value(arguments, &[option])?;
+    let value = option_value(arguments, &[option])
+        .or_else(|| option_value(arguments, &["--cli-input-json"]))?;
     if is_file_reference(value) {
         return Some(aws_uninspectable_rule("command.arguments"));
     }
@@ -1607,6 +1608,25 @@ fn has_option(arguments: &[String], long: &str, short: Option<char>) -> bool {
                 })
         })
 }
+pub(super) fn subcommand_index(
+    arguments: &[String],
+    options_with_values: &[&str],
+) -> Option<usize> {
+    let mut index = 0;
+    while index < arguments.len() {
+        let argument = &arguments[index];
+        if argument == "--" {
+            return (index + 1 < arguments.len()).then_some(index + 1);
+        }
+        if !argument.starts_with('-') || argument == "-" {
+            return Some(index);
+        }
+        let takes_separate_value =
+            !argument.contains('=') && options_with_values.contains(&argument.as_str());
+        index += if takes_separate_value { 2 } else { 1 };
+    }
+    None
+}
 
 fn option_value<'a>(arguments: &'a [String], names: &[&str]) -> Option<&'a str> {
     for (index, argument) in arguments.iter().enumerate() {
@@ -1741,6 +1761,8 @@ mod tests {
                     "diskutil partitionDisk disk4 GPT APFS Data 0b",
                     "printf reset > state.txt",
                     "find /tmp/work -ok rm -r {} ;",
+                    "printf reset >& state.txt",
+                    "printf reset >&state.txt",
                 ],
                 vec![
                     "echo 'rm -rf /tmp/work'",
@@ -1750,6 +1772,7 @@ mod tests {
                     "printf ok >> state.txt",
                     "dd if=input of=output",
                     "truncate -s 10 report.txt",
+                    "printf ok >&2",
                 ],
             ),
             (
@@ -1794,11 +1817,19 @@ mod tests {
                     "snow streamlit deploy app --prune",
                     "snow spcs compute-pool stop-all pool",
                     "snow sql -q 'WITH x AS (SELECT 1) UPDATE users SET active = false'",
+                    "snow sql -q 'WITH x AS (SELECT 1) DELETE FROM users'",
+                    "snow sql -q 'BEGIN DELETE FROM users; END;'",
+                    "snow sql -q \"$QUERY\"",
+                    "snow sql -q 'ALTER TABLE users DROP COLUMN email'",
+                    "snow sql -q 'ALTER TABLE IF EXISTS users RENAME TO former_users'",
+                    "snow sql -q '!abort 01b123'",
+                    "snow sql -q '!edit'",
                 ],
                 vec![
                     "snow sql -q 'SELECT * FROM users'",
                     "snow object list database",
                     "echo 'snow object drop database app'",
+                    "snow sql -q 'BEGIN SELECT 1; END;'",
                 ],
             ),
             (
@@ -1822,6 +1853,7 @@ mod tests {
                     "aws organizations close-account --account-id 123456789012",
                     "aws dynamodb batch-write-item --request-items '{\"Users\":[{\"DeleteRequest\":{\"Key\":{\"id\":{\"S\":\"1\"}}}}]}'",
                     "aws route53 change-resource-record-sets --hosted-zone-id Z1 --change-batch '{\"Changes\":[{\"Action\":\"DELETE\"}]}'",
+                    "aws dynamodb batch-write-item --cli-input-json file://delete.json",
                 ],
                 vec![
                     "echo 'aws ec2 terminate-instances'",
@@ -1833,6 +1865,7 @@ mod tests {
                     "aws --profile delete-old ec2 describe-instances",
                     "aws athena start-query-execution --query-string 'SELECT * FROM prod.customers'",
                     "aws athena start-query-execution --query-string 'DELETE FROM prod.customers WHERE id = 1'",
+                    "aws dynamodb batch-write-item --cli-input-json '{\"RequestItems\":{\"Users\":[{\"PutRequest\":{\"Item\":{\"id\":{\"S\":\"1\"}}}}]}}'",
                 ],
             ),
             (
@@ -1866,11 +1899,21 @@ mod tests {
                     "kubectl apply --prune -f app.yaml -l app=api",
                     "kubectl replace --force -f app.yaml",
                     "kubectl auth reconcile -f rbac.yaml --remove-extra-subjects",
+                    "kubectl --context prod delete deploy api",
+                    "kubectl delete deploy api",
+                    "kubectl delete sts db",
+                    "kubectl delete ds agent",
                 ],
                 vec![
                     "kubectl get pods",
                     "kubectl delete namespace prod --dry-run=client",
                     "kubectl apply -f app.yaml --force --dry-run=server",
+                    "kubectl get namespace delete",
+                    "kubectl -n prod get pod delete",
+                    "kubectl drain node-1 --dry-run=client",
+                    "kubectl cordon node-1 --dry-run=client",
+                    "kubectl taint node-1 maintenance=true:NoExecute --dry-run=client",
+                    "kubectl scale deployment/api --replicas=0 --dry-run=server",
                 ],
             ),
             (
@@ -1884,11 +1927,14 @@ mod tests {
                     "helm un api",
                     "helm upgrade api ./chart --force-replace",
                     "helm install api ./chart --cleanup-on-fail",
+                    "helm --namespace prod uninstall api",
                 ],
                 vec![
                     "helm status api",
                     "helm uninstall api --dry-run",
                     "helm upgrade api ./chart --force --dry-run=client",
+                    "helm status uninstall",
+                    "helm --namespace prod status uninstall",
                 ],
             ),
             (
@@ -1936,6 +1982,9 @@ mod tests {
                     "vault login token",
                     "vault operator init",
                     "aws secretsmanager get-random-password",
+                    "op item get help",
+                    "infisical secrets get help",
+                    "op item get -- --help",
                 ],
                 vec![
                     "infisical run -- npm start",

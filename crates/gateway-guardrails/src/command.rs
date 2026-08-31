@@ -66,9 +66,33 @@ pub(crate) fn has_truncating_redirection(source: &str) -> bool {
         }
         if quote.is_none() && character == '>' {
             let next = characters.get(index + 1);
-            if matches!(next, Some('>' | '&' | '(')) {
+            if matches!(next, Some('>' | '(')) {
                 index += 2;
                 continue;
+            }
+            if next == Some(&'&') {
+                index += 2;
+                while characters
+                    .get(index)
+                    .is_some_and(|value| value.is_whitespace())
+                {
+                    index += 1;
+                }
+                let target_start = index;
+                while characters.get(index).is_some_and(|value| {
+                    !value.is_whitespace()
+                        && !matches!(value, ';' | '|' | '&' | '(' | ')' | '{' | '}')
+                }) {
+                    index += 1;
+                }
+                let target = &characters[target_start..index];
+                if target.is_empty()
+                    || target == ['-']
+                    || target.iter().all(|value| value.is_ascii_digit())
+                {
+                    continue;
+                }
+                return true;
             }
             index += usize::from(next == Some(&'|')) + 1;
             while characters

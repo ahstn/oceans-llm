@@ -117,12 +117,12 @@ guardrails:
       - core.filesystem
       - database.postgresql
       - database.snowflake
+      - secrets.aws_secrets
+      - secrets.onepassword
       - cloud.aws
       - cloud.gcp
       - kubernetes.kubectl
       - kubernetes.helm
-      - secrets.aws_secrets
-      - secrets.onepassword
       - saas.github
       - saas.notion
     managed_checks:

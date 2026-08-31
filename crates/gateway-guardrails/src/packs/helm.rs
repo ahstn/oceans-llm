@@ -1,6 +1,6 @@
 use crate::{MatchedRule, command::CommandInvocation};
 
-use super::{has_option, rule};
+use super::{has_option, rule, subcommand_index};
 
 pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<MatchedRule> {
     if invocation.executable != "helm" {
@@ -11,14 +11,14 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
     if effective_dry_run(arguments) {
         return None;
     }
-    let operation = arguments.iter().find(|argument| {
-        matches!(
-            argument.as_str(),
-            "uninstall" | "delete" | "del" | "un" | "rollback" | "upgrade" | "install"
-        )
-    })?;
+    let operation = arguments
+        .get(subcommand_index(
+            arguments,
+            HELM_GLOBAL_OPTIONS_WITH_VALUES,
+        )?)?
+        .as_str();
 
-    let (rule_id, reason_code, description, safer_action) = match operation.as_str() {
+    let (rule_id, reason_code, description, safer_action) = match operation {
         "uninstall" | "delete" | "del" | "un" => (
             "uninstall",
             "helm.uninstall",
@@ -71,6 +71,22 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
         safer_action,
     ))
 }
+const HELM_GLOBAL_OPTIONS_WITH_VALUES: &[&str] = &[
+    "--burst-limit",
+    "--kube-apiserver",
+    "--kube-as-group",
+    "--kube-as-user",
+    "--kube-ca-file",
+    "--kube-context",
+    "--kube-token",
+    "--kubeconfig",
+    "--namespace",
+    "-n",
+    "--qps",
+    "--registry-config",
+    "--repository-cache",
+    "--repository-config",
+];
 
 fn effective_dry_run(arguments: &[String]) -> bool {
     let mut effective = None;

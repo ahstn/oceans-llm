@@ -88,7 +88,7 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
             "branch-force-delete",
             "git.branch_force_delete",
             "Deletes a branch or forcibly updates a branch reference",
-            "Use git branch -d after merge, or create a new branch name",
+            "Review merged status and preserve the branch tip under a backup reference",
         )),
         "worktree" if worktree_discards_changes(arguments) => Some(git_rule(
             "worktree-destructive",

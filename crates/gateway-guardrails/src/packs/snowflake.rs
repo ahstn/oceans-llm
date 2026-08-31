@@ -17,7 +17,16 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
         .position(|argument| argument.eq_ignore_ascii_case("sql"))?;
     let sql_arguments = &invocation.arguments[sql_index + 1..];
     if let Some(query) = option_value(sql_arguments, &["-q", "--query"]) {
-        return match_sql(query);
+        return match_sql(query).or_else(|| {
+            has_unresolved_shell_query(query).then(|| {
+                snowflake_rule(
+                    "query-unverified",
+                    "snowflake.query_unverified",
+                    "snow sql receives SQL from a shell expansion that guardrails cannot inspect",
+                    "Materialize and review the exact SQL before execution",
+                )
+            })
+        });
     }
     if sql_arguments.iter().any(|argument| {
         argument == "-f"
@@ -26,7 +35,7 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
             || argument.starts_with("-f=")
     }) {
         return Some(snowflake_rule(
-            "stdin-unverified",
+            "file-unverified",
             "snowflake.file_unverified",
             "snow sql receives SQL from a file that the command guard cannot inspect",
             "Review and submit the exact SQL inline, or use a separately protected workflow",
@@ -218,13 +227,29 @@ fn match_sql(sql: &str) -> Option<MatchedRule> {
 }
 
 fn match_statement(statement: &str) -> Option<MatchedRule> {
+    if meta_command(statement, "!abort") {
+        return Some(snowflake_rule(
+            "abort-query",
+            "snowflake.abort_query",
+            "Cancels an active Snowflake query",
+            "Inspect query history and confirm the exact query ID",
+        ));
+    }
+    if meta_command(statement, "!edit") {
+        return Some(snowflake_rule(
+            "interactive-edit",
+            "snowflake.interactive_edit",
+            "Executes SQL modified in an external editor",
+            "Materialize the final SQL in a reviewed local file",
+        ));
+    }
     let words = top_level_sql_words(statement);
-    let operation_index = if words.first().is_some_and(|word| word == "with") {
-        words
+    let operation_index = match words.first().map(String::as_str) {
+        Some("with") => words
             .iter()
-            .position(|word| matches!(word.as_str(), "delete" | "update" | "merge"))?
-    } else {
-        0
+            .position(|word| matches!(word.as_str(), "delete" | "update" | "merge"))?,
+        Some("begin") => words.iter().position(|word| is_scripting_operation(word))?,
+        _ => 0,
     };
     let words = &words[operation_index..];
     let first = words.first().map(String::as_str)?;
@@ -351,26 +376,36 @@ fn match_statement(statement: &str) -> Option<MatchedRule> {
             "Creates broad or account-level access",
             "Grant only required privileges to a least-privilege role",
         ),
-        ("alter", Some("table"), Some("drop")) => (
-            "alter-table-drop-column",
-            "Removes a table column and its active data",
-            "Clone the table and validate downstream consumers first",
-        ),
-        ("alter", Some("table"), _) if words.iter().any(|word| word == "swap") => (
+        ("alter", Some("table"), _)
+            if has_word_sequence(words, &["drop", "column"])
+                || has_word_sequence(words, &["drop", "constraint"]) =>
+        {
+            (
+                "alter-table-drop-column",
+                "Removes a table column, constraint, or its active data",
+                "Clone the table and validate downstream consumers first",
+            )
+        }
+        ("alter", Some("table"), _) if has_word_sequence(words, &["swap", "with"]) => (
             "alter-table-swap",
             "Atomically exchanges table identities",
             "Compare both tables and verify fully qualified names first",
         ),
-        ("alter", Some("table"), Some("rename")) => (
+        ("alter", Some("table"), _) if has_word_sequence(words, &["rename", "to"]) => (
             "rename-object",
             "Renames a table and can break qualified consumers",
             "Inventory consumers and coordinate a reviewed cutover",
         ),
-        ("alter", Some("table"), Some("alter" | "modify")) => (
-            "alter-column",
-            "Changes a column contract and can break consumers",
-            "Validate type and constraint changes against a clone",
-        ),
+        ("alter", Some("table"), _)
+            if has_word_sequence(words, &["alter", "column"])
+                || has_word_sequence(words, &["modify", "column"]) =>
+        {
+            (
+                "alter-column",
+                "Changes a column contract and can break consumers",
+                "Validate type and constraint changes against a clone",
+            )
+        }
         ("insert", Some("overwrite"), _) => (
             "insert-overwrite",
             "Replaces the target table's current rows",
@@ -405,16 +440,6 @@ fn match_statement(statement: &str) -> Option<MatchedRule> {
             "alter-remove-state",
             "Removes a Snowflake version, specification, key, or access token",
             "Preserve the current configuration and review every dependent consumer",
-        ),
-        _ if first == "!abort" => (
-            "abort-query",
-            "Cancels an active Snowflake query",
-            "Inspect query history and confirm the exact query ID",
-        ),
-        _ if first == "!edit" => (
-            "interactive-edit",
-            "Executes SQL modified in an external editor",
-            "Materialize the final SQL in a reviewed local file",
         ),
         _ => return None,
     };
@@ -495,6 +520,45 @@ fn contains_sequence(arguments: &[String], first: &str, last: &str) -> bool {
                 .take(3)
                 .any(|candidate| candidate == last)
     })
+}
+fn has_unresolved_shell_query(query: &str) -> bool {
+    let query = query.trim();
+    (query.starts_with("${") && query.ends_with('}'))
+        || (query.starts_with("$(") && query.ends_with(')'))
+        || (query.starts_with('`') && query.ends_with('`'))
+        || query.strip_prefix('$').is_some_and(|name| {
+            !name.is_empty()
+                && name
+                    .chars()
+                    .all(|value| value == '_' || value.is_ascii_alphanumeric())
+        })
+}
+
+fn is_scripting_operation(word: &str) -> bool {
+    matches!(
+        word,
+        "alter"
+            | "copy"
+            | "create"
+            | "delete"
+            | "drop"
+            | "execute"
+            | "grant"
+            | "insert"
+            | "merge"
+            | "put"
+            | "remove"
+            | "revoke"
+            | "truncate"
+            | "update"
+    )
+}
+
+fn meta_command(statement: &str, command: &str) -> bool {
+    let statement = statement.trim_start().to_ascii_lowercase();
+    statement
+        .strip_prefix(command)
+        .is_some_and(|remainder| remainder.is_empty() || remainder.starts_with(char::is_whitespace))
 }
 
 fn option_value<'a>(arguments: &'a [String], names: &[&str]) -> Option<&'a str> {

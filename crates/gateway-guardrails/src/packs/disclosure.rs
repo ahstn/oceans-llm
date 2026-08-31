@@ -6,7 +6,8 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
     let arguments = &invocation.arguments;
     if arguments
         .iter()
-        .any(|argument| matches!(argument.as_str(), "-h" | "--help" | "help"))
+        .take_while(|argument| argument.as_str() != "--")
+        .any(|argument| matches!(argument.as_str(), "-h" | "--help"))
     {
         return None;
     }

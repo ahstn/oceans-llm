@@ -17,6 +17,7 @@ const password = requiredEnv("OCEANS_VERIFY_ADMIN_PASSWORD");
 const model = "deepseek-v4-flash-0731";
 const upstreamModel = "deepseek/deepseek-v4-flash-0731";
 const syntheticCommand = "rm -rf /tmp/oceans-verify";
+const gatewayRequestTimeoutMs = 30_000;
 const actions = [];
 
 await fs.mkdir(evidenceDir, { recursive: true });
@@ -24,6 +25,7 @@ const browser = await chromium.launch({ headless: true });
 let apiKeyId;
 let rawKey;
 let page;
+let proof;
 
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -66,6 +68,7 @@ try {
 
   const evaluationResponse = await fetch(`${baseURL}/api/v1/guardrails/evaluate`, {
     method: "POST",
+    signal: AbortSignal.timeout(gatewayRequestTimeoutMs),
     headers: gatewayHeaders(rawKey),
     body: JSON.stringify({ tool_name: "bash", command: syntheticCommand }),
   });
@@ -90,6 +93,7 @@ try {
 
   const liveResponse = await fetch(`${baseURL}/v1/chat/completions`, {
     method: "POST",
+    signal: AbortSignal.timeout(gatewayRequestTimeoutMs),
     headers: {
       ...gatewayHeaders(rawKey),
       "x-oceans-service": "verification",
@@ -112,8 +116,11 @@ try {
             description: "Return a shell command for review without executing it",
             parameters: {
               type: "object",
-              properties: { command: { type: "string" } },
+              properties: {
+                command: { type: "string", enum: [syntheticCommand] },
+              },
               required: ["command"],
+              additionalProperties: false,
             },
           },
         },
@@ -126,7 +133,15 @@ try {
   const liveBody = await responseJson(liveResponse, "OpenRouter Chat Completions canary");
   assert(requestId, "live response did not include x-request-id");
   const toolCalls = liveBody.choices?.[0]?.message?.tool_calls ?? [];
-  assert(toolCalls.some((call) => call.function?.name === "bash"), "live response omitted bash tool call");
+  const bashCall = toolCalls.find((call) => call.function?.name === "bash");
+  assert(bashCall, "live response omitted bash tool call");
+  let bashArguments;
+  try {
+    bashArguments = JSON.parse(bashCall.function.arguments);
+  } catch {
+    throw new Error("live response returned invalid bash tool arguments");
+  }
+  assertEqual(bashArguments.command, syntheticCommand, "generated bash command");
   actions.push({ action: "send bounded OpenRouter tool-call canary", result: "HTTP 200" });
 
   const decisionPage = await poll(async () => {
@@ -171,7 +186,7 @@ try {
     result: "sanitized backend evidence matched",
   });
 
-  const proof = {
+  proof = {
     feature: "backend-gateway",
     gatewayVersion,
     gatewayModel: model,
@@ -192,25 +207,24 @@ try {
     actions,
     generatedAt: new Date().toISOString(),
   };
-  await fs.writeFile(
-    path.join(evidenceDir, "backend-gateway-canary-proof.json"),
-    `${JSON.stringify(proof, null, 2)}\n`,
-  );
-  console.log(`backend gateway proof passed for ${model} through OpenRouter`);
-  console.log(`evidence: ${evidenceDir}`);
 } finally {
   try {
     if (page && apiKeyId) {
-      const revokeResponse = await page.evaluate(async (id) => {
-        const response = await fetch(`/api/v1/admin/api-keys/${encodeURIComponent(id)}/revoke`, {
-          method: "POST",
-        });
-        return response.status;
-      }, apiKeyId);
+      const revokeResponse = await page.evaluate(
+        async ({ id, timeoutMs }) => {
+          const response = await fetch(`/api/v1/admin/api-keys/${encodeURIComponent(id)}/revoke`, {
+            signal: AbortSignal.timeout(timeoutMs),
+            method: "POST",
+          });
+          return response.status;
+        },
+        { id: apiKeyId, timeoutMs: gatewayRequestTimeoutMs },
+      );
       assertEqual(revokeResponse, 200, "temporary API key revocation");
       if (rawKey) {
         const rejected = await fetch(`${baseURL}/v1/models`, {
           headers: { authorization: `Bearer ${rawKey}` },
+          signal: AbortSignal.timeout(gatewayRequestTimeoutMs),
         });
         assertEqual(rejected.status, 401, "revoked key authentication");
       }
@@ -220,6 +234,14 @@ try {
     await browser.close();
   }
 }
+assert(proof, "backend gateway proof was not produced");
+await fs.writeFile(
+  path.join(evidenceDir, "backend-gateway-canary-proof.json"),
+  `${JSON.stringify(proof, null, 2)}\n`,
+);
+console.log(`backend gateway proof passed for ${model} through OpenRouter`);
+console.log(`evidence: ${evidenceDir}`);
+
 
 async function waitForSignIn(currentPage) {
   await currentPage.getByRole("heading", { name: "Sign in" }).waitFor();
