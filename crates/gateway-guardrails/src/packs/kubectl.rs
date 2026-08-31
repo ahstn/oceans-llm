@@ -189,6 +189,7 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
 const KUBECTL_GLOBAL_OPTIONS_WITH_VALUES: &[&str] = &[
     "--as",
     "--as-group",
+    "--as-uid",
     "--cache-dir",
     "--certificate-authority",
     "--client-certificate",

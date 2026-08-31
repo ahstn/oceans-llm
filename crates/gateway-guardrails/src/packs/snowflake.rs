@@ -378,7 +378,10 @@ fn match_statement(statement: &str) -> Option<MatchedRule> {
         ),
         ("alter", Some("table"), _)
             if has_word_sequence(words, &["drop", "column"])
-                || has_word_sequence(words, &["drop", "constraint"]) =>
+                || has_word_sequence(words, &["drop", "constraint"])
+                || has_word_sequence(words, &["drop", "primary", "key"])
+                || has_word_sequence(words, &["drop", "unique"])
+                || has_word_sequence(words, &["drop", "foreign", "key"]) =>
         {
             (
                 "alter-table-drop-column",

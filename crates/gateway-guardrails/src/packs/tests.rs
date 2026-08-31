@@ -182,6 +182,9 @@ fn every_shell_pack_covers_positive_quoting_order_data_and_near_miss_cases() {
                 "snow sql -q 'ALTER TABLE IF EXISTS users RENAME TO former_users'",
                 "snow sql -q '!abort 01b123'",
                 "snow sql -q '!edit'",
+                "snow sql -q 'ALTER TABLE users DROP PRIMARY KEY'",
+                "snow sql -q 'ALTER TABLE users DROP UNIQUE (email)'",
+                "snow sql -q 'ALTER TABLE users DROP FOREIGN KEY (role_id)'",
             ],
             vec![
                 "snow sql -q 'SELECT * FROM users'",
@@ -261,6 +264,7 @@ fn every_shell_pack_covers_positive_quoting_order_data_and_near_miss_cases() {
                 "kubectl delete deploy api",
                 "kubectl delete sts db",
                 "kubectl delete ds agent",
+                "kubectl --as-uid 1000 delete pod api",
             ],
             vec![
                 "kubectl get pods",
@@ -286,6 +290,7 @@ fn every_shell_pack_covers_positive_quoting_order_data_and_near_miss_cases() {
                 "helm upgrade api ./chart --force-replace",
                 "helm install api ./chart --cleanup-on-fail",
                 "helm --namespace prod uninstall api",
+                "helm --kube-tls-server-name api.internal uninstall release",
             ],
             vec![
                 "helm status api",

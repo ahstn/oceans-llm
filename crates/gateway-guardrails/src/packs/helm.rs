@@ -79,6 +79,7 @@ const HELM_GLOBAL_OPTIONS_WITH_VALUES: &[&str] = &[
     "--kube-ca-file",
     "--kube-context",
     "--kube-token",
+    "--kube-tls-server-name",
     "--kubeconfig",
     "--namespace",
     "-n",
