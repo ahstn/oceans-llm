@@ -386,7 +386,30 @@ fn targets_pid_one(arguments: &[String]) -> bool {
 }
 
 fn targets_broadcast_processes(arguments: &[String]) -> bool {
-    arguments.iter().any(|argument| argument == "-1")
+    let mut index = 0;
+    while index < arguments.len() {
+        let argument = arguments[index].as_str();
+        if argument == "--" {
+            return arguments[index + 1..].iter().any(|target| target == "-1");
+        }
+        if matches!(argument, "-s" | "--signal" | "-n") {
+            index += 2;
+            continue;
+        }
+        if argument.starts_with("--signal=") {
+            index += 1;
+            continue;
+        }
+        if index == 0 && argument.starts_with('-') {
+            index += 1;
+            continue;
+        }
+        if argument == "-1" {
+            return true;
+        }
+        index += 1;
+    }
+    false
 }
 
 fn match_filesystem(invocation: &CommandInvocation) -> Option<MatchedRule> {
@@ -1709,6 +1732,7 @@ mod tests {
                     "reboot-check",
                     "kill 10 -9",
                     "systemctl status",
+                    "kill -1 1234",
                 ],
             ),
             (
@@ -1732,14 +1756,26 @@ mod tests {
                     "git submodule update --force",
                     "git prune",
                     "git repack --cruft --cruft-expiration=now -d",
+                    "git checkout main -- src/lib.rs",
+                    "git checkout -- src/lib.rs",
+                    "git clean -f",
                 ],
-                vec!["printf '%s' 'git reset --hard'", "git reset --soft HEAD~1"],
+                vec![
+                    "printf '%s' 'git reset --hard'",
+                    "git reset --soft HEAD~1",
+                    "git checkout -b feature main",
+                    "git checkout feature/login",
+                    "git clean -n -f",
+                    "git clean -nf",
+                ],
             ),
             (
                 "core.filesystem",
                 vec![
                     "rm -rf /tmp/work",
                     "bash -c 'find . -delete'",
+                    "printf reset >| state.txt",
+                    "printf reset &> state.txt",
                     "rm --force --recursive /tmp/work",
                     "rm -Rf /tmp/work",
                     "rm -R -f /tmp/work",
@@ -1773,6 +1809,12 @@ mod tests {
                     "dd if=input of=output",
                     "truncate -s 10 report.txt",
                     "printf ok >&2",
+                    "[[ alpha > beta ]]",
+                    "(( count > 1 ))",
+                    "exec 3<>state.txt",
+                    "cat <<'EOF'\nnot > a redirect\nEOF",
+                    "printf ok >/dev/null",
+                    "printf ok 2>/dev/stderr",
                 ],
             ),
             (

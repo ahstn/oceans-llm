@@ -66,12 +66,17 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
             "Can discard uncommitted changes while resetting the index",
             "Stash changes and inspect the target commit before resetting",
         )),
-        "clean" if has_option(arguments, "--force", Some('f')) => Some(git_rule(
-            "clean-force",
-            "git.clean_force",
-            "Deletes untracked files",
-            "Run git clean --dry-run and remove reviewed paths explicitly",
-        )),
+        "clean"
+            if has_option(arguments, "--force", Some('f'))
+                && !has_option(arguments, "--dry-run", Some('n')) =>
+        {
+            Some(git_rule(
+                "clean-force",
+                "git.clean_force",
+                "Deletes untracked files",
+                "Run git clean --dry-run and remove reviewed paths explicitly",
+            ))
+        }
         "push" if push_rewrites_or_prunes(arguments) => Some(git_rule(
             "push-rewrite",
             "git.push_rewrite",
@@ -193,10 +198,6 @@ fn checkout_discards_paths(arguments: &[String]) -> bool {
         || trailing
             .windows(2)
             .any(|window| window[0] == "--" && !window[1].is_empty())
-        || positional_after_options(trailing).len() >= 2
-        || positional_after_options(trailing)
-            .first()
-            .is_some_and(|value| *value == "." || value.starts_with("./") || value.contains('/'))
 }
 
 fn restores_worktree(arguments: &[String]) -> bool {
@@ -265,14 +266,6 @@ fn has_sequence(arguments: &[String], sequence: &[&str]) -> bool {
             .map(String::as_str)
             .eq(sequence.iter().copied())
     })
-}
-
-fn positional_after_options(arguments: &[String]) -> Vec<&str> {
-    arguments
-        .iter()
-        .filter(|argument| !argument.starts_with('-'))
-        .map(String::as_str)
-        .collect()
 }
 
 fn git_rule(

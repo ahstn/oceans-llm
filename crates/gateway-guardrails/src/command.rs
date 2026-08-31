@@ -45,7 +45,10 @@ pub(crate) fn parse_command_line(source: &str) -> Vec<CommandInvocation> {
 }
 pub(crate) fn has_truncating_redirection(source: &str) -> bool {
     let characters = source.chars().collect::<Vec<_>>();
+    let mut pending_heredocs = Vec::new();
     let mut quote = None;
+    let mut in_conditional = false;
+    let mut in_arithmetic = false;
     let mut index = 0;
     while index < characters.len() {
         let character = characters[index];
@@ -64,50 +67,171 @@ pub(crate) fn has_truncating_redirection(source: &str) -> bool {
             index += 1;
             continue;
         }
-        if quote.is_none() && character == '>' {
-            let next = characters.get(index + 1);
-            if matches!(next, Some('>' | '(')) {
-                index += 2;
-                continue;
-            }
-            if next == Some(&'&') {
-                index += 2;
-                while characters
-                    .get(index)
-                    .is_some_and(|value| value.is_whitespace())
-                {
-                    index += 1;
-                }
-                let target_start = index;
-                while characters.get(index).is_some_and(|value| {
-                    !value.is_whitespace()
-                        && !matches!(value, ';' | '|' | '&' | '(' | ')' | '{' | '}')
-                }) {
-                    index += 1;
-                }
-                let target = &characters[target_start..index];
-                if target.is_empty()
-                    || target == ['-']
-                    || target.iter().all(|value| value.is_ascii_digit())
-                {
-                    continue;
-                }
-                return true;
-            }
-            index += usize::from(next == Some(&'|')) + 1;
-            while characters
-                .get(index)
-                .is_some_and(|value| value.is_whitespace())
-            {
-                index += 1;
-            }
-            if index < characters.len() {
-                return true;
-            }
+        if quote.is_some() {
+            index += 1;
+            continue;
         }
-        index += 1;
+        if character == '\n' && !pending_heredocs.is_empty() {
+            index = skip_heredoc_bodies(&characters, index + 1, &mut pending_heredocs);
+            continue;
+        }
+        if let Some((end, delimiter, strip_tabs)) = heredoc_at(&characters, index) {
+            pending_heredocs.push((delimiter, strip_tabs));
+            index = end;
+            continue;
+        }
+        if characters.get(index..index + 2) == Some(&['[', '[']) {
+            in_conditional = true;
+            index += 2;
+            continue;
+        }
+        if in_conditional && characters.get(index..index + 2) == Some(&[']', ']']) {
+            in_conditional = false;
+            index += 2;
+            continue;
+        }
+        if characters.get(index..index + 2) == Some(&['(', '(']) {
+            in_arithmetic = true;
+            index += 2;
+            continue;
+        }
+        if in_arithmetic && characters.get(index..index + 2) == Some(&[')', ')']) {
+            in_arithmetic = false;
+            index += 2;
+            continue;
+        }
+        if character != '>' || in_conditional || in_arithmetic {
+            index += 1;
+            continue;
+        }
+        let next = characters.get(index + 1);
+        if characters.get(index.wrapping_sub(1)) == Some(&'<') || matches!(next, Some('>' | '(')) {
+            index += 2;
+            continue;
+        }
+        let duplicates_descriptor = next == Some(&'&');
+        index += if matches!(next, Some('&' | '|')) {
+            2
+        } else {
+            1
+        };
+        while characters
+            .get(index)
+            .is_some_and(|value| value.is_whitespace() && *value != '\n')
+        {
+            index += 1;
+        }
+        if characters.get(index..index + 2) == Some(&['>', '(']) {
+            index += 2;
+            continue;
+        }
+        let target_start = index;
+        while characters.get(index).is_some_and(|value| {
+            !value.is_whitespace()
+                && !matches!(value, ';' | '|' | '&' | '(' | ')' | '{' | '}' | '<' | '>')
+        }) {
+            index += 1;
+        }
+        let target = normalized_redirection_target(&characters[target_start..index]);
+        if target.is_empty()
+            || is_non_file_redirection_target(&target)
+            || (duplicates_descriptor
+                && (target == "-" || target.chars().all(|value| value.is_ascii_digit())))
+        {
+            continue;
+        }
+        return true;
     }
     false
+}
+
+fn heredoc_at(characters: &[char], index: usize) -> Option<(usize, Vec<char>, bool)> {
+    if characters.get(index..index + 2) != Some(&['<', '<'])
+        || characters.get(index + 2) == Some(&'<')
+    {
+        return None;
+    }
+    let mut cursor = index + 2;
+    let strip_tabs = characters.get(cursor) == Some(&'-');
+    cursor += usize::from(strip_tabs);
+    while characters
+        .get(cursor)
+        .is_some_and(|value| matches!(value, ' ' | '\t'))
+    {
+        cursor += 1;
+    }
+    let mut delimiter = Vec::new();
+    let mut quote = None;
+    while let Some(character) = characters.get(cursor).copied() {
+        if quote.is_none() && (character.is_whitespace() || matches!(character, ';' | '&' | '|')) {
+            break;
+        }
+        if matches!(character, '\'' | '"') {
+            quote = if quote == Some(character) {
+                None
+            } else if quote.is_none() {
+                Some(character)
+            } else {
+                quote
+            };
+        } else if character == '\\' {
+            cursor += 1;
+            if let Some(escaped) = characters.get(cursor) {
+                delimiter.push(*escaped);
+            }
+        } else {
+            delimiter.push(character);
+        }
+        cursor += 1;
+    }
+    (!delimiter.is_empty()).then_some((cursor, delimiter, strip_tabs))
+}
+
+fn skip_heredoc_bodies(
+    characters: &[char],
+    mut index: usize,
+    pending: &mut Vec<(Vec<char>, bool)>,
+) -> usize {
+    while let Some((delimiter, strip_tabs)) = pending.first() {
+        let mut found = false;
+        while index < characters.len() {
+            let line_end = characters[index..]
+                .iter()
+                .position(|value| *value == '\n')
+                .map_or(characters.len(), |offset| index + offset);
+            let mut line = &characters[index..line_end];
+            if *strip_tabs {
+                line = line.strip_prefix(&['\t']).unwrap_or(line);
+                while let Some(stripped) = line.strip_prefix(&['\t']) {
+                    line = stripped;
+                }
+            }
+            line = line.strip_suffix(&['\r']).unwrap_or(line);
+            index = (line_end + 1).min(characters.len());
+            if line == delimiter {
+                found = true;
+                break;
+            }
+        }
+        pending.remove(0);
+        if !found {
+            return characters.len();
+        }
+    }
+    index
+}
+
+fn normalized_redirection_target(target: &[char]) -> String {
+    target
+        .iter()
+        .filter(|value| !matches!(value, '\'' | '"'))
+        .collect()
+}
+
+fn is_non_file_redirection_target(target: &str) -> bool {
+    matches!(target, "/dev/null" | "/dev/stdout" | "/dev/stderr")
+        || target.starts_with("/dev/fd/")
+        || target.starts_with("/proc/self/fd/")
 }
 pub(crate) fn has_pipeline_to(source: &str, executables: &[&str]) -> bool {
     let tokens = tokenize(source);
