@@ -769,12 +769,19 @@ pub struct LeaderboardSeriesPointView {
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct LeaderboardHarnessView {
+    pub key: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct LeaderboardLeaderView {
     pub rank: u32,
     pub user_id: String,
     pub user_name: String,
     pub total_spend_usd_10000: i64,
     pub most_used_model: Option<String>,
+    pub most_used_harness: Option<LeaderboardHarnessView>,
     pub total_requests: i64,
     pub tool_cardinality_averages: RequestToolCardinalityAveragesView,
 }
@@ -816,6 +823,9 @@ pub struct HarnessUsageLeaderView {
     pub agent_harness_key: String,
     pub agent_harness_label: String,
     pub total_requests: i64,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -1903,7 +1913,10 @@ pub fn format_timestamp(value: OffsetDateTime) -> String {
 mod tests {
     use serde_json::json;
 
-    use super::{UpdateUserRequest, admin_openapi};
+    use super::{
+        HarnessUsageLeaderView, LeaderboardHarnessView, LeaderboardLeaderView,
+        RequestToolCardinalityAveragesView, UpdateUserRequest, admin_openapi,
+    };
 
     #[test]
     fn openapi_document_version_is_release_agnostic() {
@@ -1973,6 +1986,73 @@ mod tests {
         );
         assert!(components.schemas.contains_key("AdminModelAllowlistView"));
         assert!(components.schemas.contains_key("AdminModelView"));
+    }
+
+    #[test]
+    fn observability_leader_views_serialize_the_live_contract() {
+        let leaderboard = serde_json::to_value(LeaderboardLeaderView {
+            rank: 1,
+            user_id: "user-1".to_string(),
+            user_name: "Ada".to_string(),
+            total_spend_usd_10000: 12_500,
+            most_used_model: Some("fast".to_string()),
+            most_used_harness: Some(LeaderboardHarnessView {
+                key: "opencode".to_string(),
+                label: "Opencode".to_string(),
+            }),
+            total_requests: 7,
+            tool_cardinality_averages: RequestToolCardinalityAveragesView {
+                referenced_mcp_server_count: None,
+                exposed_tool_count: Some(2.0),
+                invoked_tool_count: Some(1.0),
+                filtered_tool_count: None,
+            },
+        })
+        .expect("serialize leaderboard leader");
+        assert_eq!(
+            leaderboard,
+            json!({
+                "rank": 1,
+                "user_id": "user-1",
+                "user_name": "Ada",
+                "total_spend_usd_10000": 12_500,
+                "most_used_model": "fast",
+                "most_used_harness": {
+                    "key": "opencode",
+                    "label": "Opencode"
+                },
+                "total_requests": 7,
+                "tool_cardinality_averages": {
+                    "referenced_mcp_server_count": null,
+                    "exposed_tool_count": 2.0,
+                    "invoked_tool_count": 1.0,
+                    "filtered_tool_count": null
+                }
+            })
+        );
+
+        let harness = serde_json::to_value(HarnessUsageLeaderView {
+            rank: 2,
+            agent_harness_key: "mastra".to_string(),
+            agent_harness_label: "Mastra".to_string(),
+            total_requests: 3,
+            prompt_tokens: Some(120),
+            completion_tokens: None,
+            total_tokens: Some(180),
+        })
+        .expect("serialize harness usage leader");
+        assert_eq!(
+            harness,
+            json!({
+                "rank": 2,
+                "agent_harness_key": "mastra",
+                "agent_harness_label": "Mastra",
+                "total_requests": 3,
+                "prompt_tokens": 120,
+                "completion_tokens": null,
+                "total_tokens": 180
+            })
+        );
     }
 
     #[test]

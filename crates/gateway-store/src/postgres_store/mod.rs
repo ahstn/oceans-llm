@@ -68,9 +68,10 @@ use gateway_core::{
     UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
     UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
     UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
-    UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
-    UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord,
-    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord,
+    UsageLeaderboardHarnessRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
+    UserRecord, UserSessionRecord, UserStatus,
 };
 use sqlx::{
     PgPool, Row,

@@ -29,7 +29,7 @@ import {
   getObservabilityHarnessUsage,
   refreshObservabilityHarnessUsage,
 } from '@/server/admin-data.functions'
-import type { HarnessUsageRange, HarnessUsageView } from '@/types/api'
+import type { HarnessUsageLeaderView, HarnessUsageRange, HarnessUsageView } from '@/types/api'
 
 export const Route = createFileRoute('/observability/agent-harnesses')({
   loader: () => getObservabilityHarnessUsage({ data: { range: '7d' } }),
@@ -218,7 +218,7 @@ export function AgentHarnessesPage() {
         <CardHeader>
           <CardTitle>Top Harnesses</CardTitle>
           <CardDescription>
-            Ranked by request count for the selected range using normalized harness labels.
+            Ranked by request count for the selected range with input, output, and total tokens.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -227,43 +227,137 @@ export function AgentHarnessesPage() {
           ) : usage.leaders.length === 0 ? (
             <HarnessEmptyState />
           ) : (
-            <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-              <Table data-testid="harness-usage-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-16">Rank</TableHead>
-                    <TableHead>Harness</TableHead>
-                    <TableHead className="text-right">Requests</TableHead>
-                    <TableHead>Key</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {usage.leaders.map((leader, index) => (
-                    <TableRow key={leader.agent_harness_key}>
-                      <TableCell className="font-medium text-[var(--color-text-soft)]">
-                        {index + 1}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        <AgentHarnessLabel harnessKey={leader.agent_harness_key}>
-                          {leader.agent_harness_label}
-                        </AgentHarnessLabel>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {NUMBER_FORMATTER.format(leader.total_requests)}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-[var(--color-text-muted)]">
-                        {leader.agent_harness_key}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <HarnessRankings leaders={usage.leaders} />
           )}
         </CardContent>
       </Card>
     </div>
   )
+}
+
+// Keep mobile and desktop projections together so harness metrics cannot drift.
+// oxlint-disable-next-line eslint/max-lines-per-function
+function HarnessRankings({ leaders }: { leaders: HarnessUsageLeaderView[] }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-3 md:hidden" data-testid="harness-usage-mobile-list">
+        {leaders.map((leader, index) => (
+          <article
+            key={leader.agent_harness_key}
+            className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-xs font-semibold text-[var(--color-text-soft)]">
+                Rank {index + 1}
+              </span>
+              <div className="min-w-0">
+                <p className="font-semibold text-[var(--color-text)]">
+                  <AgentHarnessLabel harnessKey={leader.agent_harness_key}>
+                    {leader.agent_harness_label}
+                  </AgentHarnessLabel>
+                </p>
+                <p className="truncate font-mono text-xs text-[var(--color-text-soft)]">
+                  {leader.agent_harness_key}
+                </p>
+              </div>
+            </div>
+
+            <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                  Requests
+                </dt>
+                <dd className="mt-1 tabular-nums">
+                  {NUMBER_FORMATTER.format(leader.total_requests)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                  Input tokens
+                </dt>
+                <dd className="mt-1 tabular-nums">{formatTokenCount(leader.prompt_tokens)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                  Output tokens
+                </dt>
+                <dd className="mt-1 tabular-nums">{formatTokenCount(leader.completion_tokens)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                  Total tokens
+                </dt>
+                <dd className="mt-1 tabular-nums">{formatTokenCount(leader.total_tokens)}</dd>
+              </div>
+            </dl>
+          </article>
+        ))}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+        <Table data-testid="harness-usage-table" className="min-w-[64rem] text-left">
+          <TableHeader className="bg-[color:var(--color-surface-muted)]">
+            <TableRow>
+              <TableHead className="w-16 px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Rank
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Harness
+              </TableHead>
+              <TableHead className="px-3 py-2 text-right font-semibold text-[var(--color-text-soft)]">
+                Requests
+              </TableHead>
+              <TableHead className="px-3 py-2 text-right font-semibold text-[var(--color-text-soft)]">
+                Input tokens
+              </TableHead>
+              <TableHead className="px-3 py-2 text-right font-semibold text-[var(--color-text-soft)]">
+                Output tokens
+              </TableHead>
+              <TableHead className="px-3 py-2 text-right font-semibold text-[var(--color-text-soft)]">
+                Total tokens
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Key
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {leaders.map((leader, index) => (
+              <TableRow key={leader.agent_harness_key}>
+                <TableCell className="px-3 py-3 font-medium text-[var(--color-text-soft)]">
+                  {index + 1}
+                </TableCell>
+                <TableCell className="px-3 py-3 font-medium">
+                  <AgentHarnessLabel harnessKey={leader.agent_harness_key}>
+                    {leader.agent_harness_label}
+                  </AgentHarnessLabel>
+                </TableCell>
+                <TableCell className="px-3 py-3 text-right tabular-nums">
+                  {NUMBER_FORMATTER.format(leader.total_requests)}
+                </TableCell>
+                <TableCell className="px-3 py-3 text-right tabular-nums">
+                  {formatTokenCount(leader.prompt_tokens)}
+                </TableCell>
+                <TableCell className="px-3 py-3 text-right tabular-nums">
+                  {formatTokenCount(leader.completion_tokens)}
+                </TableCell>
+                <TableCell className="px-3 py-3 text-right tabular-nums">
+                  {formatTokenCount(leader.total_tokens)}
+                </TableCell>
+                <TableCell className="px-3 py-3 font-mono text-xs text-[var(--color-text-muted)]">
+                  {leader.agent_harness_key}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  )
+}
+
+function formatTokenCount(value: number | null | undefined) {
+  return value == null ? 'n/a' : NUMBER_FORMATTER.format(value)
 }
 
 function HarnessEmptyState() {

@@ -49,7 +49,7 @@ use crate::http::{
         AgentToolReliabilityItemView, AgentToolServerDiagnosticsView, Envelope,
         HarnessUsageChartHarnessView, HarnessUsageLeaderView, HarnessUsageQuery,
         HarnessUsageSeriesPointView, HarnessUsageSeriesValueView, HarnessUsageView,
-        LeaderboardChartUserView, LeaderboardLeaderView, LeaderboardQuery,
+        LeaderboardChartUserView, LeaderboardHarnessView, LeaderboardLeaderView, LeaderboardQuery,
         LeaderboardSeriesPointView, LeaderboardSeriesValueView, LeaderboardView,
         McpToolInvocationDetailView, McpToolInvocationListQuery, McpToolInvocationPageView,
         McpToolInvocationPayloadView, McpToolInvocationSummaryView, OpenAiErrorEnvelopeView,
@@ -177,6 +177,12 @@ async fn build_usage_leaderboard(
             user_name: leader.user_name,
             total_spend_usd_10000: leader.priced_cost_usd.as_scaled_i64(),
             most_used_model: leader.top_model_key,
+            most_used_harness: leader
+                .most_used_harness
+                .map(|harness| LeaderboardHarnessView {
+                    key: harness.key,
+                    label: harness.label,
+                }),
             total_requests: leader.total_request_count,
             tool_cardinality_averages: RequestToolCardinalityAveragesView {
                 referenced_mcp_server_count: leader
@@ -306,6 +312,9 @@ async fn build_harness_usage(
             agent_harness_key: leader.agent_harness_key,
             agent_harness_label: leader.agent_harness_label,
             total_requests: leader.request_count,
+            prompt_tokens: leader.prompt_tokens,
+            completion_tokens: leader.completion_tokens,
+            total_tokens: leader.total_tokens,
         })
         .collect();
 

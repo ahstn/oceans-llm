@@ -18,6 +18,7 @@ This directory is the maintained source for verification of the user-facing Ocea
 - Prefer ARIA roles and accessible names over CSS selectors. Use an existing `data-testid` when the visible table has no unique accessible name.
 - Treat each command and quoted label as literal.
 - Use `control-oceans-admin drive models` for the automated Models proof.
+- Use `control-oceans-admin drive observability` for the combined Leaderboard and Agent Harnesses proof.
 - Extend the harness before reporting another path as automated. Manual Playwright steps in this map remain the contract for that extension.
 - Do not mutate provider credentials or call a live provider during read-only control-plane verification. Use the live LLM request recipe only when the changed request behavior warrants paid integration proof.
 
@@ -44,6 +45,8 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 ## Features
 
 - [Models](./models.md) covers password sign-in, sidebar navigation, configured model listing, and model detail.
+- [Leaderboard](./leaderboard.md) covers 7-day production API parity, top models, the most-used harness, and the 31-day range.
+- [Agent Harnesses](./agent-harnesses.md) covers request and token aggregates, Mastra and Oh My Pi presentation, and the 31-day range.
 - [Password sign-in](./password-sign-in.md) covers protected-route redirection, seeded credentials, authenticated identity, and sign-out.
 - [API keys](./api-keys.md) covers the scoped key list, create and manage flows, one-time user-key secrets, and authorized service-account reveal controls.
 - [Agent sessions](./agent-sessions.md) covers the seeded session list, filters, and detail sheet.

@@ -41,13 +41,15 @@ const harnessUsageData = {
   bucket_hours: 12,
   chart_harnesses: [
     {
-      agent_harness_key: 'opencode',
-      agent_harness_label: 'Opencode',
+      rank: 1,
+      agent_harness_key: 'mastra',
+      agent_harness_label: 'Mastra',
       total_requests: 17,
     },
     {
-      agent_harness_key: 'claude_code',
-      agent_harness_label: 'Claude Code',
+      agent_harness_key: 'oh_my_pi',
+      rank: 2,
+      agent_harness_label: 'Oh My Pi',
       total_requests: 9,
     },
   ],
@@ -55,21 +57,29 @@ const harnessUsageData = {
     {
       bucket_start: '2026-03-01T00:00:00Z',
       values: [
-        { agent_harness_key: 'opencode', request_count: 12 },
-        { agent_harness_key: 'claude_code', request_count: 7 },
+        { agent_harness_key: 'mastra', request_count: 12 },
+        { agent_harness_key: 'oh_my_pi', request_count: 7 },
       ],
     },
   ],
   leaders: [
     {
-      agent_harness_key: 'opencode',
-      agent_harness_label: 'Opencode',
+      rank: 1,
+      agent_harness_key: 'mastra',
+      agent_harness_label: 'Mastra',
       total_requests: 17,
+      prompt_tokens: 1_200,
+      completion_tokens: 500,
+      total_tokens: 1_700,
     },
     {
-      agent_harness_key: 'claude_code',
-      agent_harness_label: 'Claude Code',
+      rank: 2,
+      agent_harness_key: 'oh_my_pi',
+      agent_harness_label: 'Oh My Pi',
       total_requests: 9,
+      prompt_tokens: null,
+      completion_tokens: null,
+      total_tokens: null,
     },
   ],
 }
@@ -95,13 +105,23 @@ describe('AgentHarnessesPage', () => {
     expect(scope.getByRole('heading', { level: 1, name: 'Agent harnesses' })).toBeInTheDocument()
     expect(scope.getByRole('radio', { name: 'Last 7 days' })).toBeInTheDocument()
     expect(scope.getByRole('radio', { name: 'Last 31 days' })).toBeInTheDocument()
-    expect(scope.getByTestId('harness-usage-table')).toBeInTheDocument()
-    expect(scope.getAllByText('Opencode').length).toBeGreaterThan(0)
-    expect(scope.getAllByText('Claude Code').length).toBeGreaterThan(0)
-    expect(scope.getByText('opencode')).toBeInTheDocument()
-    expect(
-      scope.getByTestId('harness-usage-table').querySelectorAll('[data-agent-harness-icon]'),
-    ).toHaveLength(2)
+    const table = scope.getByTestId('harness-usage-table')
+    expect(table).toBeInTheDocument()
+    expect(scope.getByTestId('harness-usage-mobile-list')).toBeInTheDocument()
+    expect(scope.getAllByText('Mastra').length).toBeGreaterThan(1)
+    expect(scope.getAllByText('Oh My Pi').length).toBeGreaterThan(1)
+    expect(scope.getAllByText('mastra')).toHaveLength(2)
+    expect(within(table).getByText('Input tokens')).toBeInTheDocument()
+    expect(within(table).getByText('Output tokens')).toBeInTheDocument()
+    expect(within(table).getByText('Total tokens')).toBeInTheDocument()
+    expect(within(table).getByText('1,200')).toBeInTheDocument()
+    expect(within(table).getByText('500')).toBeInTheDocument()
+    expect(within(table).getByText('1,700')).toBeInTheDocument()
+    expect(within(table).getAllByText('n/a')).toHaveLength(3)
+    const mastraRow = within(table).getByText('Mastra').closest('tr')
+    const ohMyPiRow = within(table).getByText('Oh My Pi').closest('tr')
+    expect(mastraRow?.querySelector('[data-agent-harness-icon="mastra"]')).toBeInTheDocument()
+    expect(ohMyPiRow?.querySelector('[data-agent-harness-icon]')).not.toBeInTheDocument()
   })
 
   it('refetches harness data when the date range changes', async () => {

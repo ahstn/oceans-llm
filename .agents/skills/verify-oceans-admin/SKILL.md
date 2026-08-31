@@ -1,6 +1,6 @@
 ---
 name: verify-oceans-admin
-description: Verify the Oceans LLM browser admin control plane against the real local gateway and seeded demo data. Use for user-path checks of sign-in, models, API keys, agent sessions, and request logs.
+description: Verify the Oceans LLM browser admin control plane against the real local gateway and seeded demo data. Use for user-path checks of sign-in, models, API keys, observability, agent sessions, and request logs.
 ---
 
 # Verify Oceans Admin
@@ -55,6 +55,18 @@ Prove the Models path:
 
 The Models driver runs the idempotent `mise run e2e-install` task to ensure Chromium is available. It then opens the protected `/admin/api-keys` route, captures its redirect to sign-in, signs in as the seeded `admin@local` user, follows the `Models` sidebar link, checks the displayed count against rendered rows and the total count against the read-only admin models response, checks every platform-admin `Model info` section, enables `Context window` and `Capabilities`, and opens `Client config` for `gpt-5.6-sol`.
 
+Prove the Leaderboard and Agent Harnesses paths together:
+
+```bash
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive observability
+```
+
+The Observability driver opens the protected Leaderboard route, signs in, and compares both the
+Leaderboard and Agent Harnesses desktop tables with their production admin API responses for the
+seeded 7-day window. It selects the 31-day range on both pages and repeats the comparison. The proof
+also requires the new leaderboard columns, harness token columns, a Mastra row with its icon, and an
+Oh My Pi row without an icon.
+
 The current `gateway.yaml` grants the `agent_sessions` page to platform administrators. Verify the list, filtering, pagination, and a matching detail sheet against the seeded demo data.
 
 For other features, follow the exact stable handles in the feature map. Extend the driver with a named command before you report a new path as automated.
@@ -81,7 +93,15 @@ Evidence is written to `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/evi
 - `models-proof.json` with the visited URLs, displayed, rendered, total, and API counts, model ID, gateway version, and action log.
 - `stack.log` beside the evidence directory for launch and runtime diagnostics. Cleanup redacts seeded passwords and raw demo API-key secrets from this log.
 
-A valid proof exercises the real browser path. It captures the action and resulting state, not only a final screenshot. It also confirms the model list through the production admin API used by the UI. Do not use internal state setters or test-only endpoints. The local demo seed is the production seed boundary for this development command; no provider call is required to list models.
+The Observability proof produces:
+
+- `01-observability-login.png` and `01-observability-login.aria.txt` for the protected entry state.
+- `02-leaderboard-7d.*` and `03-leaderboard-31d.*` for the two Leaderboard ranges.
+- `04-agent-harnesses-7d.*` and `05-agent-harnesses-31d.*` for the two Agent Harnesses ranges.
+- `observability-proof.json` with the production API leaders, rendered table values, ranges, chart
+  series counts, gateway version, Mastra/Oh My Pi icon checks, and action log.
+
+A valid proof exercises the real browser path. It captures the action and resulting state, not only a final screenshot. It also confirms rendered data through the production admin API used by the UI. Do not use internal state setters or test-only endpoints. The local demo seed is the production seed boundary for these development commands; no provider call is required for Models, Leaderboard, or Agent Harnesses.
 
 A live canary is separate evidence. Name the gateway model, provider, endpoint family, and observed request-log record. A rendered configured provider or successful health check is not live-provider proof.
 
@@ -100,8 +120,10 @@ Cleanup sends termination only to the process IDs recorded by this run and check
 Confirm that proof survived teardown:
 
 ```bash
-.agents/skills/verify-oceans-admin/scripts/control-oceans-admin evidence
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin evidence observability
 ```
+
+Pass the proof name so evidence validation requires its matching proof JSON.
 
 ## Helpers
 
@@ -111,8 +133,9 @@ The executable helper is [scripts/control-oceans-admin](./scripts/control-oceans
 control-oceans-admin launch
 control-oceans-admin doctor
 control-oceans-admin drive models
-control-oceans-admin evidence [models|live-llm]
+control-oceans-admin drive observability
+control-oceans-admin evidence [models|observability|live-llm]
 control-oceans-admin cleanup
 ```
 
-The browser implementation is [scripts/drive-models.mjs](./scripts/drive-models.mjs). Call it through `control-oceans-admin` so it receives the recorded URL, evidence path, credentials, and gateway version.
+The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs) and [scripts/drive-observability.mjs](./scripts/drive-observability.mjs). Call them through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.

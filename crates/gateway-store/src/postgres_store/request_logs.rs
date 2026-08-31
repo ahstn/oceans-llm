@@ -450,7 +450,10 @@ impl RequestLogRepository for PostgresStore {
             r#"
             SELECT agent_harness_key,
                    MIN(agent_harness_label) AS agent_harness_label,
-                   COUNT(*) AS request_count
+                   COUNT(*)::BIGINT AS request_count,
+                   SUM(prompt_tokens)::BIGINT AS prompt_tokens,
+                   SUM(completion_tokens)::BIGINT AS completion_tokens,
+                   SUM(total_tokens)::BIGINT AS total_tokens
             FROM request_logs
             WHERE occurred_at >= $1
               AND occurred_at < $2
@@ -472,6 +475,9 @@ impl RequestLogRepository for PostgresStore {
                     agent_harness_key: row.try_get(0).map_err(to_query_error)?,
                     agent_harness_label: row.try_get(1).map_err(to_query_error)?,
                     request_count: row.try_get(2).map_err(to_query_error)?,
+                    prompt_tokens: row.try_get(3).map_err(to_query_error)?,
+                    completion_tokens: row.try_get(4).map_err(to_query_error)?,
+                    total_tokens: row.try_get(5).map_err(to_query_error)?,
                 })
             })
             .collect()

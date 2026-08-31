@@ -41,12 +41,14 @@ const leaderboardData = {
   bucket_hours: 12,
   chart_users: [
     {
+      rank: 1,
       user_id: 'user_1',
       user_name: 'Ada',
       total_spend_usd_10000: 71000,
     },
     {
       user_id: 'user_2',
+      rank: 2,
       user_name: 'Ben',
       total_spend_usd_10000: 62000,
     },
@@ -62,10 +64,15 @@ const leaderboardData = {
   ],
   leaders: [
     {
+      rank: 1,
       user_id: 'user_1',
       user_name: 'Ada',
       total_spend_usd_10000: 71000,
       most_used_model: 'fast',
+      most_used_harness: {
+        key: 'claude_code',
+        label: 'Claude Code',
+      },
       total_requests: 11,
       tool_cardinality_averages: {
         referenced_mcp_server_count: null,
@@ -75,10 +82,12 @@ const leaderboardData = {
       },
     },
     {
+      rank: 2,
       user_id: 'user_2',
       user_name: 'Ben',
       total_spend_usd_10000: 62000,
       most_used_model: 'reasoning',
+      most_used_harness: null,
       total_requests: 8,
       tool_cardinality_averages: {
         referenced_mcp_server_count: null,
@@ -112,13 +121,18 @@ describe('ObservabilityLeaderboardPage', () => {
     expect(scope.getByRole('radio', { name: 'Last 7 days' })).toBeInTheDocument()
     expect(scope.getByRole('radio', { name: 'Last 31 days' })).toBeInTheDocument()
     expect(scope.getByTestId('leaderboard-table')).toBeInTheDocument()
-    expect(scope.getByText('Ada')).toBeInTheDocument()
-    expect(scope.getByText('Ben')).toBeInTheDocument()
-    expect(scope.getByText('fast')).toBeInTheDocument()
-    expect(scope.getByText('Avg Tools')).toBeInTheDocument()
-    expect(scope.getByText('exposed 2')).toBeInTheDocument()
-    expect(scope.getByText('called 0')).toBeInTheDocument()
-    expect(scope.getByText('exposed 3.5')).toBeInTheDocument()
+    expect(scope.getByTestId('leaderboard-mobile-list')).toBeInTheDocument()
+    expect(scope.getAllByText('Ada').length).toBeGreaterThan(1)
+    expect(scope.getAllByText('Ben').length).toBeGreaterThan(1)
+    expect(scope.getAllByText('fast')).toHaveLength(2)
+    expect(scope.getAllByText('reasoning')).toHaveLength(2)
+    expect(scope.getAllByText('Claude Code')).toHaveLength(2)
+    expect(scope.getAllByText('Most used model').length).toBeGreaterThan(1)
+    expect(scope.getAllByText('Most used harness').length).toBeGreaterThan(1)
+    expect(scope.getAllByText('Avg tools').length).toBeGreaterThan(1)
+    expect(scope.getAllByText('exposed 2')).toHaveLength(2)
+    expect(scope.getAllByText('called 0')).toHaveLength(2)
+    expect(scope.getAllByText('exposed 3.5')).toHaveLength(2)
   })
 
   it('refetches leaderboard data when the date range changes', async () => {
@@ -142,6 +156,10 @@ describe('ObservabilityLeaderboardPage', () => {
         },
       })
     })
+    expect(within(view.container).getByRole('radio', { name: 'Last 31 days' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
   })
 
   it('renders an explicit empty state when no leaderboard data exists', async () => {

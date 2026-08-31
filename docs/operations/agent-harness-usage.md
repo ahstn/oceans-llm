@@ -26,6 +26,8 @@ The classifier is explicit and conservative. Known coding-agent patterns map to 
 | --- | --- | --- |
 | `opencode/...`, `Agent/opencode` | `opencode` | OpenCode |
 | `pi/...` with platform/runtime metadata | `pi` | Pi |
+| `oh-my-pi/...`, `omp/...` (case-insensitive) | `oh_my_pi` | Oh My Pi |
+| exact `mastra`, `mastra/...` (case-insensitive) | `mastra` | Mastra |
 | `claude-code/...`, `Claude-User (claude-code/...)`, `Agent/claude-code` | `claude_code` | Claude Code |
 | `GeminiCLI/...`, `GeminiCLI-.../...`, `CloudCodeVSCode/...`, `Agent/gemini-cli` | `gemini_cli` | Gemini CLI |
 | `Agent/copilot-cli` | `copilot_cli` | Copilot CLI |
@@ -65,7 +67,8 @@ The page shows self-reported `User-Agent` classifications:
 
 - a 7-day and 31-day range picker
 - a request-count time-series chart for the top harnesses
-- a ranked table of normalized harness usage
+- a ranked table of normalized harness usage with request count and input, output, and total token totals (`n/a` when a total is unavailable)
+- a Mastra icon beside Mastra labels; Oh My Pi deliberately remains text-only and does not reuse the Pi icon
 
 Request-log detail also shows the normalized harness label and raw `User-Agent` value for debugging classifier behavior.
 

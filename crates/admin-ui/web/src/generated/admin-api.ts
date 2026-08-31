@@ -3146,10 +3146,16 @@ export interface components {
         HarnessUsageLeaderView: {
             agent_harness_key: string;
             agent_harness_label: string;
+            /** Format: int64 */
+            completion_tokens?: number | null;
+            /** Format: int64 */
+            prompt_tokens?: number | null;
             /** Format: int32 */
             rank: number;
             /** Format: int64 */
             total_requests: number;
+            /** Format: int64 */
+            total_tokens?: number | null;
         };
         HarnessUsageSeriesPointView: {
             bucket_start: string;
@@ -3210,7 +3216,12 @@ export interface components {
             user_id: string;
             user_name: string;
         };
+        LeaderboardHarnessView: {
+            key: string;
+            label: string;
+        };
         LeaderboardLeaderView: {
+            most_used_harness?: null | components["schemas"]["LeaderboardHarnessView"];
             most_used_model?: string | null;
             /** Format: int32 */
             rank: number;

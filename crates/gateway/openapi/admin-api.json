@@ -12303,6 +12303,20 @@
           "agent_harness_label": {
             "type": "string"
           },
+          "completion_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "prompt_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "rank": {
             "type": "integer",
             "format": "int32",
@@ -12310,6 +12324,13 @@
           },
           "total_requests": {
             "type": "integer",
+            "format": "int64"
+          },
+          "total_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           }
         }
@@ -12564,6 +12585,21 @@
           }
         }
       },
+      "LeaderboardHarnessView": {
+        "type": "object",
+        "required": [
+          "key",
+          "label"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
       "LeaderboardLeaderView": {
         "type": "object",
         "required": [
@@ -12575,6 +12611,16 @@
           "tool_cardinality_averages"
         ],
         "properties": {
+          "most_used_harness": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LeaderboardHarnessView"
+              }
+            ]
+          },
           "most_used_model": {
             "type": [
               "string",

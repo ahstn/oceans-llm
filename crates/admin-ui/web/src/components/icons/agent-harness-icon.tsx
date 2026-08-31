@@ -2,6 +2,7 @@ import type { CSSProperties, HTMLAttributes, ReactNode } from 'react'
 
 import claudeCodeIcon from '@lobehub/icons-static-svg/icons/claudecode.svg?url'
 import codexIcon from '@lobehub/icons-static-svg/icons/codex.svg?url'
+import mastraIcon from '@lobehub/icons-static-svg/icons/mastra.svg?url'
 import openCodeIcon from '@lobehub/icons-static-svg/icons/opencode.svg?url'
 import piIcon from '@lobehub/icons-static-svg/icons/pi.svg?url'
 
@@ -10,6 +11,7 @@ import { cn } from '@/lib/utils'
 const AGENT_HARNESS_ICONS: Record<string, string> = {
   claudecode: claudeCodeIcon,
   codex: codexIcon,
+  mastra: mastraIcon,
   opencode: openCodeIcon,
   pi: piIcon,
 }

@@ -936,12 +936,19 @@ pub struct FocusExportDiagnosticsRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageLeaderboardHarnessRecord {
+    pub key: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageLeaderboardUserRecord {
     pub user_id: Uuid,
     pub user_name: String,
     pub priced_cost_usd: Money4,
     pub total_request_count: i64,
     pub top_model_key: Option<String>,
+    pub most_used_harness: Option<UsageLeaderboardHarnessRecord>,
     pub tool_cardinality_averages: RequestToolCardinalityAverages,
 }
 
@@ -957,6 +964,9 @@ pub struct HarnessUsageLeaderRecord {
     pub agent_harness_key: String,
     pub agent_harness_label: String,
     pub request_count: i64,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
