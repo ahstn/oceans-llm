@@ -64,8 +64,8 @@ Prove the Leaderboard and Agent Harnesses paths together:
 The Observability driver opens the protected Leaderboard route, signs in, and compares both the
 Leaderboard and Agent Harnesses desktop tables with their production admin API responses for the
 seeded 7-day window. It selects the 31-day range on both pages and repeats the comparison. The proof
-also requires the new leaderboard columns, harness token columns, a Mastra row with its icon, and an
-Oh My Pi row without an icon.
+also requires the new leaderboard columns, harness token columns, a Mastra row with its Lobe icon,
+and an Oh My Pi row with its white `omp.sh` mark.
 
 The current `gateway.yaml` grants the `agent_sessions` page to platform administrators. Verify the list, filtering, pagination, and a matching detail sheet against the seeded demo data.
 

@@ -94,7 +94,7 @@ try {
   });
   actions.push({
     action: "inspect Mastra and Oh My Pi rendering",
-    result: "Mastra has its harness icon and Oh My Pi is text-only",
+    result: "Mastra and Oh My Pi have their harness icons; the Oh My Pi mark is white",
   });
   await capture(page, "04-agent-harnesses-7d");
 
@@ -274,10 +274,15 @@ async function assertHarnessIcons(page, view) {
     .nth(mastraIndex)
     .locator('[data-agent-harness-icon="mastra"]')
     .count();
-  const ompIconCount = await rows.nth(ompIndex).locator("[data-agent-harness-icon]").count();
+  const ompIcon = rows.nth(ompIndex).locator('[data-agent-harness-icon="ohmypi"]');
+  const ompIconCount = await ompIcon.count();
+  const ompFill = await ompIcon.locator("path").getAttribute("fill");
+  const ompGradientCount = await ompIcon.locator("linearGradient").count();
   assertEqual(mastraIconCount, 1, "Mastra icon count");
-  assertEqual(ompIconCount, 0, "Oh My Pi icon count");
-  return { mastraIconCount, ompIconCount };
+  assertEqual(ompIconCount, 1, "Oh My Pi icon count");
+  assertEqual(ompFill, "#fff", "Oh My Pi icon fill");
+  assertEqual(ompGradientCount, 0, "Oh My Pi gradient count");
+  return { mastraIconCount, ompIconCount, ompFill };
 }
 
 async function selectRange(page, tableTestId, keyHeader, leaders, projectLeader) {

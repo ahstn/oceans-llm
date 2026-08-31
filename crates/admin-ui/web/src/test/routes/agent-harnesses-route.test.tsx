@@ -121,7 +121,7 @@ describe('AgentHarnessesPage', () => {
     const mastraRow = within(table).getByText('Mastra').closest('tr')
     const ohMyPiRow = within(table).getByText('Oh My Pi').closest('tr')
     expect(mastraRow?.querySelector('[data-agent-harness-icon="mastra"]')).toBeInTheDocument()
-    expect(ohMyPiRow?.querySelector('[data-agent-harness-icon]')).not.toBeInTheDocument()
+    expect(ohMyPiRow?.querySelector('[data-agent-harness-icon="ohmypi"]')).toBeInTheDocument()
   })
 
   it('refetches harness data when the date range changes', async () => {

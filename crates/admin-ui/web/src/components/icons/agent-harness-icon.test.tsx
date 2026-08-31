@@ -25,13 +25,18 @@ describe('AgentHarnessLabel', () => {
     },
   )
 
-  it('keeps Oh My Pi text-only instead of using the Pi icon', () => {
+  it('renders the Oh My Pi mark with a white fill at the standard icon size', () => {
     const { container, getByText } = render(
       <AgentHarnessLabel harnessKey="oh_my_pi">Oh My Pi</AgentHarnessLabel>,
     )
+    const icon = container.querySelector<HTMLElement>('[data-agent-harness-icon="ohmypi"]')
+    const path = icon?.querySelector('path')
 
     expect(getByText('Oh My Pi')).toBeInTheDocument()
-    expect(container.querySelector('[data-agent-harness-icon]')).not.toBeInTheDocument()
+    expect(icon).toBeInTheDocument()
+    expect(icon).toHaveStyle({ height: '16px', width: '16px' })
+    expect(icon?.querySelector('linearGradient')).not.toBeInTheDocument()
+    expect(path).toHaveAttribute('fill', '#fff')
   })
 
   it('keeps unknown harness labels text-only', () => {

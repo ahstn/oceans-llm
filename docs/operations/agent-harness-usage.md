@@ -68,7 +68,7 @@ The page shows self-reported `User-Agent` classifications:
 - a 7-day and 31-day range picker
 - a request-count time-series chart for the top harnesses
 - a ranked table of normalized harness usage with request count and input, output, and total token totals (`n/a` when a total is unavailable)
-- a Mastra icon beside Mastra labels; Oh My Pi deliberately remains text-only and does not reuse the Pi icon
+- Mastra uses its Lobe icon; Oh My Pi uses the white mark from `omp.sh` rather than the unrelated Pi icon
 
 Request-log detail also shows the normalized harness label and raw `User-Agent` value for debugging classifier behavior.
 
