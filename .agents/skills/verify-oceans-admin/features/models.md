@@ -34,6 +34,6 @@ Preconditions:
 ## Gotchas
 
 - The mobile list replaces `models-desktop-table` below the `md` breakpoint.
-- Startup seeds configured providers without checking external credentials. A healthy Models page does not prove upstream access.
+- Startup requires configured `env.*` credential references to exist, but it does not validate credential correctness or upstream connectivity. A healthy Models page does not prove upstream access.
 - `Refresh pricing` can call the pricing refresh boundary and is outside the read-only baseline.
 - Some aliases have no independent client configuration. Use `gpt-5.6-sol` for the baseline detail proof.

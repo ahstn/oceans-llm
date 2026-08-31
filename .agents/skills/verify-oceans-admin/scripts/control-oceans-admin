@@ -192,7 +192,7 @@ launch() {
       echo "The dev stack exited before it became ready. See $log_file" >&2
       exit 1
     fi
-    if curl --silent --fail "$base_url/readyz" >/dev/null 2>&1; then
+    if [[ -n "$current_ui" ]] && curl --silent --fail "$base_url/readyz" >/dev/null 2>&1; then
       break
     fi
     sleep 0.5
@@ -256,8 +256,9 @@ drive() {
   case "$target" in
     models) driver="drive-models.mjs" ;;
     observability) driver="drive-observability.mjs" ;;
+    backend-gateway) driver="drive-backend-gateway.mjs" ;;
     *)
-      echo "Supported drive targets: models, observability" >&2
+      echo "Supported drive targets: models, observability, backend-gateway" >&2
       exit 2
       ;;
   esac
@@ -298,8 +299,14 @@ evidence() {
         exit 1
       }
       ;;
+    backend-gateway)
+      [[ -f "$evidence_dir/backend-gateway-canary-proof.json" ]] || {
+        echo "Backend gateway proof is missing from $evidence_dir." >&2
+        exit 1
+      }
+      ;;
     *)
-      echo "Supported evidence targets: models, observability, live-llm" >&2
+      echo "Supported evidence targets: models, observability, live-llm, backend-gateway" >&2
       exit 2
       ;;
   esac
@@ -312,7 +319,7 @@ case "${1:-}" in
   evidence) evidence "${2:-models}" ;;
   cleanup) cleanup ;;
   *)
-    echo "Usage: $0 {launch|doctor|drive {models|observability}|evidence [models|observability|live-llm]|cleanup}" >&2
+    echo "Usage: $0 {launch|doctor|drive {models|observability|backend-gateway}|evidence [models|observability|live-llm|backend-gateway]|cleanup}" >&2
     exit 2
     ;;
 esac

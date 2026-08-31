@@ -3,6 +3,14 @@ use std::{fmt, str::FromStr};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
+mod aws_secrets;
+mod disclosure;
+mod git;
+mod helm;
+mod kubectl;
+mod onepassword;
+mod snowflake;
+
 use crate::{
     DeterministicEvaluator, EffectivePolicy, EvaluationError, EvaluationInput, EvaluationPayload,
     MatchedRule, ReasonCode,
@@ -10,13 +18,19 @@ use crate::{
     selectors::{JsonPath, McpCall},
 };
 
-pub const BUILT_IN_PACK_IDS: [&str; 7] = [
+pub const BUILT_IN_PACK_IDS: [&str; 13] = [
     "core.shell",
     "core.git",
     "core.filesystem",
     "database.postgresql",
+    "database.snowflake",
     "cloud.aws",
     "cloud.gcp",
+    "kubernetes.kubectl",
+    "kubernetes.helm",
+    "secrets.aws_secrets",
+    "secrets.onepassword",
+    "secret_disclosure",
     "saas.notion",
 ];
 
@@ -29,7 +43,9 @@ impl PackId {
         if value.is_empty()
             || value.len() > 64
             || !value.bytes().all(|byte| {
-                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-')
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b'.' | b'-' | b'_')
             })
         {
             return Err(InvalidPackId(value));
@@ -95,10 +111,28 @@ impl PackRegistry {
             metadata("core.git", "Destructive Git repository operations"),
             metadata("core.filesystem", "Destructive filesystem operations"),
             metadata("database.postgresql", "Destructive PostgreSQL operations"),
+            metadata(
+                "database.snowflake",
+                "Destructive Snowflake CLI and SQL operations",
+            ),
             metadata("cloud.aws", "Destructive AWS CLI and MCP operations"),
             metadata(
                 "cloud.gcp",
                 "Destructive Google Cloud CLI and MCP operations",
+            ),
+            metadata("kubernetes.kubectl", "Destructive kubectl operations"),
+            metadata("kubernetes.helm", "Destructive Helm operations"),
+            metadata(
+                "secrets.aws_secrets",
+                "Destructive AWS Secrets Manager and SSM operations",
+            ),
+            metadata(
+                "secrets.onepassword",
+                "Destructive 1Password CLI operations",
+            ),
+            metadata(
+                "secret_disclosure",
+                "Secret-manager commands that disclose credential values",
             ),
             metadata("saas.notion", "Destructive Notion workspace operations"),
         ]
@@ -203,11 +237,17 @@ fn match_shell_pack(pack: &str, command: &str) -> Option<MatchedRule> {
     for invocation in &invocations {
         let finding = match pack {
             "core.shell" => match_core_shell(invocation),
-            "core.git" => match_git(invocation),
+            "core.git" => git::match_invocation(invocation),
             "core.filesystem" => match_filesystem(invocation),
             "database.postgresql" => match_postgresql_invocation(invocation),
+            "database.snowflake" => snowflake::match_invocation(invocation),
             "cloud.aws" => match_aws(invocation),
             "cloud.gcp" => match_gcp(invocation),
+            "kubernetes.kubectl" => kubectl::match_invocation(invocation),
+            "kubernetes.helm" => helm::match_invocation(invocation),
+            "secrets.aws_secrets" => aws_secrets::match_invocation(invocation),
+            "secrets.onepassword" => onepassword::match_invocation(invocation),
+            "secret_disclosure" => disclosure::match_invocation(invocation),
             _ => None,
         };
         if finding.is_some() {
@@ -273,76 +313,6 @@ fn targets_pid_one(arguments: &[String]) -> bool {
         .iter()
         .filter(|argument| !argument.starts_with('-'))
         .any(|argument| argument == "1")
-}
-
-fn match_git(invocation: &CommandInvocation) -> Option<MatchedRule> {
-    if invocation.executable != "git" {
-        return None;
-    }
-    let arguments = &invocation.arguments;
-    let operation = git_operation(arguments)?;
-    match operation {
-        "reset" if has_option(arguments, "--hard", None) => Some(rule(
-            "core.git",
-            "reset-hard",
-            "command.arguments",
-            "git.reset_hard",
-            "Discards tracked working-tree changes",
-            "Create a backup branch or use git stash before resetting",
-        )),
-        "clean" if has_option(arguments, "--force", Some('f')) => Some(rule(
-            "core.git",
-            "clean-force",
-            "command.arguments",
-            "git.clean_force",
-            "Deletes untracked files",
-            "Run git clean --dry-run and remove reviewed paths explicitly",
-        )),
-        "push"
-            if has_option(arguments, "--force", Some('f'))
-                || has_option(arguments, "--force-with-lease", None) =>
-        {
-            Some(rule(
-                "core.git",
-                "push-force",
-                "command.arguments",
-                "git.push_force",
-                "Rewrites remote branch history",
-                "Use a normal push or coordinate a reviewed force-with-lease operation",
-            ))
-        }
-        "push"
-            if has_option(arguments, "--delete", Some('d'))
-                || arguments
-                    .iter()
-                    .skip(1)
-                    .any(|argument| argument.len() > 1 && argument.starts_with(':')) =>
-        {
-            Some(rule(
-                "core.git",
-                "push-delete",
-                "command.arguments",
-                "git.push_delete",
-                "Deletes a remote reference",
-                "Delete the remote reference through a reviewed repository workflow",
-            ))
-        }
-        "branch"
-            if arguments.iter().any(|argument| argument == "-D")
-                || (has_option(arguments, "--delete", Some('d'))
-                    && has_option(arguments, "--force", Some('f'))) =>
-        {
-            Some(rule(
-                "core.git",
-                "branch-delete-force",
-                "command.arguments",
-                "git.branch_delete_force",
-                "Deletes a branch without merge checks",
-                "Use git branch -d after the branch is merged",
-            ))
-        }
-        _ => None,
-    }
 }
 
 fn match_filesystem(invocation: &CommandInvocation) -> Option<MatchedRule> {
@@ -1229,12 +1199,9 @@ mod tests {
                     "git push origin :old",
                     "git branch --delete --force old",
                     "git branch -df old",
-                ],
-                vec![
-                    "printf '%s' 'git reset --hard'",
-                    "git reset --soft HEAD~1",
                     "git branch -d merged",
                 ],
+                vec!["printf '%s' 'git reset --hard'", "git reset --soft HEAD~1"],
             ),
             (
                 "core.filesystem",
@@ -1283,6 +1250,21 @@ mod tests {
                 ],
             ),
             (
+                "database.snowflake",
+                vec![
+                    "snow sql -q 'DROP DATABASE app'",
+                    "snow sql --query='DELETE FROM users'",
+                    "snow sql -f migration.sql",
+                    "snow object drop database app",
+                    "snow stage remove @archive/path",
+                ],
+                vec![
+                    "snow sql -q 'SELECT * FROM users'",
+                    "snow object list database",
+                    "echo 'snow object drop database app'",
+                ],
+            ),
+            (
                 "cloud.aws",
                 vec![
                     "aws ec2 terminate-instances --instance-ids i-1",
@@ -1321,6 +1303,75 @@ mod tests {
                     "echo 'gcloud projects delete example'",
                     "gcloud projects describe example",
                     "gcloud compute instances list",
+                ],
+            ),
+            (
+                "kubernetes.kubectl",
+                vec![
+                    "kubectl delete namespace prod",
+                    "kubectl delete pods --all",
+                    "kubectl drain node-1",
+                    "kubectl scale deployment/api --replicas=0",
+                    "kubectl apply -f app.yaml --force",
+                ],
+                vec![
+                    "kubectl get pods",
+                    "kubectl delete namespace prod --dry-run=client",
+                    "kubectl apply -f app.yaml --force --dry-run=server",
+                ],
+            ),
+            (
+                "kubernetes.helm",
+                vec![
+                    "helm uninstall api",
+                    "helm rollback api 2",
+                    "helm upgrade api ./chart --force",
+                    "helm upgrade api ./chart --reset-values",
+                ],
+                vec![
+                    "helm status api",
+                    "helm uninstall api --dry-run",
+                    "helm upgrade api ./chart --force --dry-run=client",
+                ],
+            ),
+            (
+                "secrets.aws_secrets",
+                vec![
+                    "aws secretsmanager delete-secret --secret-id prod/api",
+                    "aws secretsmanager update-secret --secret-id prod/api",
+                    "aws ssm delete-parameters --names /prod/api /prod/db",
+                ],
+                vec![
+                    "aws secretsmanager describe-secret --secret-id prod/api",
+                    "aws ssm get-parameter --name /prod/api",
+                ],
+            ),
+            (
+                "secrets.onepassword",
+                vec![
+                    "op item delete 'Database Password'",
+                    "op vault delete Production",
+                    "op connect token delete abc123",
+                ],
+                vec!["op item get 'Database Password'", "op vault list"],
+            ),
+            (
+                "secret_disclosure",
+                vec![
+                    "infisical secrets get API_KEY --plain",
+                    "op read op://prod/api/key",
+                    "doppler secrets download",
+                    "vault kv get secret/prod/api",
+                    "aws ssm get-parameter --name /prod/api --with-decryption",
+                ],
+                vec![
+                    "infisical run -- npm start",
+                    "infisical secrets set API_KEY=new-value",
+                    "infisical secrets delete OLD_KEY",
+                    "infisical secrets folders get --path=/apps",
+                    "op read --help",
+                    "op run -- node server.js",
+                    "aws ssm get-parameter --name /prod/api",
                 ],
             ),
         ];

@@ -19,6 +19,7 @@ This directory is the maintained source for verification of the user-facing Ocea
 - Treat each command and quoted label as literal.
 - Use `control-oceans-admin drive models` for the automated Models proof.
 - Use `control-oceans-admin drive observability` for the combined Leaderboard and Agent Harnesses proof.
+- Use `control-oceans-admin drive backend-gateway` for the bounded OpenRouter, deterministic guardrail, generated-tool decision, and request-log proof.
 - Extend the harness before reporting another path as automated. Manual Playwright steps in this map remain the contract for that extension.
 - Do not mutate provider credentials or call a live provider during read-only control-plane verification. Use the live LLM request recipe only when the changed request behavior warrants paid integration proof.
 
@@ -52,3 +53,4 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Agent sessions](./agent-sessions.md) covers the seeded session list, filters, and detail sheet.
 - [Request logs](./request-logs.md) covers the seeded request list, filters, and request detail.
 - [Live LLM requests](./live-llm-requests.md) covers bounded paid canaries through OpenRouter or Bedrock and their request-log evidence.
+- [Backend gateway](./backend-gateway.md) covers the OpenRouter route for `deepseek-v4-flash-0731`, deterministic and generated-tool guardrails, request-log evidence, and temporary key cleanup.

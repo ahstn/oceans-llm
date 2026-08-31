@@ -1,10 +1,10 @@
 # Agent sessions
 
-Agent sessions lets an authorized user review seeded agent runs, filter them by ownership and execution data, and inspect outcome, cost, activity, tool use, and data-quality details.
+Agent Sessions lets the configured platform administrator review seeded agent runs, filter them by ownership and execution data, and inspect outcome, cost, activity, tool use, and available analysis or data-quality details.
 
 ## Sub-features
 
-- `sessions-list` shows seeded sessions and summary metrics.
+- `sessions-list` shows seeded sessions, a total count, and per-session metrics.
 - `sessions-filter` narrows the list by harness, model, state, owner, tags, or date.
 - `sessions-open` opens a session detail sheet from a table row.
 - `sessions-page` changes row count and moves between result pages.
@@ -26,7 +26,7 @@ Preconditions:
 - **Open list.** Choose the `Agent Sessions` link. The `Agent sessions` heading, `Session explorer`, and a session count badge are visible.
 - **Filter.** Expand `Filters`. Fill the `Harness`, `Model`, or another labeled field, or choose a value under `Session state`, `Outcome`, `Score maturity`, or `Score confidence`. The URL search changes and the table settles with `aria-busy=false`.
 - **Open detail.** Select a session row by clicking its visible harness or model cell. A sheet headed `Agent session details` opens and shows the selected session ID.
-- **Inspect proof.** When the page permission is configured, confirm that the detail contains calibration or data-quality content and that the list row's model and harness agree with `Session identity` in the detail.
+- **Inspect proof.** Confirm the list row's model and harness agree with `Session identity` in the detail. Inspect available analysis context, calibration state, data limits, event stream, and tool exposure; calibration and data-limit panels are conditional.
 - **Pagination.** Use `Rows per page`, `Previous`, `Next`, or `Go to page N`. Confirm the `first - last of total` label changes.
 - **Proof.** Capture the unfiltered list, a filtered result, and the matching detail sheet. Record the filter query and selected session ID.
 

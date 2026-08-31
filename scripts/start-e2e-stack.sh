@@ -116,8 +116,13 @@ guardrails:
       - core.git
       - core.filesystem
       - database.postgresql
+      - database.snowflake
       - cloud.aws
       - cloud.gcp
+      - kubernetes.kubectl
+      - kubernetes.helm
+      - secrets.aws_secrets
+      - secrets.onepassword
       - saas.notion
     managed_checks:
       - model-armor-e2e

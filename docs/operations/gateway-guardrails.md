@@ -23,7 +23,9 @@ A guarded MCP result is buffered for at most `stream_buffer_timeout_ms` (default
 
 ## Built-in packs
 
-The versioned built-in pack IDs are `core.shell`, `core.git`, `core.filesystem`, `database.postgresql`, `cloud.aws`, `cloud.gcp`, and `saas.notion`. Shell checks parse command structure. MCP checks use the server identity, tool identity and aliases, parsed JSON arguments, and typed JSON-path predicates. They do not match a regular expression against serialized JSON.
+The versioned built-in pack IDs are `core.shell`, `core.git`, `core.filesystem`, `database.postgresql`, `database.snowflake`, `cloud.aws`, `cloud.gcp`, `kubernetes.kubectl`, `kubernetes.helm`, `secrets.aws_secrets`, `secrets.onepassword`, `secret_disclosure`, and `saas.notion`. Shell checks parse command structure. MCP checks use the server identity, tool identity and aliases, parsed JSON arguments, and typed JSON-path predicates. They do not match a regular expression against serialized JSON.
+
+`secret_disclosure` is opt-in. It blocks secret-manager read commands that expose values to model-visible output. The provider-specific secret packs prevent destructive mutation and can remain in the default policy.
 
 ## Audit-first configuration
 
@@ -39,8 +41,13 @@ guardrails:
       - core.git
       - core.filesystem
       - database.postgresql
+      - database.snowflake
       - cloud.aws
       - cloud.gcp
+      - kubernetes.kubectl
+      - kubernetes.helm
+      - secrets.aws_secrets
+      - secrets.onepassword
       - saas.notion
     managed_checks: []
     stream_buffer_bytes: 4194304
