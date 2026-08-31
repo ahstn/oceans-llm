@@ -512,10 +512,18 @@ fn match_filesystem(invocation: &CommandInvocation) -> Option<MatchedRule> {
 
 fn truncate_shrinks(arguments: &[String]) -> bool {
     option_value(arguments, &["-s", "--size"]).is_some_and(|size| {
-        size == "0"
-            || size.strip_prefix('-').is_some_and(|digits| {
-                !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
-            })
+        let (negative, magnitude) = size
+            .strip_prefix('-')
+            .map_or((false, size), |value| (true, value));
+        let digit_count = magnitude.bytes().take_while(u8::is_ascii_digit).count();
+        if digit_count == 0
+            || !magnitude[digit_count..]
+                .bytes()
+                .all(|byte| byte.is_ascii_alphabetic())
+        {
+            return false;
+        }
+        negative || magnitude[..digit_count].bytes().all(|byte| byte == b'0')
     })
 }
 
@@ -1792,6 +1800,8 @@ mod tests {
                     "unlink report.txt",
                     "shred secrets.txt",
                     "truncate -s 0 audit.log",
+                    "truncate -s 0K audit.log",
+                    "truncate --size=-1G database.bin",
                     "dd if=image.raw of=/dev/disk4",
                     "wipefs --all /dev/sdb",
                     "diskutil partitionDisk disk4 GPT APFS Data 0b",
@@ -1808,6 +1818,7 @@ mod tests {
                     "printf ok >> state.txt",
                     "dd if=input of=output",
                     "truncate -s 10 report.txt",
+                    "truncate -s 1K report.txt",
                     "printf ok >&2",
                     "[[ alpha > beta ]]",
                     "(( count > 1 ))",
