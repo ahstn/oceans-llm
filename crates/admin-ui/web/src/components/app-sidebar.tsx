@@ -35,6 +35,8 @@ interface AppSidebarProps {
   onSignOut: () => void
 }
 
+// Keep the linear sidebar primitive hierarchy together so its accessibility structure stays clear.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function AppSidebar({
   currentPath,
   session,

@@ -28,6 +28,8 @@ import { useToolCatalog } from './-catalog'
 import { MultiToolPicker, SelectedToolChips, type ToolGroup } from './-tool-picker'
 import { MasterDetailShell, cnListButton } from './-shell'
 
+// Toolset selection, editing, and membership replacement share one tab-local state machine.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function ToolsetsTab({
   toolsets,
   servers,

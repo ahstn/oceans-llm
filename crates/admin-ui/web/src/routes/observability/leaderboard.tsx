@@ -44,6 +44,8 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
 
 const NUMBER_FORMATTER = new Intl.NumberFormat('en-US')
 
+// Keep chart and ranking projections with their shared range and leaderboard data derivation.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function ObservabilityLeaderboardPage() {
   const loaderData = Route.useLoaderData()
   const [leaderboard, setLeaderboard] = useState<LeaderboardView>(loaderData.data)

@@ -38,6 +38,8 @@ export const Route = createFileRoute('/observability/agent-harnesses')({
 
 const NUMBER_FORMATTER = new Intl.NumberFormat('en-US')
 
+// Keep chart and ranking projections with their shared range and harness data derivation.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function AgentHarnessesPage() {
   const loaderData = Route.useLoaderData()
   const [usage, setUsage] = useState<HarnessUsageView>(loaderData.data)

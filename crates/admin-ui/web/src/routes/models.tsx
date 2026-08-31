@@ -84,6 +84,8 @@ export const Route = createFileRoute('/models')({
   component: ModelsPage,
 })
 
+// Selection, pagination, pricing refresh, and client configuration share one model catalog state.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function ModelsPage() {
   const { data: modelPage } = Route.useLoaderData()
   const { session } = Route.useRouteContext()
@@ -983,6 +985,8 @@ function modelInfoSectionDescription(section: ModelInfoSectionKey) {
   }
 }
 
+// Keep the ordered setup, generated configuration blocks, and notes in one linear dialog.
+// oxlint-disable-next-line eslint/max-lines-per-function
 function ClientConfigDialog({
   models,
   activeKey,

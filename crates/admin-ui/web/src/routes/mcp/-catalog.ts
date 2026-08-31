@@ -24,14 +24,15 @@ export function useToolCatalog(servers: McpServerView[]): ToolCatalog {
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
 
-  const serverKey = useMemo(
-    () =>
-      servers
-        .filter((server) => server.status === 'active')
-        .map((server) => server.id)
-        .join(','),
-    [servers],
-  )
+  const serverKey = useMemo(() => {
+    const activeServerIds: string[] = []
+    for (const server of servers) {
+      if (server.status === 'active') {
+        activeServerIds.push(server.id)
+      }
+    }
+    return activeServerIds.join(',')
+  }, [servers])
 
   useEffect(() => {
     if (!serverKey) {

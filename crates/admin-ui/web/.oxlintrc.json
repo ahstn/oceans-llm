@@ -5,26 +5,21 @@
     "es2024": true
   },
   "options": {
-    "typeAware": true // npm add -D oxlint-tsgolint@latest
+    "typeAware": true // (npm add|bun i) -D oxlint-tsgolint@latest
   },
-  "plugins": ["eslint", "typescript", "react", "unicorn"],
-  "ignorePatterns": ["node_modules", "dist", ".output", "src/generated"],
+  "plugins": [ "eslint", "typescript", "react", "unicorn" ],
+  "ignorePatterns": [ "node_modules", "dist", ".output", "src/generated" ],
   "overrides": [
     {
-      "files": ["e2e/**"],
+      // Loosen rules for test files.
+      "files": [ "e2e/**/*.ts", "e2e/**/*.tsx", "src/test/**", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.spec.ts", "src/**/*.spec.tsx" ],
       "rules": {
         "max-lines-per-function": "off",
         "no-await-in-loop": "off"
       }
     },
     {
-      "files": ["src/test/**", "src/**/*.test.ts", "src/**/*.test.tsx"],
-      "rules": {
-        "max-lines-per-function": "off"
-      }
-    },
-    {
-      "files": ["src/routeTree.gen.ts"],
+      "files": [ "src/routeTree.gen.ts" ],
       "rules": {
         "unicorn/filename-case": "off"
       }
@@ -41,14 +36,14 @@
     "react/no-render-return-value": "error",
     "react/void-dom-elements-no-children": "error",
     // eslint rules
-    "complexity": ["warn", { "max": 30 }],
-    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "complexity": [ "warn", { "max": 30 } ],
+    "eqeqeq": [ "error", "always", { "null": "ignore" } ],
     "no-lonely-if": "error",
     "no-await-in-loop": "error",
-    "max-lines": ["warn", { "max": 1500, "skipBlankLines": true, "skipComments": true }],
-    "max-depth": ["warn", { "max": 3 }],
+    "max-lines": [ "warn", { "max": 1500, "skipBlankLines": true, "skipComments": true } ],
+    "max-depth": [ "warn", { "max": 3 } ],
     "max-lines-per-function": [
-      "warn",
+      "error",
       { "max": 120, "skipBlankLines": true, "skipComments": true }
     ],
 
@@ -59,7 +54,9 @@
 
     // unicorn rules
     "unicorn/error-message": "error", // no bare errors
-    "unicorn/filename-case": ["error", { "case": "kebabCase" }],
+    "unicorn/filename-case": [ "error", { "case": "kebabCase" } ],
+    "unicorn/no-useless-fallback-in-spread": "error",
+    "unicorn/no-useless-spread": "error",
     "unicorn/prefer-set-has": "error",
     "unicorn/prefer-array-find": "error",
     "unicorn/prefer-array-flat-map": "error",

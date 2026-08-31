@@ -63,6 +63,8 @@ const emptyFilters: GuardrailDecisionFiltersInput = {
   occurred_at_end: '',
 }
 
+// Effective policy and decision history share one guardrail scope and pagination state.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function GuardrailsPage() {
   const { policies, decisions } = Route.useLoaderData()
   const search = Route.useSearch()

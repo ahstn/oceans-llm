@@ -86,6 +86,8 @@ import {
   ServerOverviewPanel,
   ServerStatusBadge,
   ServerToolsPanel,
+} from './-components'
+import {
   emptyCredentialBindingForm,
   emptyServerForm,
   formFromRecommended,
@@ -95,7 +97,7 @@ import {
   formToUpdateInput,
   type CredentialBindingFormState,
   type ServerFormState,
-} from './-components'
+} from './-server-forms'
 
 type ServerSection = 'overview' | 'configuration' | 'tools' | 'credentials'
 
@@ -106,6 +108,8 @@ const serverSections = [
   { value: 'credentials', label: 'Credentials', icon: ShieldKeyIcon },
 ] as const
 
+// Server selection coordinates CRUD, discovery, tools, and credentials through one lifecycle.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function ServersTab({
   servers,
   recommended,
@@ -621,6 +625,8 @@ function ServerActionButton({
   )
 }
 
+// Keep responsive navigation, header actions, and section routing in one dialog shell.
+// oxlint-disable-next-line eslint/max-lines-per-function
 function ServerDetailDialog({
   server,
   section,

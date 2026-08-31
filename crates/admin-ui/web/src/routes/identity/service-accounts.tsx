@@ -95,6 +95,8 @@ export function ServiceAccountsPage() {
   )
 }
 
+// Keep mobile and desktop projections together so credential visibility policy cannot drift.
+// oxlint-disable-next-line eslint/max-lines-per-function
 function ServiceAccountTable({
   rows,
   credentialAccessRestricted,

@@ -76,11 +76,8 @@ import {
   saveIdentityUserProviderCredential,
   updateIdentityUser,
 } from '@/server/admin-data.functions'
-import {
-  EntityTagBadges,
-  EntityTagsField,
-  sanitizeEntityTags,
-} from '@/routes/identity/-entity-tags'
+import { sanitizeEntityTags } from '@/routes/identity/-entity-tag-utils'
+import { EntityTagBadges, EntityTagsField } from '@/routes/identity/-entity-tags'
 import { ReadOnlyUsersDirectory } from '@/routes/identity/-read-only-directory'
 import { sanitizeOnboardingUpdateForm } from '@/routes/identity/-user-form'
 import { ProviderConfiguration } from '@/routes/identity/-provider-configuration'
@@ -139,6 +136,8 @@ const userDetailsSections = [
 
 type UserDetailsSection = (typeof userDetailsSections)[number]['id']
 
+// User selection coordinates creation, onboarding, provider credentials, and lifecycle transitions.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function UsersPage() {
   const router = useRouter()
   const { session } = Route.useRouteContext()

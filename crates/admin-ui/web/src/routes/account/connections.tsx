@@ -33,6 +33,8 @@ export const Route = createFileRoute('/account/connections')({
   component: ConnectionsPage,
 })
 
+// Redirect and disconnect transitions belong with their single connection-card workflow.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function ConnectionsPage() {
   const connections = Route.useLoaderData()
   const search = Route.useSearch()

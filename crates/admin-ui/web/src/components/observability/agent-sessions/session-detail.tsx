@@ -156,6 +156,8 @@ interface ToolExposureItem {
   callCount: number
 }
 
+// Request grouping, incremental visibility, and timeline rendering form one event-stream workflow.
+// oxlint-disable-next-line eslint/max-lines-per-function
 function SessionEventStream({
   requests,
   observations,

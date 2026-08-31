@@ -57,6 +57,8 @@ export type AccessSubjects = {
   teams: AdminTeamOption[]
 }
 
+// Grant creation, effective access, and revocation use the same resolved subject and target data.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function AccessTab({
   grants,
   servers,

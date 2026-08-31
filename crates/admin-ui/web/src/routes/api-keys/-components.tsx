@@ -266,6 +266,8 @@ export function ApiKeyList({
   )
 }
 
+// Keep the declarative fields together because they implement one create-key form contract.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function CreateApiKeyDialog({
   form,
   isPending,
@@ -425,6 +427,8 @@ export function CreateApiKeyDialog({
   )
 }
 
+// Summary, secret, model access, and lifecycle sections share one key and permission contract.
+// oxlint-disable-next-line eslint/max-lines-per-function
 export function ManageApiKeyDialog({
   actions,
   form,
