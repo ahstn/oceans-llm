@@ -4,20 +4,39 @@ import { describe, expect, it } from 'vitest'
 import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 
 describe('AgentHarnessLabel', () => {
-  it.each(['OpenCode', 'Pi', 'Claude Code', 'Codex'])('renders the %s harness icon', (label) => {
-    const { container } = render(<AgentHarnessLabel harnessKey={label}>{label}</AgentHarnessLabel>)
-    const icon = container.querySelector<HTMLElement>('[data-agent-harness-icon]')
+  it.each(['OpenCode', 'Pi', 'Claude Code', 'Codex', 'Mastra'])(
+    'renders the %s harness icon',
+    (label) => {
+      const { container } = render(
+        <AgentHarnessLabel harnessKey={label}>{label}</AgentHarnessLabel>,
+      )
+      const icon = container.querySelector<HTMLElement>('[data-agent-harness-icon]')
 
+      expect(icon).toBeInTheDocument()
+      expect(icon?.style.getPropertyValue('-webkit-mask-image')).toContain('url(')
+      expect(icon?.style.getPropertyValue('-webkit-mask-position')).toBe('center')
+      expect(icon?.style.getPropertyValue('-webkit-mask-repeat')).toBe('no-repeat')
+      expect(icon?.style.getPropertyValue('-webkit-mask-size')).toBe('contain')
+      expect(icon?.style.getPropertyValue('mask-image')).toContain('url(')
+      expect(icon?.style.getPropertyValue('mask-position')).toBe('center')
+      expect(icon?.style.getPropertyValue('mask-repeat')).toBe('no-repeat')
+      expect(icon?.style.getPropertyValue('mask-size')).toBe('contain')
+      expect(icon?.style.getPropertyValue('background-color')).toBe('currentcolor')
+    },
+  )
+
+  it('renders the Oh My Pi mark with a white fill at the standard icon size', () => {
+    const { container, getByText } = render(
+      <AgentHarnessLabel harnessKey="oh_my_pi">Oh My Pi</AgentHarnessLabel>,
+    )
+    const icon = container.querySelector<HTMLElement>('[data-agent-harness-icon="ohmypi"]')
+    const path = icon?.querySelector('path')
+
+    expect(getByText('Oh My Pi')).toBeInTheDocument()
     expect(icon).toBeInTheDocument()
-    expect(icon?.style.getPropertyValue('-webkit-mask-image')).toContain('url(')
-    expect(icon?.style.getPropertyValue('-webkit-mask-position')).toBe('center')
-    expect(icon?.style.getPropertyValue('-webkit-mask-repeat')).toBe('no-repeat')
-    expect(icon?.style.getPropertyValue('-webkit-mask-size')).toBe('contain')
-    expect(icon?.style.getPropertyValue('mask-image')).toContain('url(')
-    expect(icon?.style.getPropertyValue('mask-position')).toBe('center')
-    expect(icon?.style.getPropertyValue('mask-repeat')).toBe('no-repeat')
-    expect(icon?.style.getPropertyValue('mask-size')).toBe('contain')
-    expect(icon?.style.getPropertyValue('background-color')).toBe('currentcolor')
+    expect(icon).toHaveStyle({ height: '16px', width: '16px' })
+    expect(icon?.querySelector('linearGradient')).not.toBeInTheDocument()
+    expect(path).toHaveAttribute('fill', '#fff')
   })
 
   it('keeps unknown harness labels text-only', () => {

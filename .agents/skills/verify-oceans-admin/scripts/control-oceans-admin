@@ -252,10 +252,15 @@ doctor() {
 }
 
 drive() {
-  [[ "${1:-}" == "models" ]] || {
-    echo "Supported drive target: models" >&2
-    exit 2
-  }
+  local target="${1:-}" driver
+  case "$target" in
+    models) driver="drive-models.mjs" ;;
+    observability) driver="drive-observability.mjs" ;;
+    *)
+      echo "Supported drive targets: models, observability" >&2
+      exit 2
+      ;;
+  esac
   doctor
   activate_mise
   mise run e2e-install
@@ -264,7 +269,7 @@ drive() {
     OCEANS_VERIFY_GATEWAY_VERSION="$(<"$run_dir/gateway-version")" \
     OCEANS_VERIFY_ADMIN_EMAIL="${OCEANS_VERIFY_ADMIN_EMAIL:-admin@local}" \
     OCEANS_VERIFY_ADMIN_PASSWORD="${OCEANS_VERIFY_ADMIN_PASSWORD:-admin}" \
-    mise exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/drive-models.mjs"
+    mise exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/$driver"
 }
 
 evidence() {
@@ -281,6 +286,12 @@ evidence() {
         exit 1
       }
       ;;
+    observability)
+      [[ -f "$evidence_dir/observability-proof.json" ]] || {
+        echo "Observability proof is missing from $evidence_dir." >&2
+        exit 1
+      }
+      ;;
     live-llm)
       find "$evidence_dir" -maxdepth 1 -type f -name '*-canary-proof.json' -print -quit | grep -q . || {
         echo "Live LLM canary proof is missing from $evidence_dir." >&2
@@ -288,7 +299,7 @@ evidence() {
       }
       ;;
     *)
-      echo "Supported evidence targets: models, live-llm" >&2
+      echo "Supported evidence targets: models, observability, live-llm" >&2
       exit 2
       ;;
   esac
@@ -301,7 +312,7 @@ case "${1:-}" in
   evidence) evidence "${2:-models}" ;;
   cleanup) cleanup ;;
   *)
-    echo "Usage: $0 {launch|doctor|drive models|evidence [models|live-llm]|cleanup}" >&2
+    echo "Usage: $0 {launch|doctor|drive {models|observability}|evidence [models|observability|live-llm]|cleanup}" >&2
     exit 2
     ;;
 esac

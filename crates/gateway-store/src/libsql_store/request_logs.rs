@@ -481,7 +481,13 @@ impl RequestLogRepository for LibsqlStore {
                 r#"
                 SELECT agent_harness_key,
                        MIN(agent_harness_label) AS agent_harness_label,
-                       COUNT(*) AS request_count
+                       COUNT(*) AS request_count,
+                       CASE WHEN COUNT(*) = COUNT(prompt_tokens)
+                           THEN SUM(prompt_tokens) END AS prompt_tokens,
+                       CASE WHEN COUNT(*) = COUNT(completion_tokens)
+                           THEN SUM(completion_tokens) END AS completion_tokens,
+                       CASE WHEN COUNT(*) = COUNT(total_tokens)
+                           THEN SUM(total_tokens) END AS total_tokens
                 FROM request_logs
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
@@ -508,6 +514,9 @@ impl RequestLogRepository for LibsqlStore {
                 agent_harness_key: row.get(0).map_err(to_query_error)?,
                 agent_harness_label: row.get(1).map_err(to_query_error)?,
                 request_count: row.get(2).map_err(to_query_error)?,
+                prompt_tokens: row.get(3).map_err(to_query_error)?,
+                completion_tokens: row.get(4).map_err(to_query_error)?,
+                total_tokens: row.get(5).map_err(to_query_error)?,
             });
         }
         Ok(leaders)

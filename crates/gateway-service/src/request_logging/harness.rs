@@ -59,6 +59,12 @@ pub fn classify_agent_harness(user_agent: Option<&str>) -> AgentHarness {
             label: "Oh My Pi",
         };
     }
+    if lower == "mastra" || lower.starts_with("mastra/") {
+        return AgentHarness {
+            key: "mastra",
+            label: "Mastra",
+        };
+    }
     if lower.contains("agent/opencode") {
         return AgentHarness {
             key: "opencode",

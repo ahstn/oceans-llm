@@ -2318,6 +2318,32 @@ pub(crate) mod tests {
                 ada_bucket_two + Duration::hours(1),
             ),
             build_usage_ledger_record(
+                "leaderboard-ada-balanced",
+                format!("user:{}", ada.user_id),
+                api_key.id,
+                Some(ada.user_id),
+                None,
+                None,
+                None,
+                "balanced",
+                UsagePricingStatus::Unpriced,
+                0,
+                ada_bucket_two + Duration::hours(2),
+            ),
+            build_usage_ledger_record(
+                "leaderboard-ada-vision",
+                format!("user:{}", ada.user_id),
+                api_key.id,
+                Some(ada.user_id),
+                None,
+                None,
+                None,
+                "vision",
+                UsagePricingStatus::Unpriced,
+                0,
+                ada_bucket_two + Duration::hours(3),
+            ),
+            build_usage_ledger_record(
                 "leaderboard-ben-fast",
                 format!("user:{}", ben.user_id),
                 api_key.id,
@@ -2392,9 +2418,9 @@ pub(crate) mod tests {
                     invoked_tool_count: Some(0),
                     filtered_tool_count: None,
                 },
-                user_agent_raw: None,
-                agent_harness_key: "unknown".to_string(),
-                agent_harness_label: "Unknown".to_string(),
+                user_agent_raw: Some("opencode/1.2.3".to_string()),
+                agent_harness_key: "opencode".to_string(),
+                agent_harness_label: "Opencode".to_string(),
                 metadata: Map::new(),
                 occurred_at: ada_bucket_one,
             },
@@ -2410,7 +2436,7 @@ pub(crate) mod tests {
                 provider_key: "openai-prod".to_string(),
                 status_code: Some(200),
                 latency_ms: Some(20),
-                prompt_tokens: Some(1),
+                prompt_tokens: None,
                 completion_tokens: Some(1),
                 total_tokens: Some(2),
                 error_code: None,
@@ -2424,9 +2450,9 @@ pub(crate) mod tests {
                     invoked_tool_count: Some(1),
                     filtered_tool_count: None,
                 },
-                user_agent_raw: None,
-                agent_harness_key: "unknown".to_string(),
-                agent_harness_label: "Unknown".to_string(),
+                user_agent_raw: Some("opencode/1.2.4".to_string()),
+                agent_harness_key: "opencode".to_string(),
+                agent_harness_label: "Opencode".to_string(),
                 metadata: Map::new(),
                 occurred_at: ada_bucket_two,
             },
@@ -2442,18 +2468,18 @@ pub(crate) mod tests {
                 provider_key: "openai-prod".to_string(),
                 status_code: Some(200),
                 latency_ms: Some(20),
-                prompt_tokens: Some(1),
-                completion_tokens: Some(1),
-                total_tokens: Some(2),
+                prompt_tokens: None,
+                completion_tokens: None,
+                total_tokens: None,
                 error_code: None,
                 has_payload: false,
                 request_payload_truncated: false,
                 response_payload_truncated: false,
                 request_tags: RequestTags::default(),
                 tool_cardinality: RequestToolCardinality::default(),
-                user_agent_raw: None,
-                agent_harness_key: "unknown".to_string(),
-                agent_harness_label: "Unknown".to_string(),
+                user_agent_raw: Some("claude-code/2.0.0".to_string()),
+                agent_harness_key: "claude_code".to_string(),
+                agent_harness_label: "Claude Code".to_string(),
                 metadata: Map::new(),
                 occurred_at: ada_bucket_two,
             },
@@ -2471,8 +2497,15 @@ pub(crate) mod tests {
         assert_eq!(leaders.len(), 3);
         assert_eq!(leaders[0].user_name, "Ada");
         assert_eq!(leaders[0].priced_cost_usd.as_scaled_i64(), 30_000);
-        assert_eq!(leaders[0].total_request_count, 3);
+        assert_eq!(leaders[0].total_request_count, 5);
         assert_eq!(leaders[0].top_model_key.as_deref(), Some("fast"));
+        assert_eq!(
+            leaders[0]
+                .most_used_harness
+                .as_ref()
+                .map(|harness| (harness.key.as_str(), harness.label.as_str())),
+            Some(("opencode", "Opencode"))
+        );
         assert_eq!(
             leaders[0].tool_cardinality_averages.exposed_tool_count,
             Some(1.5)
@@ -2491,7 +2524,26 @@ pub(crate) mod tests {
         assert_eq!(leaders[1].priced_cost_usd.as_scaled_i64(), 30_000);
         assert_eq!(leaders[1].total_request_count, 2);
         assert_eq!(leaders[1].top_model_key.as_deref(), Some("fast"));
+        assert!(leaders[1].most_used_harness.is_none());
         assert_eq!(leaders[2].user_name, "Cleo");
+        assert_eq!(leaders[2].top_model_key.as_deref(), Some("fast"));
+        assert!(leaders[2].most_used_harness.is_none());
+
+        let harness_leaders = store
+            .list_harness_usage_leaders(window_start, window_end, 30)
+            .await
+            .expect("list harness usage leaders");
+        assert_eq!(harness_leaders.len(), 2);
+        assert_eq!(harness_leaders[0].agent_harness_key, "opencode");
+        assert_eq!(harness_leaders[0].request_count, 2);
+        assert_eq!(harness_leaders[0].prompt_tokens, None);
+        assert_eq!(harness_leaders[0].completion_tokens, Some(2));
+        assert_eq!(harness_leaders[0].total_tokens, Some(4));
+        assert_eq!(harness_leaders[1].agent_harness_key, "claude_code");
+        assert_eq!(harness_leaders[1].request_count, 1);
+        assert_eq!(harness_leaders[1].prompt_tokens, None);
+        assert_eq!(harness_leaders[1].completion_tokens, None);
+        assert_eq!(harness_leaders[1].total_tokens, None);
 
         let bucket_rows = store
             .list_usage_user_bucket_aggregates(
@@ -3765,6 +3817,9 @@ pub(crate) mod tests {
         assert_eq!(harness_leaders[0].agent_harness_key, "opencode");
         assert_eq!(harness_leaders[0].agent_harness_label, "Opencode");
         assert_eq!(harness_leaders[0].request_count, 3);
+        assert_eq!(harness_leaders[0].prompt_tokens, Some(3));
+        assert_eq!(harness_leaders[0].completion_tokens, Some(6));
+        assert_eq!(harness_leaders[0].total_tokens, Some(9));
 
         let harness_buckets = store
             .list_harness_usage_bucket_aggregates(

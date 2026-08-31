@@ -17,6 +17,10 @@ fn classifies_known_agent_harness_user_agents() {
         ("pi/0.4.0 (darwin; bun/1.2.19; arm64)", "pi", "Pi"),
         ("pi/0.4.0 (linux; node/v22.14.0; x64)", "pi", "Pi"),
         ("pi/0.4.0", "pi", "Pi"),
+        ("mastra", "mastra", "Mastra"),
+        ("MASTRA", "mastra", "Mastra"),
+        ("Mastra/0.19.0", "mastra", "Mastra"),
+        ("MASTRA/", "mastra", "Mastra"),
         ("claude-code/2.1.89 (cli)", "claude_code", "Claude Code"),
         (
             "claude-cli/2.1.170 (external, claude-vscode, agent-sdk/0.3.165)",
@@ -86,6 +90,10 @@ fn classifies_missing_empty_and_unmatched_user_agents_as_unknown() {
         Some("   "),
         Some("undici"),
         Some("Mozilla/5.0"),
+        Some("mastra-es"),
+        Some("mastra-es/1.0.0"),
+        Some("mastra-elasticsearch"),
+        Some("mastra-elasticsearch/1.0.0"),
     ] {
         assert_eq!(classify_agent_harness(user_agent), AgentHarness::UNKNOWN);
     }
@@ -119,6 +127,7 @@ fn classifies_supported_session_analysis_harnesses() {
         ("opencode/1.2.3", "opencode"),
         ("pi/0.45.0", "pi"),
         ("oh-my-pi/0.45.0", "oh_my_pi"),
+        ("mastra/0.19.0", "mastra"),
         ("OMP/0.45.0", "oh_my_pi"),
     ] {
         assert_eq!(

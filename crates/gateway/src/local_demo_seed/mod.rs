@@ -575,10 +575,13 @@ fn local_demo_request_fixtures() -> impl Iterator<Item = &'static LocalDemoReque
 fn demo_agent_harness(
     fixture: &LocalDemoRequestFixture,
 ) -> (&'static str, &'static str, &'static str) {
-    if agent_session_fixtures::request_metadata(fixture).is_some() {
-        ("codex/1.0.0 (local demo)", "codex", "Codex")
-    } else {
-        ("opencode/1.0.0 (local demo)", "opencode", "Opencode")
+    match fixture.request_id {
+        "demo-req-001" | "demo-req-010" => ("mastra/1.0.0 (local demo)", "mastra", "Mastra"),
+        "demo-req-005" => ("omp/1.0.0 (local demo)", "oh_my_pi", "Oh My Pi"),
+        _ if agent_session_fixtures::request_metadata(fixture).is_some() => {
+            ("codex/1.0.0 (local demo)", "codex", "Codex")
+        }
+        _ => ("opencode/1.0.0 (local demo)", "opencode", "Opencode"),
     }
 }
 
@@ -1048,6 +1051,31 @@ mod tests {
             teams,
             users,
         }
+    }
+
+    #[test]
+    fn observability_seed_covers_mastra_and_omp_in_seven_days() {
+        let seven_day_fixtures = usage::LOCAL_DEMO_REQUESTS
+            .iter()
+            .filter(|fixture| fixture.days_ago < 7)
+            .collect::<Vec<_>>();
+
+        let mastra_request_ids = seven_day_fixtures
+            .iter()
+            .filter(|fixture| demo_agent_harness(fixture).1 == "mastra")
+            .map(|fixture| fixture.request_id)
+            .collect::<Vec<_>>();
+        let omp_request_ids = seven_day_fixtures
+            .iter()
+            .filter(|fixture| demo_agent_harness(fixture).1 == "oh_my_pi")
+            .map(|fixture| fixture.request_id)
+            .collect::<Vec<_>>();
+        assert_eq!(mastra_request_ids, ["demo-req-001", "demo-req-010"]);
+        assert_eq!(omp_request_ids, ["demo-req-005"]);
+        assert_eq!(
+            demo_agent_harness(seven_day_fixtures[0]),
+            ("mastra/1.0.0 (local demo)", "mastra", "Mastra")
+        );
     }
 
     #[tokio::test]

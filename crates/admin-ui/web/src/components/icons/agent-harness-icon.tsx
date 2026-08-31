@@ -2,6 +2,7 @@ import type { CSSProperties, HTMLAttributes, ReactNode } from 'react'
 
 import claudeCodeIcon from '@lobehub/icons-static-svg/icons/claudecode.svg?url'
 import codexIcon from '@lobehub/icons-static-svg/icons/codex.svg?url'
+import mastraIcon from '@lobehub/icons-static-svg/icons/mastra.svg?url'
 import openCodeIcon from '@lobehub/icons-static-svg/icons/opencode.svg?url'
 import piIcon from '@lobehub/icons-static-svg/icons/pi.svg?url'
 
@@ -10,6 +11,7 @@ import { cn } from '@/lib/utils'
 const AGENT_HARNESS_ICONS: Record<string, string> = {
   claudecode: claudeCodeIcon,
   codex: codexIcon,
+  mastra: mastraIcon,
   opencode: openCodeIcon,
   pi: piIcon,
 }
@@ -26,8 +28,25 @@ export function AgentHarnessIcon({
   style,
   ...props
 }: AgentHarnessIconProps) {
-  const source = AGENT_HARNESS_ICONS[normalizeHarnessKey(harnessKey)]
+  const normalizedKey = harnessKey.toLowerCase().replace(/[^a-z0-9]+/g, '')
+  // OMP mark from omp.sh. Keep the solid white fill instead of the source gradient.
+  if (normalizedKey === 'ohmypi') {
+    return (
+      <span
+        aria-hidden="true"
+        className={cn('inline-flex shrink-0', className)}
+        data-agent-harness-icon={normalizedKey}
+        style={{ height: size, width: size, ...style }}
+        {...props}
+      >
+        <svg viewBox="0 0 64 64" width="100%" height="100%">
+          <path fill="#fff" d="M10 14h44v9H43v33h-9V23h-9v22h-9V23H10z" />
+        </svg>
+      </span>
+    )
+  }
 
+  const source = AGENT_HARNESS_ICONS[normalizedKey]
   if (!source) {
     return null
   }
@@ -51,7 +70,7 @@ export function AgentHarnessIcon({
     <span
       aria-hidden="true"
       className={cn('inline-flex shrink-0', className)}
-      data-agent-harness-icon={normalizeHarnessKey(harnessKey)}
+      data-agent-harness-icon={normalizedKey}
       style={maskStyle}
       {...props}
     />
@@ -75,8 +94,4 @@ export function AgentHarnessLabel({
       <span>{children}</span>
     </span>
   )
-}
-
-function normalizeHarnessKey(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
 }

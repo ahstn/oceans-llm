@@ -1090,18 +1090,23 @@ impl BudgetRepository for LibsqlStore {
                         users.name AS user_name,
                         COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
                             THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
-                        SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
-                            AS priced_request_count,
-                        SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)
-                            AS unpriced_request_count,
-                        SUM(CASE WHEN u.pricing_status = 'usage_missing' THEN 1 ELSE 0 END)
-                            AS usage_missing_request_count
+                        COUNT(*) AS total_request_count
                     FROM usage_cost_events u
                     INNER JOIN users ON users.user_id = u.user_id
                     WHERE u.occurred_at >= ?1
                       AND u.occurred_at < ?2
                       AND u.user_id IS NOT NULL
                     GROUP BY u.user_id, users.name
+                ),
+                limited_users AS (
+                    SELECT *
+                    FROM user_totals
+                    ORDER BY
+                        priced_cost_10000 DESC,
+                        total_request_count DESC,
+                        user_name ASC,
+                        user_id ASC
+                    LIMIT ?3
                 ),
                 model_totals AS (
                     SELECT
@@ -1127,6 +1132,29 @@ impl BudgetRepository for LibsqlStore {
                         ) AS model_rank
                     FROM model_totals
                 ),
+                harness_totals AS (
+                    SELECT
+                        request_logs.user_id,
+                        request_logs.agent_harness_key,
+                        MIN(request_logs.agent_harness_label) AS agent_harness_label,
+                        COUNT(*) AS request_count
+                    FROM request_logs
+                    INNER JOIN limited_users ON limited_users.user_id = request_logs.user_id
+                    WHERE request_logs.occurred_at >= ?1
+                      AND request_logs.occurred_at < ?2
+                    GROUP BY request_logs.user_id, request_logs.agent_harness_key
+                ),
+                ranked_harnesses AS (
+                    SELECT
+                        user_id,
+                        agent_harness_key,
+                        agent_harness_label,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY user_id
+                            ORDER BY request_count DESC, agent_harness_label ASC, agent_harness_key ASC
+                        ) AS harness_rank
+                    FROM harness_totals
+                ),
                 tool_totals AS (
                     SELECT
                         user_id,
@@ -1141,31 +1169,31 @@ impl BudgetRepository for LibsqlStore {
                     GROUP BY user_id
                 )
                 SELECT
-                    user_totals.user_id,
-                    user_totals.user_name,
-                    user_totals.priced_cost_10000,
-                    (
-                        user_totals.priced_request_count
-                        + user_totals.unpriced_request_count
-                        + user_totals.usage_missing_request_count
-                    ) AS total_request_count,
+                    limited_users.user_id,
+                    limited_users.user_name,
+                    limited_users.priced_cost_10000,
+                    limited_users.total_request_count,
                     ranked_models.model_key,
+                    ranked_harnesses.agent_harness_key,
+                    ranked_harnesses.agent_harness_label,
                     tool_totals.avg_referenced_mcp_server_count,
                     tool_totals.avg_exposed_tool_count,
                     tool_totals.avg_invoked_tool_count,
                     tool_totals.avg_filtered_tool_count
-                FROM user_totals
+                FROM limited_users
                 LEFT JOIN ranked_models
-                    ON ranked_models.user_id = user_totals.user_id
+                    ON ranked_models.user_id = limited_users.user_id
                    AND ranked_models.model_rank = 1
+                LEFT JOIN ranked_harnesses
+                    ON ranked_harnesses.user_id = limited_users.user_id
+                   AND ranked_harnesses.harness_rank = 1
                 LEFT JOIN tool_totals
-                    ON tool_totals.user_id = user_totals.user_id
+                    ON tool_totals.user_id = limited_users.user_id
                 ORDER BY
-                    user_totals.priced_cost_10000 DESC,
-                    total_request_count DESC,
-                    user_totals.user_name ASC,
-                    user_totals.user_id ASC
-                LIMIT ?3
+                    limited_users.priced_cost_10000 DESC,
+                    limited_users.total_request_count DESC,
+                    limited_users.user_name ASC,
+                    limited_users.user_id ASC
                 "#,
                 libsql::params![
                     window_start.unix_timestamp(),
@@ -1178,17 +1206,22 @@ impl BudgetRepository for LibsqlStore {
 
         let mut output = Vec::new();
         while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let harness_key: Option<String> = row.get(5).map_err(to_query_error)?;
+            let harness_label: Option<String> = row.get(6).map_err(to_query_error)?;
             output.push(UsageLeaderboardUserRecord {
                 user_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
                 user_name: row.get(1).map_err(to_query_error)?,
                 priced_cost_usd: Money4::from_scaled(row.get::<i64>(2).map_err(to_query_error)?),
                 total_request_count: row.get(3).map_err(to_query_error)?,
                 top_model_key: row.get(4).map_err(to_query_error)?,
+                most_used_harness: harness_key
+                    .zip(harness_label)
+                    .map(|(key, label)| UsageLeaderboardHarnessRecord { key, label }),
                 tool_cardinality_averages: gateway_core::RequestToolCardinalityAverages {
-                    referenced_mcp_server_count: row.get(5).map_err(to_query_error)?,
-                    exposed_tool_count: row.get(6).map_err(to_query_error)?,
-                    invoked_tool_count: row.get(7).map_err(to_query_error)?,
-                    filtered_tool_count: row.get(8).map_err(to_query_error)?,
+                    referenced_mcp_server_count: row.get(7).map_err(to_query_error)?,
+                    exposed_tool_count: row.get(8).map_err(to_query_error)?,
+                    invoked_tool_count: row.get(9).map_err(to_query_error)?,
+                    filtered_tool_count: row.get(10).map_err(to_query_error)?,
                 },
             });
         }

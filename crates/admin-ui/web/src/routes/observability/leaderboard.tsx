@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { toast } from 'sonner'
 
+import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -49,7 +50,7 @@ const NUMBER_FORMATTER = new Intl.NumberFormat('en-US')
 export function ObservabilityLeaderboardPage() {
   const loaderData = Route.useLoaderData()
   const [leaderboard, setLeaderboard] = useState<LeaderboardView>(loaderData.data)
-  const [range, setRange] = useState<LeaderboardRange>(loaderData.data.range)
+  const [range, setRange] = useState<LeaderboardRange>(() => toLeaderboardRange(loaderData.data.range))
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isPending, startTransition] = useTransition()
   const isLoading = isPending || isRefreshing
@@ -89,7 +90,6 @@ export function ObservabilityLeaderboardPage() {
   })
 
   function refreshRange(nextRange: LeaderboardRange) {
-    setRange(nextRange)
     setIsRefreshing(true)
 
     startTransition(async () => {
@@ -100,6 +100,7 @@ export function ObservabilityLeaderboardPage() {
           },
         })
         setLeaderboard(response.data)
+        setRange(response.data.range)
       } catch (error) {
         toast.error(getErrorMessage(error))
       } finally {
@@ -217,8 +218,8 @@ export function ObservabilityLeaderboardPage() {
         <CardHeader>
           <CardTitle>Top Users</CardTitle>
           <CardDescription>
-            Ranked by total spend for the selected range with dominant model, request volume, and
-            average tool exposure and invocation counts.
+            Ranked by total spend for the selected range with dominant model and harness, request
+            volume, and average tool exposure and invocation counts.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -227,44 +228,140 @@ export function ObservabilityLeaderboardPage() {
           ) : leaderboard.leaders.length === 0 ? (
             <LeaderboardEmptyState />
           ) : (
-            <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-              <Table data-testid="leaderboard-table" className="min-w-[72rem]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-16">Rank</TableHead>
-                    <TableHead>User</TableHead>
-                    <TableHead className="text-right">Total spend</TableHead>
-                    <TableHead>Most used model</TableHead>
-                    <TableHead className="text-right">Total requests</TableHead>
-                    <TableHead>Avg Tools</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {leaderboard.leaders.map((leader, index) => (
-                    <TableRow key={leader.user_id}>
-                      <TableCell className="font-medium text-[var(--color-text-soft)]">
-                        {index + 1}
-                      </TableCell>
-                      <TableCell className="font-medium">{leader.user_name}</TableCell>
-                      <TableCell className="text-right">
-                        {CURRENCY_FORMATTER.format(leader.total_spend_usd_10000 / 10_000)}
-                      </TableCell>
-                      <TableCell>{leader.most_used_model ?? '—'}</TableCell>
-                      <TableCell className="text-right">
-                        {NUMBER_FORMATTER.format(leader.total_requests)}
-                      </TableCell>
-                      <TableCell>
-                        <ToolAverages leader={leader} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <LeaderboardRankings leaders={leaderboard.leaders} />
           )}
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+// Keep mobile and desktop projections together so leaderboard fields cannot drift.
+// oxlint-disable-next-line eslint/max-lines-per-function
+function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-3 md:hidden" data-testid="leaderboard-mobile-list">
+        {leaders.map((leader) => (
+          <article
+            key={leader.user_id}
+            className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[var(--color-text-soft)]">
+                  Rank {leader.rank}
+                </p>
+                <p className="truncate font-semibold text-[var(--color-text)]">
+                  {leader.user_name}
+                </p>
+              </div>
+              <p className="shrink-0 font-medium text-[var(--color-text)] tabular-nums">
+                {CURRENCY_FORMATTER.format(leader.total_spend_usd_10000 / 10_000)}
+              </p>
+            </div>
+
+            <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <div className="col-span-2">
+                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                  Most used model
+                </dt>
+                <dd className="mt-1">{leader.most_used_model ?? '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                  Most used harness
+                </dt>
+                <dd className="mt-1">
+                  <MostUsedHarness leader={leader} />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                  Total requests
+                </dt>
+                <dd className="mt-1 tabular-nums">
+                  {NUMBER_FORMATTER.format(leader.total_requests)}
+                </dd>
+              </div>
+              <div className="col-span-2">
+                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                  Avg tools
+                </dt>
+                <dd className="mt-1">
+                  <ToolAverages leader={leader} />
+                </dd>
+              </div>
+            </dl>
+          </article>
+        ))}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+        <Table data-testid="leaderboard-table" className="min-w-[80rem] text-left">
+          <TableHeader className="bg-[color:var(--color-surface-muted)]">
+            <TableRow>
+              <TableHead className="w-16 px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Rank
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                User
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Total spend
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Most used model
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Most used harness
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Total requests
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Avg tools
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {leaders.map((leader) => (
+              <TableRow key={leader.user_id}>
+                <TableCell className="px-3 py-3 font-medium text-[var(--color-text-soft)]">
+                  {leader.rank}
+                </TableCell>
+                <TableCell className="px-3 py-3 font-medium">{leader.user_name}</TableCell>
+                <TableCell className="px-3 py-3 tabular-nums">
+                  {CURRENCY_FORMATTER.format(leader.total_spend_usd_10000 / 10_000)}
+                </TableCell>
+                <TableCell className="px-3 py-3">{leader.most_used_model ?? '—'}</TableCell>
+                <TableCell className="px-3 py-3">
+                  <MostUsedHarness leader={leader} />
+                </TableCell>
+                <TableCell className="px-3 py-3 tabular-nums">
+                  {NUMBER_FORMATTER.format(leader.total_requests)}
+                </TableCell>
+                <TableCell className="px-3 py-3">
+                  <ToolAverages leader={leader} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  )
+}
+
+function MostUsedHarness({ leader }: { leader: LeaderboardLeaderView }) {
+  if (!leader.most_used_harness) {
+    return <span className="text-[var(--color-text-soft)]">—</span>
+  }
+
+  return (
+    <AgentHarnessLabel harnessKey={leader.most_used_harness.key}>
+      {leader.most_used_harness.label}
+    </AgentHarnessLabel>
   )
 }
 
@@ -358,6 +455,10 @@ function formatTooltipLabel(value: string) {
     hour12: false,
     timeZone: 'UTC',
   })
+}
+
+function toLeaderboardRange(value: string): LeaderboardRange {
+  return value === '31d' ? '31d' : '7d'
 }
 
 function getErrorMessage(error: unknown) {

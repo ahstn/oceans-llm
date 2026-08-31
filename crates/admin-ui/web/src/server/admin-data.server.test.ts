@@ -4,6 +4,7 @@ import {
   createApiKey,
   deactivateUser,
   getGatewayVersion,
+  getHarnessUsage,
   getRequestLogDetail,
   getMcpInvocationDetail,
   getSpendReport,
@@ -358,6 +359,7 @@ describe('server-side admin data wrappers', () => {
               bucket_hours: 12,
               chart_users: [
                 {
+                  rank: 1,
                   user_id: 'user_1',
                   user_name: 'Jane Admin',
                   total_spend_usd_10000: 123_450,
@@ -376,10 +378,15 @@ describe('server-side admin data wrappers', () => {
               ],
               leaders: [
                 {
+                  rank: 1,
                   user_id: 'user_1',
                   user_name: 'Jane Admin',
                   total_spend_usd_10000: 123_450,
                   most_used_model: 'fast',
+                  most_used_harness: {
+                    key: 'mastra',
+                    label: 'Mastra',
+                  },
                   total_requests: 42,
                   tool_cardinality_averages: {
                     referenced_mcp_server_count: null,
@@ -387,6 +394,51 @@ describe('server-side admin data wrappers', () => {
                     invoked_tool_count: 0,
                     filtered_tool_count: null,
                   },
+                },
+              ],
+            },
+            meta: { generated_at: '2026-03-10T11:32:00Z' },
+          },
+          response: { status: 200 },
+        }
+      }
+
+      if (path === '/api/v1/admin/observability/harness-usage') {
+        return {
+          data: {
+            data: {
+              range: '7d',
+              window_start: '2026-03-01T00:00:00Z',
+              window_end: '2026-03-08T00:00:00Z',
+              bucket_hours: 12,
+              chart_harnesses: [
+                {
+                  rank: 1,
+                  agent_harness_key: 'mastra',
+                  agent_harness_label: 'Mastra',
+                  total_requests: 42,
+                },
+              ],
+              series: [
+                {
+                  bucket_start: '2026-03-01T00:00:00Z',
+                  values: [
+                    {
+                      agent_harness_key: 'mastra',
+                      request_count: 42,
+                    },
+                  ],
+                },
+              ],
+              leaders: [
+                {
+                  rank: 1,
+                  agent_harness_key: 'mastra',
+                  agent_harness_label: 'Mastra',
+                  total_requests: 42,
+                  prompt_tokens: 12_000,
+                  completion_tokens: 3_000,
+                  total_tokens: 15_000,
                 },
               ],
             },
@@ -706,6 +758,7 @@ describe('server-side admin data wrappers', () => {
       models,
       spendReport,
       leaderboard,
+      harnessUsage,
       spendBudgets,
       budgetAlerts,
       logs,
@@ -717,6 +770,7 @@ describe('server-side admin data wrappers', () => {
       listModels(),
       getSpendReport(),
       getUsageLeaderboard({ range: '7d' }),
+      getHarnessUsage({ range: '7d' }),
       listSpendBudgets(),
       listBudgetAlertHistory(),
       listRequestLogs(),
@@ -732,6 +786,15 @@ describe('server-side admin data wrappers', () => {
     expect(spendReport.data.window_days).toBeGreaterThan(0)
     expect(leaderboard.data.chart_users.length).toBe(1)
     expect(leaderboard.data.leaders[0].most_used_model).toBe('fast')
+    expect(leaderboard.data.leaders[0].most_used_harness).toEqual({
+      key: 'mastra',
+      label: 'Mastra',
+    })
+    expect(harnessUsage.data.leaders[0]).toMatchObject({
+      prompt_tokens: 12_000,
+      completion_tokens: 3_000,
+      total_tokens: 15_000,
+    })
     expect(spendBudgets.data.users.length).toBe(0)
     expect(budgetAlerts.data.items.length).toBe(0)
     expect(logs.data.items.length).toBeGreaterThan(0)
@@ -829,6 +892,23 @@ describe('server-side admin data wrappers', () => {
 
     expect(leaderboard.data.range).toBe('7d')
     expect(GET).toHaveBeenCalledWith('/api/v1/admin/observability/leaderboard', {
+      params: {
+        query: {
+          range: '31d',
+        },
+      },
+    })
+  })
+
+  it('wires harness usage fetches to the documented gateway path and query params', async () => {
+    const harnessUsage = await getHarnessUsage({ range: '31d' })
+
+    expect(harnessUsage.data.leaders[0]).toMatchObject({
+      prompt_tokens: 12_000,
+      completion_tokens: 3_000,
+      total_tokens: 15_000,
+    })
+    expect(GET).toHaveBeenCalledWith('/api/v1/admin/observability/harness-usage', {
       params: {
         query: {
           range: '31d',
