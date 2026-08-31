@@ -1,33 +1,39 @@
 # Gateway Guardrails
 
+Gateway guardrails let admins inspect and control model and tool traffic at the gateway. Policies can audit or deny operations with built-in deterministic checks, Amazon Bedrock Guardrails, or Google Cloud Model Armor.
+
+Guardrails are configuration-authoritative. Callers cannot disable a policy, select a weaker policy, or supply an allow-once token.
+
 `See also`: [Agent Harness Usage](agent-harness-usage.md), [AWS Bedrock](../providers/aws-bedrock.md), [Google Vertex AI](../providers/gcp-vertex.md), [Observability and Request Logs](observability-and-request-logs.md)
 
-Gateway guardrails inspect model and tool traffic before a protected operation crosses its execution or release boundary. Configuration is the only policy authority. Callers cannot bypass a policy, supply an allow-once token, or select a weaker scope.
+## How guardrails are applied
 
-## Evaluation order
+For each protected operation, the gateway resolves the default policy and then applies any matching model-route or MCP-server override. An override replaces only the fields it defines.
 
-For each configured phase, the gateway resolves the global policy and then applies a model-route or MCP-server override. It runs built-in deterministic packs first. A deterministic deny stops the chain. If deterministic checks allow the operation, managed checks run once in the configured order. An allowed transformation becomes the input to the next check and to the protected operation.
+The gateway evaluates checks in this order:
 
-Supported phases are:
+1. Built-in deterministic packs run first. A deterministic deny stops evaluation.
+2. Managed checks run once in the configured order.
+3. Text transformed by an allowed managed check becomes the input to the next check and then to the protected operation.
 
-- `prompt`: before provider invocation.
-- `model_response`: before a model response reaches the caller.
-- `generated_tool_call`: after complete tool-call reconstruction and before caller release.
-- `mcp_call`: before upstream credential lookup or network I/O.
-- `mcp_result`: before an MCP result reaches the caller.
-- `harness_pre_tool`: before Pi or OpenCode starts a local shell process.
+The supported evaluation phases are:
 
-A guarded stream is buffered up to `stream_buffer_bytes`. The gateway releases no guarded bytes before the final decision. Streams for disabled policies keep their normal streaming behavior.
+| Phase | Protected boundary |
+| --- | --- |
+| `prompt` | Before the gateway invokes a model provider |
+| `model_response` | Before a model response reaches the caller |
+| `generated_tool_call` | After the gateway reconstructs a model-generated tool call and before it reaches the caller |
+| `mcp_call` | Before the gateway looks up upstream credentials or sends an MCP request |
+| `mcp_result` | Before an MCP result reaches the caller |
+| `harness_pre_tool` | Before Pi or OpenCode starts a local shell process |
 
-A guarded MCP result is buffered for at most `stream_buffer_timeout_ms` (default `120000`, maximum `600000`). An upstream MCP tool that holds its event stream open past that bound is answered with `504` and a JSON-RPC guardrail error instead of holding the caller connection open.
+Guarded streams are buffered until the gateway reaches a final decision. The gateway releases no guarded bytes before that decision. Streams with no enabled policy retain their normal streaming behavior.
 
-## Built-in packs
+## Enable guardrails in audit mode
 
-The versioned built-in pack IDs are `core.shell`, `core.git`, `core.filesystem`, `database.postgresql`, `cloud.aws`, `cloud.gcp`, and `saas.notion`. Shell checks parse command structure. MCP checks use the server identity, tool identity and aliases, parsed JSON arguments, and typed JSON-path predicates. They do not match a regular expression against serialized JSON.
+Guardrails are disabled when the `guardrails` section is absent or `default.enabled` is `false`. Start with `audit` mode so matching traffic is recorded without being blocked.
 
-## Audit-first configuration
-
-Start with `audit`. Audit mode records matches but does not stop the operation.
+Add the following section to the gateway YAML configuration:
 
 ```yaml
 guardrails:
@@ -50,7 +56,27 @@ guardrails:
   mcp_servers: {}
 ```
 
-A model-route key has the form `{model}/{provider}/{upstream_model}`. An MCP key is the configured server key. An override replaces only the fields it defines.
+Restart the gateway with the updated configuration. Startup fails if the configuration references an unknown pack, managed check, model route, or MCP server. It also rejects unsupported phase combinations and invalid managed-service resource names.
+
+The built-in pack IDs are versioned policy contracts:
+
+| Pack | Traffic inspected |
+| --- | --- |
+| `core.shell` | Shell commands |
+| `core.git` | Git operations |
+| `core.filesystem` | Filesystem operations |
+| `database.postgresql` | PostgreSQL operations |
+| `cloud.aws` | AWS operations |
+| `cloud.gcp` | Google Cloud operations |
+| `saas.notion` | Notion MCP operations |
+
+Shell checks parse command structure rather than matching raw command text. MCP checks use the server and tool identity, aliases, parsed JSON arguments, and typed JSON-path predicates. This prevents quoted text or serialized JSON formatting from changing how a rule is interpreted.
+
+## Configure policy overrides
+
+Use `model_routes` to change policy for a specific inference route. The key must use `{model}/{provider}/{upstream_model}` and match a configured route exactly.
+
+Use `mcp_servers` to change policy for a registered MCP server. The key must match the configured server key.
 
 ```yaml
 guardrails:
@@ -68,11 +94,24 @@ guardrails:
       packs: [saas.notion]
 ```
 
-Startup rejects unknown packs, managed checks, model routes, MCP servers, invalid phase combinations, and invalid managed resource names.
+In this example, most traffic remains in audit mode. The selected model route and Notion MCP server enforce denials. The model route inherits the default packs, while the MCP override replaces them with `saas.notion`.
 
-## Amazon Bedrock Guardrails
+An override can set any of these policy fields:
 
-The adapter uses the standalone Bedrock Runtime `ApplyGuardrail` API. It is independent of the route's model provider. It only references a guardrail that already exists.
+| Field | Purpose | Default policy value |
+| --- | --- | --- |
+| `enabled` | Enables evaluation for the scope | `false` |
+| `mode` | Selects `audit` or `deny` behavior | `audit` |
+| `packs` | Ordered list of built-in packs | `[]` |
+| `managed_checks` | Ordered list of configured managed checks | `[]` |
+| `stream_buffer_bytes` | Maximum buffered guarded response size | `4194304` |
+| `stream_buffer_timeout_ms` | Maximum time to buffer an MCP result | `120000` |
+
+`stream_buffer_timeout_ms` can be at most `600000`. If an upstream MCP tool keeps its event stream open beyond the configured timeout, the gateway returns `504` with a JSON-RPC guardrail error.
+
+## Add Amazon Bedrock Guardrails
+
+The Amazon Bedrock adapter calls the standalone Bedrock Runtime `ApplyGuardrail` API. It can protect traffic for any model provider because it is not coupled to an AWS Bedrock inference route. The referenced guardrail and version must already exist.
 
 ```yaml
 guardrails:
@@ -97,9 +136,11 @@ guardrails:
     managed_checks: [company-bedrock]
 ```
 
-The AWS identity needs `bedrock:ApplyGuardrail` for the selected guardrail. Use the default AWS credential chain in production. If static credentials are required for a development fixture, store them as `env.NAME` or `file./path` secret references. Do not put credentials in YAML.
+The AWS identity needs `bedrock:ApplyGuardrail` for the selected guardrail. `ApplyGuardrail` does not require model invocation permissions.
 
-Use a least-privilege identity policy. Replace the region, account, and guardrail ID placeholders. `ApplyGuardrail` does not need model invocation permissions because Oceans calls the standalone API.
+Use the default AWS credential chain in production. If a development environment requires static credentials, use `env.NAME` or `file./path` secret references. Do not put credential values in YAML.
+
+A least-privilege identity policy has this shape:
 
 ```json
 {
@@ -114,11 +155,11 @@ Use a least-privilege identity policy. Replace the region, account, and guardrai
 }
 ```
 
-For cross-account use, the caller identity policy and the guardrail resource policy must both allow `bedrock:ApplyGuardrail`. See [Set up permissions to use Amazon Bedrock Guardrails](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-permissions.html) and [Using resource-based policies for guardrails](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-resource-based-policies.html).
+For cross-account access, both the caller identity policy and the guardrail resource policy must allow `bedrock:ApplyGuardrail`. See [Set up permissions to use Amazon Bedrock Guardrails](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-permissions.html) and [Using resource-based policies for guardrails](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-resource-based-policies.html).
 
-## Google Cloud Model Armor
+## Add Google Cloud Model Armor
 
-The adapter calls `sanitizeUserPrompt` for prompt and MCP-call input and `sanitizeModelResponse` for model responses and MCP results. It is independent of the route's model provider. Templates must already exist.
+The Model Armor adapter calls `sanitizeUserPrompt` for prompts and MCP calls. It calls `sanitizeModelResponse` for model responses and MCP results. The referenced templates must already exist.
 
 ```yaml
 guardrails:
@@ -136,7 +177,7 @@ guardrails:
         response_template: projects/my-security-project/locations/us-central1/templates/response-policy
         auth:
           kind: bearer_token
-          token: env.MODEL_ARMOR_ACCESS_TOKEN
+          token: file./run/secrets/model-armor-token
   default:
     enabled: true
     mode: audit
@@ -144,9 +185,7 @@ guardrails:
     managed_checks: [company-model-armor]
 ```
 
-The Google identity needs `modelarmor.templates.useToSanitizeUserPrompt` or `modelarmor.templates.useToSanitizeModelResponse` on each referenced template. For production, write a current OAuth access token to a protected file and configure a `file./path` secret reference. The gateway reads that file before each evaluation, so an external credential process can rotate the token without restarting the gateway. An `env.NAME` reference is also supported, but its value is fixed for the life of the process. Do not store the token in YAML.
-
-Grant the predefined Model Armor User role to the gateway service account:
+Grant the gateway service account the Model Armor User role:
 
 ```bash
 gcloud projects add-iam-policy-binding PROJECT_ID \
@@ -154,74 +193,62 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
   --role="roles/modelarmor.user"
 ```
 
-For a least-privilege custom role, include `modelarmor.templates.useToSanitizeUserPrompt` and `modelarmor.templates.useToSanitizeModelResponse`. The access token must include the `https://www.googleapis.com/auth/cloud-platform` scope. See [Model Armor roles and permissions](https://docs.cloud.google.com/model-armor/access-control/roles-permissions) and the [`sanitizeUserPrompt` method](https://docs.cloud.google.com/model-armor/reference/rest/v1/projects.locations.templates/sanitizeUserPrompt).
+For a custom role, grant `modelarmor.templates.useToSanitizeUserPrompt` and `modelarmor.templates.useToSanitizeModelResponse` on the referenced templates. The OAuth token must include the `https://www.googleapis.com/auth/cloud-platform` scope.
 
-## Failures and transformations
+Use a protected `file./path` secret reference in production. The gateway reads the file before each evaluation, which allows an external credential process to rotate the token without restarting the gateway. An `env.NAME` reference is also supported, but its value remains fixed for the life of the gateway process.
 
-`failure_disposition` defaults to `fail_open`. A timeout, unavailable service, rate limit, malformed response, or content-size failure then permits the operation and records an audit decision. Set `fail_closed` only after the managed service has met its availability target. Fail-closed converts the managed failure to a deny.
+See [Model Armor roles and permissions](https://docs.cloud.google.com/model-armor/access-control/roles-permissions) and the [`sanitizeUserPrompt` method](https://docs.cloud.google.com/model-armor/reference/rest/v1/projects.locations.templates/sanitizeUserPrompt).
 
-Allowed masked or sanitized text is passed to the next check and then to the caller or upstream service. The gateway rejects a transformation that cannot preserve the protocol payload shape.
+## Choose managed failure behavior
 
-## Observability
+Each managed check supports these fields:
 
-The platform-admin UI has a read-only **Guardrails** page. The API endpoints are:
+| Field | Meaning | Default |
+| --- | --- | --- |
+| `phases` | Gateway phases evaluated by the check | Required |
+| `timeout_ms` | Request timeout from `1` to `120000` milliseconds | `2000` |
+| `failure_disposition` | `fail_open` or `fail_closed` | `fail_open` |
+| `max_content_bytes` | Maximum content sent to the service | `262144` |
+
+With `fail_open`, a timeout, unavailable service, rate limit, malformed response, or content-size failure permits the operation and records an audit decision. With `fail_closed`, the same managed-service failure becomes a deny.
+
+Keep `fail_open` during the initial rollout. Use `fail_closed` only when the security requirement outweighs the availability impact and the managed service has met its availability target.
+
+Managed services may return masked or sanitized text. An allowed transformation is passed to the next check and then to the provider or caller. The gateway rejects transformations that cannot preserve the protocol payload shape.
+
+## Verify decisions
+
+Platform admins can open **Observability > Guardrails** in the admin control plane. The page shows resolved policies and privacy-safe decision metadata. Admin API clients can use:
 
 - `GET /api/v1/admin/guardrails/policies`
 - `GET /api/v1/admin/guardrails/decisions`
 
-Decision events include the decision ID, related request ID or MCP invocation context, phase, effective scope, evaluator, managed service, pack and rule ID, action, stable reason code, latency, failure disposition, transformation flag, and SHA-256 content hash. Default events do not contain prompts, commands, JSON arguments, or results. Payload retention follows the existing opt-in payload capture, redaction, and retention policy.
+Decision records include the decision ID, request or MCP invocation context, phase, effective scope, evaluator, managed service, pack and rule ID, action, reason code, latency, failure disposition, transformation status, and a SHA-256 content hash.
 
-Metrics use `gateway.guardrails.decisions` and `gateway.guardrails.decision.duration`. Alert on sustained fail-open decisions, deny-rate changes, latency near the configured timeout, and buffer-limit failures.
+By default, decision records do not contain prompts, commands, JSON arguments, or results. Raw payload retention follows the existing opt-in payload capture, redaction, and retention configuration.
 
-## Release gate
+Guardrail metrics are emitted as `gateway.guardrails.decisions` and `gateway.guardrails.decision.duration`. Monitor sustained fail-open decisions, changes in deny rate, latency near managed-check timeouts, and buffer-limit failures.
 
-Run `mise run guardrail-release-gate` before an audit-to-deny change. The gate uses the production gateway binary, LibSQL migrations, the admin UI build, fake managed-service endpoints, and the first-party harness hook artifacts.
+## Move from audit to deny
 
-| Boundary | Safe or transformed case | Denied case and side-effect proof |
-| --- | --- | --- |
-| OpenAI Chat Completions, Anthropic Messages, and OpenAI Responses prompts | Audit-mode managed intervention reaches the provider; an allowed mask reaches the provider in protocol-valid form | Deny mode returns the stable policy error and the mock provider request count remains zero |
-| Non-stream model response | Safe text reaches the caller | A destructive generated tool call returns the stable policy error without executable arguments |
-| Stream model response | Safe SSE is released after the final decision | Split, parallel, malformed, and destructive tool-call fixtures release no guarded stream bytes; an oversize stream returns `413` with a bounded JSON error |
-| Direct MCP call and result | Safe calls execute; managed result masking preserves JSON | Deterministic and managed call denies leave the upstream execution count at zero |
-| Aggregate MCP call and result | Safe calls execute; managed result masking preserves the aggregate response | The aggregate policy-denied JSON-RPC result leaves the upstream execution count at zero |
-| Pi and OpenCode | Allow and audit decisions retain the decision ID | The pre-tool hook rejects before the shell implementation or process handoff runs |
-| Managed failures and observability | Fake Model Armor masking is visible in the protected output | A fake managed failure creates a `fail_open` audit event in structured logs, guardrail metrics, persistence, the admin API, and the read-only UI |
+Roll out enforcement one scope at a time:
 
-The load budgets are release gates, not sizing promises for every deployment:
+1. Enable the required packs and managed checks in `audit` mode.
+2. Send representative inference, MCP, Pi, and OpenCode traffic through the gateway.
+3. Review matches, fail-open events, managed latency, and transformations on the **Guardrails** page.
+4. Correct policy scopes, aliases, phase selection, limits, and managed-service permissions.
+5. Set one model-route or MCP-server override to `deny`.
+6. Confirm expected traffic succeeds and denied operations create decision records.
+7. Expand `deny` mode only after reviewing the observation window.
 
-- Deterministic evaluation: 10,000 local pack evaluations must finish within two seconds.
-- Managed concurrency: 64 concurrent 20 ms managed evaluations must finish within two seconds. Each managed call still has its configured `timeout_ms`; the release fixture uses 1,000 ms.
-- Managed request body: each check rejects content above `max_content_bytes`; the documented default is 256 KiB.
-- Guarded response memory: each stream buffers at most `stream_buffer_bytes`; the release stack uses 4 MiB and verifies that overflow releases only a small JSON error.
-- MCP request body: the gateway rejects a body above 4 MiB before dispatch.
-- Event persistence: 100 privacy-safe LibSQL decision records must insert and list within five seconds. PostgreSQL runs the same metadata, filter, ordering, and pagination contract when `TEST_POSTGRES_URL` is set.
+To roll back enforcement without losing decision history, change the affected override from `deny` to `audit` and restart the gateway. If evaluation causes unacceptable latency or protocol errors, set `enabled: false` on the affected override. Keep decision storage enabled while investigating.
 
-Release checklist:
+## Investigate unexpected decisions
 
-1. Run `mise run guardrail-release-gate`.
-2. Run the repository checks: `mise run rust-fmt-check`, `mise run rust-lint`, `mise run rust-test`, `mise run admin-contract-check`, `mise run harness-integration-typecheck`, `mise run test`, `mise run lint`, `mise run build`, and `mise run //docs:build`.
-3. Confirm every configured inference route, direct MCP route, aggregate MCP route, and first-party harness appears in the matrix. Do not approve a new route without a deny-before-side-effect fixture.
-4. Confirm default decision records, logs, API responses, and UI output contain hashes and identifiers but no raw prompt, command, argument, result, credential, or managed-service token.
-5. Confirm the production-shaped local stack lets the `audit-fast` route reach the provider for the same managed intervention that the `fast` deny route blocks.
-6. Review fail-open counts and managed latency before changing a production scope from `audit` to `deny`.
-
-## Rollout and rollback
-
-1. Enable all required packs in `audit` mode.
-2. Run representative prompt, response, direct MCP, aggregate MCP, Pi, and OpenCode traffic.
-3. Review near misses, fail-open events, managed latency, and transformation validity in the admin view.
-4. Correct aliases, phases, limits, or managed resource permissions in configuration.
-5. Change one route or MCP server to `deny` mode.
-6. Confirm that denied MCP calls make zero upstream requests, denied harness calls make zero local processes, and guarded streams release no early bytes.
-7. Expand deny mode by route or server after the observation window.
-
-To roll back enforcement without losing evidence, change the affected override from `deny` to `audit` and restart the gateway. If guardrails cause unacceptable latency or protocol errors, set `enabled: false` for the affected override. Do not remove event storage during an incident.
-
-## Incident handling
-
-1. Record the decision ID and related request or MCP invocation ID. Do not copy raw sensitive content into the incident ticket.
+1. Record the decision ID and related request or MCP invocation ID. Do not copy sensitive payloads into an incident ticket.
 2. Check the effective scope, phase, pack or managed service, reason code, failure disposition, and content hash.
-3. For an unexpected deny, reproduce with privacy-safe fixtures and compare the resolved policy with the read-only admin view.
-4. For a fail-open spike, check cloud IAM, resource names, rate limits, timeouts, and regional service health.
-5. Move the affected scope to `audit` if false denials block production. Use `fail_closed` only when the security risk of unavailable checks is greater than the availability impact.
-6. Preserve decision metadata and metrics for the incident timeline. Retain raw payloads only under the existing approved capture policy.
+3. For an unexpected deny, compare the configured policy with the resolved policy on the **Guardrails** page.
+4. For repeated fail-open decisions, check cloud IAM, resource names, rate limits, timeouts, and regional service health.
+5. Move the affected scope to `audit` if false denials block production traffic.
+
+The guardrail architecture and composition rules are recorded in the [Gateway Guardrails ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-08-22-gateway-guardrails-domain-and-composition.md). The implementation was introduced in [pull request #305](https://github.com/ahstn/oceans-llm/pull/305).
