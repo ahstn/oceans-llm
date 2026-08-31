@@ -2436,7 +2436,7 @@ pub(crate) mod tests {
                 provider_key: "openai-prod".to_string(),
                 status_code: Some(200),
                 latency_ms: Some(20),
-                prompt_tokens: Some(1),
+                prompt_tokens: None,
                 completion_tokens: Some(1),
                 total_tokens: Some(2),
                 error_code: None,
@@ -2536,7 +2536,7 @@ pub(crate) mod tests {
         assert_eq!(harness_leaders.len(), 2);
         assert_eq!(harness_leaders[0].agent_harness_key, "opencode");
         assert_eq!(harness_leaders[0].request_count, 2);
-        assert_eq!(harness_leaders[0].prompt_tokens, Some(2));
+        assert_eq!(harness_leaders[0].prompt_tokens, None);
         assert_eq!(harness_leaders[0].completion_tokens, Some(2));
         assert_eq!(harness_leaders[0].total_tokens, Some(4));
         assert_eq!(harness_leaders[1].agent_harness_key, "claude_code");

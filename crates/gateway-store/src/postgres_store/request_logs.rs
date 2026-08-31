@@ -451,9 +451,12 @@ impl RequestLogRepository for PostgresStore {
             SELECT agent_harness_key,
                    MIN(agent_harness_label) AS agent_harness_label,
                    COUNT(*)::BIGINT AS request_count,
-                   SUM(prompt_tokens)::BIGINT AS prompt_tokens,
-                   SUM(completion_tokens)::BIGINT AS completion_tokens,
-                   SUM(total_tokens)::BIGINT AS total_tokens
+                   CASE WHEN COUNT(*) = COUNT(prompt_tokens)
+                       THEN SUM(prompt_tokens)::BIGINT END AS prompt_tokens,
+                   CASE WHEN COUNT(*) = COUNT(completion_tokens)
+                       THEN SUM(completion_tokens)::BIGINT END AS completion_tokens,
+                   CASE WHEN COUNT(*) = COUNT(total_tokens)
+                       THEN SUM(total_tokens)::BIGINT END AS total_tokens
             FROM request_logs
             WHERE occurred_at >= $1
               AND occurred_at < $2

@@ -155,11 +155,11 @@ describe('ObservabilityLeaderboardPage', () => {
           range: '31d',
         },
       })
+      expect(within(view.container).getByRole('radio', { name: 'Last 31 days' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      )
     })
-    expect(within(view.container).getByRole('radio', { name: 'Last 31 days' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    )
   })
 
   it('renders an explicit empty state when no leaderboard data exists', async () => {

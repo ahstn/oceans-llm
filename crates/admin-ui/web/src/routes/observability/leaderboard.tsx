@@ -50,7 +50,7 @@ const NUMBER_FORMATTER = new Intl.NumberFormat('en-US')
 export function ObservabilityLeaderboardPage() {
   const loaderData = Route.useLoaderData()
   const [leaderboard, setLeaderboard] = useState<LeaderboardView>(loaderData.data)
-  const [range, setRange] = useState<LeaderboardRange>(toLeaderboardRange(loaderData.data.range))
+  const [range, setRange] = useState<LeaderboardRange>(() => toLeaderboardRange(loaderData.data.range))
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isPending, startTransition] = useTransition()
   const isLoading = isPending || isRefreshing
@@ -307,7 +307,7 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
               <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                 User
               </TableHead>
-              <TableHead className="px-3 py-2 text-right font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                 Total spend
               </TableHead>
               <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
@@ -316,7 +316,7 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
               <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                 Most used harness
               </TableHead>
-              <TableHead className="px-3 py-2 text-right font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                 Total requests
               </TableHead>
               <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
@@ -331,14 +331,14 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
                   {leader.rank}
                 </TableCell>
                 <TableCell className="px-3 py-3 font-medium">{leader.user_name}</TableCell>
-                <TableCell className="px-3 py-3 text-right tabular-nums">
+                <TableCell className="px-3 py-3 tabular-nums">
                   {CURRENCY_FORMATTER.format(leader.total_spend_usd_10000 / 10_000)}
                 </TableCell>
                 <TableCell className="px-3 py-3">{leader.most_used_model ?? '—'}</TableCell>
                 <TableCell className="px-3 py-3">
                   <MostUsedHarness leader={leader} />
                 </TableCell>
-                <TableCell className="px-3 py-3 text-right tabular-nums">
+                <TableCell className="px-3 py-3 tabular-nums">
                   {NUMBER_FORMATTER.format(leader.total_requests)}
                 </TableCell>
                 <TableCell className="px-3 py-3">

@@ -482,9 +482,12 @@ impl RequestLogRepository for LibsqlStore {
                 SELECT agent_harness_key,
                        MIN(agent_harness_label) AS agent_harness_label,
                        COUNT(*) AS request_count,
-                       SUM(prompt_tokens) AS prompt_tokens,
-                       SUM(completion_tokens) AS completion_tokens,
-                       SUM(total_tokens) AS total_tokens
+                       CASE WHEN COUNT(*) = COUNT(prompt_tokens)
+                           THEN SUM(prompt_tokens) END AS prompt_tokens,
+                       CASE WHEN COUNT(*) = COUNT(completion_tokens)
+                           THEN SUM(completion_tokens) END AS completion_tokens,
+                       CASE WHEN COUNT(*) = COUNT(total_tokens)
+                           THEN SUM(total_tokens) END AS total_tokens
                 FROM request_logs
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
