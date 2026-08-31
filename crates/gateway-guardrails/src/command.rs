@@ -43,6 +43,48 @@ pub(crate) fn parse_command_line(source: &str) -> Vec<CommandInvocation> {
     invocations.extend(nested_shells.into_iter().chain(substitutions));
     invocations
 }
+pub(crate) fn has_truncating_redirection(source: &str) -> bool {
+    let characters = source.chars().collect::<Vec<_>>();
+    let mut quote = None;
+    let mut index = 0;
+    while index < characters.len() {
+        let character = characters[index];
+        if character == '\\' && quote != Some('\'') {
+            index = index.saturating_add(2);
+            continue;
+        }
+        if matches!(character, '\'' | '"') {
+            quote = if quote == Some(character) {
+                None
+            } else if quote.is_none() {
+                Some(character)
+            } else {
+                quote
+            };
+            index += 1;
+            continue;
+        }
+        if quote.is_none() && character == '>' {
+            let next = characters.get(index + 1);
+            if matches!(next, Some('>' | '&' | '(')) {
+                index += 2;
+                continue;
+            }
+            index += usize::from(next == Some(&'|')) + 1;
+            while characters
+                .get(index)
+                .is_some_and(|value| value.is_whitespace())
+            {
+                index += 1;
+            }
+            if index < characters.len() {
+                return true;
+            }
+        }
+        index += 1;
+    }
+    false
+}
 
 fn push_invocation(
     invocations: &mut Vec<CommandInvocation>,
@@ -173,10 +215,9 @@ pub(crate) fn nested_shell_command(invocation: &CommandInvocation) -> Option<Str
             .then(|| invocation.arguments[index..].join(" "));
     }
     if invocation.executable == "find"
-        && let Some(index) = invocation
-            .arguments
-            .iter()
-            .position(|argument| matches!(argument.as_str(), "-exec" | "-execdir"))
+        && let Some(index) = invocation.arguments.iter().position(|argument| {
+            matches!(argument.as_str(), "-exec" | "-execdir" | "-ok" | "-okdir")
+        })
     {
         let command = invocation.arguments[index + 1..]
             .iter()

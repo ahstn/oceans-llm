@@ -123,6 +123,7 @@ guardrails:
       - kubernetes.helm
       - secrets.aws_secrets
       - secrets.onepassword
+      - saas.github
       - saas.notion
     managed_checks:
       - model-armor-e2e

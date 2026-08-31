@@ -11,9 +11,16 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
     let delete = arguments.iter().any(|argument| argument == "delete");
     let dry_run = effective_dry_run(arguments);
     let (rule_id, reason_code, description, safer_action) = if delete
-        && contains_any(arguments, &["namespace", "ns"])
+        && has_option(arguments, "--force", None)
         && !dry_run
     {
+        (
+            "delete-force",
+            "kubectl.delete_force",
+            "Removes resources without graceful shutdown",
+            "Use the default grace period and inspect why the resource is stuck",
+        )
+    } else if delete && contains_any(arguments, &["namespace", "ns"]) && !dry_run {
         (
             "delete-namespace",
             "kubectl.delete_namespace",
@@ -93,16 +100,15 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
             "Stops every pod for the selected workload",
             "Review traffic and availability requirements before scaling down",
         )
-    } else if delete
-        && has_option(arguments, "--force", None)
-        && option_is_zero(arguments, "--grace-period")
+    } else if arguments.iter().any(|argument| argument == "apply")
+        && has_option(arguments, "--prune", None)
         && !dry_run
     {
         (
-            "delete-force",
-            "kubectl.delete_force",
-            "Removes resources without graceful shutdown",
-            "Use the default grace period and inspect why the resource is stuck",
+            "apply-prune",
+            "kubectl.apply_prune",
+            "Deletes live resources absent from the applied configuration",
+            "Run kubectl diff and review every object selected for pruning",
         )
     } else if arguments.iter().any(|argument| argument == "apply")
         && has_option(arguments, "--force", None)
@@ -128,6 +134,34 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
             "Deletes every resource described by a directory tree",
             "Use a specific reviewed file and preview with --dry-run=client",
         )
+    } else if arguments.iter().any(|argument| argument == "replace")
+        && has_option(arguments, "--force", None)
+        && !dry_run
+    {
+        (
+            "replace-force",
+            "kubectl.replace_force",
+            "Deletes and recreates resources during replace",
+            "Review the manifest and replace without --force",
+        )
+    } else if has_sequence(arguments, &["auth", "reconcile"])
+        && (has_option(arguments, "--remove-extra-permissions", None)
+            || has_option(arguments, "--remove-extra-subjects", None))
+        && !dry_run
+    {
+        (
+            "auth-reconcile-remove",
+            "kubectl.auth_reconcile_remove",
+            "Removes RBAC permissions or subjects absent from the manifest",
+            "Review the RBAC diff before removing access",
+        )
+    } else if delete && delete_has_target(arguments) && !dry_run {
+        (
+            "delete-resource",
+            "kubectl.delete_resource",
+            "Deletes one or more Kubernetes resources",
+            "Preview the exact resources with --dry-run=client",
+        )
     } else {
         return None;
     };
@@ -142,6 +176,33 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
     ))
 }
 
+fn has_sequence(arguments: &[String], sequence: &[&str]) -> bool {
+    arguments.windows(sequence.len()).any(|window| {
+        window
+            .iter()
+            .map(String::as_str)
+            .eq(sequence.iter().copied())
+    })
+}
+
+fn delete_has_target(arguments: &[String]) -> bool {
+    let Some(delete_index) = arguments.iter().position(|argument| argument == "delete") else {
+        return false;
+    };
+    arguments[delete_index + 1..].iter().any(|argument| {
+        !argument.starts_with('-')
+            || matches!(
+                argument.as_str(),
+                "-f" | "--filename" | "-k" | "--kustomize" | "-l" | "--selector" | "--raw"
+            )
+            || argument.starts_with("--filename=")
+            || argument.starts_with("--kustomize=")
+            || argument.starts_with("--selector=")
+            || argument.starts_with("--field-selector=")
+            || argument.starts_with("--raw=")
+    })
+}
+
 fn contains_any(arguments: &[String], values: &[&str]) -> bool {
     arguments
         .iter()
@@ -153,15 +214,6 @@ fn replicas_are_zero(arguments: &[String]) -> bool {
         || arguments
             .windows(2)
             .any(|window| window[0] == "--replicas" && window[1] == "0")
-}
-
-fn option_is_zero(arguments: &[String], name: &str) -> bool {
-    arguments
-        .iter()
-        .any(|argument| argument == &format!("{name}=0"))
-        || arguments
-            .windows(2)
-            .any(|window| window[0] == name && window[1] == "0")
 }
 
 fn filename_is_stdin(arguments: &[String]) -> bool {

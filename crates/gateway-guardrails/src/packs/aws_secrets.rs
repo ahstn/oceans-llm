@@ -1,6 +1,6 @@
 use crate::{MatchedRule, command::CommandInvocation};
 
-use super::rule;
+use super::{has_option, rule};
 
 pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<MatchedRule> {
     if invocation.executable != "aws" {
@@ -33,11 +33,22 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
                 "Deletes secret replicas and reduces regional availability",
                 "Review replica use and disaster recovery requirements first",
             )
-        } else if has_sequence(arguments, &["secretsmanager", "update-secret"]) {
+        } else if has_sequence(arguments, &["secretsmanager", "update-secret"])
+            || has_sequence(arguments, &["secretsmanager", "rotate-secret"])
+            || has_sequence(arguments, &["secretsmanager", "cancel-rotate-secret"])
+            || has_sequence(
+                arguments,
+                &["secretsmanager", "update-secret-version-stage"],
+            )
+            || has_sequence(
+                arguments,
+                &["secretsmanager", "stop-replication-to-replica"],
+            )
+        {
             (
                 "aws-secretsmanager-update-secret",
                 "aws_secrets.update_secret",
-                "Changes a secret value, KMS key, or metadata",
+                "Changes a secret value, rotation state, active version, or replication state",
                 "Export the current version and coordinate the update with consumers",
             )
         } else if has_sequence(arguments, &["secretsmanager", "put-secret-value"]) {
@@ -60,6 +71,22 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
                 "aws_secrets.delete_parameters",
                 "Deletes multiple SSM parameters without a recovery window",
                 "Export all values and remove one reviewed parameter at a time",
+            )
+        } else if has_sequence(arguments, &["ssm", "put-parameter"])
+            && has_option(arguments, "--overwrite", None)
+        {
+            (
+                "aws-ssm-overwrite-parameter",
+                "aws_secrets.overwrite_parameter",
+                "Overwrites an existing SSM parameter value",
+                "Export the current value and coordinate a reviewed update",
+            )
+        } else if has_sequence(arguments, &["ssm", "delete-resource-policy"]) {
+            (
+                "aws-ssm-delete-resource-policy",
+                "aws_secrets.delete_parameter_policy",
+                "Removes a parameter resource policy and cross-account access",
+                "Export the policy and verify every consumer before removal",
             )
         } else {
             return None;

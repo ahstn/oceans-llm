@@ -53,11 +53,44 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
             "op document get emits protected document contents",
             "Retrieve the document through a protected workflow outside the agent transcript",
         ),
+        "op" if arguments.iter().any(|argument| argument == "inject") => (
+            "onepassword-inject-output",
+            "op inject emits substituted secret values",
+            "Use op run to inject values directly into the consuming process",
+        ),
+        "op" if has_sequence(arguments, &["environment", "read"]) => (
+            "onepassword-environment-read-output",
+            "op environment read prints protected environment values",
+            "Inject values directly into the consuming process",
+        ),
+        "op" if has_sequence(arguments, &["connect", "token", "create"])
+            || has_sequence(arguments, &["service-account", "create"]) =>
+        {
+            (
+                "onepassword-token-create-output",
+                "Creating a 1Password token emits the credential once",
+                "Create and deliver the token through a protected operator workflow",
+            )
+        }
+        "op" if (arguments.iter().any(|argument| argument == "signin")
+            || has_sequence(arguments, &["account", "add"]))
+            && has_option(arguments, "--raw", None) =>
+        {
+            (
+                "onepassword-session-token-output",
+                "The raw option prints a 1Password session token",
+                "Use biometric or desktop-app integration without printing the token",
+            )
+        }
         "doppler"
-            if arguments.iter().any(|argument| argument == "secrets")
-                && arguments
-                    .iter()
-                    .any(|argument| matches!(argument.as_str(), "get" | "list" | "download")) =>
+            if has_sequence(arguments, &["secrets", "substitute"])
+                || (arguments.iter().any(|argument| argument == "secrets")
+                    && !arguments.iter().any(|argument| {
+                        matches!(
+                            argument.as_str(),
+                            "set" | "delete" | "upload" | "--only-names"
+                        )
+                    })) =>
         {
             (
                 "doppler-secrets-output",
@@ -75,6 +108,19 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
                 "Deliver values directly to the consuming process through a protected workflow",
             )
         }
+        "vault"
+            if arguments.iter().any(|argument| argument == "login")
+                || has_sequence(arguments, &["token", "create"])
+                || has_sequence(arguments, &["operator", "init"])
+                || has_sequence(arguments, &["operator", "rekey"])
+                || has_sequence(arguments, &["operator", "generate-root"]) =>
+        {
+            (
+                "vault-credential-output",
+                "Vault authentication and operator commands emit tokens or recovery keys",
+                "Run the command through a protected operator workflow",
+            )
+        }
         "aws"
             if has_sequence(arguments, &["secretsmanager", "get-secret-value"])
                 || has_sequence(arguments, &["secretsmanager", "batch-get-secret-value"]) =>
@@ -85,6 +131,11 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
                 "Inject the value into the intended process without printing it",
             )
         }
+        "aws" if has_sequence(arguments, &["secretsmanager", "get-random-password"]) => (
+            "aws-random-password-output",
+            "AWS Secrets Manager prints a newly generated credential",
+            "Create and deliver the credential through a protected workflow",
+        ),
         "aws"
             if arguments.iter().any(|argument| {
                 matches!(

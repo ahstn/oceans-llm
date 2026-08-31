@@ -60,6 +60,7 @@ guardrails:
       - kubernetes.helm
       - secrets.aws_secrets
       - secrets.onepassword
+      - saas.github
       - saas.notion
     managed_checks: []
     stream_buffer_bytes: 4194304

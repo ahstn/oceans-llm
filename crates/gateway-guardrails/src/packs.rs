@@ -6,6 +6,7 @@ use serde_json::Value;
 mod aws_secrets;
 mod disclosure;
 mod git;
+mod github;
 mod helm;
 mod kubectl;
 mod onepassword;
@@ -14,11 +15,11 @@ mod snowflake;
 use crate::{
     DeterministicEvaluator, EffectivePolicy, EvaluationError, EvaluationInput, EvaluationPayload,
     MatchedRule, ReasonCode,
-    command::{CommandInvocation, parse_command_line},
+    command::{CommandInvocation, has_truncating_redirection, parse_command_line},
     selectors::{JsonPath, McpCall},
 };
 
-pub const BUILT_IN_PACK_IDS: [&str; 13] = [
+pub const BUILT_IN_PACK_IDS: [&str; 14] = [
     "core.shell",
     "core.git",
     "core.filesystem",
@@ -31,6 +32,7 @@ pub const BUILT_IN_PACK_IDS: [&str; 13] = [
     "secrets.aws_secrets",
     "secrets.onepassword",
     "secret_disclosure",
+    "saas.github",
     "saas.notion",
 ];
 
@@ -134,6 +136,7 @@ impl PackRegistry {
                 "secret_disclosure",
                 "Secret-manager commands that disclose credential values",
             ),
+            metadata("saas.github", "Destructive GitHub MCP operations"),
             metadata("saas.notion", "Destructive Notion workspace operations"),
         ]
     }
@@ -233,6 +236,16 @@ fn is_shell_tool(name: &str) -> bool {
 }
 
 fn match_shell_pack(pack: &str, command: &str) -> Option<MatchedRule> {
+    if pack == "core.filesystem" && has_truncating_redirection(command) {
+        return Some(rule(
+            "core.filesystem",
+            "truncate-redirection",
+            "command.redirection",
+            "filesystem.truncate_redirection",
+            "Truncates or replaces the contents of a redirected output file",
+            "Write to a new reviewed path or preserve the existing file first",
+        ));
+    }
     let invocations = parse_command_line(command);
     for invocation in &invocations {
         let finding = match pack {
@@ -248,6 +261,7 @@ fn match_shell_pack(pack: &str, command: &str) -> Option<MatchedRule> {
             "secrets.aws_secrets" => aws_secrets::match_invocation(invocation),
             "secrets.onepassword" => onepassword::match_invocation(invocation),
             "secret_disclosure" => disclosure::match_invocation(invocation),
+            "saas.notion" => match_notion_cli(invocation),
             _ => None,
         };
         if finding.is_some() {
@@ -267,6 +281,22 @@ fn match_core_shell(invocation: &CommandInvocation) -> Option<MatchedRule> {
             "Changes the host power state",
             "Use an operator-approved maintenance procedure",
         )),
+        "systemctl" if systemctl_changes_power_state(&invocation.arguments) => Some(rule(
+            "core.shell",
+            "systemctl-power-state",
+            "command.arguments",
+            "shell.systemctl_power_state",
+            "Changes the host power state through systemd",
+            "Use an operator-approved maintenance procedure",
+        )),
+        "init" | "telinit" if targets_shutdown_runlevel(&invocation.arguments) => Some(rule(
+            "core.shell",
+            "init-power-state",
+            "command.arguments",
+            "shell.init_power_state",
+            "Changes the host power state through an init runlevel",
+            "Use an operator-approved maintenance procedure",
+        )),
         executable if executable.starts_with("mkfs") => Some(rule(
             "core.shell",
             "format-filesystem",
@@ -282,6 +312,14 @@ fn match_core_shell(invocation: &CommandInvocation) -> Option<MatchedRule> {
             "shell.kill_init",
             "Terminates the host init process",
             "Restart the intended service through its service manager",
+        )),
+        "kill" if targets_broadcast_processes(&invocation.arguments) => Some(rule(
+            "core.shell",
+            "kill-broadcast",
+            "command.arguments",
+            "shell.kill_broadcast",
+            "Sends a signal to every permitted process or a process group",
+            "Target one reviewed process ID through its service manager",
         )),
         executable
             if matches!(executable, "sh" | "bash" | "zsh" | "dash" | "fish")
@@ -308,6 +346,28 @@ fn match_core_shell(invocation: &CommandInvocation) -> Option<MatchedRule> {
     }
 }
 
+fn systemctl_changes_power_state(arguments: &[String]) -> bool {
+    let positional = positional_arguments(arguments);
+    positional.iter().any(|argument| {
+        matches!(
+            argument.as_str(),
+            "poweroff" | "reboot" | "halt" | "kexec" | "soft-reboot"
+        )
+    }) || positional.windows(2).any(|window| {
+        window[0] == "start"
+            && matches!(
+                window[1].as_str(),
+                "poweroff.target" | "reboot.target" | "halt.target"
+            )
+    })
+}
+
+fn targets_shutdown_runlevel(arguments: &[String]) -> bool {
+    arguments
+        .iter()
+        .any(|argument| matches!(argument.as_str(), "0" | "6"))
+}
+
 fn targets_pid_one(arguments: &[String]) -> bool {
     arguments
         .iter()
@@ -315,11 +375,16 @@ fn targets_pid_one(arguments: &[String]) -> bool {
         .any(|argument| argument == "1")
 }
 
+fn targets_broadcast_processes(arguments: &[String]) -> bool {
+    arguments.iter().any(|argument| argument == "-1")
+}
+
 fn match_filesystem(invocation: &CommandInvocation) -> Option<MatchedRule> {
+    let arguments = &invocation.arguments;
     match invocation.executable.as_str() {
-        "rm" if (has_option(&invocation.arguments, "--recursive", Some('r'))
-            || has_option(&invocation.arguments, "--recursive", Some('R')))
-            && has_option(&invocation.arguments, "--force", Some('f')) =>
+        "rm" if (has_option(arguments, "--recursive", Some('r'))
+            || has_option(arguments, "--recursive", Some('R')))
+            && has_option(arguments, "--force", Some('f')) =>
         {
             Some(rule(
                 "core.filesystem",
@@ -330,31 +395,124 @@ fn match_filesystem(invocation: &CommandInvocation) -> Option<MatchedRule> {
                 "List and review the target, then remove explicit paths without force",
             ))
         }
-        "find"
-            if invocation
-                .arguments
-                .iter()
-                .any(|argument| argument == "-delete") =>
+        "rm" if has_option(arguments, "--recursive", Some('r'))
+            || has_option(arguments, "--recursive", Some('R')) =>
         {
             Some(rule(
                 "core.filesystem",
-                "find-delete",
+                "recursive-remove",
                 "command.arguments",
-                "filesystem.find_delete",
-                "Deletes every path selected by find",
-                "Run find without -delete and review the selected paths",
+                "filesystem.recursive_remove",
+                "Recursively deletes a directory tree",
+                "List and review the target, then remove explicit paths",
             ))
         }
+        "rmdir" | "unlink" => Some(rule(
+            "core.filesystem",
+            "remove-path",
+            "command.executable",
+            "filesystem.remove_path",
+            "Removes a filesystem path",
+            "Verify and preserve the target before removing it",
+        )),
+        "shred" => Some(rule(
+            "core.filesystem",
+            "shred-file",
+            "command.executable",
+            "filesystem.shred_file",
+            "Overwrites file contents to prevent recovery",
+            "Preserve required data and use a reviewed disposal procedure",
+        )),
+        "truncate" if truncate_shrinks(arguments) => Some(rule(
+            "core.filesystem",
+            "truncate-file",
+            "command.arguments",
+            "filesystem.truncate_file",
+            "Shrinks or clears file contents",
+            "Preserve the file and write the intended content to a new path",
+        )),
+        "dd" if arguments
+            .iter()
+            .any(|argument| argument.starts_with("of=/dev/")) =>
+        {
+            Some(rule(
+                "core.filesystem",
+                "overwrite-device",
+                "command.arguments",
+                "filesystem.overwrite_device",
+                "Writes raw data to a block or character device",
+                "Verify the device and use an operator-approved imaging procedure",
+            ))
+        }
+        "wipefs"
+            if has_option(arguments, "--all", Some('a'))
+                || has_option(arguments, "--offset", Some('o')) =>
+        {
+            Some(rule(
+                "core.filesystem",
+                "wipe-filesystem-signature",
+                "command.arguments",
+                "filesystem.wipe_signature",
+                "Erases filesystem, RAID, or partition-table signatures",
+                "Inventory the device and preserve metadata before erasing signatures",
+            ))
+        }
+        "diskutil" if diskutil_erases_storage(arguments) => Some(rule(
+            "core.filesystem",
+            "diskutil-erase",
+            "command.arguments",
+            "filesystem.diskutil_erase",
+            "Erases, repartitions, or deletes a macOS storage volume",
+            "Verify the disk identifier and preserve required data first",
+        )),
+        "find" if arguments.iter().any(|argument| argument == "-delete") => Some(rule(
+            "core.filesystem",
+            "find-delete",
+            "command.arguments",
+            "filesystem.find_delete",
+            "Deletes every path selected by find",
+            "Run find without -delete and review the selected paths",
+        )),
         _ => None,
     }
+}
+
+fn truncate_shrinks(arguments: &[String]) -> bool {
+    option_value(arguments, &["-s", "--size"]).is_some_and(|size| {
+        size == "0"
+            || size.strip_prefix('-').is_some_and(|digits| {
+                !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+            })
+    })
+}
+
+fn diskutil_erases_storage(arguments: &[String]) -> bool {
+    arguments.iter().any(|argument| {
+        matches!(
+            argument.to_ascii_lowercase().as_str(),
+            "erasedisk" | "erasevolume" | "partitiondisk" | "deletevolume"
+        )
+    })
 }
 
 fn match_postgresql_invocation(invocation: &CommandInvocation) -> Option<MatchedRule> {
     if !matches!(invocation.executable.as_str(), "psql" | "pgcli") {
         return None;
     }
-    let sql = option_value(&invocation.arguments, &["-c", "--command"])?;
-    match_destructive_sql(sql, "command.arguments")
+    if option_value(&invocation.arguments, &["-f", "--file"]).is_some()
+        || invocation.arguments.iter().any(|argument| argument == "-")
+    {
+        return Some(rule(
+            "database.postgresql",
+            "uninspectable-sql-input",
+            "command.arguments",
+            "postgresql.uninspectable_sql_input",
+            "Loads PostgreSQL statements from input that guardrails cannot inspect",
+            "Provide the reviewed SQL through --command",
+        ));
+    }
+    option_value(&invocation.arguments, &["-c", "--command"])
+        .and_then(|sql| match_destructive_sql(sql, "command.arguments"))
 }
 
 fn match_destructive_sql(sql: &str, field: &str) -> Option<MatchedRule> {
@@ -403,6 +561,14 @@ fn match_destructive_sql_statement(sql: &str, field: &str) -> Option<MatchedRule
             "Drops a PostgreSQL table",
             "Use a reviewed migration after a verified backup",
         )),
+        ("drop", Some(object)) => Some(rule(
+            "database.postgresql",
+            "drop-object",
+            field,
+            "postgresql.drop_object",
+            &format!("Drops a PostgreSQL {object} object"),
+            "Preserve the object definition and use a reviewed migration",
+        )),
         ("truncate", _) => Some(rule(
             "database.postgresql",
             "truncate",
@@ -419,12 +585,32 @@ fn match_destructive_sql_statement(sql: &str, field: &str) -> Option<MatchedRule
             "Deletes every row from a table",
             "Add a reviewed WHERE clause and run inside a transaction",
         )),
+        ("alter", Some("table")) if postgres_alter_removes_state(normalized) => Some(rule(
+            "database.postgresql",
+            "alter-table-remove",
+            field,
+            "postgresql.alter_table_remove",
+            "Drops a table column or constraint, or detaches a partition",
+            "Preserve the table definition and use a reviewed migration",
+        )),
         _ => None,
     }
 }
 
 fn is_destructive_sql_operation(word: &str) -> bool {
-    matches!(word, "drop" | "truncate" | "delete")
+    matches!(word, "drop" | "truncate" | "delete" | "alter")
+}
+
+fn postgres_alter_removes_state(words: &[String]) -> bool {
+    words.windows(2).any(|window| {
+        matches!(
+            window,
+            [operation, object]
+                if (operation == "drop"
+                    && matches!(object.as_str(), "column" | "constraint"))
+                    || (operation == "detach" && object == "partition")
+        )
+    })
 }
 
 fn top_level_sql_words(sql: &str) -> Vec<String> {
@@ -519,16 +705,96 @@ fn match_aws(invocation: &CommandInvocation) -> Option<MatchedRule> {
     {
         return Some(matched);
     }
+    if let Some(matched) =
+        match_aws_structured_delete_cli(service, operation, &invocation.arguments)
+    {
+        return Some(matched);
+    }
     let destructive = operation.starts_with("delete-")
         || operation.starts_with("terminate-")
         || operation.starts_with("deregister-")
         || operation.starts_with("batch-delete-")
+        || aws_exact_destructive_operation(service, operation)
         || (service == "s3" && operation == "rb")
         || (service == "kms" && operation == "schedule-key-deletion")
+        || (service == "s3" && operation == "rm")
         || (service == "s3"
-            && operation == "rm"
-            && has_option(&invocation.arguments, "--recursive", None));
+            && operation == "mv"
+            && !has_option(&invocation.arguments, "--dryrun", None))
+        || (service == "s3"
+            && operation == "sync"
+            && has_option(&invocation.arguments, "--delete", None)
+            && !has_option(&invocation.arguments, "--dryrun", None));
     destructive.then(|| aws_destructive_rule("command.arguments"))
+}
+fn aws_exact_destructive_operation(service: &str, operation: &str) -> bool {
+    matches!(
+        (service, operation),
+        ("s3api" | "glacier", "abort-multipart-upload")
+            | ("sqs", "purge-queue")
+            | ("codeartifact", "dispose-package-versions")
+            | ("ec2", "release-address" | "release-hosts")
+            | (
+                "organizations",
+                "close-account"
+                    | "remove-account-from-organization"
+                    | "leave-organization"
+                    | "disable-aws-service-access"
+            )
+            | ("account", "disable-region")
+            | ("kms", "retire-grant" | "revoke-grant")
+    )
+}
+
+fn match_aws_structured_delete_cli(
+    service: &str,
+    operation: &str,
+    arguments: &[String],
+) -> Option<MatchedRule> {
+    let option = match (service, operation) {
+        ("dynamodb", "batch-write-item") => "--request-items",
+        ("route53", "change-resource-record-sets") => "--change-batch",
+        _ => return None,
+    };
+    let value = option_value(arguments, &[option])?;
+    if is_file_reference(value) {
+        return Some(aws_uninspectable_rule("command.arguments"));
+    }
+    let payload = serde_json::from_str::<Value>(value).ok()?;
+    let destructive = if service == "dynamodb" {
+        json_contains_key(&payload, "DeleteRequest")
+    } else {
+        json_contains_string_field(&payload, "Action", "DELETE")
+    };
+    destructive.then(|| aws_destructive_rule("command.arguments"))
+}
+
+fn json_contains_key(value: &Value, key: &str) -> bool {
+    match value {
+        Value::Object(object) => {
+            object.contains_key(key) || object.values().any(|child| json_contains_key(child, key))
+        }
+        Value::Array(array) => array.iter().any(|child| json_contains_key(child, key)),
+        _ => false,
+    }
+}
+
+fn json_contains_string_field(value: &Value, key: &str, expected: &str) -> bool {
+    match value {
+        Value::Object(object) => {
+            object
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+                || object
+                    .values()
+                    .any(|child| json_contains_string_field(child, key, expected))
+        }
+        Value::Array(array) => array
+            .iter()
+            .any(|child| json_contains_string_field(child, key, expected)),
+        _ => false,
+    }
 }
 
 fn aws_service_operation(arguments: &[String]) -> Option<(&str, &str)> {
@@ -638,6 +904,9 @@ fn match_aws_mcp(call: &McpCall) -> Option<MatchedRule> {
     if let Some(matched) = match_aws_athena_mcp(&tool, &call.arguments) {
         return Some(matched);
     }
+    if aws_structured_mcp_delete(&tool, &call.arguments) {
+        return Some(aws_destructive_rule("arguments"));
+    }
     if aws_destructive_identity(&tool) {
         return Some(aws_destructive_rule("tool"));
     }
@@ -673,6 +942,37 @@ fn aws_destructive_identity(identity: &str) -> bool {
         .any(|operation| identity_has_operation(identity, operation))
         || identity_has_sequence(identity, "s3", "rb")
         || identity.contains("schedule_key_deletion")
+        || aws_exact_destructive_identity(identity)
+}
+
+fn aws_exact_destructive_identity(identity: &str) -> bool {
+    let identity = flattened_identity(identity);
+    [
+        "s3_rm",
+        "s3_mv",
+        "abort_multipart_upload",
+        "sqs_purge_queue",
+        "dispose_package_versions",
+        "ec2_release_address",
+        "ec2_release_hosts",
+        "organizations_close_account",
+        "account_disable_region",
+        "organizations_leave_organization",
+        "retire_grant",
+        "revoke_grant",
+    ]
+    .iter()
+    .any(|candidate| identity.contains(candidate))
+}
+
+fn aws_structured_mcp_delete(identity: &str, arguments: &Value) -> bool {
+    identity.contains("batch_write_item") && json_contains_key(arguments, "DeleteRequest")
+        || identity.contains("change_resource_record_sets")
+            && json_contains_string_field(arguments, "Action", "DELETE")
+        || flattened_identity(identity).contains("s3_sync")
+            && ["$.delete", "$.input.delete"]
+                .iter()
+                .any(|path| first_bool(arguments, path) == Some(true))
 }
 
 fn identity_has_sequence(identity: &str, first: &str, second: &str) -> bool {
@@ -728,19 +1028,98 @@ fn match_gcp(invocation: &CommandInvocation) -> Option<MatchedRule> {
     if invocation.executable != "gcloud" {
         return None;
     }
-    positional_arguments(&invocation.arguments)
-        .iter()
-        .any(|argument| argument == "delete")
-        .then(|| {
-            rule(
+    let arguments = &invocation.arguments;
+    let positional = positional_arguments(arguments);
+    let destructive = positional.iter().any(|argument| argument == "delete")
+        || has_string_sequence(&positional, &["storage", "rm"])
+        || has_string_sequence(&positional, &["tasks", "queues", "purge"])
+        || has_string_sequence(&positional, &["secrets", "versions", "destroy"])
+        || has_string_sequence(&positional, &["kms", "keys", "versions", "destroy"])
+        || has_string_sequence(&positional, &["projects", "remove-iam-policy-binding"])
+        || has_string_sequence(
+            &positional,
+            &["iam", "service-accounts", "remove-iam-policy-binding"],
+        )
+        || (has_string_sequence(
+            &positional,
+            &["storage", "batch-operations", "jobs", "create"],
+        ) && has_option(arguments, "--delete-object", None)
+            && !has_option(arguments, "--dry-run", None));
+    destructive.then(|| {
+        rule(
+            "cloud.gcp",
+            "delete-resource",
+            "command.arguments",
+            "gcp.delete_resource",
+            "Deletes a Google Cloud resource or access binding",
+            "Describe the resource and follow the approved cloud change process",
+        )
+    })
+}
+
+fn has_string_sequence(arguments: &[String], sequence: &[&str]) -> bool {
+    arguments.windows(sequence.len()).any(|window| {
+        window
+            .iter()
+            .map(String::as_str)
+            .eq(sequence.iter().copied())
+    })
+}
+fn match_gcp_mcp(call: &McpCall) -> Option<MatchedRule> {
+    if let Some(matched) = match_operation_mcp(
+        call,
+        &["gcp", "google_cloud", "google"],
+        &["delete", "destroy", "remove"],
+        "cloud.gcp",
+        "delete-resource",
+        "gcp.delete_resource",
+        "Deletes a Google Cloud resource",
+    ) {
+        return Some(matched);
+    }
+    if !server_has_identity(&call.server, &["gcp", "google"]) {
+        return None;
+    }
+    let tool = normalize_identity(&call.tool);
+    if gcp_exact_destructive_identity(&tool) {
+        return Some(rule(
+            "cloud.gcp",
+            "delete-resource",
+            "tool",
+            "gcp.delete_resource",
+            "Deletes a Google Cloud resource or access binding",
+            "Use a read-only operation and follow the approved change process",
+        ));
+    }
+    for path in ["$.operation", "$.action", "$.method"] {
+        if first_string(&call.arguments, path)
+            .map(normalize_identity)
+            .is_some_and(|identity| gcp_exact_destructive_identity(&identity))
+        {
+            return Some(rule(
                 "cloud.gcp",
                 "delete-resource",
-                "command.arguments",
+                path,
                 "gcp.delete_resource",
-                "Deletes a Google Cloud resource",
-                "Describe the resource and follow the approved cloud change process",
-            )
-        })
+                "Deletes a Google Cloud resource or access binding",
+                "Use a read-only operation and follow the approved change process",
+            ));
+        }
+    }
+    None
+}
+
+fn gcp_exact_destructive_identity(identity: &str) -> bool {
+    let identity = flattened_identity(identity);
+    [
+        "storage_rm",
+        "tasks_queues_purge",
+        "secrets_versions_destroy",
+        "kms_keys_versions_destroy",
+        "remove_iam_policy_binding",
+    ]
+    .iter()
+    .any(|candidate| identity.contains(candidate))
 }
 
 fn match_mcp_pack(pack: &str, call: &McpCall) -> Option<MatchedRule> {
@@ -752,32 +1131,52 @@ fn match_mcp_pack(pack: &str, call: &McpCall) -> Option<MatchedRule> {
     match pack {
         "database.postgresql" => match_postgresql_mcp(call),
         "cloud.aws" => match_aws_mcp(call),
-        "cloud.gcp" => match_operation_mcp(
-            call,
-            &["gcp", "google_cloud", "google"],
-            &["delete", "destroy", "remove"],
-            "cloud.gcp",
-            "delete-resource",
-            "gcp.delete_resource",
-            "Deletes a Google Cloud resource",
-        ),
+        "cloud.gcp" => match_gcp_mcp(call),
+        "saas.github" => github::match_call(call),
         "saas.notion" => match_notion(call),
         _ => None,
     }
 }
 
 fn match_postgresql_mcp(call: &McpCall) -> Option<MatchedRule> {
-    if !server_has_identity(&call.server, &["postgres", "postgresql", "pg"]) {
+    if !postgresql_server(&call.server) {
         return None;
     }
     let tool = normalize_identity(&call.tool);
+    if matches!(
+        tool.as_str(),
+        "delete_table"
+            | "drop_table"
+            | "alter_table_drop_column"
+            | "drop_index"
+            | "drop_view"
+            | "drop_function"
+            | "drop_trigger"
+            | "drop_schema"
+    ) {
+        return Some(rule(
+            "database.postgresql",
+            "structured-destructive-operation",
+            "tool",
+            "postgresql.structured_destructive_operation",
+            "Deletes PostgreSQL data or a database object",
+            "Inspect dependencies and use a reviewed migration",
+        ));
+    }
     if !matches!(
         tool.as_str(),
         "execute_sql" | "run_sql" | "query" | "postgres.execute" | "postgresql.execute"
     ) {
         return None;
     }
-    for path in ["$.sql", "$.query", "$.statement", "$.input.sql"] {
+    for path in [
+        "$.sql",
+        "$.query",
+        "$.statement",
+        "$.sqlStatement",
+        "$.input.sql",
+        "$.input.sqlStatement",
+    ] {
         if let Some(sql) = first_string(&call.arguments, path)
             && let Some(matched) = match_destructive_sql(sql, path)
         {
@@ -785,6 +1184,17 @@ fn match_postgresql_mcp(call: &McpCall) -> Option<MatchedRule> {
         }
     }
     None
+}
+
+fn postgresql_server(server: &str) -> bool {
+    let normalized = normalize_identity(server);
+    server_has_identity(server, &["postgres", "postgresql", "pg", "cloudsql"])
+        || (normalized
+            .split(['.', '_', '/', ':'])
+            .any(|part| part == "cloud")
+            && normalized
+                .split(['.', '_', '/', ':'])
+                .any(|part| part == "sql"))
 }
 
 fn match_operation_mcp(
@@ -854,6 +1264,7 @@ fn match_notion(call: &McpCall) -> Option<MatchedRule> {
         "databases.move",
         "workspaces.delete",
         "workspaces.archive",
+        "notion_move_pages",
     ]
     .iter()
     .any(|candidate| tool == *candidate);
@@ -875,9 +1286,18 @@ fn match_notion(call: &McpCall) -> Option<MatchedRule> {
             | "update_database"
             | "databases.update"
             | "update_workspace"
+            | "notion_update_page"
+            | "notion_update_data_source"
     );
     if update_alias {
-        for path in ["$.archived", "$.in_trash", "$.deleted"] {
+        for path in [
+            "$.archived",
+            "$.is_archived",
+            "$.in_trash",
+            "$.deleted",
+            "$.erase_content",
+            "$.allow_deleting_content",
+        ] {
             if first_bool(&call.arguments, path) == Some(true) {
                 return Some(rule(
                     "saas.notion",
@@ -888,6 +1308,18 @@ fn match_notion(call: &McpCall) -> Option<MatchedRule> {
                     "Duplicate or export the object before an operator-approved archive",
                 ));
             }
+        }
+        if first_string(&call.arguments, "$.command")
+            .is_some_and(|command| normalize_identity(command) == "replace_content")
+        {
+            return Some(rule(
+                "saas.notion",
+                "replace-page-content",
+                "$.command",
+                "notion.replace_page_content",
+                "Replaces the current page content",
+                "Duplicate or export the page before replacing its content",
+            ));
         }
         for path in ["$.action", "$.operation"] {
             if first_string(&call.arguments, path).is_some_and(|operation| {
@@ -908,6 +1340,47 @@ fn match_notion(call: &McpCall) -> Option<MatchedRule> {
         }
     }
     None
+}
+
+fn match_notion_cli(invocation: &CommandInvocation) -> Option<MatchedRule> {
+    if invocation.executable != "ntn" {
+        return None;
+    }
+    let arguments = &invocation.arguments;
+    let destructive = has_string_sequence(arguments, &["pages", "trash"])
+        || has_string_sequence(arguments, &["pages", "edit"])
+            && has_option(arguments, "--allow-deleting-content", None)
+        || has_string_sequence(arguments, &["workers", "delete"])
+        || has_string_sequence(arguments, &["workers", "rm"])
+        || has_string_sequence(arguments, &["workers", "env", "unset"])
+        || has_string_sequence(arguments, &["workers", "env", "delete"])
+        || has_string_sequence(arguments, &["workers", "env", "rm"])
+        || has_string_sequence(arguments, &["workers", "databases", "attach"])
+            && has_option(arguments, "--yes", Some('y'))
+        || has_string_sequence(arguments, &["api"]) && notion_api_request_is_destructive(arguments);
+    destructive.then(|| {
+        rule(
+            "saas.notion",
+            "cli-destructive-operation",
+            "command.arguments",
+            "notion.cli_destructive_operation",
+            "Deletes, trashes, or replaces Notion content or worker state",
+            "Export the target and review the exact API mutation first",
+        )
+    })
+}
+
+fn notion_api_request_is_destructive(arguments: &[String]) -> bool {
+    option_value(arguments, &["-X", "--request"])
+        .is_some_and(|method| method.eq_ignore_ascii_case("DELETE"))
+        || arguments.iter().any(|argument| {
+            let compact = argument.to_ascii_lowercase().replace(' ', "");
+            compact.contains("in_trash:=true")
+                || compact.contains("\"in_trash\":true")
+                || compact.contains("erase_content:=true")
+                || compact.contains("\"erase_content\":true")
+                || compact.contains("\"properties\"") && compact.contains(":null")
+        })
 }
 
 fn notion_rule_id(tool: &str) -> &'static str {
@@ -940,6 +1413,18 @@ fn first_bool(value: &Value, path: &str) -> Option<bool> {
 
 fn normalize_identity(value: &str) -> String {
     value.trim().to_ascii_lowercase().replace('-', "_")
+}
+fn flattened_identity(value: &str) -> String {
+    normalize_identity(value)
+        .chars()
+        .map(|character| {
+            if matches!(character, '.' | '/' | ':') {
+                '_'
+            } else {
+                character
+            }
+        })
+        .collect()
 }
 
 fn identity_has_operation(identity: &str, operation: &str) -> bool {
@@ -1184,8 +1669,17 @@ mod tests {
                     "bash -c 'poweroff'",
                     "kill 1 -9",
                     "printf 'rm -rf /tmp/work' | bash",
+                    "systemctl poweroff",
+                    "systemctl start reboot.target",
+                    "init 6",
+                    "kill -9 -1",
                 ],
-                vec!["echo 'reboot'", "reboot-check", "kill 10 -9"],
+                vec![
+                    "echo 'reboot'",
+                    "reboot-check",
+                    "kill 10 -9",
+                    "systemctl status",
+                ],
             ),
             (
                 "core.git",
@@ -1200,6 +1694,14 @@ mod tests {
                     "git branch --delete --force old",
                     "git branch -df old",
                     "git branch -d merged",
+                    "git checkout --force main",
+                    "git switch --discard-changes main",
+                    "git push --mirror origin",
+                    "git push origin +main",
+                    "git worktree remove --force ../dirty",
+                    "git submodule update --force",
+                    "git prune",
+                    "git repack --cruft --cruft-expiration=now -d",
                 ],
                 vec!["printf '%s' 'git reset --hard'", "git reset --soft HEAD~1"],
             ),
@@ -1220,12 +1722,24 @@ mod tests {
                     "function wipe { rm -rf /tmp/work; }; wipe",
                     "sudo FOO=bar rm -rf /tmp/work",
                     "2>&1 rm -rf /tmp/work",
+                    "rm -r /tmp/work",
+                    "unlink report.txt",
+                    "shred secrets.txt",
+                    "truncate -s 0 audit.log",
+                    "dd if=image.raw of=/dev/disk4",
+                    "wipefs --all /dev/sdb",
+                    "diskutil partitionDisk disk4 GPT APFS Data 0b",
+                    "printf reset > state.txt",
+                    "find /tmp/work -ok rm -r {} ;",
                 ],
                 vec![
                     "echo 'rm -rf /tmp/work'",
                     "rm -f report.txt",
                     "rm -- -rf",
                     "find . -depth",
+                    "printf ok >> state.txt",
+                    "dd if=input of=output",
+                    "truncate -s 10 report.txt",
                 ],
             ),
             (
@@ -1240,6 +1754,9 @@ mod tests {
                     "psql -c 'DROP /* migration */ TABLE users'",
                     "psql -c 'WITH x AS (SELECT 1) DELETE FROM users'",
                     "psql -c 'EXPLAIN ANALYZE DELETE FROM users'",
+                    "psql -c 'DROP VIEW current_users'",
+                    "psql -c 'ALTER TABLE users DROP COLUMN legacy'",
+                    "psql -f migration.sql",
                 ],
                 vec![
                     "echo 'DROP DATABASE app'",
@@ -1257,6 +1774,13 @@ mod tests {
                     "snow sql -f migration.sql",
                     "snow object drop database app",
                     "snow stage remove @archive/path",
+                    "snow git drop analytics",
+                    "snow dcm purge",
+                    "snow dbt deploy analytics --force",
+                    "snow stage copy local @stage --overwrite",
+                    "snow streamlit deploy app --prune",
+                    "snow spcs compute-pool stop-all pool",
+                    "snow sql -q 'WITH x AS (SELECT 1) UPDATE users SET active = false'",
                 ],
                 vec![
                     "snow sql -q 'SELECT * FROM users'",
@@ -1278,13 +1802,19 @@ mod tests {
                     "aws athena start-query-execution --query-string 'DROP TABLE prod.customers'",
                     "aws athena start-query-execution --query-string file:///tmp/query.sql",
                     "aws athena start-query-execution --cli-input-json file://request.json",
+                    "aws s3 rm s3://bucket/path",
+                    "aws s3 mv s3://bucket/old s3://bucket/new",
+                    "aws s3 sync ./out s3://bucket --delete",
+                    "aws sqs purge-queue --queue-url https://example.invalid/queue",
+                    "aws organizations close-account --account-id 123456789012",
+                    "aws dynamodb batch-write-item --request-items '{\"Users\":[{\"DeleteRequest\":{\"Key\":{\"id\":{\"S\":\"1\"}}}}]}'",
+                    "aws route53 change-resource-record-sets --hosted-zone-id Z1 --change-batch '{\"Changes\":[{\"Action\":\"DELETE\"}]}'",
                 ],
                 vec![
                     "echo 'aws ec2 terminate-instances'",
                     "aws ec2 describe-instances",
                     "aws s3 ls s3://bucket",
                     "aws s3 cp local.txt s3://bucket/local.txt",
-                    "aws s3 rm s3://bucket/path",
                     "aws ec2 describe-instances --filters Name=tag:job,Values=delete-old",
                     "aws s3api list-buckets --cli-input-json delete-me.json",
                     "aws --profile delete-old ec2 describe-instances",
@@ -1298,6 +1828,10 @@ mod tests {
                     "gcloud projects delete example",
                     "bash -c 'gcloud compute instances delete vm'",
                     "gcloud --quiet compute disks delete disk",
+                    "gcloud storage rm gs://bucket/object",
+                    "gcloud tasks queues purge queue",
+                    "gcloud secrets versions destroy 2 --secret=api",
+                    "gcloud projects remove-iam-policy-binding project --member=user:a@example.com",
                 ],
                 vec![
                     "echo 'gcloud projects delete example'",
@@ -1313,6 +1847,12 @@ mod tests {
                     "kubectl drain node-1",
                     "kubectl scale deployment/api --replicas=0",
                     "kubectl apply -f app.yaml --force",
+                    "kubectl delete pod api-1",
+                    "kubectl delete -f old.yaml",
+                    "kubectl delete pod api-1 --force",
+                    "kubectl apply --prune -f app.yaml -l app=api",
+                    "kubectl replace --force -f app.yaml",
+                    "kubectl auth reconcile -f rbac.yaml --remove-extra-subjects",
                 ],
                 vec![
                     "kubectl get pods",
@@ -1327,6 +1867,10 @@ mod tests {
                     "helm rollback api 2",
                     "helm upgrade api ./chart --force",
                     "helm upgrade api ./chart --reset-values",
+                    "helm del api",
+                    "helm un api",
+                    "helm upgrade api ./chart --force-replace",
+                    "helm install api ./chart --cleanup-on-fail",
                 ],
                 vec![
                     "helm status api",
@@ -1340,6 +1884,10 @@ mod tests {
                     "aws secretsmanager delete-secret --secret-id prod/api",
                     "aws secretsmanager update-secret --secret-id prod/api",
                     "aws ssm delete-parameters --names /prod/api /prod/db",
+                    "aws secretsmanager rotate-secret --secret-id prod/api",
+                    "aws secretsmanager update-secret-version-stage --secret-id prod/api",
+                    "aws ssm put-parameter --name /prod/api --value next --overwrite",
+                    "aws ssm delete-resource-policy --resource-arn arn:aws:ssm:us-east-1:123:parameter/prod/api",
                 ],
                 vec![
                     "aws secretsmanager describe-secret --secret-id prod/api",
@@ -1352,6 +1900,11 @@ mod tests {
                     "op item delete 'Database Password'",
                     "op vault delete Production",
                     "op connect token delete abc123",
+                    "op document edit Architecture --file architecture.pdf",
+                    "op item move 'Database Password' --vault Archive",
+                    "op user suspend alice@example.com",
+                    "op vault user revoke Production alice@example.com",
+                    "op connect server delete production",
                 ],
                 vec!["op item get 'Database Password'", "op vault list"],
             ),
@@ -1363,6 +1916,13 @@ mod tests {
                     "doppler secrets download",
                     "vault kv get secret/prod/api",
                     "aws ssm get-parameter --name /prod/api --with-decryption",
+                    "op inject -i template.env",
+                    "op service-account create deploy",
+                    "doppler secrets",
+                    "doppler secrets substitute template.env",
+                    "vault login token",
+                    "vault operator init",
+                    "aws secretsmanager get-random-password",
                 ],
                 vec![
                     "infisical run -- npm start",
@@ -1372,6 +1932,22 @@ mod tests {
                     "op read --help",
                     "op run -- node server.js",
                     "aws ssm get-parameter --name /prod/api",
+                ],
+            ),
+            (
+                "saas.notion",
+                vec![
+                    "ntn pages trash page-id",
+                    "ntn pages edit page-id --allow-deleting-content",
+                    "ntn workers delete worker-id",
+                    "ntn workers env unset API_KEY",
+                    "ntn workers databases attach db primary --yes",
+                    "ntn api v1/pages/page-id -X DELETE",
+                ],
+                vec![
+                    "ntn pages get page-id",
+                    "ntn workers list",
+                    "ntn api v1/pages/page-id -X GET",
                 ],
             ),
         ];
@@ -1451,6 +2027,16 @@ mod tests {
                 tool: "pages.move".into(),
                 arguments: json!({"page_id": "p", "parent_id": "next"}),
             },
+            McpCall {
+                server: "notion-mcp".into(),
+                tool: "notion-update-page".into(),
+                arguments: json!({"page_id": "p", "command": "replace_content"}),
+            },
+            McpCall {
+                server: "notion-mcp".into(),
+                tool: "notion-update-data-source".into(),
+                arguments: json!({"data_source_id": "d", "in_trash": true}),
+            },
         ] {
             assert!(evaluate("saas.notion", EvaluationPayload::McpCall { call }).is_some());
         }
@@ -1478,6 +2064,108 @@ mod tests {
             },
         ] {
             assert!(evaluate("saas.notion", EvaluationPayload::McpCall { call }).is_none());
+        }
+    }
+    #[test]
+    fn github_pack_covers_exact_tools_typed_methods_and_near_misses() {
+        for call in [
+            McpCall {
+                server: "github-mcp-server".into(),
+                tool: "delete_repository".into(),
+                arguments: json!({"owner": "acme", "repo": "api"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "delete_file".into(),
+                arguments: json!({"owner": "acme", "repo": "api", "path": "old.txt"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "create_or_update_file".into(),
+                arguments: json!({"path": "config.yml", "sha": "abc123"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "actions_run_trigger".into(),
+                arguments: json!({"method": "delete_workflow_run_logs"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "merge_pull_request".into(),
+                arguments: json!({"pull_number": 7}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "update_pull_request_state".into(),
+                arguments: json!({"pull_number": 7, "state": "closed"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "delete_pending_pull_request_review".into(),
+                arguments: json!({"pull_number": 7}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "projects_write".into(),
+                arguments: json!({"method": "delete_project_view"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "label_write".into(),
+                arguments: json!({"method": "delete", "name": "obsolete"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "discussion_comment_write".into(),
+                arguments: json!({"method": "delete", "comment_id": "1"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "issue_write".into(),
+                arguments: json!({"method": "update", "issue_fields": [{"id": "f", "delete": true}]}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "update_issue_state".into(),
+                arguments: json!({"issue_number": 9, "state": "closed"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "sub_issue_write".into(),
+                arguments: json!({"method": "remove"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "set_issue_fields".into(),
+                arguments: json!({"fields": [{"id": "f", "delete": true}]}),
+            },
+        ] {
+            assert!(evaluate("saas.github", EvaluationPayload::McpCall { call }).is_some());
+        }
+
+        for call in [
+            McpCall {
+                server: "github".into(),
+                tool: "actions_run_trigger".into(),
+                arguments: json!({"method": "run_workflow"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "create_or_update_file".into(),
+                arguments: json!({"path": "new.txt"}),
+            },
+            McpCall {
+                server: "github".into(),
+                tool: "update_pull_request_state".into(),
+                arguments: json!({"state": "open"}),
+            },
+            McpCall {
+                server: "generic-content".into(),
+                tool: "delete_repository".into(),
+                arguments: json!({"repo": "api"}),
+            },
+        ] {
+            assert!(evaluate("saas.github", EvaluationPayload::McpCall { call }).is_none());
         }
     }
 
@@ -1508,6 +2196,33 @@ mod tests {
                     server: "gcp-platform".into(),
                     tool: "compute.delete".into(),
                     arguments: json!({"name": "secret-value"}),
+                },
+                "tool",
+            ),
+            (
+                "database.postgresql",
+                McpCall {
+                    server: "cloud-sql-postgres".into(),
+                    tool: "drop_schema".into(),
+                    arguments: json!({"schema": "archive"}),
+                },
+                "tool",
+            ),
+            (
+                "cloud.aws",
+                McpCall {
+                    server: "production-aws".into(),
+                    tool: "sqs.purge_queue".into(),
+                    arguments: json!({"queue_url": "secret-value"}),
+                },
+                "tool",
+            ),
+            (
+                "cloud.gcp",
+                McpCall {
+                    server: "gcp-platform".into(),
+                    tool: "storage.rm".into(),
+                    arguments: json!({"url": "secret-value"}),
                 },
                 "tool",
             ),
@@ -1562,6 +2277,11 @@ mod tests {
                 json!({"action": "kms.schedule_key_deletion"}),
                 "aws.destructive_operation",
             ),
+            (
+                "s3.sync",
+                json!({"source": "s3://a", "destination": "s3://b", "delete": true}),
+                "aws.destructive_operation",
+            ),
         ] {
             let matched = evaluate(
                 "cloud.aws",
@@ -1585,6 +2305,10 @@ mod tests {
             (
                 "athena.start_query_execution",
                 json!({"query_string": "SELECT * FROM prod.customers"}),
+            ),
+            (
+                "s3.sync",
+                json!({"source": "s3://a", "destination": "s3://b", "delete": false}),
             ),
         ] {
             assert!(

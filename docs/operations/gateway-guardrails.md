@@ -23,9 +23,11 @@ A guarded MCP result is buffered for at most `stream_buffer_timeout_ms` (default
 
 ## Built-in packs
 
-The versioned built-in pack IDs are `core.shell`, `core.git`, `core.filesystem`, `database.postgresql`, `database.snowflake`, `cloud.aws`, `cloud.gcp`, `kubernetes.kubectl`, `kubernetes.helm`, `secrets.aws_secrets`, `secrets.onepassword`, `secret_disclosure`, and `saas.notion`. Shell checks parse command structure. MCP checks use the server identity, tool identity and aliases, parsed JSON arguments, and typed JSON-path predicates. They do not match a regular expression against serialized JSON.
+The versioned built-in pack IDs are `core.shell`, `core.git`, `core.filesystem`, `database.postgresql`, `database.snowflake`, `cloud.aws`, `cloud.gcp`, `kubernetes.kubectl`, `kubernetes.helm`, `secrets.aws_secrets`, `secrets.onepassword`, `secret_disclosure`, `saas.github`, and `saas.notion`. Shell checks parse command structure. MCP checks use the server identity, tool identity and aliases, parsed JSON arguments, and typed JSON-path predicates. They do not match a regular expression against serialized JSON.
 
-`secret_disclosure` is opt-in. It blocks secret-manager read commands that expose values to model-visible output. The provider-specific secret packs prevent destructive mutation and can remain in the default policy.
+The built-in packs cover destructive command options, resource deletion, content replacement, control-plane access removal, and uninspectable executable input. `saas.github` uses the GitHub MCP server identity plus exact canonical tools and typed method arguments. It covers repository and file deletion, existing-file replacement, workflow cancellation and log deletion, pull request merge and closure, pending-review deletion, project deletion, issue closure and field deletion, relationship removal, label deletion, and discussion-comment deletion or replacement.
+
+`secret_disclosure` is opt-in. It blocks secret-manager commands that expose values to model-visible output. The provider-specific secret packs prevent destructive mutation and can remain in the default policy.
 
 ## Audit-first configuration
 
@@ -48,6 +50,7 @@ guardrails:
       - kubernetes.helm
       - secrets.aws_secrets
       - secrets.onepassword
+      - saas.github
       - saas.notion
     managed_checks: []
     stream_buffer_bytes: 4194304
@@ -70,6 +73,9 @@ guardrails:
     openai-fast/openai-prod/gpt-5:
       mode: deny
   mcp_servers:
+    github:
+      mode: deny
+      packs: [saas.github]
     notion:
       mode: deny
       packs: [saas.notion]

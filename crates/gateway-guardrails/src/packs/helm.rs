@@ -14,12 +14,12 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
     let operation = arguments.iter().find(|argument| {
         matches!(
             argument.as_str(),
-            "uninstall" | "delete" | "rollback" | "upgrade"
+            "uninstall" | "delete" | "del" | "un" | "rollback" | "upgrade" | "install"
         )
     })?;
 
     let (rule_id, reason_code, description, safer_action) = match operation.as_str() {
-        "uninstall" | "delete" => (
+        "uninstall" | "delete" | "del" | "un" => (
             "uninstall",
             "helm.uninstall",
             "Removes a Helm release and its Kubernetes resources",
@@ -31,18 +31,34 @@ pub(super) fn match_invocation(invocation: &CommandInvocation) -> Option<Matched
             "Reverts release resources and values to an earlier revision",
             "Inspect helm history and preview the rollback with --dry-run",
         ),
-        "upgrade" if has_option(arguments, "--force", None) => (
-            "upgrade-force",
-            "helm.upgrade_force",
-            "Deletes and recreates resources during a Helm upgrade",
-            "Remove --force and preview the upgrade with --dry-run",
-        ),
+        "upgrade"
+            if has_option(arguments, "--force", None)
+                || has_option(arguments, "--force-replace", None) =>
+        {
+            (
+                "upgrade-force",
+                "helm.upgrade_force",
+                "Deletes and recreates resources during a Helm upgrade",
+                "Remove force replacement and preview the upgrade with --dry-run",
+            )
+        }
         "upgrade" if has_option(arguments, "--reset-values", None) => (
             "upgrade-reset-values",
             "helm.upgrade_reset_values",
             "Discards values saved by earlier Helm releases",
             "Review helm get values and provide a complete values file",
         ),
+        "install" | "upgrade"
+            if has_option(arguments, "--cleanup-on-fail", None)
+                || has_option(arguments, "--rollback-on-failure", None) =>
+        {
+            (
+                "cleanup-on-failure",
+                "helm.cleanup_on_failure",
+                "Deletes newly created resources or uninstalls a failed release",
+                "Inspect failure behavior and clean up reviewed resources explicitly",
+            )
+        }
         _ => return None,
     };
 
