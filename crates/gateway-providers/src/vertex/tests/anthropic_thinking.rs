@@ -26,7 +26,7 @@ fn maps_vertex_adaptive_only_claude_reasoning_effort_to_adaptive_thinking() {
 
         assert_eq!(mapped["anthropic_version"], "vertex-2023-10-16");
         assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
-        assert_eq!(mapped["output_config"], json!({ "effort": "xhigh" }));
+        assert!(mapped.get("output_config").is_none());
         assert!(mapped.get("reasoning_effort").is_none());
         assert!(mapped.get("model").is_none());
         assert!(mapped.get("temperature").is_none());
@@ -69,15 +69,19 @@ fn validates_native_output_config_effort_for_vertex_anthropic_mapping() {
         name: None,
         extra: BTreeMap::new(),
     }]);
-    request
-        .extra
-        .insert("output_config".to_string(), json!({ "effort": "xhigh" }));
+    request.extra.insert(
+        "output_config".to_string(),
+        json!({ "effort": "xhigh", "metadata": {"source": "caller"} }),
+    );
 
     let mapped = map_anthropic_request(&request, &context("anthropic/claude-opus-4-7"), false)
         .expect("mapped");
 
     assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
-    assert_eq!(mapped["output_config"], json!({ "effort": "xhigh" }));
+    assert_eq!(
+        mapped["output_config"],
+        json!({ "metadata": {"source": "caller"} })
+    );
 }
 
 #[test]
@@ -206,7 +210,7 @@ fn maps_vertex_opus_and_sonnet_4_6_reasoning_effort_to_adaptive_thinking() {
         let mapped = map_anthropic_request(&request, &context(model), false).expect("mapped");
 
         assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
-        assert_eq!(mapped["output_config"], json!({ "effort": "high" }));
+        assert!(mapped.get("output_config").is_none());
         assert!(mapped.get("reasoning_effort").is_none());
     }
 }
@@ -235,7 +239,7 @@ fn maps_vertex_opus_4_5_reasoning_effort_with_manual_budget() {
         mapped["thinking"],
         json!({ "type": "enabled", "budget_tokens": 2048 })
     );
-    assert_eq!(mapped["output_config"], json!({ "effort": "medium" }));
+    assert!(mapped.get("output_config").is_none());
     assert!(mapped.get("reasoning").is_none());
 }
 

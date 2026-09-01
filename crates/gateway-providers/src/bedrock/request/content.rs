@@ -363,7 +363,15 @@ pub(super) fn map_anthropic_content_blocks(content: &Value) -> Result<Vec<Value>
                     )
                 })?;
                 match kind {
-                    "text" | "input_text" => {
+                    "text" => {
+                        object.get("text").and_then(Value::as_str).ok_or_else(|| {
+                            ProviderError::InvalidRequest(
+                                "text content entries must include a string `text`".to_string(),
+                            )
+                        })?;
+                        blocks.push(item.clone());
+                    }
+                    "input_text" => {
                         let text = object.get("text").and_then(Value::as_str).ok_or_else(|| {
                             ProviderError::InvalidRequest(
                                 "text content entries must include a string `text`".to_string(),
@@ -371,11 +379,11 @@ pub(super) fn map_anthropic_content_blocks(content: &Value) -> Result<Vec<Value>
                         })?;
                         blocks.push(json!({ "type": "text", "text": text }));
                     }
+                    "thinking" | "redacted_thinking" | "tool_use" | "tool_result" => {
+                        blocks.push(item.clone());
+                    }
                     "image" | "image_url" | "input_image" => {
                         blocks.push(map_anthropic_image_block(object)?);
-                    }
-                    "tool_result" => {
-                        blocks.push(map_anthropic_tool_result_content_block(object)?);
                     }
                     other => {
                         return Err(ProviderError::InvalidRequest(format!(

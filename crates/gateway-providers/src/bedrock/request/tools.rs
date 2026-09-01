@@ -277,41 +277,6 @@ fn map_bedrock_tool_result_content(content: &Value) -> Result<Vec<Value>, Provid
     }
 }
 
-pub(super) fn map_anthropic_tool_result_content_block(
-    object: &Map<String, Value>,
-) -> Result<Value, ProviderError> {
-    let tool_use_id = object
-        .get("tool_use_id")
-        .or_else(|| object.get("toolUseId"))
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            ProviderError::InvalidRequest(
-                "tool_result content must include tool_use_id".to_string(),
-            )
-        })?;
-    let tool_use_id = normalize_bedrock_tool_use_id(tool_use_id);
-    let content = object
-        .get("content")
-        .cloned()
-        .or_else(|| {
-            object
-                .get("text")
-                .and_then(Value::as_str)
-                .map(|text| Value::String(text.to_string()))
-        })
-        .ok_or_else(|| {
-            ProviderError::InvalidRequest(
-                "tool_result content must include `content` or string `text`".to_string(),
-            )
-        })?;
-
-    Ok(json!({
-        "type": "tool_result",
-        "tool_use_id": tool_use_id,
-        "content": content
-    }))
-}
-
 fn normalize_bedrock_tool_use_id(id: &str) -> String {
     if !id.is_empty()
         && id.len() <= 64
@@ -460,43 +425,44 @@ pub(super) fn extract_anthropic_tools(
         let object = tool.as_object().ok_or_else(|| {
             ProviderError::InvalidRequest("tool entries must be objects".to_string())
         })?;
-        if object.get("type").and_then(Value::as_str) != Some("function") {
-            return Err(ProviderError::InvalidRequest(
-                "only OpenAI function tools are supported for Anthropic Messages".to_string(),
-            ));
+        if object.get("type").and_then(Value::as_str) == Some("function") {
+            let function = object
+                .get("function")
+                .and_then(Value::as_object)
+                .ok_or_else(|| {
+                    ProviderError::InvalidRequest(
+                        "function tools must include `function`".to_string(),
+                    )
+                })?;
+            let name = function
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    ProviderError::InvalidRequest(
+                        "function tools must include function.name".to_string(),
+                    )
+                })?;
+            let schema = function
+                .get("parameters")
+                .cloned()
+                .unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
+            let mut spec = Map::new();
+            spec.insert("name".to_string(), Value::String(name.to_string()));
+            if let Some(description) = function
+                .get("description")
+                .and_then(Value::as_str)
+                .filter(|description| !description.trim().is_empty())
+            {
+                spec.insert(
+                    "description".to_string(),
+                    Value::String(description.to_string()),
+                );
+            }
+            spec.insert("input_schema".to_string(), schema);
+            anthropic_tools.push(Value::Object(spec));
+        } else {
+            anthropic_tools.push(tool.clone());
         }
-        let function = object
-            .get("function")
-            .and_then(Value::as_object)
-            .ok_or_else(|| {
-                ProviderError::InvalidRequest("function tools must include `function`".to_string())
-            })?;
-        let name = function
-            .get("name")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                ProviderError::InvalidRequest(
-                    "function tools must include function.name".to_string(),
-                )
-            })?;
-        let schema = function
-            .get("parameters")
-            .cloned()
-            .unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
-        let mut spec = Map::new();
-        spec.insert("name".to_string(), Value::String(name.to_string()));
-        if let Some(description) = function
-            .get("description")
-            .and_then(Value::as_str)
-            .filter(|description| !description.trim().is_empty())
-        {
-            spec.insert(
-                "description".to_string(),
-                Value::String(description.to_string()),
-            );
-        }
-        spec.insert("input_schema".to_string(), schema);
-        anthropic_tools.push(Value::Object(spec));
     }
 
     let mut mapped = Map::new();
@@ -585,7 +551,7 @@ pub(super) fn map_anthropic_tool_choice(value: &Value) -> Result<Option<Value>, 
             ))),
         },
         Value::Object(object) => match object.get("type").and_then(Value::as_str) {
-            Some("auto") => Ok(Some(json!({ "type": "auto" }))),
+            Some("auto" | "any") => Ok(Some(value.clone())),
             Some("required") => Ok(Some(json!({ "type": "any" }))),
             Some("none") => Ok(None),
             Some("function") => {
@@ -608,12 +574,12 @@ pub(super) fn map_anthropic_tool_choice(value: &Value) -> Result<Option<Value>, 
                 Ok(Some(json!({ "type": "tool", "name": name })))
             }
             Some("tool") => {
-                let name = object.get("name").and_then(Value::as_str).ok_or_else(|| {
+                object.get("name").and_then(Value::as_str).ok_or_else(|| {
                     ProviderError::InvalidRequest(
                         "tool tool_choice must include `name`".to_string(),
                     )
                 })?;
-                Ok(Some(json!({ "type": "tool", "name": name })))
+                Ok(Some(value.clone()))
             }
             Some(other) => Err(ProviderError::InvalidRequest(format!(
                 "unsupported tool_choice type `{other}` for Anthropic Messages"

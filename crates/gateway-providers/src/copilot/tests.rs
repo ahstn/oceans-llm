@@ -550,7 +550,7 @@ async fn builds_chat_completions_with_copilot_headers() {
 }
 
 #[tokio::test]
-async fn builds_claude_messages_request() {
+async fn builds_claude_messages_request_with_authoritative_contract() {
     let (tx, mut rx) = mpsc::channel(1);
 
     let app = Router::new().route(
@@ -613,6 +613,10 @@ async fn builds_claude_messages_request() {
         },
     );
     config.base_url = format!("http://{addr}");
+    config.default_headers.insert(
+        "anthropic-version".to_string(),
+        "default-hostile-version".to_string(),
+    );
 
     let provider = CopilotProvider::new(config).unwrap();
 
@@ -636,7 +640,18 @@ async fn builds_claude_messages_request() {
         extra: BTreeMap::new(),
     };
 
-    let context = messages_context("claude-3-7-sonnet");
+    let mut context = messages_context("claude-3-7-sonnet");
+    context.extra_headers.insert(
+        "anthropic-version".to_string(),
+        json!("route-hostile-version"),
+    );
+    context
+        .extra_body
+        .insert("model".to_string(), json!("route-override"));
+    context
+        .extra_body
+        .insert("anthropic_version".to_string(), json!("hostile-version"));
+    context.extra_body.insert("stream".to_string(), json!(true));
     let response = provider.chat_completions(&request, &context).await.unwrap();
 
     assert_eq!(
@@ -653,6 +668,8 @@ async fn builds_claude_messages_request() {
     assert_eq!(body["messages"][0]["role"], "user");
     assert_eq!(body["messages"][0]["content"][0]["text"], "Hello Claude");
     assert_eq!(body["max_tokens"], 4096);
+    assert!(body.get("anthropic_version").is_none());
+    assert_eq!(body["stream"], false);
     assert_eq!(
         response["choices"][0]["message"]["provider_metadata"]["github_copilot"]["reasoning"]["source"],
         "anthropic_messages"

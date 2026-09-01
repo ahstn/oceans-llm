@@ -89,6 +89,117 @@ fn maps_text_chat_request_to_anthropic_messages_invoke_body() {
 }
 
 #[test]
+fn preserves_native_anthropic_continuation_blocks_without_duplicate_tool_calls() {
+    let native_tool_use_id = "toolu.native:123";
+    let assistant_content = json!([
+        {
+            "type": "thinking",
+            "thinking": "private reasoning",
+            "signature": "sig-native",
+            "cache_control": {"type": "ephemeral"}
+        },
+        {
+            "type": "redacted_thinking",
+            "data": "encrypted-native",
+            "provider_extension": true
+        },
+        {
+            "type": "text",
+            "text": "Calling the tool",
+            "cache_control": {"type": "ephemeral"}
+        },
+        {
+            "type": "tool_use",
+            "id": native_tool_use_id,
+            "name": "lookup",
+            "input": {"query": "weather"},
+            "caller": {"type": "direct"}
+        }
+    ]);
+    let tool_result_content = json!([
+        {
+            "type": "tool_result",
+            "tool_use_id": native_tool_use_id,
+            "content": [
+                {
+                    "type": "text",
+                    "text": "sunny",
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ],
+            "is_error": false,
+            "provider_extension": "preserve"
+        },
+        {"type": "text", "text": "Continue", "cache_control": {"type": "ephemeral"}}
+    ]);
+    let mut assistant = CoreChatMessage {
+        role: "assistant".to_string(),
+        content: assistant_content.clone(),
+        name: None,
+        extra: BTreeMap::new(),
+    };
+    assistant.extra.insert(
+        "tool_calls".to_string(),
+        json!([{
+            "id": native_tool_use_id,
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "arguments": "{\"query\":\"weather\"}"
+            }
+        }]),
+    );
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![
+            message("user", "Check the weather"),
+            assistant,
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: tool_result_content.clone(),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+        ],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(256))]),
+    };
+
+    let body =
+        map_chat_request_to_anthropic_messages(&request, &context("anthropic.claude-sonnet-4-5"))
+            .expect("mapped");
+
+    assert_eq!(body["messages"][1]["content"], assistant_content);
+    assert_eq!(body["messages"][2]["content"], tool_result_content);
+}
+
+#[test]
+fn validates_native_anthropic_text_before_preserving_it() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([{
+                "type": "text",
+                "text": {"not": "a string"},
+                "cache_control": {"type": "ephemeral"}
+            }]),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(256))]),
+    };
+
+    let error =
+        map_chat_request_to_anthropic_messages(&request, &context("anthropic.claude-sonnet-4-5"))
+            .expect_err("invalid text rejected")
+            .to_string();
+
+    assert!(error.contains("string `text`"), "{error}");
+}
+
+#[test]
 fn maps_converse_base64_image_blocks_and_rejects_remote_urls() {
     let request = CoreChatRequest {
         model: "nova".to_string(),
