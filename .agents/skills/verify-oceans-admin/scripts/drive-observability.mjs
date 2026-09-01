@@ -74,6 +74,15 @@ try {
     result: `${leaderboard31d.leaders.length} rendered leaders matched`,
   });
   await capture(page, "03-leaderboard-31d");
+  await page.setViewportSize({ width: 600, height: 1000 });
+  await page.getByTestId("leaderboard-mobile-list").waitFor({ state: "visible" });
+  await page.getByTestId("leaderboard-table").waitFor({ state: "hidden" });
+  actions.push({
+    action: "verify responsive leaderboard presentation",
+    result: "mobile list visible and desktop table hidden below md",
+  });
+  await capture(page, "03b-leaderboard-mobile");
+  await page.setViewportSize({ width: 1440, height: 1000 });
 
   const harnessesLink = page.getByRole("link", { name: "Agent Harnesses" }).first();
   await Promise.all([
@@ -189,6 +198,7 @@ async function assertLeaderboard(page, view) {
     "Most used model",
     "Most used harness",
     "Total requests",
+    "Avg tools",
   ]);
   assertEqual(table.rows.length, view.leaders.length, "leaderboard rendered row count");
 
@@ -215,6 +225,12 @@ async function assertLeaderboard(page, view) {
       cells[columns["Total requests"]],
       numberFormatter.format(leader.total_requests),
       `leaderboard requests for ${leader.user_name}`,
+    );
+    const averages = leader.tool_cardinality_averages;
+    assertEqual(
+      cells[columns["Avg tools"]],
+      `MCP ${formatAverageCount(averages.referenced_mcp_server_count)}exposed ${formatAverageCount(averages.exposed_tool_count)}called ${formatAverageCount(averages.invoked_tool_count)}filtered ${formatAverageCount(averages.filtered_tool_count)}`,
+      `leaderboard tool averages for ${leader.user_name}`,
     );
   }
   return table;
@@ -371,6 +387,11 @@ function proofProjection(view, renderedTable) {
 
 function formatTokenCount(value) {
   return value == null ? "n/a" : numberFormatter.format(value);
+}
+
+function formatAverageCount(value) {
+  if (value == null) return "n/a";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function compact(value) {

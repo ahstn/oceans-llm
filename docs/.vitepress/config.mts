@@ -97,6 +97,20 @@ const primarySidebar = [
       {
         text: "Gateway Guardrails",
         link: "/operations/gateway-guardrails",
+        items: [
+          {
+            text: "Built-in Deterministic Packs",
+            link: "/operations/guardrails/built-in-packs",
+          },
+          {
+            text: "Amazon Bedrock Guardrails",
+            link: "/operations/guardrails/amazon-bedrock",
+          },
+          {
+            text: "Google Cloud Model Armor",
+            link: "/operations/guardrails/google-model-armor",
+          },
+        ],
       },
       { text: "Admin Runbooks", link: "/operations/operator-runbooks" },
     ],

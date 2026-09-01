@@ -1,6 +1,6 @@
 ---
 name: verify-oceans-admin
-description: Verify the Oceans LLM browser admin control plane against the real local gateway and seeded demo data. Use for user-path checks of sign-in, models, API keys, observability, agent sessions, and request logs.
+description: Verify the Oceans LLM admin control plane and backend gateway against the real local stack, seeded demo data, and bounded live providers when required. Use for user-path checks of sign-in, models, API keys, observability, agent sessions, request logs, OpenRouter routing, and guardrails.
 ---
 
 # Verify Oceans Admin
@@ -71,6 +71,14 @@ The current `gateway.yaml` grants the `agent_sessions` page to platform administ
 
 For other features, follow the exact stable handles in the feature map. Extend the driver with a named command before you report a new path as automated.
 
+Prove backend gateway routing and generated-tool guardrails through OpenRouter:
+
+```bash
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive backend-gateway
+```
+
+The Backend Gateway driver opens the real API Keys page, creates a temporary user key limited to `deepseek-v4-flash-0731`, evaluates one synthetic destructive command without executing it, and sends one bounded forced-tool Chat Completions request through OpenRouter. It confirms the request-linked guardrail decision and request-log attempt, writes sanitized evidence, revokes the key, and confirms that the revoked key is rejected. Use [features/backend-gateway.md](./features/backend-gateway.md) for the exact contract.
+
 ## Live LLM requests
 
 Read-only control-plane verification is the default and does not call an upstream provider. Add one short, paid live request when the change affects request routing, provider authentication, request or response translation, streaming, tool calls, usage accounting, request logging, provider error mapping, or another behavior that a configured model list cannot prove. Do not add a paid request for UI-only, documentation-only, seed-only, or unrelated configuration changes.
@@ -96,7 +104,7 @@ Evidence is written to `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/evi
 The Observability proof produces:
 
 - `01-observability-login.png` and `01-observability-login.aria.txt` for the protected entry state.
-- `02-leaderboard-7d.*` and `03-leaderboard-31d.*` for the two Leaderboard ranges.
+- `02-leaderboard-7d.*`, `03-leaderboard-31d.*`, and `03b-leaderboard-mobile.*` for API parity and responsive presentation.
 - `04-agent-harnesses-7d.*` and `05-agent-harnesses-31d.*` for the two Agent Harnesses ranges.
 - `observability-proof.json` with the production API leaders, rendered table values, ranges, chart
   series counts, gateway version, Mastra/Oh My Pi icon checks, and action log.
@@ -104,6 +112,12 @@ The Observability proof produces:
 A valid proof exercises the real browser path. It captures the action and resulting state, not only a final screenshot. It also confirms rendered data through the production admin API used by the UI. Do not use internal state setters or test-only endpoints. The local demo seed is the production seed boundary for these development commands; no provider call is required for Models, Leaderboard, or Agent Harnesses.
 
 A live canary is separate evidence. Name the gateway model, provider, endpoint family, and observed request-log record. A rendered configured provider or successful health check is not live-provider proof.
+
+The Backend Gateway proof produces:
+
+- `01-backend-api-keys.png` and `01-backend-api-keys.aria.txt` for the authenticated key-management entry state.
+- `backend-gateway-canary-proof.json` with the gateway model, OpenRouter provider, configured upstream model, request ID, status, usage presence, tool count, guardrail rule, payload capture mode, gateway version, and action log.
+- No prompt, response, gateway key, provider credential, or authorization header.
 
 Mocks are valid only when the production boundary already isolates an external system. This Models proof uses no mock. Do not interpret a rendered configured provider as proof that its credentials or live upstream service work.
 
@@ -120,7 +134,7 @@ Cleanup sends termination only to the process IDs recorded by this run and check
 Confirm that proof survived teardown:
 
 ```bash
-.agents/skills/verify-oceans-admin/scripts/control-oceans-admin evidence observability
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin evidence backend-gateway
 ```
 
 Pass the proof name so evidence validation requires its matching proof JSON.
@@ -134,8 +148,10 @@ control-oceans-admin launch
 control-oceans-admin doctor
 control-oceans-admin drive models
 control-oceans-admin drive observability
-control-oceans-admin evidence [models|observability|live-llm]
+control-oceans-admin drive backend-gateway
+control-oceans-admin evidence [models|observability|live-llm|backend-gateway]
 control-oceans-admin cleanup
+
 ```
 
-The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs) and [scripts/drive-observability.mjs](./scripts/drive-observability.mjs). Call them through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.
+The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), and [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs). Call them through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.

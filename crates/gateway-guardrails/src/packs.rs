@@ -3,20 +3,37 @@ use std::{fmt, str::FromStr};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
+mod aws_secrets;
+mod core;
+mod disclosure;
+mod git;
+mod github;
+mod helm;
+mod kubectl;
+mod onepassword;
+mod snowflake;
+
 use crate::{
     DeterministicEvaluator, EffectivePolicy, EvaluationError, EvaluationInput, EvaluationPayload,
     MatchedRule, ReasonCode,
-    command::{CommandInvocation, parse_command_line},
+    command::{CommandInvocation, has_pipeline_to, has_truncating_redirection, parse_command_line},
     selectors::{JsonPath, McpCall},
 };
 
-pub const BUILT_IN_PACK_IDS: [&str; 7] = [
+pub const BUILT_IN_PACK_IDS: [&str; 14] = [
     "core.shell",
     "core.git",
     "core.filesystem",
     "database.postgresql",
+    "database.snowflake",
     "cloud.aws",
     "cloud.gcp",
+    "kubernetes.kubectl",
+    "kubernetes.helm",
+    "secrets.aws_secrets",
+    "secrets.onepassword",
+    "secret_disclosure",
+    "saas.github",
     "saas.notion",
 ];
 
@@ -29,7 +46,9 @@ impl PackId {
         if value.is_empty()
             || value.len() > 64
             || !value.bytes().all(|byte| {
-                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-')
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b'.' | b'-' | b'_')
             })
         {
             return Err(InvalidPackId(value));
@@ -95,11 +114,30 @@ impl PackRegistry {
             metadata("core.git", "Destructive Git repository operations"),
             metadata("core.filesystem", "Destructive filesystem operations"),
             metadata("database.postgresql", "Destructive PostgreSQL operations"),
+            metadata(
+                "database.snowflake",
+                "Destructive Snowflake CLI and SQL operations",
+            ),
             metadata("cloud.aws", "Destructive AWS CLI and MCP operations"),
             metadata(
                 "cloud.gcp",
                 "Destructive Google Cloud CLI and MCP operations",
             ),
+            metadata("kubernetes.kubectl", "Destructive kubectl operations"),
+            metadata("kubernetes.helm", "Destructive Helm operations"),
+            metadata(
+                "secrets.aws_secrets",
+                "Destructive AWS Secrets Manager and SSM operations",
+            ),
+            metadata(
+                "secrets.onepassword",
+                "Destructive 1Password CLI operations",
+            ),
+            metadata(
+                "secret_disclosure",
+                "Secret-manager commands that disclose credential values",
+            ),
+            metadata("saas.github", "Destructive GitHub MCP operations"),
             metadata("saas.notion", "Destructive Notion workspace operations"),
         ]
     }
@@ -199,15 +237,42 @@ fn is_shell_tool(name: &str) -> bool {
 }
 
 fn match_shell_pack(pack: &str, command: &str) -> Option<MatchedRule> {
+    if pack == "core.filesystem" && has_truncating_redirection(command) {
+        return Some(rule(
+            "core.filesystem",
+            "truncate-redirection",
+            "command.redirection",
+            "filesystem.truncate_redirection",
+            "Truncates or replaces the contents of a redirected output file",
+            "Write to a new reviewed path or preserve the existing file first",
+        ));
+    }
+    if pack == "database.postgresql" && has_pipeline_to(command, &["psql", "pgcli"]) {
+        return Some(rule(
+            "database.postgresql",
+            "uninspectable-sql-input",
+            "command.pipeline",
+            "postgresql.uninspectable_sql_input",
+            "Pipes PostgreSQL statements from input that guardrails cannot inspect",
+            "Provide the reviewed SQL through --command",
+        ));
+    }
     let invocations = parse_command_line(command);
     for invocation in &invocations {
         let finding = match pack {
-            "core.shell" => match_core_shell(invocation),
-            "core.git" => match_git(invocation),
-            "core.filesystem" => match_filesystem(invocation),
+            "core.shell" => core::match_shell(invocation),
+            "core.git" => git::match_invocation(invocation),
+            "core.filesystem" => core::match_filesystem(invocation),
             "database.postgresql" => match_postgresql_invocation(invocation),
+            "database.snowflake" => snowflake::match_invocation(invocation),
             "cloud.aws" => match_aws(invocation),
             "cloud.gcp" => match_gcp(invocation),
+            "kubernetes.kubectl" => kubectl::match_invocation(invocation),
+            "kubernetes.helm" => helm::match_invocation(invocation),
+            "secrets.aws_secrets" => aws_secrets::match_invocation(invocation),
+            "secrets.onepassword" => onepassword::match_invocation(invocation),
+            "secret_disclosure" => disclosure::match_invocation(invocation),
+            "saas.notion" => match_notion_cli(invocation),
             _ => None,
         };
         if finding.is_some() {
@@ -217,174 +282,24 @@ fn match_shell_pack(pack: &str, command: &str) -> Option<MatchedRule> {
     None
 }
 
-fn match_core_shell(invocation: &CommandInvocation) -> Option<MatchedRule> {
-    match invocation.executable.as_str() {
-        "shutdown" | "reboot" | "poweroff" | "halt" => Some(rule(
-            "core.shell",
-            "system-power-state",
-            "command.executable",
-            "shell.system_power_state",
-            "Changes the host power state",
-            "Use an operator-approved maintenance procedure",
-        )),
-        executable if executable.starts_with("mkfs") => Some(rule(
-            "core.shell",
-            "format-filesystem",
-            "command.executable",
-            "shell.format_filesystem",
-            "Formats a block device",
-            "Verify the target device and use a provisioned replacement volume",
-        )),
-        "kill" if targets_pid_one(&invocation.arguments) => Some(rule(
-            "core.shell",
-            "kill-init",
-            "command.arguments",
-            "shell.kill_init",
-            "Terminates the host init process",
-            "Restart the intended service through its service manager",
-        )),
-        executable
-            if matches!(executable, "sh" | "bash" | "zsh" | "dash" | "fish")
-                && crate::command::nested_shell_command(invocation).is_none() =>
-        {
-            Some(rule(
-                "core.shell",
-                "uninspectable-shell-input",
-                "command.arguments",
-                "shell.uninspectable_input",
-                "Runs shell input that the policy cannot inspect",
-                "Pass the command through the shell command option",
-            ))
-        }
-        executable if executable.starts_with('$') => Some(rule(
-            "core.shell",
-            "dynamic-executable",
-            "command.executable",
-            "shell.dynamic_executable",
-            "Resolves the executable from an unknown shell variable",
-            "Use an explicit executable name that policy can inspect",
-        )),
-        _ => None,
-    }
-}
-
-fn targets_pid_one(arguments: &[String]) -> bool {
-    arguments
-        .iter()
-        .filter(|argument| !argument.starts_with('-'))
-        .any(|argument| argument == "1")
-}
-
-fn match_git(invocation: &CommandInvocation) -> Option<MatchedRule> {
-    if invocation.executable != "git" {
-        return None;
-    }
-    let arguments = &invocation.arguments;
-    let operation = git_operation(arguments)?;
-    match operation {
-        "reset" if has_option(arguments, "--hard", None) => Some(rule(
-            "core.git",
-            "reset-hard",
-            "command.arguments",
-            "git.reset_hard",
-            "Discards tracked working-tree changes",
-            "Create a backup branch or use git stash before resetting",
-        )),
-        "clean" if has_option(arguments, "--force", Some('f')) => Some(rule(
-            "core.git",
-            "clean-force",
-            "command.arguments",
-            "git.clean_force",
-            "Deletes untracked files",
-            "Run git clean --dry-run and remove reviewed paths explicitly",
-        )),
-        "push"
-            if has_option(arguments, "--force", Some('f'))
-                || has_option(arguments, "--force-with-lease", None) =>
-        {
-            Some(rule(
-                "core.git",
-                "push-force",
-                "command.arguments",
-                "git.push_force",
-                "Rewrites remote branch history",
-                "Use a normal push or coordinate a reviewed force-with-lease operation",
-            ))
-        }
-        "push"
-            if has_option(arguments, "--delete", Some('d'))
-                || arguments
-                    .iter()
-                    .skip(1)
-                    .any(|argument| argument.len() > 1 && argument.starts_with(':')) =>
-        {
-            Some(rule(
-                "core.git",
-                "push-delete",
-                "command.arguments",
-                "git.push_delete",
-                "Deletes a remote reference",
-                "Delete the remote reference through a reviewed repository workflow",
-            ))
-        }
-        "branch"
-            if arguments.iter().any(|argument| argument == "-D")
-                || (has_option(arguments, "--delete", Some('d'))
-                    && has_option(arguments, "--force", Some('f'))) =>
-        {
-            Some(rule(
-                "core.git",
-                "branch-delete-force",
-                "command.arguments",
-                "git.branch_delete_force",
-                "Deletes a branch without merge checks",
-                "Use git branch -d after the branch is merged",
-            ))
-        }
-        _ => None,
-    }
-}
-
-fn match_filesystem(invocation: &CommandInvocation) -> Option<MatchedRule> {
-    match invocation.executable.as_str() {
-        "rm" if (has_option(&invocation.arguments, "--recursive", Some('r'))
-            || has_option(&invocation.arguments, "--recursive", Some('R')))
-            && has_option(&invocation.arguments, "--force", Some('f')) =>
-        {
-            Some(rule(
-                "core.filesystem",
-                "recursive-force-remove",
-                "command.arguments",
-                "filesystem.recursive_force_remove",
-                "Recursively deletes files without confirmation",
-                "List and review the target, then remove explicit paths without force",
-            ))
-        }
-        "find"
-            if invocation
-                .arguments
-                .iter()
-                .any(|argument| argument == "-delete") =>
-        {
-            Some(rule(
-                "core.filesystem",
-                "find-delete",
-                "command.arguments",
-                "filesystem.find_delete",
-                "Deletes every path selected by find",
-                "Run find without -delete and review the selected paths",
-            ))
-        }
-        _ => None,
-    }
-}
-
 fn match_postgresql_invocation(invocation: &CommandInvocation) -> Option<MatchedRule> {
     if !matches!(invocation.executable.as_str(), "psql" | "pgcli") {
         return None;
     }
-    let sql = option_value(&invocation.arguments, &["-c", "--command"])?;
-    match_destructive_sql(sql, "command.arguments")
+    if option_value(&invocation.arguments, &["-f", "--file"]).is_some()
+        || invocation.arguments.iter().any(|argument| argument == "-")
+    {
+        return Some(rule(
+            "database.postgresql",
+            "uninspectable-sql-input",
+            "command.arguments",
+            "postgresql.uninspectable_sql_input",
+            "Loads PostgreSQL statements from input that guardrails cannot inspect",
+            "Provide the reviewed SQL through --command",
+        ));
+    }
+    option_value(&invocation.arguments, &["-c", "--command"])
+        .and_then(|sql| match_destructive_sql(sql, "command.arguments"))
 }
 
 fn match_destructive_sql(sql: &str, field: &str) -> Option<MatchedRule> {
@@ -433,6 +348,14 @@ fn match_destructive_sql_statement(sql: &str, field: &str) -> Option<MatchedRule
             "Drops a PostgreSQL table",
             "Use a reviewed migration after a verified backup",
         )),
+        ("drop", Some(object)) => Some(rule(
+            "database.postgresql",
+            "drop-object",
+            field,
+            "postgresql.drop_object",
+            &format!("Drops a PostgreSQL {object} object"),
+            "Preserve the object definition and use a reviewed migration",
+        )),
         ("truncate", _) => Some(rule(
             "database.postgresql",
             "truncate",
@@ -449,12 +372,32 @@ fn match_destructive_sql_statement(sql: &str, field: &str) -> Option<MatchedRule
             "Deletes every row from a table",
             "Add a reviewed WHERE clause and run inside a transaction",
         )),
+        ("alter", Some("table")) if postgres_alter_removes_state(normalized) => Some(rule(
+            "database.postgresql",
+            "alter-table-remove",
+            field,
+            "postgresql.alter_table_remove",
+            "Drops a table column or constraint, or detaches a partition",
+            "Preserve the table definition and use a reviewed migration",
+        )),
         _ => None,
     }
 }
 
 fn is_destructive_sql_operation(word: &str) -> bool {
-    matches!(word, "drop" | "truncate" | "delete")
+    matches!(word, "drop" | "truncate" | "delete" | "alter")
+}
+
+fn postgres_alter_removes_state(words: &[String]) -> bool {
+    words.windows(2).any(|window| {
+        matches!(
+            window,
+            [operation, object]
+                if (operation == "drop"
+                    && matches!(object.as_str(), "column" | "constraint"))
+                    || (operation == "detach" && object == "partition")
+        )
+    })
 }
 
 fn top_level_sql_words(sql: &str) -> Vec<String> {
@@ -549,16 +492,97 @@ fn match_aws(invocation: &CommandInvocation) -> Option<MatchedRule> {
     {
         return Some(matched);
     }
+    if let Some(matched) =
+        match_aws_structured_delete_cli(service, operation, &invocation.arguments)
+    {
+        return Some(matched);
+    }
     let destructive = operation.starts_with("delete-")
         || operation.starts_with("terminate-")
         || operation.starts_with("deregister-")
         || operation.starts_with("batch-delete-")
+        || aws_exact_destructive_operation(service, operation)
         || (service == "s3" && operation == "rb")
         || (service == "kms" && operation == "schedule-key-deletion")
+        || (service == "s3" && operation == "rm")
         || (service == "s3"
-            && operation == "rm"
-            && has_option(&invocation.arguments, "--recursive", None));
+            && operation == "mv"
+            && !has_option(&invocation.arguments, "--dryrun", None))
+        || (service == "s3"
+            && operation == "sync"
+            && has_option(&invocation.arguments, "--delete", None)
+            && !has_option(&invocation.arguments, "--dryrun", None));
     destructive.then(|| aws_destructive_rule("command.arguments"))
+}
+fn aws_exact_destructive_operation(service: &str, operation: &str) -> bool {
+    matches!(
+        (service, operation),
+        ("s3api" | "glacier", "abort-multipart-upload")
+            | ("sqs", "purge-queue")
+            | ("codeartifact", "dispose-package-versions")
+            | ("ec2", "release-address" | "release-hosts")
+            | (
+                "organizations",
+                "close-account"
+                    | "remove-account-from-organization"
+                    | "leave-organization"
+                    | "disable-aws-service-access"
+            )
+            | ("account", "disable-region")
+            | ("kms", "retire-grant" | "revoke-grant")
+    )
+}
+
+fn match_aws_structured_delete_cli(
+    service: &str,
+    operation: &str,
+    arguments: &[String],
+) -> Option<MatchedRule> {
+    let option = match (service, operation) {
+        ("dynamodb", "batch-write-item") => "--request-items",
+        ("route53", "change-resource-record-sets") => "--change-batch",
+        _ => return None,
+    };
+    let value = option_value(arguments, &[option])
+        .or_else(|| option_value(arguments, &["--cli-input-json"]))?;
+    if is_file_reference(value) {
+        return Some(aws_uninspectable_rule("command.arguments"));
+    }
+    let payload = serde_json::from_str::<Value>(value).ok()?;
+    let destructive = if service == "dynamodb" {
+        json_contains_key(&payload, "DeleteRequest")
+    } else {
+        json_contains_string_field(&payload, "Action", "DELETE")
+    };
+    destructive.then(|| aws_destructive_rule("command.arguments"))
+}
+
+fn json_contains_key(value: &Value, key: &str) -> bool {
+    match value {
+        Value::Object(object) => {
+            object.contains_key(key) || object.values().any(|child| json_contains_key(child, key))
+        }
+        Value::Array(array) => array.iter().any(|child| json_contains_key(child, key)),
+        _ => false,
+    }
+}
+
+fn json_contains_string_field(value: &Value, key: &str, expected: &str) -> bool {
+    match value {
+        Value::Object(object) => {
+            object
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+                || object
+                    .values()
+                    .any(|child| json_contains_string_field(child, key, expected))
+        }
+        Value::Array(array) => array
+            .iter()
+            .any(|child| json_contains_string_field(child, key, expected)),
+        _ => false,
+    }
 }
 
 fn aws_service_operation(arguments: &[String]) -> Option<(&str, &str)> {
@@ -668,6 +692,9 @@ fn match_aws_mcp(call: &McpCall) -> Option<MatchedRule> {
     if let Some(matched) = match_aws_athena_mcp(&tool, &call.arguments) {
         return Some(matched);
     }
+    if aws_structured_mcp_delete(&tool, &call.arguments) {
+        return Some(aws_destructive_rule("arguments"));
+    }
     if aws_destructive_identity(&tool) {
         return Some(aws_destructive_rule("tool"));
     }
@@ -703,6 +730,37 @@ fn aws_destructive_identity(identity: &str) -> bool {
         .any(|operation| identity_has_operation(identity, operation))
         || identity_has_sequence(identity, "s3", "rb")
         || identity.contains("schedule_key_deletion")
+        || aws_exact_destructive_identity(identity)
+}
+
+fn aws_exact_destructive_identity(identity: &str) -> bool {
+    let identity = flattened_identity(identity);
+    [
+        "s3_rm",
+        "s3_mv",
+        "abort_multipart_upload",
+        "sqs_purge_queue",
+        "dispose_package_versions",
+        "ec2_release_address",
+        "ec2_release_hosts",
+        "organizations_close_account",
+        "account_disable_region",
+        "organizations_leave_organization",
+        "retire_grant",
+        "revoke_grant",
+    ]
+    .iter()
+    .any(|candidate| identity.contains(candidate))
+}
+
+fn aws_structured_mcp_delete(identity: &str, arguments: &Value) -> bool {
+    identity.contains("batch_write_item") && json_contains_key(arguments, "DeleteRequest")
+        || identity.contains("change_resource_record_sets")
+            && json_contains_string_field(arguments, "Action", "DELETE")
+        || flattened_identity(identity).contains("s3_sync")
+            && ["$.delete", "$.input.delete"]
+                .iter()
+                .any(|path| first_bool(arguments, path) == Some(true))
 }
 
 fn identity_has_sequence(identity: &str, first: &str, second: &str) -> bool {
@@ -758,19 +816,98 @@ fn match_gcp(invocation: &CommandInvocation) -> Option<MatchedRule> {
     if invocation.executable != "gcloud" {
         return None;
     }
-    positional_arguments(&invocation.arguments)
-        .iter()
-        .any(|argument| argument == "delete")
-        .then(|| {
-            rule(
+    let arguments = &invocation.arguments;
+    let positional = positional_arguments(arguments);
+    let destructive = positional.iter().any(|argument| argument == "delete")
+        || has_string_sequence(&positional, &["storage", "rm"])
+        || has_string_sequence(&positional, &["tasks", "queues", "purge"])
+        || has_string_sequence(&positional, &["secrets", "versions", "destroy"])
+        || has_string_sequence(&positional, &["kms", "keys", "versions", "destroy"])
+        || has_string_sequence(&positional, &["projects", "remove-iam-policy-binding"])
+        || has_string_sequence(
+            &positional,
+            &["iam", "service-accounts", "remove-iam-policy-binding"],
+        )
+        || (has_string_sequence(
+            &positional,
+            &["storage", "batch-operations", "jobs", "create"],
+        ) && has_option(arguments, "--delete-object", None)
+            && !has_option(arguments, "--dry-run", None));
+    destructive.then(|| {
+        rule(
+            "cloud.gcp",
+            "delete-resource",
+            "command.arguments",
+            "gcp.delete_resource",
+            "Deletes a Google Cloud resource or access binding",
+            "Describe the resource and follow the approved cloud change process",
+        )
+    })
+}
+
+fn has_string_sequence(arguments: &[String], sequence: &[&str]) -> bool {
+    arguments.windows(sequence.len()).any(|window| {
+        window
+            .iter()
+            .map(String::as_str)
+            .eq(sequence.iter().copied())
+    })
+}
+fn match_gcp_mcp(call: &McpCall) -> Option<MatchedRule> {
+    if let Some(matched) = match_operation_mcp(
+        call,
+        &["gcp", "google_cloud", "google"],
+        &["delete", "destroy", "remove"],
+        "cloud.gcp",
+        "delete-resource",
+        "gcp.delete_resource",
+        "Deletes a Google Cloud resource",
+    ) {
+        return Some(matched);
+    }
+    if !server_has_identity(&call.server, &["gcp", "google"]) {
+        return None;
+    }
+    let tool = normalize_identity(&call.tool);
+    if gcp_exact_destructive_identity(&tool) {
+        return Some(rule(
+            "cloud.gcp",
+            "delete-resource",
+            "tool",
+            "gcp.delete_resource",
+            "Deletes a Google Cloud resource or access binding",
+            "Use a read-only operation and follow the approved change process",
+        ));
+    }
+    for path in ["$.operation", "$.action", "$.method"] {
+        if first_string(&call.arguments, path)
+            .map(normalize_identity)
+            .is_some_and(|identity| gcp_exact_destructive_identity(&identity))
+        {
+            return Some(rule(
                 "cloud.gcp",
                 "delete-resource",
-                "command.arguments",
+                path,
                 "gcp.delete_resource",
-                "Deletes a Google Cloud resource",
-                "Describe the resource and follow the approved cloud change process",
-            )
-        })
+                "Deletes a Google Cloud resource or access binding",
+                "Use a read-only operation and follow the approved change process",
+            ));
+        }
+    }
+    None
+}
+
+fn gcp_exact_destructive_identity(identity: &str) -> bool {
+    let identity = flattened_identity(identity);
+    [
+        "storage_rm",
+        "tasks_queues_purge",
+        "secrets_versions_destroy",
+        "kms_keys_versions_destroy",
+        "remove_iam_policy_binding",
+    ]
+    .iter()
+    .any(|candidate| identity.contains(candidate))
 }
 
 fn match_mcp_pack(pack: &str, call: &McpCall) -> Option<MatchedRule> {
@@ -782,32 +919,52 @@ fn match_mcp_pack(pack: &str, call: &McpCall) -> Option<MatchedRule> {
     match pack {
         "database.postgresql" => match_postgresql_mcp(call),
         "cloud.aws" => match_aws_mcp(call),
-        "cloud.gcp" => match_operation_mcp(
-            call,
-            &["gcp", "google_cloud", "google"],
-            &["delete", "destroy", "remove"],
-            "cloud.gcp",
-            "delete-resource",
-            "gcp.delete_resource",
-            "Deletes a Google Cloud resource",
-        ),
+        "cloud.gcp" => match_gcp_mcp(call),
+        "saas.github" => github::match_call(call),
         "saas.notion" => match_notion(call),
         _ => None,
     }
 }
 
 fn match_postgresql_mcp(call: &McpCall) -> Option<MatchedRule> {
-    if !server_has_identity(&call.server, &["postgres", "postgresql", "pg"]) {
+    if !postgresql_server(&call.server) {
         return None;
     }
     let tool = normalize_identity(&call.tool);
+    if matches!(
+        tool.as_str(),
+        "delete_table"
+            | "drop_table"
+            | "alter_table_drop_column"
+            | "drop_index"
+            | "drop_view"
+            | "drop_function"
+            | "drop_trigger"
+            | "drop_schema"
+    ) {
+        return Some(rule(
+            "database.postgresql",
+            "structured-destructive-operation",
+            "tool",
+            "postgresql.structured_destructive_operation",
+            "Deletes PostgreSQL data or a database object",
+            "Inspect dependencies and use a reviewed migration",
+        ));
+    }
     if !matches!(
         tool.as_str(),
         "execute_sql" | "run_sql" | "query" | "postgres.execute" | "postgresql.execute"
     ) {
         return None;
     }
-    for path in ["$.sql", "$.query", "$.statement", "$.input.sql"] {
+    for path in [
+        "$.sql",
+        "$.query",
+        "$.statement",
+        "$.sqlStatement",
+        "$.input.sql",
+        "$.input.sqlStatement",
+    ] {
         if let Some(sql) = first_string(&call.arguments, path)
             && let Some(matched) = match_destructive_sql(sql, path)
         {
@@ -815,6 +972,17 @@ fn match_postgresql_mcp(call: &McpCall) -> Option<MatchedRule> {
         }
     }
     None
+}
+
+fn postgresql_server(server: &str) -> bool {
+    let normalized = normalize_identity(server);
+    server_has_identity(server, &["postgres", "postgresql", "pg", "cloudsql"])
+        || (normalized
+            .split(['.', '_', '/', ':'])
+            .any(|part| part == "cloud")
+            && normalized
+                .split(['.', '_', '/', ':'])
+                .any(|part| part == "sql"))
 }
 
 fn match_operation_mcp(
@@ -884,6 +1052,7 @@ fn match_notion(call: &McpCall) -> Option<MatchedRule> {
         "databases.move",
         "workspaces.delete",
         "workspaces.archive",
+        "notion_move_pages",
     ]
     .iter()
     .any(|candidate| tool == *candidate);
@@ -905,9 +1074,18 @@ fn match_notion(call: &McpCall) -> Option<MatchedRule> {
             | "update_database"
             | "databases.update"
             | "update_workspace"
+            | "notion_update_page"
+            | "notion_update_data_source"
     );
     if update_alias {
-        for path in ["$.archived", "$.in_trash", "$.deleted"] {
+        for path in [
+            "$.archived",
+            "$.is_archived",
+            "$.in_trash",
+            "$.deleted",
+            "$.erase_content",
+            "$.allow_deleting_content",
+        ] {
             if first_bool(&call.arguments, path) == Some(true) {
                 return Some(rule(
                     "saas.notion",
@@ -918,6 +1096,18 @@ fn match_notion(call: &McpCall) -> Option<MatchedRule> {
                     "Duplicate or export the object before an operator-approved archive",
                 ));
             }
+        }
+        if first_string(&call.arguments, "$.command")
+            .is_some_and(|command| normalize_identity(command) == "replace_content")
+        {
+            return Some(rule(
+                "saas.notion",
+                "replace-page-content",
+                "$.command",
+                "notion.replace_page_content",
+                "Replaces the current page content",
+                "Duplicate or export the page before replacing its content",
+            ));
         }
         for path in ["$.action", "$.operation"] {
             if first_string(&call.arguments, path).is_some_and(|operation| {
@@ -938,6 +1128,47 @@ fn match_notion(call: &McpCall) -> Option<MatchedRule> {
         }
     }
     None
+}
+
+fn match_notion_cli(invocation: &CommandInvocation) -> Option<MatchedRule> {
+    if invocation.executable != "ntn" {
+        return None;
+    }
+    let arguments = &invocation.arguments;
+    let destructive = has_string_sequence(arguments, &["pages", "trash"])
+        || has_string_sequence(arguments, &["pages", "edit"])
+            && has_option(arguments, "--allow-deleting-content", None)
+        || has_string_sequence(arguments, &["workers", "delete"])
+        || has_string_sequence(arguments, &["workers", "rm"])
+        || has_string_sequence(arguments, &["workers", "env", "unset"])
+        || has_string_sequence(arguments, &["workers", "env", "delete"])
+        || has_string_sequence(arguments, &["workers", "env", "rm"])
+        || has_string_sequence(arguments, &["workers", "databases", "attach"])
+            && has_option(arguments, "--yes", Some('y'))
+        || has_string_sequence(arguments, &["api"]) && notion_api_request_is_destructive(arguments);
+    destructive.then(|| {
+        rule(
+            "saas.notion",
+            "cli-destructive-operation",
+            "command.arguments",
+            "notion.cli_destructive_operation",
+            "Deletes, trashes, or replaces Notion content or worker state",
+            "Export the target and review the exact API mutation first",
+        )
+    })
+}
+
+fn notion_api_request_is_destructive(arguments: &[String]) -> bool {
+    option_value(arguments, &["-X", "--request"])
+        .is_some_and(|method| method.eq_ignore_ascii_case("DELETE"))
+        || arguments.iter().any(|argument| {
+            let compact = argument.to_ascii_lowercase().replace(' ', "");
+            compact.contains("in_trash:=true")
+                || compact.contains("\"in_trash\":true")
+                || compact.contains("erase_content:=true")
+                || compact.contains("\"erase_content\":true")
+                || compact.contains("\"properties\"") && compact.contains(":null")
+        })
 }
 
 fn notion_rule_id(tool: &str) -> &'static str {
@@ -970,6 +1201,18 @@ fn first_bool(value: &Value, path: &str) -> Option<bool> {
 
 fn normalize_identity(value: &str) -> String {
     value.trim().to_ascii_lowercase().replace('-', "_")
+}
+fn flattened_identity(value: &str) -> String {
+    normalize_identity(value)
+        .chars()
+        .map(|character| {
+            if matches!(character, '.' | '/' | ':') {
+                '_'
+            } else {
+                character
+            }
+        })
+        .collect()
 }
 
 fn identity_has_operation(identity: &str, operation: &str) -> bool {
@@ -1142,6 +1385,25 @@ fn has_option(arguments: &[String], long: &str, short: Option<char>) -> bool {
                 })
         })
 }
+pub(super) fn subcommand_index(
+    arguments: &[String],
+    options_with_values: &[&str],
+) -> Option<usize> {
+    let mut index = 0;
+    while index < arguments.len() {
+        let argument = &arguments[index];
+        if argument == "--" {
+            return (index + 1 < arguments.len()).then_some(index + 1);
+        }
+        if !argument.starts_with('-') || argument == "-" {
+            return Some(index);
+        }
+        let takes_separate_value =
+            !argument.contains('=') && options_with_values.contains(&argument.as_str());
+        index += if takes_separate_value { 2 } else { 1 };
+    }
+    None
+}
 
 fn option_value<'a>(arguments: &'a [String], names: &[&str]) -> Option<&'a str> {
     for (index, argument) in arguments.iter().enumerate() {
@@ -1176,469 +1438,4 @@ fn rule(
 }
 
 #[cfg(test)]
-mod tests {
-    use std::{
-        collections::BTreeSet,
-        time::{Duration, Instant},
-    };
-
-    use serde_json::json;
-
-    use super::*;
-    use crate::{EffectiveScope, GuardPhase, PolicyMode};
-
-    fn evaluate(pack: &str, payload: EvaluationPayload) -> Option<MatchedRule> {
-        BuiltInEvaluator
-            .evaluate(
-                &EvaluationInput::new(GuardPhase::HarnessPreTool, payload),
-                &EffectivePolicy {
-                    enabled: true,
-                    mode: PolicyMode::Deny,
-                    packs: vec![PackId::new(pack).unwrap()],
-                    managed_checks: Vec::new(),
-                    stream_buffer_bytes: 1024,
-                    stream_buffer_timeout_ms: 1_000,
-                    scope: EffectiveScope::Global,
-                },
-            )
-            .unwrap()
-    }
-
-    #[test]
-    fn every_shell_pack_covers_positive_quoting_order_data_and_near_miss_cases() {
-        let cases = vec![
-            (
-                "core.shell",
-                vec![
-                    "reboot",
-                    "bash -c 'poweroff'",
-                    "kill 1 -9",
-                    "printf 'rm -rf /tmp/work' | bash",
-                ],
-                vec!["echo 'reboot'", "reboot-check", "kill 10 -9"],
-            ),
-            (
-                "core.git",
-                vec![
-                    "git reset --hard",
-                    "bash -c 'git branch -D old'",
-                    "git --no-pager reset main --hard",
-                    "git -C /repo reset --hard",
-                    "git --git-dir=/repo/.git reset --hard",
-                    "git push origin --delete old",
-                    "git push origin :old",
-                    "git branch --delete --force old",
-                    "git branch -df old",
-                ],
-                vec![
-                    "printf '%s' 'git reset --hard'",
-                    "git reset --soft HEAD~1",
-                    "git branch -d merged",
-                ],
-            ),
-            (
-                "core.filesystem",
-                vec![
-                    "rm -rf /tmp/work",
-                    "bash -c 'find . -delete'",
-                    "rm --force --recursive /tmp/work",
-                    "rm -Rf /tmp/work",
-                    "rm -R -f /tmp/work",
-                    "nice rm -rf /tmp/work",
-                    "setsid rm -rf /tmp/work",
-                    "chroot /sandbox rm -rf /tmp/work",
-                    "cmd=rm; $cmd -rf /tmp/work",
-                    "opts=-rf; rm $opts /tmp/work",
-                    "find /tmp/work -exec rm -rf {} +",
-                    "function wipe { rm -rf /tmp/work; }; wipe",
-                    "sudo FOO=bar rm -rf /tmp/work",
-                    "2>&1 rm -rf /tmp/work",
-                ],
-                vec![
-                    "echo 'rm -rf /tmp/work'",
-                    "rm -f report.txt",
-                    "rm -- -rf",
-                    "find . -depth",
-                ],
-            ),
-            (
-                "database.postgresql",
-                vec![
-                    "psql -c 'DROP DATABASE app'",
-                    "bash -c \"psql -c 'TRUNCATE audit'\"",
-                    "psql --host=db --command='DELETE FROM users'",
-                    "psql -c 'SELECT 1; DROP DATABASE app'",
-                    "psql -c '-- migration\nDROP TABLE users'",
-                    "psql -c '/* migration */ DROP TABLE users'",
-                    "psql -c 'DROP /* migration */ TABLE users'",
-                    "psql -c 'WITH x AS (SELECT 1) DELETE FROM users'",
-                    "psql -c 'EXPLAIN ANALYZE DELETE FROM users'",
-                ],
-                vec![
-                    "echo 'DROP DATABASE app'",
-                    "psql -c 'DELETE FROM users WHERE id = 1'",
-                    "psql -c 'SELECT drop_database_hint FROM docs'",
-                    "psql -c 'WITH x AS (SELECT 1) SELECT * FROM x'",
-                    "psql -c 'EXPLAIN SELECT \"delete\" FROM docs'",
-                ],
-            ),
-            (
-                "cloud.aws",
-                vec![
-                    "aws ec2 terminate-instances --instance-ids i-1",
-                    "bash -c 'aws s3 rm s3://bucket --recursive'",
-                    "aws --region us-east-1 ec2 delete-vpc --vpc-id vpc-1",
-                    "aws s3 rb s3://prod-bucket",
-                    "aws kms schedule-key-deletion --key-id key-1",
-                    "aws ecr batch-delete-image --repository-name app --image-ids imageTag=old",
-                    "aws glue batch-delete-table --database-name prod --tables-to-delete old",
-                    "aws glue batch-delete-partition --database-name prod --table-name events",
-                    "aws athena start-query-execution --query-string 'DROP TABLE prod.customers'",
-                    "aws athena start-query-execution --query-string file:///tmp/query.sql",
-                    "aws athena start-query-execution --cli-input-json file://request.json",
-                ],
-                vec![
-                    "echo 'aws ec2 terminate-instances'",
-                    "aws ec2 describe-instances",
-                    "aws s3 ls s3://bucket",
-                    "aws s3 cp local.txt s3://bucket/local.txt",
-                    "aws s3 rm s3://bucket/path",
-                    "aws ec2 describe-instances --filters Name=tag:job,Values=delete-old",
-                    "aws s3api list-buckets --cli-input-json delete-me.json",
-                    "aws --profile delete-old ec2 describe-instances",
-                    "aws athena start-query-execution --query-string 'SELECT * FROM prod.customers'",
-                    "aws athena start-query-execution --query-string 'DELETE FROM prod.customers WHERE id = 1'",
-                ],
-            ),
-            (
-                "cloud.gcp",
-                vec![
-                    "gcloud projects delete example",
-                    "bash -c 'gcloud compute instances delete vm'",
-                    "gcloud --quiet compute disks delete disk",
-                ],
-                vec![
-                    "echo 'gcloud projects delete example'",
-                    "gcloud projects describe example",
-                    "gcloud compute instances list",
-                ],
-            ),
-        ];
-
-        for (pack, destructive, safe) in cases {
-            for command in destructive {
-                assert!(
-                    evaluate(
-                        pack,
-                        EvaluationPayload::ShellCommand {
-                            command: command.into()
-                        }
-                    )
-                    .is_some(),
-                    "{pack} did not match `{command}`"
-                );
-            }
-            for command in safe {
-                assert!(
-                    evaluate(
-                        pack,
-                        EvaluationPayload::ShellCommand {
-                            command: command.into()
-                        }
-                    )
-                    .is_none(),
-                    "{pack} matched safe command `{command}`"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn postgresql_dollar_quoted_text_is_not_matched_as_sql() {
-        for command in [
-            "psql -c 'SELECT $$safe; DROP TABLE users;$$'",
-            "psql -c 'SELECT $body$safe; TRUNCATE audit;$body$'",
-        ] {
-            assert!(
-                evaluate(
-                    "database.postgresql",
-                    EvaluationPayload::ShellCommand {
-                        command: command.into(),
-                    }
-                )
-                .is_none(),
-                "matched SQL inside dollar-quoted text: {command}"
-            );
-        }
-    }
-
-    #[test]
-    fn notion_pack_covers_aliases_key_order_data_and_near_misses() {
-        for call in [
-            McpCall {
-                server: "notion-team".into(),
-                tool: "pages.update".into(),
-                arguments: json!({"page_id": "p", "archived": true}),
-            },
-            McpCall {
-                server: "notion-team".into(),
-                tool: "update_page".into(),
-                arguments: json!({"archived": true, "page_id": "p"}),
-            },
-            McpCall {
-                server: "notion-team".into(),
-                tool: "databases.archive".into(),
-                arguments: json!({"database_id": "d"}),
-            },
-            McpCall {
-                server: "notion-team".into(),
-                tool: "delete_workspace".into(),
-                arguments: json!({"workspace_id": "w"}),
-            },
-            McpCall {
-                server: "notion-team".into(),
-                tool: "pages.move".into(),
-                arguments: json!({"page_id": "p", "parent_id": "next"}),
-            },
-        ] {
-            assert!(evaluate("saas.notion", EvaluationPayload::McpCall { call }).is_some());
-        }
-
-        for call in [
-            McpCall {
-                server: "notion-team".into(),
-                tool: "search".into(),
-                arguments: json!({"query": "archive_page"}),
-            },
-            McpCall {
-                server: "notion-team".into(),
-                tool: "pages.update".into(),
-                arguments: json!({"archived": false, "note": "\"archive\""}),
-            },
-            McpCall {
-                server: "notion-team".into(),
-                tool: "archive_page_preview".into(),
-                arguments: json!({"page_id": "p"}),
-            },
-            McpCall {
-                server: "generic-content".into(),
-                tool: "delete_page".into(),
-                arguments: json!({"page_id": "secret-page"}),
-            },
-        ] {
-            assert!(evaluate("saas.notion", EvaluationPayload::McpCall { call }).is_none());
-        }
-    }
-
-    #[test]
-    fn infrastructure_mcp_packs_use_server_tool_and_typed_arguments() {
-        let cases = [
-            (
-                "database.postgresql",
-                McpCall {
-                    server: "team-postgresql".into(),
-                    tool: "execute_sql".into(),
-                    arguments: json!({"input": {"sql": "DROP TABLE audit"}}),
-                },
-                "$.input.sql",
-            ),
-            (
-                "cloud.aws",
-                McpCall {
-                    server: "production-aws".into(),
-                    tool: "resource.execute".into(),
-                    arguments: json!({"resource": "secret-value", "action": "terminate_instance"}),
-                },
-                "$.action",
-            ),
-            (
-                "cloud.gcp",
-                McpCall {
-                    server: "gcp-platform".into(),
-                    tool: "compute.delete".into(),
-                    arguments: json!({"name": "secret-value"}),
-                },
-                "tool",
-            ),
-        ];
-
-        for (pack, call, matched_field) in cases {
-            let matched = evaluate(pack, EvaluationPayload::McpCall { call }).unwrap();
-            assert_eq!(matched.pack_id, pack);
-            assert_eq!(matched.matched_field, matched_field);
-            assert!(!matched.rule_id.is_empty());
-            assert!(!matched.reason_code.as_str().is_empty());
-            assert!(!matched.description.is_empty());
-            assert!(!matched.safer_action.is_empty());
-            assert!(!format!("{matched:?}").contains("secret-value"));
-        }
-
-        assert!(
-            evaluate(
-                "cloud.aws",
-                EvaluationPayload::McpCall {
-                    call: McpCall {
-                        server: "unrelated-service".into(),
-                        tool: "resource.delete".into(),
-                        arguments: json!({"action": "delete"}),
-                    },
-                },
-            )
-            .is_none()
-        );
-    }
-
-    #[test]
-    fn aws_mcp_pack_covers_destructive_operations_queries_and_near_misses() {
-        for (tool, arguments, reason_code) in [
-            (
-                "ecr.batch_delete_image",
-                json!({"repository_name": "app"}),
-                "aws.destructive_operation",
-            ),
-            (
-                "athena.start_query_execution",
-                json!({"query_string": "DROP TABLE prod.customers"}),
-                "aws.destructive_operation",
-            ),
-            (
-                "athena.start_query_execution",
-                json!({"query_string": "file:///tmp/query.sql"}),
-                "aws.uninspectable_query",
-            ),
-            (
-                "resource.execute",
-                json!({"action": "kms.schedule_key_deletion"}),
-                "aws.destructive_operation",
-            ),
-        ] {
-            let matched = evaluate(
-                "cloud.aws",
-                EvaluationPayload::McpCall {
-                    call: McpCall {
-                        server: "production-aws".into(),
-                        tool: tool.into(),
-                        arguments,
-                    },
-                },
-            )
-            .expect("destructive AWS MCP operation");
-            assert_eq!(matched.reason_code.as_str(), reason_code);
-        }
-
-        for (tool, arguments) in [
-            (
-                "ec2.describe_instances",
-                json!({"filter": "delete-old", "action": "delete_old"}),
-            ),
-            (
-                "athena.start_query_execution",
-                json!({"query_string": "SELECT * FROM prod.customers"}),
-            ),
-        ] {
-            assert!(
-                evaluate(
-                    "cloud.aws",
-                    EvaluationPayload::McpCall {
-                        call: McpCall {
-                            server: "production-aws".into(),
-                            tool: tool.into(),
-                            arguments,
-                        },
-                    },
-                )
-                .is_none()
-            );
-        }
-    }
-
-    #[test]
-    fn core_packs_inspect_commands_exposed_as_mcp_tools() {
-        let cases = [
-            ("core.shell", "bash", json!({"command": "reboot"})),
-            (
-                "core.git",
-                "execute_command",
-                json!({"input": {"command": "git reset --hard"}}),
-            ),
-            (
-                "core.filesystem",
-                "run_command",
-                json!({"cmd": "rm -rf /tmp/work"}),
-            ),
-        ];
-
-        for (pack, tool, arguments) in cases {
-            let matched = evaluate(
-                pack,
-                EvaluationPayload::McpCall {
-                    call: McpCall {
-                        server: "local-tools".into(),
-                        tool: tool.into(),
-                        arguments,
-                    },
-                },
-            )
-            .unwrap();
-            assert_eq!(matched.pack_id, pack);
-            assert!(matched.matched_field.starts_with("$."));
-        }
-    }
-
-    #[test]
-    fn malformed_generated_tool_arguments_fail_closed() {
-        let error = BuiltInEvaluator
-            .evaluate(
-                &EvaluationInput::new(
-                    GuardPhase::GeneratedToolCall,
-                    EvaluationPayload::ToolCall {
-                        name: "bash".into(),
-                        arguments: Value::String("{not-json".into()),
-                    },
-                ),
-                &EffectivePolicy {
-                    enabled: true,
-                    mode: PolicyMode::Deny,
-                    packs: vec![PackId::new("core.shell").unwrap()],
-                    managed_checks: Vec::new(),
-                    stream_buffer_bytes: 1024,
-                    stream_buffer_timeout_ms: 1_000,
-                    scope: EffectiveScope::Global,
-                },
-            )
-            .unwrap_err();
-        assert_eq!(error, EvaluationError::MalformedToolCall);
-    }
-
-    #[test]
-    fn registry_has_only_versioned_required_packs() {
-        let metadata = PackRegistry::built_in();
-        assert_eq!(
-            metadata
-                .iter()
-                .map(|pack| pack.id.as_str())
-                .collect::<BTreeSet<_>>(),
-            BUILT_IN_PACK_IDS.into_iter().collect()
-        );
-        assert!(metadata.iter().all(|pack| pack.version == "1.0.0"));
-    }
-
-    #[test]
-    fn deterministic_evaluation_load_gate_stays_below_two_seconds() {
-        let started = Instant::now();
-        for _ in 0..10_000 {
-            let decision = evaluate(
-                "core.filesystem",
-                EvaluationPayload::ShellCommand {
-                    command: "rm -rf /tmp/load-gate".into(),
-                },
-            );
-            assert!(decision.is_some());
-        }
-        assert!(
-            started.elapsed() < Duration::from_secs(2),
-            "10,000 deterministic evaluations took {:?}",
-            started.elapsed()
-        );
-    }
-}
+mod tests;
