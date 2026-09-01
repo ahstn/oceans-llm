@@ -1,6 +1,6 @@
 # Configuration Reference
 
-`See also`: [Oceans LLM Gateway](../../README.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [OIDC and SSO](../access/oidc-and-sso-status.md), [ADR: Configurable Admin Page Permissions](../adr/2026-08-05-configurable-admin-page-permissions.md)
+`See also`: [Oceans LLM Gateway](../../README.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [OIDC and SSO](../access/oidc-and-sso-status.md), [Tagging](../operations/tagging.md), [ADR: Configurable Admin Page Permissions](../adr/2026-08-05-configurable-admin-page-permissions.md)
 
 This page owns config syntax and parse-time rules. It does not own the full runtime story after a request starts moving.
 
@@ -502,6 +502,7 @@ Important service-account fields:
 - `team`: owning `teams[*].id`; team moves are rejected by seed reconciliation
 - `budget`: required active service-account budget
 - `keys`: managed gateway API keys for this service account
+- `tags`: optional identity tag list; see [Identity Tags In Declarative Identity](#identity-tags-in-declarative-identity)
 
 Important managed-key fields:
 
@@ -611,6 +612,7 @@ Important `teams` fields:
 
 - `key`
 - `name`
+- `tags`
 
 Important `users` fields:
 
@@ -624,6 +626,26 @@ Important `users` fields:
 - `membership.team`
 - `membership.role`
 - `budget`
+- `tags`
+
+### Identity Tags In Declarative Identity
+
+`teams[*].tags`, `users[*].tags`, and `service_accounts[*].tags` are optional identity tag lists. Each entry is a `key`/`value` pair. Tag rules and reserved keys are owned by [Tagging](../operations/tagging.md#validation-rules); startup rejects lists that violate those rules.
+
+Startup reconciliation treats the field as a directive:
+
+- omitting `tags` leaves existing identity tags unchanged
+- `tags: []` clears the stored tag set
+- a non-empty list replaces the stored set after validation
+
+```yaml
+teams:
+  - id: platform
+    name: Platform
+    tags:
+      - key: cost-center
+        value: platform
+```
 
 ## `budgets`
 

@@ -42,12 +42,14 @@ All public HTTP traffic enters through the gateway service. The admin UI service
 
 The chart intentionally has no raw YAML fallback value. Keep deploy-specific config in values files and let the chart render the gateway config.
 
-Set `gateway.clientConfigGatewayBaseUrl` to the public gateway API base URL that admins should copy into generated client snippets. This value is rendered as `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway pod. Use the externally reachable OpenAI-compatible base URL, including `/v1`, for example:
+Set `gateway.clientConfigGatewayBaseUrl` to the public gateway base URL that admins copy into generated client snippets. This value is rendered as `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway pod. Use the externally reachable gateway origin without a path, for example:
 
 ```yaml
 gateway:
-  clientConfigGatewayBaseUrl: https://gateway.example.com/v1
+  clientConfigGatewayBaseUrl: https://gateway.example.com
 ```
+
+Generated snippets derive client base URLs from this value: Anthropic Messages clients use the origin as given, and OpenAI-compatible clients append `/v1`. A trailing `/v1` in the configured value is normalized away before generation. For the full base URL mapping, see [Client Harness Configuration](../configuration/client-harness-configuration.md).
 
 Do not rely on the admin UI browser origin for this value. The admin UI may be served through a different ingress path or internal proxy than the API endpoint used by local harnesses.
 

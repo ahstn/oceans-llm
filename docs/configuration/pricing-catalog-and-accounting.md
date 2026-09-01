@@ -22,7 +22,7 @@ This is intentional. Oceans avoids approximate charging because approximate char
 
 ## Pricing Catalog Refresh
 
-Oceans uses pricing metadata from `models.dev` when it is available. Admins can refresh that metadata from the Models page with **Refresh pricing**.
+Oceans uses pricing metadata from `models.dev` when it is available. Platform admins can refresh that metadata from the Models page with **Refresh pricing**. The refresh endpoint is platform-admin-only.
 
 A refresh updates the gateway's cached catalog snapshot and reconciles effective pricing rows for models with exact coverage. Scheduled refreshes run the same reconciliation workflow. The Models page then reloads so newly priced models can show input and output rates.
 
@@ -80,8 +80,11 @@ Current exact catalog coverage, used only when a route has no pricing override, 
 - Vertex routes are priced from the upstream publisher prefix
 - `google/...` maps to Google Vertex pricing
 - `anthropic/...` maps to Anthropic-on-Vertex pricing
+- `aws_bedrock` routes are priced against the `amazon-bedrock` provider family
 
 Anthropic-on-Vertex pricing is supported only for `location=global`.
+
+Bedrock pricing model ids are normalized from `upstream_model` before catalog lookup: ARN model ids resolve to their final path segment, `gpt-oss-120b` and `gpt-oss-20b` map to their catalog ids, and the default-version suffix `-v1:0` is stripped only for `claude-sonnet-4-6`, `claude-opus-4-6`, and `claude-opus-4-7`. Every other id resolves verbatim, so pinned versions outside those families need an exact catalog row to price.
 
 If a route changes provider, upstream model, location, or a billing modifier such as `service_tier`, review pricing behavior before relying on budget enforcement for that traffic.
 
