@@ -82,6 +82,13 @@ describe('UsageCostsPage', () => {
             unpriced_request_count: 2,
             usage_missing_request_count: 1,
           },
+          ...Array.from({ length: 11 }, (_, index) => ({
+            model_key: `long-tail-${index}`,
+            priced_cost_usd_10000: 1_000 - index,
+            priced_request_count: 1,
+            unpriced_request_count: 0,
+            usage_missing_request_count: 0,
+          })),
         ],
       },
     })
@@ -91,9 +98,13 @@ describe('UsageCostsPage', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Usage costs' })).toBeInTheDocument()
     expect(screen.getByText('CI Indexer')).toBeInTheDocument()
+    expect(screen.queryByText('service account')).not.toBeInTheDocument()
     expect(screen.getByText('fast')).toBeInTheDocument()
-    expect(screen.getByText('Priced requests')).toBeInTheDocument()
+    expect(screen.getByText('Pricing coverage')).toBeInTheDocument()
     expect(screen.getByText('234,567')).toBeInTheDocument()
+    // Breakdowns are capped at the top 10 spenders.
+    expect(screen.getByText('long-tail-8')).toBeInTheDocument()
+    expect(screen.queryByText('long-tail-9')).not.toBeInTheDocument()
   })
 
   it('shows a self-service view without cross-owner controls to regular users', async () => {
