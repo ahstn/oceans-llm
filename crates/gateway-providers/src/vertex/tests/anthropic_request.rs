@@ -386,14 +386,24 @@ fn does_not_duplicate_native_and_openai_tool_uses() {
     let mut assistant_extra = BTreeMap::new();
     assistant_extra.insert(
         "tool_calls".to_string(),
-        json!([{
-            "id": "toolu_1",
-            "type": "function",
-            "function": {
-                "name": "lookup",
-                "arguments": "{\"key\":\"value\"}"
+        json!([
+            {
+                "id": "toolu_1",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{\"key\":\"value\"}"
+                }
+            },
+            {
+                "id": "toolu_2",
+                "type": "function",
+                "function": {
+                    "name": "notify",
+                    "arguments": "{}"
+                }
             }
-        }]),
+        ]),
     );
     let request = chat_request(vec![
         CoreChatMessage {
@@ -404,12 +414,20 @@ fn does_not_duplicate_native_and_openai_tool_uses() {
         },
         CoreChatMessage {
             role: "assistant".to_string(),
-            content: json!([{
-                "type": "tool_use",
-                "id": "toolu_1",
-                "name": "lookup",
-                "input": {"key": "value"}
-            }]),
+            content: json!([
+                {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "lookup",
+                    "input": {"key": "value"}
+                },
+                {
+                    "type": "server_tool_use",
+                    "id": "srvtoolu_1",
+                    "name": "tool_search",
+                    "input": {"query": "weather"}
+                }
+            ]),
             name: None,
             extra: assistant_extra,
         },
@@ -419,7 +437,26 @@ fn does_not_duplicate_native_and_openai_tool_uses() {
         .expect("mapped");
 
     assert_eq!(
-        mapped["messages"][1]["content"].as_array().unwrap().len(),
-        1
+        mapped["messages"][1]["content"],
+        json!([
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "lookup",
+                "input": {"key": "value"}
+            },
+            {
+                "type": "server_tool_use",
+                "id": "srvtoolu_1",
+                "name": "tool_search",
+                "input": {"query": "weather"}
+            },
+            {
+                "type": "tool_use",
+                "id": "toolu_2",
+                "name": "notify",
+                "input": {}
+            }
+        ])
     );
 }

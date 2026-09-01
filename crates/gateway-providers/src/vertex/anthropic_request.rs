@@ -82,12 +82,17 @@ fn map_anthropic_message_content(message: &CoreChatMessage) -> Result<Value, Pro
         Value::Array(items) => items,
         _ => Vec::new(),
     };
-    let has_native_tool_use = content
-        .iter()
-        .any(|block| block.get("type").and_then(Value::as_str) == Some("tool_use"));
-    if !has_native_tool_use {
-        content.extend(map_openai_assistant_tool_uses(message)?);
-    }
+    let additional_tool_uses = map_openai_assistant_tool_uses(message)?
+        .into_iter()
+        .filter(|tool_use| {
+            let id = tool_use.get("id").and_then(Value::as_str);
+            !content.iter().any(|block| {
+                block.get("type").and_then(Value::as_str) == Some("tool_use")
+                    && block.get("id").and_then(Value::as_str) == id
+            })
+        })
+        .collect::<Vec<_>>();
+    content.extend(additional_tool_uses);
 
     if content.is_empty() {
         Ok(Value::String(String::new()))
@@ -131,14 +136,7 @@ fn map_anthropic_content(content: &Value) -> Result<Value, ProviderError> {
                             mapped.push(json!({"type":"text","text":text}));
                         }
                     }
-                    "thinking" | "redacted_thinking" | "tool_use" | "tool_result" => {
-                        mapped.push(Value::Object(object.clone()));
-                    }
-                    other => {
-                        return Err(ProviderError::InvalidRequest(format!(
-                            "unsupported content type `{other}` for anthropic vertex mapping"
-                        )));
-                    }
+                    _ => mapped.push(Value::Object(object.clone())),
                 }
             }
             Ok(Value::Array(mapped))

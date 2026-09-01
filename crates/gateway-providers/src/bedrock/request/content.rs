@@ -379,17 +379,10 @@ pub(super) fn map_anthropic_content_blocks(content: &Value) -> Result<Vec<Value>
                         })?;
                         blocks.push(json!({ "type": "text", "text": text }));
                     }
-                    "thinking" | "redacted_thinking" | "tool_use" | "tool_result" => {
-                        blocks.push(item.clone());
-                    }
                     "image" | "image_url" | "input_image" => {
                         blocks.push(map_anthropic_image_block(object)?);
                     }
-                    other => {
-                        return Err(ProviderError::InvalidRequest(format!(
-                            "unsupported content type `{other}` for Anthropic Messages mapping"
-                        )));
-                    }
+                    _ => blocks.push(item.clone()),
                 }
             }
             Ok(blocks)

@@ -114,6 +114,12 @@ fn preserves_native_anthropic_continuation_blocks_without_duplicate_tool_calls()
             "name": "lookup",
             "input": {"query": "weather"},
             "caller": {"type": "direct"}
+        },
+        {
+            "type": "server_tool_use",
+            "id": "srvtoolu_1",
+            "name": "tool_search",
+            "input": {"query": "weather"}
         }
     ]);
     let tool_result_content = json!([
@@ -130,6 +136,11 @@ fn preserves_native_anthropic_continuation_blocks_without_duplicate_tool_calls()
             "is_error": false,
             "provider_extension": "preserve"
         },
+        {
+            "type": "tool_search_tool_result",
+            "tool_use_id": "srvtoolu_1",
+            "content": {"type": "tool_search_tool_search_result", "tool_references": []}
+        },
         {"type": "text", "text": "Continue", "cache_control": {"type": "ephemeral"}}
     ]);
     let mut assistant = CoreChatMessage {
@@ -140,14 +151,24 @@ fn preserves_native_anthropic_continuation_blocks_without_duplicate_tool_calls()
     };
     assistant.extra.insert(
         "tool_calls".to_string(),
-        json!([{
-            "id": native_tool_use_id,
-            "type": "function",
-            "function": {
-                "name": "lookup",
-                "arguments": "{\"query\":\"weather\"}"
+        json!([
+            {
+                "id": native_tool_use_id,
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{\"query\":\"weather\"}"
+                }
+            },
+            {
+                "id": "toolu_additional",
+                "type": "function",
+                "function": {
+                    "name": "notify",
+                    "arguments": "{}"
+                }
             }
-        }]),
+        ]),
     );
     let request = CoreChatRequest {
         model: "claude".to_string(),
@@ -169,8 +190,63 @@ fn preserves_native_anthropic_continuation_blocks_without_duplicate_tool_calls()
         map_chat_request_to_anthropic_messages(&request, &context("anthropic.claude-sonnet-4-5"))
             .expect("mapped");
 
-    assert_eq!(body["messages"][1]["content"], assistant_content);
+    let mapped_assistant_content = body["messages"][1]["content"].as_array().unwrap();
+    assert_eq!(
+        &mapped_assistant_content[..assistant_content.as_array().unwrap().len()],
+        assistant_content.as_array().unwrap()
+    );
+    assert_eq!(
+        mapped_assistant_content.last().unwrap(),
+        &json!({
+            "type": "tool_use",
+            "id": "toolu_additional",
+            "name": "notify",
+            "input": {}
+        })
+    );
     assert_eq!(body["messages"][2]["content"], tool_result_content);
+}
+
+#[test]
+fn preserves_native_tool_use_id_for_role_tool_result() {
+    let tool_use_id = "toolu.native:123";
+    let mut tool_result = message("tool", "sunny");
+    tool_result
+        .extra
+        .insert("tool_call_id".to_string(), json!(tool_use_id));
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![
+            message("user", "Check the weather"),
+            CoreChatMessage {
+                role: "assistant".to_string(),
+                content: json!([{
+                    "type": "tool_use",
+                    "id": tool_use_id,
+                    "name": "lookup",
+                    "input": {"query": "weather"}
+                }]),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            tool_result,
+        ],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(256))]),
+    };
+
+    let body =
+        map_chat_request_to_anthropic_messages(&request, &context("anthropic.claude-sonnet-4-5"))
+            .expect("mapped");
+
+    assert_eq!(
+        body["messages"][1]["content"][0]["id"],
+        body["messages"][2]["content"][0]["tool_use_id"]
+    );
+    assert_eq!(
+        body["messages"][2]["content"][0]["tool_use_id"],
+        tool_use_id
+    );
 }
 
 #[test]

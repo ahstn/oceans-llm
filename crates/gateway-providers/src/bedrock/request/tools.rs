@@ -96,7 +96,6 @@ pub(super) fn map_anthropic_assistant_tool_uses(
                     "assistant tool_calls entries must include `id`".to_string(),
                 )
             })?;
-            let id = normalize_bedrock_tool_use_id(id);
             let function = object
                 .get("function")
                 .and_then(Value::as_object)
@@ -166,7 +165,6 @@ pub(super) fn map_anthropic_tool_result(
         .ok_or_else(|| {
             ProviderError::InvalidRequest("tool messages must include `tool_call_id`".to_string())
         })?;
-    let tool_use_id = normalize_bedrock_tool_use_id(tool_use_id);
     let content = match &message.content {
         Value::String(text) => Value::String(text.clone()),
         Value::Array(items) => Value::Array(
