@@ -35,7 +35,9 @@ const ADMIN_VIEW_CACHE_TTL: Duration = Duration::from_secs(30);
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let command = cli.command.unwrap_or_else(|| Command::Serve(ServeArgs::from_env()));
+    let command = cli
+        .command
+        .unwrap_or_else(|| Command::Serve(ServeArgs::from_env()));
 
     if matches!(&command, Command::Config(ConfigCommand::Validate)) {
         validate_config_file(&cli.config)?;

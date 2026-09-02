@@ -1,5 +1,5 @@
+import { lazy, Suspense } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { Badge } from '@/components/ui/badge'
@@ -11,12 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart'
+import type { ChartConfig } from '@/components/ui/chart'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -48,6 +43,74 @@ const BREAKDOWN_LIMIT = 10
 const CHART_CONFIG: ChartConfig = {
   cost: { label: 'Priced spend', color: 'var(--chart-3)' },
 }
+type SpendChartDatum = {
+  day: string
+  cost: number
+  requests: number
+}
+
+const SpendTrendChart = lazy(async () => {
+  const [
+    { Area, AreaChart, CartesianGrid, XAxis, YAxis },
+    { ChartContainer, ChartTooltip, ChartTooltipContent },
+  ] = await Promise.all([import('recharts'), import('@/components/ui/chart')])
+
+  function SpendTrendChartComponent({ data }: { data: SpendChartDatum[] }) {
+    return (
+      <ChartContainer config={CHART_CONFIG} className="h-64 w-full">
+        <AreaChart accessibilityLayer data={data} margin={{ left: 4, right: 12 }}>
+          <defs>
+            <linearGradient id="usage-costs-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="var(--color-cost)" stopOpacity={0.35} />
+              <stop offset="95%" stopColor="var(--color-cost)" stopOpacity={0.04} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey="day"
+            tickLine={false}
+            axisLine={false}
+            minTickGap={24}
+            tickFormatter={formatDay}
+          />
+          <YAxis
+            tickLine={false}
+            axisLine={false}
+            width={56}
+            tickFormatter={(value: number) => CURRENCY_FORMATTER.format(value)}
+          />
+          <ChartTooltip
+            cursor={false}
+            content={
+              <ChartTooltipContent
+                labelFormatter={(_, payload) => formatDay(String(payload?.[0]?.payload?.day ?? ''))}
+                formatter={(value, _name, item) => (
+                  <div className="flex w-full items-center justify-between gap-4">
+                    <span className="text-muted-foreground">
+                      {item.payload.requests} priced requests
+                    </span>
+                    <span className="font-mono font-medium tabular-nums">
+                      {CURRENCY_FORMATTER.format(Number(value))}
+                    </span>
+                  </div>
+                )}
+              />
+            }
+          />
+          <Area
+            dataKey="cost"
+            type="monotone"
+            stroke="var(--color-cost)"
+            fill="url(#usage-costs-fill)"
+            strokeWidth={2}
+          />
+        </AreaChart>
+      </ChartContainer>
+    )
+  }
+
+  return { default: SpendTrendChartComponent }
+})
 
 // Executive dashboard: KPI strip, spend trend, and ranked share tables.
 // oxlint-disable-next-line eslint/max-lines-per-function
@@ -155,57 +218,9 @@ export function UsageCostsPage() {
           ) : peakDay === null ? (
             <EmptyReport />
           ) : (
-            <ChartContainer config={CHART_CONFIG} className="h-64 w-full">
-              <AreaChart accessibilityLayer data={chartData} margin={{ left: 4, right: 12 }}>
-                <defs>
-                  <linearGradient id="usage-costs-fill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--color-cost)" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="var(--color-cost)" stopOpacity={0.04} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="day"
-                  tickLine={false}
-                  axisLine={false}
-                  minTickGap={24}
-                  tickFormatter={formatDay}
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  width={56}
-                  tickFormatter={(value: number) => CURRENCY_FORMATTER.format(value)}
-                />
-                <ChartTooltip
-                  cursor={false}
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(_, payload) =>
-                        formatDay(String(payload?.[0]?.payload?.day ?? ''))
-                      }
-                      formatter={(value, _name, item) => (
-                        <div className="flex w-full items-center justify-between gap-4">
-                          <span className="text-muted-foreground">
-                            {item.payload.requests} priced requests
-                          </span>
-                          <span className="font-mono font-medium tabular-nums">
-                            {CURRENCY_FORMATTER.format(Number(value))}
-                          </span>
-                        </div>
-                      )}
-                    />
-                  }
-                />
-                <Area
-                  dataKey="cost"
-                  type="monotone"
-                  stroke="var(--color-cost)"
-                  fill="url(#usage-costs-fill)"
-                  strokeWidth={2}
-                />
-              </AreaChart>
-            </ChartContainer>
+            <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+              <SpendTrendChart data={chartData} />
+            </Suspense>
           )}
         </CardContent>
       </Card>

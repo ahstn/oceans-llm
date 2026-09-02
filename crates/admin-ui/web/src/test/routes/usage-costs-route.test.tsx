@@ -51,29 +51,29 @@ function emptyReport(windowDays: 7 | 30, ownerKind: string) {
   }
 }
 
-describe('UsageCostsPage', () => {
-  beforeEach(() => {
-    routeMock.useLoaderData.mockReset()
-    routeMock.useRouteContext.mockReset()
-    getSpendUsageReportMock.mockReset()
-    toastErrorMock.mockReset()
-    routeMock.useRouteContext.mockReturnValue({
-      session: {
-        must_change_password: false,
-        user: {
-          id: 'user_1',
-          name: 'Admin User',
-          email: 'admin@example.com',
-          global_role: 'platform_admin',
-        },
+beforeEach(() => {
+  routeMock.useLoaderData.mockReset()
+  routeMock.useRouteContext.mockReset()
+  getSpendUsageReportMock.mockReset()
+  toastErrorMock.mockReset()
+  routeMock.useRouteContext.mockReturnValue({
+    session: {
+      must_change_password: false,
+      user: {
+        id: 'user_1',
+        name: 'Admin User',
+        email: 'admin@example.com',
+        global_role: 'platform_admin',
       },
-    })
+    },
   })
+})
 
-  afterEach(() => {
-    cleanup()
-  })
+afterEach(() => {
+  cleanup()
+})
 
+describe('UsageCostsPage reports', () => {
   it('renders live ledger totals and owner/model breakdowns', async () => {
     routeMock.useLoaderData.mockReturnValue({
       exportOrigin: '',
@@ -153,7 +153,9 @@ describe('UsageCostsPage', () => {
     expect(screen.getByText('No priced spend yet')).toBeInTheDocument()
     expect(screen.getByText('No priced spend in window')).toBeInTheDocument()
   })
+})
 
+describe('UsageCostsPage filters', () => {
   it('requests the selected window and owner kind, committing filters on success', async () => {
     routeMock.useLoaderData.mockReturnValue({ exportOrigin: '', data: emptyReport(7, 'all') })
     getSpendUsageReportMock.mockResolvedValue({ data: emptyReport(30, 'service_account') })
