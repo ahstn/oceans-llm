@@ -25,7 +25,20 @@ Rust-first LLM gateway workspace with an embedded TanStack Start admin control p
 - `crates/admin-ui/web`
   - TanStack Start and React admin UI
 
-## Quick Start
+| If you want to... | Start here |
+| --- | --- |
+| Understand the product and its capabilities | [Overview and Features](docs/overview-features.md) |
+| Run Oceans LLM for the first time | [Getting Started](docs/getting-started.md) |
+| Choose between local, Compose, and Kubernetes deployments | [Deploy Oceans LLM](docs/setup/deploy-and-operations.md) |
+| Understand startup, seeded state, and first access | [Runtime Bootstrap and Access](docs/setup/runtime-bootstrap-and-access.md) |
+| Configure providers, models, authentication, and runtime behavior | [Configuration Reference](docs/configuration/configuration-reference.md) |
+| Understand routing and supported API families | [Model Routing and APIs](docs/configuration/model-routing-and-api-behavior.md) and [Provider API Compatibility](docs/reference/provider-api-compatibility.md) |
+| Configure identities, service accounts, API keys, or budgets | [Identity and Access](docs/access/identity-and-access.md), [Service Accounts](docs/access/service-accounts.md), and [Budgets](docs/access/budgets.md) |
+| Register MCP servers and control tool access | [MCP Servers](docs/configuration/mcp-servers.md), [MCP Tool Access](docs/mcp/mcp-tool-access.md), and [MCP Client Setup](docs/mcp/mcp-client-setup.md) |
+| Enable and operate gateway guardrails | [Gateway Guardrails](docs/operations/gateway-guardrails.md) |
+| Configure telemetry or inspect request logs | [Observability and Request Logs](docs/operations/observability-and-request-logs.md) |
+| Upgrade a deployment or recover a failure | [Admin Runbooks](docs/operations/operator-runbooks.md) |
+| Contribute to the repository | [Contributing](CONTRIBUTING.md) and [Contributing & Internal](docs/contributing/index.md) |
 
 Install the repo toolchain:
 

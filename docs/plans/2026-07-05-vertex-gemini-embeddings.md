@@ -1,6 +1,6 @@
 # Vertex Gemini Embeddings Implementation Plan
 
-`See also`: [Google Vertex AI](../providers/gcp-vertex.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Budgets](../access/budgets.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
+`See also`: [Google Vertex AI](../providers/gcp-vertex.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md), [Budgets](../access/budgets.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
 
 - Date: 2026-07-05
 - Status: Draft plan

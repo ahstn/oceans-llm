@@ -1,6 +1,6 @@
 # Google Cloud Run OpenAI-Compatible Models
 
-`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Google Vertex AI](gcp-vertex.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
+`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Google Vertex AI](gcp-vertex.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
 
 This page owns provider-specific configuration examples for private Cloud Run services that expose an OpenAI-compatible `/v1` API, such as vLLM-hosted Gemma deployments.
 

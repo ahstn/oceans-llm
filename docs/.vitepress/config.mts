@@ -30,7 +30,7 @@ const primarySidebar = [
         link: "/configuration/configuration-reference",
       },
       {
-        text: "Model Routing and API Behavior",
+        text: "Model Routing and APIs",
         link: "/configuration/model-routing-and-api-behavior",
       },
       {
