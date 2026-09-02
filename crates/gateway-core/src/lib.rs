@@ -130,7 +130,7 @@ pub use protocol::translate::{
     openai_responses_request_to_core,
 };
 pub use reasoning_policy::{
-    enforce_chat_reasoning_effort, enforce_reasoning_effort_value,
+    enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
     enforce_responses_reasoning_effort,
 };
 pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};

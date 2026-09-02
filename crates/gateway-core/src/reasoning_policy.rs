@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::{CoreChatRequest, CoreResponsesRequest, GatewayError, ReasoningEffort};
 
@@ -20,6 +20,16 @@ pub fn enforce_reasoning_effort_value(
         Value::Object(object) => enforce_reasoning_effort_fields(object, max_reasoning_effort),
         _ => enforce_effort_value(value, max_reasoning_effort),
     }
+}
+
+/// Rejects categorical reasoning effort settings in a borrowed request/provider object.
+pub fn enforce_reasoning_effort_map(
+    object: &Map<String, Value>,
+    max_reasoning_effort: Option<ReasoningEffort>,
+) -> Result<(), GatewayError> {
+    max_reasoning_effort.map_or(Ok(()), |max_reasoning_effort| {
+        enforce_reasoning_effort_fields(object, max_reasoning_effort)
+    })
 }
 
 fn enforce_effort_value(

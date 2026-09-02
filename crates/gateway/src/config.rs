@@ -13,7 +13,7 @@ use gateway_core::{
     SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
     SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
     SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
-    enforce_reasoning_effort_value, hash_gateway_key_secret, parse_gateway_api_key,
+    enforce_reasoning_effort_map, hash_gateway_key_secret, parse_gateway_api_key,
     validate_entity_tags,
 };
 use gateway_guardrails::{
@@ -604,16 +604,13 @@ impl GatewayConfig {
                     ))?;
                 }
 
-                enforce_reasoning_effort_value(
-                    &Value::Object(route.extra_body.clone()),
-                    model.max_reasoning_effort,
-                )
-                .with_context(|| {
-                    format!(
-                        "model `{}` route `{}` extra_body violates max_reasoning_effort",
-                        model.id, route.upstream_model
-                    )
-                })?;
+                enforce_reasoning_effort_map(&route.extra_body, model.max_reasoning_effort)
+                    .with_context(|| {
+                        format!(
+                            "model `{}` route `{}` extra_body violates max_reasoning_effort",
+                            model.id, route.upstream_model
+                        )
+                    })?;
 
                 let provider = provider_by_id.get(route.provider.as_str()).copied();
 
@@ -668,8 +665,8 @@ impl GatewayConfig {
             }
 
             for route in &current.routes {
-                enforce_reasoning_effort_value(
-                    &Value::Object(route.extra_body.clone()),
+                enforce_reasoning_effort_map(
+                    &route.extra_body,
                     effective_max_reasoning_effort,
                 )
                 .with_context(|| {
