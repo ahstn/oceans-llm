@@ -6,7 +6,7 @@
 ## Current state
 
 - [Configuration Reference](../configuration/configuration-reference.md#route-metadata-overrides)
-- [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md#effective-route-metadata)
+- [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md#effective-route-metadata)
 - [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md#route-pricing-overrides)
 - [Client Harness Configuration](../configuration/client-harness-configuration.md)
 

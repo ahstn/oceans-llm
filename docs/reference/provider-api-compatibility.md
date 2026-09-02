@@ -1,6 +1,6 @@
 # Provider API Compatibility
 
-`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Request Lifecycle and Failure Modes](request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [OpenAI Responses API Family Boundary](../adr/2026-04-23-openai-responses-api-family-boundary.md)
+`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md), [Request Lifecycle and Failure Modes](request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [OpenAI Responses API Family Boundary](../adr/2026-04-23-openai-responses-api-family-boundary.md)
 
 This page describes the live compatibility contract between the gateway's public OpenAI-shaped API and provider-specific upstream APIs.
 

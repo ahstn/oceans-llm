@@ -397,23 +397,6 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     }
 
     let mut body = Map::new();
-    match target {
-        AnthropicMessagesTarget::RuntimeInvoke => {
-            body.insert(
-                "anthropic_version".to_string(),
-                Value::String("bedrock-2023-05-31".to_string()),
-            );
-        }
-        AnthropicMessagesTarget::MantleMessages => {
-            body.insert(
-                "model".to_string(),
-                Value::String(context.upstream_model.clone()),
-            );
-            if request.stream {
-                body.insert("stream".to_string(), Value::Bool(true));
-            }
-        }
-    }
 
     let mut system = Vec::new();
     let mut messages = Vec::new();
@@ -434,7 +417,16 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
             }
             "assistant" => {
                 let mut content = map_anthropic_content_blocks(&message.content)?;
-                content.extend(map_anthropic_assistant_tool_uses(message)?);
+                for tool_use in map_anthropic_assistant_tool_uses(message)? {
+                    let id = tool_use.get("id").and_then(Value::as_str);
+                    let is_duplicate = content.iter().any(|block| {
+                        block.get("type").and_then(Value::as_str) == Some("tool_use")
+                            && block.get("id").and_then(Value::as_str) == id
+                    });
+                    if !is_duplicate {
+                        content.push(tool_use);
+                    }
+                }
                 messages.push(json!({
                     "role": "assistant",
                     "content": content
@@ -485,6 +477,25 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
         return Err(ProviderError::InvalidRequest(
             "Anthropic Messages requires `max_tokens` or `max_completion_tokens`".to_string(),
         ));
+    }
+
+    match target {
+        AnthropicMessagesTarget::RuntimeInvoke => {
+            body.remove("model");
+            body.remove("stream");
+            body.insert(
+                "anthropic_version".to_string(),
+                Value::String("bedrock-2023-05-31".to_string()),
+            );
+        }
+        AnthropicMessagesTarget::MantleMessages => {
+            body.remove("anthropic_version");
+            body.insert(
+                "model".to_string(),
+                Value::String(context.upstream_model.clone()),
+            );
+            body.insert("stream".to_string(), Value::Bool(request.stream));
+        }
     }
 
     Ok(Value::Object(body))
