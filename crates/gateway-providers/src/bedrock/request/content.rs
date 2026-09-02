@@ -399,33 +399,40 @@ pub(super) fn map_anthropic_content_blocks(content: &Value) -> Result<Vec<Value>
 fn map_anthropic_tool_result_content_block(
     object: &Map<String, Value>,
 ) -> Result<Value, ProviderError> {
-    if object.contains_key("tool_use_id") && object.contains_key("content") {
+    let tool_use_id = match object.get("tool_use_id") {
+        Some(value) => value.as_str(),
+        None => object.get("toolUseId").and_then(Value::as_str),
+    }
+    .ok_or_else(|| {
+        ProviderError::InvalidRequest(
+            "tool_result content must include a string tool_use_id".to_string(),
+        )
+    })?;
+    let content = match object.get("content") {
+        Some(value) if value.is_string() || value.is_array() => value.clone(),
+        Some(Value::Null) | None => object
+            .get("text")
+            .and_then(Value::as_str)
+            .map(|text| Value::String(text.to_string()))
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "tool_result content must include `content` or string `text`".to_string(),
+                )
+            })?,
+        Some(_) => {
+            return Err(ProviderError::InvalidRequest(
+                "tool_result `content` must be a string or array".to_string(),
+            ));
+        }
+    };
+
+    if object.contains_key("tool_use_id")
+        && object
+            .get("content")
+            .is_some_and(|value| value.is_string() || value.is_array())
+    {
         return Ok(Value::Object(object.clone()));
     }
-
-    let tool_use_id = object
-        .get("tool_use_id")
-        .or_else(|| object.get("toolUseId"))
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            ProviderError::InvalidRequest(
-                "tool_result content must include tool_use_id".to_string(),
-            )
-        })?;
-    let content = object
-        .get("content")
-        .cloned()
-        .or_else(|| {
-            object
-                .get("text")
-                .and_then(Value::as_str)
-                .map(|text| Value::String(text.to_string()))
-        })
-        .ok_or_else(|| {
-            ProviderError::InvalidRequest(
-                "tool_result content must include `content` or string `text`".to_string(),
-            )
-        })?;
 
     let mut block = object.clone();
     block.insert(

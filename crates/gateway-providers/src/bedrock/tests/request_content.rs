@@ -235,6 +235,7 @@ fn normalizes_anthropic_tool_result_aliases() {
                 {
                     "type": "tool_result",
                     "tool_use_id": "toolu_text_alias",
+                    "content": null,
                     "text": "rainy",
                     "cache_control": {"type": "ephemeral"}
                 }
@@ -267,6 +268,43 @@ fn normalizes_anthropic_tool_result_aliases() {
             }
         ])
     );
+}
+
+#[test]
+fn rejects_invalid_canonical_anthropic_tool_result_fields() {
+    for invalid_content in [
+        json!({
+            "type": "tool_result",
+            "tool_use_id": 1,
+            "content": "sunny"
+        }),
+        json!({
+            "type": "tool_result",
+            "tool_use_id": "toolu_invalid_content",
+            "content": {"unexpected": true}
+        }),
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: json!([invalid_content]),
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: false,
+            extra: BTreeMap::from([("max_tokens".to_string(), json!(256))]),
+        };
+
+        let error = map_chat_request_to_anthropic_messages(
+            &request,
+            &context("anthropic.claude-sonnet-4-5"),
+        )
+        .expect_err("invalid tool result rejected")
+        .to_string();
+
+        assert!(error.contains("tool_result"), "{error}");
+    }
 }
 
 #[test]
