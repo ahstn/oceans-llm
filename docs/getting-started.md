@@ -33,7 +33,7 @@ This page is the admin, user, caller, and client map for the gateway. Use `Contr
 ## Common Questions
 
 - Model shows up but fails:
-  - [Model Routing and API Behavior](configuration/model-routing-and-api-behavior.md)
+  - [Model Routing and APIs](configuration/model-routing-and-api-behavior.md)
   - [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
 - Request succeeds but is not charged:
   - [Pricing Catalog and Accounting](configuration/pricing-catalog-and-accounting.md)

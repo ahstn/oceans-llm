@@ -1,284 +1,264 @@
-# Model Routing and API Behavior
-
-`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Data Relationships](../contributing/reference/data-relationships.md), [Identity and Access](../access/identity-and-access.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Model Aliases and Provider-Only Route Config](../adr/2026-03-10-model-aliases-and-provider-route-config.md), [ADR: Capability-Aware Route Gating with Strict Fail-Fast Validation](../adr/2026-03-13-capability-aware-route-gating.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
-
-This page explains how the public `/v1/*` surface resolves a request into one concrete route.
-
-## Source of Truth
-
-- config parsing:
-  - [../crates/gateway/src/config.rs](../../crates/gateway/src/config.rs)
-- model access and tag selection:
-  - [../crates/gateway-service/src/model_access.rs](../../crates/gateway-service/src/model_access.rs)
-- alias resolution:
-  - [../crates/gateway-service/src/model_resolution.rs](../../crates/gateway-service/src/model_resolution.rs)
-- route planning:
-  - [../crates/gateway-service/src/route_planner.rs](../../crates/gateway-service/src/route_planner.rs)
-- HTTP handlers:
-  - [../crates/gateway/src/http/handlers.rs](../../crates/gateway/src/http/handlers.rs)
-
-## Public Endpoints
-
-The live public endpoints are:
-
-- `GET /v1/models`
-- `POST /v1/chat/completions`
-- `POST /v1/messages`
-- `POST /messages`
-- `POST /v1/responses`
-- `POST /v1/embeddings`
-
-All are authenticated.
-
-## Requested Versus Resolved Model Identity
-
-The gateway keeps two model identities in play:
-
-- requested model
-  - what the caller asked for
-- resolved model
-  - the canonical execution target after alias resolution
-
-That distinction is persisted into request logs.
-
-## Model Forms
-
-Configured gateway models are either:
-
-- provider-backed
-- alias-backed
-
-A model cannot define both routes and `alias_of`.
-
-Aliases are independent gateway model keys for authorization. An allowlist on an alias does not inherit from the target model, and an allowlist on the target model does not automatically apply to the alias.
-
-## `tag:` Selectors
-
-The request `model` field can be:
-
-- a concrete gateway model key
-- a tag selector such as `tag:fast`
-
-Tag selectors use AND semantics.
-
-- every requested tag must exist on the chosen model
-- selection only considers models in the caller's effective accessible set
-- API-key grants, principal-centric restrictions, and model-level allowlists all contribute to that effective set
-- blocked allowlisted models are skipped as candidates rather than selected and denied later
-- candidates are ordered by model `rank`, then model key
-
-## Routes, Priority, and Weight
-
-Provider-backed models resolve to one or more routes.
-
-Each route can define:
-
-- `provider`
-- `upstream_model`
-- `priority`
-- `weight`
-- `enabled`
-- `capabilities`
-- `context_window_tokens`
-- `pricing_override`
-
-Current planner behavior:
-
-- lower `priority` is attempted first
-- `weight` only matters within the same priority bucket
-- disabled routes and routes with non-positive weight are excluded
-
-Current runtime nuance:
-
-- weighted routing is not multi-route fallback
-- the planner produces an ordered route list
-- the handler executes only the first eligible route
-
-Weight affects selection inside a single priority bucket. It does not mean the gateway sends one request to many providers, retries the next route, or falls back after an upstream error. Configurable retry and fallback remains separate follow-up work in [issue #118](https://github.com/ahstn/oceans-llm/issues/118).
-
-## Effective Route Metadata
-
-`context_window_tokens` declares a deployment-specific context cap for one route. The effective context is the smaller of the configured cap and a known catalog context limit. Catalog input and output limits are also clamped to the effective context. A catalog refresh may lower effective metadata, but it never rewrites the configured override.
-
-Serving startup validates configured context caps after pricing catalog initialization. A cap above a known catalog context fails startup. If the catalog has no context for that route, the configured cap is accepted. Manual and scheduled catalog refreshes keep serving available if newly refreshed catalog context is smaller; Oceans applies the smaller value and emits a warning.
-
-The Models admin API exposes logical-model limits conservatively:
-
-- each dimension is the minimum across selectable routes
-- a dimension is `null` when any selectable route lacks that dimension
-- context provenance is `configured_override`, `catalog`, or `mixed`
-- pricing remains the primary route's effective pricing and sets `pricing_varies_by_route` when another selectable route differs or is unpriced
-
-Generated client configurations use the same conservative logical-model limits. The OpenAI-compatible `/v1/models` response remains an identity/discovery contract and does not gain Oceans-specific metadata.
-
-This first slice governs advertised and internally consumed model metadata only. It does not count request tokens or reject oversize prompts before provider execution; request-time preflight enforcement remains follow-up work until Oceans has a canonical tokenizer contract.
-
-## Capability-Aware Gating
-
-Routes are filtered before provider execution based on request requirements and route capability.
-
-Current capability dimensions:
-
-- `chat_completions`
-- `responses`
-- `stream`
-- `embeddings`
-- `tools`
-- `vision`
-- `json_schema`
-- `developer_role`
-
-Capability metadata exists to fail early at the gateway edge. It is not a copy of provider marketing language.
-
-Effective capability is the intersection of route metadata and provider runtime support.
-
-- route capability defaults are permissive
-- provider implementations can still reject unsupported API families
-- partial provider routes should explicitly disable unsupported API families
-
-For example, current Vertex routes support the chat path but not the Responses path. A Vertex chat route should keep `responses: false` and `embeddings: false` so `/v1/responses` or `/v1/embeddings` fails during capability filtering instead of later inside the provider adapter. A separate Vertex text-embedding route can set `embeddings: true` for supported Google embedding models.
-
-Cloud Run OpenAI-compatible routes use the same route capability model as ordinary `openai_compat` routes. If the deployed vLLM service only exposes Chat Completions, keep `responses: false` and `embeddings: false` on that route even though the provider adapter can speak those OpenAI-compatible families when the upstream supports them.
-
-## Compatibility Profiles
-
-Routes can also define provider API compatibility metadata.
-
-Capabilities and compatibility have different jobs:
-
-- `capabilities` gates whether the route can execute a request at all
-- `compatibility` rewrites the outbound provider request shape after a route is selected
-
-OpenAI-compatible route profiles currently cover deterministic Chat Completions transforms such as `store` removal, token field renaming, `developer` role rewriting, `reasoning_effort` handling, and stream usage requests. Responses uses a separate typed request/provider path; Chat Completions transforms must not be used as Responses shims.
-
-OpenRouter routes can also define `compatibility.openrouter.provider` policy. That policy is serialized into the upstream Chat Completions request body as OpenRouter's `provider` object after Oceans has selected one gateway route. OpenRouter `order`, `only`, `ignore`, `zdr`, latency, and price settings affect OpenRouter's upstream provider selection for that one request; they do not change Oceans route `priority`, route `weight`, or the current single-route execution behavior.
-
-See [provider-api-compatibility.md](../reference/provider-api-compatibility.md) for the compatibility matrix and field-level contract.
-
-Cloud Run vLLM/Gemma controls such as `chat_template_kwargs.enable_thinking` and `skip_special_tokens` are additive upstream request fields. Put them in route `extra_body`, not in a compatibility profile.
-
-## Worked Request Path
-
-One plain path looks like this:
-
-- request model:
-  - `tag:fast`
-- allowed model set:
-  - `gpt-4o-mini`, `claude-3-5-haiku`
-- selection result:
-  - `gpt-4o-mini`
-- alias result:
-  - `openai-gpt-4o-mini`
-- planned route order:
-  - `openai-primary`, then `openai-backup`
-- capability filter:
-  - `openai-primary` stays eligible
-- execution:
-  - the handler uses `openai-primary`
-- request-log fields:
-  - `model_key = gpt-4o-mini`
-  - `resolved_model_key = openai-gpt-4o-mini`
-  - `provider_key = openai-primary`
-
-Use [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md) for the later logging, pricing, and budget effects.
-
-## `/v1/models`
-
-`GET /v1/models` returns the gateway models visible to the authenticated API key.
-
-Important notes:
-
-- it reflects gateway model identity, not raw provider catalogs
-- it shows grant-visible identities
-- it does not promise executable routes
-
-That last point matters. A model can be visible and still fail if route viability or capability checks remove every route.
-
-## `/v1/chat/completions`
-
-Current behavior highlights:
-
-- request IDs are assigned once at the HTTP middleware boundary and propagated through `x-request-id`
-- budget checks run before provider execution
-- successful requests write usage when usage can be normalized
-- request logs store both requested and resolved model identity
-
-## `/v1/messages`
-
-`POST /v1/messages` and the unversioned `POST /messages` alias accept Anthropic Messages-compatible request bodies for chat-capable routes. The gateway authenticates Anthropic-style `x-api-key` headers, converts the Messages request into the internal chat request boundary for model resolution and provider execution, then returns Anthropic-compatible response payloads or Messages SSE events.
-
-For Anthropic-on-Vertex Claude routes, the Messages path supports text messages, `system`, `max_tokens`, `stream`, `tools`, `tool_choice`, and `thinking` fields that are compatible with the Vertex Anthropic mapper. OpenAI Chat Completions requests with function tools use the same Vertex tool mapping. Routes that cannot support tools should keep `tools: false` so capability filtering fails at the gateway edge.
-
-## `/v1/responses`
-
-`POST /v1/responses` follows the same authentication, model resolution, route planning, budget guard, logging, and ledger flow as Chat Completions.
-
-Important differences:
-
-- route capability filtering requires `responses`
-- provider execution calls the provider's Responses methods, not Chat Completions methods
-- streaming preserves Responses `response.*` event names and payloads instead of rewriting them into Chat Completions chunks
-- usage is normalized from `input_tokens`, `output_tokens`, and `total_tokens`
-
-## `/v1/embeddings`
-
-`POST /v1/embeddings` follows the same high-level path:
-
-- authenticate
-- resolve the requested model
-- capability-filter the route set
-- execute the first eligible route
-- record the provider execution attempt when request logging writes a summary row
-- write usage when usage can be normalized
-
-Vertex text embeddings are supported only by explicit embedding routes for supported Google publisher models:
-
-- `google/gemini-embedding-001`
-- `google/gemini-embedding-2`
-- `google/text-embedding-005`
-- `google/text-multilingual-embedding-002`
-
-Those routes should set `embeddings: true` and disable unrelated API families such as `chat_completions`, `responses`, `stream`, `tools`, `vision`, and `json_schema`. Gemini chat routes should keep `embeddings: false`.
-
-The OpenAI-compatible embeddings request supports string and array-of-strings input. The Vertex mapper rejects unsupported input forms before the provider call: token arrays, nested arrays, non-string values, empty arrays, empty strings, multimodal payloads, and `encoding_format: "base64"`.
-
-Examples:
-
-| Request shape | Expected route behavior |
+# Model Routing and APIs
+
+Oceans gives callers stable gateway model names while admins control the providers, upstream models, capabilities, and compatibility settings behind them. This page explains how an authenticated API request becomes one provider request and how behavior differs across the public API families.
+
+`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Identity and Access](../access/identity-and-access.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md)
+
+## Public API surface
+
+The gateway exposes these authenticated endpoints:
+
+| Endpoint | API family | Route requirement |
+| --- | --- | --- |
+| `GET /v1/models` | OpenAI-compatible model discovery | Model is visible to the caller |
+| `POST /v1/chat/completions` | OpenAI Chat Completions | `chat_completions: true` |
+| `POST /v1/responses` | OpenAI Responses | `responses: true` |
+| `POST /v1/embeddings` | OpenAI Embeddings | `embeddings: true` |
+| `POST /v1/messages` | Anthropic Messages | Chat-capable route with provider support |
+| `POST /messages` | Anthropic Messages compatibility alias | Chat-capable route with provider support |
+
+Provider support varies by API family. A provider that supports Chat Completions does not necessarily support Responses, embeddings, Anthropic Messages, or every hosted tool. Use [Provider API Compatibility](../reference/provider-api-compatibility.md) as the current support matrix.
+
+## Follow the request path
+
+A model request passes through these routing stages:
+
+```text
+requested model
+  -> caller access and model grants
+  -> tag selection, when requested
+  -> alias resolution
+  -> enabled and weighted routes
+  -> API and feature capability checks
+  -> first eligible route
+  -> provider compatibility transforms
+  -> upstream provider request
+```
+
+Oceans records the requested model, resolved model, selected provider, and provider attempt in request observability. This keeps the caller-facing identity separate from the route that executed it.
+
+## Configure a provider-backed model
+
+A provider-backed model has one or more routes:
+
+```yaml
+models:
+  - id: fast
+    description: General-purpose low-latency model
+    tags: [chat, fast]
+    rank: 10
+    routes:
+      - provider: openai-primary
+        upstream_model: gpt-5-mini
+        priority: 10
+        weight: 3
+        enabled: true
+        capabilities:
+          chat_completions: true
+          responses: true
+          embeddings: false
+          stream: true
+          tools: true
+          vision: true
+          json_schema: true
+          developer_role: true
+      - provider: openai-secondary
+        upstream_model: gpt-5-mini
+        priority: 10
+        weight: 1
+        enabled: true
+        capabilities:
+          chat_completions: true
+          responses: true
+          embeddings: false
+          stream: true
+          tools: true
+          vision: true
+          json_schema: true
+          developer_role: true
+```
+
+The model ID is the stable name callers send in the `model` field. Each route identifies a configured provider and the model name expected by that provider.
+
+See [Configuration Reference](configuration-reference.md) for complete field syntax, provider credentials, compatibility profiles, and validation constraints.
+
+## Understand requested and resolved models
+
+Oceans keeps two model identities:
+
+| Identity | Meaning |
 | --- | --- |
-| `/v1/embeddings` against an embedding-only `google/gemini-embedding-001` or `google/gemini-embedding-2` route | Route can pass capability filtering and execute through Vertex `:predict` or `:embedContent`, respectively. |
-| `/v1/embeddings` against a Gemini chat route with `embeddings: false` | Capability filtering removes the route and returns an edge error before Vertex execution. |
-| `/v1/embeddings` against `google/gemini-2.0-flash` with `embeddings: true` | Provider support checks reject the unsupported embedding model instead of treating all `google/*` models as embedding-capable. |
-| `/v1/embeddings` with `input: [[1, 2, 3]]` | The embeddings mapper rejects the unsupported OpenAI token-array/nested-array form locally. |
+| Requested model | The model name or selected gateway model requested by the caller |
+| Resolved model | The canonical provider-backed model after alias resolution |
 
-## Route Viability Versus Capability Mismatch
+Both identities are written to request logs. This distinction matters when an alias presents a stable client name while its target changes over time.
 
-| Symptom | Meaning |
+### Use model aliases
+
+An alias is a gateway model that points to another gateway model:
+
+```yaml
+models:
+  - id: coding-default
+    alias_of: coding-primary
+
+  - id: coding-primary
+    routes:
+      - provider: openai-primary
+        upstream_model: gpt-5
+```
+
+A model cannot define both `alias_of` and `routes`. Startup rejects missing alias targets and cycles. Request resolution rejects alias chains beyond the supported depth.
+
+Aliases are independent authorization keys. Access to `coding-default` does not imply access to `coding-primary`, and access to the target does not automatically grant access to the alias. Grant the identity callers are expected to request.
+
+### Use tag selectors
+
+A caller can request a concrete model ID or a selector such as:
+
+```json
+{
+  "model": "tag:chat,fast"
+}
+```
+
+Tag selectors use AND semantics. The selected model must contain every requested tag and must be available in the caller's effective model set.
+
+Oceans applies API-key grants, principal restrictions, and model allowlists before choosing a tag candidate. It then orders eligible models by ascending `rank` and model ID. A blocked model is skipped rather than selected and rejected later.
+
+Use tags for policy-oriented choices such as `fast`, `coding`, or `low-cost`. Use a concrete model ID when the caller requires a specific gateway contract.
+
+## Control route selection
+
+Each provider-backed model can define several routes. Route selection uses these fields:
+
+| Field | Behavior |
 | --- | --- |
-| `invalid_request` | the model resolved, but capability filtering removed every route |
-| `no_routes_available` | the model exists, but no usable route survived provider and route-viability checks |
+| `enabled` | Excludes the route when `false` |
+| `priority` | Lower values are considered before higher values |
+| `weight` | Controls weighted selection among routes with the same priority |
+| `provider` | Selects the configured provider connection |
+| `upstream_model` | Names the model sent to that provider |
 
-That distinction is one of the fastest ways to debug a visible-but-unusable model.
+Routes with non-positive weight are excluded. Within each priority group, weight changes the probability that a route is selected first.
 
-## Current V1 Behavior
+### Weight is not fallback
 
-The live runtime is intentionally narrow in this slice:
+The gateway currently executes only the first eligible route. It does not retry another route after an upstream error and does not send the request to several providers.
 
-- single-route execution only
-- no retry loop
-- no live fallback loop
-- request-attempt records describe the single provider execution attempt; configurable retry/fallback execution is tracked separately in issue #118
-- strict capability filtering before provider execution
+For example, weights of `3` and `1` at the same priority produce weighted first-route selection. They do not mean “try the first provider three times, then fail over to the second.” Configure each selectable route as a valid execution target and monitor provider failures independently.
 
-The open retry/fallback policy work must amend this section when it lands; see [issue #118](https://github.com/ahstn/oceans-llm/issues/118).
+## Gate routes by capability
 
-## What This Page Does Not Own
+Capabilities remove incompatible routes before provider execution:
 
-- config field syntax and defaults:
-  - [configuration-reference.md](configuration-reference.md)
-- full cross-cutting request path:
-  - [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
-- exact pricing coverage:
-  - [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md)
-- budget behavior and setup:
-  - [budgets.md](../access/budgets.md)
+| Capability | Required when the request uses |
+| --- | --- |
+| `chat_completions` | `/v1/chat/completions` or a compatible chat path |
+| `responses` | `/v1/responses` |
+| `embeddings` | `/v1/embeddings` |
+| `stream` | Streaming output |
+| `tools` | Function, custom, MCP, or other supported tools |
+| `vision` | Image or supported multimodal input |
+| `json_schema` | Structured output using JSON Schema |
+| `developer_role` | A developer-role message |
+
+Effective support is the intersection of configured capability metadata and provider runtime support. Capability defaults are permissive, so partial provider routes should explicitly disable unsupported families and features.
+
+For example, an embedding-only route should normally disable unrelated capabilities:
+
+```yaml
+capabilities:
+  chat_completions: false
+  responses: false
+  embeddings: true
+  stream: false
+  tools: false
+  vision: false
+  json_schema: false
+  developer_role: false
+```
+
+Capability checks fail at the gateway edge. They do not make an unsupported upstream feature available merely because its flag is enabled.
+
+## Apply compatibility profiles
+
+Capabilities and compatibility have different purposes:
+
+- `capabilities` decides whether a route may execute a request.
+- `compatibility` adjusts the provider request after route selection.
+
+OpenAI-compatible Chat Completions profiles can remove unsupported `store` fields, rename token-limit fields, rewrite the `developer` role, handle `reasoning_effort`, control stream-usage requests, and omit unsupported empty tool lists.
+
+Responses is a separate API family with its own typed request and streaming path. Chat Completions transforms are not used as Responses shims.
+
+Provider-specific profiles also cover Amazon Bedrock API styles and OpenRouter provider policy. OpenRouter's `order`, `only`, `ignore`, zero-data-retention, latency, and price settings affect upstream selection inside the chosen OpenRouter route. They do not change Oceans route priority, weight, or single-route execution.
+
+Put additive provider request fields that are not compatibility behavior in route `extra_body` or `extra_headers`. See [Provider API Compatibility](../reference/provider-api-compatibility.md) for supported profiles and API-specific constraints.
+
+## Configure route metadata
+
+`context_window_tokens` sets a deployment-specific context cap for one route. When the pricing catalog also knows the model limit, Oceans uses the smaller value. A configured cap above a known catalog limit fails startup.
+
+The Models admin API reports logical-model metadata conservatively across selectable routes:
+
+- Each token-limit dimension is the minimum known value.
+- A dimension is unknown when any selectable route lacks it.
+- Context provenance is `configured_override`, `catalog`, or `mixed`.
+- Pricing uses the primary route and reports when pricing varies by route.
+
+Generated client configurations use the same conservative limits. `GET /v1/models` remains an identity and discovery response; it does not expose Oceans-specific route metadata.
+
+The context value is metadata, not request-time token enforcement. Oceans does not currently tokenize every request and reject an oversized prompt before provider execution.
+
+## Understand API-specific behavior
+
+### Model discovery
+
+`GET /v1/models` returns gateway model identities visible to the authenticated API key. Visibility does not guarantee that a route can execute every API family. A model can be visible while all routes are disabled, non-viable, or incompatible with the requested operation.
+
+### Chat Completions
+
+`POST /v1/chat/completions` uses the shared authentication, model resolution, route planning, budget, logging, and accounting path. Compatibility transforms apply after route selection and before the provider request.
+
+### Anthropic Messages
+
+`POST /v1/messages` and `POST /messages` accept Anthropic Messages-compatible requests. The gateway supports Anthropic-style `x-api-key` authentication and returns Anthropic-compatible JSON or server-sent events.
+
+Messages support still depends on the selected provider and route. Disable unsupported tools, vision, or other features so the request fails before provider execution.
+
+### Responses
+
+`POST /v1/responses` requires the `responses` capability and invokes the provider's Responses implementation. Streaming preserves `response.*` event names rather than converting them into Chat Completions chunks. Usage is normalized from Responses token fields.
+
+### Embeddings
+
+`POST /v1/embeddings` requires the `embeddings` capability. OpenAI-compatible routes support provider-compatible embeddings endpoints. Native Vertex text embeddings require an explicitly supported Google embedding model and text input.
+
+The Vertex mapper rejects unsupported token arrays, nested arrays, non-string values, empty input, multimodal payloads, and `encoding_format: "base64"` before provider execution. See [Provider API Compatibility](../reference/provider-api-compatibility.md) for the current model list.
+
+## Diagnose routing failures
+
+Start with the returned error and the request log:
+
+| Symptom | Meaning | Check |
+| --- | --- | --- |
+| Model not found | The model ID does not exist, is not granted, or no tag candidate is accessible | Requested model, tags, API-key grants, and allowlists |
+| `invalid_request` | The model resolved, but route capability checks rejected the request | API family and required feature flags |
+| `no_routes_available` | No enabled, positively weighted, viable route remained | Route state, provider configuration, and weight |
+| Provider error | The selected route reached the provider and the upstream request failed | Provider attempt, credentials, compatibility profile, and upstream response |
+| Visible model cannot execute | Discovery access succeeded but no route supports this request | Route capabilities and provider runtime support |
+
+Use the request ID to correlate the gateway response with **Observability > Request Logs** and exported traces. Request logs preserve requested and resolved model identities, the selected provider, and the provider attempt.
+
+## Verify a routing change
+
+1. Restart or reseed the gateway as required by the deployment method.
+2. Call `GET /v1/models` with the intended API key.
+3. Send one request for each enabled API family.
+4. Exercise streaming, tools, vision, or structured output when the route advertises them.
+5. Confirm the request log shows the expected requested model, resolved model, provider, and outcome.
+6. Test one unsupported capability and confirm it fails before provider execution.
+7. If routes share a priority, send enough representative requests to observe weighted selection without assuming a fixed sequence.
+
+For failures after route selection, continue with [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md). For provider-specific request and response behavior, use [Provider API Compatibility](../reference/provider-api-compatibility.md).

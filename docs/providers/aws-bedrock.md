@@ -1,6 +1,6 @@
 # AWS Bedrock
 
-`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
+`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
 
 This page owns provider-specific configuration examples for Amazon Bedrock routes.
 
@@ -265,7 +265,7 @@ Gateway guardrails use the standalone Bedrock Runtime `ApplyGuardrail` API. This
 
 The gateway references an existing guardrail identifier and version. It does not create, update, version, or delete Bedrock guardrail resources. The runtime identity needs `bedrock:ApplyGuardrail` for the selected resource. Use `auth.kind: default_chain` in production and set the guardrail Region explicitly.
 
-See [Gateway Guardrails](../operations/gateway-guardrails.md) for phase selection, failure behavior, configuration, rollout, and incident handling.
+See [Amazon Bedrock Guardrails](../operations/guardrails/amazon-bedrock.md) for managed-check configuration, IAM, failure behavior, verification, and troubleshooting.
 
 ## Validation
 

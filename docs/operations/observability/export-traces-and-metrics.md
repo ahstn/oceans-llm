@@ -4,6 +4,10 @@
 
 Oceans LLM sends traces and metrics with the OpenTelemetry Protocol (OTLP). Admins can send this data to an OpenTelemetry Collector or to a Datadog Agent that accepts OTLP.
 
+![Exported Oceans LLM request trace shown as a span waterfall](../../public/images/exported-trace-waterfall.png)
+
+A request trace shows authentication, model resolution, request preparation, route selection, MCP telemetry, budget checks, provider streaming, usage accounting, and request-log persistence under one trace ID. The exact spans depend on the API family and request path.
+
 The gateway uses OTLP over gRPC. The examples use receiver port `4317`. You can set a different port in the endpoint URI. The Helm chart does not install a collector or an agent.
 
 ## Understand the Data Flow
