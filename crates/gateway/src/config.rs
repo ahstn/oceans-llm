@@ -646,6 +646,7 @@ impl GatewayConfig {
         for model in &self.models {
             let mut seen = std::collections::BTreeSet::new();
             let mut current = model;
+            let mut effective_max_reasoning_effort = model.max_reasoning_effort;
 
             while let Some(alias_target) = current.alias_of.as_deref() {
                 if !seen.insert(current.id.as_str()) {
@@ -656,6 +657,25 @@ impl GatewayConfig {
                     anyhow::anyhow!(
                         "model `{}` aliases unknown model `{alias_target}`",
                         model.id
+                    )
+                })?;
+                effective_max_reasoning_effort =
+                    match (effective_max_reasoning_effort, current.max_reasoning_effort) {
+                        (Some(current), Some(candidate)) => Some(current.min(candidate)),
+                        (Some(effort), None) | (None, Some(effort)) => Some(effort),
+                        (None, None) => None,
+                    };
+            }
+
+            for route in &current.routes {
+                enforce_reasoning_effort_value(
+                    &Value::Object(route.extra_body.clone()),
+                    effective_max_reasoning_effort,
+                )
+                .with_context(|| {
+                    format!(
+                        "model `{}` effective route `{}` extra_body violates max_reasoning_effort",
+                        model.id, route.upstream_model
                     )
                 })?;
             }
@@ -4976,6 +4996,47 @@ models:
         );
         assert!(
             error_text.contains("reasoning effort `high` exceeds the model maximum `low`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_target_route_above_alias_reasoning_effort_policy() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: reasoning-safe
+    alias_of: reasoning
+    max_reasoning_effort: medium
+  - id: reasoning
+    max_reasoning_effort: high
+    routes:
+      - provider: openai
+        upstream_model: gpt-5
+        extra_body:
+          reasoning_effort: high
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains(
+                "model `reasoning-safe` effective route `gpt-5` extra_body violates max_reasoning_effort"
+            ),
+            "unexpected error: {error_text}"
+        );
+        assert!(
+            error_text.contains("reasoning effort `high` exceeds the model maximum `medium`"),
             "unexpected error: {error_text}"
         );
     }

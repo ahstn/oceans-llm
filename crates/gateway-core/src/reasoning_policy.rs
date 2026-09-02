@@ -30,16 +30,29 @@ fn enforce_effort_value(
         return Ok(());
     }
 
-    let requested = value
-        .as_str()
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-        .and_then(ReasoningEffort::from_db)
-        .ok_or_else(|| {
-            GatewayError::InvalidRequest(format!(
-                "reasoning effort must be one of `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; received {value}"
-            ))
-        })?;
+    let raw_effort = value.as_str().ok_or_else(|| {
+        GatewayError::InvalidRequest(format!(
+            "reasoning effort must be one of `none`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; received {value}"
+        ))
+    })?;
+    if raw_effort.eq_ignore_ascii_case("none") || raw_effort.eq_ignore_ascii_case("off") {
+        return Ok(());
+    }
+    let requested = [
+        ReasoningEffort::Minimal,
+        ReasoningEffort::Low,
+        ReasoningEffort::Medium,
+        ReasoningEffort::High,
+        ReasoningEffort::XHigh,
+        ReasoningEffort::Max,
+    ]
+    .into_iter()
+    .find(|effort| effort.as_str().eq_ignore_ascii_case(raw_effort))
+    .ok_or_else(|| {
+        GatewayError::InvalidRequest(format!(
+            "reasoning effort must be one of `none`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; received {value}"
+        ))
+    })?;
 
     if requested > max_reasoning_effort {
         return Err(GatewayError::InvalidRequest(format!(
@@ -269,7 +282,7 @@ mod tests {
 
     #[test]
     fn effort_value_accepts_known_values_at_or_below_the_ceiling() {
-        for effort in ["minimal", "low", "medium"] {
+        for effort in ["none", "off", "minimal", "low", "medium", "MEDIUM"] {
             enforce_reasoning_effort_value(&json!(effort), Some(ReasoningEffort::Medium))
                 .expect("effort at or below the ceiling should pass");
         }

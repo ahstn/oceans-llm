@@ -4,6 +4,7 @@ use super::*;
 fn maps_adaptive_only_claude_reasoning_effort_to_adaptive_thinking() {
     for upstream_model in [
         "global.anthropic.claude-fable-5",
+        "global.anthropic.claude-fable-5-1",
         "global.anthropic.claude-opus-4-7",
         "global.anthropic.claude-opus-4-8",
         "global.anthropic.claude-sonnet-5",

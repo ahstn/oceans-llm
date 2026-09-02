@@ -122,15 +122,17 @@ The canonical effort order is `minimal`, `low`, `medium`, `high`, `xhigh`, then 
 
 | API or body shape | Effort paths checked |
 | --- | --- |
-| Chat Completions and Anthropic Messages | `reasoning_effort`, `reasoning.effort`, `output_config.effort`, and `messages[*].output_config.effort` |
-| Responses | `reasoning.effort`, plus flattened `reasoning_effort` and `output_config.effort` compatibility fields |
-| Provider-shaped JSON and batch item bodies | The applicable request-level paths above and `messages[*].output_config.effort` |
+| Chat Completions and Anthropic Messages | `reasoning_effort`; `reasoning.effort`; `output_config.effort`; `thinking.effort`; and per-message `reasoning.effort`, `output_config.effort`, or `thinking.effort` |
+| Responses | `reasoning.effort`, plus flattened `reasoning_effort`, `output_config.effort`, and `thinking.effort` compatibility fields |
+| Bedrock-shaped JSON | `additionalModelRequestFields.{reasoning,output_config,thinking}.effort` and the snake-case `additional_model_request_fields` form |
+| Gemini-shaped JSON | `generationConfig.thinkingConfig.thinkingLevel` and the snake-case `generation_config.thinking_config.thinking_level` form |
+| Chat-template and batch JSON | `chat_template_kwargs.reasoning_effort`, `chat_template_args.reasoning_effort`, the applicable request paths above, and nested `messages` or `input` item paths |
 
-Known values at or below the ceiling pass unchanged. A known value above the ceiling returns `invalid_request`; the gateway does not clamp or mutate it. Unknown future strings and malformed non-string values also return `invalid_request` while a ceiling is active, so a new provider value cannot silently bypass policy. Omitted effort fields and explicit `null` values pass. If the effective model policy is omitted, this categorical check does not reject the request.
+Known values at or below the ceiling pass unchanged. The disable values `none` and `off` also pass as lower than `minimal`; provider compatibility still determines whether a given field accepts either spelling. A known value above the ceiling returns `invalid_request`; the gateway does not clamp or mutate it. Unknown future strings and malformed non-string values also return `invalid_request` while a ceiling is active, so a new provider value cannot silently bypass policy. Omitted effort fields and explicit `null` values pass. If the effective model policy is omitted, this categorical check does not reject the request.
 
 This policy applies only to explicit categorical values. It does not cap numeric budgets such as `thinking.budget_tokens` or `reasoning.budget_tokens`, and it does not override an effort default chosen internally by the provider when no explicit value is present. Existing provider mapping still owns conflicts between two explicit effort fields; every field must first satisfy the gateway ceiling.
 
-Validation runs after alias resolution and before route selection, provider transforms, or budget enforcement. Route `extra_body` values are validated during configuration startup; see [Configuration Reference](configuration-reference.md#reasoning-effort-ceilings).
+Validation runs after alias resolution and before route selection, provider transforms, or budget enforcement. Route `extra_body` values are validated during configuration startup against both their target model and every alias policy that can resolve to that target; see [Configuration Reference](configuration-reference.md#reasoning-effort-ceilings).
 
 ### Use tag selectors
 

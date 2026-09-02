@@ -180,7 +180,7 @@ Model behavior:
 
 #### Per-message effort
 
-Anthropic documents [per-message effort](https://platform.claude.com/docs/en/build-with-claude/effort#per-message-effort-beta) for Claude Fable 5.1 as a beta. The request includes `anthropic-beta: mid-conversation-output-config-2026-07-01` and an effort-only system message; the new value applies to the next user turn:
+Anthropic documents [per-message effort](https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta) for Claude Fable 5.1 as a beta. The request includes `anthropic-beta: mid-conversation-output-config-2026-07-01` and an effort-only system message; the new value applies to the next user turn:
 
 ```json
 {

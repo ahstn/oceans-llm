@@ -33,7 +33,7 @@ fn is_adaptive_only_claude(model: &str) -> bool {
 fn contains_exact_claude_model_marker(model: &str, marker: &str) -> bool {
     model.split(marker).skip(1).any(|rest| {
         rest.chars().next().is_none_or(|ch| {
-            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']')
+            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']' | '-')
         })
     })
 }
