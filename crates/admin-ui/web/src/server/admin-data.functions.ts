@@ -320,7 +320,12 @@ export const refreshModelPricing = createServerFn({ method: 'POST' }).handler(as
 })
 
 export const getUsageCosts = createServerFn({ method: 'GET' }).handler(async () => {
-  return getSpendReport({ days: 7, owner_kind: 'all' })
+  // FOCUS exports are browser navigations to the gateway, so they need its browser-facing origin
+  // when the UI is opened on its own port instead of through the gateway proxy.
+  return {
+    ...(await getSpendReport({ days: 7, owner_kind: 'all' })),
+    exportOrigin: resolveBrowserGatewayOrigin(),
+  }
 })
 
 export const getObservabilityLeaderboard = createServerFn({ method: 'GET' }).handler(

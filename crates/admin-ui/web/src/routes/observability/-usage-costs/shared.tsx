@@ -61,15 +61,16 @@ export function useSpendReport(initial: SpendReportView) {
   )
   const [isPending, startTransition] = useTransition()
 
+  // Filters commit with the response so the controls always describe the rendered report.
   function load(nextDays: WindowDays, nextOwnerKind: SpendOwnerKind) {
-    setWindowDays(nextDays)
-    setOwnerKind(nextOwnerKind)
     startTransition(async () => {
       try {
         const response = await getSpendUsageReport({
           data: { days: nextDays, owner_kind: nextOwnerKind },
         })
         setReport(response.data)
+        setWindowDays(nextDays)
+        setOwnerKind(nextOwnerKind)
       } catch (error) {
         toast.error(getErrorMessage(error))
       }
@@ -98,18 +99,21 @@ function getErrorMessage(error: unknown) {
   return 'Request failed'
 }
 
-export function downloadFocusRange(
-  windowDays: WindowDays,
-  ownerKind: SpendOwnerKind,
-  currentUserOnly: boolean,
-) {
+export type FocusExportTarget = {
+  ownerKind: SpendOwnerKind
+  currentUserOnly: boolean
+  /** Browser-facing gateway origin, so the download hits the gateway even on the raw UI port. */
+  origin: string
+}
+
+export function downloadFocusRange(windowDays: WindowDays, target: FocusExportTarget) {
   const end = utcDateAtDayOffset(0)
   const start = utcDateAtDayOffset(-(windowDays - 1))
   const params = new URLSearchParams({ start, end, granularity: 'daily' })
-  navigateToFocusExport(params, ownerKind, currentUserOnly)
+  navigateToFocusExport(params, target)
 }
 
-export function downloadFocusDay(day: string, ownerKind: SpendOwnerKind, currentUserOnly: boolean) {
+export function downloadFocusDay(day: string, target: FocusExportTarget) {
   if (!day) {
     toast.error('Choose a day to export')
     return
@@ -119,19 +123,18 @@ export function downloadFocusDay(day: string, ownerKind: SpendOwnerKind, current
     return
   }
   const params = new URLSearchParams({ day, granularity: 'daily' })
-  navigateToFocusExport(params, ownerKind, currentUserOnly)
+  navigateToFocusExport(params, target)
 }
 
 function navigateToFocusExport(
   params: URLSearchParams,
-  ownerKind: SpendOwnerKind,
-  currentUserOnly: boolean,
+  { ownerKind, currentUserOnly, origin }: FocusExportTarget,
 ) {
   if (!currentUserOnly && ownerKind !== 'all') {
     params.set('owner_kind', ownerKind)
   }
   const path = currentUserOnly ? '/api/v1/me/spend/focus.csv' : '/api/v1/admin/spend/focus.csv'
-  window.location.assign(`${path}?${params.toString()}`)
+  window.location.assign(`${origin}${path}?${params.toString()}`)
 }
 
 function utcDateAtDayOffset(dayOffset: number) {

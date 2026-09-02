@@ -48,16 +48,18 @@ Restart the gateway after changing its configuration. Startup validates the phas
 
 ## Choose phases and templates
 
-Model Armor supports these phases:
+Model Armor supports all six phases:
 
 | Phase | Model Armor operation | Required template |
 | --- | --- | --- |
 | `prompt` | `sanitizeUserPrompt` | `prompt_template` |
 | `mcp_call` | `sanitizeUserPrompt` | `prompt_template` |
+| `harness_pre_tool` | `sanitizeUserPrompt` | `prompt_template` |
 | `model_response` | `sanitizeModelResponse` | `response_template` |
+| `generated_tool_call` | `sanitizeModelResponse` | `response_template` |
 | `mcp_result` | `sanitizeModelResponse` | `response_template` |
 
-Configure a prompt template when the check includes an input phase and a response template when it includes an output phase. `generated_tool_call` and `harness_pre_tool` are not supported by Model Armor. Use [built-in deterministic packs](built-in-packs.md) for structured generated tool calls and local shell execution.
+Configure a prompt template when the check includes an input-side phase and a response template when it includes an output-side phase. Startup validation rejects a phase whose template is missing. Model Armor evaluates text, so `harness_pre_tool` and `generated_tool_call` send the serialized command or tool call. Use [built-in deterministic packs](built-in-packs.md) alongside a managed check when you need structural matching for those phases.
 
 ## Grant Google Cloud permission
 

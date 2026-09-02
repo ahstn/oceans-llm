@@ -47,15 +47,18 @@ Restart the gateway after changing its configuration. Startup validates the phas
 
 ## Choose phases
 
-The Bedrock adapter supports:
+The Bedrock adapter supports all six phases. Input-side phases are sent as `INPUT` content and output-side phases as `OUTPUT` content:
 
-- `prompt`
-- `model_response`
-- `generated_tool_call`
-- `mcp_call`
-- `mcp_result`
+| Phase | Bedrock content source |
+| --- | --- |
+| `prompt` | `INPUT` |
+| `mcp_call` | `INPUT` |
+| `harness_pre_tool` | `INPUT` |
+| `model_response` | `OUTPUT` |
+| `generated_tool_call` | `OUTPUT` |
+| `mcp_result` | `OUTPUT` |
 
-Choose only the phases covered by the Bedrock policy and required by the protected workflow. `harness_pre_tool` is not supported by this managed check; use [built-in deterministic packs](built-in-packs.md) for local shell execution.
+Choose only the phases covered by the Bedrock policy and required by the protected workflow. Bedrock evaluates text, so `harness_pre_tool` and `generated_tool_call` send the serialized command or tool call. Use [built-in deterministic packs](built-in-packs.md) alongside a managed check when you need structural matching for those phases.
 
 ## Grant AWS permission
 

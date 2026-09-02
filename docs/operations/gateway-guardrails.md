@@ -153,9 +153,10 @@ Roll out enforcement one scope at a time:
 2. Send representative inference, MCP, Pi, and OpenCode traffic through the gateway.
 3. Review matches, fail-open events, managed latency, and transformations on the **Guardrails** page.
 4. Correct policy scopes, aliases, phase selection, limits, and managed-service permissions.
-5. Set one model-route or MCP-server override to `deny`.
-6. Confirm expected traffic succeeds and denied operations create decision records.
-7. Expand `deny` mode only after reviewing the observation window.
+5. Run `mise run guardrail-release-gate`. It runs the guardrail security, load, harness, and end-to-end gates against the production gateway binary with fake managed-service endpoints. Do not move a scope to `deny` while the gate fails.
+6. Set one model-route or MCP-server override to `deny`.
+7. Confirm expected traffic succeeds and denied operations create decision records.
+8. Expand `deny` mode only after reviewing the observation window.
 
 To roll back enforcement without losing decision history, change the affected override from `deny` to `audit` and restart the gateway. If evaluation causes unacceptable latency or protocol errors, set `enabled: false` on the affected override. Keep decision storage enabled while investigating.
 

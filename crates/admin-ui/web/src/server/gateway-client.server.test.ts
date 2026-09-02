@@ -1,10 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   forwardRequestHeadersFromRequest,
   resolveBrowserGatewayOriginFromRequest,
   resolveGatewayOriginFromRequest,
 } from '@/server/gateway-client.server'
+
+beforeEach(() => {
+  vi.stubEnv('GATEWAY_PORT', '')
+  delete process.env.GATEWAY_PORT
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 describe('resolveGatewayOriginFromRequest', () => {
   it('targets the default gateway port when the UI is accessed directly on the dev server', () => {
@@ -13,6 +22,16 @@ describe('resolveGatewayOriginFromRequest', () => {
     })
 
     expect(resolveGatewayOriginFromRequest(request)).toBe('http://127.0.0.1:8080')
+  })
+
+  it('targets GATEWAY_PORT when the stack runs on alternate ports', () => {
+    vi.stubEnv('GATEWAY_PORT', '8095')
+    const request = new Request('http://localhost:3005/admin/identity/users', {
+      headers: { host: 'localhost:3005' },
+    })
+
+    expect(resolveGatewayOriginFromRequest(request)).toBe('http://127.0.0.1:8095')
+    expect(resolveBrowserGatewayOriginFromRequest(request)).toBe('http://localhost:8095')
   })
 
   it('prefers an explicit origin over request-derived values', () => {

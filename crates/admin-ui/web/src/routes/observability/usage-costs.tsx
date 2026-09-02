@@ -65,13 +65,14 @@ export function UsageCostsPage() {
     cost: point.priced_cost_usd_10000 / 10_000,
     requests: point.priced_request_count,
   }))
+  // The API zero-fills every day in the window, so "no spend" is a value check, not a length check.
   const peakDay = report.daily.reduce<SpendReportView['daily'][number] | null>(
     (peak, point) =>
-      peak === null || point.priced_cost_usd_10000 > peak.priced_cost_usd_10000 ? point : peak,
+      point.priced_cost_usd_10000 > (peak?.priced_cost_usd_10000 ?? 0) ? point : peak,
     null,
   )
   const avgDaily =
-    report.daily.length > 0 ? report.totals.priced_cost_usd_10000 / report.daily.length : 0
+    report.window_days > 0 ? report.totals.priced_cost_usd_10000 / report.window_days : 0
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
@@ -98,6 +99,7 @@ export function UsageCostsPage() {
               windowDays={spend.windowDays}
               ownerKind={spend.ownerKind}
               isPlatformAdmin={isPlatformAdmin}
+              origin={loaderData.exportOrigin}
             />
           </div>
         }
@@ -150,7 +152,7 @@ export function UsageCostsPage() {
         <CardContent>
           {isPending ? (
             <Skeleton className="h-64 w-full rounded-xl" />
-          ) : chartData.length === 0 ? (
+          ) : peakDay === null ? (
             <EmptyReport />
           ) : (
             <ChartContainer config={CHART_CONFIG} className="h-64 w-full">
@@ -359,10 +361,7 @@ function ShareTable({
                     <span className="text-sm font-medium tabular-nums">{formatUsd(row.cost)}</span>
                   </div>
                 </div>
-                <Progress
-                  value={max > 0 ? (row.cost / max) * 100 : 0}
-                  aria-label={`${row.label} share of spend`}
-                />
+                <Progress value={max > 0 ? (row.cost / max) * 100 : 0} aria-hidden="true" />
               </li>
             ))}
           </ol>

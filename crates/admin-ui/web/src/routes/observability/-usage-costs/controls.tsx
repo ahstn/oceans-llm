@@ -110,13 +110,14 @@ export function ExportMenu({
   windowDays,
   ownerKind,
   isPlatformAdmin,
+  origin,
   variant = 'outline',
 }: Pick<ReportControlsProps, 'windowDays' | 'ownerKind' | 'isPlatformAdmin'> & {
+  origin: string
   variant?: 'outline' | 'default' | 'secondary'
 }) {
   const [exportDay, setExportDay] = useState(() => formatUtcDate(new Date()))
-  const currentUserOnly = !isPlatformAdmin
-
+  const target = { ownerKind, currentUserOnly: !isPlatformAdmin, origin }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -128,9 +129,7 @@ export function ExportMenu({
       <DropdownMenuContent align="end" className="w-72">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Billing export</DropdownMenuLabel>
-          <DropdownMenuItem
-            onSelect={() => downloadFocusRange(windowDays, ownerKind, currentUserOnly)}
-          >
+          <DropdownMenuItem onSelect={() => downloadFocusRange(windowDays, target)}>
             Export last {windowDays} days
           </DropdownMenuItem>
         </DropdownMenuGroup>
@@ -146,11 +145,7 @@ export function ExportMenu({
                   value={exportDay}
                   onChange={(event) => setExportDay(event.target.value)}
                 />
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => downloadFocusDay(exportDay, ownerKind, currentUserOnly)}
-                >
+                <Button type="button" size="sm" onClick={() => downloadFocusDay(exportDay, target)}>
                   Export
                 </Button>
               </div>

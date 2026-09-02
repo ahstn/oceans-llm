@@ -5,7 +5,9 @@ import type { GatewayPaths } from '@/types/live-api'
 
 // Requests that reach this server without `x-forwarded-origin` did not come through the gateway
 // proxy, so they hit the UI port directly and the gateway lives on GATEWAY_PORT of the same host.
-const GATEWAY_PORT = process.env.GATEWAY_PORT ?? '8080'
+function gatewayPort() {
+  return process.env.GATEWAY_PORT ?? '8080'
+}
 
 function trimOrigin(value: string) {
   return value.replace(/\/$/, '')
@@ -46,7 +48,7 @@ export function resolveGatewayOriginFromRequest(request: Request, explicitOrigin
   if (isLoopbackHostname(gatewayOrigin.hostname)) {
     gatewayOrigin.hostname = '127.0.0.1'
   }
-  gatewayOrigin.port = GATEWAY_PORT
+  gatewayOrigin.port = gatewayPort()
   return trimOrigin(gatewayOrigin.origin)
 }
 
@@ -62,7 +64,7 @@ export function resolveBrowserGatewayOriginFromRequest(request: Request, explici
   }
 
   const gatewayOrigin = parseRequestTarget(request)
-  gatewayOrigin.port = GATEWAY_PORT
+  gatewayOrigin.port = gatewayPort()
   return trimOrigin(gatewayOrigin.origin)
 }
 

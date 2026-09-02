@@ -100,7 +100,7 @@ The local environment uses:
 | Database | Local LibSQL or SQLite |
 | Bootstrap admin | `admin@local` / `admin` |
 
-When `gateway.db` does not exist, the development stack seeds local demonstration identities, credentials, budgets, request history, and agent-session diagnostics. These credentials and data are for local development only.
+On every start, the development stack seeds or refreshes the local demonstration identities, credentials, budgets, request history, and agent-session diagnostics in `gateway.db`. Existing demo records are updated in place. These credentials and data are for local development only.
 
 Check that the gateway is ready:
 

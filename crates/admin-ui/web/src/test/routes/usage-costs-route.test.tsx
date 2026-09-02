@@ -1,26 +1,62 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const routeMock = {
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
 }
+const getSpendUsageReportMock = vi.fn()
+const toastErrorMock = vi.fn()
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
 }))
 
+vi.mock('@/server/admin-data.functions', () => ({
+  getUsageCosts: vi.fn(),
+  getSpendUsageReport: (...args: unknown[]) => getSpendUsageReportMock(...args),
+}))
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
-    error: vi.fn(),
+    error: (...args: unknown[]) => toastErrorMock(...args),
   },
 }))
+
+function emptyReport(windowDays: 7 | 30, ownerKind: string) {
+  return {
+    window_days: windowDays,
+    owner_kind: ownerKind,
+    window_start: '2026-03-01T00:00:00Z',
+    window_end: '2026-03-08T00:00:00Z',
+    totals: {
+      priced_cost_usd_10000: 0,
+      priced_request_count: 0,
+      unpriced_request_count: 0,
+      usage_missing_request_count: 0,
+      uncached_input_tokens: null,
+      cache_read_tokens: null,
+      cache_write_tokens: null,
+    },
+    daily: Array.from({ length: windowDays }, (_, index) => ({
+      day_start: `2026-03-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+      priced_cost_usd_10000: 0,
+      priced_request_count: 0,
+      unpriced_request_count: 0,
+      usage_missing_request_count: 0,
+    })),
+    owners: [],
+    models: [],
+  }
+}
 
 describe('UsageCostsPage', () => {
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
     routeMock.useRouteContext.mockReset()
+    getSpendUsageReportMock.mockReset()
+    toastErrorMock.mockReset()
     routeMock.useRouteContext.mockReturnValue({
       session: {
         must_change_password: false,
@@ -40,6 +76,7 @@ describe('UsageCostsPage', () => {
 
   it('renders live ledger totals and owner/model breakdowns', async () => {
     routeMock.useLoaderData.mockReturnValue({
+      exportOrigin: '',
       data: {
         window_days: 7,
         owner_kind: 'all',
@@ -107,6 +144,58 @@ describe('UsageCostsPage', () => {
     expect(screen.queryByText('long-tail-9')).not.toBeInTheDocument()
   })
 
+  it('treats a zero-filled window as no spend', async () => {
+    routeMock.useLoaderData.mockReturnValue({ exportOrigin: '', data: emptyReport(7, 'all') })
+
+    const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
+    render(<UsageCostsPage />)
+
+    expect(screen.getByText('No priced spend yet')).toBeInTheDocument()
+    expect(screen.getByText('No priced spend in window')).toBeInTheDocument()
+  })
+
+  it('requests the selected window and owner kind, committing filters on success', async () => {
+    routeMock.useLoaderData.mockReturnValue({ exportOrigin: '', data: emptyReport(7, 'all') })
+    getSpendUsageReportMock.mockResolvedValue({ data: emptyReport(30, 'service_account') })
+
+    const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
+    render(<UsageCostsPage />)
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Last 30 days' }))
+    await waitFor(() => {
+      expect(getSpendUsageReportMock).toHaveBeenCalledWith({
+        data: { days: 30, owner_kind: 'all' },
+      })
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: 'Last 30 days' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      )
+    })
+  })
+
+  it('keeps the previous filters when the report request fails', async () => {
+    routeMock.useLoaderData.mockReturnValue({ exportOrigin: '', data: emptyReport(7, 'all') })
+    getSpendUsageReportMock.mockRejectedValue(new Error('gateway unavailable'))
+
+    const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
+    render(<UsageCostsPage />)
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Last 30 days' }))
+    await waitFor(() => {
+      expect(toastErrorMock).toHaveBeenCalledWith('gateway unavailable')
+    })
+    expect(screen.getByRole('radio', { name: 'Last 7 days' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    expect(screen.getByRole('radio', { name: 'Last 30 days' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    )
+  })
+
   it('shows a self-service view without cross-owner controls to regular users', async () => {
     routeMock.useRouteContext.mockReturnValue({
       session: {
@@ -120,6 +209,7 @@ describe('UsageCostsPage', () => {
       },
     })
     routeMock.useLoaderData.mockReturnValue({
+      exportOrigin: '',
       data: {
         window_days: 7,
         owner_kind: 'user',

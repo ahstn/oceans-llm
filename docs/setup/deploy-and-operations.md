@@ -57,10 +57,11 @@ Use this runtime only for development and evaluation. Its checked-in credentials
 
 ## Run a production-shaped local stack
 
-Prepare a PostgreSQL connection and run:
+Set `POSTGRES_URL` from a secret manager or an untracked environment file, then run:
 
 ```bash
-POSTGRES_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE mise run prod-stack
+# POSTGRES_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE, exported outside shell history
+mise run prod-stack
 ```
 
 This uses `gateway.prod.yaml`, PostgreSQL, and the local gateway and admin UI builds. The local bootstrap admin must rotate its password on first sign-in.
