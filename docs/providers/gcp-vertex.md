@@ -357,7 +357,7 @@ Gateway guardrails call the standalone Model Armor `sanitizeUserPrompt` and `san
 
 The gateway references existing prompt and response templates. It does not create, update, or delete Model Armor resources. The runtime identity needs `modelarmor.templates.useToSanitizeUserPrompt` or `modelarmor.templates.useToSanitizeModelResponse` on each template. For production, supply the OAuth access token through a protected `file./path` secret reference. The gateway reads the file before each Model Armor evaluation, so an external credential process can rotate the token. An `env.NAME` reference is also supported, but it does not refresh while the process runs.
 
-See [Google Cloud Model Armor](../operations/guardrails/google-model-armor.md) for managed-check configuration, IAM, token rotation, failure behavior, and verification.
+See [Gateway Guardrails](../operations/gateway-guardrails.md) for phase selection, failure behavior, configuration, rollout, and incident handling.
 
 ## Validation
 

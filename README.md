@@ -1,170 +1,173 @@
 # Oceans LLM Gateway
 
 <p align="center">
-  <img height="400" alt="Oceans LLM logo" src="https://github.com/user-attachments/assets/37d617f1-3eb9-4774-bd38-7b7dd495eab4" />
+<img height="400" alt="oceans_llm_logo_v2" src="https://github.com/user-attachments/assets/37d617f1-3eb9-4774-bd38-7b7dd495eab4" />
 </p>
 
-Oceans LLM is a policy-aware gateway for routing, governing, and observing AI traffic. It gives clients one API surface while admins manage providers, identities, model access, spend, MCP tools, guardrails, and request observability centrally.
+Rust-first LLM gateway workspace with an embedded TanStack Start admin control plane.
 
-The gateway is written in Rust and includes a same-origin React and TanStack Start admin control plane.
+## Overview
 
-## Find the right documentation
+- `crates/gateway`
+  - Rust HTTP runtime for `/healthz`, `/readyz`, `/v1/*`, and `/api/v1/admin/*`
+- `crates/gateway-core`
+  - shared domain types, traits, OpenAI-compatible Chat/Responses/Embeddings DTOs, and errors
+- `crates/gateway-mcp`
+  - protocol-only MCP JSON-RPC, Streamable HTTP discovery, tool normalization, and schema hashing
+- `crates/gateway-store`
+  - libsql or SQLite and PostgreSQL stores, migrations, and seed behavior
+- `crates/gateway-service`
+  - auth, model resolution, routing, accounting, and request logging
+- `crates/gateway-providers`
+  - provider adapters and transport helpers
+- `crates/admin-ui`
+  - Rust reverse-proxy integration for `/admin*`
+- `crates/admin-ui/web`
+  - TanStack Start and React admin UI
 
-| If you want to... | Start here |
-| --- | --- |
-| Understand the product and its capabilities | [Overview and Features](docs/overview-features.md) |
-| Run Oceans LLM for the first time | [Getting Started](docs/getting-started.md) |
-| Choose between local, Compose, and Kubernetes deployments | [Deploy Oceans LLM](docs/setup/deploy-and-operations.md) |
-| Understand startup, seeded state, and first access | [Runtime Bootstrap and Access](docs/setup/runtime-bootstrap-and-access.md) |
-| Configure providers, models, authentication, and runtime behavior | [Configuration Reference](docs/configuration/configuration-reference.md) |
-| Understand routing and supported API families | [Model Routing and API Behavior](docs/configuration/model-routing-and-api-behavior.md) and [Provider API Compatibility](docs/reference/provider-api-compatibility.md) |
-| Configure identities, service accounts, API keys, or budgets | [Identity and Access](docs/access/identity-and-access.md), [Service Accounts](docs/access/service-accounts.md), and [Budgets](docs/access/budgets.md) |
-| Register MCP servers and control tool access | [MCP Servers](docs/configuration/mcp-servers.md), [MCP Tool Access](docs/mcp/mcp-tool-access.md), and [MCP Client Setup](docs/mcp/mcp-client-setup.md) |
-| Enable and operate gateway guardrails | [Gateway Guardrails](docs/operations/gateway-guardrails.md) |
-| Configure telemetry or inspect request logs | [Observability and Request Logs](docs/operations/observability-and-request-logs.md) |
-| Upgrade a deployment or recover a failure | [Admin Runbooks](docs/operations/operator-runbooks.md) |
-| Contribute to the repository | [Contributing](CONTRIBUTING.md) and [Contributing & Internal](docs/contributing/index.md) |
+## Quick Start
 
-The [documentation home](docs/index.md) contains the complete user-facing map. Detailed policy belongs in the documentation rather than this README.
-
-## What Oceans LLM provides
-
-### One API surface across providers
-
-Clients can use these gateway endpoints:
-
-- `GET /v1/models`
-- `POST /v1/chat/completions`
-- `POST /v1/responses`
-- `POST /v1/embeddings`
-- `POST /v1/messages`
-- `POST /messages`
-
-Routes can target OpenAI-compatible providers, Google Vertex AI, Amazon Bedrock, Google Cloud Run OpenAI-compatible services, and GitHub Copilot integrations. Support varies by provider and API family. Configure route capability gates so unsupported operations fail at the gateway boundary. See [Provider API Compatibility](docs/reference/provider-api-compatibility.md) for the current matrix.
-
-### Central access and spend controls
-
-Admins can manage:
-
-- Users, teams, service accounts, and scoped API keys
-- Model grants and route availability
-- User, service-account, and model-specific budgets
-- OIDC and OAuth sign-in, including GitHub OAuth
-- Pricing provenance, durable usage accounting, and FOCUS-oriented export
-
-### MCP governance
-
-Register Streamable HTTP MCP servers once and expose tools through aggregate or direct routes. Oceans keeps caller credentials separate from upstream MCP credentials and applies tool-set grants before making tools available to users.
-
-MCP invocation logs retain server, tool, owner, policy, latency, and sanitized payload state for investigation.
-
-### Guardrails across model and tool traffic
-
-Configuration-authoritative guardrails can audit or deny prompts, model responses, generated tool calls, MCP calls, MCP results, and supported local harness tool execution. Policies can combine built-in deterministic packs with Amazon Bedrock Guardrails or Google Cloud Model Armor.
-
-Start in audit mode and move individual routes or MCP servers to deny mode after reviewing decisions. See [Gateway Guardrails](docs/operations/gateway-guardrails.md).
-
-### Operational visibility
-
-The admin control plane provides request logs, provider attempts, usage and cost reporting, MCP invocation history, guardrail decisions, agent-session analysis, and coding-harness adoption data.
-
-The gateway exports traces and metrics through OTLP. Deployment artifacts provide hooks for an existing collector or vendor agent but do not install one by default.
-
-## Run the local development stack
-
-### Prerequisites
-
-- [mise](https://mise.jdx.dev/)
-- Repository access and the platform tools required by `mise.toml`
-
-Install the pinned toolchain and UI dependencies:
+Install the repo toolchain:
 
 ```bash
+eval "$(mise activate zsh)"
 mise install
 mise run ui-install
 ```
 
-Start the gateway and admin UI:
+Run the local development stack:
 
 ```bash
 mise run dev-stack
 ```
 
-The local environment uses:
+Default local endpoints:
 
-| Component | Default |
-| --- | --- |
-| Gateway API | `http://localhost:8080` |
-| Admin control plane | `http://localhost:8080/admin` |
-| Configuration | `gateway.yaml` |
-| Database | Local LibSQL or SQLite |
-| Bootstrap admin | `admin@local` / `admin` |
+- gateway API: `http://localhost:8080`
+- admin UI: `http://localhost:8080/admin`
+- active config: `./gateway.yaml`
+- database backend: local libsql or SQLite
 
-When `gateway.db` does not exist, the development stack seeds local demonstration identities, credentials, budgets, request history, and agent-session diagnostics. These credentials and data are for local development only.
+`mise run dev-stack` refreshes the local demo dataset on startup and gives platform admins access to calibration data. Sign in with the seeded platform admin and open **Observability → Agent Sessions** to inspect the sample session reports. The demo includes ten-request Jira and repository sessions. The Jira session has six available tools, two direct MCP calls, and file operations. Use `mise run gateway-reset-local-demo` to recreate the complete sample state.
 
-Check that the gateway is ready:
+## Core Commands
+
+- local dev stack:
+  - `mise run dev-stack`
+- local gateway:
+  - `mise run gateway-serve`
+- local explicit migration:
+  - `mise run gateway-migrate`
+- local explicit bootstrap admin:
+  - `mise run gateway-bootstrap-admin`
+- local explicit config seed:
+  - `mise run gateway-seed-config`
+- request-log retention purge:
+  - `mise run gateway-purge-request-logs-dry-run`
+  - `mise run gateway-purge-request-logs`
+  - `mise run gateway-purge-request-logs-dry-run-prod`
+  - `mise run gateway-purge-request-logs-prod`
+- local-only demo dataset seed:
+  - `mise run gateway-seed-local-demo`
+- local-only demo dataset reset:
+  - `mise run gateway-reset-local-demo`
+- production-shaped local stack:
+  - `mise run prod-stack`
+- production-shaped explicit migration:
+  - `mise run gateway-migrate-prod`
+- production-shaped explicit bootstrap admin:
+  - `mise run gateway-bootstrap-admin-prod`
+- production-shaped explicit config seed:
+  - `mise run gateway-seed-config-prod`
+- admin contract generation:
+  - `mise run admin-contract-generate`
+- admin contract drift check:
+  - `mise run admin-contract-check`
+- full lint:
+  - `mise run lint`
+- full test:
+  - `mise run test`
+- E2E contract suite:
+  - `mise run e2e-test`
+
+## Migration Policy
+
+- Fresh databases apply one active `V17` baseline per backend.
+- Databases carrying pre-baseline `V1` through `V16` history must be recreated instead of upgraded in place.
+- Use `mise run gateway-migrate` to apply or inspect the active migration state.
+
+## Documentation Map
+
+Use the docs site instead of treating this file as the full admin and maintainer manual.
+
+- repo workflow:
+  - [Contributing](CONTRIBUTING.md)
+- docs site:
+  - [Documentation Home](docs/index.md)
+- startup and first access:
+  - [Runtime Bootstrap and Access](docs/setup/runtime-bootstrap-and-access.md)
+- config contract:
+  - [Configuration Reference](docs/configuration/configuration-reference.md)
+- identity:
+  - [Identity and Access](docs/access/identity-and-access.md)
+- gateway API keys and service-account-style callers:
+  - [Admin Control Plane](docs/access/admin-control-plane.md)
+- budgets:
+  - [Budgets](docs/access/budgets.md)
+- routing:
+  - [Model Routing and API Behavior](docs/configuration/model-routing-and-api-behavior.md)
+- provider API compatibility:
+  - [Provider API Compatibility](docs/reference/provider-api-compatibility.md)
+- provider setup:
+  - [Google Cloud Run OpenAI-Compatible Models](docs/providers/gcp-cloud-run-openai-compat.md)
+  - [Google Vertex AI](docs/providers/gcp-vertex.md)
+- cross-cutting request flow:
+  - [Request Lifecycle and Failure Modes](docs/reference/request-lifecycle-and-failure-modes.md)
+- pricing and spend:
+  - [Pricing Catalog and Accounting](docs/configuration/pricing-catalog-and-accounting.md)
+  - [Budgets and Spending](docs/contributing/operations/budgets-and-spending.md)
+- observability:
+  - [Observability and Request Logs](docs/operations/observability-and-request-logs.md)
+  - [MCP Registry and Discovery](docs/contributing/mcp/mcp-registry-and-discovery.md)
+- admin UI:
+  - [Admin Control Plane](docs/access/admin-control-plane.md)
+- maintainer-facing docs source notes:
+  - [Documentation Source Notes](docs/README.md)
+- deploy quick start:
+  - [Deploy](deploy/README.md)
+- Kubernetes and Helm:
+  - [Kubernetes and Helm](docs/setup/kubernetes-and-helm.md)
+  - [Helm Chart](deploy/helm/oceans-llm/README.md)
+
+## Same-Origin Runtime Model
+
+The product runs as a same-origin control plane:
+
+1. the gateway listens on the configured bind address
+2. the admin UI SSR process runs separately
+3. the gateway reverse-proxies `/admin*` to the admin UI upstream
+
+This is part of the product contract, not only a local-dev trick.
+
+## Admin Contract Generation
+
+The live admin control plane ships checked-in contract artifacts:
+
+- gateway OpenAPI artifact:
+  - `crates/gateway/openapi/admin-api.json`
+- generated admin UI types:
+  - `crates/admin-ui/web/src/generated/admin-api.ts`
+
+Regenerate them with:
 
 ```bash
-curl --fail http://localhost:8080/healthz
-curl --fail http://localhost:8080/readyz
+mise run admin-contract-generate
 ```
 
-Open `http://localhost:8080/admin` to inspect the seeded environment. To recreate the complete local dataset later, run:
+Verify drift with:
 
 ```bash
-mise run gateway-reset-local-demo
+mise run admin-contract-check
 ```
 
-This reset command deletes and recreates the local `gateway.db`. Do not use it against data you need to retain.
-
-## Deploy Oceans LLM
-
-Oceans supports these runtime shapes:
-
-- Local development with LibSQL or SQLite
-- A production-shaped local stack with PostgreSQL
-- Docker Compose with gateway, admin UI, and PostgreSQL containers
-- Kubernetes with the published OCI Helm chart and external PostgreSQL or optional CloudNativePG
-
-All public traffic must enter through the gateway. The admin UI runs separately, but the gateway proxies `/admin*` to it so the control plane remains same-origin.
-
-Start with [Deploy Oceans LLM](docs/setup/deploy-and-operations.md). It covers prerequisites, architecture support, secrets, deployment selection, health checks, and rollback planning.
-
-## Common development commands
-
-Run repository tooling through `mise`.
-
-| Task | Command |
-| --- | --- |
-| Start the local development stack | `mise run dev-stack` |
-| Start the production-shaped local stack | `mise run prod-stack` |
-| Recreate local demo data | `mise run gateway-reset-local-demo` |
-| Check Rust formatting, lint, and tests | `mise run rust-check` |
-| Run repository linting | `mise run lint` |
-| Run repository unit tests | `mise run test` |
-| Build the gateway and admin UI | `mise run build` |
-| Run end-to-end contract tests | `mise run e2e-test` |
-| Build the documentation | `mise run //docs:build` |
-| Lint and render the Helm chart | `mise run helm-check` |
-
-Use `mise tasks` for the complete task list. Maintainer workflows, contract generation, migrations, and release procedures are documented under [Contributing & Internal](docs/contributing/index.md).
-
-## Repository structure
-
-| Path | Responsibility |
-| --- | --- |
-| `crates/gateway` | HTTP runtime, configuration loading, API handlers, and integration boundaries |
-| `crates/gateway-core` | Shared domain types, traits, API DTOs, and errors |
-| `crates/gateway-service` | Authentication, model resolution, routing, accounting, and request logging |
-| `crates/gateway-providers` | Provider adapters and transport behavior |
-| `crates/gateway-mcp` | MCP protocol, discovery, tool normalization, and schema handling |
-| `crates/gateway-guardrails` | Guardrail policy resolution, deterministic packs, and managed checks |
-| `crates/gateway-store` | LibSQL, SQLite, and PostgreSQL persistence and migrations |
-| `crates/admin-ui` | Gateway integration for the admin control plane |
-| `crates/admin-ui/web` | React and TanStack Start admin UI |
-| `deploy` | Docker Compose and Helm deployment artifacts |
-| `docs` | User-facing and contributor documentation |
-
-## Contributing
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. Repository-specific tooling, validation, and structural guidance are recorded in [AGENTS.md](AGENTS.md).
+For the full maintainer workflow, use [Admin API Contract Workflow](docs/contributing/reference/admin-api-contract-workflow.md).

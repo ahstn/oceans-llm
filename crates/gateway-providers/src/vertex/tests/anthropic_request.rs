@@ -347,6 +347,30 @@ fn omits_unqualified_context_management_from_vertex_request() {
 }
 
 #[test]
+fn omits_route_owned_context_management_without_matching_beta_header() {
+    let request = chat_request(vec![CoreChatMessage {
+        role: "user".to_string(),
+        content: json!("start"),
+        name: None,
+        extra: BTreeMap::new(),
+    }]);
+    let mut context = context("anthropic/claude-sonnet-4-6");
+    context.extra_body.insert(
+        "context_management".to_string(),
+        json!({
+            "edits": [{
+                "type": "clear_thinking_20251015",
+                "keep": "all"
+            }]
+        }),
+    );
+
+    let mapped = map_anthropic_request(&request, &context, false).expect("mapped");
+
+    assert!(mapped.get("context_management").is_none());
+}
+
+#[test]
 fn allows_route_owned_context_management_with_matching_beta_header() {
     let mut request = chat_request(vec![CoreChatMessage {
         role: "user".to_string(),
@@ -400,6 +424,14 @@ fn does_not_duplicate_native_and_openai_tool_uses() {
                 "type": "function",
                 "function": {
                     "name": "notify",
+                    "arguments": "{}"
+                }
+            },
+            {
+                "id": "toolu_2",
+                "type": "function",
+                "function": {
+                    "name": "duplicate",
                     "arguments": "{}"
                 }
             }

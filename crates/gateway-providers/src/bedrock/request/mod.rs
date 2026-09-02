@@ -417,17 +417,16 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
             }
             "assistant" => {
                 let mut content = map_anthropic_content_blocks(&message.content)?;
-                let additional_tool_uses = map_anthropic_assistant_tool_uses(message)?
-                    .into_iter()
-                    .filter(|tool_use| {
-                        let id = tool_use.get("id").and_then(Value::as_str);
-                        !content.iter().any(|block| {
-                            block.get("type").and_then(Value::as_str) == Some("tool_use")
-                                && block.get("id").and_then(Value::as_str) == id
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                content.extend(additional_tool_uses);
+                for tool_use in map_anthropic_assistant_tool_uses(message)? {
+                    let id = tool_use.get("id").and_then(Value::as_str);
+                    let is_duplicate = content.iter().any(|block| {
+                        block.get("type").and_then(Value::as_str) == Some("tool_use")
+                            && block.get("id").and_then(Value::as_str) == id
+                    });
+                    if !is_duplicate {
+                        content.push(tool_use);
+                    }
+                }
                 messages.push(json!({
                     "role": "assistant",
                     "content": content

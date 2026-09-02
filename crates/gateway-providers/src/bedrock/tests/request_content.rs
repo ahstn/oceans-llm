@@ -167,6 +167,14 @@ fn preserves_native_anthropic_continuation_blocks_without_duplicate_tool_calls()
                     "name": "notify",
                     "arguments": "{}"
                 }
+            },
+            {
+                "id": "toolu_additional",
+                "type": "function",
+                "function": {
+                    "name": "duplicate",
+                    "arguments": "{}"
+                }
             }
         ]),
     );
@@ -194,6 +202,10 @@ fn preserves_native_anthropic_continuation_blocks_without_duplicate_tool_calls()
     assert_eq!(
         &mapped_assistant_content[..assistant_content.as_array().unwrap().len()],
         assistant_content.as_array().unwrap()
+    );
+    assert_eq!(
+        mapped_assistant_content.len(),
+        assistant_content.as_array().unwrap().len() + 1
     );
     assert_eq!(
         mapped_assistant_content.last().unwrap(),
