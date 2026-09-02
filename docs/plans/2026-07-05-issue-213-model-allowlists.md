@@ -1,6 +1,6 @@
 # Issue 213: Model-level allowlists for users and teams
 
-`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Data Relationships](../contributing/reference/data-relationships.md), [Budgets](../access/budgets.md)
+`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Data Relationships](../contributing/reference/data-relationships.md), [Budgets](../access/budgets.md)
 
 ## Goal
 

@@ -17,7 +17,7 @@ The gateway is written in Rust and includes a same-origin React and TanStack Sta
 | Choose between local, Compose, and Kubernetes deployments | [Deploy Oceans LLM](docs/setup/deploy-and-operations.md) |
 | Understand startup, seeded state, and first access | [Runtime Bootstrap and Access](docs/setup/runtime-bootstrap-and-access.md) |
 | Configure providers, models, authentication, and runtime behavior | [Configuration Reference](docs/configuration/configuration-reference.md) |
-| Understand routing and supported API families | [Model Routing and API Behavior](docs/configuration/model-routing-and-api-behavior.md) and [Provider API Compatibility](docs/reference/provider-api-compatibility.md) |
+| Understand routing and supported API families | [Model Routing and APIs](docs/configuration/model-routing-and-api-behavior.md) and [Provider API Compatibility](docs/reference/provider-api-compatibility.md) |
 | Configure identities, service accounts, API keys, or budgets | [Identity and Access](docs/access/identity-and-access.md), [Service Accounts](docs/access/service-accounts.md), and [Budgets](docs/access/budgets.md) |
 | Register MCP servers and control tool access | [MCP Servers](docs/configuration/mcp-servers.md), [MCP Tool Access](docs/mcp/mcp-tool-access.md), and [MCP Client Setup](docs/mcp/mcp-client-setup.md) |
 | Enable and operate gateway guardrails | [Gateway Guardrails](docs/operations/gateway-guardrails.md) |
