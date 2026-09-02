@@ -35,7 +35,9 @@ const ADMIN_VIEW_CACHE_TTL: Duration = Duration::from_secs(30);
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let command = cli.command.unwrap_or(Command::Serve(ServeArgs::default()));
+    let command = cli
+        .command
+        .unwrap_or_else(|| Command::Serve(ServeArgs::from_env()));
 
     if matches!(&command, Command::Config(ConfigCommand::Validate)) {
         validate_config_file(&cli.config)?;
@@ -257,7 +259,10 @@ async fn run_serve_with_store(
     )
     .context("invalid MCP credential runtime configuration")?;
 
-    let bind_address = config.server.bind_address()?;
+    let mut bind_address = config.server.bind_address()?;
+    if let Some(port) = args.port {
+        bind_address.set_port(port);
+    }
 
     let state = AppState {
         service: service.clone(),
@@ -304,7 +309,7 @@ async fn run_serve_with_store(
         harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
     };
     gateway::batch_worker::spawn(state.clone());
-    let app = build_router(state, load_admin_ui_config());
+    let app = build_router(state, load_admin_ui_config(args.admin_ui_upstream));
 
     let listener = TcpListener::bind(bind_address)
         .await
@@ -483,11 +488,10 @@ fn build_provider_registry(
     Ok(providers)
 }
 
-fn load_admin_ui_config() -> AdminUiConfig {
+fn load_admin_ui_config(upstream: String) -> AdminUiConfig {
     AdminUiConfig {
         base_path: env::var("ADMIN_UI_BASE_PATH").unwrap_or_else(|_| "/admin".to_string()),
-        upstream: env::var("ADMIN_UI_UPSTREAM")
-            .unwrap_or_else(|_| "http://localhost:3001".to_string()),
+        upstream,
         connect_timeout_ms: env_u64("ADMIN_UI_CONNECT_TIMEOUT_MS", 750),
         request_timeout_ms: env_u64("ADMIN_UI_REQUEST_TIMEOUT_MS", 10_000),
     }

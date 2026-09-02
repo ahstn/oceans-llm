@@ -367,7 +367,7 @@ Config changes take effect after a gateway restart. See [Identity and Access](..
 
 Important fields:
 
-- `bind`
+- `bind` (socket address; the `PORT` env var or `gateway serve --port` overrides its port)
 - `log_format`
 - `otel_endpoint`
 - `otel_metrics_endpoint`

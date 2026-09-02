@@ -167,9 +167,8 @@ launch() {
   activate_mise
   (
     cd "$repo_root"
-    export PORT="$gateway_port"
-    export ADMIN_UI_INTERNAL_PORT="$ui_port"
-    export ADMIN_UI_UPSTREAM="http://localhost:$ui_port"
+    export GATEWAY_PORT="$gateway_port"
+    export UI_PORT="$ui_port"
     exec mise run dev-stack
   ) >"$log_file" 2>&1 &
   pid=$!

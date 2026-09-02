@@ -39,6 +39,18 @@ pub enum ConfigCommand {
 
 #[derive(Debug, Clone, Args)]
 pub struct ServeArgs {
+    /// Listener port. Overrides the port in `server.bind` from the config file.
+    #[arg(long, env = "PORT")]
+    pub port: Option<u16>,
+
+    /// Admin UI origin that `/admin*` requests are proxied to.
+    #[arg(
+        long,
+        env = "ADMIN_UI_UPSTREAM",
+        default_value = "http://localhost:3001"
+    )]
+    pub admin_ui_upstream: String,
+
     #[arg(
         long,
         env = "GATEWAY_RUN_MIGRATIONS",
@@ -64,13 +76,15 @@ pub struct ServeArgs {
     pub seed_config: bool,
 }
 
-impl Default for ServeArgs {
-    fn default() -> Self {
-        Self {
-            run_migrations: true,
-            bootstrap_admin: true,
-            seed_config: true,
+impl ServeArgs {
+    /// Serve arguments for a bare `gateway` invocation: clap defaults plus env overrides.
+    pub fn from_env() -> Self {
+        #[derive(Parser)]
+        struct Wrapper {
+            #[command(flatten)]
+            serve: ServeArgs,
         }
+        Wrapper::parse_from(["gateway"]).serve
     }
 }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   forwardRequestHeadersFromRequest,
@@ -6,8 +6,17 @@ import {
   resolveGatewayOriginFromRequest,
 } from '@/server/gateway-client.server'
 
+beforeEach(() => {
+  vi.stubEnv('GATEWAY_PORT', '')
+  delete process.env.GATEWAY_PORT
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
 describe('resolveGatewayOriginFromRequest', () => {
-  it('targets the gateway port when the UI is accessed directly on the dev server', () => {
+  it('targets the default gateway port when the UI is accessed directly on the dev server', () => {
     const request = new Request('http://localhost:3001/admin/identity/users', {
       headers: { host: 'localhost:3001' },
     })
@@ -15,15 +24,35 @@ describe('resolveGatewayOriginFromRequest', () => {
     expect(resolveGatewayOriginFromRequest(request)).toBe('http://127.0.0.1:8080')
   })
 
+  it('targets GATEWAY_PORT when the stack runs on alternate ports', () => {
+    vi.stubEnv('GATEWAY_PORT', '8095')
+    const request = new Request('http://localhost:3005/admin/identity/users', {
+      headers: { host: 'localhost:3005' },
+    })
+
+    expect(resolveGatewayOriginFromRequest(request)).toBe('http://127.0.0.1:8095')
+    expect(resolveBrowserGatewayOriginFromRequest(request)).toBe('http://localhost:8095')
+  })
+
+  it('prefers an explicit origin over request-derived values', () => {
+    const request = new Request('http://localhost:3001/admin/identity/users', {
+      headers: { host: 'localhost:3001', 'x-forwarded-origin': 'http://localhost:8080' },
+    })
+
+    expect(resolveGatewayOriginFromRequest(request, 'http://gateway:9000/')).toBe(
+      'http://gateway:9000',
+    )
+  })
+
   it('prefers forwarded origin when the UI is accessed through the gateway proxy', () => {
     const request = new Request('http://localhost:3001/admin/identity/users', {
       headers: {
         host: 'localhost:3001',
-        'x-forwarded-origin': 'http://localhost:8080',
+        'x-forwarded-origin': 'http://localhost:8090',
       },
     })
 
-    expect(resolveGatewayOriginFromRequest(request)).toBe('http://localhost:8080')
+    expect(resolveGatewayOriginFromRequest(request)).toBe('http://localhost:8090')
   })
 
   it('normalizes loopback IPv6 requests to the IPv4 gateway listener', () => {
@@ -36,7 +65,7 @@ describe('resolveGatewayOriginFromRequest', () => {
 })
 
 describe('resolveBrowserGatewayOriginFromRequest', () => {
-  it('targets the gateway port when the UI is accessed through the Docker admin port', () => {
+  it('targets the default gateway port when the UI is accessed on its own port', () => {
     const request = new Request('http://localhost:3003/admin/login', {
       headers: { host: 'localhost:3003' },
     })
@@ -44,12 +73,12 @@ describe('resolveBrowserGatewayOriginFromRequest', () => {
     expect(resolveBrowserGatewayOriginFromRequest(request)).toBe('http://localhost:8080')
   })
 
-  it('keeps the gateway origin when the UI is accessed through the gateway proxy', () => {
-    const request = new Request('http://localhost:8080/admin/login', {
-      headers: { host: 'localhost:8080' },
+  it('keeps the forwarded origin when the UI is accessed through the gateway proxy', () => {
+    const request = new Request('http://localhost:3001/admin/login', {
+      headers: { host: 'localhost:3001', 'x-forwarded-origin': 'http://localhost:8090' },
     })
 
-    expect(resolveBrowserGatewayOriginFromRequest(request)).toBe('http://localhost:8080')
+    expect(resolveBrowserGatewayOriginFromRequest(request)).toBe('http://localhost:8090')
   })
 })
 

@@ -3,9 +3,11 @@ import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
 
 import type { GatewayPaths } from '@/types/live-api'
 
-const DEFAULT_DEV_UI_PORT = '3001'
-const DEFAULT_DOCKER_UI_PORT = '3003'
-const DEFAULT_GATEWAY_PORT = '8080'
+// Requests that reach this server without `x-forwarded-origin` did not come through the gateway
+// proxy, so they hit the UI port directly and the gateway lives on GATEWAY_PORT of the same host.
+function gatewayPort() {
+  return process.env.GATEWAY_PORT ?? '8080'
+}
 
 function trimOrigin(value: string) {
   return value.replace(/\/$/, '')
@@ -42,17 +44,12 @@ export function resolveGatewayOriginFromRequest(request: Request, explicitOrigin
     return trimOrigin(forwardedOrigin)
   }
 
-  const requestTarget = parseRequestTarget(request)
-  if (requestTarget.port === DEFAULT_DEV_UI_PORT) {
-    const gatewayOrigin = new URL(requestTarget.origin)
-    if (isLoopbackHostname(gatewayOrigin.hostname)) {
-      gatewayOrigin.hostname = '127.0.0.1'
-    }
-    gatewayOrigin.port = DEFAULT_GATEWAY_PORT
-    return trimOrigin(gatewayOrigin.origin)
+  const gatewayOrigin = parseRequestTarget(request)
+  if (isLoopbackHostname(gatewayOrigin.hostname)) {
+    gatewayOrigin.hostname = '127.0.0.1'
   }
-
-  return trimOrigin(requestTarget.origin)
+  gatewayOrigin.port = gatewayPort()
+  return trimOrigin(gatewayOrigin.origin)
 }
 
 export function resolveBrowserGatewayOriginFromRequest(request: Request, explicitOrigin?: string) {
@@ -66,14 +63,9 @@ export function resolveBrowserGatewayOriginFromRequest(request: Request, explici
     return trimOrigin(forwardedOrigin)
   }
 
-  const requestTarget = parseRequestTarget(request)
-  if (requestTarget.port === DEFAULT_DEV_UI_PORT || requestTarget.port === DEFAULT_DOCKER_UI_PORT) {
-    const gatewayOrigin = new URL(requestTarget.origin)
-    gatewayOrigin.port = DEFAULT_GATEWAY_PORT
-    return trimOrigin(gatewayOrigin.origin)
-  }
-
-  return trimOrigin(requestTarget.origin)
+  const gatewayOrigin = parseRequestTarget(request)
+  gatewayOrigin.port = gatewayPort()
+  return trimOrigin(gatewayOrigin.origin)
 }
 
 export function resolveBrowserGatewayOrigin() {

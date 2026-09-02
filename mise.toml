@@ -200,76 +200,36 @@ description = "Run `gateway seed-config` against `gateway.prod.yaml`"
 env = { POSTGRES_URL = { required = true } }
 run = "cargo run -p gateway --bin gateway -- --config gateway.prod.yaml seed-config"
 
+# Stack tasks: GATEWAY_PORT is the gateway listener, UI_PORT the admin UI server the gateway
+# proxies /admin* to. Both default so two worktrees can run side by side with different values.
 [tasks.dev-stack]
-description = "Run the local dev stack via mise (gateway + admin UI dev server)"
+description = "Run the local dev stack (gateway + admin UI dev server); override with GATEWAY_PORT and UI_PORT"
 depends = ["ui-install"]
 run = """
-set -euo pipefail
-
-ROOT_DIR="$PWD"
-WEB_DIR="$ROOT_DIR/crates/admin-ui/web"
-GATEWAY_PORT="${PORT:-8080}"
-ADMIN_UI_INTERNAL_PORT="${ADMIN_UI_INTERNAL_PORT:-3001}"
-ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_PORT}}"
-GATEWAY_RUNTIME_CONFIG="$(mktemp "${TMPDIR:-/tmp}/oceans-gateway-dev.XXXXXX")"
-
-cleanup() {
-  if [[ -n "${UI_PID:-}" ]]; then
-    kill "$UI_PID" >/dev/null 2>&1 || true
-  fi
-  rm -f "$GATEWAY_RUNTIME_CONFIG"
-}
-
-trap cleanup EXIT INT TERM
-
-awk -v gateway_bind="0.0.0.0:${GATEWAY_PORT}" '
-  BEGIN { in_server = 0; replaced = 0 }
-  /^server:$/ { in_server = 1 }
-  in_server && !replaced && /^  bind:/ {
-    printf "  bind: %c%s%c%c", 34, gateway_bind, 34, 10
-    replaced = 1
-    next
-  }
-  { print }
-' gateway.yaml >"$GATEWAY_RUNTIME_CONFIG"
+set -eu
+trap 'kill $(jobs -p) 2>/dev/null' EXIT
 
 export OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
 export OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="${OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY:-$(scripts/local-provider-credential-key.sh)}"
 export AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED="${AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED:-true}"
+export GATEWAY_PORT="${GATEWAY_PORT:-8080}" UI_PORT="${UI_PORT:-3001}"
 
-cargo run -p gateway --bin gateway -- --config "$GATEWAY_RUNTIME_CONFIG" seed-local-demo
-
-bun run --cwd "$WEB_DIR" dev -- --port "$ADMIN_UI_INTERNAL_PORT" &
-UI_PID=$!
-
-ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" cargo run -p gateway --bin gateway -- --config "$GATEWAY_RUNTIME_CONFIG" serve
+cargo run -p gateway --bin gateway -- seed-local-demo
+PORT="$UI_PORT" bun run --cwd crates/admin-ui/web dev &
+PORT="$GATEWAY_PORT" ADMIN_UI_UPSTREAM="http://localhost:$UI_PORT" cargo run -p gateway --bin gateway -- serve
 """
 
 [tasks.prod-stack]
-description = "Run the production-shaped local stack via mise (gateway + admin UI SSR server)"
+description = "Run the production-shaped local stack (gateway + admin UI SSR server); override with GATEWAY_PORT and UI_PORT"
 depends = ["ui-install"]
 env = { POSTGRES_URL = { required = true } }
 run = """
-set -euo pipefail
+set -eu
+trap 'kill $(jobs -p) 2>/dev/null' EXIT
+export GATEWAY_PORT="${GATEWAY_PORT:-8080}" UI_PORT="${UI_PORT:-3001}"
 
-ROOT_DIR="$PWD"
-WEB_DIR="$ROOT_DIR/crates/admin-ui/web"
-GATEWAY_PORT="${PORT:-8080}"
-ADMIN_UI_INTERNAL_PORT="${ADMIN_UI_INTERNAL_PORT:-3001}"
-ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_PORT}}"
-
-cleanup() {
-  if [[ -n "${UI_PID:-}" ]]; then
-    kill "$UI_PID" >/dev/null 2>&1 || true
-  fi
-}
-
-trap cleanup EXIT INT TERM
-
-PORT="$ADMIN_UI_INTERNAL_PORT" bun run --cwd "$WEB_DIR" start &
-UI_PID=$!
-
-ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" PORT="$GATEWAY_PORT" cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve
+PORT="$UI_PORT" bun run --cwd crates/admin-ui/web start &
+PORT="$GATEWAY_PORT" ADMIN_UI_UPSTREAM="http://localhost:$UI_PORT" cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve
 """
 
 [tasks.sync-pricing-catalog]
@@ -362,7 +322,12 @@ run = "bun run --cwd crates/admin-ui/web test:e2e"
 
 [tasks.guardrail-release-gate]
 description = "Run guardrail security, load, harness, and end-to-end release gates"
-depends = ["ui-build", "e2e-install", "e2e-gateway-build", "harness-integration-install"]
+depends = [
+  "ui-build",
+  "e2e-install",
+  "e2e-gateway-build",
+  "harness-integration-install",
+]
 run = """
 cargo test -p gateway-guardrails
 cargo test -p gateway-store decision_event_persistence_load_gate_stays_within_release_budget

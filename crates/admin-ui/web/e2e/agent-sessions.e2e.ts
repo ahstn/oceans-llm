@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { expect, test } from 'playwright/test'
 
 import { ensureAdminSession } from './admin-session'
@@ -25,6 +26,11 @@ test('correlates a live agent request and exposes it through the admin session e
   expect(serviceAccount).toBeDefined()
   const externalSessionId = `e2e-agent-session-${Date.now()}`
   const startedAfter = new Date(Date.now() - 1_000).toISOString()
+  const sessionSourceHash = `sha256:${createHash('sha256')
+    .update(`service_account:${serviceAccount?.id ?? ''}`)
+    .update('\0opencode\0lineage-v1\0')
+    .update(externalSessionId)
+    .digest('hex')}`
 
   const completionResponse = await request.post(`${root}/v1/chat/completions`, {
     headers: {
@@ -51,10 +57,17 @@ test('correlates a live agent request and exposes it through the admin session e
   })
   expect(completionResponse.status()).toBe(200)
 
-  const listResponse = await request.get(
-    `${root}/api/v1/admin/observability/agent-sessions?harness_key=opencode&requested_model_key=fast&service_account_id=${encodeURIComponent(serviceAccount?.id ?? '')}&started_after=${encodeURIComponent(startedAfter)}`,
-    { headers: { cookie: adminCookie } },
-  )
+  const listUrl = `${root}/api/v1/admin/observability/agent-sessions?harness_key=opencode&requested_model_key=fast&service_account_id=${encodeURIComponent(serviceAccount?.id ?? '')}&session_source_hash=${encodeURIComponent(sessionSourceHash)}&started_after=${encodeURIComponent(startedAfter)}`
+  await expect
+    .poll(async () => {
+      const response = await request.get(listUrl, { headers: { cookie: adminCookie } })
+      if (response.status() !== 200) return -1
+      const body = (await response.json()) as { data: { total: number } }
+      return body.data.total
+    })
+    .toBe(1)
+
+  const listResponse = await request.get(listUrl, { headers: { cookie: adminCookie } })
   expect(listResponse.status()).toBe(200)
   const listBody = (await listResponse.json()) as {
     data: {

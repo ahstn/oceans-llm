@@ -50,7 +50,9 @@ const NUMBER_FORMATTER = new Intl.NumberFormat('en-US')
 export function ObservabilityLeaderboardPage() {
   const loaderData = Route.useLoaderData()
   const [leaderboard, setLeaderboard] = useState<LeaderboardView>(loaderData.data)
-  const [range, setRange] = useState<LeaderboardRange>(() => toLeaderboardRange(loaderData.data.range))
+  const [range, setRange] = useState<LeaderboardRange>(() =>
+    toLeaderboardRange(loaderData.data.range),
+  )
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isPending, startTransition] = useTransition()
   const isLoading = isPending || isRefreshing
