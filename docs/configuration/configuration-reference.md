@@ -917,9 +917,31 @@ Important fields:
 - `description`
 - `tags`
 - `rank`
+- `max_reasoning_effort`
 - `routes`
 - `alias_of`
 - `allowlist`
+
+### Reasoning Effort Ceilings
+
+`models[*].max_reasoning_effort` is an optional categorical ceiling for explicit reasoning-effort controls:
+
+```yaml
+models:
+  - id: claude-fable-5.1
+    description: Claude Fable 5.1 on Vertex
+    max_reasoning_effort: high
+    routes:
+      - provider: vertex-global
+        upstream_model: anthropic/claude-fable-5-1
+        context_window_tokens: 1000000
+```
+
+The accepted values, from least to greatest effort, are `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. The gateway compares values using this order; it does not clamp or rewrite a request. Omitting the field or setting it to `null` leaves the model without a categorical ceiling.
+
+This field governs explicit categorical effort only. It does not cap numeric controls such as `thinking.budget_tokens` or `reasoning.budget_tokens`, and it does not replace or constrain an opaque default selected inside a provider when the caller and route omit effort. Set provider defaults explicitly when they must be governed by the gateway ceiling.
+
+Alias requests use the strictest ceiling in the complete requested-model-to-target chain. See [Model Routing and APIs](model-routing-and-api-behavior.md#enforce-reasoning-effort-ceilings) for request shapes, rejection behavior, and batch admission.
 
 ### Model Allowlists
 
@@ -967,6 +989,8 @@ Important fields:
 - `compatibility`
 - `extra_headers`
 - `extra_body`
+
+When a model has `max_reasoning_effort`, startup also validates explicit effort values in each of its route `extra_body` objects. Known values above the ceiling, unknown strings, and malformed non-string values make configuration invalid. Omitted fields and `null` values pass. Startup does not clamp or mutate `extra_body`.
 
 Capability flags default permissively. A route can constrain provider capability. It cannot expand provider truth.
 

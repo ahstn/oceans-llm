@@ -268,6 +268,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V49__provider_user_credentials.sql"),
         postgres_sql: include_str!("../migrations/postgres/V49__provider_user_credentials.sql"),
     },
+    MigrationManifest {
+        version: 50,
+        name: "model_reasoning_effort_policy",
+        checksum: "V50__model_reasoning_effort_policy.sql",
+        libsql_sql: include_str!("../migrations/V50__model_reasoning_effort_policy.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V50__model_reasoning_effort_policy.sql"),
+    },
 ];
 
 #[cfg(test)]

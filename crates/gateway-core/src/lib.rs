@@ -6,6 +6,7 @@ pub mod domain;
 pub mod error;
 pub mod gateway_keys;
 pub mod protocol;
+pub mod reasoning_policy;
 pub mod streaming;
 pub mod traits;
 
@@ -78,30 +79,31 @@ pub use domain::{
     PricingCatalogCacheRecord, PricingLimits, PricingModalities, PricingProvenance,
     PricingResolution, PricingUnpricedReason, ProviderCapabilities, ProviderConnection,
     ProviderRequestContext, ProviderUserCredentialRecord, ProviderUserCredentialStatusRecord,
-    RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord, RequestAttemptStatus,
-    RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
-    RequestLogQuery, RequestLogRecord, RequestLogRetentionWindow, RequestMcpTokenOverheadRecord,
-    RequestTag, RequestTags, RequestToolCardinality, RequestToolCardinalityAverages,
-    ResolvedModelPricing, ReviewAgentProvider, ReviewAgentPullRequestRecord,
-    ReviewAgentPullRequestState, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
-    ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility,
-    RoutePricingOverride, SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey,
-    SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
-    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
-    SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
-    ServiceAccountRecord, ServiceAccountStatus, SpendDailyAggregateRecord,
-    SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord,
-    UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
-    UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-    UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
-    UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord,
-    UsageLeaderboardHarnessRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
-    UserRecord, UserSessionRecord, UserStatus, VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc,
-    github_copilot_route_capabilities, is_supported_vertex_google_chat_upstream_model,
-    is_supported_vertex_text_embedding_model_id, is_supported_vertex_text_embedding_upstream_model,
-    validate_entity_tags, validate_tag_key, validate_tag_value,
-    vertex_route_capabilities_for_upstream_model, vertex_text_embedding_capabilities,
+    ReasoningEffort, RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord,
+    RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+    RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRetentionWindow,
+    RequestMcpTokenOverheadRecord, RequestTag, RequestTags, RequestToolCardinality,
+    RequestToolCardinalityAverages, ResolvedModelPricing, ReviewAgentProvider,
+    ReviewAgentPullRequestRecord, ReviewAgentPullRequestState, ReviewAgentRepositoryRecord,
+    ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
+    RouteCompatibility, RoutePricingOverride, SYSTEM_BOOTSTRAP_ADMIN_EMAIL,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
+    SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
+    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+    SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountRecord, ServiceAccountStatus,
+    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
+    TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
+    UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+    UpsertMcpToolGrantRecord, UpsertMcpUpstreamCredentialBindingRecord,
+    UpsertProviderUserCredentialRecord, UpsertReviewAgentPullRequestRecord,
+    UsageLeaderboardBucketRecord, UsageLeaderboardHarnessRecord, UsageLeaderboardUserRecord,
+    UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc, github_copilot_route_capabilities,
+    is_supported_vertex_google_chat_upstream_model, is_supported_vertex_text_embedding_model_id,
+    is_supported_vertex_text_embedding_upstream_model, validate_entity_tags, validate_tag_key,
+    validate_tag_value, vertex_route_capabilities_for_upstream_model,
+    vertex_text_embedding_capabilities,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use gateway_keys::{
@@ -126,6 +128,10 @@ pub use protocol::translate::{
     core_embeddings_request_to_openai, core_responses_request_to_openai,
     openai_chat_request_to_core, openai_embeddings_request_to_core,
     openai_responses_request_to_core,
+};
+pub use reasoning_policy::{
+    enforce_chat_reasoning_effort, enforce_reasoning_effort_value,
+    enforce_responses_reasoning_effort,
 };
 pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};
 pub use traits::{

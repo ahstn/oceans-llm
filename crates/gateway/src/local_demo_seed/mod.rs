@@ -963,6 +963,7 @@ mod tests {
             .map(|model_key| SeedModel {
                 model_key: model_key.to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 0,

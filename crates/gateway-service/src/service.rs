@@ -2404,6 +2404,7 @@ mod tests {
             id: model_id,
             model_key: "embeddings".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: None,
             tags: Vec::new(),
             rank: 0,
