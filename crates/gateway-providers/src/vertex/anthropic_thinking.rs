@@ -61,13 +61,12 @@ pub(super) fn apply_vertex_anthropic_thinking_compatibility(
 
     validate_caller_thinking_for_policy(body, policy, upstream_model)?;
 
-    if let Some(effort) = effort {
+    if effort.is_some() {
         match policy {
             ClaudeThinkingPolicy::AdaptiveOnly
             | ClaudeThinkingPolicy::AdaptivePreferred
             | ClaudeThinkingPolicy::MythosPreview => {
                 ensure_anthropic_adaptive_thinking(body, upstream_model)?;
-                merge_anthropic_output_effort(body, effort, upstream_model)?;
             }
             ClaudeThinkingPolicy::ManualWithEffort => {
                 let budget_tokens = budget_tokens
@@ -78,7 +77,6 @@ pub(super) fn apply_vertex_anthropic_thinking_compatibility(
                         ))
                     })?;
                 ensure_anthropic_manual_thinking(body, budget_tokens, upstream_model)?;
-                merge_anthropic_output_effort(body, effort, upstream_model)?;
             }
             ClaudeThinkingPolicy::ManualOnly => {
                 if has_native_effort {
@@ -186,13 +184,10 @@ fn extract_existing_anthropic_output_effort(
             )
         })?;
 
-        let effort = output_config.get("effort").cloned();
-        if effort.as_ref().is_some_and(Value::is_null) {
-            output_config.remove("effort");
-            (None, output_config.is_empty())
-        } else {
-            (effort, false)
-        }
+        let effort = output_config
+            .remove("effort")
+            .filter(|value| !value.is_null());
+        (effort, output_config.is_empty())
     };
     if remove_output_config {
         body.remove("output_config");
@@ -350,32 +345,6 @@ fn existing_manual_thinking_budget(body: &Map<String, Value>) -> Option<Value> {
         thinking.get("budget_tokens").cloned()
     } else {
         None
-    }
-}
-
-fn merge_anthropic_output_effort(
-    body: &mut Map<String, Value>,
-    effort: Value,
-    upstream_model: &str,
-) -> Result<(), ProviderError> {
-    match body.get_mut("output_config") {
-        None => {
-            body.insert("output_config".to_string(), json!({ "effort": effort }));
-            Ok(())
-        }
-        Some(Value::Object(output_config)) => match output_config.get("effort") {
-            Some(existing) if existing != &effort => Err(ProviderError::InvalidRequest(format!(
-                "`reasoning_effort` conflicts with `output_config.effort` for `{upstream_model}`"
-            ))),
-            Some(_) => Ok(()),
-            None => {
-                output_config.insert("effort".to_string(), effort);
-                Ok(())
-            }
-        },
-        Some(_) => Err(ProviderError::InvalidRequest(
-            "`output_config` must be an object for Anthropic Vertex mapping".to_string(),
-        )),
     }
 }
 

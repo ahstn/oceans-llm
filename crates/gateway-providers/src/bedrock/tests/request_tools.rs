@@ -414,3 +414,119 @@ fn maps_anthropic_function_tools_tool_choice_and_tool_results() {
         })
     );
 }
+
+#[test]
+fn preserves_native_anthropic_tools_and_tool_choices() {
+    let tools = json!([
+        {
+            "name": "lookup",
+            "description": "Look up data",
+            "input_schema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}}
+            },
+            "cache_control": {"type": "ephemeral"}
+        },
+        {
+            "type": "computer_20250124",
+            "name": "computer",
+            "display_width_px": 1024,
+            "display_height_px": 768
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "converted",
+                "description": "OpenAI alias",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }
+    ]);
+    let expected_tools = json!([
+        {
+            "name": "lookup",
+            "description": "Look up data",
+            "input_schema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}}
+            },
+            "cache_control": {"type": "ephemeral"}
+        },
+        {
+            "type": "computer_20250124",
+            "name": "computer",
+            "display_width_px": 1024,
+            "display_height_px": 768
+        },
+        {
+            "name": "converted",
+            "description": "OpenAI alias",
+            "input_schema": {"type": "object", "properties": {}}
+        }
+    ]);
+    let cases = [
+        (
+            json!({"type": "auto", "disable_parallel_tool_use": true}),
+            json!({"type": "auto", "disable_parallel_tool_use": true}),
+        ),
+        (
+            json!({"type": "any", "disable_parallel_tool_use": false}),
+            json!({"type": "any", "disable_parallel_tool_use": false}),
+        ),
+        (
+            json!({
+                "type": "tool",
+                "name": "lookup",
+                "disable_parallel_tool_use": true
+            }),
+            json!({
+                "type": "tool",
+                "name": "lookup",
+                "disable_parallel_tool_use": true
+            }),
+        ),
+        (json!("required"), json!({"type": "any"})),
+        (
+            json!({"type": "function", "function": {"name": "lookup"}}),
+            json!({"type": "tool", "name": "lookup"}),
+        ),
+    ];
+
+    for (tool_choice, expected_tool_choice) in cases {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Use a tool")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(256)),
+                ("tools".to_string(), tools.clone()),
+                ("tool_choice".to_string(), tool_choice),
+            ]),
+        };
+
+        let body = map_chat_request_to_anthropic_messages(
+            &request,
+            &context("anthropic.claude-sonnet-4-5"),
+        )
+        .expect("mapped");
+
+        assert_eq!(body["tools"], expected_tools);
+        assert_eq!(body["tool_choice"], expected_tool_choice);
+    }
+
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Do not use tools")],
+        stream: false,
+        extra: BTreeMap::from([
+            ("max_tokens".to_string(), json!(256)),
+            ("tools".to_string(), tools),
+            ("tool_choice".to_string(), json!({"type": "none"})),
+        ]),
+    };
+    let body =
+        map_chat_request_to_anthropic_messages(&request, &context("anthropic.claude-sonnet-4-5"))
+            .expect("mapped");
+    assert!(body.get("tools").is_none());
+    assert!(body.get("tool_choice").is_none());
+}

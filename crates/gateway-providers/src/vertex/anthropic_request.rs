@@ -13,6 +13,7 @@ pub(super) fn map_anthropic_request(
     body.remove("model");
     body.remove("messages");
     body.remove("stream");
+    body.remove("context_management");
 
     let mut messages = Vec::new();
     let mut instructions = Vec::new();
@@ -51,14 +52,6 @@ pub(super) fn map_anthropic_request(
     if !body.contains_key("max_tokens") {
         body.insert("max_tokens".to_string(), Value::Number(1024.into()));
     }
-    if !body.contains_key("anthropic_version")
-        && !context.extra_body.contains_key("anthropic_version")
-    {
-        body.insert(
-            "anthropic_version".to_string(),
-            Value::String("vertex-2023-10-16".to_string()),
-        );
-    }
     if !instructions.is_empty()
         && !body.contains_key("system")
         && !context.extra_body.contains_key("system")
@@ -70,6 +63,14 @@ pub(super) fn map_anthropic_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
+    if !has_route_anthropic_beta(context, "context-management-2025-06-27") {
+        body.remove("context_management");
+    }
+    body.remove("model");
+    body.insert(
+        "anthropic_version".to_string(),
+        Value::String("vertex-2023-10-16".to_string()),
+    );
     body.insert("messages".to_string(), Value::Array(messages));
     body.insert("stream".to_string(), Value::Bool(stream));
     convert_openai_tools_for_anthropic(&mut body)?;
@@ -84,7 +85,16 @@ fn map_anthropic_message_content(message: &CoreChatMessage) -> Result<Value, Pro
         Value::Array(items) => items,
         _ => Vec::new(),
     };
-    content.extend(map_openai_assistant_tool_uses(message)?);
+    for tool_use in map_openai_assistant_tool_uses(message)? {
+        let id = tool_use.get("id").and_then(Value::as_str);
+        let is_duplicate = content.iter().any(|block| {
+            block.get("type").and_then(Value::as_str) == Some("tool_use")
+                && block.get("id").and_then(Value::as_str) == id
+        });
+        if !is_duplicate {
+            content.push(tool_use);
+        }
+    }
 
     if content.is_empty() {
         Ok(Value::String(String::new()))
@@ -96,6 +106,15 @@ fn map_anthropic_message_content(message: &CoreChatMessage) -> Result<Value, Pro
     } else {
         Ok(Value::Array(content))
     }
+}
+
+fn has_route_anthropic_beta(context: &ProviderRequestContext, beta: &str) -> bool {
+    context.extra_headers.iter().any(|(name, value)| {
+        name.eq_ignore_ascii_case("anthropic-beta")
+            && value
+                .as_str()
+                .is_some_and(|betas| betas.split(',').any(|candidate| candidate.trim() == beta))
+    })
 }
 
 fn map_anthropic_content(content: &Value) -> Result<Value, ProviderError> {
@@ -128,14 +147,7 @@ fn map_anthropic_content(content: &Value) -> Result<Value, ProviderError> {
                             mapped.push(json!({"type":"text","text":text}));
                         }
                     }
-                    "tool_use" | "tool_result" => {
-                        mapped.push(Value::Object(object.clone()));
-                    }
-                    other => {
-                        return Err(ProviderError::InvalidRequest(format!(
-                            "unsupported content type `{other}` for anthropic vertex mapping"
-                        )));
-                    }
+                    _ => mapped.push(Value::Object(object.clone())),
                 }
             }
             Ok(Value::Array(mapped))
