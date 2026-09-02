@@ -382,6 +382,9 @@ pub(super) fn map_anthropic_content_blocks(content: &Value) -> Result<Vec<Value>
                     "image" | "image_url" | "input_image" => {
                         blocks.push(map_anthropic_image_block(object)?);
                     }
+                    "tool_result" => {
+                        blocks.push(map_anthropic_tool_result_content_block(object)?);
+                    }
                     _ => blocks.push(item.clone()),
                 }
             }
@@ -391,6 +394,48 @@ pub(super) fn map_anthropic_content_blocks(content: &Value) -> Result<Vec<Value>
             "message content must be a string or typed content array".to_string(),
         )),
     }
+}
+
+fn map_anthropic_tool_result_content_block(
+    object: &Map<String, Value>,
+) -> Result<Value, ProviderError> {
+    if object.contains_key("tool_use_id") && object.contains_key("content") {
+        return Ok(Value::Object(object.clone()));
+    }
+
+    let tool_use_id = object
+        .get("tool_use_id")
+        .or_else(|| object.get("toolUseId"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "tool_result content must include tool_use_id".to_string(),
+            )
+        })?;
+    let content = object
+        .get("content")
+        .cloned()
+        .or_else(|| {
+            object
+                .get("text")
+                .and_then(Value::as_str)
+                .map(|text| Value::String(text.to_string()))
+        })
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "tool_result content must include `content` or string `text`".to_string(),
+            )
+        })?;
+
+    let mut block = object.clone();
+    block.insert(
+        "tool_use_id".to_string(),
+        Value::String(tool_use_id.to_string()),
+    );
+    block.insert("content".to_string(), content);
+    block.remove("toolUseId");
+    block.remove("text");
+    Ok(Value::Object(block))
 }
 
 pub(super) fn map_anthropic_image_block(

@@ -208,6 +208,56 @@ fn preserves_native_anthropic_continuation_blocks_without_duplicate_tool_calls()
 }
 
 #[test]
+fn normalizes_anthropic_tool_result_aliases() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([
+                {
+                    "type": "tool_result",
+                    "toolUseId": "toolu_id_alias",
+                    "content": [{"type": "text", "text": "sunny"}],
+                    "is_error": false
+                },
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_text_alias",
+                    "text": "rainy",
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ]),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(256))]),
+    };
+
+    let body =
+        map_chat_request_to_anthropic_messages(&request, &context("anthropic.claude-sonnet-4-5"))
+            .expect("mapped");
+
+    assert_eq!(
+        body["messages"][0]["content"],
+        json!([
+            {
+                "type": "tool_result",
+                "tool_use_id": "toolu_id_alias",
+                "content": [{"type": "text", "text": "sunny"}],
+                "is_error": false
+            },
+            {
+                "type": "tool_result",
+                "tool_use_id": "toolu_text_alias",
+                "content": "rainy",
+                "cache_control": {"type": "ephemeral"}
+            }
+        ])
+    );
+}
+
+#[test]
 fn preserves_native_tool_use_id_for_role_tool_result() {
     let tool_use_id = "toolu.native:123";
     let mut tool_result = message("tool", "sunny");
