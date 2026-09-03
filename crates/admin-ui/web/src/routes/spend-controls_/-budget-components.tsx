@@ -1,6 +1,7 @@
 import { useState, useTransition, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import { Link, useRouter } from '@tanstack/react-router'
 import {
+  Alert02Icon,
   ArrowLeft01Icon,
   ArrowRight01Icon,
   FilterHorizontalIcon,
@@ -9,6 +10,7 @@ import {
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Timeline,
   TimelineContent,
@@ -65,10 +67,13 @@ import type {
 import {
   alertBadgeVariant,
   budgetPayload,
+  budgetSourceLabel,
   CURRENCY_FORMATTER,
   formatThreshold,
   getErrorMessage,
+  INHERITED_BUDGET_WARNING,
   initialBudgetSettings,
+  isInheritedBudgetSource,
   LOW_USAGE_RATIO,
   PERCENT_FORMATTER,
   serviceAccountScope,
@@ -78,6 +83,7 @@ import {
   userModelScope,
   userScope,
   type BudgetSettingsForm,
+  type BudgetSource,
   type BudgetStateFilter,
   type BudgetUsage,
   type UsageStatus,
@@ -195,17 +201,27 @@ export function useBudgetEditor(onSaved?: () => void): BudgetEditor {
           : target.mode === 'service_account'
             ? serviceAccountScope(target.serviceAccount)
             : userModelScope(target.budget)
+      const result = budgetPayload(scope, form)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
       runMutation(
         async () => {
-          await saveBudget({ data: budgetPayload(scope, form) })
+          await saveBudget({ data: result.payload })
         },
         'Budget updated',
         close,
       )
     },
     createBudget(scope, settings, message) {
+      const result = budgetPayload(scope, settings)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
       runMutation(async () => {
-        await saveBudget({ data: budgetPayload(scope, settings) })
+        await saveBudget({ data: result.payload })
       }, message)
     },
     remove(scope, message) {
@@ -229,6 +245,19 @@ export function budgetTargetLabel(target: BudgetDialogTarget) {
   }
 }
 
+function budgetTargetSource(target: BudgetDialogTarget): BudgetSource | null | undefined {
+  switch (target.mode) {
+    case 'user':
+      return target.user.budget_source
+    case 'service_account':
+      return target.serviceAccount.budget_source
+    case 'user_model':
+      return target.budget.budget_source
+    case 'closed':
+      return null
+  }
+}
+
 export function BudgetDialog({ editor }: { editor: BudgetEditor }) {
   const label = budgetTargetLabel(editor.target)
   return (
@@ -244,6 +273,12 @@ export function BudgetDialog({ editor }: { editor: BudgetEditor }) {
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-5" onSubmit={editor.save}>
+          {isInheritedBudgetSource(budgetTargetSource(editor.target)) ? (
+            <Alert>
+              <AppIcon icon={Alert02Icon} />
+              <AlertDescription>{INHERITED_BUDGET_WARNING}</AlertDescription>
+            </Alert>
+          ) : null}
           <BudgetSettingsFields form={editor.form} setForm={editor.setForm} idPrefix="dialog" />
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={editor.close}>
@@ -699,6 +734,12 @@ const STATUS_BAR_CLASS: Record<UsageStatus, string> = {
 
 export function UsageStatusBadge({ status }: { status: UsageStatus }) {
   return <Badge variant={STATUS_BADGE_VARIANT[status]}>{USAGE_STATUS_LABEL[status]}</Badge>
+}
+
+/** Marks budgets that come from configuration. Renders nothing for manual budgets. */
+export function BudgetSourceBadge({ source }: { source: BudgetSource | null | undefined }) {
+  if (!source || !isInheritedBudgetSource(source)) return null
+  return <Badge variant="outline">{budgetSourceLabel(source.kind)}</Badge>
 }
 
 export function UsageBar({

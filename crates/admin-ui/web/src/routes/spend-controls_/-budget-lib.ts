@@ -13,6 +13,17 @@ import type {
   UpsertBudgetInput,
 } from '@/types/api'
 
+// Amount validation, payload shape, and budget-source labels are shared with the
+// current page so both stay in lockstep with the API contract.
+export {
+  budgetPayload,
+  budgetSourceLabel,
+  INHERITED_BUDGET_WARNING,
+  isInheritedBudgetSource,
+  normalizeBudgetAmount,
+  type BudgetSource,
+} from '../spend-controls/-utils'
+
 export const USER_PAGE_SIZE = 15
 export const LOW_USAGE_RATIO = 0.2
 export const WARNING_USAGE_RATIO = 0.8
@@ -262,19 +273,6 @@ export function settingsFromBudget(budget?: BudgetSettings | null): BudgetSettin
     amount_usd: budget?.amount_usd ?? '0.0000',
     hard_limit: budget?.hard_limit ?? true,
     timezone: budget?.timezone ?? 'UTC',
-  }
-}
-
-export function budgetPayload(
-  scope: BudgetScopeRequest,
-  settings: BudgetSettingsForm,
-): UpsertBudgetInput {
-  return {
-    scope,
-    cadence: settings.cadence,
-    amount_usd: settings.amount_usd,
-    hard_limit: settings.hard_limit,
-    timezone: settings.timezone?.trim() || 'UTC',
   }
 }
 

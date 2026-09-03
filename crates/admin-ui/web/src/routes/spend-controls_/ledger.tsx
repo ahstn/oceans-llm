@@ -55,10 +55,12 @@ import {
   type BudgetEditor,
 } from './-budget-components'
 import {
+  budgetSourceLabel,
   budgetUsage,
   CURRENCY_FORMATTER,
   formatCadence,
   formatUserModelSelector,
+  isInheritedBudgetSource,
   loadSpendControls,
   serviceAccountScope,
   summarizeUsers,
@@ -66,6 +68,7 @@ import {
   userModelScope,
   userScope,
   useUserBudgetList,
+  type BudgetSource,
   type BudgetSummary,
   type SpendControlsLoaderData,
   type UserBudgetList,
@@ -270,7 +273,7 @@ function UsersTable({ list, editor }: { list: UserBudgetList; editor: BudgetEdit
                   </div>
                 </div>
               </TableCell>
-              <BudgetCell budget={user.budget} />
+              <BudgetCell budget={user.budget} source={user.budget_source} />
               <TableCell className="min-w-[12rem]">
                 <UsageBar usage={usage} />
               </TableCell>
@@ -381,7 +384,7 @@ function ServiceAccountsTable({
                     </span>
                   </div>
                 </TableCell>
-                <BudgetCell budget={serviceAccount.budget} />
+                <BudgetCell budget={serviceAccount.budget} source={serviceAccount.budget_source} />
                 <TableCell className="min-w-[12rem]">
                   <UsageBar usage={usage} />
                 </TableCell>
@@ -479,7 +482,7 @@ function UserModelBudgetsTable({
                   </div>
                 </TableCell>
                 <TableCell className="font-mono text-xs">{selector}</TableCell>
-                <BudgetCell budget={budget.budget} />
+                <BudgetCell budget={budget.budget} source={budget.budget_source} />
                 <TableCell className="min-w-[12rem]">
                   <UsageBar usage={budgetUsage(budget)} />
                 </TableCell>
@@ -503,7 +506,13 @@ function UserModelBudgetsTable({
 // Shared cells
 // ---------------------------------------------------------------------------
 
-function BudgetCell({ budget }: { budget: SpendBudgetUserView['budget'] }) {
+function BudgetCell({
+  budget,
+  source,
+}: {
+  budget: SpendBudgetUserView['budget']
+  source: BudgetSource | null | undefined
+}) {
   if (!budget) {
     return (
       <TableCell>
@@ -519,6 +528,9 @@ function BudgetCell({ budget }: { budget: SpendBudgetUserView['budget'] }) {
         </span>
         <Badge variant="secondary">{formatCadence(budget.cadence)}</Badge>
         {budget.hard_limit ? <Badge variant="outline">Hard</Badge> : null}
+        {source && isInheritedBudgetSource(source) ? (
+          <Badge variant="outline">{budgetSourceLabel(source.kind)}</Badge>
+        ) : null}
       </div>
     </TableCell>
   )

@@ -47,6 +47,7 @@ import type {
 import {
   AlertTimeline,
   BudgetDialog,
+  BudgetSourceBadge,
   CandidateSwitcher,
   ListPager,
   UsageBar,
@@ -269,7 +270,10 @@ function UserBudgetCard({ row, editor }: { row: UserBudgetRow; editor: BudgetEdi
           <CardTitle className="truncate">{user.name}</CardTitle>
           <CardDescription className="truncate">{user.email}</CardDescription>
         </div>
-        <UsageStatusBadge status={usage.status} />
+        <div className="flex flex-col items-end gap-1">
+          <UsageStatusBadge status={usage.status} />
+          <BudgetSourceBadge source={user.budget_source} />
+        </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <UsageBar usage={usage} />
@@ -351,6 +355,7 @@ function ServiceAccountRow({
         )}
       </div>
       <UsageBar usage={usage} showAmounts className="w-40" />
+      <BudgetSourceBadge source={serviceAccount.budget_source} />
       <UsageStatusBadge status={usage.status} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

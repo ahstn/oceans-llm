@@ -46,6 +46,7 @@ import type {
 import {
   AlertTimeline,
   BudgetDialog,
+  BudgetSourceBadge,
   CandidateSwitcher,
   ListPager,
   UsageBar,
@@ -268,6 +269,7 @@ function UserBudgetCard({ user, editor }: { user: SpendBudgetUserView; editor: B
             {user.team_name ? ` · ${user.team_name}` : ''}
           </CardDescription>
         </div>
+        <BudgetSourceBadge source={user.budget_source} />
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <UsageBar usage={usage} className="[&_[data-slot=progress]]:h-2" />
@@ -517,13 +519,14 @@ function ServiceAccountRow({
       </TableCell>
       <TableCell>
         {sa.budget ? (
-          <div className="flex flex-col">
+          <div className="flex flex-col items-start gap-1">
             <span className="tabular-nums">
               {CURRENCY_FORMATTER.format(sa.budget.amount_usd_10000 / 10_000)}
             </span>
             <span className="text-muted-foreground text-xs">
               {formatCadence(sa.budget.cadence)} · {sa.budget.hard_limit ? 'Hard' : 'Soft'} limit
             </span>
+            <BudgetSourceBadge source={sa.budget_source} />
           </div>
         ) : (
           <span className="text-muted-foreground">No budget</span>
