@@ -75,8 +75,9 @@ Route configuration affects pricing. The selected route tells Oceans which provi
 
 Current exact catalog coverage, used only when a route has no pricing override, is intentionally narrow:
 
-- `openai_compat` routes need a supported `pricing_provider_id`
+- `openai_compat` and `anthropic_compat` routes need a supported `pricing_provider_id`
 - OpenRouter `openai_compat` routes should use `pricing_provider_id: openrouter`
+- OpenCode Zen `anthropic_compat` routes should use `pricing_provider_id: opencode`
 - Vertex routes are priced from the upstream publisher prefix
 - `google/...` maps to Google Vertex pricing
 - `anthropic/...` maps to Anthropic-on-Vertex pricing

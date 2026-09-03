@@ -352,7 +352,78 @@ fn pi_safe_effort_config_matches_expected_full_shape() {
                                 "medium": "medium",
                                 "minimal": null,
                                 "off": null,
-                                "xhigh": "xhigh"
+                                "xhigh": "xhigh",
+                                "max": "max"
+                            }
+                        }
+                    ]
+                }
+            }
+        })
+    );
+}
+#[test]
+fn pi_fable_5_1_config_matches_expected_shape() {
+    let input = ClientConfigInput {
+        model_id: "claude-fable-5-1".to_string(),
+        display_name: "Claude Fable 5.1".to_string(),
+        upstream_model: Some("claude-fable-5-1".to_string()),
+        provider_id: "oceans-llm".to_string(),
+        provider_name: "Oceans LLM".to_string(),
+        gateway_base_url: "https://llm.example.com".to_string(),
+        api_key_env_var: "OCEANS_LLM_API_KEY".to_string(),
+        input_cost_per_million_tokens_usd_10000: Some(100_000),
+        output_cost_per_million_tokens_usd_10000: Some(500_000),
+        cache_read_cost_per_million_tokens_usd_10000: Some(2_500),
+        cache_write_cost_per_million_tokens_usd_10000: Some(125_000),
+        context_window_tokens: Some(1_000_000),
+        input_window_tokens: None,
+        output_window_tokens: Some(128_000),
+        capabilities: ClientModelCapabilities {
+            responses: false,
+            tool_calling: true,
+            attachments: false,
+            vision: true,
+        },
+        thinking_policy: Some(AnthropicThinkingPolicy::SafeEffort),
+    };
+
+    let rendered = PiConfigTemplate.render(&input);
+    let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "providers": {
+                "oceans-llm": {
+                    "api": "anthropic-messages",
+                    "apiKey": "$OCEANS_LLM_API_KEY",
+                    "baseUrl": "https://llm.example.com",
+                    "compat": {
+                        "forceAdaptiveThinking": true
+                    },
+                    "models": [
+                        {
+                            "contextWindow": 200000,
+                            "cost": {
+                                "cacheRead": 0.25,
+                                "cacheWrite": 12.5,
+                                "input": 10.0,
+                                "output": 50.0
+                            },
+                            "id": "claude-fable-5-1",
+                            "input": ["text", "image"],
+                            "maxTokens": 128000,
+                            "name": "Claude Fable 5.1",
+                            "reasoning": true,
+                            "thinkingLevelMap": {
+                                "off": null,
+                                "minimal": null,
+                                "low": "low",
+                                "medium": "medium",
+                                "high": "high",
+                                "xhigh": "xhigh",
+                                "max": "max"
                             }
                         }
                     ]

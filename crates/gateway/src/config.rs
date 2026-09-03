@@ -52,6 +52,7 @@ pub use permissions::{
 };
 
 pub use providers::{
+    AnthropicCompatAuthConfig, AnthropicCompatAuthKindConfig, AnthropicCompatProviderConfig,
     AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
     GcpCloudRunOpenAiCompatAuthHeaderConfig, GcpCloudRunOpenAiCompatProviderConfig,
     GcpVertexAuthConfig, GcpVertexBatchConfig, GcpVertexProviderConfig, GitHubCopilotAuthConfig,
@@ -232,6 +233,52 @@ impl GatewayConfig {
                                 provider.id
                             );
                         }
+                    }
+                    validate_provider_display_config(
+                        provider.id.as_str(),
+                        provider.display.as_ref(),
+                    )?;
+                }
+                ProviderConfig::AnthropicCompat(provider) => {
+                    if provider.id.trim().is_empty() {
+                        bail!("anthropic_compat provider id cannot be empty");
+                    }
+                    if provider.base_url.trim().is_empty() {
+                        bail!(
+                            "anthropic_compat provider `{}` base_url cannot be empty",
+                            provider.id
+                        );
+                    }
+                    let parsed = url::Url::parse(&provider.base_url).with_context(|| {
+                        format!(
+                            "anthropic_compat provider `{}` base_url is invalid",
+                            provider.id
+                        )
+                    })?;
+                    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+                        bail!(
+                            "anthropic_compat provider `{}` base_url must be an HTTP URL with a host",
+                            provider.id
+                        );
+                    }
+                    if parsed.query().is_some() || parsed.fragment().is_some() {
+                        bail!(
+                            "anthropic_compat provider `{}` base_url cannot include query parameters or fragments",
+                            provider.id
+                        );
+                    }
+                    if provider.pricing_provider_id.trim().is_empty() {
+                        bail!(
+                            "anthropic_compat provider `{}` pricing_provider_id cannot be empty",
+                            provider.id
+                        );
+                    }
+                    if !is_supported_pricing_provider_id(&provider.pricing_provider_id) {
+                        bail!(
+                            "anthropic_compat provider `{}` pricing_provider_id `{}` is not supported",
+                            provider.id,
+                            provider.pricing_provider_id
+                        );
                     }
                     validate_provider_display_config(
                         provider.id.as_str(),
@@ -1015,6 +1062,35 @@ impl GatewayConfig {
                         secrets,
                     });
                 }
+                ProviderConfig::AnthropicCompat(provider) => {
+                    if let Some(auth) = &provider.auth
+                        && let Some(token) = &auth.token
+                    {
+                        validate_env_reference_if_needed(token)?;
+                    }
+
+                    let config = json!({
+                        "base_url": provider.base_url,
+                        "pricing_provider_id": provider.pricing_provider_id,
+                        "default_headers": provider.default_headers,
+                        "timeouts": provider.timeouts,
+                        "display": provider.display,
+                    });
+
+                    let secrets = provider.auth.as_ref().map(|auth| {
+                        json!({
+                            "kind": auth.kind,
+                            "token": auth.token,
+                        })
+                    });
+
+                    providers.push(SeedProvider {
+                        provider_key: provider.id.clone(),
+                        provider_type: "anthropic_compat".to_string(),
+                        config,
+                        secrets,
+                    });
+                }
                 ProviderConfig::GcpCloudRunOpenAiCompat(provider) => {
                     match &provider.auth {
                         GcpCloudRunOpenAiCompatAuthConfig::Adc => {}
@@ -1548,10 +1624,46 @@ impl GatewayConfig {
 
                     configs.push(config);
                 }
-                ProviderConfig::GcpVertex(_)
+                ProviderConfig::AnthropicCompat(_)
+                | ProviderConfig::GcpVertex(_)
                 | ProviderConfig::AwsBedrock(_)
                 | ProviderConfig::GitHubCopilot(_) => {}
             }
+        }
+
+        Ok(configs)
+    }
+    pub fn anthropic_compatible_provider_configs(
+        &self,
+    ) -> anyhow::Result<Vec<gateway_providers::AnthropicCompatConfig>> {
+        let mut configs = Vec::new();
+
+        for provider in &self.providers {
+            let ProviderConfig::AnthropicCompat(provider) = provider else {
+                continue;
+            };
+
+            let mut config = gateway_providers::AnthropicCompatConfig::new(
+                provider.id.clone(),
+                provider.base_url.clone(),
+            );
+            config.default_headers = provider.default_headers.clone();
+            config.request_timeout_ms = provider
+                .timeouts
+                .as_ref()
+                .map(|timeouts| timeouts.total_ms)
+                .unwrap_or(120_000);
+
+            if let Some(auth) = &provider.auth
+                && let Some(token) = &auth.token
+            {
+                config.auth = Some(gateway_providers::AnthropicCompatAuth {
+                    kind: auth.kind.into_provider_kind(),
+                    token: resolve_secret_reference(token)?,
+                });
+            }
+
+            configs.push(config);
         }
 
         Ok(configs)
@@ -7380,5 +7492,148 @@ models:
         assert_eq!(runtime_configs.len(), 1);
         assert_eq!(runtime_configs[0].provider_key, "copilot-bearer");
         assert_eq!(runtime_configs[0].base_url, "https://api.githubcopilot.com");
+    }
+    #[test]
+    fn parses_anthropic_compat_provider_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: opencode-zen
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+    pricing_provider_id: opencode
+    auth:
+      kind: x_api_key
+      token: literal.test_opencode_key
+    default_headers:
+      anthropic-version: "2023-06-01"
+    display:
+      label: OpenCode Zen
+      icon_key: anthropic
+
+models:
+  - id: claude-fable-5-1
+    description: Claude Fable 5.1 through OpenCode Zen
+    max_reasoning_effort: max
+    routes:
+      - provider: opencode-zen
+        upstream_model: claude-fable-5-1
+        context_window_tokens: 1000000
+        pricing_override:
+          input_usd_per_million_tokens: "10.0000"
+          output_usd_per_million_tokens: "50.0000"
+          cache_read_usd_per_million_tokens: "0.2500"
+          cache_write_usd_per_million_tokens: "12.5000"
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+          stream: true
+          tools: true
+          vision: true
+          json_schema: false
+          developer_role: false
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let runtime_configs = config
+            .anthropic_compatible_provider_configs()
+            .expect("anthropic_compat runtime provider configs");
+        assert_eq!(runtime_configs.len(), 1);
+        assert_eq!(runtime_configs[0].provider_key, "opencode-zen");
+        assert_eq!(runtime_configs[0].base_url, "https://opencode.ai/zen");
+        assert_eq!(
+            runtime_configs[0].auth,
+            Some(gateway_providers::AnthropicCompatAuth {
+                kind: gateway_providers::AnthropicCompatAuthKind::XApiKey,
+                token: "test_opencode_key".to_string(),
+            })
+        );
+        assert_eq!(
+            runtime_configs[0].default_headers.get("anthropic-version"),
+            Some(&"2023-06-01".to_string())
+        );
+
+        let seed_providers = config.seed_providers().expect("seed providers");
+        assert_eq!(seed_providers[0].provider_key, "opencode-zen");
+        assert_eq!(seed_providers[0].provider_type, "anthropic_compat");
+
+        let seed_models = config.seed_models().expect("seed models");
+        assert_eq!(seed_models[0].model_key, "claude-fable-5-1");
+        assert_eq!(
+            seed_models[0].max_reasoning_effort,
+            Some(gateway_core::ReasoningEffort::Max)
+        );
+    }
+
+    #[test]
+    fn rejects_anthropic_compat_with_unsupported_pricing_provider() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: opencode-zen
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+    pricing_provider_id: unknown_provider
+models:
+  - id: test
+    routes:
+      - provider: opencode-zen
+        upstream_model: test
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("pricing_provider_id `unknown_provider` is not supported"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_anthropic_compat_with_query_or_fragment_in_base_url() {
+        for invalid_base_url in [
+            "https://opencode.ai/zen?query=1",
+            "https://opencode.ai/zen#fragment",
+            "https://opencode.ai/zen?query=1#fragment",
+        ] {
+            let tmp = tempdir().expect("tempdir");
+            let config_path = tmp.path().join("gateway.yaml");
+
+            write_config(
+                &config_path,
+                &format!(
+                    r#"
+providers:
+  - id: opencode-zen
+    type: anthropic_compat
+    base_url: {invalid_base_url}
+    pricing_provider_id: opencode
+models:
+  - id: test
+    routes:
+      - provider: opencode-zen
+        upstream_model: test
+"#
+                ),
+            );
+
+            let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+            let error_text = format!("{error:#}");
+            assert!(
+                error_text.contains("base_url cannot include query parameters or fragments"),
+                "unexpected error for {invalid_base_url}: {error_text}"
+            );
+        }
     }
 }

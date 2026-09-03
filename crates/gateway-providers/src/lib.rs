@@ -1,3 +1,5 @@
+pub mod anthropic;
+mod anthropic_compat;
 mod bedrock;
 mod copilot;
 mod http;
@@ -8,6 +10,9 @@ mod streaming;
 mod token;
 mod vertex;
 
+pub use anthropic_compat::{
+    AnthropicCompatAuth, AnthropicCompatAuthKind, AnthropicCompatConfig, AnthropicCompatProvider,
+};
 pub use bedrock::{BedrockAuthConfig, BedrockEndpointKind, BedrockProvider, BedrockProviderConfig};
 pub use copilot::{
     CopilotAuthConfig, CopilotProvider, CopilotProviderConfig, DEFAULT_COPILOT_API_URL,

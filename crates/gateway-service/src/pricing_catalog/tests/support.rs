@@ -246,6 +246,17 @@ pub(super) fn openai_provider(pricing_provider_id: &str) -> ProviderConnection {
         secrets: None,
     }
 }
+pub(super) fn anthropic_compat_provider(pricing_provider_id: &str) -> ProviderConnection {
+    ProviderConnection {
+        provider_key: "opencode-zen".to_string(),
+        provider_type: "anthropic_compat".to_string(),
+        config: json!({
+            "base_url": "https://opencode.ai/zen",
+            "pricing_provider_id": pricing_provider_id
+        }),
+        secrets: None,
+    }
+}
 
 pub(super) fn cloud_run_provider(pricing_provider_id: Option<&str>) -> ProviderConnection {
     let mut config = serde_json::Map::from_iter([(
@@ -547,6 +558,74 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                                 },
                             },
                         )]),
+                    },
+                ),
+                (
+                    "opencode".to_string(),
+                    PricingCatalogProviderDocument {
+                        display_name: "OpenCode".to_string(),
+                        models: BTreeMap::from([
+                            (
+                                "claude-fable-5-1".to_string(),
+                                PricingCatalogModelDocument {
+                                    id: "claude-fable-5-1".to_string(),
+                                    display_name: "Claude Fable 5.1".to_string(),
+                                    release_date: "2026-09-01".to_string(),
+                                    last_updated: "2026-09-01".to_string(),
+                                    cost: PricingCatalogCostDocument {
+                                        input: Some("10.0000".to_string()),
+                                        output: Some("50.0000".to_string()),
+                                        cache_read: Some("0.2500".to_string()),
+                                        cache_write: Some("12.5000".to_string()),
+                                        input_audio: None,
+                                        output_audio: None,
+                                    },
+                                    limit: PricingCatalogLimitDocument {
+                                        context: Some(1_000_000),
+                                        input: None,
+                                        output: Some(128_000),
+                                    },
+                                    modalities: PricingCatalogModalitiesDocument {
+                                        input: vec![
+                                            "text".to_string(),
+                                            "image".to_string(),
+                                            "pdf".to_string(),
+                                        ],
+                                        output: vec!["text".to_string()],
+                                    },
+                                },
+                            ),
+                            (
+                                "claude-sonnet-5".to_string(),
+                                PricingCatalogModelDocument {
+                                    id: "claude-sonnet-5".to_string(),
+                                    display_name: "Claude Sonnet 5".to_string(),
+                                    release_date: "2026-05-15".to_string(),
+                                    last_updated: "2026-05-15".to_string(),
+                                    cost: PricingCatalogCostDocument {
+                                        input: Some("3.0000".to_string()),
+                                        output: Some("15.0000".to_string()),
+                                        cache_read: Some("0.3000".to_string()),
+                                        cache_write: Some("3.7500".to_string()),
+                                        input_audio: None,
+                                        output_audio: None,
+                                    },
+                                    limit: PricingCatalogLimitDocument {
+                                        context: Some(1_000_000),
+                                        input: None,
+                                        output: Some(128_000),
+                                    },
+                                    modalities: PricingCatalogModalitiesDocument {
+                                        input: vec![
+                                            "text".to_string(),
+                                            "image".to_string(),
+                                            "pdf".to_string(),
+                                        ],
+                                        output: vec!["text".to_string()],
+                                    },
+                                },
+                            ),
+                        ]),
                     },
                 ),
             ]),

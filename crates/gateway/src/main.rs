@@ -12,7 +12,8 @@ use gateway::{
 };
 use gateway_core::{McpRegistryRepository, ProviderRegistry, SeedHumanBudgetDefaults};
 use gateway_providers::{
-    BedrockProvider, CopilotAuthConfig, CopilotProvider, OpenAiCompatProvider, VertexProvider,
+    AnthropicCompatProvider, BedrockProvider, CopilotAuthConfig, CopilotProvider,
+    OpenAiCompatProvider, VertexProvider,
 };
 use gateway_service::{
     AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
@@ -454,6 +455,12 @@ fn build_provider_registry(
         let provider_type = provider_config.provider_type.clone();
         let provider = OpenAiCompatProvider::new(provider_config).map_err(|error| {
             anyhow::anyhow!("failed building {provider_type} provider: {error}")
+        })?;
+        providers.register(Arc::new(provider));
+    }
+    for provider_config in config.anthropic_compatible_provider_configs()? {
+        let provider = AnthropicCompatProvider::new(provider_config).map_err(|error| {
+            anyhow::anyhow!("failed building anthropic_compat provider: {error}")
         })?;
         providers.register(Arc::new(provider));
     }

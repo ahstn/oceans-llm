@@ -47,6 +47,7 @@ const primarySidebar = [
     text: "Providers",
     items: [
       { text: "OpenRouter", link: "/providers/openrouter" },
+      { text: "OpenCode Zen", link: "/providers/opencode-zen" },
       {
         text: "AWS Bedrock",
         link: "/providers/aws-bedrock",

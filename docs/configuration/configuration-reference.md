@@ -746,16 +746,18 @@ SMTP transport fields:
 Supported provider types in the checked-in configs:
 
 - `openai_compat`
+- `anthropic_compat`
 - `gcp_cloud_run_openai_compat`
 - `gcp_vertex`
 - `aws_bedrock`
 - `github_copilot`
-
 ### Provider Auth Modes
 
 | Provider type | Auth field | Expected secret material |
 | --- | --- | --- |
 | `openai_compat` | `auth.token` | bearer-style token |
+| `anthropic_compat` | `auth.kind: x_api_key` | API key sent as `x-api-key` header (default) |
+| `anthropic_compat` | `auth.kind: bearer` | Bearer token sent as `Authorization: Bearer` header |
 | `gcp_cloud_run_openai_compat` | `auth.mode: adc` | Google ADC or metadata-server identity credentials that can mint Cloud Run ID tokens |
 | `gcp_cloud_run_openai_compat` | `auth.mode: service_account` | Google Cloud service-account JSON through `credentials_path` or an equivalent mounted secret path |
 | `gcp_cloud_run_openai_compat` | `auth.mode: bearer` | pre-minted Cloud Run ID token for constrained debugging only |
@@ -794,6 +796,69 @@ Validation rules that matter:
 - `pricing_provider_id` must map to a supported internal pricing family
 
 OpenRouter uses this generic provider type with `base_url: https://openrouter.ai/api/v1`. Keep arbitrary OpenAI-compatible endpoints on plain `openai_compat`; add route-level `compatibility.openrouter` only when the route needs OpenRouter provider-selection policy such as ZDR, provider allow/deny lists, provider order, latency preference, or price ceilings. See [OpenRouter](../providers/openrouter.md).
+### `anthropic_compat`
+
+Use `anthropic_compat` for upstream providers that expose native Anthropic Messages endpoints at `{base_url}/v1/messages`. This adapter translates gateway chat completion requests to Anthropic Messages payloads, handles native JSON and SSE streaming, normalizes usage (including cache read and cache creation tokens), and forwards thinking blocks across turns.
+
+Important fields:
+
+- `id`
+- `base_url`
+  - upstream origin/base URL without `/v1/messages` (e.g., `https://opencode.ai/zen`)
+  - the adapter automatically appends `/v1/messages`
+- `pricing_provider_id`
+  - maps to a supported internal pricing family (such as `opencode`, `openai`, `openrouter`, `google-vertex`, `google-vertex-anthropic`, `amazon-bedrock`)
+- `auth.kind`
+  - `x_api_key` (default): sends upstream token in `x-api-key` header
+  - `bearer`: sends upstream token in `Authorization: Bearer` header
+- `auth.token`
+  - secret reference such as `env.OPENCODE_API_KEY` or `literal.<token>`
+- `default_headers`
+  - custom headers sent with each upstream request, such as `anthropic-version: "2023-06-01"`
+- optional `timeouts.total_ms`
+- optional `display.label`
+- optional `display.icon_key`
+
+Example configuration for OpenCode Zen:
+
+```yaml
+providers:
+  - id: opencode-zen
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+    pricing_provider_id: opencode
+    auth:
+      kind: x_api_key
+      token: env.OPENCODE_API_KEY
+    default_headers:
+      anthropic-version: "2023-06-01"
+    display:
+      label: OpenCode Zen
+      icon_key: anthropic
+
+models:
+  - id: claude-fable-5-1
+    description: Claude Fable 5.1 through OpenCode Zen
+    max_reasoning_effort: max
+    routes:
+      - provider: opencode-zen
+        upstream_model: claude-fable-5-1
+        context_window_tokens: 1000000
+        pricing_override:
+          input_usd_per_million_tokens: "10.0000"
+          output_usd_per_million_tokens: "50.0000"
+          cache_read_usd_per_million_tokens: "0.2500"
+          cache_write_usd_per_million_tokens: "12.5000"
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+          stream: true
+          tools: true
+          vision: true
+          json_schema: false
+          developer_role: false
+```
 
 ### `gcp_cloud_run_openai_compat`
 
