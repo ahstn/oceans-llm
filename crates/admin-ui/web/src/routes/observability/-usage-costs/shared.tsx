@@ -1,17 +1,14 @@
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 
+import { getErrorMessage } from '@/lib/errors'
+import { CURRENCY_FORMATTER, formatUsd10000 } from '@/lib/format'
 import { getSpendUsageReport } from '@/server/admin-data.functions'
 import type { SpendOwnerKind, SpendReportView } from '@/types/api'
 
 export type WindowDays = 7 | 30
 
-export const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
+export { CURRENCY_FORMATTER }
 
 export const NUMBER_FORMATTER = new Intl.NumberFormat('en-US')
 
@@ -20,9 +17,7 @@ export const PERCENT_FORMATTER = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 1,
 })
 
-export function formatUsd(amountUsd10000: number) {
-  return CURRENCY_FORMATTER.format(amountUsd10000 / 10_000)
-}
+export const formatUsd = formatUsd10000
 
 export function formatCount(value: number | null | undefined) {
   return value == null ? 'Unavailable' : NUMBER_FORMATTER.format(value)
@@ -90,13 +85,6 @@ export function useSpendReport(initial: SpendReportView) {
 
 export function toWindowDays(value: string): WindowDays {
   return value === '30' ? 30 : 7
-}
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message
-  }
-  return 'Request failed'
 }
 
 export type FocusExportTarget = {

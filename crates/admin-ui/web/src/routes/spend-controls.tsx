@@ -35,6 +35,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { CURRENCY_FORMATTER, formatUsd10000 } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import type {
   ModelView,
   SpendBudgetServiceAccountView,
@@ -42,36 +44,36 @@ import type {
   SpendBudgetUserView,
 } from '@/types/api'
 
+import { AlertTimeline } from './spend-controls/-alert-timeline'
+import { BudgetDialog, useBudgetEditor, type BudgetEditor } from './spend-controls/-budget-editor'
 import {
-  AlertTimeline,
-  BudgetDialog,
-  ListPager,
-  UsageBar,
-  UsageStatusBadge,
-  useBudgetEditor,
-  UserListToolbar,
-  UserModelBudgetForm,
-  type BudgetEditor,
-} from './spend-controls/-budget-components'
-import {
-  budgetSourceLabel,
-  budgetUsage,
-  CURRENCY_FORMATTER,
   formatCadence,
   formatUserModelSelector,
-  isInheritedBudgetSource,
   loadSpendControls,
   serviceAccountScope,
-  summarizeUsers,
-  toUserRows,
+  serviceAccountTarget,
   userModelScope,
+  userModelTarget,
   userScope,
-  useUserBudgetList,
+  userTarget,
   type BudgetSource,
-  type BudgetSummary,
   type SpendControlsLoaderData,
+} from './spend-controls/-budget-model'
+import {
+  budgetUsage,
+  BudgetSourceBadge,
+  summarizeUsage,
+  UsageBar,
+  UsageStatusBadge,
+  type BudgetSummary,
+} from './spend-controls/-usage'
+import {
+  UserListPager,
+  UserListToolbar,
+  useUserBudgetList,
   type UserBudgetList,
-} from './spend-controls/-budget-lib'
+} from './spend-controls/-user-list'
+import { UserModelBudgetForm } from './spend-controls/-user-model-form'
 
 export const Route = createFileRoute('/spend-controls')({
   loader: loadSpendControls,
@@ -90,7 +92,7 @@ export function SpendControlsPage() {
   } = budgets.data
   const editor = useBudgetEditor()
   const list = useUserBudgetList(users)
-  const summary = useMemo(() => summarizeUsers(toUserRows(users)), [users])
+  const summary = useMemo(() => summarizeUsage(users.map(budgetUsage)), [users])
   const usersById = useMemo(() => new Map(users.map((user) => [user.user_id, user])), [users])
 
   return (
@@ -130,7 +132,7 @@ export function SpendControlsPage() {
             <TabsContent value="users" className="flex min-w-0 flex-col gap-4">
               <UserListToolbar list={list} />
               <UsersTable list={list} editor={editor} />
-              <ListPager list={list} />
+              <UserListPager list={list} />
             </TabsContent>
 
             <TabsContent value="service-accounts" className="min-w-0">
@@ -196,17 +198,22 @@ function SummaryStrip({ summary, totalUsers }: { summary: BudgetSummary; totalUs
         icon={AlertDiamondIcon}
         label="Over budget"
         value={String(summary.overBudget)}
-        tone={summary.overBudget > 0 ? 'text-destructive' : undefined}
+        tone={summary.overBudget > 0 ? 'destructive' : undefined}
       />
       <StatTile
         icon={Alert02Icon}
         label="Near limit"
         value={String(summary.nearLimit)}
-        tone={summary.nearLimit > 0 ? 'text-[var(--color-warning)]' : undefined}
+        tone={summary.nearLimit > 0 ? 'warning' : undefined}
       />
     </div>
   )
 }
+
+const STAT_TONE_CLASS = {
+  destructive: 'text-destructive',
+  warning: 'text-[var(--color-warning)]',
+} as const
 
 function StatTile({
   icon,
@@ -217,13 +224,13 @@ function StatTile({
   icon: typeof Wallet01Icon
   label: string
   value: string
-  /** Text color class that retints the soft tile; defaults to the primary tone. */
-  tone?: string
+  /** Retints the soft tile; defaults to the primary tone. */
+  tone?: keyof typeof STAT_TONE_CLASS
 }) {
   return (
     <Card size="sm">
       <CardContent className="flex items-center gap-3">
-        <IconTile variant="soft" size="sm" className={tone}>
+        <IconTile variant="soft" size="sm" className={tone && STAT_TONE_CLASS[tone]}>
           <AppIcon icon={icon} size={16} stroke={1.5} />
         </IconTile>
         <div className="flex min-w-0 flex-col">
@@ -285,7 +292,7 @@ function UsersTable({ list, editor }: { list: UserBudgetList; editor: BudgetEdit
               </TableCell>
               <ActionsCell
                 disabled={editor.isPending}
-                onConfigure={() => editor.openUser(user)}
+                onConfigure={() => editor.open(userTarget(user))}
                 onRemove={
                   user.budget
                     ? () => editor.remove(userScope(user), 'User budget removed')
@@ -391,18 +398,19 @@ function ServiceAccountsTable({
                 </TableCell>
                 <TableCell>
                   <p
-                    className={
+                    className={cn(
+                      'max-w-[14rem] truncate',
                       serviceAccount.alert_email_ready
-                        ? 'text-muted-foreground max-w-[14rem] truncate'
-                        : 'text-destructive max-w-[14rem] truncate'
-                    }
+                        ? 'text-muted-foreground'
+                        : 'text-destructive',
+                    )}
                   >
                     {serviceAccount.alert_recipient_summary}
                   </p>
                 </TableCell>
                 <ActionsCell
                   disabled={editor.isPending}
-                  onConfigure={() => editor.openServiceAccount(serviceAccount)}
+                  onConfigure={() => editor.open(serviceAccountTarget(serviceAccount))}
                   onRemove={
                     serviceAccount.budget
                       ? () =>
@@ -486,7 +494,9 @@ function UserModelBudgetsTable({
                 </TableCell>
                 <ActionsCell
                   disabled={editor.isPending}
-                  onConfigure={() => editor.openUserModel(budget, `${ownerName} / ${selector}`)}
+                  onConfigure={() =>
+                    editor.open(userModelTarget(budget, `${ownerName} / ${selector}`))
+                  }
                   onRemove={() =>
                     editor.remove(userModelScope(budget), 'User model budget removed')
                   }
@@ -521,14 +531,10 @@ function BudgetCell({
   return (
     <TableCell>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="font-medium tabular-nums">
-          {CURRENCY_FORMATTER.format(budget.amount_usd_10000 / 10_000)}
-        </span>
+        <span className="font-medium tabular-nums">{formatUsd10000(budget.amount_usd_10000)}</span>
         <Badge variant="secondary">{formatCadence(budget.cadence)}</Badge>
         {budget.hard_limit ? <Badge variant="outline">Hard</Badge> : null}
-        {source && isInheritedBudgetSource(source) ? (
-          <Badge variant="outline">{budgetSourceLabel(source.kind)}</Badge>
-        ) : null}
+        <BudgetSourceBadge source={source} />
       </div>
     </TableCell>
   )

@@ -5,8 +5,8 @@ import {
   INHERITED_BUDGET_WARNING,
   INVALID_BUDGET_AMOUNT_MESSAGE,
   normalizeBudgetAmount,
-  USER_PAGE_SIZE,
-} from '@/routes/spend-controls/-budget-lib'
+} from '@/routes/spend-controls/-budget-model'
+import { USER_PAGE_SIZE } from '@/routes/spend-controls/-user-list'
 import { SpendControlsPage } from '@/routes/spend-controls'
 import type { SpendBudgetUserView, SpendBudgetsView } from '@/types/api'
 
@@ -71,7 +71,7 @@ const jane = user(1, {
     timezone: 'UTC',
   },
   budget_source: { kind: 'manual', key: null },
-  // 25% of budget: above the 20% "idle" cutoff, so visible by default.
+  // 25% of budget: above the 20% "quiet" cutoff, so visible by default.
   current_window_spend_usd_10000: 250_000,
 })
 
@@ -91,7 +91,7 @@ const lowSpender = user(2, {
 
 const bigSpender = user(3, {
   name: 'Big Spender',
-  // No budget but real spend: sorts first and is never "idle".
+  // No budget but real spend: sorts first and is never "quiet".
   current_window_spend_usd_10000: 900_000,
 })
 
@@ -219,7 +219,7 @@ describe('SpendControlsPage', () => {
     cleanup()
   })
 
-  it('sorts users by spend and hides idle users by default', async () => {
+  it('sorts users by spend and hides quiet users by default', async () => {
     renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Spend controls' })).toBeInTheDocument()
@@ -230,7 +230,7 @@ describe('SpendControlsPage', () => {
     expect(screen.getByText(/1 hidden by filters/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Filters/ }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Hide idle users' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Hide quiet users' }))
     await waitFor(() => expect(userRows()).toHaveLength(3))
     expect(userRows()[2]).toContain('Low Spender')
   })
@@ -244,9 +244,10 @@ describe('SpendControlsPage', () => {
     expect(userRows()).toHaveLength(USER_PAGE_SIZE)
     expect(screen.getByText(`Showing 1–${USER_PAGE_SIZE} of ${many.length} users`)).toBeVisible()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Go to next page' }))
     expect(userRows()).toHaveLength(3)
-    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+    expect(screen.queryByRole('link', { name: 'Go to next page' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Go to previous page' })).toBeInTheDocument()
   })
 
   it('labels inherited budgets with their source', async () => {
