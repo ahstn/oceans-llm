@@ -14,6 +14,7 @@ The gateway currently exposes:
 - `POST /messages`
 - `POST /v1/responses`
 - `POST /v1/embeddings`
+- `POST /api/v1/batches`
 
 The Responses API is a first-class API family. It is not translated through Chat Completions.
 
@@ -25,6 +26,7 @@ The Responses API is a first-class API family. It is not translated through Chat
 | OpenAI Responses API | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Uses a distinct typed request/core/provider boundary and preserves Responses event-stream semantics. |
 | OpenAI Embeddings | Supported for `openai_compat` providers and native Vertex text-embedding routes | `crates/gateway-providers/src/openai_compat.rs`, `crates/gateway-providers/src/vertex/embeddings.rs` | OpenAI-compatible providers receive the OpenAI-shaped request. Vertex text embeddings use a provider-specific `:predict` mapper with explicit local validation. |
 | Anthropic Messages | Supported for `/v1/messages` and `/messages` through the chat execution boundary | `crates/gateway/src/http/handlers.rs`, `crates/gateway-providers/src/vertex/anthropic_request.rs`, `crates/gateway-providers/src/vertex/streaming.rs` | Accepts Anthropic Messages request shape and returns Anthropic Messages response/SSE for chat-capable routes such as Anthropic-on-Vertex. |
+| Durable batches | Supported for providers with a configured batch adapter | `crates/gateway/src/http/batches.rs` and provider-specific batch adapters | The outer `endpoint` selects Chat Completions, Responses, or Embeddings. Chat and Responses item bodies use the same model effort policy as synchronous requests and are validated before persistence. |
 | Google Generative AI | Not implemented as a direct API-key provider path | Follow-up issue | Vertex Google transport exists; direct Google native API needs separate auth, request, and stream mapping. |
 | Cross-provider multimodal files/images | Partial, provider-dependent | Follow-up issue | Needs explicit request body and accounting semantics across OpenAI-compatible, Vertex Google, Anthropic, and Google native APIs. |
 
@@ -145,6 +147,7 @@ Claude thinking compatibility is model-aware:
 
 | Model family | Gateway behavior |
 | --- | --- |
+| Claude Fable 5.1 | Adaptive thinking is always on. Request-level `reasoning_effort`, `reasoning.effort`, or `output_config.effort` maps to adaptive thinking plus `output_config.effort`. Provider support for beta per-message effort is separate from request-level mapping; see [Google Vertex AI](../providers/gcp-vertex.md#per-message-effort). |
 | Claude Opus 4.7 and later | `reasoning_effort` or `reasoning.effort` maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`; manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p`, and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. |
 | Claude Opus 4.6 and Claude Sonnet 4.6 | `reasoning_effort` maps to adaptive thinking and `output_config.effort`. Caller-supplied manual budgets remain pass-through because Anthropic still accepts them, though they are deprecated upstream. |
 | Claude Mythos Preview | `reasoning_effort` maps to `output_config.effort`; `thinking.type: "disabled"` is rejected. |
@@ -152,6 +155,8 @@ Claude thinking compatibility is model-aware:
 | Claude Sonnet/Haiku 4.5 and older Claude models | Adaptive thinking is rejected. These models require an explicit manual budget from `reasoning.budget_tokens`, `reasoning_budget_tokens`, `thinking_budget_tokens`, or caller-supplied `thinking.type: "enabled"` with `budget_tokens`; the gateway does not add `output_config.effort`. |
 
 Provider-specific Anthropic fields remain available where they do not conflict with normalized compatibility behavior. If `reasoning_effort` disagrees with `reasoning.effort`, `output_config.effort`, caller-supplied `thinking`, or a manual budget, the request fails locally with a deterministic gateway error.
+
+Model reasoning-effort ceilings are enforced before provider mapping. Every explicit effort field must satisfy the effective alias-chain policy even when two fields agree; compatibility transforms do not clamp or bypass the ceiling. See [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md#enforce-reasoning-effort-ceilings) for the accepted order and API-specific paths.
 
 Chat Completions response policy matches the Bedrock Claude policy. Native Anthropic `thinking` and `redacted_thinking` blocks are never concatenated into `choices[*].message.content`. Streaming `thinking_delta` and `signature_delta` events are never emitted as `delta.content`. The gateway preserves these blocks under `choices[*].message.provider_metadata.gcp_vertex.reasoning` and `choices[*].delta.provider_metadata.gcp_vertex.reasoning`.
 

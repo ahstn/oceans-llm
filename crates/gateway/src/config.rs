@@ -8,12 +8,13 @@ use gateway_core::{
     OidcJitMembership, OidcJitPolicy, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
     OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
     OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
-    OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities,
+    OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities, ReasoningEffort,
     RequestLogRetentionWindow, RequestTag, RouteCompatibility, RoutePricingOverride,
     SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
     SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
     SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
-    hash_gateway_key_secret, parse_gateway_api_key, validate_entity_tags,
+    enforce_reasoning_effort_map, hash_gateway_key_secret, parse_gateway_api_key,
+    validate_entity_tags,
 };
 use gateway_guardrails::{
     BearerTokenProvider, BedrockApplyGuardrail, BedrockApplyGuardrailConfig, BedrockAuth,
@@ -603,6 +604,14 @@ impl GatewayConfig {
                     ))?;
                 }
 
+                enforce_reasoning_effort_map(&route.extra_body, model.max_reasoning_effort)
+                    .with_context(|| {
+                        format!(
+                            "model `{}` route `{}` extra_body violates max_reasoning_effort",
+                            model.id, route.upstream_model
+                        )
+                    })?;
+
                 let provider = provider_by_id.get(route.provider.as_str()).copied();
 
                 if provider.is_some_and(|provider| matches!(provider, ProviderConfig::GcpVertex(_)))
@@ -634,6 +643,7 @@ impl GatewayConfig {
         for model in &self.models {
             let mut seen = std::collections::BTreeSet::new();
             let mut current = model;
+            let mut effective_max_reasoning_effort = model.max_reasoning_effort;
 
             while let Some(alias_target) = current.alias_of.as_deref() {
                 if !seen.insert(current.id.as_str()) {
@@ -644,6 +654,25 @@ impl GatewayConfig {
                     anyhow::anyhow!(
                         "model `{}` aliases unknown model `{alias_target}`",
                         model.id
+                    )
+                })?;
+                effective_max_reasoning_effort =
+                    match (effective_max_reasoning_effort, current.max_reasoning_effort) {
+                        (Some(current), Some(candidate)) => Some(current.min(candidate)),
+                        (Some(effort), None) | (None, Some(effort)) => Some(effort),
+                        (None, None) => None,
+                    };
+            }
+
+            for route in &current.routes {
+                enforce_reasoning_effort_map(
+                    &route.extra_body,
+                    effective_max_reasoning_effort,
+                )
+                .with_context(|| {
+                    format!(
+                        "model `{}` effective route `{}` extra_body violates max_reasoning_effort",
+                        model.id, route.upstream_model
                     )
                 })?;
             }
@@ -1200,6 +1229,7 @@ impl GatewayConfig {
                 Ok(SeedModel {
                     model_key: model.id.clone(),
                     alias_target_model_key: model.alias_of.clone(),
+                    max_reasoning_effort: model.max_reasoning_effort,
                     description: model.description.clone(),
                     tags: model.tags.clone(),
                     rank: model.rank,
@@ -2769,6 +2799,8 @@ pub struct ModelConfig {
     #[serde(default)]
     pub alias_of: Option<String>,
     #[serde(default)]
+    pub max_reasoning_effort: Option<ReasoningEffort>,
+    #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -3791,7 +3823,7 @@ mod tests {
         AuthMode, AwsBedrockApiStyle, BudgetCadence, GitHubCopilotChatApi, GlobalRole,
         ManagedApiKeySource, MembershipRole, Money4, OpenAiCompatDeveloperRole,
         OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-        OpenRouterPercentilePreference, RequestLogRetentionWindow,
+        OpenRouterPercentilePreference, ReasoningEffort, RequestLogRetentionWindow,
     };
     use gateway_providers::{
         BearerAuthHeader, BedrockAuthConfig, CopilotAuthConfig, OpenAiBatchDialect,
@@ -4889,6 +4921,119 @@ models:
             error_text.contains(
                 "cannot set both compatibility.openrouter.provider and extra_body.provider"
             ),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn loads_model_reasoning_effort_policy_into_seed_models() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: reasoning
+    max_reasoning_effort: medium
+    routes:
+      - provider: openai
+        upstream_model: gpt-5
+        extra_body:
+          reasoning_effort: low
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should load");
+        assert_eq!(
+            config.models[0].max_reasoning_effort,
+            Some(ReasoningEffort::Medium)
+        );
+        assert_eq!(
+            config.seed_models().expect("seed models")[0].max_reasoning_effort,
+            Some(ReasoningEffort::Medium)
+        );
+    }
+
+    #[test]
+    fn rejects_route_extra_body_above_model_reasoning_effort_policy() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: reasoning
+    max_reasoning_effort: low
+    routes:
+      - provider: openai
+        upstream_model: gpt-5
+        extra_body:
+          reasoning:
+            effort: high
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("extra_body violates max_reasoning_effort"),
+            "unexpected error: {error_text}"
+        );
+        assert!(
+            error_text.contains("reasoning effort `high` exceeds the model maximum `low`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_target_route_above_alias_reasoning_effort_policy() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: reasoning-safe
+    alias_of: reasoning
+    max_reasoning_effort: medium
+  - id: reasoning
+    max_reasoning_effort: high
+    routes:
+      - provider: openai
+        upstream_model: gpt-5
+        extra_body:
+          reasoning_effort: high
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains(
+                "model `reasoning-safe` effective route `gpt-5` extra_body violates max_reasoning_effort"
+            ),
+            "unexpected error: {error_text}"
+        );
+        assert!(
+            error_text.contains("reasoning effort `high` exceeds the model maximum `medium`"),
             "unexpected error: {error_text}"
         );
     }

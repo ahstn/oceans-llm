@@ -33,7 +33,7 @@ fn is_adaptive_only_claude(model: &str) -> bool {
 fn contains_exact_claude_model_marker(model: &str, marker: &str) -> bool {
     model.split(marker).skip(1).any(|rest| {
         rest.chars().next().is_none_or(|ch| {
-            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']')
+            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']' | '-')
         })
     })
 }
@@ -61,12 +61,13 @@ pub(super) fn apply_vertex_anthropic_thinking_compatibility(
 
     validate_caller_thinking_for_policy(body, policy, upstream_model)?;
 
-    if effort.is_some() {
+    if let Some(effort) = effort {
         match policy {
             ClaudeThinkingPolicy::AdaptiveOnly
             | ClaudeThinkingPolicy::AdaptivePreferred
             | ClaudeThinkingPolicy::MythosPreview => {
                 ensure_anthropic_adaptive_thinking(body, upstream_model)?;
+                restore_anthropic_output_effort(body, effort);
             }
             ClaudeThinkingPolicy::ManualWithEffort => {
                 let budget_tokens = budget_tokens
@@ -77,6 +78,7 @@ pub(super) fn apply_vertex_anthropic_thinking_compatibility(
                         ))
                     })?;
                 ensure_anthropic_manual_thinking(body, budget_tokens, upstream_model)?;
+                restore_anthropic_output_effort(body, effort);
             }
             ClaudeThinkingPolicy::ManualOnly => {
                 if has_native_effort {
@@ -111,6 +113,14 @@ pub(super) fn apply_vertex_anthropic_thinking_compatibility(
     }
 
     Ok(())
+}
+
+fn restore_anthropic_output_effort(body: &mut Map<String, Value>, effort: Value) {
+    body.entry("output_config".to_string())
+        .or_insert_with(|| Value::Object(Map::new()))
+        .as_object_mut()
+        .expect("output_config was validated before effort restoration")
+        .insert("effort".to_string(), effort);
 }
 
 fn extract_anthropic_reasoning_effort(

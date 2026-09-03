@@ -419,11 +419,13 @@ models:
     description: Legacy local demo alias
     alias_of: claude-opus-4-7
 
-  - id: claude-fable-5
-    description: Claude Fable on Vertex
+  - id: claude-fable-5.1
+    description: Claude Fable 5.1 on Vertex
+    max_reasoning_effort: high
     routes:
       - provider: vertex-claude
-        upstream_model: anthropic/claude-fable-5
+        upstream_model: anthropic/claude-fable-5-1
+        context_window_tokens: 1000000
 
   - id: claude-sonnet-4.6
     description: Claude Sonnet on AWS Bedrock

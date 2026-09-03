@@ -75,11 +75,12 @@ Use publisher-qualified `upstream_model` values:
 
 The publisher prefix selects the request mapper and pricing family. The model ID after the slash is passed to the Vertex endpoint path.
 
-Examples verified against Anthropic and Google Cloud docs on 2026-05-01:
+Examples verified against Anthropic's [effort reference](https://platform.claude.com/docs/en/build-with-claude/effort), [Claude Fable 5.1 overview](https://platform.claude.com/docs/en/models/fable-5-1/overview), and Google Cloud docs on 2026-09-02:
 
 | Use case | Gateway model id | Vertex `upstream_model` | Notes |
 | --- | --- | --- | --- |
-| Latest high-capability Claude | `claude-opus-vertex` | `anthropic/claude-opus-4-7` | Claude Opus 4.7 is available through Anthropic-on-Vertex and supports adaptive thinking. |
+| Demanding reasoning and long-horizon agents | `claude-fable-5.1` | `anthropic/claude-fable-5-1` | Claude Fable 5.1 has a 1M-token context window, adaptive thinking that is always on, and a default effort of `high`. |
+| General high-capability Claude | `claude-opus-vertex` | `anthropic/claude-opus-4-7` | Claude Opus 4.7 is available through Anthropic-on-Vertex and supports adaptive thinking. |
 | Claude coding and agent workloads | `claude-sonnet-vertex` | `anthropic/claude-sonnet-4-6` | Claude Sonnet 4.6 supports adaptive thinking with effort. |
 | Older pinned Claude | `claude-sonnet-45-vertex` | `anthropic/claude-sonnet-4-5@20250929` | Versioned Anthropic model IDs use the `@YYYYMMDD` suffix on Vertex. |
 | Gemini chat | `gemini-flash-vertex` | `google/gemini-2.0-flash` | Uses the Vertex Google publisher request shape. |
@@ -101,12 +102,14 @@ Anthropic-on-Vertex uses the Anthropic Messages body shape with Vertex transport
 
 ```yaml
 models:
-  - id: claude-opus-vertex
-    description: Claude Opus on Google Vertex AI
+  - id: claude-fable-5.1
+    description: Claude Fable 5.1 on Google Vertex AI
     tags: [vertex, claude, reasoning]
+    max_reasoning_effort: high
     routes:
       - provider: vertex-global
-        upstream_model: anthropic/claude-opus-4-7
+        upstream_model: anthropic/claude-fable-5-1
+        context_window_tokens: 1000000
         capabilities:
           chat_completions: true
           responses: false
@@ -125,7 +128,7 @@ Anthropic-on-Vertex routes can enable `tools: true` when the upstream Claude mod
 
 For Anthropic-on-Vertex, OpenAI-shaped `reasoning_effort` maps to Anthropic Messages `output_config.effort` without forwarding the OpenAI-only field. The gateway also applies model-aware thinking policy before sending the Vertex request.
 
-Adaptive example for Claude Opus 4.7:
+Adaptive example for Claude Fable 5.1:
 
 ```json
 {
@@ -135,7 +138,7 @@ Adaptive example for Claude Opus 4.7:
     "type": "adaptive"
   },
   "output_config": {
-    "effort": "xhigh"
+    "effort": "high"
   },
   "messages": [
     {
@@ -150,9 +153,9 @@ Gateway callers can request the same shape with OpenAI-compatible fields:
 
 ```json
 {
-  "model": "claude-opus-vertex",
+  "model": "claude-fable-5.1",
   "max_tokens": 16000,
-  "reasoning_effort": "xhigh",
+  "reasoning_effort": "high",
   "messages": [
     {
       "role": "user",
@@ -168,11 +171,41 @@ Model behavior:
 
 | Model family | Gateway behavior |
 | --- | --- |
+| Claude Fable 5.1 | Adaptive thinking is always on. Request-level `reasoning_effort`, `reasoning.effort`, or `output_config.effort` maps to adaptive thinking plus `output_config.effort`. The checked-in example caps explicit effort at `high`, so `xhigh` and `max` are rejected by the gateway before Vertex routing. |
 | Claude Opus 4.7 and later | `reasoning_effort` or `reasoning.effort` maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`. Manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p`, and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. |
 | Claude Opus 4.6 and Claude Sonnet 4.6 | `reasoning_effort` maps to adaptive thinking and `output_config.effort`. Caller-supplied manual budgets remain pass-through because Anthropic still accepts them, but they are deprecated upstream. |
 | Claude Mythos Preview | Adaptive thinking is the default when `thinking` is unset. `reasoning_effort` maps to `output_config.effort`; `thinking.type: "disabled"` is rejected. |
 | Claude Opus 4.5 | Adaptive thinking is rejected. `reasoning_effort` maps to `output_config.effort` only when a manual thinking budget is also supplied. |
 | Claude Sonnet/Haiku 4.5 and older Claude models | Adaptive thinking is rejected. These models require an explicit manual budget from `reasoning.budget_tokens`, `reasoning_budget_tokens`, `thinking_budget_tokens`, or caller-supplied `thinking.type: "enabled"` with `budget_tokens`; the gateway does not add `output_config.effort`. |
+
+#### Per-message effort
+
+Anthropic documents [per-message effort](https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta) for Claude Fable 5.1 as a beta. The request includes `anthropic-beta: mid-conversation-output-config-2026-07-01` and an effort-only system message; the new value applies to the next user turn:
+
+```json
+{
+  "output_config": {
+    "effort": "high"
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": [],
+      "output_config": {
+        "effort": "low"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Summarize the plan in one sentence."
+    }
+  ]
+}
+```
+
+The gateway checks both `output_config.effort` values independently against the effective model ceiling. With `max_reasoning_effort: high`, the values above pass; `xhigh`, `max`, unknown strings, and malformed values fail before route selection.
+
+Per-message effort is beta, and availability of the header and message shape can differ by provider API. Verify Anthropic-on-Vertex support before adding the beta header to a Vertex route. The gateway validates a nested effort value wherever it is present, but policy validation does not make an unsupported provider feature available.
 
 Manual budget example for an older Claude model:
 

@@ -4,6 +4,7 @@ use super::*;
 fn maps_vertex_adaptive_only_claude_reasoning_effort_to_adaptive_thinking() {
     for upstream_model in [
         "anthropic/claude-fable-5",
+        "anthropic/claude-fable-5-1",
         "anthropic/claude-opus-4-7",
         "anthropic/claude-opus-4-8",
         "anthropic/claude-sonnet-5",
@@ -17,7 +18,7 @@ fn maps_vertex_adaptive_only_claude_reasoning_effort_to_adaptive_thinking() {
         request.extra.insert("model".to_string(), json!("fast"));
         request
             .extra
-            .insert("reasoning_effort".to_string(), json!("xhigh"));
+            .insert("reasoning_effort".to_string(), json!("low"));
         request.extra.insert("temperature".to_string(), json!(1.0));
         request.extra.insert("top_p".to_string(), json!(1.0));
 
@@ -26,7 +27,7 @@ fn maps_vertex_adaptive_only_claude_reasoning_effort_to_adaptive_thinking() {
 
         assert_eq!(mapped["anthropic_version"], "vertex-2023-10-16");
         assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
-        assert!(mapped.get("output_config").is_none());
+        assert_eq!(mapped["output_config"], json!({ "effort": "low" }));
         assert!(mapped.get("reasoning_effort").is_none());
         assert!(mapped.get("model").is_none());
         assert!(mapped.get("temperature").is_none());
@@ -80,7 +81,7 @@ fn validates_native_output_config_effort_for_vertex_anthropic_mapping() {
     assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
     assert_eq!(
         mapped["output_config"],
-        json!({ "metadata": {"source": "caller"} })
+        json!({ "effort": "xhigh", "metadata": {"source": "caller"} })
     );
 }
 
@@ -210,7 +211,7 @@ fn maps_vertex_opus_and_sonnet_4_6_reasoning_effort_to_adaptive_thinking() {
         let mapped = map_anthropic_request(&request, &context(model), false).expect("mapped");
 
         assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
-        assert!(mapped.get("output_config").is_none());
+        assert_eq!(mapped["output_config"], json!({ "effort": "high" }));
         assert!(mapped.get("reasoning_effort").is_none());
     }
 }
@@ -239,7 +240,7 @@ fn maps_vertex_opus_4_5_reasoning_effort_with_manual_budget() {
         mapped["thinking"],
         json!({ "type": "enabled", "budget_tokens": 2048 })
     );
-    assert!(mapped.get("output_config").is_none());
+    assert_eq!(mapped["output_config"], json!({ "effort": "medium" }));
     assert!(mapped.get("reasoning").is_none());
 }
 

@@ -16,6 +16,7 @@ The gateway exposes these authenticated endpoints:
 | `POST /v1/embeddings` | OpenAI Embeddings | `embeddings: true` |
 | `POST /v1/messages` | Anthropic Messages | Chat-capable route with provider support |
 | `POST /messages` | Anthropic Messages compatibility alias | Chat-capable route with provider support |
+| `POST /api/v1/batches` | Durable batch admission for Chat Completions, Responses, or Embeddings items | Capability matching the batch `endpoint` |
 
 Provider support varies by API family. A provider that supports Chat Completions does not necessarily support Responses, embeddings, Anthropic Messages, or every hosted tool. Use [Provider API Compatibility](../reference/provider-api-compatibility.md) as the current support matrix.
 
@@ -27,7 +28,8 @@ A model request passes through these routing stages:
 requested model
   -> caller access and model grants
   -> tag selection, when requested
-  -> alias resolution
+  -> alias resolution and effective model policy
+  -> explicit reasoning-effort validation
   -> enabled and weighted routes
   -> API and feature capability checks
   -> first eligible route
@@ -111,6 +113,26 @@ models:
 A model cannot define both `alias_of` and `routes`. Startup rejects missing alias targets and cycles. Request resolution rejects alias chains beyond the supported depth.
 
 Aliases are independent authorization keys. Access to `coding-default` does not imply access to `coding-primary`, and access to the target does not automatically grant access to the alias. Grant the identity callers are expected to request.
+
+### Enforce reasoning effort ceilings
+
+When one or more models in an alias chain define `max_reasoning_effort`, the gateway uses the strictest value across the complete requested-model-to-provider-backed-target chain. For example, an alias capped at `medium` that targets a model capped at `high` has an effective ceiling of `medium`. An uncapped chain member does not weaken a cap set elsewhere in the chain.
+
+The canonical effort order is `minimal`, `low`, `medium`, `high`, `xhigh`, then `max`. The gateway checks every non-null explicit effort occurrence independently:
+
+| API or body shape | Effort paths checked |
+| --- | --- |
+| Chat Completions and Anthropic Messages | `reasoning_effort`; `reasoning.effort`; `output_config.effort`; `thinking.effort`; and per-message `reasoning.effort`, `output_config.effort`, or `thinking.effort` |
+| Responses | `reasoning.effort`, plus flattened `reasoning_effort`, `output_config.effort`, and `thinking.effort` compatibility fields |
+| Bedrock-shaped JSON | `additionalModelRequestFields.{reasoning,output_config,thinking}.effort` and the snake-case `additional_model_request_fields` form |
+| Gemini-shaped JSON | `generationConfig.thinkingConfig.thinkingLevel` and the snake-case `generation_config.thinking_config.thinking_level` form |
+| Chat-template and batch JSON | `chat_template_kwargs.reasoning_effort`, `chat_template_args.reasoning_effort`, the applicable request paths above, and nested `messages` or `input` item paths |
+
+Known values at or below the ceiling pass unchanged. The disable values `none` and `off` also pass as lower than `minimal`; provider compatibility still determines whether a given field accepts either spelling. A known value above the ceiling returns `invalid_request`; the gateway does not clamp or mutate it. Unknown future strings and malformed non-string values also return `invalid_request` while a ceiling is active, so a new provider value cannot silently bypass policy. Omitted effort fields and explicit `null` values pass. If the effective model policy is omitted, this categorical check does not reject the request.
+
+This policy applies only to explicit categorical values. It does not cap numeric budgets such as `thinking.budget_tokens` or `reasoning.budget_tokens`, and it does not override an effort default chosen internally by the provider when no explicit value is present. Existing provider mapping still owns conflicts between two explicit effort fields; every field must first satisfy the gateway ceiling.
+
+Validation runs after alias resolution and before route selection, provider transforms, or budget enforcement. Route `extra_body` values are validated during configuration startup against both their target model and every alias policy that can resolve to that target; see [Configuration Reference](configuration-reference.md#reasoning-effort-ceilings).
 
 ### Use tag selectors
 
@@ -231,6 +253,10 @@ Messages support still depends on the selected provider and route. Disable unsup
 
 `POST /v1/responses` requires the `responses` capability and invokes the provider's Responses implementation. Streaming preserves `response.*` event names rather than converting them into Chat Completions chunks. Usage is normalized from Responses token fields.
 
+### Batch admission
+
+`POST /api/v1/batches` resolves the outer `model` and validates every item body against the resulting model policy. Chat Completions and Responses items use the same effort paths and fail-closed rules as synchronous requests. Validation happens before the batch job or any item is persisted; one violating item rejects the batch instead of leaving a partially admitted job. Embeddings items have no categorical effort field.
+
 ### Embeddings
 
 `POST /v1/embeddings` requires the `embeddings` capability. OpenAI-compatible routes support provider-compatible embeddings endpoints. Native Vertex text embeddings require an explicitly supported Google embedding model and text input.
@@ -244,7 +270,7 @@ Start with the returned error and the request log:
 | Symptom | Meaning | Check |
 | --- | --- | --- |
 | Model not found | The model ID does not exist, is not granted, or no tag candidate is accessible | Requested model, tags, API-key grants, and allowlists |
-| `invalid_request` | The model resolved, but route capability checks rejected the request | API family and required feature flags |
+| `invalid_request` | Model policy or route capability checks rejected the request | Explicit effort fields and effective ceiling; API family and required feature flags |
 | `no_routes_available` | No enabled, positively weighted, viable route remained | Route state, provider configuration, and weight |
 | Provider error | The selected route reached the provider and the upstream request failed | Provider attempt, credentials, compatibility profile, and upstream response |
 | Visible model cannot execute | Discovery access succeeded but no route supports this request | Route capabilities and provider runtime support |

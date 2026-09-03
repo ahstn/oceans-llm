@@ -10,7 +10,7 @@ impl ModelRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT gm.id, gm.model_key, alias_target.model_key, gm.description, gm.tags_json, gm.rank
+                SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
                 FROM gateway_models gm
                 LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
                 ORDER BY gm.rank ASC, gm.model_key ASC
@@ -37,7 +37,7 @@ impl ModelRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT gm.id, gm.model_key, alias_target.model_key, gm.description, gm.tags_json, gm.rank
+                SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
                 FROM gateway_models gm
                 LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
                 WHERE gm.model_key = ?1
@@ -67,7 +67,7 @@ impl ModelRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT gm.id, gm.model_key, alias_target.model_key, gm.description, gm.tags_json, gm.rank
+                SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
                 FROM gateway_models gm
                 LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
                 INNER JOIN api_key_model_grants grants ON grants.model_id = gm.id

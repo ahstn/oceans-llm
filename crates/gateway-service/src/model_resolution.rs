@@ -5,17 +5,29 @@ use std::{
 
 use gateway_core::{
     AuthenticatedApiKey, GatewayError, GatewayModel, ModelRepository, ProviderConnection,
-    RouteError,
+    ReasoningEffort, RouteError,
 };
 use serde_json::Value;
 
 use crate::redaction::mask_secret_leaf_values;
+
+fn strictest_reasoning_effort(
+    current: Option<ReasoningEffort>,
+    candidate: Option<ReasoningEffort>,
+) -> Option<ReasoningEffort> {
+    match (current, candidate) {
+        (Some(current), Some(candidate)) => Some(current.min(candidate)),
+        (Some(effort), None) | (None, Some(effort)) => Some(effort),
+        (None, None) => None,
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ResolvedModelSelection {
     pub requested_model: GatewayModel,
     pub execution_model: GatewayModel,
     pub alias_chain: Vec<String>,
+    pub max_reasoning_effort: Option<ReasoningEffort>,
 }
 
 #[derive(Debug, Clone)]
@@ -76,13 +88,18 @@ where
         let mut seen_keys = BTreeSet::from([requested_model.model_key.clone()]);
         let mut alias_chain = vec![requested_model.model_key.clone()];
         let mut alias_hops = 0usize;
+        let mut max_reasoning_effort: Option<ReasoningEffort> = None;
 
         loop {
+            max_reasoning_effort =
+                strictest_reasoning_effort(max_reasoning_effort, current.max_reasoning_effort);
+
             let Some(alias_target_model_key) = current.alias_target_model_key.clone() else {
                 return Ok(ResolvedModelSelection {
                     requested_model,
                     execution_model: current,
                     alias_chain,
+                    max_reasoning_effort,
                 });
             };
 
@@ -112,5 +129,29 @@ where
             "model alias depth exceeded for requested model `{requested_model_key}`"
         ))
         .into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gateway_core::ReasoningEffort;
+
+    use super::strictest_reasoning_effort;
+
+    #[test]
+    fn strictest_reasoning_effort_uses_lowest_configured_ceiling() {
+        assert_eq!(strictest_reasoning_effort(None, None), None);
+        assert_eq!(
+            strictest_reasoning_effort(None, Some(ReasoningEffort::High)),
+            Some(ReasoningEffort::High)
+        );
+        assert_eq!(
+            strictest_reasoning_effort(Some(ReasoningEffort::Medium), Some(ReasoningEffort::XHigh)),
+            Some(ReasoningEffort::Medium)
+        );
+        assert_eq!(
+            strictest_reasoning_effort(Some(ReasoningEffort::Max), Some(ReasoningEffort::Minimal)),
+            Some(ReasoningEffort::Minimal)
+        );
     }
 }
