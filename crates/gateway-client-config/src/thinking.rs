@@ -1,4 +1,4 @@
-use crate::types::AnthropicThinkingPolicy;
+use crate::types::ThinkingPolicy;
 
 const SAFE_EFFORT_MODEL_MARKERS: &[&str] = &[
     "claude-mythos-preview",
@@ -14,9 +14,9 @@ const SAFE_EFFORT_MODEL_MARKERS: &[&str] = &[
 const SAFE_EFFORT_EXACT_MODEL_MARKERS: &[&str] = &["claude-fable-5", "claude-sonnet-5"];
 
 #[must_use]
-pub fn infer_anthropic_thinking_policy(
+pub fn infer_thinking_policy(
     values: impl IntoIterator<Item = impl AsRef<str>>,
-) -> Option<AnthropicThinkingPolicy> {
+) -> Option<ThinkingPolicy> {
     let joined = values
         .into_iter()
         .map(|value| value.as_ref().to_ascii_lowercase())
@@ -30,14 +30,36 @@ pub fn infer_anthropic_thinking_policy(
             .iter()
             .any(|marker| contains_exact_model_marker(&joined, marker))
     {
-        return Some(AnthropicThinkingPolicy::SafeEffort);
+        return Some(ThinkingPolicy::AnthropicSafeEffort);
     }
 
     if joined.contains("anthropic") || joined.contains("claude") {
-        return Some(AnthropicThinkingPolicy::ManualBudget);
+        return Some(ThinkingPolicy::AnthropicManualBudget);
+    }
+
+    if joined.contains("gemini-3") {
+        let is_pro = is_gemini_3_pro(&joined);
+        return Some(ThinkingPolicy::GeminiLevel {
+            supports_minimal: !is_pro,
+            supports_medium: !is_pro,
+        });
+    }
+
+    if joined.contains("gemini-2.5") {
+        return Some(ThinkingPolicy::GeminiBudget);
     }
 
     None
+}
+
+/// Inspects only the `gemini-3…` model token so provider labels such as
+/// `vertex-prod` cannot masquerade as a Pro model.
+fn is_gemini_3_pro(value: &str) -> bool {
+    value.split("gemini-3").skip(1).any(|rest| {
+        rest.split(|ch: char| ch.is_ascii_whitespace())
+            .next()
+            .is_some_and(|token| token.contains("-pro"))
+    })
 }
 
 fn contains_exact_model_marker(value: &str, marker: &str) -> bool {

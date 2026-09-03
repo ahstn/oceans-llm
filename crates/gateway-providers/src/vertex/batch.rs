@@ -406,9 +406,11 @@ impl VertexProvider {
                     item.custom_id
                 ))
             })?;
+            let (_, _, model_id) = parse_upstream_model(&request.context.upstream_model)?;
             let mapped = map_google_request(
                 &openai_chat_request_to_core(&openai),
                 &request.context,
+                model_id,
                 false,
             )?;
             let row = json!({
@@ -722,7 +724,8 @@ fn parse_bigquery_results(
                 .cloned();
             let normalized = response
                 .as_ref()
-                .map(|response| normalize_google_response(response, context));
+                .map(|response| normalize_google_response(response, context))
+                .transpose()?;
             Ok(ProviderBatchResult {
                 custom_id: custom_id.to_string(),
                 provider_usage: normalized

@@ -6,10 +6,17 @@ pub const DEFAULT_PROVIDER_ID: &str = "oceans-llm";
 pub const MAX_CLIENT_CONTEXT_WINDOW_TOKENS: i64 = 200_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AnthropicThinkingPolicy {
-    SafeEffort,
-    ManualBudget,
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum ThinkingPolicy {
+    AnthropicSafeEffort,
+    AnthropicManualBudget,
+    /// Gemini 3.x `thinkingLevel` models.
+    GeminiLevel {
+        supports_minimal: bool,
+        supports_medium: bool,
+    },
+    /// Gemini 2.5 `thinkingBudget` models.
+    GeminiBudget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -38,7 +45,7 @@ pub struct ClientConfigInput {
     pub input_window_tokens: Option<i64>,
     pub output_window_tokens: Option<i64>,
     pub capabilities: ClientModelCapabilities,
-    pub thinking_policy: Option<AnthropicThinkingPolicy>,
+    pub thinking_policy: Option<ThinkingPolicy>,
 }
 
 impl ClientConfigInput {

@@ -5,8 +5,8 @@ use std::{
 
 use gateway_client_config::{
     ClientConfig, ClientConfigInput, ClientConfigInputSet, ClientModelCapabilities,
-    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID,
-    infer_anthropic_thinking_policy, render_default_configs, render_default_configs_for_models,
+    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, infer_thinking_policy,
+    render_default_configs, render_default_configs_for_models,
 };
 use gateway_core::{
     GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
@@ -345,7 +345,7 @@ struct ClientConfigContext<'a> {
 fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientConfigInput> {
     let primary_route = context.primary_route?;
     context.primary_provider?;
-    let thinking_policy = infer_anthropic_thinking_policy(
+    let thinking_policy = infer_thinking_policy(
         Some(primary_route.upstream_model.as_str())
             .into_iter()
             .chain(

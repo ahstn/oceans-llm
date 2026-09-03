@@ -168,8 +168,10 @@ pub struct GcpVertexProviderConfig {
     pub project_id: String,
     #[serde(default = "default_vertex_location")]
     pub location: String,
-    #[serde(default = "default_vertex_api_host")]
-    pub api_host: String,
+    /// Vertex API host. Defaults to the host that serves `location`
+    /// (`aiplatform.googleapis.com` for `global`, `{region}-aiplatform.googleapis.com` otherwise).
+    #[serde(default)]
+    pub api_host: Option<String>,
     pub auth: GcpVertexAuthConfig,
     #[serde(default)]
     pub default_headers: BTreeMap<String, String>,
@@ -293,6 +295,10 @@ fn default_vertex_location() -> String {
     "global".to_string()
 }
 
-fn default_vertex_api_host() -> String {
-    "aiplatform.googleapis.com".to_string()
+impl GcpVertexProviderConfig {
+    pub fn resolved_api_host(&self) -> String {
+        self.api_host
+            .clone()
+            .unwrap_or_else(|| gateway_providers::vertex_api_host_for_location(&self.location))
+    }
 }

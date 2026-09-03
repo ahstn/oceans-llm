@@ -8,8 +8,8 @@ use crate::{
     format::to_pretty_json,
     templates::notes::{client_notes_for_inputs, thinking_notes},
     types::{
-        AnthropicThinkingPolicy, ClientConfig, ClientConfigCodeBlock, ClientConfigInput,
-        ClientConfigInputSet, ClientConfigSetupItem, ClientConfigTemplate,
+        ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
+        ClientConfigSetupItem, ClientConfigTemplate, ThinkingPolicy,
     },
 };
 
@@ -152,21 +152,48 @@ fn opencode_model(input: &ClientConfigInput) -> Map<String, Value> {
     if input.capabilities.attachments || input.capabilities.vision {
         model.insert("attachment".to_string(), json!(true));
     }
-    if input.thinking_policy == Some(AnthropicThinkingPolicy::SafeEffort) {
-        model.insert(
-            "variants".to_string(),
-            json!({
-                "high": {
-                    "reasoningEffort": "high",
-                },
-                "max": {
-                    "reasoningEffort": "xhigh",
-                },
-            }),
-        );
+    if let Some(variants) = input.thinking_policy.and_then(opencode_variants) {
+        model.insert("variants".to_string(), variants);
     }
 
     model
+}
+
+fn opencode_variants(policy: ThinkingPolicy) -> Option<Value> {
+    match policy {
+        ThinkingPolicy::AnthropicSafeEffort => Some(json!({
+            "high": {
+                "reasoningEffort": "high",
+            },
+            "max": {
+                "reasoningEffort": "xhigh",
+            },
+        })),
+        ThinkingPolicy::AnthropicManualBudget => None,
+        ThinkingPolicy::GeminiLevel {
+            supports_minimal,
+            supports_medium,
+        } => Some(reasoning_effort_variants(
+            [
+                ("minimal", supports_minimal),
+                ("low", true),
+                ("medium", supports_medium),
+                ("high", true),
+            ]
+            .into_iter()
+            .filter_map(|(level, supported)| supported.then_some(level)),
+        )),
+        ThinkingPolicy::GeminiBudget => Some(reasoning_effort_variants(["low", "medium", "high"])),
+    }
+}
+
+fn reasoning_effort_variants<'a>(levels: impl IntoIterator<Item = &'a str>) -> Value {
+    Value::Object(
+        levels
+            .into_iter()
+            .map(|level| (level.to_string(), json!({"reasoningEffort": level})))
+            .collect(),
+    )
 }
 
 fn provider_id_for_style(

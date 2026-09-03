@@ -1,5 +1,11 @@
 use super::*;
 
+use crate::vertex::embeddings::extract_google_embedding_outputs;
+
+fn inputs(count: usize) -> Value {
+    Value::Array((0..count).map(|i| json!(format!("text-{i}"))).collect())
+}
+
 #[test]
 fn maps_vertex_embedding_aliases_to_predict_payload() {
     let mut request = embedding_request(json!("document text"));
@@ -34,6 +40,7 @@ fn maps_vertex_embedding_aliases_to_predict_payload() {
     .expect("mapped embeddings request");
 
     assert_eq!(mapped.bodies.len(), 1);
+    assert_eq!(mapped.input_count, 1);
     assert_eq!(mapped.bodies[0]["instances"][0]["content"], "document text");
     assert_eq!(
         mapped.bodies[0]["instances"][0]["task_type"],
@@ -42,6 +49,172 @@ fn maps_vertex_embedding_aliases_to_predict_payload() {
     assert_eq!(mapped.bodies[0]["instances"][0]["title"], "Doc title");
     assert_eq!(mapped.bodies[0]["parameters"]["outputDimensionality"], 128);
     assert_eq!(mapped.bodies[0]["parameters"]["autoTruncate"], false);
+}
+
+#[test]
+fn batches_predict_inputs_up_to_max_instances_per_body() {
+    let count = VERTEX_PREDICT_MAX_INSTANCES + 1;
+    let mut request = embedding_request(inputs(count));
+    request
+        .extra
+        .insert("task_type".to_string(), json!("RETRIEVAL_QUERY"));
+    let mut context = context("google/gemini-embedding-001");
+    context
+        .extra_body
+        .insert("parameters".to_string(), json!({"autoTruncate": true}));
+
+    let mapped = map_google_embedding_request(&request, &context, "gemini-embedding-001")
+        .expect("mapped embeddings request");
+
+    assert_eq!(mapped.input_count, count);
+    assert_eq!(mapped.bodies.len(), 2);
+    let first = mapped.bodies[0]["instances"]
+        .as_array()
+        .expect("first batch instances");
+    let second = mapped.bodies[1]["instances"]
+        .as_array()
+        .expect("second batch instances");
+    assert_eq!(first.len(), VERTEX_PREDICT_MAX_INSTANCES);
+    assert_eq!(second.len(), 1);
+    assert_eq!(first[0]["content"], "text-0");
+    assert_eq!(
+        first[VERTEX_PREDICT_MAX_INSTANCES - 1]["content"],
+        format!("text-{}", VERTEX_PREDICT_MAX_INSTANCES - 1)
+    );
+    assert_eq!(
+        second[0]["content"],
+        format!("text-{VERTEX_PREDICT_MAX_INSTANCES}")
+    );
+    for body in &mapped.bodies {
+        assert_eq!(body["parameters"], json!({"autoTruncate": true}));
+        for instance in body["instances"].as_array().expect("instances") {
+            assert_eq!(instance["task_type"], "RETRIEVAL_QUERY");
+        }
+    }
+}
+
+#[test]
+fn exactly_max_instances_fits_in_one_predict_body() {
+    let request = embedding_request(inputs(VERTEX_PREDICT_MAX_INSTANCES));
+
+    let mapped = map_google_embedding_request(
+        &request,
+        &context("google/text-embedding-005"),
+        "text-embedding-005",
+    )
+    .expect("mapped embeddings request");
+
+    assert_eq!(mapped.bodies.len(), 1);
+    assert_eq!(mapped.input_count, VERTEX_PREDICT_MAX_INSTANCES);
+    assert_eq!(
+        mapped.bodies[0]["instances"]
+            .as_array()
+            .expect("instances")
+            .len(),
+        VERTEX_PREDICT_MAX_INSTANCES
+    );
+}
+
+#[test]
+fn gemini_embedding_2_keeps_one_embed_content_body_per_input() {
+    let count = VERTEX_PREDICT_MAX_INSTANCES + 1;
+    let request = embedding_request(inputs(count));
+
+    let mapped = map_google_embedding_request(
+        &request,
+        &context("google/gemini-embedding-2"),
+        "gemini-embedding-2",
+    )
+    .expect("mapped embeddings request");
+
+    assert_eq!(mapped.input_count, count);
+    assert_eq!(mapped.bodies.len(), count);
+    assert_eq!(
+        mapped.bodies[0],
+        json!({"content": {"parts": [{"text": "text-0"}]}})
+    );
+    assert_eq!(
+        mapped.bodies[count - 1]["content"]["parts"][0]["text"],
+        format!("text-{}", count - 1)
+    );
+}
+
+#[test]
+fn extracts_every_prediction_numbered_from_first_index() {
+    let response = json!({
+        "predictions": [
+            {"embeddings": {"values": [1.0, 1.5], "statistics": {"token_count": 2}}},
+            {"embeddings": {"values": [2.0], "statistics": {"token_count": 5}}},
+            {"embeddings": {"values": [3.0]}}
+        ]
+    });
+
+    let outputs =
+        extract_google_embedding_outputs(&response, 250, "gemini-embedding-001").expect("outputs");
+
+    assert_eq!(outputs.len(), 3);
+    assert_eq!(
+        outputs
+            .iter()
+            .map(|output| output.index)
+            .collect::<Vec<_>>(),
+        vec![250, 251, 252]
+    );
+    assert_eq!(outputs[0].embedding, json!([1.0, 1.5]));
+    assert_eq!(outputs[0].token_count, Some(2));
+    assert_eq!(outputs[1].embedding, json!([2.0]));
+    assert_eq!(outputs[1].token_count, Some(5));
+    assert_eq!(outputs[2].embedding, json!([3.0]));
+    assert_eq!(outputs[2].token_count, None);
+}
+
+#[test]
+fn rejects_predict_responses_with_missing_or_non_numeric_embeddings() {
+    let cases = [
+        ("no predictions", json!({}), "missing predictions[0]"),
+        (
+            "empty predictions",
+            json!({"predictions": []}),
+            "missing predictions[0]",
+        ),
+        (
+            "missing values in later prediction",
+            json!({"predictions": [
+                {"embeddings": {"values": [1.0]}},
+                {"embeddings": {}}
+            ]}),
+            "missing embeddings.values",
+        ),
+        (
+            "non-numeric value",
+            json!({"predictions": [{"embeddings": {"values": [1.0, "x"]}}]}),
+            "embedding values must be numbers",
+        ),
+    ];
+    for (name, response, expected) in cases {
+        let error =
+            extract_google_embedding_outputs(&response, 0, "gemini-embedding-001").expect_err(name);
+        assert!(
+            matches!(&error, ProviderError::Transport(message) if message.contains(expected)),
+            "{name}: {error}"
+        );
+    }
+}
+
+#[test]
+fn extracts_embed_content_output_at_first_index() {
+    let response = json!({
+        "embedding": {"values": [0.5, 0.25]},
+        "usageMetadata": {"promptTokenCount": 7, "totalTokenCount": 999}
+    });
+
+    let outputs =
+        extract_google_embedding_outputs(&response, 3, "gemini-embedding-2").expect("outputs");
+
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(outputs[0].index, 3);
+    assert_eq!(outputs[0].embedding, json!([0.5, 0.25]));
+    assert_eq!(outputs[0].token_count, Some(7));
 }
 
 #[test]
@@ -276,7 +449,7 @@ async fn vertex_provider_google_embedding_string_executes_predict_mapping() {
 }
 
 #[tokio::test]
-async fn vertex_provider_google_embedding_array_fans_out_and_preserves_order() {
+async fn vertex_provider_google_embedding_array_batches_one_predict_body_and_preserves_order() {
     let captured = Arc::new(Mutex::new(Vec::<Value>::new()));
     let state = captured.clone();
     let app = Router::new()
@@ -289,30 +462,30 @@ async fn vertex_provider_google_embedding_array_fans_out_and_preserves_order() {
                         assert!(path.ends_with(
                             "publishers/google/models/text-embedding-005:predict"
                         ));
-                        let content = payload["instances"][0]["content"]
-                            .as_str()
-                            .expect("string content")
-                            .to_string();
+                        let instances = payload["instances"]
+                            .as_array()
+                            .expect("instances")
+                            .clone();
                         captured.lock().await.push(payload);
-                        match content.as_str() {
-                            "first" => Json(json!({
-                                "predictions": [{
+                        let predictions: Vec<Value> = instances
+                            .iter()
+                            .map(|instance| match instance["content"].as_str() {
+                                Some("first") => json!({
                                     "embeddings": {
                                         "values": [1.0, 1.5],
                                         "statistics": {"token_count": 2, "billable_character_count": 999}
                                     }
-                                }]
-                            })),
-                            "second" => Json(json!({
-                                "predictions": [{
+                                }),
+                                Some("second") => json!({
                                     "embeddings": {
                                         "values": [2.0, 2.5],
                                         "statistics": {"token_count": 5, "billable_character_count": 999}
                                     }
-                                }]
-                            })),
-                            other => panic!("unexpected embedding content: {other}"),
-                        }
+                                }),
+                                other => panic!("unexpected embedding content: {other:?}"),
+                            })
+                            .collect();
+                        Json(json!({"predictions": predictions}))
                     },
                 ),
             )
@@ -334,9 +507,94 @@ async fn vertex_provider_google_embedding_array_fans_out_and_preserves_order() {
     assert_eq!(response["usage"], embedding_usage(7));
 
     let request_payloads = captured.lock().await.clone();
+    assert_eq!(request_payloads.len(), 1);
+    assert_eq!(
+        request_payloads[0]["instances"],
+        json!([{"content": "first"}, {"content": "second"}])
+    );
+}
+
+#[tokio::test]
+async fn vertex_provider_google_embedding_predict_splits_batches_and_reports_partial_usage() {
+    let captured = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let state = captured.clone();
+    let app = Router::new()
+        .route(
+            "/v1/{*path}",
+            post(
+                |State(captured): State<Arc<Mutex<Vec<Value>>>>,
+                 Json(payload): Json<Value>| async move {
+                    let instances = payload["instances"]
+                        .as_array()
+                        .expect("instances")
+                        .clone();
+                    captured.lock().await.push(payload);
+                    if instances.len() == VERTEX_PREDICT_MAX_INSTANCES {
+                        let predictions: Vec<Value> = instances
+                            .iter()
+                            .map(|_| {
+                                json!({
+                                    "embeddings": {
+                                        "values": [0.5],
+                                        "statistics": {"token_count": 2}
+                                    }
+                                })
+                            })
+                            .collect();
+                        (StatusCode::OK, Json(json!({"predictions": predictions})))
+                    } else {
+                        (
+                            StatusCode::TOO_MANY_REQUESTS,
+                            Json(json!({"error": {"message": "quota exhausted"}})),
+                        )
+                    }
+                },
+            ),
+        )
+        .with_state(state);
+
+    let host = start_router(app).await;
+    let provider = vertex_provider_for_test(format!("http://{host}"));
+    let request = embedding_request(inputs(VERTEX_PREDICT_MAX_INSTANCES + 1));
+
+    let error = provider
+        .embeddings(&request, &context("google/gemini-embedding-001"))
+        .await
+        .expect_err("second batch failure should surface partial usage");
+
+    match error {
+        ProviderError::PartialUsage {
+            source,
+            provider_usage,
+        } => {
+            assert_eq!(
+                provider_usage,
+                Some(embedding_usage(2 * VERTEX_PREDICT_MAX_INSTANCES as i64))
+            );
+            match *source {
+                ProviderError::UpstreamHttp { status, body } => {
+                    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS.as_u16());
+                    assert!(body.contains("quota exhausted"));
+                }
+                other => panic!("unexpected partial usage source: {other}"),
+            }
+        }
+        other => panic!("unexpected error: {other}"),
+    }
+
+    let request_payloads = captured.lock().await.clone();
     assert_eq!(request_payloads.len(), 2);
-    assert_eq!(request_payloads[0]["instances"][0]["content"], "first");
-    assert_eq!(request_payloads[1]["instances"][0]["content"], "second");
+    assert_eq!(
+        request_payloads[0]["instances"]
+            .as_array()
+            .expect("first batch")
+            .len(),
+        VERTEX_PREDICT_MAX_INSTANCES
+    );
+    assert_eq!(
+        request_payloads[1]["instances"],
+        json!([{"content": format!("text-{VERTEX_PREDICT_MAX_INSTANCES}")}])
+    );
 }
 
 #[tokio::test]

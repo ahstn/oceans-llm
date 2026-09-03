@@ -282,7 +282,7 @@ Important defaults from config parsing and domain deserialization:
 - route `enabled` defaults to `true`
 - route capability flags default to all enabled
 - Vertex `location` defaults to `global`
-- Vertex `api_host` defaults to `aiplatform.googleapis.com`
+- Vertex `api_host` defaults to the host that serves `location` (`aiplatform.googleapis.com` for `global`, `aiplatform.{us|eu}.rep.googleapis.com` for multi-region, `{region}-aiplatform.googleapis.com` otherwise)
 - `request_logging.payloads.capture_mode` defaults to `redacted_payloads`
 - `request_logging.payloads.request_max_bytes` defaults to `131072` and cannot exceed the `262144` absolute inline ceiling
 - `request_logging.payloads.response_max_bytes` defaults to `65536`

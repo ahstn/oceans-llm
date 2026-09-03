@@ -1,4 +1,43 @@
-use super::*;
+use std::collections::BTreeMap;
+
+use gateway_core::{
+    CoreEmbeddingsRequest, ProviderError, ProviderRequestContext, VERTEX_TEXT_EMBEDDING_MODEL_IDS,
+    is_supported_vertex_text_embedding_model_id,
+};
+use serde_json::{Map, Value, json};
+
+use super::google_request::merge_object_overrides;
+
+const VERTEX_EMBEDDING_TASK_TYPES: &[&str] = &[
+    "RETRIEVAL_QUERY",
+    "RETRIEVAL_DOCUMENT",
+    "SEMANTIC_SIMILARITY",
+    "CLASSIFICATION",
+    "CLUSTERING",
+    "QUESTION_ANSWERING",
+    "FACT_VERIFICATION",
+    "CODE_RETRIEVAL_QUERY",
+];
+
+const VERTEX_EMBED_CONTENT_MODEL_IDS: &[&str] = &["gemini-embedding-2"];
+
+/// Maximum `instances` per `predict` call for text embedding models.
+pub(super) const VERTEX_PREDICT_MAX_INSTANCES: usize = 250;
+
+/// Upstream bodies for one embeddings request. `predict` bodies carry up to
+/// [`VERTEX_PREDICT_MAX_INSTANCES`] inputs each; `embedContent` bodies carry exactly one.
+#[derive(Debug)]
+pub(super) struct GoogleEmbeddingRequestMapping {
+    pub(super) bodies: Vec<Value>,
+    pub(super) input_count: usize,
+}
+
+#[derive(Debug)]
+pub(super) struct GoogleEmbeddingOutput {
+    pub(super) index: usize,
+    pub(super) embedding: Value,
+    pub(super) token_count: Option<i64>,
+}
 
 pub(super) fn validate_vertex_embedding_model(model_id: &str) -> Result<(), ProviderError> {
     if is_supported_vertex_text_embedding_model_id(model_id) {
@@ -58,42 +97,49 @@ pub(super) fn map_google_embedding_request(
         )));
     }
 
-    let mut bodies = Vec::with_capacity(inputs.len());
-    for input in inputs {
-        let mut instance = Map::new();
-        instance.insert("content".to_string(), Value::String(input));
-        if let Some(task_type) = &task_type {
-            instance.insert("task_type".to_string(), Value::String(task_type.clone()));
-        }
-        if let Some(title) = &title {
-            instance.insert("title".to_string(), Value::String(title.clone()));
-        }
-
-        let mut body = Map::new();
-        body.insert(
-            "instances".to_string(),
-            Value::Array(vec![Value::Object(instance)]),
+    let mut parameters = Map::new();
+    if let Some(output_dimensionality) = output_dimensionality {
+        parameters.insert(
+            "outputDimensionality".to_string(),
+            Value::Number(output_dimensionality.into()),
         );
+    }
+    if let Some(auto_truncate) = auto_truncate {
+        parameters.insert("autoTruncate".to_string(), Value::Bool(auto_truncate));
+    }
 
-        let mut parameters = Map::new();
-        if let Some(output_dimensionality) = output_dimensionality {
-            parameters.insert(
-                "outputDimensionality".to_string(),
-                Value::Number(output_dimensionality.into()),
-            );
-        }
-        if let Some(auto_truncate) = auto_truncate {
-            parameters.insert("autoTruncate".to_string(), Value::Bool(auto_truncate));
-        }
+    let input_count = inputs.len();
+    let mut bodies = Vec::with_capacity(input_count.div_ceil(VERTEX_PREDICT_MAX_INSTANCES));
+    let mut inputs = inputs.into_iter().peekable();
+    while inputs.peek().is_some() {
+        let instances = inputs
+            .by_ref()
+            .take(VERTEX_PREDICT_MAX_INSTANCES)
+            .map(|input| {
+                let mut instance = Map::new();
+                instance.insert("content".to_string(), Value::String(input));
+                if let Some(task_type) = &task_type {
+                    instance.insert("task_type".to_string(), Value::String(task_type.clone()));
+                }
+                if let Some(title) = &title {
+                    instance.insert("title".to_string(), Value::String(title.clone()));
+                }
+                Value::Object(instance)
+            })
+            .collect();
+        let mut body = Map::new();
+        body.insert("instances".to_string(), Value::Array(instances));
         if !parameters.is_empty() {
-            body.insert("parameters".to_string(), Value::Object(parameters));
+            body.insert("parameters".to_string(), Value::Object(parameters.clone()));
         }
-
         merge_object_overrides(&mut body, &context.extra_body);
         bodies.push(Value::Object(body));
     }
 
-    Ok(GoogleEmbeddingRequestMapping { bodies })
+    Ok(GoogleEmbeddingRequestMapping {
+        bodies,
+        input_count,
+    })
 }
 
 fn map_google_embed_content_request(
@@ -115,7 +161,8 @@ fn map_google_embed_content_request(
         )));
     }
 
-    let mut bodies = Vec::with_capacity(inputs.len());
+    let input_count = inputs.len();
+    let mut bodies = Vec::with_capacity(input_count);
     for input in inputs {
         let mut body = Map::new();
         body.insert(
@@ -140,7 +187,10 @@ fn map_google_embed_content_request(
         bodies.push(Value::Object(body));
     }
 
-    Ok(GoogleEmbeddingRequestMapping { bodies })
+    Ok(GoogleEmbeddingRequestMapping {
+        bodies,
+        input_count,
+    })
 }
 
 fn reject_vertex_embed_content_only_field(
@@ -377,48 +427,55 @@ fn optional_bool_field(field: &str, value: &Value) -> Result<Option<bool>, Provi
     })
 }
 
-pub(super) fn extract_google_embedding_output(
+/// Extracts every embedding in one upstream response, numbering them from `first_index`.
+pub(super) fn extract_google_embedding_outputs(
     value: &Value,
-    index: usize,
+    first_index: usize,
     model_id: &str,
-) -> Result<GoogleEmbeddingOutput, ProviderError> {
+) -> Result<Vec<GoogleEmbeddingOutput>, ProviderError> {
     if uses_vertex_embed_content(model_id) {
-        return extract_google_embed_content_output(value, index);
+        return extract_google_embed_content_output(value, first_index).map(|output| vec![output]);
     }
-    let prediction = value
+    let predictions = value
         .get("predictions")
         .and_then(Value::as_array)
-        .and_then(|predictions| predictions.first())
+        .filter(|predictions| !predictions.is_empty())
         .ok_or_else(|| {
             ProviderError::Transport(
                 "invalid JSON from vertex embeddings: missing predictions[0]".to_string(),
             )
         })?;
-    let embedding = prediction
-        .get("embeddings")
-        .and_then(|embeddings| embeddings.get("values"))
-        .and_then(Value::as_array)
-        .ok_or_else(|| {
-            ProviderError::Transport(
-                "invalid JSON from vertex embeddings: missing embeddings.values".to_string(),
-            )
-        })?;
-    if embedding.iter().any(|value| value.as_f64().is_none()) {
-        return Err(ProviderError::Transport(
-            "invalid JSON from vertex embeddings: embedding values must be numbers".to_string(),
-        ));
-    }
-    let token_count = prediction
-        .get("embeddings")
-        .and_then(|embeddings| embeddings.get("statistics"))
-        .and_then(|statistics| statistics.get("token_count"))
-        .and_then(Value::as_i64);
-
-    Ok(GoogleEmbeddingOutput {
-        index,
-        embedding: Value::Array(embedding.clone()),
-        token_count,
-    })
+    predictions
+        .iter()
+        .zip(first_index..)
+        .map(|(prediction, index)| {
+            let embeddings = prediction.get("embeddings");
+            let embedding = embeddings
+                .and_then(|embeddings| embeddings.get("values"))
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    ProviderError::Transport(
+                        "invalid JSON from vertex embeddings: missing embeddings.values"
+                            .to_string(),
+                    )
+                })?;
+            if embedding.iter().any(|value| value.as_f64().is_none()) {
+                return Err(ProviderError::Transport(
+                    "invalid JSON from vertex embeddings: embedding values must be numbers"
+                        .to_string(),
+                ));
+            }
+            let token_count = embeddings
+                .and_then(|embeddings| embeddings.get("statistics"))
+                .and_then(|statistics| statistics.get("token_count"))
+                .and_then(Value::as_i64);
+            Ok(GoogleEmbeddingOutput {
+                index,
+                embedding: Value::Array(embedding.clone()),
+                token_count,
+            })
+        })
+        .collect()
 }
 
 fn extract_google_embed_content_output(

@@ -32,7 +32,7 @@ providers:
       icon_key: vertexai
 ```
 
-`api_host` is optional. When omitted, the gateway uses `aiplatform.googleapis.com`, which is the right default for the global endpoint. For Vertex multi-region endpoints, set `api_host` explicitly to `aiplatform.us.rep.googleapis.com` or `aiplatform.eu.rep.googleapis.com`. For a regional endpoint, set it to the regional Vertex host such as `us-east5-aiplatform.googleapis.com`. Anthropic-on-Vertex pricing is currently supported only for `location: global`.
+`api_host` is optional. When omitted, the gateway derives it from `location`: `global` uses `aiplatform.googleapis.com`, the multi-region `us` and `eu` locations use `aiplatform.us.rep.googleapis.com` / `aiplatform.eu.rep.googleapis.com`, and any other region uses `{region}-aiplatform.googleapis.com` (for example `us-east5-aiplatform.googleapis.com`). Set `api_host` explicitly only to override that host, such as for a private endpoint. Anthropic-on-Vertex pricing is currently supported only for `location: global`.
 
 Service-account and bearer examples:
 

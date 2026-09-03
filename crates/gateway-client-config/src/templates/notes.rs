@@ -1,6 +1,6 @@
 use crate::{
     api_style::uses_anthropic_messages_api,
-    types::{AnthropicThinkingPolicy, ClientConfigInput, MAX_CLIENT_CONTEXT_WINDOW_TOKENS},
+    types::{ClientConfigInput, MAX_CLIENT_CONTEXT_WINDOW_TOKENS, ThinkingPolicy},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -74,7 +74,7 @@ pub(crate) fn client_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNo
 
 pub(crate) fn thinking_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNote> {
     match input.thinking_policy {
-        Some(AnthropicThinkingPolicy::ManualBudget) => vec![ClientConfigNote::new(
+        Some(ThinkingPolicy::AnthropicManualBudget) => vec![ClientConfigNote::new(
             ClientConfigNoteKind::ThinkingPolicy,
             "This Anthropic model is marked as reasoning-capable, but no thinking variants are generated because it requires caller-supplied manual budget tokens.",
         )],

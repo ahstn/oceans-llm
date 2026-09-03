@@ -1,31 +1,60 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 
-use async_stream::stream;
 use async_trait::async_trait;
-use bytes::Bytes;
-use futures_util::StreamExt;
 use gateway_core::{
-    BatchCapabilities, CoreChatMessage, CoreChatRequest, CoreContentPartType,
-    CoreEmbeddingsRequest, CoreResponsesRequest, ProviderBatchRequest, ProviderBatchResult,
-    ProviderBatchState, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, ProviderStream, SseEventParser, Utf8ChunkDecoder,
-    VERTEX_TEXT_EMBEDDING_MODEL_IDS, is_supported_vertex_text_embedding_model_id,
+    BatchCapabilities, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
+    ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderCapabilities,
+    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
 };
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    anthropic::{normalize_anthropic_response, normalize_anthropic_stream},
     http::{execute_request, map_reqwest_error},
-    media::{infer_media_type_from_path, is_valid_media_type},
-    streaming::{done_sse_chunk, openai_sse_error_chunk},
     token::{
         AccessTokenSource, AdcTokenSource, CLOUD_PLATFORM_SCOPE, CachedAccessTokenSource,
         ServiceAccountTokenSource, StaticBearerTokenSource,
     },
 };
 
+mod anthropic;
 mod batch;
+mod embeddings;
+mod error;
+mod gemini;
+mod google_request;
+mod google_response;
+mod google_stream;
+mod google_tools;
+#[cfg(test)]
+mod tests;
+
+use anthropic::map_vertex_anthropic_request;
+use embeddings::{
+    GoogleEmbeddingOutput, extract_google_embedding_outputs, map_google_embedding_request,
+    normalize_google_embedding_outputs, partial_google_embedding_failure,
+    validate_vertex_embedding_model, vertex_embedding_method,
+};
+use error::VertexAdapterError;
+use google_request::map_google_request;
+use google_response::normalize_google_response;
+use google_stream::normalize_google_stream;
+
+const ANTHROPIC_USAGE_SOURCE: &str = "vertex_anthropic";
+const PROVIDER_NAMESPACE: &str = "gcp_vertex";
+
+/// Vertex host that serves a location: `global` and the multi-region `us`/`eu` endpoints have
+/// dedicated hosts; every other location is a regional `{region}-aiplatform.googleapis.com`.
+#[must_use]
+pub fn vertex_api_host_for_location(location: &str) -> String {
+    match location {
+        "global" => "aiplatform.googleapis.com".to_string(),
+        "us" | "eu" => format!("aiplatform.{location}.rep.googleapis.com"),
+        region => format!("{region}-aiplatform.googleapis.com"),
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum VertexAuthConfig {
@@ -91,16 +120,12 @@ impl VertexProvider {
     #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_request(
         &self,
-        endpoint_suffix: &str,
+        endpoint: &str,
         body: &Value,
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
         let token = self.access_token_source.token().await?;
-        let request = self
-            .client
-            .post(endpoint_suffix)
-            .bearer_auth(token)
-            .json(body);
+        let request = self.client.post(endpoint).bearer_auth(token).json(body);
         self.apply_request_headers(request, context)
             .build()
             .map_err(map_reqwest_error)
@@ -122,18 +147,46 @@ impl VertexProvider {
         }
         request
     }
+
     fn model_endpoint(&self, publisher: &str, model_id: &str, method: &str) -> String {
         let host = self.config.api_host.trim_end_matches('/');
-        let base = if host.starts_with("http://") || host.starts_with("https://") {
-            host.to_string()
+        let scheme = if host.starts_with("http://") || host.starts_with("https://") {
+            ""
         } else {
-            format!("https://{host}")
+            "https://"
         };
-
         format!(
-            "{}/v1/projects/{}/locations/{}/publishers/{}/models/{}:{}",
-            base, self.config.project_id, self.config.location, publisher, model_id, method
+            "{scheme}{host}/v1/projects/{}/locations/{}/publishers/{publisher}/models/{model_id}:{method}",
+            self.config.project_id, self.config.location
         )
+    }
+
+    /// Sends a mapped body and returns the upstream JSON, or the upstream HTTP failure.
+    async fn post_json(
+        &self,
+        endpoint: &str,
+        body: &Value,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        let request = self.build_request(endpoint, body, context).await?;
+        let response = execute_request(
+            &self.client,
+            request,
+            PROVIDER_NAMESPACE,
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
+        let status = response.status();
+        let text = response.text().await.map_err(map_reqwest_error)?;
+        if !status.is_success() {
+            return Err(ProviderError::UpstreamHttp {
+                status: status.as_u16(),
+                body: text,
+            });
+        }
+        serde_json::from_str(&text)
+            .map_err(|error| ProviderError::Transport(format!("invalid JSON from vertex: {error}")))
     }
 }
 
@@ -145,53 +198,17 @@ enum PublisherFamily {
 
 fn parse_upstream_model(
     upstream_model: &str,
-) -> Result<(PublisherFamily, &str, &str), ProviderError> {
-    let mut parts = upstream_model.splitn(2, '/');
-    let publisher = parts.next().unwrap_or_default();
-    let model_id = parts.next().unwrap_or_default();
-
-    if publisher.is_empty() || model_id.is_empty() {
-        return Err(ProviderError::InvalidRequest(format!(
-            "vertex route upstream_model must be <publisher>/<model_id>, got `{upstream_model}`"
-        )));
-    }
-
+) -> Result<(PublisherFamily, &str, &str), VertexAdapterError> {
+    let (publisher, model_id) = upstream_model
+        .split_once('/')
+        .filter(|(publisher, model_id)| !publisher.is_empty() && !model_id.is_empty())
+        .ok_or_else(|| VertexAdapterError::InvalidUpstreamModel(upstream_model.to_string()))?;
     let family = match publisher {
         "google" => PublisherFamily::Google,
         "anthropic" => PublisherFamily::Anthropic,
-        other => {
-            return Err(ProviderError::InvalidRequest(format!(
-                "vertex publisher `{other}` is not supported in this slice"
-            )));
-        }
+        other => return Err(VertexAdapterError::UnsupportedPublisher(other.to_string())),
     };
-
     Ok((family, publisher, model_id))
-}
-
-const VERTEX_EMBEDDING_TASK_TYPES: &[&str] = &[
-    "RETRIEVAL_QUERY",
-    "RETRIEVAL_DOCUMENT",
-    "SEMANTIC_SIMILARITY",
-    "CLASSIFICATION",
-    "CLUSTERING",
-    "QUESTION_ANSWERING",
-    "FACT_VERIFICATION",
-    "CODE_RETRIEVAL_QUERY",
-];
-
-const VERTEX_EMBED_CONTENT_MODEL_IDS: &[&str] = &["gemini-embedding-2"];
-
-#[derive(Debug)]
-struct GoogleEmbeddingRequestMapping {
-    bodies: Vec<Value>,
-}
-
-#[derive(Debug)]
-struct GoogleEmbeddingOutput {
-    index: usize,
-    embedding: Value,
-    token_count: Option<i64>,
 }
 
 #[async_trait]
@@ -201,11 +218,11 @@ impl ProviderClient for VertexProvider {
     }
 
     fn provider_type(&self) -> &str {
-        "gcp_vertex"
+        PROVIDER_NAMESPACE
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true)
+        ProviderCapabilities::with_dimensions(true, true, false, true, true, true, true)
     }
 
     fn batch_capabilities(&self) -> BatchCapabilities {
@@ -249,44 +266,30 @@ impl ProviderClient for VertexProvider {
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         let (family, publisher, model_id) = parse_upstream_model(&context.upstream_model)?;
-        let endpoint = match family {
-            PublisherFamily::Google => self.model_endpoint(publisher, model_id, "generateContent"),
-            PublisherFamily::Anthropic => self.model_endpoint(publisher, model_id, "rawPredict"),
-        };
-
-        let body = match family {
-            PublisherFamily::Google => map_google_request(request, context, false)?,
-            PublisherFamily::Anthropic => map_anthropic_request(request, context, false)?,
-        };
-
-        let request = self.build_request(&endpoint, &body, context).await?;
-        let response = execute_request(
-            &self.client,
-            request,
-            "gcp_vertex",
-            &self.config.provider_key,
-        )
-        .await
-        .map_err(map_reqwest_error)?;
-        let status = response.status();
-        let text = response.text().await.map_err(map_reqwest_error)?;
-        if !status.is_success() {
-            return Err(ProviderError::UpstreamHttp {
-                status: status.as_u16(),
-                body: text,
-            });
+        match family {
+            PublisherFamily::Google => {
+                let body = map_google_request(request, context, model_id, false)?;
+                let endpoint = self.model_endpoint(publisher, model_id, "generateContent");
+                let value = self.post_json(&endpoint, &body, context).await?;
+                Ok(normalize_google_response(&value, context)?)
+            }
+            PublisherFamily::Anthropic => {
+                let body = map_vertex_anthropic_request(
+                    request,
+                    context,
+                    false,
+                    &self.config.default_headers,
+                )?;
+                let endpoint = self.model_endpoint(publisher, model_id, "rawPredict");
+                let value = self.post_json(&endpoint, &body, context).await?;
+                Ok(normalize_anthropic_response(
+                    &value,
+                    context,
+                    PROVIDER_NAMESPACE,
+                    ANTHROPIC_USAGE_SOURCE,
+                ))
+            }
         }
-
-        let value: Value = serde_json::from_str(&text).map_err(|error| {
-            ProviderError::Transport(format!("invalid JSON from vertex: {error}"))
-        })?;
-
-        let normalized = match family {
-            PublisherFamily::Google => normalize_google_response(&value, context),
-            PublisherFamily::Anthropic => normalize_anthropic_response(&value, context),
-        };
-
-        Ok(normalized)
     }
 
     async fn chat_completions_stream(
@@ -295,24 +298,25 @@ impl ProviderClient for VertexProvider {
         context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError> {
         let (family, publisher, model_id) = parse_upstream_model(&context.upstream_model)?;
-        let endpoint = match family {
-            PublisherFamily::Google => {
-                self.model_endpoint(publisher, model_id, "streamGenerateContent")
-            }
-            PublisherFamily::Anthropic => {
-                self.model_endpoint(publisher, model_id, "streamRawPredict")
-            }
-        };
-        let body = match family {
-            PublisherFamily::Google => map_google_request(request, context, true)?,
-            PublisherFamily::Anthropic => map_anthropic_request(request, context, true)?,
+        let (endpoint, body) = match family {
+            PublisherFamily::Google => (
+                format!(
+                    "{}?alt=sse",
+                    self.model_endpoint(publisher, model_id, "streamGenerateContent")
+                ),
+                map_google_request(request, context, model_id, true)?,
+            ),
+            PublisherFamily::Anthropic => (
+                self.model_endpoint(publisher, model_id, "streamRawPredict"),
+                map_vertex_anthropic_request(request, context, true, &self.config.default_headers)?,
+            ),
         };
 
         let request = self.build_request(&endpoint, &body, context).await?;
         let response = execute_request(
             &self.client,
             request,
-            "gcp_vertex",
+            PROVIDER_NAMESPACE,
             &self.config.provider_key,
         )
         .await
@@ -331,14 +335,17 @@ impl ProviderClient for VertexProvider {
         let model = context.model_key.clone();
         let upstream = response.bytes_stream();
 
-        let normalized = match family {
+        Ok(match family {
             PublisherFamily::Google => normalize_google_stream(upstream, stream_id, created, model),
-            PublisherFamily::Anthropic => {
-                normalize_anthropic_stream(upstream, stream_id, created, model)
-            }
-        };
-
-        Ok(normalized)
+            PublisherFamily::Anthropic => normalize_anthropic_stream(
+                upstream,
+                stream_id,
+                created,
+                model,
+                PROVIDER_NAMESPACE,
+                ANTHROPIC_USAGE_SOURCE,
+            ),
+        })
     }
 
     async fn embeddings(
@@ -357,13 +364,13 @@ impl ProviderClient for VertexProvider {
 
         let mapped = map_google_embedding_request(request, context, model_id)?;
         let endpoint = self.model_endpoint(publisher, model_id, vertex_embedding_method(model_id));
-        let mut outputs = Vec::with_capacity(mapped.bodies.len());
-        for (index, body) in mapped.bodies.iter().enumerate() {
+        let mut outputs: Vec<GoogleEmbeddingOutput> = Vec::with_capacity(mapped.input_count);
+        for body in &mapped.bodies {
             let request = self.build_request(&endpoint, body, context).await?;
             let response = match execute_request(
                 &self.client,
                 request,
-                "gcp_vertex",
+                PROVIDER_NAMESPACE,
                 &self.config.provider_key,
             )
             .await
@@ -411,11 +418,10 @@ impl ProviderClient for VertexProvider {
                     ));
                 }
             };
-            let output = match extract_google_embedding_output(&value, index, model_id) {
-                Ok(output) => output,
+            match extract_google_embedding_outputs(&value, outputs.len(), model_id) {
+                Ok(batch) => outputs.extend(batch),
                 Err(error) => return Err(partial_google_embedding_failure(error, &outputs, true)),
-            };
-            outputs.push(output);
+            }
         }
 
         normalize_google_embedding_outputs(outputs, context)
@@ -441,43 +447,3 @@ impl ProviderClient for VertexProvider {
         ))
     }
 }
-
-mod anthropic_request;
-mod anthropic_thinking;
-mod embeddings;
-mod google_request;
-mod google_tools;
-mod response;
-mod streaming;
-
-use anthropic_request::{map_anthropic_request, parse_openai_tool_arguments};
-use anthropic_thinking::{
-    apply_vertex_anthropic_thinking_compatibility, validate_vertex_anthropic_sampling_fields,
-};
-use embeddings::{
-    extract_google_embedding_output, map_google_embedding_request,
-    normalize_google_embedding_outputs, partial_google_embedding_failure,
-    validate_vertex_embedding_model, vertex_embedding_method,
-};
-use google_request::{
-    map_google_parts, map_google_request, merge_object_overrides, message_content_as_text,
-};
-use google_tools::{
-    convert_openai_tools_for_google, map_google_anthropic_tool_result_part,
-    map_google_anthropic_tool_use_part, map_google_assistant_parts, map_google_tool_result_part,
-    record_google_tool_names,
-};
-use response::{
-    extract_google_candidate_text, extract_google_candidate_tool_calls,
-    map_anthropic_finish_reason, map_anthropic_stream_usage, map_google_finish_reason,
-    map_google_usage, merge_openai_stream_usage, normalize_anthropic_response,
-    normalize_anthropic_thinking_delta, normalize_anthropic_thinking_start,
-    normalize_google_response, vertex_reasoning_metadata,
-};
-use streaming::{normalize_anthropic_stream, normalize_google_stream};
-
-#[cfg(test)]
-use streaming::JsonObjectParser;
-
-#[cfg(test)]
-mod tests;
