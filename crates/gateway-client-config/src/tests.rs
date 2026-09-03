@@ -4,8 +4,8 @@ use toml::Value as TomlValue;
 use crate::{
     AnthropicThinkingPolicy, ClaudeCodeConfigTemplate, ClientConfig, ClientConfigInput,
     ClientConfigInputSet, ClientConfigTemplate, ClientModelCapabilities, CodexConfigTemplate,
-    OpenCodeConfigTemplate, PiConfigTemplate, infer_anthropic_thinking_policy,
-    render_default_configs, render_default_configs_for_models,
+    CodexReasoningEffort, OpenCodeConfigTemplate, PiConfigTemplate,
+    infer_anthropic_thinking_policy, render_default_configs, render_default_configs_for_models,
 };
 
 fn input(policy: Option<AnthropicThinkingPolicy>) -> ClientConfigInput {
@@ -386,6 +386,7 @@ fn pi_fable_5_1_config_matches_expected_shape() {
             vision: true,
         },
         thinking_policy: Some(AnthropicThinkingPolicy::SafeEffort),
+        codex_reasoning_effort: None,
     };
 
     let rendered = PiConfigTemplate.render(&input);
@@ -743,7 +744,7 @@ fn claude_code_sets_default_fable_model_env_var() {
 }
 
 #[test]
-fn codex_shape_includes_custom_responses_provider() {
+fn codex_shape_includes_custom_responses_provider_without_unknown_reasoning_default() {
     let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
     input.provider_id = "oceans".to_string();
     input.provider_name = "OpenAI using LLM proxy".to_string();
@@ -768,7 +769,7 @@ fn codex_shape_includes_custom_responses_provider() {
     let content = &rendered.blocks[0].content;
     let toml: TomlValue = content.parse().expect("codex config toml");
     assert_eq!(toml["model"].as_str(), Some("claude-sonnet"));
-    assert_eq!(toml["model_reasoning_effort"].as_str(), Some("medium"));
+    assert!(toml.get("model_reasoning_effort").is_none());
     assert_eq!(toml["model_provider"].as_str(), Some("oceans"));
 
     let provider = &toml["model_providers"]["oceans"];
@@ -795,6 +796,30 @@ fn codex_shape_includes_custom_responses_provider() {
             .iter()
             .any(|note| note.contains("~/.codex/config.toml"))
     );
+}
+
+#[test]
+fn codex_emits_supported_explicit_reasoning_default() {
+    let mut input = input(None);
+    input.codex_reasoning_effort = Some(CodexReasoningEffort::High);
+
+    let rendered = CodexConfigTemplate.render(&input);
+    let toml: TomlValue = rendered.blocks[0]
+        .content
+        .parse()
+        .expect("codex config toml");
+
+    assert_eq!(toml["model_reasoning_effort"].as_str(), Some("high"));
+}
+
+#[test]
+fn codex_xhigh_reasoning_effort_round_trips_with_codex_spelling() {
+    let encoded = serde_json::to_value(CodexReasoningEffort::XHigh).expect("serialize effort");
+    assert_eq!(encoded, serde_json::json!("xhigh"));
+
+    let decoded: CodexReasoningEffort =
+        serde_json::from_value(encoded).expect("deserialize effort");
+    assert_eq!(decoded, CodexReasoningEffort::XHigh);
 }
 
 #[test]

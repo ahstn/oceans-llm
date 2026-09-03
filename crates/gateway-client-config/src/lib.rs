@@ -13,7 +13,7 @@ pub use thinking::infer_anthropic_thinking_policy;
 pub use types::{
     AnthropicThinkingPolicy, ClientConfig, ClientConfigCodeBlock, ClientConfigInput,
     ClientConfigInputSet, ClientConfigSetupItem, ClientConfigTemplate, ClientModelCapabilities,
-    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID,
+    CodexReasoningEffort, DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID,
 };
 
 #[cfg(test)]

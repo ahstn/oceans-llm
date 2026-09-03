@@ -419,6 +419,8 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
             vision: capabilities.vision,
         },
         thinking_policy,
+        // max_reasoning_effort is an enforcement ceiling, not a client default.
+        codex_reasoning_effort: None,
     })
 }
 
@@ -614,7 +616,7 @@ mod tests {
         GitHubCopilotUpstreamSupports, ModelAllowlistPolicy, ModelPricingRecord,
         ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, PricingCatalogCacheRecord,
         PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-        ProviderCapabilities, ProviderConnection, ProviderRepository, StoreError,
+        ProviderCapabilities, ProviderConnection, ProviderRepository, ReasoningEffort, StoreError,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -1567,7 +1569,7 @@ mod tests {
                     id: model_id,
                     model_key: "claude-sonnet".to_string(),
                     alias_target_model_key: None,
-                    max_reasoning_effort: None,
+                    max_reasoning_effort: Some(ReasoningEffort::Max),
                     description: Some("Claude Sonnet".to_string()),
                     tags: vec!["anthropic".to_string()],
                     rank: 1,
@@ -1758,6 +1760,11 @@ mod tests {
             items[0].client_configurations[3].blocks[0]
                 .content
                 .contains("wire_api = \"responses\"")
+        );
+        assert!(
+            !items[0].client_configurations[3].blocks[0]
+                .content
+                .contains("model_reasoning_effort")
         );
     }
 
