@@ -264,19 +264,22 @@ OpenAI-shaped `reasoning_effort` (or `reasoning.effort`) maps to `generationConf
 
 | Model | `reasoning_effort` mapping |
 | --- | --- |
-| Gemini 3.7 Flash and later (any tier) | `thinkingLevel`: `minimal`/`low` -> `LOW`, `medium` -> `MEDIUM`, `high`/`xhigh`/`max` -> `HIGH`. `MINIMAL` is not offered by these models. `none`/`off` sends `LOW` with `includeThoughts: false`. |
-| Gemini 3.0 to 3.6 Flash / Flash-Lite | `thinkingLevel` with all four levels, `minimal` -> `MINIMAL`. `none`/`off` sends `MINIMAL` with `includeThoughts: false`. |
+| Gemini 3.7 Flash and later (any tier) | `thinkingLevel`: `minimal`/`low` -> `LOW`, `medium` -> `MEDIUM`, `high`/`xhigh`/`max` -> `HIGH`. `MINIMAL` is not offered by these models. |
+| Gemini 3.0 to 3.6 Flash / Flash-Lite | `thinkingLevel` with all four levels, `minimal` -> `MINIMAL`. |
 | Gemini 3.x Pro | `thinkingLevel` `LOW` or `HIGH` only; `minimal` collapses to `LOW`, `medium` to `HIGH`. |
 | Gemini 2.5 | `thinkingBudget` per effort tier. `none` sends `0` on Flash / Flash-Lite; 2.5 Pro cannot disable thinking and gets the 128-token floor. |
 | Gemini 2.0 and older | No thinking; `reasoning_effort` is dropped. |
 
-Gemini 3.7 and later deprecate the classic sampling parameters. The gateway follows the [official model guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-7-flash):
+Gemini 3.x cannot turn thinking off. `reasoning_effort: "none"` (or `"off"`) sends the lowest `thinkingLevel` the model accepts (`MINIMAL` before 3.7, `LOW` from 3.7 and on Pro) together with `includeThoughts: false`. That hides the thought text from the response; the model still thinks at that level and bills those tokens as `reasoning_tokens`.
+
+Gemini 3.6 and later deprecate the classic sampling parameters. The gateway follows the [3.6](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-6-flash) and [3.7](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-7-flash) model guides:
 
 - `temperature`, `top_p`, and `top_k` are ignored upstream, so the gateway drops them instead of forwarding.
-- `presence_penalty`, `frequency_penalty`, and `n` cause an upstream API error. The gateway accepts the no-op defaults (`0`, `0`, `1`) and rejects any other value with `400 invalid_request_error` naming the field.
-- Older Gemini models keep the full sampling surface (`temperature`, `topP`, `topK`, `presencePenalty`, `frequencyPenalty`, `candidateCount`).
+- `presence_penalty`, `frequency_penalty`, and `n` cause an upstream API error. The gateway accepts the no-op defaults (`0`, `0`, `1`) and rejects any other value with `400 invalid_request_error` naming the native field.
+- The rules run on the fully merged `generationConfig`, so they also cover a caller-supplied native `generationConfig` and a route's `extra_body`.
+- Gemini 3.5 and older keep the full sampling surface (`temperature`, `topP`, `topK`, `presencePenalty`, `frequencyPenalty`, `candidateCount`).
 
-A caller-supplied native `generationConfig` (or `generation_config`) is deep-merged over the mapped OpenAI fields and is forwarded as written.
+A caller-supplied native `generationConfig` (or `generation_config`) is deep-merged over the mapped OpenAI fields.
 
 ### Gemini Remote Media
 

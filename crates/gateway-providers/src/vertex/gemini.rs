@@ -63,10 +63,10 @@ impl GeminiModel {
         self.is_at_least(3, 5)
     }
 
-    /// Gemini 3.7+ ignores `temperature`/`topP`/`topK` and rejects `presencePenalty`,
+    /// Gemini 3.6+ ignores `temperature`/`topP`/`topK` and rejects `presencePenalty`,
     /// `frequencyPenalty`, and `candidateCount` with an API error.
     pub(super) const fn deprecates_sampling(self) -> bool {
-        self.is_at_least(3, 7)
+        self.is_at_least(3, 6)
     }
 
     /// `MINIMAL` is a Flash / Flash-Lite level up to Gemini 3.6; Pro and 3.7+ start at `LOW`.
@@ -201,8 +201,15 @@ mod tests {
             );
             assert!(model.deprecates_sampling(), "{id}");
         }
+        // 3.6 keeps MINIMAL but already deprecates sampling.
+        let flash_3_6 = GeminiModel::parse("gemini-3.6-flash").expect("3.6");
+        assert_eq!(
+            flash_3_6.thinking_control(ReasoningEffort::Minimal),
+            Some(ThinkingControl::Level("MINIMAL"))
+        );
+        assert!(flash_3_6.deprecates_sampling());
         for id in [
-            "gemini-3.6-flash",
+            "gemini-3.5-flash",
             "gemini-3.1-pro-preview",
             "gemini-2.5-flash",
         ] {

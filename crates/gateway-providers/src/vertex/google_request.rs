@@ -27,7 +27,6 @@ pub(super) fn map_google_request(
         Some(model) if model.supports_function_ids() => FunctionIdPolicy::Include,
         _ => FunctionIdPolicy::Omit,
     };
-    let deprecates_sampling = model.is_some_and(GeminiModel::deprecates_sampling);
 
     let mut body = Map::new();
     map_google_contents(request, function_ids, &mut body)?;
@@ -43,22 +42,9 @@ pub(super) fn map_google_request(
             | "service_tier" | "logit_bias" | "prompt_cache_key" | "safety_identifier"
             | "modalities" | "audio" | "prediction" | "verbosity" | "web_search_options"
             | "functions" | "function_call" => {}
-            // Gemini 3.7+ ignores these; drop them so the payload matches the documented shape.
-            "temperature" | "top_p" | "top_k" if deprecates_sampling => {}
             "temperature" => insert_config(&mut generation_config, "temperature", value),
             "top_p" => insert_config(&mut generation_config, "topP", value),
             "top_k" => insert_config(&mut generation_config, "topK", value),
-            // Gemini 3.7+ errors on these unless they are the no-op defaults.
-            "presence_penalty" | "frequency_penalty" | "n" if deprecates_sampling => {
-                let noop = if key == "n" { 1.0 } else { 0.0 };
-                if !(value.is_null() || value.as_f64() == Some(noop)) {
-                    return Err(VertexAdapterError::UnsupportedSamplingField {
-                        field: key.clone(),
-                        model_id: model_id.to_string(),
-                    }
-                    .into());
-                }
-            }
             "presence_penalty" => insert_config(&mut generation_config, "presencePenalty", value),
             "frequency_penalty" => {
                 insert_config(&mut generation_config, "frequencyPenalty", value);
@@ -114,10 +100,53 @@ pub(super) fn map_google_request(
 
     merge_object_overrides(&mut body, &context.extra_body);
     body.remove("stream");
+    if model.is_some_and(GeminiModel::deprecates_sampling) {
+        enforce_deprecated_sampling(&mut body, model_id)?;
+    }
     convert_openai_tools_for_google(&mut body)?;
     reject_google_streamed_function_call_arguments(&body)?;
     validate_google_stream_candidate_count(&body, stream)?;
     Ok(Value::Object(body))
+}
+
+/// Gemini 3.6+ ignores `temperature`/`topP`/`topK` and errors on `presencePenalty`,
+/// `frequencyPenalty`, and `candidateCount`. Runs on the fully merged body so mapped OpenAI
+/// keys, caller `generationConfig`, and route `extra_body` are all covered; the ignored keys are
+/// dropped and the erroring keys are refused unless they carry the no-op default.
+fn enforce_deprecated_sampling(
+    body: &mut Map<String, Value>,
+    model_id: &str,
+) -> Result<(), VertexAdapterError> {
+    let Some(config) = body
+        .get_mut("generationConfig")
+        .and_then(Value::as_object_mut)
+    else {
+        return Ok(());
+    };
+    for key in ["temperature", "topP", "topK"] {
+        config.remove(key);
+    }
+    for (key, noop) in [
+        ("presencePenalty", 0.0),
+        ("frequencyPenalty", 0.0),
+        ("candidateCount", 1.0),
+    ] {
+        let Some(value) = config.get(key) else {
+            continue;
+        };
+        if value.is_null() || value.as_f64() == Some(noop) {
+            config.remove(key);
+            continue;
+        }
+        return Err(VertexAdapterError::UnsupportedSamplingField {
+            field: key.to_string(),
+            model_id: model_id.to_string(),
+        });
+    }
+    if config.is_empty() {
+        body.remove("generationConfig");
+    }
+    Ok(())
 }
 
 fn insert_config(generation_config: &mut Map<String, Value>, key: &str, value: &Value) {

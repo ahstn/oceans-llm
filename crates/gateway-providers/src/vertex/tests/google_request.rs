@@ -570,10 +570,10 @@ fn maps_reasoning_effort_to_thinking_level_on_gemini_3_flash() {
 }
 
 #[test]
-fn gemini_3_7_drops_deprecated_sampling_and_rejects_unsupported_fields() {
+fn gemini_3_6_drops_deprecated_sampling_and_rejects_unsupported_fields() {
     // Ignored upstream: dropped rather than forwarded.
     let config = generation_config(
-        "gemini-3.8-flash",
+        "gemini-3.6-flash",
         &[
             ("temperature", json!(0.2)),
             ("top_p", json!(0.9)),
@@ -590,7 +590,7 @@ fn gemini_3_7_drops_deprecated_sampling_and_rejects_unsupported_fields() {
 
     // Older models keep the full sampling surface.
     let config = generation_config(
-        "gemini-3.6-flash",
+        "gemini-3.5-flash",
         &[
             ("temperature", json!(0.2)),
             ("presence_penalty", json!(0.5)),
@@ -600,16 +600,54 @@ fn gemini_3_7_drops_deprecated_sampling_and_rejects_unsupported_fields() {
     assert_eq!(config["temperature"], json!(0.2));
     assert_eq!(config["presencePenalty"], json!(0.5));
 
-    // Non-default values Vertex would reject are refused locally with the field named.
-    for (field, value) in [
-        ("presence_penalty", json!(0.5)),
-        ("frequency_penalty", json!(-1)),
-        ("n", json!(2)),
+    // Non-default values Vertex would reject are refused locally, naming the native field.
+    for (field, value, native) in [
+        ("presence_penalty", json!(0.5), "presencePenalty"),
+        ("frequency_penalty", json!(-1), "frequencyPenalty"),
+        ("n", json!(2), "candidateCount"),
     ] {
         let error = generation_config("gemini-3.7-flash", &[(field, value)])
             .expect_err("unsupported sampling field");
-        assert_invalid_request(error, field);
+        assert_invalid_request(error, native);
     }
+}
+
+#[test]
+fn deprecated_sampling_rules_cover_native_generation_config_and_route_extra_body() {
+    // Caller-supplied native config is subject to the same rules as mapped OpenAI keys.
+    let config = generation_config(
+        "gemini-3.8-flash",
+        &[(
+            "generationConfig",
+            json!({"temperature": 0.3, "topK": 5, "candidateCount": 1, "seed": 9}),
+        )],
+    )
+    .expect("mapped");
+    assert_eq!(config, json!({"seed": 9}));
+
+    let error = generation_config(
+        "gemini-3.8-flash",
+        &[("generation_config", json!({"frequencyPenalty": 0.7}))],
+    )
+    .expect_err("native frequencyPenalty");
+    assert_invalid_request(error, "frequencyPenalty");
+
+    // Route-level extra_body is merged last and is validated too. A config left empty after
+    // stripping is removed from the body entirely.
+    let mut context = context("google/gemini-3.7-flash");
+    context.extra_body.insert(
+        "generationConfig".to_string(),
+        json!({"temperature": 0.0, "topP": 0.5}),
+    );
+    let body = google_body(&ping_request(&[]), &context, false).expect("mapped");
+    assert!(body.get("generationConfig").is_none());
+
+    context.extra_body.insert(
+        "generationConfig".to_string(),
+        json!({"presencePenalty": 1.0}),
+    );
+    let error = google_body(&ping_request(&[]), &context, false).expect_err("route penalty");
+    assert_invalid_request(error, "presencePenalty");
 }
 
 #[test]
@@ -683,8 +721,9 @@ fn disables_thoughts_for_effort_none() {
 
 #[test]
 fn both_generation_config_aliases_merge_instead_of_replacing() {
+    // A pre-3.6 model, so the sampling keys used as markers are forwarded.
     let config = generation_config(
-        "gemini-3.7-flash",
+        "gemini-3.5-flash",
         &[
             ("generationConfig", json!({"seed": 7, "temperature": 0.1})),
             ("generation_config", json!({"topK": 5, "temperature": 0.9})),
@@ -826,7 +865,7 @@ fn omits_thinking_config_without_reasoning_effort() {
 fn merges_caller_generation_config_with_mapped_sampling() {
     for alias in ["generationConfig", "generation_config"] {
         let config = generation_config(
-            "gemini-3.7-flash",
+            "gemini-3.5-flash",
             &[
                 ("max_tokens", json!(100)),
                 ("temperature", json!(0.9)),
@@ -979,7 +1018,7 @@ fn rejects_response_format_alongside_caller_response_mime_type() {
 
 #[test]
 fn route_extra_body_deep_merges_into_generation_config() {
-    let mut context = context("google/gemini-3.7-flash");
+    let mut context = context("google/gemini-3.5-flash");
     context.extra_body.insert(
         "generationConfig".to_string(),
         json!({"topK": 5, "temperature": 0.0}),
