@@ -266,6 +266,26 @@ fn infers_safe_effort_for_newer_claude_models() {
 }
 
 #[test]
+fn specific_model_markers_win_over_generic_provider_markers_in_any_position() {
+    // An opaque upstream deployment name, then a generic provider key, then the gateway model
+    // key that names the family: the specific marker must still win.
+    assert_eq!(
+        infer_thinking_policy(["deployment-7f3a", "anthropic_compat", "claude-sonnet-4-6"]),
+        Some(ThinkingPolicy::AnthropicSafeEffort)
+    );
+    assert_eq!(
+        infer_thinking_policy(["deployment-7f3a", "anthropic_compat", "gemini-2.5-flash"]),
+        Some(ThinkingPolicy::GeminiBudget)
+    );
+    // With no specific marker anywhere, the generic marker still yields a manual budget.
+    assert_eq!(
+        infer_thinking_policy(["deployment-7f3a", "anthropic_compat"]),
+        Some(ThinkingPolicy::AnthropicManualBudget)
+    );
+    assert_eq!(infer_thinking_policy(["deployment-7f3a", "openai"]), None);
+}
+
+#[test]
 fn safe_thinking_variants_are_emitted_for_newer_claude_models() {
     let input = input(infer_thinking_policy([
         "anthropic/claude-sonnet-4-6",
@@ -628,7 +648,7 @@ fn pi_gemini_budget_models_map_levels_to_reasoning_effort() {
         model["thinkingLevelMap"],
         serde_json::json!({
             "off": null,
-            "minimal": "low",
+            "minimal": "minimal",
             "low": "low",
             "medium": "medium",
             "high": "high",
@@ -677,6 +697,7 @@ fn opencode_gemini_variants_follow_supported_thinking_levels() {
     assert_eq!(
         budget_model["variants"],
         serde_json::json!({
+            "minimal": {"reasoningEffort": "minimal"},
             "low": {"reasoningEffort": "low"},
             "medium": {"reasoningEffort": "medium"},
             "high": {"reasoningEffort": "high"}

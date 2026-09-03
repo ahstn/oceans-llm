@@ -210,7 +210,7 @@ fn pi_thinking_level_map(policy: ThinkingPolicy) -> Option<Value> {
         })),
         ThinkingPolicy::GeminiBudget => Some(json!({
             "off": null,
-            "minimal": "low",
+            "minimal": "minimal",
             "low": "low",
             "medium": "medium",
             "high": "high",

@@ -183,7 +183,9 @@ fn opencode_variants(policy: ThinkingPolicy) -> Option<Value> {
             .into_iter()
             .filter_map(|(level, supported)| supported.then_some(level)),
         )),
-        ThinkingPolicy::GeminiBudget => Some(reasoning_effort_variants(["low", "medium", "high"])),
+        ThinkingPolicy::GeminiBudget => Some(reasoning_effort_variants([
+            "minimal", "low", "medium", "high",
+        ])),
     }
 }
 

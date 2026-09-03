@@ -436,20 +436,30 @@ fn map_google_media_part(
     field: &str,
     modality: MediaModality,
 ) -> Result<Value, VertexAdapterError> {
-    let media = content
-        .get(field)
-        .and_then(Value::as_object)
-        .ok_or_else(|| VertexAdapterError::MissingMediaObject {
-            field: field.to_string(),
-        })?;
-    let uri = media.get("url").and_then(Value::as_str).ok_or_else(|| {
-        VertexAdapterError::MissingMediaUrl {
-            field: field.to_string(),
+    // Chat Completions nests the URL (`image_url: { url }`); Responses-style parts carry the
+    // URL string directly (`input_image.image_url: "https://..."`).
+    let (media, uri) = match content.get(field) {
+        Some(Value::Object(media)) => {
+            let uri = media.get("url").and_then(Value::as_str).ok_or_else(|| {
+                VertexAdapterError::MissingMediaUrl {
+                    field: field.to_string(),
+                }
+            })?;
+            (Some(media), uri)
         }
-    })?;
+        Some(Value::String(uri)) => (None, uri.as_str()),
+        _ => {
+            return Err(VertexAdapterError::MissingMediaObject {
+                field: field.to_string(),
+            });
+        }
+    };
     let parsed_uri = validate_google_media_uri(uri)?;
 
-    let mime_type = explicit_media_mime_type(media, field)?
+    let mime_type = media
+        .map(|media| explicit_media_mime_type(media, field))
+        .transpose()?
+        .flatten()
         .or_else(|| infer_media_type_from_path(parsed_uri.path()))
         .ok_or_else(|| VertexAdapterError::UnknownMediaMimeType {
             field: field.to_string(),

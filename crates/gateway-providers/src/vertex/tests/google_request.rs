@@ -87,6 +87,39 @@ fn maps_image_only_https_request_to_google_file_data() {
 }
 
 #[test]
+fn responses_style_input_image_with_string_url_maps_to_file_data() {
+    let request = chat_request(vec![CoreChatMessage {
+        role: "user".to_string(),
+        content: json!([
+            { "type": "input_text", "text": "Describe this" },
+            { "type": "input_image", "image_url": "https://media.example.invalid/cat.png" }
+        ]),
+        name: None,
+        extra: BTreeMap::new(),
+    }]);
+
+    let mapped = google_body(&request, &context("google/gemini-3.7-flash"), false).expect("mapped");
+    assert_eq!(
+        mapped["contents"][0]["parts"][1]["fileData"],
+        json!({
+            "fileUri": "https://media.example.invalid/cat.png",
+            "mimeType": "image/png"
+        })
+    );
+
+    // Anything other than an object or string is still a typed error.
+    let request = chat_request(vec![CoreChatMessage {
+        role: "user".to_string(),
+        content: json!([{ "type": "input_image", "image_url": 42 }]),
+        name: None,
+        extra: BTreeMap::new(),
+    }]);
+    let error = google_body(&request, &context("google/gemini-3.7-flash"), false)
+        .expect_err("numeric image_url");
+    assert_invalid_request(error, "image_url");
+}
+
+#[test]
 fn preserves_existing_gs_file_mapping() {
     let request = chat_request(vec![CoreChatMessage {
         role: "user".to_string(),

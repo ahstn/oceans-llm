@@ -13,20 +13,31 @@ const SAFE_EFFORT_MODEL_MARKERS: &[&str] = &[
 
 const SAFE_EFFORT_EXACT_MODEL_MARKERS: &[&str] = &["claude-fable-5", "claude-sonnet-5"];
 
-/// Infers the thinking policy from candidate identifiers in priority order. Callers pass the
-/// upstream model first, then aliases and provider metadata; the first value that names a
-/// known model family wins, so a provider key like `vertex-anthropic-prod` cannot reclassify
-/// a Gemini route.
+/// Infers the thinking policy from candidate identifiers. Callers pass the upstream model
+/// first, then aliases and provider metadata. Specific model-family markers (a Claude model
+/// that supports effort, a Gemini generation) are resolved across every candidate before the
+/// generic `anthropic` / `claude` marker is consulted, so a provider key like
+/// `vertex-anthropic-prod` or `anthropic_compat` cannot hide a more specific model alias.
 #[must_use]
 pub fn infer_thinking_policy(
     values: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> Option<ThinkingPolicy> {
-    values
+    let values: Vec<String> = values
         .into_iter()
-        .find_map(|value| classify(&value.as_ref().to_ascii_lowercase()))
+        .map(|value| value.as_ref().to_ascii_lowercase())
+        .collect();
+    values
+        .iter()
+        .find_map(|value| classify_model_family(value))
+        .or_else(|| {
+            values
+                .iter()
+                .any(|value| value.contains("anthropic") || value.contains("claude"))
+                .then_some(ThinkingPolicy::AnthropicManualBudget)
+        })
 }
 
-fn classify(value: &str) -> Option<ThinkingPolicy> {
+fn classify_model_family(value: &str) -> Option<ThinkingPolicy> {
     if SAFE_EFFORT_MODEL_MARKERS
         .iter()
         .any(|marker| value.contains(marker))
@@ -35,9 +46,6 @@ fn classify(value: &str) -> Option<ThinkingPolicy> {
             .any(|marker| contains_exact_model_marker(value, marker))
     {
         return Some(ThinkingPolicy::AnthropicSafeEffort);
-    }
-    if value.contains("anthropic") || value.contains("claude") {
-        return Some(ThinkingPolicy::AnthropicManualBudget);
     }
     if let Some(token) = gemini_3_token(value) {
         let is_pro = token.split('-').any(|segment| segment == "pro");
