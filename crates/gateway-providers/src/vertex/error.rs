@@ -141,14 +141,16 @@ pub enum VertexAdapterError {
     MalformedFunctionCall(String),
     #[error("google vertex stream reported an error: {0}")]
     StreamError(String),
+    #[error("upstream google vertex stream ended without a candidate `finishReason`")]
+    StreamPrematureEof,
 }
 
 impl From<VertexAdapterError> for ProviderError {
     fn from(error: VertexAdapterError) -> Self {
         match error {
-            VertexAdapterError::MalformedFunctionCall(_) | VertexAdapterError::StreamError(_) => {
-                Self::Transport(error.to_string())
-            }
+            VertexAdapterError::MalformedFunctionCall(_)
+            | VertexAdapterError::StreamError(_)
+            | VertexAdapterError::StreamPrematureEof => Self::Transport(error.to_string()),
             other => Self::InvalidRequest(other.to_string()),
         }
     }

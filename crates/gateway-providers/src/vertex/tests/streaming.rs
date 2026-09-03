@@ -427,7 +427,7 @@ fn google_stream_state_emits_nothing_for_usage_only_frames_and_folds_them_into_f
     assert!(chunks[0]["choices"][0]["finish_reason"].is_null());
     assert!(chunks[0].get("usage").is_none());
 
-    let finish = state.finish();
+    let finish = state.finish().expect("finish reason seen");
     assert_eq!(finish["choices"][0]["finish_reason"], "length");
     assert_eq!(finish["usage"]["completion_tokens"], 2);
     assert_eq!(finish["usage"]["total_tokens"], 6);
@@ -449,15 +449,48 @@ fn google_stream_state_tool_calls_override_later_finish_reason() {
         .on_response(&finish_object("STOP"))
         .expect("finish frame");
 
-    assert_eq!(state.finish()["choices"][0]["finish_reason"], "tool_calls");
+    assert_eq!(
+        state.finish().expect("finish reason seen")["choices"][0]["finish_reason"],
+        "tool_calls"
+    );
 }
 
 #[test]
-fn google_stream_state_without_frames_finishes_with_stop_and_no_usage() {
-    let finish =
-        GoogleStreamState::new("chatcmpl-test".to_string(), 1, "fast".to_string()).finish();
+fn google_stream_state_without_finish_reason_is_a_premature_eof() {
+    // No frames at all.
+    let error = GoogleStreamState::new("chatcmpl-test".to_string(), 1, "fast".to_string())
+        .finish()
+        .expect_err("no finish reason");
+    assert!(matches!(error, VertexAdapterError::StreamPrematureEof));
+    assert!(matches!(
+        ProviderError::from(error),
+        ProviderError::Transport(_)
+    ));
 
-    assert_eq!(finish["id"], "chatcmpl-test");
-    assert_eq!(finish["choices"][0]["finish_reason"], "stop");
-    assert!(finish.get("usage").is_none());
+    // Complete text frames but the connection closed before the `finishReason` frame.
+    let mut state = GoogleStreamState::new("chatcmpl-test".to_string(), 1, "fast".to_string());
+    state
+        .on_response(&text_object("partial"))
+        .expect("text frame");
+    assert!(matches!(
+        state.finish(),
+        Err(VertexAdapterError::StreamPrematureEof)
+    ));
+}
+
+#[tokio::test]
+async fn google_stream_closed_before_finish_reason_is_an_error_not_a_clean_stop() {
+    // Upstream closes cleanly between frames: the delivered text is kept, but the client sees
+    // an error chunk instead of `finish_reason: "stop"` + [DONE] for truncated output.
+    let rendered = render_google_objects(&[text_object("kept")]).await;
+    let events = openai_stream_events(&rendered);
+
+    assert_eq!(concat_delta_field(&events, "content"), "kept");
+    let error = events
+        .iter()
+        .find(|event| event.get("error").is_some())
+        .expect("error chunk");
+    assert_eq!(error["error"]["code"], "google_stream_premature_eof");
+    assert!(finish_events(&events).is_empty());
+    assert!(!rendered.contains("[DONE]"));
 }

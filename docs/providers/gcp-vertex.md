@@ -234,7 +234,7 @@ Chat Completions hides Claude thinking from normal `content` and `delta.content`
 
 ## Gemini Example
 
-Google publisher routes use Vertex `generateContent` and `streamGenerateContent`.
+Google publisher routes use Vertex `generateContent` and `streamGenerateContent?alt=sse`. Streamed output is folded into Chat Completions chunks; the `finish_reason` chunk is emitted once at end of stream so late `usageMetadata` is never dropped. Every Gemini stream ends with a candidate `finishReason` (or a prompt block with no candidates). If the upstream connection closes before that frame arrives, the gateway emits an error chunk (`google_stream_premature_eof`) instead of `finish_reason: "stop"` and `[DONE]`, so clients do not accept truncated output as complete.
 
 ```yaml
 models:
@@ -268,7 +268,7 @@ OpenAI-shaped `reasoning_effort` (or `reasoning.effort`) maps to `generationConf
 | Gemini 3.0 to 3.6 Flash / Flash-Lite | `thinkingLevel` with all four levels, `minimal` -> `MINIMAL`. |
 | Gemini 3.x Pro | `thinkingLevel` `LOW` or `HIGH` only; `minimal` collapses to `LOW`, `medium` to `HIGH`. |
 | Gemini 2.5 | `thinkingBudget` per effort tier. `none` sends `0` on Flash / Flash-Lite; 2.5 Pro cannot disable thinking and gets the 128-token floor. |
-| Gemini 2.0 and older | No thinking; `reasoning_effort` is dropped. |
+| Gemini 2.0 and older, or an unrecognised Gemini id | No thinking. Any `reasoning_effort` (including `none`) is rejected with `400 invalid_request_error` so a misconfigured client is visible instead of silently paying for a request it did not intend. Omit the field for these models. |
 
 Gemini 3.x cannot turn thinking off. `reasoning_effort: "none"` (or `"off"`) sends the lowest `thinkingLevel` the model accepts (`MINIMAL` before 3.7, `LOW` from 3.7 and on Pro) together with `includeThoughts: false`. That hides the thought text from the response; the model still thinks at that level and bills those tokens as `reasoning_tokens`.
 

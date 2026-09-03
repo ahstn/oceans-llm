@@ -94,19 +94,26 @@ impl GoogleStreamState {
     }
 
     /// Terminal chunk carrying the resolved finish reason and the latest usage snapshot.
-    pub(super) fn finish(self) -> Value {
+    ///
+    /// Every Gemini stream ends with a candidate `finishReason` (or a prompt block with no
+    /// candidates). A stream that closes without one was cut short, so the client must not
+    /// treat the partial output as complete.
+    pub(super) fn finish(self) -> Result<Value, VertexAdapterError> {
+        let finish_reason = self
+            .finish_reason
+            .ok_or(VertexAdapterError::StreamPrematureEof)?;
         let mut finish = openai_chunk(
             &self.stream_id,
             self.created,
             &self.model,
             None,
             None,
-            Some(self.finish_reason.unwrap_or("stop")),
+            Some(finish_reason),
         );
         if let Some(usage) = self.latest_usage {
             finish["usage"] = usage;
         }
-        finish
+        Ok(finish)
     }
 
     fn delta_chunk(&mut self, mut delta: Value) -> Value {
@@ -190,7 +197,13 @@ where
             yield Ok(openai_sse_error_chunk("google_stream_parse_error", &error.to_string()));
             return;
         }
-        yield Ok(openai_sse_chunk(&state.finish()));
+        match state.finish() {
+            Ok(chunk) => yield Ok(openai_sse_chunk(&chunk)),
+            Err(error) => {
+                yield Ok(openai_sse_error_chunk("google_stream_premature_eof", &error.to_string()));
+                return;
+            }
+        }
         yield Ok(done_sse_chunk());
     })
 }
