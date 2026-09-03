@@ -1793,4 +1793,105 @@ mod tests {
         assert!(provider_capabilities(&provider, Some(&google_route)).tools);
         assert!(!provider_capabilities(&provider, Some(&embedding_route)).tools);
     }
+
+    #[tokio::test]
+    async fn offline_fallback_populates_opencode_limits_and_pi_maxtokens() {
+        let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
+        let opencode_provider = snapshot
+            .document
+            .providers
+            .get("opencode")
+            .expect("opencode in fallback snapshot");
+        let fable_doc = opencode_provider
+            .models
+            .get("claude-fable-5-1")
+            .expect("claude-fable-5-1 in fallback snapshot");
+        assert_eq!(fable_doc.limit.output, Some(128_000));
+        assert_eq!(fable_doc.limit.context, Some(1_000_000));
+
+        let pricing_record = crate::pricing_catalog::build_model_pricing_record(
+            &snapshot.metadata,
+            "opencode",
+            "claude-fable-5-1",
+            fable_doc,
+        )
+        .expect("build pricing record from fallback snapshot");
+
+        let model_id = Uuid::new_v4();
+        let route_id = Uuid::new_v4();
+        let repo = Arc::new(CountingRepo {
+            models: vec![GatewayModel {
+                id: model_id,
+                model_key: "claude-fable-5-1".to_string(),
+                alias_target_model_key: None,
+                max_reasoning_effort: None,
+                description: Some("Claude Fable 5.1".to_string()),
+                tags: vec!["anthropic".to_string()],
+                rank: 1,
+            }],
+            routes_by_model: HashMap::from([(
+                model_id,
+                vec![ModelRoute {
+                    id: route_id,
+                    model_id,
+                    provider_key: "opencode-zen".to_string(),
+                    upstream_model: "claude-fable-5-1".to_string(),
+                    priority: 0,
+                    weight: 1.0,
+                    enabled: true,
+                    context_window_tokens: None,
+                    pricing_override: None,
+                    extra_headers: Default::default(),
+                    extra_body: Default::default(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
+                }],
+            )]),
+            providers_by_key: HashMap::from([(
+                "opencode-zen".to_string(),
+                ProviderConnection {
+                    provider_key: "opencode-zen".to_string(),
+                    provider_type: "anthropic_compat".to_string(),
+                    config: json!({
+                        "base_url": "https://opencode.ai/zen",
+                        "pricing_provider_id": "opencode",
+                        "display": {"label": "OpenCode Zen", "icon_key": "anthropic"}
+                    }),
+                    secrets: None,
+                },
+            )]),
+            pricing_by_key: HashMap::from([(
+                ("opencode".to_string(), "claude-fable-5-1".to_string()),
+                pricing_record,
+            )]),
+            ..Default::default()
+        });
+
+        let service = AdminModelsService::new(repo);
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].context_window_tokens, Some(1_000_000));
+        assert_eq!(items[0].output_window_tokens, Some(128_000));
+
+        let pi_config = items[0]
+            .client_configurations
+            .iter()
+            .find(|cfg| cfg.key == "pi")
+            .expect("pi client configuration");
+
+        let pi_content = &pi_config.blocks[0].content;
+        assert!(
+            pi_content.contains("\"maxTokens\": 128000"),
+            "Pi configuration should contain maxTokens: 128000, got: {pi_content}"
+        );
+        assert!(
+            !pi_content.contains("\"maxTokens\": 0"),
+            "Pi configuration must not contain maxTokens: 0, got: {pi_content}"
+        );
+        assert!(
+            pi_content.contains("\"contextWindow\": 200000"),
+            "Pi configuration context window should be capped at 200000, got: {pi_content}"
+        );
+    }
 }

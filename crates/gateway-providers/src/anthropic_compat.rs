@@ -72,6 +72,13 @@ impl AnthropicCompatProvider {
 
     pub(crate) fn messages_endpoint_url(&self) -> Result<String, ProviderError> {
         let base = self.config.base_url.trim_end_matches('/');
+        let parsed = url::Url::parse(base)
+            .map_err(|err| ProviderError::InvalidRequest(format!("invalid base_url: {err}")))?;
+        if parsed.query().is_some() || parsed.fragment().is_some() {
+            return Err(ProviderError::InvalidRequest(
+                "base_url cannot contain query parameters or fragments".to_string(),
+            ));
+        }
         let endpoint = if base.ends_with("/v1") {
             "messages"
         } else {
@@ -154,6 +161,7 @@ impl ProviderClient for AnthropicCompatProvider {
             include_model: true,
             anthropic_version_body: None,
             default_max_tokens: Some(4096),
+            default_headers: Some(&self.config.default_headers),
         };
         let body = map_anthropic_request(request, context, false, &options)?;
         let req = self.build_request(body, context)?;
@@ -198,6 +206,7 @@ impl ProviderClient for AnthropicCompatProvider {
             include_model: true,
             anthropic_version_body: None,
             default_max_tokens: Some(4096),
+            default_headers: Some(&self.config.default_headers),
         };
         let body = map_anthropic_request(request, context, true, &options)?;
         let req = self.build_request(body, context)?;

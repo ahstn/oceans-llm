@@ -11,7 +11,7 @@ use super::response::{
     normalize_anthropic_thinking_delta, normalize_anthropic_thinking_start,
     provider_reasoning_metadata,
 };
-use crate::streaming::openai_sse_error_chunk;
+use crate::streaming::{done_sse_chunk, openai_sse_error_chunk};
 
 pub fn normalize_anthropic_stream<S>(
     upstream: S,
@@ -28,6 +28,7 @@ where
         let mut parser = SseEventParser::default();
         let mut role_emitted = false;
         let mut finish_emitted = false;
+        let mut saw_message_stop = false;
         let mut stream_failed = false;
         let mut tool_block_indexes = BTreeMap::<i64, i64>::new();
         let mut latest_usage = None;
@@ -59,7 +60,14 @@ where
 
                 let payload: Value = match serde_json::from_str(&event.data) {
                     Ok(val) => val,
-                    Err(_) => continue,
+                    Err(error) => {
+                        yield Ok(openai_sse_error_chunk(
+                            "anthropic_sse_json_error",
+                            &error.to_string(),
+                        ));
+                        stream_failed = true;
+                        break 'stream_loop;
+                    }
                 };
                 let kind = payload
                     .get("type")
@@ -272,17 +280,20 @@ where
                             )));
                         }
                     }
-                    "message_stop" if !finish_emitted => {
-                        let finish = openai_chunk(
-                            &stream_id,
-                            created,
-                            &model,
-                            None,
-                            None,
-                            Some("stop"),
-                        );
-                        yield Ok(openai_sse_chunk(&finish));
-                        finish_emitted = true;
+                    "message_stop" => {
+                        saw_message_stop = true;
+                        if !finish_emitted {
+                            let finish = openai_chunk(
+                                &stream_id,
+                                created,
+                                &model,
+                                None,
+                                None,
+                                Some("stop"),
+                            );
+                            yield Ok(openai_sse_chunk(&finish));
+                            finish_emitted = true;
+                        }
                     }
                     "error" => {
                         let message = payload
@@ -300,16 +311,24 @@ where
             }
         }
 
-        if !stream_failed && !finish_emitted {
-            let finish = openai_chunk(
-                &stream_id,
-                created,
-                &model,
-                None,
-                None,
-                Some("stop"),
-            );
-            yield Ok(openai_sse_chunk(&finish));
+        if !stream_failed && let Err(error) = parser.finish() {
+            yield Ok(openai_sse_error_chunk(
+                "anthropic_sse_finalization_error",
+                &error.to_string(),
+            ));
+            stream_failed = true;
+        }
+
+        if !stream_failed && !saw_message_stop {
+            yield Ok(openai_sse_error_chunk(
+                "anthropic_stream_truncated",
+                "upstream Anthropic stream ended prematurely before message_stop event",
+            ));
+            stream_failed = true;
+        }
+
+        if !stream_failed {
+            yield Ok(done_sse_chunk());
         }
     })
 }

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use gateway_core::protocol::anthropic::anthropic_reasoning_blocks;
 use gateway_core::{CoreChatMessage, CoreChatRequest, ProviderError, ProviderRequestContext};
 use serde_json::{Map, Value, json};
@@ -13,6 +15,7 @@ pub struct AnthropicRequestOptions<'a> {
     pub include_model: bool,
     pub anthropic_version_body: Option<&'a str>,
     pub default_max_tokens: Option<i64>,
+    pub default_headers: Option<&'a BTreeMap<String, String>>,
 }
 
 impl Default for AnthropicRequestOptions<'_> {
@@ -21,6 +24,7 @@ impl Default for AnthropicRequestOptions<'_> {
             include_model: true,
             anthropic_version_body: None,
             default_max_tokens: Some(4096),
+            default_headers: None,
         }
     }
 }
@@ -39,7 +43,6 @@ pub fn map_anthropic_request(
     body.remove("model");
     body.remove("messages");
     body.remove("stream");
-    body.remove("context_management");
 
     let (messages, instructions) = map_chat_messages(&request.messages)?;
 
@@ -47,9 +50,22 @@ pub fn map_anthropic_request(
         return Err(AnthropicAdapterError::EmptyMessages.into());
     }
 
-    if !body.contains_key("max_tokens") {
-        let max_tokens = options.default_max_tokens.unwrap_or(4096);
-        body.insert("max_tokens".to_string(), Value::Number(max_tokens.into()));
+    let max_completion_tokens = body.remove("max_completion_tokens");
+    let max_tokens = body.get("max_tokens").cloned();
+    match (max_completion_tokens, max_tokens) {
+        (Some(completion), Some(tokens)) => {
+            if completion != tokens {
+                return Err(AnthropicAdapterError::ConflictingMaxTokens.into());
+            }
+        }
+        (Some(completion), None) => {
+            body.insert("max_tokens".to_string(), completion);
+        }
+        (None, Some(_)) => {}
+        (None, None) => {
+            let max_tokens = options.default_max_tokens.unwrap_or(4096);
+            body.insert("max_tokens".to_string(), Value::Number(max_tokens.into()));
+        }
     }
 
     if !instructions.is_empty()
@@ -63,7 +79,7 @@ pub fn map_anthropic_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
-    if !has_route_anthropic_beta(context, "context-management-2025-06-27") {
+    if !has_anthropic_beta(context, options, "context-management-2025-06-27") {
         body.remove("context_management");
     }
 
@@ -158,8 +174,14 @@ fn map_anthropic_message_content(
         if !has_existing_thinking
             && let Some(provider_metadata) = message.extra.get("provider_metadata")
         {
-            let reasoning_blocks =
+            let mut reasoning_blocks =
                 anthropic_reasoning_blocks(Some(provider_metadata), "anthropic_messages");
+            if reasoning_blocks.is_empty() {
+                reasoning_blocks = anthropic_reasoning_blocks(
+                    Some(provider_metadata),
+                    "anthropic_messages_stream",
+                );
+            }
             let mut extracted = Vec::with_capacity(reasoning_blocks.len());
             for block in reasoning_blocks {
                 if matches!(
@@ -225,12 +247,109 @@ fn map_anthropic_content(content: &Value) -> Result<Value, AnthropicAdapterError
                             mapped.push(json!({"type": "text", "text": text}));
                         }
                     }
+                    "image" | "image_url" | "input_image" => {
+                        let image_block = map_anthropic_image_content_block(object)?;
+                        mapped.push(image_block);
+                    }
                     _ => mapped.push(Value::Object(object.clone())),
                 }
             }
             Ok(Value::Array(mapped))
         }
         _ => Err(AnthropicAdapterError::InvalidMessageContent),
+    }
+}
+
+fn map_anthropic_image_content_block(
+    object: &Map<String, Value>,
+) -> Result<Value, AnthropicAdapterError> {
+    if object.get("type").and_then(Value::as_str) == Some("image")
+        && let Some(source) = object.get("source").and_then(Value::as_object)
+    {
+        validate_anthropic_base64_image_source(source)?;
+        return Ok(Value::Object(object.clone()));
+    }
+
+    let image_url = object
+        .get("image_url")
+        .or_else(|| object.get("source"))
+        .ok_or(AnthropicAdapterError::MissingImageSource)?;
+
+    match image_url {
+        Value::Object(image_object) => {
+            if image_object.get("type").and_then(Value::as_str) == Some("base64") {
+                validate_anthropic_base64_image_source(image_object)?;
+                return Ok(json!({ "type": "image", "source": image_object }));
+            }
+            if let Some(source) = image_object.get("source").and_then(Value::as_object)
+                && source.get("type").and_then(Value::as_str) == Some("base64")
+            {
+                validate_anthropic_base64_image_source(source)?;
+                return Ok(json!({ "type": "image", "source": source }));
+            }
+
+            let url = image_object
+                .get("url")
+                .and_then(Value::as_str)
+                .ok_or(AnthropicAdapterError::MissingImageUrlString)?;
+            map_anthropic_data_url_image(url, image_object)
+        }
+        Value::String(url) => map_anthropic_data_url_image(url, object),
+        _ => Err(AnthropicAdapterError::InvalidImageUrl),
+    }
+}
+
+fn validate_anthropic_base64_image_source(
+    source: &Map<String, Value>,
+) -> Result<(), AnthropicAdapterError> {
+    let media_type = source
+        .get("media_type")
+        .and_then(Value::as_str)
+        .ok_or(AnthropicAdapterError::MissingImageMediaType)?;
+    if !matches!(
+        media_type,
+        "image/jpeg" | "image/png" | "image/webp" | "image/gif"
+    ) {
+        return Err(AnthropicAdapterError::UnsupportedImageMediaType {
+            media_type: media_type.to_string(),
+        });
+    }
+    if source.get("data").and_then(Value::as_str).is_none() {
+        return Err(AnthropicAdapterError::MissingImageData);
+    }
+    Ok(())
+}
+
+fn map_anthropic_data_url_image(
+    url: &str,
+    metadata: &Map<String, Value>,
+) -> Result<Value, AnthropicAdapterError> {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        return Err(AnthropicAdapterError::RemoteImageUrlNotSupported);
+    }
+    let Some((media_type, data)) = url
+        .strip_prefix("data:")
+        .and_then(|rest| rest.split_once(";base64,"))
+    else {
+        return Err(AnthropicAdapterError::RemoteImageUrlNotSupported);
+    };
+    let media_type = metadata
+        .get("mime_type")
+        .and_then(Value::as_str)
+        .unwrap_or(media_type);
+
+    match media_type {
+        "image/jpeg" | "image/png" | "image/webp" | "image/gif" => Ok(json!({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": media_type,
+                "data": data
+            }
+        })),
+        other => Err(AnthropicAdapterError::UnsupportedImageMediaType {
+            media_type: other.to_string(),
+        }),
     }
 }
 
@@ -295,11 +414,17 @@ pub fn parse_openai_tool_arguments(
             .ok_or_else(|| AnthropicAdapterError::InvalidToolArguments {
                 reason: "arguments must be a string".to_string(),
             })?;
-    serde_json::from_str::<Value>(arguments).map_err(|err| {
+    let value = serde_json::from_str::<Value>(arguments).map_err(|err| {
         AnthropicAdapterError::InvalidToolArguments {
-            reason: err.to_string(),
+            reason: format!("arguments must be valid JSON: {err}"),
         }
-    })
+    })?;
+    if !value.is_object() {
+        return Err(AnthropicAdapterError::InvalidToolArguments {
+            reason: "arguments must decode to a JSON object".to_string(),
+        });
+    }
+    Ok(value)
 }
 
 fn map_openai_tool_result(message: &CoreChatMessage) -> Result<Value, ProviderError> {
@@ -421,13 +546,28 @@ fn convert_openai_tool_choice(value: &mut Value) -> Result<(), AnthropicAdapterE
     Ok(())
 }
 
-fn has_route_anthropic_beta(context: &ProviderRequestContext, beta: &str) -> bool {
-    context.extra_headers.iter().any(|(name, value)| {
+fn has_anthropic_beta(
+    context: &ProviderRequestContext,
+    options: &AnthropicRequestOptions<'_>,
+    beta: &str,
+) -> bool {
+    let in_extra = context.extra_headers.iter().any(|(name, value)| {
         name.eq_ignore_ascii_case("anthropic-beta")
             && value
                 .as_str()
                 .is_some_and(|betas| betas.split(',').any(|cand| cand.trim() == beta))
-    })
+    });
+    if in_extra {
+        return true;
+    }
+    if let Some(default_headers) = options.default_headers {
+        default_headers.iter().any(|(name, value)| {
+            name.eq_ignore_ascii_case("anthropic-beta")
+                && value.split(',').any(|cand| cand.trim() == beta)
+        })
+    } else {
+        false
+    }
 }
 
 fn merge_object_overrides(target: &mut Map<String, Value>, overrides: &Map<String, Value>) {

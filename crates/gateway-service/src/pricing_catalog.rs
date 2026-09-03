@@ -508,7 +508,7 @@ fn resolved_model_pricing(record: &ModelPricingRecord) -> ResolvedModelPricing {
     }
 }
 
-fn build_model_pricing_record(
+pub(crate) fn build_model_pricing_record(
     metadata: &PricingCatalogSnapshotMetadata,
     pricing_provider_id: &str,
     pricing_model_id: &str,
@@ -704,7 +704,7 @@ fn normalize_models_dev_money(number: &Number) -> Result<String, GatewayError> {
     Ok(Money4::from_scaled(scaled as i64).format_4dp())
 }
 
-fn load_vendored_fallback_snapshot() -> PricingCatalogSnapshot {
+pub(crate) fn load_vendored_fallback_snapshot() -> PricingCatalogSnapshot {
     let snapshot = serde_json::from_str::<PricingCatalogSnapshotFile>(VENDORED_FALLBACK_JSON)
         .expect("vendored pricing catalog fallback should deserialize");
     PricingCatalogSnapshot {
@@ -716,9 +716,9 @@ fn load_vendored_fallback_snapshot() -> PricingCatalogSnapshot {
 }
 
 #[derive(Debug, Clone)]
-struct PricingCatalogSnapshot {
-    metadata: PricingCatalogSnapshotMetadata,
-    document: PricingCatalogDocument,
+pub(crate) struct PricingCatalogSnapshot {
+    pub(crate) metadata: PricingCatalogSnapshotMetadata,
+    pub(crate) document: PricingCatalogDocument,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -736,8 +736,8 @@ pub struct PricingCatalogSnapshotMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct PricingCatalogDocument {
-    providers: BTreeMap<String, PricingCatalogProviderDocument>,
+pub(crate) struct PricingCatalogDocument {
+    pub(crate) providers: BTreeMap<String, PricingCatalogProviderDocument>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

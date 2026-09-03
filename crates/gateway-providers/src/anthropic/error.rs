@@ -15,6 +15,24 @@ pub enum AnthropicAdapterError {
     MissingContentText,
     #[error("message content must be a string or typed content array")]
     InvalidMessageContent,
+    #[error("`max_completion_tokens` conflicts with `max_tokens` for Anthropic mapping")]
+    ConflictingMaxTokens,
+    #[error("image content entries must include `image_url` or `source`")]
+    MissingImageSource,
+    #[error("image_url must be a string or object for Anthropic mapping")]
+    InvalidImageUrl,
+    #[error("image_url.url must be a string")]
+    MissingImageUrlString,
+    #[error("base64 image sources for Anthropic Messages must include `media_type`")]
+    MissingImageMediaType,
+    #[error("unsupported image media type `{media_type}` for Anthropic Messages")]
+    UnsupportedImageMediaType { media_type: String },
+    #[error("base64 image sources for Anthropic Messages must include string `data`")]
+    MissingImageData,
+    #[error(
+        "Anthropic Messages only supports base64 image data URLs; remote image URLs are not supported"
+    )]
+    RemoteImageUrlNotSupported,
     #[error(
         "forced `tool_choice` is not supported for `{model}`; Fable 5.1 rejects forced tool choice, use `auto` or omit the field"
     )]
@@ -67,6 +85,10 @@ pub enum AnthropicAdapterError {
     ConflictingEffort { model: String },
     #[error("`output_config.effort` is not supported for `{model}`")]
     EffortNotSupported { model: String },
+    #[error(
+        "`output_config.effort` `{effort}` is not supported for `{model}`; supported effort levels are `low`, `medium`, `high`, `xhigh`, and `max`"
+    )]
+    UnsupportedAdaptiveEffort { effort: String, model: String },
     #[error(
         "`reasoning_effort` requires an explicit manual thinking budget for `{model}` because this Claude model does not support adaptive thinking"
     )]

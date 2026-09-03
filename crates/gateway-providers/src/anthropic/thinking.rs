@@ -51,6 +51,19 @@ fn is_opus_4_7_or_later(model: &str) -> bool {
         .is_some_and(|minor| minor >= 7)
 }
 
+const ADAPTIVE_EFFORT_LEVELS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
+
+fn validate_adaptive_effort(effort: &Value, model: &str) -> Result<(), AnthropicAdapterError> {
+    let effort_str = effort.as_str().unwrap_or_default();
+    if !ADAPTIVE_EFFORT_LEVELS.contains(&effort_str) {
+        return Err(AnthropicAdapterError::UnsupportedAdaptiveEffort {
+            effort: effort.to_string(),
+            model: model.to_string(),
+        });
+    }
+    Ok(())
+}
+
 pub fn apply_anthropic_thinking_compatibility(
     body: &mut Map<String, Value>,
     upstream_model: &str,
@@ -64,13 +77,23 @@ pub fn apply_anthropic_thinking_compatibility(
 
     validate_caller_thinking_for_policy(body, policy, upstream_model)?;
 
-    let effort = if policy == ClaudeThinkingPolicy::AdaptiveOnly && effort.is_none() {
-        Some(Value::String("high".to_string()))
-    } else {
-        effort
-    };
-
-    if let Some(effort) = effort {
+    if policy == ClaudeThinkingPolicy::AdaptiveOnly {
+        if budget_tokens.is_some() {
+            return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+                model: upstream_model.to_string(),
+            });
+        }
+        let effort = effort.unwrap_or_else(|| Value::String("high".to_string()));
+        validate_adaptive_effort(&effort, upstream_model)?;
+        apply_policy_effort(
+            body,
+            policy,
+            effort,
+            None,
+            has_native_effort,
+            upstream_model,
+        )?;
+    } else if let Some(effort) = effort {
         apply_policy_effort(
             body,
             policy,
@@ -82,7 +105,6 @@ pub fn apply_anthropic_thinking_compatibility(
     } else if let Some(budget_tokens) = budget_tokens {
         apply_policy_budget(body, policy, budget_tokens, upstream_model)?;
     }
-
     Ok(())
 }
 
@@ -287,6 +309,28 @@ fn validate_caller_thinking_for_policy(
                     model: upstream_model.to_string(),
                 });
             }
+            if thinking_type != Some("adaptive") {
+                return Err(
+                    AnthropicAdapterError::AdaptiveOnlyManualThinkingNotSupported {
+                        model: upstream_model.to_string(),
+                    },
+                );
+            }
+            if thinking
+                .get("budget_tokens")
+                .is_some_and(|val| !val.is_null())
+            {
+                return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+                    model: upstream_model.to_string(),
+                });
+            }
+            for key in thinking.keys() {
+                if key != "type" {
+                    return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+                        model: upstream_model.to_string(),
+                    });
+                }
+            }
         }
         ClaudeThinkingPolicy::ManualOnly | ClaudeThinkingPolicy::ManualWithEffort => {
             if thinking_type == Some("adaptive") {
@@ -325,6 +369,14 @@ fn ensure_anthropic_adaptive_thinking(
         Some(Value::Object(object))
             if object.get("type").and_then(Value::as_str) == Some("adaptive") =>
         {
+            if object
+                .get("budget_tokens")
+                .is_some_and(|val| !val.is_null())
+            {
+                return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+                    model: upstream_model.to_string(),
+                });
+            }
             Ok(())
         }
         Some(_) => Err(AnthropicAdapterError::ConflictingAdaptiveThinking {

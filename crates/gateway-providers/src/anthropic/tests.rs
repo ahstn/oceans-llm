@@ -8,10 +8,13 @@ use gateway_core::{
 };
 use serde_json::{Value, json};
 
+use super::error::AnthropicAdapterError;
 use super::request::{AnthropicRequestOptions, map_anthropic_request};
 use super::response::normalize_anthropic_response;
 use super::streaming::normalize_anthropic_stream;
-use super::thinking::{ClaudeThinkingPolicy, claude_thinking_policy};
+use super::thinking::{
+    ClaudeThinkingPolicy, apply_anthropic_thinking_compatibility, claude_thinking_policy,
+};
 use crate::anthropic_compat::{
     AnthropicCompatAuth, AnthropicCompatAuthKind, AnthropicCompatConfig, AnthropicCompatProvider,
 };
@@ -644,4 +647,529 @@ async fn stream_normalization_converts_sse_events_and_preserves_thinking_and_usa
     assert!(all_text.contains("Hello "));
     assert!(all_text.contains("world!"));
     assert!(all_text.contains("\"finish_reason\":\"stop\""));
+    assert!(all_text.contains("data: [DONE]\n\n"));
+}
+
+#[tokio::test]
+async fn stream_normalization_yields_error_and_halts_on_corrupt_sse_json() {
+    let sse_chunks = vec![
+        Ok(Bytes::from(
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"claude-fable-5-1\",\"role\":\"assistant\"}}\n\n",
+        )),
+        Ok(Bytes::from(
+            "event: message_delta\ndata: {corrupt json here\n\n",
+        )),
+    ];
+
+    let stream = futures_util::stream::iter(sse_chunks);
+    let mut provider_stream = normalize_anthropic_stream(
+        stream,
+        "chatcmpl-corrupt-test".to_string(),
+        1700000000,
+        "claude-fable-5-1".to_string(),
+        "anthropic_compat",
+        "anthropic_compat",
+    );
+
+    let mut chunks = Vec::new();
+    while let Some(item) = provider_stream.next().await {
+        let bytes = item.expect("valid chunk");
+        let text = String::from_utf8(bytes.to_vec()).expect("utf-8");
+        chunks.push(text);
+    }
+
+    let all_text = chunks.join("");
+    assert!(all_text.contains("anthropic_sse_json_error"));
+    assert!(!all_text.contains("data: [DONE]"));
+}
+
+#[tokio::test]
+async fn stream_normalization_yields_error_on_truncated_stream_without_message_stop() {
+    let sse_chunks = vec![
+        Ok(Bytes::from(
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"claude-fable-5-1\",\"role\":\"assistant\"}}\n\n",
+        )),
+        Ok(Bytes::from(
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+        )),
+        Ok(Bytes::from(
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Incomplete\"}}\n\n",
+        )),
+    ];
+
+    let stream = futures_util::stream::iter(sse_chunks);
+    let mut provider_stream = normalize_anthropic_stream(
+        stream,
+        "chatcmpl-truncated-test".to_string(),
+        1700000000,
+        "claude-fable-5-1".to_string(),
+        "anthropic_compat",
+        "anthropic_compat",
+    );
+
+    let mut chunks = Vec::new();
+    while let Some(item) = provider_stream.next().await {
+        let bytes = item.expect("valid chunk");
+        let text = String::from_utf8(bytes.to_vec()).expect("utf-8");
+        chunks.push(text);
+    }
+
+    let all_text = chunks.join("");
+    assert!(all_text.contains("anthropic_stream_truncated"));
+    assert!(!all_text.contains("data: [DONE]"));
+}
+
+#[test]
+fn map_anthropic_request_translates_openai_image_url_data_url() {
+    let request = CoreChatRequest {
+        model: "claude-fable-5-1".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([
+                {"type": "text", "text": "Describe this image:"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                    }
+                }
+            ]),
+            name: None,
+            extra: Default::default(),
+        }],
+        stream: false,
+        extra: Default::default(),
+    };
+
+    let context = test_context("claude-fable-5-1");
+    let options = AnthropicRequestOptions::default();
+    let body = map_anthropic_request(&request, &context, false, &options).expect("map request");
+
+    let messages = body["messages"].as_array().expect("messages array");
+    let content = messages[0]["content"].as_array().expect("content array");
+    assert_eq!(content.len(), 2);
+    assert_eq!(content[0]["type"], "text");
+    assert_eq!(content[1]["type"], "image");
+    assert_eq!(content[1]["source"]["type"], "base64");
+    assert_eq!(content[1]["source"]["media_type"], "image/png");
+    assert_eq!(
+        content[1]["source"]["data"],
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    );
+}
+
+#[test]
+fn map_anthropic_request_rejects_remote_image_urls() {
+    let request = CoreChatRequest {
+        model: "claude-fable-5-1".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "https://example.com/test.png"
+                    }
+                }
+            ]),
+            name: None,
+            extra: Default::default(),
+        }],
+        stream: false,
+        extra: Default::default(),
+    };
+    let context = test_context("claude-fable-5-1");
+    let options = AnthropicRequestOptions::default();
+    let error =
+        map_anthropic_request(&request, &context, false, &options).expect_err("should reject");
+    assert!(
+        error
+            .to_string()
+            .contains("remote image URLs are not supported")
+    );
+}
+
+#[test]
+fn map_anthropic_request_normalizes_max_completion_tokens() {
+    let mut request = CoreChatRequest {
+        model: "claude-fable-5-1".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!("Hello"),
+            name: None,
+            extra: Default::default(),
+        }],
+        stream: false,
+        extra: Default::default(),
+    };
+    request
+        .extra
+        .insert("max_completion_tokens".to_string(), json!(2048));
+
+    let context = test_context("claude-fable-5-1");
+    let options = AnthropicRequestOptions::default();
+    let body = map_anthropic_request(&request, &context, false, &options).expect("map request");
+
+    assert_eq!(body["max_tokens"], 2048);
+    assert!(body.get("max_completion_tokens").is_none());
+}
+
+#[test]
+fn map_anthropic_request_rejects_conflicting_max_completion_tokens() {
+    let mut request = CoreChatRequest {
+        model: "claude-fable-5-1".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!("Hello"),
+            name: None,
+            extra: Default::default(),
+        }],
+        stream: false,
+        extra: Default::default(),
+    };
+    request
+        .extra
+        .insert("max_completion_tokens".to_string(), json!(2048));
+    request.extra.insert("max_tokens".to_string(), json!(4096));
+
+    let context = test_context("claude-fable-5-1");
+    let options = AnthropicRequestOptions::default();
+    let error =
+        map_anthropic_request(&request, &context, false, &options).expect_err("should conflict");
+    assert!(error.to_string().contains("conflicts with `max_tokens`"));
+}
+
+#[test]
+fn fable_adaptive_thinking_rejects_budget_tokens_in_adaptive_object() {
+    let mut body = serde_json::Map::from_iter([(
+        "thinking".to_string(),
+        json!({"type": "adaptive", "budget_tokens": 10000}),
+    )]);
+
+    let error = apply_anthropic_thinking_compatibility(&mut body, "claude-fable-5-1")
+        .expect_err("should reject manual budget for adaptive only");
+    assert!(
+        matches!(
+            error,
+            AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported { .. }
+        ),
+        "expected AdaptiveOnlyBudgetNotSupported, got {error:?}"
+    );
+}
+
+#[test]
+fn fable_adaptive_thinking_rejects_unsupported_effort_levels() {
+    for invalid_effort in ["minimal", "off", "none", "extreme"] {
+        let mut body = serde_json::Map::from_iter([(
+            "output_config".to_string(),
+            json!({"effort": invalid_effort}),
+        )]);
+        let error = apply_anthropic_thinking_compatibility(&mut body, "claude-fable-5-1")
+            .expect_err("should reject invalid effort");
+        assert!(
+            matches!(
+                error,
+                AnthropicAdapterError::UnsupportedAdaptiveEffort { .. }
+            ),
+            "expected UnsupportedAdaptiveEffort for {invalid_effort}, got {error:?}"
+        );
+    }
+
+    for valid_effort in ["low", "medium", "high", "xhigh", "max"] {
+        let mut body = serde_json::Map::from_iter([(
+            "output_config".to_string(),
+            json!({"effort": valid_effort}),
+        )]);
+        apply_anthropic_thinking_compatibility(&mut body, "claude-fable-5-1")
+            .expect("valid effort should succeed");
+        assert_eq!(body["output_config"]["effort"], valid_effort);
+    }
+}
+
+#[test]
+fn anthropic_compat_default_headers_preserve_context_management_beta() {
+    let mut request = CoreChatRequest {
+        model: "claude-fable-5-1".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!("Hello"),
+            name: None,
+            extra: Default::default(),
+        }],
+        stream: false,
+        extra: Default::default(),
+    };
+    request
+        .extra
+        .insert("context_management".to_string(), json!({"enabled": true}));
+
+    let context = test_context("claude-fable-5-1");
+    let default_headers = BTreeMap::from([(
+        "anthropic-beta".to_string(),
+        "context-management-2025-06-27".to_string(),
+    )]);
+    let options = AnthropicRequestOptions {
+        include_model: true,
+        anthropic_version_body: None,
+        default_max_tokens: Some(4096),
+        default_headers: Some(&default_headers),
+    };
+
+    let body = map_anthropic_request(&request, &context, false, &options).expect("map request");
+    assert_eq!(body["context_management"], json!({"enabled": true}));
+}
+
+#[test]
+fn tool_arguments_decoding_to_non_object_rejected() {
+    let request = CoreChatRequest {
+        model: "claude-fable-5-1".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "assistant".to_string(),
+            content: json!("Calling tool"),
+            name: None,
+            extra: BTreeMap::from([(
+                "tool_calls".to_string(),
+                json!([
+                    {
+                        "id": "call_123",
+                        "type": "function",
+                        "function": {
+                            "name": "calc",
+                            "arguments": "42"
+                        }
+                    }
+                ]),
+            )]),
+        }],
+        stream: false,
+        extra: Default::default(),
+    };
+
+    let context = test_context("claude-fable-5-1");
+    let options = AnthropicRequestOptions::default();
+    let error =
+        map_anthropic_request(&request, &context, false, &options).expect_err("should reject");
+    assert!(
+        error
+            .to_string()
+            .contains("arguments must decode to a JSON object")
+    );
+}
+
+#[tokio::test]
+#[ignore = "live integration test against OpenCode Zen"]
+async fn live_opencode_zen_non_streaming() {
+    let api_key = std::env::var("OPENCODE_ZEN_API_KEY")
+        .or_else(|_| std::env::var("OPENCODE_API_KEY"))
+        .expect("OPENCODE_ZEN_API_KEY or OPENCODE_API_KEY must be set");
+
+    let mut config = AnthropicCompatConfig::new(
+        "opencode-zen".to_string(),
+        "https://opencode.ai/zen".to_string(),
+    );
+    config.auth = Some(AnthropicCompatAuth {
+        kind: AnthropicCompatAuthKind::XApiKey,
+        token: api_key,
+    });
+
+    let provider = AnthropicCompatProvider::new(config).expect("provider");
+    let context = test_context("claude-sonnet-5");
+
+    let request = CoreChatRequest {
+        model: "claude-sonnet-5".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!("Say hello in exactly 3 words."),
+            name: None,
+            extra: Default::default(),
+        }],
+        stream: false,
+        extra: Default::default(),
+    };
+
+    let response = provider
+        .chat_completions(&request, &context)
+        .await
+        .expect("non-streaming chat response");
+
+    let text = response["choices"][0]["message"]["content"]
+        .as_str()
+        .expect("content text");
+    assert!(!text.is_empty(), "expected non-empty response text");
+    assert!(response["usage"]["total_tokens"].as_i64().unwrap_or(0) > 0);
+}
+
+#[tokio::test]
+#[ignore = "live integration test against OpenCode Zen"]
+async fn live_opencode_zen_streaming() {
+    let api_key = std::env::var("OPENCODE_ZEN_API_KEY")
+        .or_else(|_| std::env::var("OPENCODE_API_KEY"))
+        .expect("OPENCODE_ZEN_API_KEY or OPENCODE_API_KEY must be set");
+
+    let mut config = AnthropicCompatConfig::new(
+        "opencode-zen".to_string(),
+        "https://opencode.ai/zen".to_string(),
+    );
+    config.auth = Some(AnthropicCompatAuth {
+        kind: AnthropicCompatAuthKind::XApiKey,
+        token: api_key,
+    });
+
+    let provider = AnthropicCompatProvider::new(config).expect("provider");
+    let context = test_context("claude-sonnet-5");
+
+    let request = CoreChatRequest {
+        model: "claude-sonnet-5".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!("Count from 1 to 3."),
+            name: None,
+            extra: Default::default(),
+        }],
+        stream: true,
+        extra: Default::default(),
+    };
+
+    let mut stream = provider
+        .chat_completions_stream(&request, &context)
+        .await
+        .expect("streaming response");
+
+    let mut full_text = String::new();
+    let mut saw_done = false;
+    let mut saw_usage = false;
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.expect("valid stream chunk");
+        let text = String::from_utf8(bytes.to_vec()).expect("utf-8");
+        full_text.push_str(&text);
+        if text.contains("data: [DONE]") {
+            saw_done = true;
+        }
+        if text.contains("\"usage\"") {
+            saw_usage = true;
+        }
+    }
+
+    assert!(saw_done, "stream must terminate with [DONE]");
+    assert!(saw_usage, "stream must emit usage");
+    assert!(!full_text.contains("anthropic_stream_truncated"));
+    assert!(!full_text.contains("anthropic_sse_json_error"));
+}
+
+#[tokio::test]
+#[ignore = "live integration test against OpenCode Zen"]
+async fn live_opencode_zen_vision() {
+    let api_key = std::env::var("OPENCODE_ZEN_API_KEY")
+        .or_else(|_| std::env::var("OPENCODE_API_KEY"))
+        .expect("OPENCODE_ZEN_API_KEY or OPENCODE_API_KEY must be set");
+
+    let mut config = AnthropicCompatConfig::new(
+        "opencode-zen".to_string(),
+        "https://opencode.ai/zen".to_string(),
+    );
+    config.auth = Some(AnthropicCompatAuth {
+        kind: AnthropicCompatAuthKind::XApiKey,
+        token: api_key,
+    });
+
+    let provider = AnthropicCompatProvider::new(config).expect("provider");
+    let context = test_context("claude-sonnet-5");
+
+    let red_dot = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    let request = CoreChatRequest {
+        model: "claude-sonnet-5".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([
+                {"type": "text", "text": "What color is this 1x1 pixel image? Reply with one word."},
+                {"type": "image_url", "image_url": {"url": red_dot}}
+            ]),
+            name: None,
+            extra: Default::default(),
+        }],
+        stream: false,
+        extra: Default::default(),
+    };
+
+    let response = provider
+        .chat_completions(&request, &context)
+        .await
+        .expect("vision chat response");
+
+    let text = response["choices"][0]["message"]["content"]
+        .as_str()
+        .expect("content text");
+    assert!(
+        text.to_ascii_lowercase().contains("red") || text.to_ascii_lowercase().contains("pink"),
+        "expected color description, got: {text}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "live integration test against OpenCode Zen"]
+async fn live_opencode_zen_tools() {
+    let api_key = std::env::var("OPENCODE_ZEN_API_KEY")
+        .or_else(|_| std::env::var("OPENCODE_API_KEY"))
+        .expect("OPENCODE_ZEN_API_KEY or OPENCODE_API_KEY must be set");
+
+    let mut config = AnthropicCompatConfig::new(
+        "opencode-zen".to_string(),
+        "https://opencode.ai/zen".to_string(),
+    );
+    config.auth = Some(AnthropicCompatAuth {
+        kind: AnthropicCompatAuthKind::XApiKey,
+        token: api_key,
+    });
+
+    let provider = AnthropicCompatProvider::new(config).expect("provider");
+    let context = test_context("claude-sonnet-5");
+
+    let mut request = CoreChatRequest {
+        model: "claude-sonnet-5".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!("What is the weather in Tokyo right now? Call get_weather tool."),
+            name: None,
+            extra: Default::default(),
+        }],
+        stream: false,
+        extra: Default::default(),
+    };
+    request.extra.insert(
+        "tools".to_string(),
+        json!([
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get current weather for a city",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "location": {
+                                "type": "string",
+                                "description": "City name"
+                            }
+                        },
+                        "required": ["location"]
+                    }
+                }
+            }
+        ]),
+    );
+
+    let response = provider
+        .chat_completions(&request, &context)
+        .await
+        .expect("tool call response");
+
+    let tool_calls = response["choices"][0]["message"]["tool_calls"]
+        .as_array()
+        .expect("tool calls array");
+    assert!(!tool_calls.is_empty(), "expected tool calls");
+    assert_eq!(tool_calls[0]["function"]["name"], "get_weather");
+    let args_str = tool_calls[0]["function"]["arguments"]
+        .as_str()
+        .expect("args str");
+    assert!(args_str.to_ascii_lowercase().contains("tokyo"));
 }

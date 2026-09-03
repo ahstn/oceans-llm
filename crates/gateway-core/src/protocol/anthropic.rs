@@ -44,19 +44,21 @@ pub fn anthropic_message_from_openai_chat(value: &Value, model_key: &str) -> Val
     let message = choice.and_then(|choice| choice.get("message"));
 
     let mut content = Vec::new();
+    let provider_metadata = message.and_then(|message| message.get("provider_metadata"));
+    let mut reasoning = anthropic_reasoning_blocks(provider_metadata, "anthropic_messages");
+    if reasoning.is_empty() {
+        reasoning = anthropic_reasoning_blocks(provider_metadata, "anthropic_messages_stream");
+    }
     content.extend(
-        anthropic_reasoning_blocks(
-            message.and_then(|message| message.get("provider_metadata")),
-            "anthropic_messages",
-        )
-        .into_iter()
-        .filter(|block| {
-            matches!(
-                block.get("type").and_then(Value::as_str),
-                Some("thinking" | "redacted_thinking")
-            )
-        })
-        .cloned(),
+        reasoning
+            .into_iter()
+            .filter(|block| {
+                matches!(
+                    block.get("type").and_then(Value::as_str),
+                    Some("thinking" | "redacted_thinking")
+                )
+            })
+            .cloned(),
     );
 
     if let Some(text) = message

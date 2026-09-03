@@ -261,6 +261,12 @@ impl GatewayConfig {
                             provider.id
                         );
                     }
+                    if parsed.query().is_some() || parsed.fragment().is_some() {
+                        bail!(
+                            "anthropic_compat provider `{}` base_url cannot include query parameters or fragments",
+                            provider.id
+                        );
+                    }
                     if provider.pricing_provider_id.trim().is_empty() {
                         bail!(
                             "anthropic_compat provider `{}` pricing_provider_id cannot be empty",
@@ -7592,5 +7598,42 @@ models:
             error_text.contains("pricing_provider_id `unknown_provider` is not supported"),
             "unexpected error: {error_text}"
         );
+    }
+
+    #[test]
+    fn rejects_anthropic_compat_with_query_or_fragment_in_base_url() {
+        for invalid_base_url in [
+            "https://opencode.ai/zen?query=1",
+            "https://opencode.ai/zen#fragment",
+            "https://opencode.ai/zen?query=1#fragment",
+        ] {
+            let tmp = tempdir().expect("tempdir");
+            let config_path = tmp.path().join("gateway.yaml");
+
+            write_config(
+                &config_path,
+                &format!(
+                    r#"
+providers:
+  - id: opencode-zen
+    type: anthropic_compat
+    base_url: {invalid_base_url}
+    pricing_provider_id: opencode
+models:
+  - id: test
+    routes:
+      - provider: opencode-zen
+        upstream_model: test
+"#
+                ),
+            );
+
+            let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+            let error_text = format!("{error:#}");
+            assert!(
+                error_text.contains("base_url cannot include query parameters or fragments"),
+                "unexpected error for {invalid_base_url}: {error_text}"
+            );
+        }
     }
 }
