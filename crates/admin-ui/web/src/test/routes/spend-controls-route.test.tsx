@@ -1,7 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { normalizeBudgetAmount } from '@/routes/spend-controls/-utils'
+import {
+  INVALID_BUDGET_AMOUNT_MESSAGE,
+  normalizeBudgetAmount,
+} from '@/routes/spend-controls/-utils'
 import type { SpendBudgetsView } from '@/types/api'
 
 const routeMock = {
@@ -103,14 +106,32 @@ const budgets: SpendBudgetsView = {
   ],
 }
 
+const models = [
+  {
+    id: 'fast',
+    model_id: 'model_fast',
+    resolved_model_key: 'fast',
+    alias_of: null,
+    tags: [],
+    status: 'healthy',
+    pricing_varies_by_route: false,
+    client_configurations: [],
+    allowlist: null,
+  },
+]
+
 async function renderPage() {
   routeMock.useLoaderData.mockReturnValue({
     budgets: { data: budgets },
     alerts: { data: { items: [], page: 1, page_size: 10, total: 0 } },
-    models: { data: { items: [] } },
+    models: { data: { items: models } },
   })
   const { SpendControlsPage } = await import('@/routes/spend-controls')
   render(<SpendControlsPage />)
+}
+
+function userModelForm() {
+  return screen.getByRole('button', { name: 'Add' }).closest('form')!
 }
 
 const INHERITED_WARNING =
@@ -119,6 +140,12 @@ const INHERITED_WARNING =
 describe('SpendControlsPage', () => {
   beforeEach(() => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+    if (!Element.prototype.hasPointerCapture) {
+      Element.prototype.hasPointerCapture = () => false
+    }
+    if (!Element.prototype.releasePointerCapture) {
+      Element.prototype.releasePointerCapture = () => {}
+    }
     routeMock.useLoaderData.mockReset()
     saveBudgetMock.mockReset()
     toastErrorMock.mockReset()
@@ -182,7 +209,7 @@ describe('SpendControlsPage', () => {
 
     fireEvent.change(amount, { target: { value: '0' } })
     fireEvent.submit(amount.closest('form')!)
-    expect(toastErrorMock).toHaveBeenCalledWith('Amount must be a number greater than 0')
+    expect(toastErrorMock).toHaveBeenCalledWith(INVALID_BUDGET_AMOUNT_MESSAGE)
     expect(saveBudgetMock).not.toHaveBeenCalled()
 
     fireEvent.change(amount, { target: { value: '5' } })
@@ -198,15 +225,91 @@ describe('SpendControlsPage', () => {
       },
     })
   })
+
+  it('creates a user model budget for a managed model', async () => {
+    saveBudgetMock.mockResolvedValue({})
+    await renderPage()
+    const form = userModelForm()
+
+    expect(within(form).getByRole('combobox', { name: 'User' })).toHaveTextContent('Jane Admin')
+    expect(within(form).getByRole('combobox', { name: 'Model' })).toHaveTextContent('fast')
+    fireEvent.change(within(form).getByLabelText('Amount (USD)'), { target: { value: '40' } })
+    fireEvent.click(within(form).getByRole('combobox', { name: 'Cadence' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Monthly' }))
+    fireEvent.submit(form)
+
+    await waitFor(() => expect(saveBudgetMock).toHaveBeenCalledTimes(1))
+    expect(saveBudgetMock).toHaveBeenCalledWith({
+      data: {
+        scope: { kind: 'user_model', user_id: 'user_1', model_id: 'model_fast' },
+        cadence: 'monthly',
+        amount_usd: '40.0000',
+        hard_limit: true,
+        timezone: 'UTC',
+      },
+    })
+  })
+
+  it('creates a user model budget for an upstream model name', async () => {
+    saveBudgetMock.mockResolvedValue({})
+    await renderPage()
+    const form = userModelForm()
+
+    fireEvent.click(within(form).getByRole('combobox', { name: 'Scope type' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Upstream model' }))
+    fireEvent.change(within(form).getByLabelText('Upstream model'), {
+      target: { value: ' openai/gpt-5 ' },
+    })
+    fireEvent.change(within(form).getByLabelText('Amount (USD)'), { target: { value: '12.5' } })
+    fireEvent.change(within(form).getByLabelText('Timezone'), {
+      target: { value: 'Europe/London' },
+    })
+    fireEvent.click(within(form).getByRole('checkbox', { name: 'Hard' }))
+    fireEvent.submit(form)
+
+    await waitFor(() => expect(saveBudgetMock).toHaveBeenCalledTimes(1))
+    expect(saveBudgetMock).toHaveBeenCalledWith({
+      data: {
+        scope: { kind: 'user_model', user_id: 'user_1', upstream_model: 'openai/gpt-5' },
+        cadence: 'daily',
+        amount_usd: '12.5000',
+        hard_limit: false,
+        timezone: 'Europe/London',
+      },
+    })
+  })
+
+  it('rejects a user model budget without a model selector', async () => {
+    await renderPage()
+    const form = userModelForm()
+
+    fireEvent.click(within(form).getByRole('combobox', { name: 'Scope type' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Upstream model' }))
+    fireEvent.change(within(form).getByLabelText('Amount (USD)'), { target: { value: '5' } })
+    fireEvent.submit(form)
+
+    expect(saveBudgetMock).not.toHaveBeenCalled()
+    expect(toastErrorMock).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('normalizeBudgetAmount', () => {
-  it('formats positive numbers to four decimals and rejects everything else', () => {
+  it('pads to four decimals without rounding or losing precision', () => {
     expect(normalizeBudgetAmount('5')).toBe('5.0000')
     expect(normalizeBudgetAmount(' 12.5 ')).toBe('12.5000')
-    expect(normalizeBudgetAmount('0.00005')).toBe('0.0001')
+    expect(normalizeBudgetAmount('0.0001')).toBe('0.0001')
+    expect(normalizeBudgetAmount('007.25')).toBe('7.2500')
+    expect(normalizeBudgetAmount('10000000000000.0001')).toBe('10000000000000.0001')
+  })
+
+  it('rejects non-positive, over-precise, and non-numeric input', () => {
     expect(normalizeBudgetAmount('0')).toBeNull()
+    expect(normalizeBudgetAmount('0.0000')).toBeNull()
+    expect(normalizeBudgetAmount('0.00004')).toBeNull()
+    expect(normalizeBudgetAmount('1.00005')).toBeNull()
     expect(normalizeBudgetAmount('-1')).toBeNull()
+    expect(normalizeBudgetAmount('1e3')).toBeNull()
+    expect(normalizeBudgetAmount('.5')).toBeNull()
     expect(normalizeBudgetAmount('')).toBeNull()
     expect(normalizeBudgetAmount('abc')).toBeNull()
   })

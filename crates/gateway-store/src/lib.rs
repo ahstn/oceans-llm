@@ -3226,6 +3226,325 @@ pub(crate) mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_service_account_source_migration_rebuild_preserves_existing_budgets() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+        conn.execute("PRAGMA foreign_keys = ON", ())
+            .await
+            .expect("enable foreign keys");
+
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS refinery_schema_history (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_on INTEGER NOT NULL,
+                checksum TEXT NOT NULL
+            )
+            "#,
+            (),
+        )
+        .await
+        .expect("schema history");
+
+        for migration in MIGRATION_REGISTRY
+            .iter()
+            .filter(|migration| migration.version < 51)
+        {
+            conn.execute_batch(migration.sql_for(MigrationBackend::Libsql))
+                .await
+                .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
+            conn.execute(
+                r#"
+                INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
+                VALUES (?1, ?2, unixepoch(), ?3)
+                "#,
+                libsql::params![migration.version as i64, migration.name, migration.checksum],
+            )
+            .await
+            .unwrap_or_else(|error| panic!("record migration {}: {error}", migration.version));
+        }
+
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        let user_id = Uuid::new_v4();
+        let service_account_id = Uuid::new_v4();
+        conn.execute(
+            r#"
+            INSERT INTO users (
+              user_id, name, email, email_normalized, global_role, auth_mode, status,
+              request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'User One', 'user@example.com', 'user@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
+            "#,
+            libsql::params![user_id.to_string(), now],
+        )
+        .await
+        .expect("user");
+        let team_id = Uuid::new_v4();
+        conn.execute(
+            r#"
+            INSERT INTO teams (team_id, team_key, team_name, status, model_access_mode, created_at, updated_at)
+            VALUES (?1, 'platform', 'Platform', 'active', 'all', ?2, ?2)
+            "#,
+            libsql::params![team_id.to_string(), now],
+        )
+        .await
+        .expect("team");
+        conn.execute(
+            r#"
+            INSERT INTO service_accounts (
+              service_account_id, team_id, service_account_key, service_account_name, status,
+              model_access_mode, metadata_json, created_at, updated_at
+            ) VALUES (?1, ?2, 'ci-indexer', 'CI Indexer', 'active', 'all', '{}', ?3, ?3)
+            "#,
+            libsql::params![service_account_id.to_string(), team_id.to_string(), now],
+        )
+        .await
+        .expect("service account");
+
+        let active_budget_id = Uuid::new_v4().to_string();
+        let inactive_budget_id = Uuid::new_v4().to_string();
+        let sa_budget_id = Uuid::new_v4().to_string();
+        let insert_budget = r#"
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, user_id, service_account_id, model_id, upstream_model,
+                cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at,
+                source_kind, source_key
+            ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+        "#;
+        conn.execute(
+            insert_budget,
+            libsql::params![
+                active_budget_id.as_str(),
+                "user",
+                format!("budget:v1:user:{user_id}"),
+                user_id.to_string(),
+                libsql::Value::Null,
+                libsql::Value::Null,
+                "monthly",
+                800_000_i64,
+                1_i64,
+                "Europe/London",
+                1_i64,
+                now - 100,
+                now - 50,
+                "config_user_override",
+                "user@example.com",
+            ],
+        )
+        .await
+        .expect("active user budget");
+        conn.execute(
+            insert_budget,
+            libsql::params![
+                inactive_budget_id.as_str(),
+                "user_model",
+                format!("budget:v1:user:{user_id}:upstream_model:gpt-4"),
+                user_id.to_string(),
+                libsql::Value::Null,
+                "gpt-4",
+                "daily",
+                400_000_i64,
+                0_i64,
+                "UTC",
+                0_i64,
+                now - 200,
+                now - 150,
+                "manual",
+                "deactivated",
+            ],
+        )
+        .await
+        .expect("inactive user model budget");
+        conn.execute(
+            insert_budget,
+            libsql::params![
+                sa_budget_id.as_str(),
+                "service_account",
+                format!("budget:v1:service_account:{service_account_id}"),
+                libsql::Value::Null,
+                service_account_id.to_string(),
+                libsql::Value::Null,
+                "weekly",
+                250_000_i64,
+                1_i64,
+                "UTC",
+                1_i64,
+                now - 10,
+                now - 5,
+                "manual",
+                libsql::Value::Null,
+            ],
+        )
+        .await
+        .expect("active service account budget");
+
+        run_migrations(&db_path).await.expect("apply v51");
+
+        let mut rows = conn
+            .query(
+                r#"
+                SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                       upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                       created_at, updated_at, source_kind, source_key
+                FROM budgets ORDER BY created_at
+                "#,
+                (),
+            )
+            .await
+            .expect("budgets after rebuild");
+        let mut survivors: Vec<Vec<libsql::Value>> = Vec::new();
+        while let Some(row) = rows.next().await.expect("row fetch") {
+            survivors.push(
+                (0..16)
+                    .map(|index| row.get_value(index).expect("column"))
+                    .collect(),
+            );
+        }
+        use libsql::Value::{Integer, Null, Text};
+        assert_eq!(
+            survivors,
+            vec![
+                vec![
+                    Text(inactive_budget_id.clone()),
+                    Text("user_model".into()),
+                    Text(format!("budget:v1:user:{user_id}:upstream_model:gpt-4")),
+                    Text(user_id.to_string()),
+                    Null,
+                    Null,
+                    Text("gpt-4".into()),
+                    Text("daily".into()),
+                    Integer(400_000),
+                    Integer(0),
+                    Text("UTC".into()),
+                    Integer(0),
+                    Integer(now - 200),
+                    Integer(now - 150),
+                    Text("manual".into()),
+                    Text("deactivated".into()),
+                ],
+                vec![
+                    Text(active_budget_id.clone()),
+                    Text("user".into()),
+                    Text(format!("budget:v1:user:{user_id}")),
+                    Text(user_id.to_string()),
+                    Null,
+                    Null,
+                    Null,
+                    Text("monthly".into()),
+                    Integer(800_000),
+                    Integer(1),
+                    Text("Europe/London".into()),
+                    Integer(1),
+                    Integer(now - 100),
+                    Integer(now - 50),
+                    Text("config_user_override".into()),
+                    Text("user@example.com".into()),
+                ],
+                vec![
+                    Text(sa_budget_id.clone()),
+                    Text("service_account".into()),
+                    Text(format!("budget:v1:service_account:{service_account_id}")),
+                    Null,
+                    Text(service_account_id.to_string()),
+                    Null,
+                    Null,
+                    Text("weekly".into()),
+                    Integer(250_000),
+                    Integer(1),
+                    Text("UTC".into()),
+                    Integer(1),
+                    Integer(now - 10),
+                    Integer(now - 5),
+                    Text("manual".into()),
+                    Null,
+                ],
+            ]
+        );
+
+        // The partial unique index on active scope keys survives the rebuild.
+        let duplicate_active = conn
+            .execute(
+                insert_budget,
+                libsql::params![
+                    Uuid::new_v4().to_string(),
+                    "user",
+                    format!("budget:v1:user:{user_id}"),
+                    user_id.to_string(),
+                    libsql::Value::Null,
+                    libsql::Value::Null,
+                    "daily",
+                    1_i64,
+                    1_i64,
+                    "UTC",
+                    1_i64,
+                    now,
+                    now,
+                    "manual",
+                    libsql::Value::Null,
+                ],
+            )
+            .await;
+        assert!(
+            duplicate_active
+                .as_ref()
+                .is_err_and(|error| error.to_string().contains("UNIQUE constraint failed")),
+            "second active budget for the same scope should be rejected: {duplicate_active:?}"
+        );
+
+        // The widened CHECK accepts the new service-account source kind.
+        conn.execute(
+            "UPDATE budgets SET source_kind = 'config_service_account', source_key = ?2 WHERE budget_id = ?1",
+            libsql::params![sa_budget_id.as_str(), service_account_id.to_string()],
+        )
+        .await
+        .expect("service account source kind accepted");
+        let rejected = conn
+            .execute(
+                "UPDATE budgets SET source_kind = 'bogus' WHERE budget_id = ?1",
+                [sa_budget_id.as_str()],
+            )
+            .await;
+        assert!(
+            rejected
+                .as_ref()
+                .is_err_and(|error| error.to_string().contains("CHECK constraint failed")),
+            "unknown source kind should be rejected: {rejected:?}"
+        );
+
+        // Foreign keys are re-declared with ON DELETE CASCADE.
+        conn.execute(
+            "DELETE FROM service_accounts WHERE service_account_id = ?1",
+            [service_account_id.to_string()],
+        )
+        .await
+        .expect("delete service account");
+        conn.execute(
+            "DELETE FROM users WHERE user_id = ?1",
+            [user_id.to_string()],
+        )
+        .await
+        .expect("delete user");
+        let mut remaining = conn
+            .query("SELECT COUNT(*) FROM budgets", ())
+            .await
+            .expect("count");
+        let count: i64 = remaining
+            .next()
+            .await
+            .expect("count fetch")
+            .expect("count row")
+            .get(0)
+            .expect("count value");
+        assert_eq!(count, 0, "budgets should cascade with their owners");
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn libsql_migration_commands_reject_legacy_history() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");

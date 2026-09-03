@@ -64,19 +64,27 @@ export function isInheritedBudgetSource(source: BudgetSource | null | undefined)
 export const INHERITED_BUDGET_WARNING =
   'This budget is inherited from configuration. Saving converts it to a manual budget that config reloads will not change.'
 
-export const INVALID_BUDGET_AMOUNT_MESSAGE = 'Amount must be a number greater than 0'
+export const INVALID_BUDGET_AMOUNT_MESSAGE =
+  'Amount must be greater than 0 with at most four decimal places'
 
-/** Normalises a user-entered USD amount to the 4-decimal string the API expects. */
+const BUDGET_AMOUNT_PATTERN = /^(\d+)(?:\.(\d{1,4}))?$/
+
+/**
+ * Normalises a user-entered USD amount to the 4-decimal string the API expects.
+ * Works on the string itself so no precision is lost and nothing is rounded:
+ * the server rejects more than four decimals, so the client does too.
+ */
 export function normalizeBudgetAmount(value: string): string | null {
-  const trimmed = value.trim()
-  if (trimmed.length === 0) {
+  const match = BUDGET_AMOUNT_PATTERN.exec(value.trim())
+  if (match === null) {
     return null
   }
-  const amount = Number(trimmed)
-  if (!Number.isFinite(amount) || amount <= 0) {
+  const integer = match[1].replace(/^0+(?=\d)/, '')
+  const fraction = (match[2] ?? '').padEnd(4, '0')
+  if (/^0*$/.test(integer + fraction)) {
     return null
   }
-  return amount.toFixed(4)
+  return `${integer}.${fraction}`
 }
 
 export type BudgetPayloadResult =

@@ -44,9 +44,9 @@ Live enforcement windows currently use UTC:
 
 ## Hard And Soft Limits
 
-Hard budgets reject new chargeable traffic with HTTP 429 `budget_exceeded` when the active window is already at or past its cap. This check runs before the request reaches a provider. Once a provider has answered, that spend is already incurred, so the gateway always records it in the ledger even when it pushes a hard budget over its limit. The request that caused the overrun still returns its completion; the updated ledger blocks the caller's next chargeable request. This applies equally to synchronous requests, streamed responses, and asynchronous batch results. Streamed responses are charged whenever the provider reports usage, including streams that end with a provider error event after usage was sent.
+Hard budgets reject new chargeable traffic with HTTP 429 `budget_exceeded` when the active window is already at or past its cap. This check runs before the request reaches a provider. Once a provider has answered, that spend is already incurred, so the gateway always records it in the ledger even when it pushes a hard budget over its limit. The request that caused the overrun still returns its completion; the updated ledger blocks the caller's next chargeable request. This applies equally to synchronous requests, streamed responses, and asynchronous batch results. Streamed responses are charged whenever the provider reports usage, including streams that end with a provider error event or a dropped connection after usage was sent.
 
-In practice a hard budget can be exceeded by at most one request's cost. Set the cap with that headroom in mind.
+The pre-provider check reads recorded spend; it does not reserve the cost of in-flight requests. Every request that starts while the window still has headroom is admitted, so a hard budget can be exceeded by the combined cost of all requests in flight at the moment the cap is reached. For a caller that sends one request at a time that is one request's cost; for a caller running N requests concurrently it is up to N requests' cost. Set the cap with that headroom in mind.
 
 Soft budgets never reject traffic. They are useful for alerting and reporting when a team wants visibility before enforcing a hard cap.
 
