@@ -22,4 +22,7 @@ pub use openai_compat::{
     BearerAuthHeader, CloudRunOpenAiCompatAuth, OpenAiBatchConfig, OpenAiBatchDialect,
     OpenAiCompatConfig, OpenAiCompatProvider,
 };
-pub use vertex::{VertexAuthConfig, VertexBatchConfig, VertexProvider, VertexProviderConfig};
+pub use vertex::{
+    VertexAuthConfig, VertexBatchConfig, VertexProvider, VertexProviderConfig,
+    vertex_api_host_for_location,
+};

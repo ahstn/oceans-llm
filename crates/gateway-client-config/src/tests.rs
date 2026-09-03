@@ -2,13 +2,13 @@ use serde_json::Value;
 use toml::Value as TomlValue;
 
 use crate::{
-    AnthropicThinkingPolicy, ClaudeCodeConfigTemplate, ClientConfig, ClientConfigInput,
-    ClientConfigInputSet, ClientConfigTemplate, ClientModelCapabilities, CodexConfigTemplate,
-    CodexReasoningEffort, OpenCodeConfigTemplate, PiConfigTemplate,
-    infer_anthropic_thinking_policy, render_default_configs, render_default_configs_for_models,
+    ClaudeCodeConfigTemplate, ClientConfig, ClientConfigInput, ClientConfigInputSet,
+    ClientConfigTemplate, ClientModelCapabilities, CodexConfigTemplate, CodexReasoningEffort,
+    OpenCodeConfigTemplate, PiConfigTemplate, ThinkingPolicy, infer_thinking_policy,
+    render_default_configs, render_default_configs_for_models,
 };
 
-fn input(policy: Option<AnthropicThinkingPolicy>) -> ClientConfigInput {
+fn input(policy: Option<ThinkingPolicy>) -> ClientConfigInput {
     ClientConfigInput {
         model_id: "claude-sonnet".to_string(),
         display_name: "Claude Sonnet".to_string(),
@@ -45,6 +45,26 @@ fn non_anthropic_input() -> ClientConfigInput {
     }
 }
 
+fn gemini_input(model_id: &str, upstream_model: &str) -> ClientConfigInput {
+    ClientConfigInput {
+        model_id: model_id.to_string(),
+        display_name: model_id.to_string(),
+        upstream_model: Some(upstream_model.to_string()),
+        input_cost_per_million_tokens_usd_10000: Some(5_000),
+        output_cost_per_million_tokens_usd_10000: Some(30_000),
+        context_window_tokens: Some(1_000_000),
+        output_window_tokens: Some(65_536),
+        capabilities: ClientModelCapabilities {
+            responses: false,
+            tool_calling: true,
+            attachments: true,
+            vision: true,
+        },
+        thinking_policy: infer_thinking_policy([upstream_model]),
+        ..ClientConfigInput::default()
+    }
+}
+
 fn setup_value<'a>(config: &'a ClientConfig, label: &str) -> &'a str {
     config
         .setup
@@ -65,7 +85,7 @@ fn setup_href<'a>(config: &'a ClientConfig, label: &str) -> &'a str {
 
 #[test]
 fn opencode_shape_includes_required_cost_and_limits() {
-    let rendered = OpenCodeConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
+    let rendered = OpenCodeConfigTemplate.render(&input(Some(ThinkingPolicy::AnthropicSafeEffort)));
     let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
     let model = &value["provider"]["oceans-llm"]["models"]["claude-sonnet"];
 
@@ -88,7 +108,7 @@ fn opencode_shape_includes_required_cost_and_limits() {
 
 #[test]
 fn pi_shape_includes_provider_model_cost_and_windows() {
-    let rendered = PiConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
+    let rendered = PiConfigTemplate.render(&input(Some(ThinkingPolicy::AnthropicSafeEffort)));
     let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
     let provider = &value["providers"]["oceans-llm"];
     let model = &provider["models"][0];
@@ -114,7 +134,7 @@ fn pi_shape_includes_provider_model_cost_and_windows() {
 
 #[test]
 fn pi_cache_costs_default_to_zero_when_missing() {
-    let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    let mut input = input(Some(ThinkingPolicy::AnthropicSafeEffort));
     input.cache_read_cost_per_million_tokens_usd_10000 = None;
     input.cache_write_cost_per_million_tokens_usd_10000 = None;
 
@@ -141,7 +161,7 @@ fn pi_cache_costs_default_to_zero_when_missing() {
 
 #[test]
 fn client_context_window_is_capped_with_note() {
-    let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    let mut input = input(Some(ThinkingPolicy::AnthropicSafeEffort));
     input.context_window_tokens = Some(1_000_000);
     input.input_window_tokens = None;
 
@@ -168,7 +188,7 @@ fn client_context_window_is_capped_with_note() {
 
 #[test]
 fn client_context_window_note_is_emitted_once_for_multi_model_configs() {
-    let mut first = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    let mut first = input(Some(ThinkingPolicy::AnthropicSafeEffort));
     first.context_window_tokens = Some(1_000_000);
     let mut second = first.clone();
     second.model_id = "claude-haiku".to_string();
@@ -197,7 +217,7 @@ fn client_context_window_note_is_emitted_once_for_multi_model_configs() {
 
 #[test]
 fn client_context_window_note_is_emitted_when_later_model_is_capped() {
-    let mut first = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    let mut first = input(Some(ThinkingPolicy::AnthropicSafeEffort));
     first.context_window_tokens = Some(200_000);
     let mut second = first.clone();
     second.model_id = "claude-haiku".to_string();
@@ -231,23 +251,43 @@ fn infers_safe_effort_for_newer_claude_models() {
         "anthropic/claude-sonnet-5",
     ] {
         assert_eq!(
-            infer_anthropic_thinking_policy([model]),
-            Some(AnthropicThinkingPolicy::SafeEffort)
+            infer_thinking_policy([model]),
+            Some(ThinkingPolicy::AnthropicSafeEffort)
         );
     }
     assert_eq!(
-        infer_anthropic_thinking_policy(["anthropic/claude-sonnet-50"]),
-        Some(AnthropicThinkingPolicy::ManualBudget)
+        infer_thinking_policy(["anthropic/claude-sonnet-50"]),
+        Some(ThinkingPolicy::AnthropicManualBudget)
     );
     assert_eq!(
-        infer_anthropic_thinking_policy(["anthropic/claude-fable-50"]),
-        Some(AnthropicThinkingPolicy::ManualBudget)
+        infer_thinking_policy(["anthropic/claude-fable-50"]),
+        Some(ThinkingPolicy::AnthropicManualBudget)
     );
 }
 
 #[test]
+fn specific_model_markers_win_over_generic_provider_markers_in_any_position() {
+    // An opaque upstream deployment name, then a generic provider key, then the gateway model
+    // key that names the family: the specific marker must still win.
+    assert_eq!(
+        infer_thinking_policy(["deployment-7f3a", "anthropic_compat", "claude-sonnet-4-6"]),
+        Some(ThinkingPolicy::AnthropicSafeEffort)
+    );
+    assert_eq!(
+        infer_thinking_policy(["deployment-7f3a", "anthropic_compat", "gemini-2.5-flash"]),
+        Some(ThinkingPolicy::GeminiBudget)
+    );
+    // With no specific marker anywhere, the generic marker still yields a manual budget.
+    assert_eq!(
+        infer_thinking_policy(["deployment-7f3a", "anthropic_compat"]),
+        Some(ThinkingPolicy::AnthropicManualBudget)
+    );
+    assert_eq!(infer_thinking_policy(["deployment-7f3a", "openai"]), None);
+}
+
+#[test]
 fn safe_thinking_variants_are_emitted_for_newer_claude_models() {
-    let input = input(infer_anthropic_thinking_policy([
+    let input = input(infer_thinking_policy([
         "anthropic/claude-sonnet-4-6",
         "Claude Sonnet 4.6",
     ]));
@@ -269,7 +309,7 @@ fn safe_thinking_variants_are_emitted_for_newer_claude_models() {
 
 #[test]
 fn opencode_safe_effort_config_matches_expected_full_shape() {
-    let rendered = OpenCodeConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
+    let rendered = OpenCodeConfigTemplate.render(&input(Some(ThinkingPolicy::AnthropicSafeEffort)));
     let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
 
     assert_eq!(
@@ -318,7 +358,7 @@ fn opencode_safe_effort_config_matches_expected_full_shape() {
 
 #[test]
 fn pi_safe_effort_config_matches_expected_full_shape() {
-    let rendered = PiConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
+    let rendered = PiConfigTemplate.render(&input(Some(ThinkingPolicy::AnthropicSafeEffort)));
     let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
 
     assert_eq!(
@@ -385,7 +425,7 @@ fn pi_fable_5_1_config_matches_expected_shape() {
             attachments: false,
             vision: true,
         },
-        thinking_policy: Some(AnthropicThinkingPolicy::SafeEffort),
+        thinking_policy: Some(ThinkingPolicy::AnthropicSafeEffort),
         codex_reasoning_effort: None,
     };
 
@@ -436,18 +476,255 @@ fn pi_fable_5_1_config_matches_expected_shape() {
 
 #[test]
 fn manual_budget_models_do_not_emit_variants() {
-    let policy = infer_anthropic_thinking_policy(["anthropic/claude-sonnet-4-5@20250929"]);
+    let policy = infer_thinking_policy(["anthropic/claude-sonnet-4-5@20250929"]);
     let input = input(policy);
     let rendered = OpenCodeConfigTemplate.render(&input);
     let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
 
-    assert_eq!(policy, Some(AnthropicThinkingPolicy::ManualBudget));
+    assert_eq!(policy, Some(ThinkingPolicy::AnthropicManualBudget));
     assert!(
         value["provider"]["oceans-llm"]["models"]["claude-sonnet"]
             .get("variants")
             .is_none()
     );
     assert!(!rendered.notes.is_empty());
+}
+
+#[test]
+fn infers_thinking_policy_for_gemini_models() {
+    // Flash / Flash-Lite before 3.7 expose MINIMAL; 3.7+ start at LOW.
+    const LEGACY_FLASH: Option<ThinkingPolicy> = Some(ThinkingPolicy::GeminiLevel {
+        supports_minimal: true,
+        supports_medium: true,
+    });
+    const FLASH: Option<ThinkingPolicy> = Some(ThinkingPolicy::GeminiLevel {
+        supports_minimal: false,
+        supports_medium: true,
+    });
+    const PRO: Option<ThinkingPolicy> = Some(ThinkingPolicy::GeminiLevel {
+        supports_minimal: false,
+        supports_medium: false,
+    });
+
+    assert_eq!(infer_thinking_policy(["google/gemini-3.7-flash"]), FLASH);
+    assert_eq!(infer_thinking_policy(["google/gemini-3.8-flash"]), FLASH);
+    assert_eq!(
+        infer_thinking_policy(["google/gemini-3.6-flash"]),
+        LEGACY_FLASH
+    );
+    assert_eq!(
+        infer_thinking_policy(["google/gemini-3.1-flash-lite-preview"]),
+        LEGACY_FLASH
+    );
+    assert_eq!(
+        infer_thinking_policy(["google/gemini-3.1-pro-preview"]),
+        PRO
+    );
+    // Later generations keep the level-based contract, like the Vertex adapter.
+    assert_eq!(infer_thinking_policy(["google/gemini-4-flash-lite"]), FLASH);
+    assert_eq!(infer_thinking_policy(["google/gemini-4.2-pro"]), PRO);
+    assert_eq!(
+        infer_thinking_policy(["google/gemini-2.5-flash"]),
+        Some(ThinkingPolicy::GeminiBudget)
+    );
+    assert_eq!(infer_thinking_policy(["google/gemini-2.0-flash"]), None);
+    assert_eq!(infer_thinking_policy(["google/gemini-embedding-001"]), None);
+}
+
+#[test]
+fn model_aliases_outrank_provider_metadata_naming_an_older_generation() {
+    // `build_client_config_input` passes the upstream model, then model aliases, then provider
+    // key/type/label. An opaque deployment id followed by a Pro alias and a provider labelled
+    // after 2.5 must yield the Pro levels, not 2.5 budgets.
+    assert_eq!(
+        infer_thinking_policy([
+            "deployment-7f3a",
+            "gemini-3.1-pro",
+            "vertex-gemini-2.5-proxy",
+        ]),
+        Some(ThinkingPolicy::GeminiLevel {
+            supports_minimal: false,
+            supports_medium: false,
+        })
+    );
+}
+
+#[test]
+fn gemini_pro_detection_ignores_provider_labels() {
+    const FLASH_3_8: Option<ThinkingPolicy> = Some(ThinkingPolicy::GeminiLevel {
+        supports_minimal: false,
+        supports_medium: true,
+    });
+    assert_eq!(
+        infer_thinking_policy([
+            "google/gemini-3.8-flash",
+            "vertex-prod",
+            "gcp_vertex",
+            "Production Vertex",
+        ]),
+        FLASH_3_8
+    );
+    // A provider named after Anthropic must not reclassify a Gemini route: the upstream model
+    // is consulted first.
+    assert_eq!(
+        infer_thinking_policy(["google/gemini-3.8-flash", "vertex-anthropic-prod"]),
+        FLASH_3_8
+    );
+    // Aliases containing `-pro` as part of a longer word are not Pro.
+    assert_eq!(
+        infer_thinking_policy(["google/gemini-3.8-flash", "gemini-3-production"]),
+        FLASH_3_8
+    );
+    assert_eq!(
+        infer_thinking_policy(["google/gemini-3.1-pro-preview"]),
+        Some(ThinkingPolicy::GeminiLevel {
+            supports_minimal: false,
+            supports_medium: false,
+        })
+    );
+}
+
+#[test]
+fn pi_gemini_flash_config_matches_expected_full_shape() {
+    let input = gemini_input("gemini-3.8-flash", "google/gemini-3.8-flash");
+    let rendered = PiConfigTemplate.render(&input);
+    let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "providers": {
+                "oceans-llm": {
+                    "api": "openai-completions",
+                    "apiKey": "$OCEANS_LLM_API_KEY",
+                    "baseUrl": "http://127.0.0.1:3000/v1",
+                    "compat": {
+                        "supportsDeveloperRole": true,
+                        "supportsReasoningEffort": true,
+                        "supportsUsageInStreaming": true,
+                        "maxTokensField": "max_completion_tokens"
+                    },
+                    "models": [
+                        {
+                            "contextWindow": 200000,
+                            "cost": {
+                                "cacheRead": 0,
+                                "cacheWrite": 0,
+                                "input": 0.5,
+                                "output": 3.0
+                            },
+                            "id": "gemini-3.8-flash",
+                            "input": ["text", "image"],
+                            "maxTokens": 65536,
+                            "name": "gemini-3.8-flash",
+                            "reasoning": true,
+                            "thinkingLevelMap": {
+                                "off": "none",
+                                "minimal": "low",
+                                "low": "low",
+                                "medium": "medium",
+                                "high": "high",
+                                "xhigh": "high",
+                                "max": "high"
+                            }
+                        }
+                    ]
+                }
+            }
+        })
+    );
+    assert!(rendered.notes.iter().all(|note| !note.contains("thinking")));
+}
+
+#[test]
+fn pi_gemini_pro_collapses_unsupported_thinking_levels() {
+    let input = gemini_input("gemini-3.1-pro", "google/gemini-3.1-pro-preview");
+    let rendered = PiConfigTemplate.render(&input);
+    let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+    let model = &value["providers"]["oceans-llm"]["models"][0];
+
+    assert_eq!(model["reasoning"], true);
+    assert_eq!(
+        model["thinkingLevelMap"],
+        serde_json::json!({
+            "off": "none",
+            "minimal": "low",
+            "low": "low",
+            "medium": "high",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+        })
+    );
+}
+
+#[test]
+fn pi_gemini_budget_models_map_levels_to_reasoning_effort() {
+    let input = gemini_input("gemini-2.5-flash", "google/gemini-2.5-flash");
+    let value: Value =
+        serde_json::from_str(&PiConfigTemplate.render(&input).blocks[0].content).expect("json");
+    let model = &value["providers"]["oceans-llm"]["models"][0];
+
+    assert_eq!(model["reasoning"], true);
+    assert_eq!(
+        model["thinkingLevelMap"],
+        serde_json::json!({
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+        })
+    );
+}
+
+#[test]
+fn opencode_gemini_variants_follow_supported_thinking_levels() {
+    let flash = gemini_input("gemini-3.8-flash", "google/gemini-3.8-flash");
+    let pro = gemini_input("gemini-3.1-pro", "google/gemini-3.1-pro-preview");
+    let budget = gemini_input("gemini-2.5-flash", "google/gemini-2.5-flash");
+
+    let render = |input: &ClientConfigInput| -> Value {
+        let value: Value =
+            serde_json::from_str(&OpenCodeConfigTemplate.render(input).blocks[0].content)
+                .expect("json");
+        value["provider"]["oceans-llm"]["models"][input.model_id.as_str()].clone()
+    };
+
+    let flash_model = render(&flash);
+    assert_eq!(flash_model["reasoning"], true);
+    assert_eq!(
+        flash_model["variants"],
+        serde_json::json!({
+            "low": {"reasoningEffort": "low"},
+            "medium": {"reasoningEffort": "medium"},
+            "high": {"reasoningEffort": "high"}
+        })
+    );
+
+    let pro_model = render(&pro);
+    assert_eq!(pro_model["reasoning"], true);
+    assert_eq!(
+        pro_model["variants"],
+        serde_json::json!({
+            "low": {"reasoningEffort": "low"},
+            "high": {"reasoningEffort": "high"}
+        })
+    );
+
+    let budget_model = render(&budget);
+    assert_eq!(budget_model["reasoning"], true);
+    assert_eq!(
+        budget_model["variants"],
+        serde_json::json!({
+            "minimal": {"reasoningEffort": "minimal"},
+            "low": {"reasoningEffort": "low"},
+            "medium": {"reasoningEffort": "medium"},
+            "high": {"reasoningEffort": "high"}
+        })
+    );
 }
 
 #[test]
@@ -486,7 +763,7 @@ fn non_anthropic_models_use_openai_compatible_client_surfaces() {
 #[test]
 fn opencode_and_pi_group_mixed_api_styles_into_separate_providers() {
     let rendered = render_default_configs_for_models(ClientConfigInputSet::new(vec![
-        input(Some(AnthropicThinkingPolicy::SafeEffort)),
+        input(Some(ThinkingPolicy::AnthropicSafeEffort)),
         non_anthropic_input(),
     ]));
 
@@ -555,8 +832,8 @@ fn opencode_and_pi_group_mixed_api_styles_into_separate_providers() {
 
 #[test]
 fn pi_splits_anthropic_models_by_thinking_compatibility() {
-    let safe_effort = input(Some(AnthropicThinkingPolicy::SafeEffort));
-    let mut manual_budget = input(Some(AnthropicThinkingPolicy::ManualBudget));
+    let safe_effort = input(Some(ThinkingPolicy::AnthropicSafeEffort));
+    let mut manual_budget = input(Some(ThinkingPolicy::AnthropicManualBudget));
     manual_budget.model_id = "claude-haiku".to_string();
     manual_budget.upstream_model = Some("anthropic/claude-haiku-3-5".to_string());
 
@@ -587,7 +864,7 @@ fn pi_splits_anthropic_models_by_thinking_compatibility() {
 fn claude_code_filters_non_anthropic_models_from_mixed_selection() {
     let rendered = ClaudeCodeConfigTemplate
         .render_many(&ClientConfigInputSet::new(vec![
-            input(Some(AnthropicThinkingPolicy::SafeEffort)),
+            input(Some(ThinkingPolicy::AnthropicSafeEffort)),
             non_anthropic_input(),
         ]))
         .expect("claude code config");
@@ -607,8 +884,8 @@ fn claude_code_filters_non_anthropic_models_from_mixed_selection() {
 
 #[test]
 fn claude_code_deduplicates_duplicate_override_keys() {
-    let first = input(Some(AnthropicThinkingPolicy::SafeEffort));
-    let mut alias = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    let first = input(Some(ThinkingPolicy::AnthropicSafeEffort));
+    let mut alias = input(Some(ThinkingPolicy::AnthropicSafeEffort));
     alias.model_id = "claude-sonnet-alias".to_string();
 
     let rendered = ClaudeCodeConfigTemplate
@@ -665,7 +942,7 @@ fn claude_code_render_does_not_panic_for_non_anthropic_input() {
 #[test]
 fn claude_code_shape_includes_gateway_env_and_model_override() {
     let rendered =
-        ClaudeCodeConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
+        ClaudeCodeConfigTemplate.render(&input(Some(ThinkingPolicy::AnthropicSafeEffort)));
     let gateway_settings: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
     let lower_usage_settings: Value =
         serde_json::from_str(&rendered.blocks[1].content).expect("json");
@@ -725,7 +1002,7 @@ fn claude_code_shape_includes_gateway_env_and_model_override() {
 
 #[test]
 fn claude_code_sets_default_fable_model_env_var() {
-    let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    let mut input = input(Some(ThinkingPolicy::AnthropicSafeEffort));
     input.model_id = "claude-fable".to_string();
     input.display_name = "Claude Fable".to_string();
     input.upstream_model = Some("anthropic/claude-fable-5".to_string());
@@ -745,7 +1022,7 @@ fn claude_code_sets_default_fable_model_env_var() {
 
 #[test]
 fn codex_shape_includes_custom_responses_provider_without_unknown_reasoning_default() {
-    let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    let mut input = input(Some(ThinkingPolicy::AnthropicSafeEffort));
     input.provider_id = "oceans".to_string();
     input.provider_name = "OpenAI using LLM proxy".to_string();
     input.gateway_base_url = "https://oceans.example.com/v1".to_string();
@@ -824,7 +1101,7 @@ fn codex_xhigh_reasoning_effort_round_trips_with_codex_spelling() {
 
 #[test]
 fn codex_notes_do_not_include_thinking_variant_guidance() {
-    let rendered = CodexConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::ManualBudget)));
+    let rendered = CodexConfigTemplate.render(&input(Some(ThinkingPolicy::AnthropicManualBudget)));
 
     assert!(
         rendered
@@ -837,7 +1114,7 @@ fn codex_notes_do_not_include_thinking_variant_guidance() {
 
 #[test]
 fn default_configs_include_codex_only_for_responses_capable_models() {
-    let responses_input = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    let responses_input = input(Some(ThinkingPolicy::AnthropicSafeEffort));
     let response_keys = render_default_configs(&responses_input)
         .into_iter()
         .map(|config| config.key)
@@ -861,7 +1138,7 @@ fn default_configs_include_codex_only_for_responses_capable_models() {
 #[test]
 fn multi_model_configs_explain_codex_single_model_requirement() {
     let rendered = render_default_configs_for_models(ClientConfigInputSet::new(vec![
-        input(Some(AnthropicThinkingPolicy::SafeEffort)),
+        input(Some(ThinkingPolicy::AnthropicSafeEffort)),
         non_anthropic_input(),
     ]));
 

@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-use crate::types::{AnthropicThinkingPolicy, ClientConfigInput};
+use crate::types::{ClientConfigInput, ThinkingPolicy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum ClientApiStyle {
@@ -47,7 +47,7 @@ pub(crate) fn pi_api_key_env_reference(input: &ClientConfigInput) -> String {
 
 pub(crate) fn pi_provider_compat(input: &ClientConfigInput) -> Option<Value> {
     if client_api_style(input) == ClientApiStyle::AnthropicMessages {
-        return (input.thinking_policy == Some(AnthropicThinkingPolicy::SafeEffort))
+        return (input.thinking_policy == Some(ThinkingPolicy::AnthropicSafeEffort))
             .then(|| json!({"forceAdaptiveThinking": true}));
     }
 

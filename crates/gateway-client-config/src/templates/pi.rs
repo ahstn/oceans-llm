@@ -11,8 +11,8 @@ use crate::{
     format::to_pretty_json,
     templates::notes::{client_notes_for_inputs, thinking_notes},
     types::{
-        AnthropicThinkingPolicy, ClientConfig, ClientConfigCodeBlock, ClientConfigInput,
-        ClientConfigInputSet, ClientConfigSetupItem, ClientConfigTemplate,
+        ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
+        ClientConfigSetupItem, ClientConfigTemplate, ThinkingPolicy,
     },
 };
 
@@ -125,7 +125,7 @@ impl PiProviderGroup {
         match client_api_style(input) {
             ClientApiStyle::OpenAiCompatible => Self::OpenAiCompatible,
             ClientApiStyle::AnthropicMessages
-                if input.thinking_policy == Some(AnthropicThinkingPolicy::SafeEffort) =>
+                if input.thinking_policy == Some(ThinkingPolicy::AnthropicSafeEffort) =>
             {
                 Self::AnthropicMessagesAdaptiveThinking
             }
@@ -177,22 +177,50 @@ fn pi_model(input: &ClientConfigInput) -> Map<String, Value> {
         ("cost".to_string(), pi_cost(input)),
     ]);
 
-    if input.thinking_policy == Some(AnthropicThinkingPolicy::SafeEffort) {
-        model.insert(
-            "thinkingLevelMap".to_string(),
-            json!({
-                "off": null,
-                "minimal": null,
-                "low": "low",
-                "medium": "medium",
-                "high": "high",
-                "xhigh": "xhigh",
-                "max": "max",
-            }),
-        );
+    if let Some(level_map) = input.thinking_policy.and_then(pi_thinking_level_map) {
+        model.insert("thinkingLevelMap".to_string(), level_map);
     }
 
     model
+}
+
+fn pi_thinking_level_map(policy: ThinkingPolicy) -> Option<Value> {
+    match policy {
+        ThinkingPolicy::AnthropicSafeEffort => Some(json!({
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max",
+        })),
+        ThinkingPolicy::AnthropicManualBudget => None,
+        ThinkingPolicy::GeminiLevel {
+            supports_minimal,
+            supports_medium,
+        } => Some(json!({
+            // Pi sends the `off` value as `reasoning_effort` when thinking is off; `none`
+            // makes the gateway request the lowest level and hide thoughts. `null` would send
+            // nothing and leave Gemini at its MEDIUM default.
+            "off": "none",
+            "minimal": if supports_minimal { "minimal" } else { "low" },
+            "low": "low",
+            "medium": if supports_medium { "medium" } else { "high" },
+            "high": "high",
+            "xhigh": "high",
+            "max": "high",
+        })),
+        ThinkingPolicy::GeminiBudget => Some(json!({
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high",
+        })),
+    }
 }
 
 fn pi_group_compat(group: PiProviderGroup, inputs: &[&ClientConfigInput]) -> Option<Value> {

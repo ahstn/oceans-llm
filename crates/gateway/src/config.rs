@@ -351,7 +351,11 @@ impl GatewayConfig {
                             provider.id
                         );
                     }
-                    if provider.api_host.trim().is_empty() {
+                    if provider
+                        .api_host
+                        .as_deref()
+                        .is_some_and(|host| host.trim().is_empty())
+                    {
                         bail!(
                             "gcp_vertex provider `{}` api_host cannot be empty",
                             provider.id
@@ -1151,7 +1155,7 @@ impl GatewayConfig {
                     let config = json!({
                         "project_id": provider.project_id,
                         "location": provider.location,
-                        "api_host": provider.api_host,
+                        "api_host": provider.resolved_api_host(),
                         "default_headers": provider.default_headers,
                         "timeouts": provider.timeouts,
                         "display": provider.display,
@@ -1693,7 +1697,7 @@ impl GatewayConfig {
                 provider_key: provider.id.clone(),
                 project_id: provider.project_id.clone(),
                 location: provider.location.clone(),
-                api_host: provider.api_host.clone(),
+                api_host: provider.resolved_api_host(),
                 auth,
                 default_headers: provider.default_headers.clone(),
                 request_timeout_ms: provider

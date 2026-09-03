@@ -1,4 +1,62 @@
-use super::*;
+use std::collections::BTreeMap;
+
+use gateway_core::{
+    CoreEmbeddingsRequest, ProviderError, ProviderRequestContext, VERTEX_TEXT_EMBEDDING_MODEL_IDS,
+    is_supported_vertex_text_embedding_model_id,
+};
+use serde_json::{Map, Value, json};
+
+use super::google_request::merge_object_overrides;
+
+const VERTEX_EMBEDDING_TASK_TYPES: &[&str] = &[
+    "RETRIEVAL_QUERY",
+    "RETRIEVAL_DOCUMENT",
+    "SEMANTIC_SIMILARITY",
+    "CLASSIFICATION",
+    "CLUSTERING",
+    "QUESTION_ANSWERING",
+    "FACT_VERIFICATION",
+    "CODE_RETRIEVAL_QUERY",
+];
+
+const VERTEX_EMBED_CONTENT_MODEL_IDS: &[&str] = &["gemini-embedding-2"];
+
+/// `predict` models that accept only one input text per request.
+const VERTEX_SINGLE_INSTANCE_PREDICT_MODEL_IDS: &[&str] = &["gemini-embedding-001"];
+
+/// Maximum `instances` per `predict` call for text embedding models that batch.
+pub(super) const VERTEX_PREDICT_MAX_INSTANCES: usize = 250;
+
+/// Vertex caps one `predict` call at 20,000 input tokens across all instances. Tokens are not
+/// counted locally, so batches are bounded by [`estimated_tokens`] instead.
+pub(super) const VERTEX_PREDICT_MAX_TOKENS: usize = 20_000;
+
+/// Upper bound on the token count without a tokenizer: one token per UTF-8 byte. Gemini's
+/// SentencePiece tokenizer falls back to single bytes, so no input tokenizes to more tokens than
+/// bytes; dense ASCII (base64, hex, minified code) can approach that ceiling. Prose batches come
+/// out smaller than necessary, which only costs extra `predict` calls, while a batch can never
+/// exceed the upstream token cap.
+pub(super) fn estimated_tokens(text: &str) -> usize {
+    text.len()
+}
+
+/// Upstream bodies for one embeddings request. `predict` bodies carry up to
+/// [`predict_max_instances`] inputs and [`VERTEX_PREDICT_MAX_TOKENS`] estimated tokens each;
+/// `embedContent` bodies carry exactly one input.
+#[derive(Debug)]
+pub(super) struct GoogleEmbeddingRequestMapping {
+    pub(super) bodies: Vec<Value>,
+    /// Inputs carried by each body, aligned with `bodies`.
+    pub(super) batch_sizes: Vec<usize>,
+    pub(super) input_count: usize,
+}
+
+#[derive(Debug)]
+pub(super) struct GoogleEmbeddingOutput {
+    pub(super) index: usize,
+    pub(super) embedding: Value,
+    pub(super) token_count: Option<i64>,
+}
 
 pub(super) fn validate_vertex_embedding_model(model_id: &str) -> Result<(), ProviderError> {
     if is_supported_vertex_text_embedding_model_id(model_id) {
@@ -13,6 +71,15 @@ pub(super) fn validate_vertex_embedding_model(model_id: &str) -> Result<(), Prov
 
 fn uses_vertex_embed_content(model_id: &str) -> bool {
     VERTEX_EMBED_CONTENT_MODEL_IDS.contains(&model_id)
+}
+
+/// Inputs one `predict` call may carry for `model_id`.
+pub(super) fn predict_max_instances(model_id: &str) -> usize {
+    if VERTEX_SINGLE_INSTANCE_PREDICT_MODEL_IDS.contains(&model_id) {
+        1
+    } else {
+        VERTEX_PREDICT_MAX_INSTANCES
+    }
 }
 
 pub(super) fn vertex_embedding_method(model_id: &str) -> &'static str {
@@ -58,8 +125,47 @@ pub(super) fn map_google_embedding_request(
         )));
     }
 
-    let mut bodies = Vec::with_capacity(inputs.len());
+    let mut parameters = Map::new();
+    if let Some(output_dimensionality) = output_dimensionality {
+        parameters.insert(
+            "outputDimensionality".to_string(),
+            Value::Number(output_dimensionality.into()),
+        );
+    }
+    if let Some(auto_truncate) = auto_truncate {
+        parameters.insert("autoTruncate".to_string(), Value::Bool(auto_truncate));
+    }
+
+    let input_count = inputs.len();
+    let max_instances = predict_max_instances(model_id);
+    let mut bodies = Vec::with_capacity(input_count.div_ceil(max_instances));
+    let mut batch_sizes = Vec::with_capacity(bodies.capacity());
+    let mut instances = Vec::new();
+    let mut batch_tokens = 0usize;
+    // Vertex prepends `title` to every instance's text before tokenizing, so it counts
+    // against the aggregate budget once per instance.
+    let title_tokens = title.as_deref().map_or(0, estimated_tokens);
+    let mut flush = |instances: &mut Vec<Value>, batch_tokens: &mut usize| {
+        let mut body = Map::new();
+        batch_sizes.push(instances.len());
+        body.insert(
+            "instances".to_string(),
+            Value::Array(std::mem::take(instances)),
+        );
+        if !parameters.is_empty() {
+            body.insert("parameters".to_string(), Value::Object(parameters.clone()));
+        }
+        merge_object_overrides(&mut body, &context.extra_body);
+        bodies.push(Value::Object(body));
+        *batch_tokens = 0;
+    };
     for input in inputs {
+        let tokens = estimated_tokens(&input) + title_tokens;
+        let full = instances.len() >= max_instances
+            || (!instances.is_empty() && batch_tokens + tokens > VERTEX_PREDICT_MAX_TOKENS);
+        if full {
+            flush(&mut instances, &mut batch_tokens);
+        }
         let mut instance = Map::new();
         instance.insert("content".to_string(), Value::String(input));
         if let Some(task_type) = &task_type {
@@ -68,32 +174,18 @@ pub(super) fn map_google_embedding_request(
         if let Some(title) = &title {
             instance.insert("title".to_string(), Value::String(title.clone()));
         }
-
-        let mut body = Map::new();
-        body.insert(
-            "instances".to_string(),
-            Value::Array(vec![Value::Object(instance)]),
-        );
-
-        let mut parameters = Map::new();
-        if let Some(output_dimensionality) = output_dimensionality {
-            parameters.insert(
-                "outputDimensionality".to_string(),
-                Value::Number(output_dimensionality.into()),
-            );
-        }
-        if let Some(auto_truncate) = auto_truncate {
-            parameters.insert("autoTruncate".to_string(), Value::Bool(auto_truncate));
-        }
-        if !parameters.is_empty() {
-            body.insert("parameters".to_string(), Value::Object(parameters));
-        }
-
-        merge_object_overrides(&mut body, &context.extra_body);
-        bodies.push(Value::Object(body));
+        instances.push(Value::Object(instance));
+        batch_tokens += tokens;
+    }
+    if !instances.is_empty() {
+        flush(&mut instances, &mut batch_tokens);
     }
 
-    Ok(GoogleEmbeddingRequestMapping { bodies })
+    Ok(GoogleEmbeddingRequestMapping {
+        bodies,
+        batch_sizes,
+        input_count,
+    })
 }
 
 fn map_google_embed_content_request(
@@ -115,7 +207,8 @@ fn map_google_embed_content_request(
         )));
     }
 
-    let mut bodies = Vec::with_capacity(inputs.len());
+    let input_count = inputs.len();
+    let mut bodies = Vec::with_capacity(input_count);
     for input in inputs {
         let mut body = Map::new();
         body.insert(
@@ -140,7 +233,11 @@ fn map_google_embed_content_request(
         bodies.push(Value::Object(body));
     }
 
-    Ok(GoogleEmbeddingRequestMapping { bodies })
+    Ok(GoogleEmbeddingRequestMapping {
+        bodies,
+        batch_sizes: vec![1; input_count],
+        input_count,
+    })
 }
 
 fn reject_vertex_embed_content_only_field(
@@ -377,48 +474,63 @@ fn optional_bool_field(field: &str, value: &Value) -> Result<Option<bool>, Provi
     })
 }
 
-pub(super) fn extract_google_embedding_output(
+/// Extracts every embedding in one upstream response, numbering them from `first_index`.
+/// The response must carry exactly `expected` predictions so later batches stay aligned.
+pub(super) fn extract_google_embedding_outputs(
     value: &Value,
-    index: usize,
+    first_index: usize,
+    expected: usize,
     model_id: &str,
-) -> Result<GoogleEmbeddingOutput, ProviderError> {
+) -> Result<Vec<GoogleEmbeddingOutput>, ProviderError> {
     if uses_vertex_embed_content(model_id) {
-        return extract_google_embed_content_output(value, index);
+        return extract_google_embed_content_output(value, first_index).map(|output| vec![output]);
     }
-    let prediction = value
+    let predictions = value
         .get("predictions")
         .and_then(Value::as_array)
-        .and_then(|predictions| predictions.first())
+        .filter(|predictions| !predictions.is_empty())
         .ok_or_else(|| {
             ProviderError::Transport(
                 "invalid JSON from vertex embeddings: missing predictions[0]".to_string(),
             )
         })?;
-    let embedding = prediction
-        .get("embeddings")
-        .and_then(|embeddings| embeddings.get("values"))
-        .and_then(Value::as_array)
-        .ok_or_else(|| {
-            ProviderError::Transport(
-                "invalid JSON from vertex embeddings: missing embeddings.values".to_string(),
-            )
-        })?;
-    if embedding.iter().any(|value| value.as_f64().is_none()) {
-        return Err(ProviderError::Transport(
-            "invalid JSON from vertex embeddings: embedding values must be numbers".to_string(),
-        ));
+    if predictions.len() != expected {
+        return Err(ProviderError::Transport(format!(
+            "invalid JSON from vertex embeddings: expected {expected} predictions, got {}",
+            predictions.len()
+        )));
     }
-    let token_count = prediction
-        .get("embeddings")
-        .and_then(|embeddings| embeddings.get("statistics"))
-        .and_then(|statistics| statistics.get("token_count"))
-        .and_then(Value::as_i64);
-
-    Ok(GoogleEmbeddingOutput {
-        index,
-        embedding: Value::Array(embedding.clone()),
-        token_count,
-    })
+    predictions
+        .iter()
+        .zip(first_index..)
+        .map(|(prediction, index)| {
+            let embeddings = prediction.get("embeddings");
+            let embedding = embeddings
+                .and_then(|embeddings| embeddings.get("values"))
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    ProviderError::Transport(
+                        "invalid JSON from vertex embeddings: missing embeddings.values"
+                            .to_string(),
+                    )
+                })?;
+            if embedding.iter().any(|value| value.as_f64().is_none()) {
+                return Err(ProviderError::Transport(
+                    "invalid JSON from vertex embeddings: embedding values must be numbers"
+                        .to_string(),
+                ));
+            }
+            let token_count = embeddings
+                .and_then(|embeddings| embeddings.get("statistics"))
+                .and_then(|statistics| statistics.get("token_count"))
+                .and_then(Value::as_i64);
+            Ok(GoogleEmbeddingOutput {
+                index,
+                embedding: Value::Array(embedding.clone()),
+                token_count,
+            })
+        })
+        .collect()
 }
 
 fn extract_google_embed_content_output(

@@ -12,23 +12,30 @@ use bytes::Bytes;
 use futures_util::StreamExt;
 use futures_util::stream;
 use gateway_core::{
-    CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, ProviderClient, ProviderRequestContext,
+    CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, ProviderClient, ProviderError,
+    ProviderRequestContext,
 };
 use serde_json::{Map, Value, json};
 use tokio::{net::TcpListener, sync::Mutex};
 
 use super::{
-    JsonObjectParser, PublisherFamily, SseEventParser, VertexAuthConfig, VertexProvider,
-    VertexProviderConfig, extract_google_candidate_text, map_anthropic_request,
-    map_google_embedding_request, map_google_request, map_google_usage,
-    normalize_anthropic_response, normalize_anthropic_stream, normalize_google_response,
-    normalize_google_stream, parse_upstream_model,
+    PublisherFamily, VertexAuthConfig, VertexProvider, VertexProviderConfig,
+    anthropic::map_vertex_anthropic_request,
+    embeddings::{
+        VERTEX_PREDICT_MAX_INSTANCES, VERTEX_PREDICT_MAX_TOKENS, estimated_tokens,
+        map_google_embedding_request, predict_max_instances,
+    },
+    error::VertexAdapterError,
+    gemini::{GeminiModel, ThinkingControl},
+    google_request::map_google_request,
+    google_response::{map_google_usage, normalize_google_response},
+    google_stream::{GoogleStreamState, normalize_google_stream},
+    parse_upstream_model, vertex_api_host_for_location,
 };
-use gateway_core::ProviderError;
 
 mod anthropic_request;
-mod anthropic_thinking;
 mod embeddings;
+mod gemini;
 mod google_request;
 mod google_tools;
 mod provider;
@@ -49,6 +56,13 @@ fn context(upstream_model: &str) -> ProviderRequestContext {
     }
 }
 fn vertex_provider_for_test(api_host: String) -> VertexProvider {
+    vertex_provider_with_headers(api_host, BTreeMap::new())
+}
+
+fn vertex_provider_with_headers(
+    api_host: String,
+    default_headers: BTreeMap<String, String>,
+) -> VertexProvider {
     VertexProvider::new(VertexProviderConfig {
         provider_key: "vertex-prod".to_string(),
         project_id: "proj-123".to_string(),
@@ -57,7 +71,7 @@ fn vertex_provider_for_test(api_host: String) -> VertexProvider {
         auth: VertexAuthConfig::Bearer {
             token: "test-token".to_string(),
         },
-        default_headers: BTreeMap::new(),
+        default_headers,
         request_timeout_ms: 5_000,
         batch: None,
     })
@@ -71,6 +85,33 @@ fn chat_request(messages: Vec<CoreChatMessage>) -> CoreChatRequest {
         stream: false,
         extra: BTreeMap::new(),
     }
+}
+
+/// Maps a chat request for a Google model, deriving `model_id` from the context.
+fn google_body(
+    request: &CoreChatRequest,
+    context: &ProviderRequestContext,
+    stream: bool,
+) -> Result<Value, ProviderError> {
+    let (_, _, model_id) = parse_upstream_model(&context.upstream_model)?;
+    map_google_request(request, context, model_id, stream)
+}
+
+/// Maps a chat request for an Anthropic model with no provider default headers.
+fn anthropic_body(
+    request: &CoreChatRequest,
+    context: &ProviderRequestContext,
+    stream: bool,
+) -> Result<Value, ProviderError> {
+    map_vertex_anthropic_request(request, context, stream, &BTreeMap::new())
+}
+
+/// Encodes upstream JSON objects as the `alt=sse` frames Vertex streams.
+fn google_sse_frames(objects: &[Value]) -> String {
+    objects
+        .iter()
+        .map(|object| format!("data: {object}\r\n\r\n"))
+        .collect()
 }
 
 fn embedding_request(input: Value) -> CoreEmbeddingsRequest {

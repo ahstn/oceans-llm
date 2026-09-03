@@ -406,9 +406,11 @@ impl VertexProvider {
                     item.custom_id
                 ))
             })?;
+            let (_, _, model_id) = parse_upstream_model(&request.context.upstream_model)?;
             let mapped = map_google_request(
                 &openai_chat_request_to_core(&openai),
                 &request.context,
+                model_id,
                 false,
             )?;
             let row = json!({
@@ -720,9 +722,22 @@ fn parse_bigquery_results(
                         && status.get("code").and_then(Value::as_i64).unwrap_or(0) != 0
                 })
                 .cloned();
-            let normalized = response
-                .as_ref()
-                .map(|response| normalize_google_response(response, context));
+            // Normalization failures (malformed function call, inline error) are per-item model
+            // outcomes; record them on the row instead of failing the whole batch.
+            let (normalized, error) =
+                match response
+                    .as_ref()
+                    .map(|response| normalize_google_response(response, context))
+                {
+                    Some(Ok(normalized)) => (Some(normalized), error),
+                    Some(Err(failure)) => (
+                        None,
+                        Some(error.unwrap_or_else(
+                            || json!({ "code": 3, "message": failure.to_string() }),
+                        )),
+                    ),
+                    None => (None, error),
+                };
             Ok(ProviderBatchResult {
                 custom_id: custom_id.to_string(),
                 provider_usage: normalized
@@ -825,6 +840,50 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].custom_id, "row-1");
         assert!(results[0].response_body.is_some());
+    }
+
+    #[test]
+    fn vertex_bigquery_row_normalization_failure_is_recorded_per_row() {
+        let context = ProviderRequestContext {
+            request_id: "batch-1".to_string(),
+            model_key: "analysis".to_string(),
+            provider_key: "vertex".to_string(),
+            upstream_model: "google/gemini-3.7-flash".to_string(),
+            owner_user_id: None,
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            request_headers: BTreeMap::new(),
+            compatibility: RouteCompatibility::default(),
+        };
+        let results = parse_bigquery_results(
+            &json!({"rows": [
+                {"f": [
+                    {"v": "bad"},
+                    {"v": "{\"candidates\":[{\"finishReason\":\"MALFORMED_FUNCTION_CALL\",\"finishMessage\":\"unparseable\"}]}"},
+                    {"v": null}
+                ]},
+                {"f": [
+                    {"v": "good"},
+                    {"v": "{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}"},
+                    {"v": null}
+                ]}
+            ]}),
+            &context,
+        )
+        .expect("one bad row must not drop the batch");
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].custom_id, "bad");
+        assert!(results[0].response_body.is_none());
+        let error = results[0].error.as_ref().expect("row error");
+        assert!(
+            error["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("unparseable"))
+        );
+        assert_eq!(results[1].custom_id, "good");
+        assert!(results[1].response_body.is_some());
+        assert!(results[1].error.is_none());
     }
 
     #[test]
