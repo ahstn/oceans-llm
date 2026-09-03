@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn gemini_3_flash_maps_every_effort_to_a_thinking_level() {
-    let model = GeminiModel::parse("gemini-3.7-flash").expect("parse");
+    let model = GeminiModel::parse("gemini-3.6-flash").expect("parse");
     assert_eq!(
         model.thinking_control(ReasoningEffort::Minimal),
         Some(ThinkingControl::Level("MINIMAL"))

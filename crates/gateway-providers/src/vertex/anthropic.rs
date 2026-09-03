@@ -42,9 +42,15 @@ fn apply_body_betas(
     let mut betas: Vec<String> = match body.remove("anthropic_beta") {
         None | Some(Value::Null) => Vec::new(),
         Some(Value::Array(values)) => values
-            .into_iter()
-            .filter_map(|value| value.as_str().map(str::to_string))
-            .collect(),
+            .iter()
+            .map(|value| value.as_str().map(str::to_string))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "`anthropic_beta` must be an array of strings for Vertex Anthropic mapping"
+                        .to_string(),
+                )
+            })?,
         Some(Value::String(value)) => split_betas(&value).map(str::to_string).collect(),
         Some(_) => {
             return Err(ProviderError::InvalidRequest(

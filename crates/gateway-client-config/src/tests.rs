@@ -472,8 +472,13 @@ fn manual_budget_models_do_not_emit_variants() {
 
 #[test]
 fn infers_thinking_policy_for_gemini_models() {
-    const FLASH: Option<ThinkingPolicy> = Some(ThinkingPolicy::GeminiLevel {
+    // Flash / Flash-Lite before 3.7 expose MINIMAL; 3.7+ start at LOW.
+    const LEGACY_FLASH: Option<ThinkingPolicy> = Some(ThinkingPolicy::GeminiLevel {
         supports_minimal: true,
+        supports_medium: true,
+    });
+    const FLASH: Option<ThinkingPolicy> = Some(ThinkingPolicy::GeminiLevel {
+        supports_minimal: false,
         supports_medium: true,
     });
     const PRO: Option<ThinkingPolicy> = Some(ThinkingPolicy::GeminiLevel {
@@ -484,8 +489,12 @@ fn infers_thinking_policy_for_gemini_models() {
     assert_eq!(infer_thinking_policy(["google/gemini-3.7-flash"]), FLASH);
     assert_eq!(infer_thinking_policy(["google/gemini-3.8-flash"]), FLASH);
     assert_eq!(
+        infer_thinking_policy(["google/gemini-3.6-flash"]),
+        LEGACY_FLASH
+    );
+    assert_eq!(
         infer_thinking_policy(["google/gemini-3.1-flash-lite-preview"]),
-        FLASH
+        LEGACY_FLASH
     );
     assert_eq!(
         infer_thinking_policy(["google/gemini-3.1-pro-preview"]),
@@ -500,6 +509,10 @@ fn infers_thinking_policy_for_gemini_models() {
 
 #[test]
 fn gemini_pro_detection_ignores_provider_labels() {
+    const FLASH_3_8: Option<ThinkingPolicy> = Some(ThinkingPolicy::GeminiLevel {
+        supports_minimal: false,
+        supports_medium: true,
+    });
     assert_eq!(
         infer_thinking_policy([
             "google/gemini-3.8-flash",
@@ -507,27 +520,18 @@ fn gemini_pro_detection_ignores_provider_labels() {
             "gcp_vertex",
             "Production Vertex",
         ]),
-        Some(ThinkingPolicy::GeminiLevel {
-            supports_minimal: true,
-            supports_medium: true,
-        })
+        FLASH_3_8
     );
     // A provider named after Anthropic must not reclassify a Gemini route: the upstream model
     // is consulted first.
     assert_eq!(
         infer_thinking_policy(["google/gemini-3.8-flash", "vertex-anthropic-prod"]),
-        Some(ThinkingPolicy::GeminiLevel {
-            supports_minimal: true,
-            supports_medium: true,
-        })
+        FLASH_3_8
     );
     // Aliases containing `-pro` as part of a longer word are not Pro.
     assert_eq!(
         infer_thinking_policy(["google/gemini-3.8-flash", "gemini-3-production"]),
-        Some(ThinkingPolicy::GeminiLevel {
-            supports_minimal: true,
-            supports_medium: true,
-        })
+        FLASH_3_8
     );
     assert_eq!(
         infer_thinking_policy(["google/gemini-3.1-pro-preview"]),
@@ -574,7 +578,7 @@ fn pi_gemini_flash_config_matches_expected_full_shape() {
                             "reasoning": true,
                             "thinkingLevelMap": {
                                 "off": null,
-                                "minimal": "minimal",
+                                "minimal": "low",
                                 "low": "low",
                                 "medium": "medium",
                                 "high": "high",
@@ -652,7 +656,6 @@ fn opencode_gemini_variants_follow_supported_thinking_levels() {
     assert_eq!(
         flash_model["variants"],
         serde_json::json!({
-            "minimal": {"reasoningEffort": "minimal"},
             "low": {"reasoningEffort": "low"},
             "medium": {"reasoningEffort": "medium"},
             "high": {"reasoningEffort": "high"}

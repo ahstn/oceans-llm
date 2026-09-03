@@ -218,9 +218,11 @@ async fn vertex_provider_google_non_stream_executes_real_http_mapping() {
 
     let request_payload = captured.lock().await.clone().expect("captured request");
     assert_eq!(request_payload["contents"][0]["parts"][0]["text"], "ping");
-    assert_eq!(
-        request_payload["generationConfig"]["temperature"],
-        json!(0.2)
+    // Gemini 3.7+ ignores temperature; it is stripped rather than forwarded.
+    assert!(
+        request_payload["generationConfig"]
+            .get("temperature")
+            .is_none()
     );
     assert_eq!(
         request_payload["generationConfig"]["thinkingConfig"],

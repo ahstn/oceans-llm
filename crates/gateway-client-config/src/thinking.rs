@@ -39,10 +39,17 @@ fn classify(value: &str) -> Option<ThinkingPolicy> {
     if value.contains("anthropic") || value.contains("claude") {
         return Some(ThinkingPolicy::AnthropicManualBudget);
     }
-    if value.contains("gemini-3") {
-        let is_pro = is_gemini_3_pro(value);
+    if let Some(token) = gemini_3_token(value) {
+        let is_pro = token.split('-').any(|segment| segment == "pro");
+        // `MINIMAL` exists on Flash / Flash-Lite up to 3.6; Pro and 3.7+ start at `LOW`.
+        let minor: u32 = token
+            .split('-')
+            .next()
+            .and_then(|version| version.split_once('.'))
+            .and_then(|(_, minor)| minor.parse().ok())
+            .unwrap_or(0);
         return Some(ThinkingPolicy::GeminiLevel {
-            supports_minimal: !is_pro,
+            supports_minimal: !is_pro && minor < 7,
             supports_medium: !is_pro,
         });
     }
@@ -52,13 +59,14 @@ fn classify(value: &str) -> Option<ThinkingPolicy> {
     None
 }
 
-/// True when the `gemini-3…` token has `pro` as a whole hyphen-delimited tier segment, so
-/// `gemini-3.1-pro-preview` matches while `gemini-3-production` does not.
-fn is_gemini_3_pro(value: &str) -> bool {
-    value.split("gemini-3").skip(1).any(|rest| {
+/// The model token following `gemini-` for a Gemini 3 id, e.g. `3.1-pro-preview` from
+/// `google/gemini-3.1-pro-preview@001`. Tier segments are hyphen-delimited, so
+/// `3-production` is not Pro.
+fn gemini_3_token(value: &str) -> Option<&str> {
+    value.split("gemini-").skip(1).find_map(|rest| {
         rest.split(|ch: char| ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@'))
             .next()
-            .is_some_and(|token| token.split('-').any(|segment| segment == "pro"))
+            .filter(|token| token.split(['.', '-']).next() == Some("3"))
     })
 }
 

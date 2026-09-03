@@ -545,16 +545,22 @@ fn accepts_comma_separated_caller_anthropic_beta_string() {
 
 #[test]
 fn rejects_non_string_caller_anthropic_beta() {
-    let mut request = chat_request(vec![user("ping")]);
-    request
-        .extra
-        .insert("anthropic_beta".to_string(), json!({"beta": true}));
+    // An object, and an array with a non-string entry, both fail instead of being partially
+    // applied.
+    for value in [json!({"beta": true}), json!(["files-api-2025-04-14", 1])] {
+        let mut request = chat_request(vec![user("ping")]);
+        request
+            .extra
+            .insert("anthropic_beta".to_string(), value.clone());
 
-    let error = anthropic_body(&request, &context("anthropic/claude-sonnet-4-6"), false)
-        .expect_err("object anthropic_beta must fail");
+        let error = match anthropic_body(&request, &context("anthropic/claude-sonnet-4-6"), false) {
+            Ok(_) => panic!("anthropic_beta {value} must fail"),
+            Err(error) => error,
+        };
 
-    assert!(matches!(error, ProviderError::InvalidRequest(_)));
-    assert!(error.to_string().contains("anthropic_beta"));
+        assert!(matches!(error, ProviderError::InvalidRequest(_)), "{value}");
+        assert!(error.to_string().contains("anthropic_beta"), "{value}");
+    }
 }
 
 #[test]

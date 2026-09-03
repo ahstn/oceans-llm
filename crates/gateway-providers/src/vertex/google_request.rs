@@ -27,6 +27,7 @@ pub(super) fn map_google_request(
         Some(model) if model.supports_function_ids() => FunctionIdPolicy::Include,
         _ => FunctionIdPolicy::Omit,
     };
+    let deprecates_sampling = model.is_some_and(GeminiModel::deprecates_sampling);
 
     let mut body = Map::new();
     map_google_contents(request, function_ids, &mut body)?;
@@ -42,9 +43,22 @@ pub(super) fn map_google_request(
             | "service_tier" | "logit_bias" | "prompt_cache_key" | "safety_identifier"
             | "modalities" | "audio" | "prediction" | "verbosity" | "web_search_options"
             | "functions" | "function_call" => {}
+            // Gemini 3.7+ ignores these; drop them so the payload matches the documented shape.
+            "temperature" | "top_p" | "top_k" if deprecates_sampling => {}
             "temperature" => insert_config(&mut generation_config, "temperature", value),
             "top_p" => insert_config(&mut generation_config, "topP", value),
             "top_k" => insert_config(&mut generation_config, "topK", value),
+            // Gemini 3.7+ errors on these unless they are the no-op defaults.
+            "presence_penalty" | "frequency_penalty" | "n" if deprecates_sampling => {
+                let noop = if key == "n" { 1.0 } else { 0.0 };
+                if !(value.is_null() || value.as_f64() == Some(noop)) {
+                    return Err(VertexAdapterError::UnsupportedSamplingField {
+                        field: key.clone(),
+                        model_id: model_id.to_string(),
+                    }
+                    .into());
+                }
+            }
             "presence_penalty" => insert_config(&mut generation_config, "presencePenalty", value),
             "frequency_penalty" => {
                 insert_config(&mut generation_config, "frequencyPenalty", value);

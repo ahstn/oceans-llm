@@ -513,7 +513,8 @@ fn drops_openai_only_fields_and_passes_unknown_fields_to_body_root() {
 #[test]
 fn maps_reasoning_effort_to_thinking_level_on_gemini_3_flash() {
     for (effort, level) in [
-        ("minimal", "MINIMAL"),
+        // 3.7+ Flash has no MINIMAL level; the lowest supported level is used instead.
+        ("minimal", "LOW"),
         ("low", "LOW"),
         ("medium", "MEDIUM"),
         ("high", "HIGH"),
@@ -525,6 +526,56 @@ fn maps_reasoning_effort_to_thinking_level_on_gemini_3_flash() {
             json!({"thinkingLevel": level, "includeThoughts": true}),
             "effort {effort}"
         );
+    }
+    assert_eq!(
+        thinking_config(
+            "gemini-3.6-flash",
+            &[("reasoning_effort", json!("minimal"))]
+        ),
+        json!({"thinkingLevel": "MINIMAL", "includeThoughts": true})
+    );
+}
+
+#[test]
+fn gemini_3_7_drops_deprecated_sampling_and_rejects_unsupported_fields() {
+    // Ignored upstream: dropped rather than forwarded.
+    let config = generation_config(
+        "gemini-3.8-flash",
+        &[
+            ("temperature", json!(0.2)),
+            ("top_p", json!(0.9)),
+            ("top_k", json!(40)),
+            ("seed", json!(7)),
+            // No-op defaults are tolerated so stock OpenAI clients keep working.
+            ("n", json!(1)),
+            ("presence_penalty", json!(0)),
+            ("frequency_penalty", json!(0.0)),
+        ],
+    )
+    .expect("mapped");
+    assert_eq!(config, json!({"seed": 7}));
+
+    // Older models keep the full sampling surface.
+    let config = generation_config(
+        "gemini-3.6-flash",
+        &[
+            ("temperature", json!(0.2)),
+            ("presence_penalty", json!(0.5)),
+        ],
+    )
+    .expect("mapped");
+    assert_eq!(config["temperature"], json!(0.2));
+    assert_eq!(config["presencePenalty"], json!(0.5));
+
+    // Non-default values Vertex would reject are refused locally with the field named.
+    for (field, value) in [
+        ("presence_penalty", json!(0.5)),
+        ("frequency_penalty", json!(-1)),
+        ("n", json!(2)),
+    ] {
+        let error = generation_config("gemini-3.7-flash", &[(field, value)])
+            .expect_err("unsupported sampling field");
+        assert_invalid_request(error, field);
     }
 }
 
@@ -572,7 +623,7 @@ fn maps_reasoning_effort_to_thinking_budget_on_gemini_2_5() {
 fn disables_thoughts_for_effort_none() {
     assert_eq!(
         thinking_config("gemini-3.7-flash", &[("reasoning_effort", json!("none"))]),
-        json!({"thinkingLevel": "MINIMAL", "includeThoughts": false})
+        json!({"thinkingLevel": "LOW", "includeThoughts": false})
     );
     assert_eq!(
         thinking_config(
@@ -593,7 +644,7 @@ fn disables_thoughts_for_effort_none() {
     // `off` is the gateway's other spelling of disabled thinking.
     assert_eq!(
         thinking_config("gemini-3.7-flash", &[("reasoning_effort", json!("OFF"))]),
-        json!({"thinkingLevel": "MINIMAL", "includeThoughts": false})
+        json!({"thinkingLevel": "LOW", "includeThoughts": false})
     );
 }
 
@@ -840,11 +891,11 @@ fn response_format_text_maps_to_nothing() {
         "gemini-3.7-flash",
         &[
             ("response_format", json!({"type": "text"})),
-            ("temperature", json!(0.1)),
+            ("seed", json!(1)),
         ],
     )
     .expect("mapped");
-    assert_eq!(config, json!({"temperature": 0.1}));
+    assert_eq!(config, json!({"seed": 1}));
 }
 
 #[test]

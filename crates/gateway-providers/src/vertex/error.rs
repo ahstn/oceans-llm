@@ -89,6 +89,8 @@ pub enum VertexAdapterError {
     ParallelToolCallsDisabled,
     #[error("`parallel_tool_calls` must be a boolean")]
     InvalidParallelToolCalls,
+    #[error("`{field}` is not supported by `{model_id}`; Gemini 3.7+ rejects it upstream")]
+    UnsupportedSamplingField { field: String, model_id: String },
     #[error("tool tool_choice must include `name`")]
     MissingToolChoiceName,
     #[error("function tool_choice must include function.name")]

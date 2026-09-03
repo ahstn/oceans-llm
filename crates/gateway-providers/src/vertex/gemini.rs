@@ -53,10 +53,25 @@ impl GeminiModel {
         self.major >= 3
     }
 
+    const fn is_at_least(self, major: u32, minor: u32) -> bool {
+        self.major > major || (self.major == major && self.minor >= minor)
+    }
+
     /// Gemini 3.5+ accepts `functionCall.id` / `functionResponse.id`; earlier Vertex models
     /// reject them.
     pub(super) const fn supports_function_ids(self) -> bool {
-        self.major > 3 || (self.major == 3 && self.minor >= 5)
+        self.is_at_least(3, 5)
+    }
+
+    /// Gemini 3.7+ ignores `temperature`/`topP`/`topK` and rejects `presencePenalty`,
+    /// `frequencyPenalty`, and `candidateCount` with an API error.
+    pub(super) const fn deprecates_sampling(self) -> bool {
+        self.is_at_least(3, 7)
+    }
+
+    /// `MINIMAL` is a Flash / Flash-Lite level up to Gemini 3.6; Pro and 3.7+ start at `LOW`.
+    const fn supports_minimal_level(self) -> bool {
+        matches!(self.tier, GeminiTier::Flash | GeminiTier::FlashLite) && !self.is_at_least(3, 7)
     }
 
     /// Wire value for one categorical effort, or `None` when the model has no thinking.
@@ -89,13 +104,13 @@ impl GeminiModel {
         Some(ThinkingControl::Budget(0))
     }
 
-    /// Gemini 3 Pro only exposes `LOW` and `HIGH`; Flash and Flash-Lite expose all four levels.
+    /// Gemini 3 Pro only exposes `LOW` and `HIGH`; Flash and Flash-Lite expose `LOW`..`HIGH`
+    /// plus `MINIMAL` before 3.7.
     fn thinking_level(self, effort: ReasoningEffort) -> &'static str {
         let pro = matches!(self.tier, GeminiTier::Pro);
         match effort {
-            ReasoningEffort::Minimal if pro => "LOW",
-            ReasoningEffort::Minimal => "MINIMAL",
-            ReasoningEffort::Low => "LOW",
+            ReasoningEffort::Minimal if self.supports_minimal_level() => "MINIMAL",
+            ReasoningEffort::Minimal | ReasoningEffort::Low => "LOW",
             ReasoningEffort::Medium if pro => "HIGH",
             ReasoningEffort::Medium => "MEDIUM",
             ReasoningEffort::High | ReasoningEffort::XHigh | ReasoningEffort::Max => "HIGH",
@@ -136,7 +151,7 @@ mod tests {
 
     #[test]
     fn flash_levels_pass_through_and_pro_collapses() {
-        let flash = GeminiModel::parse("gemini-3.7-flash").expect("flash");
+        let flash = GeminiModel::parse("gemini-3.6-flash").expect("flash");
         assert_eq!(
             flash.thinking_control(ReasoningEffort::Minimal),
             Some(ThinkingControl::Level("MINIMAL"))
@@ -159,6 +174,43 @@ mod tests {
             pro.thinking_control(ReasoningEffort::Medium),
             Some(ThinkingControl::Level("HIGH"))
         );
+    }
+
+    #[test]
+    fn gemini_3_7_and_later_drop_minimal_and_deprecate_sampling() {
+        for id in [
+            "gemini-3.7-flash",
+            "gemini-3.8-flash",
+            "gemini-4-flash-lite",
+        ] {
+            let model = GeminiModel::parse(id).expect(id);
+            assert_eq!(
+                model.thinking_control(ReasoningEffort::Minimal),
+                Some(ThinkingControl::Level("LOW")),
+                "{id}"
+            );
+            assert_eq!(
+                model.disabled_thinking_control(),
+                Some(ThinkingControl::Level("LOW")),
+                "{id}"
+            );
+            assert_eq!(
+                model.thinking_control(ReasoningEffort::Medium),
+                Some(ThinkingControl::Level("MEDIUM")),
+                "{id}"
+            );
+            assert!(model.deprecates_sampling(), "{id}");
+        }
+        for id in [
+            "gemini-3.6-flash",
+            "gemini-3.1-pro-preview",
+            "gemini-2.5-flash",
+        ] {
+            assert!(
+                !GeminiModel::parse(id).expect(id).deprecates_sampling(),
+                "{id}"
+            );
+        }
     }
 
     #[test]
