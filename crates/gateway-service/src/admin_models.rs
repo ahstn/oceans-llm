@@ -345,28 +345,31 @@ struct ClientConfigContext<'a> {
 fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientConfigInput> {
     let primary_route = context.primary_route?;
     context.primary_provider?;
+    // Most specific first: the upstream model, then the gateway model aliases, then provider
+    // metadata. A provider named after an older model generation must not outrank an alias
+    // that names the actual model.
     let thinking_policy = infer_thinking_policy(
-        Some(primary_route.upstream_model.as_str())
-            .into_iter()
-            .chain(
-                context
-                    .primary_provider
-                    .map(|provider| provider.provider_key.as_str()),
-            )
-            .chain(
-                context
-                    .primary_provider
-                    .map(|provider| provider.provider_type.as_str()),
-            )
-            .chain(
-                context
-                    .provider_display
-                    .map(|display| display.label.as_str()),
-            )
-            .chain([
-                context.execution_model.model_key.as_str(),
-                context.model.model_key.as_str(),
-            ]),
+        [
+            primary_route.upstream_model.as_str(),
+            context.execution_model.model_key.as_str(),
+            context.model.model_key.as_str(),
+        ]
+        .into_iter()
+        .chain(
+            context
+                .primary_provider
+                .map(|provider| provider.provider_key.as_str()),
+        )
+        .chain(
+            context
+                .primary_provider
+                .map(|provider| provider.provider_type.as_str()),
+        )
+        .chain(
+            context
+                .provider_display
+                .map(|display| display.label.as_str()),
+        ),
     );
     let capabilities = effective_provider_route_capabilities(
         context.route_capabilities,

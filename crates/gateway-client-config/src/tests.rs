@@ -520,11 +520,33 @@ fn infers_thinking_policy_for_gemini_models() {
         infer_thinking_policy(["google/gemini-3.1-pro-preview"]),
         PRO
     );
+    // Later generations keep the level-based contract, like the Vertex adapter.
+    assert_eq!(infer_thinking_policy(["google/gemini-4-flash-lite"]), FLASH);
+    assert_eq!(infer_thinking_policy(["google/gemini-4.2-pro"]), PRO);
     assert_eq!(
         infer_thinking_policy(["google/gemini-2.5-flash"]),
         Some(ThinkingPolicy::GeminiBudget)
     );
     assert_eq!(infer_thinking_policy(["google/gemini-2.0-flash"]), None);
+    assert_eq!(infer_thinking_policy(["google/gemini-embedding-001"]), None);
+}
+
+#[test]
+fn model_aliases_outrank_provider_metadata_naming_an_older_generation() {
+    // `build_client_config_input` passes the upstream model, then model aliases, then provider
+    // key/type/label. An opaque deployment id followed by a Pro alias and a provider labelled
+    // after 2.5 must yield the Pro levels, not 2.5 budgets.
+    assert_eq!(
+        infer_thinking_policy([
+            "deployment-7f3a",
+            "gemini-3.1-pro",
+            "vertex-gemini-2.5-proxy",
+        ]),
+        Some(ThinkingPolicy::GeminiLevel {
+            supports_minimal: false,
+            supports_medium: false,
+        })
+    );
 }
 
 #[test]
