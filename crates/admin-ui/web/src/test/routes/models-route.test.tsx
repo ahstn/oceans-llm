@@ -224,7 +224,7 @@ const modelPage: ModelPageView = {
               label: 'config.toml',
               filename: 'config.toml',
               content:
-                'model = "claude-sonnet"\nmodel_reasoning_effort = "medium"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nenv_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"\nrequires_openai_auth = false\nwire_api = "responses"\n\n[analytics]\nenabled = false\n\n[otel]\nlog_user_prompt = false\n',
+                'model = "claude-sonnet"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nenv_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"\nrequires_openai_auth = false\nwire_api = "responses"\n\n[analytics]\nenabled = false\n\n[otel]\nlog_user_prompt = false\n',
             },
           ],
           notes: ['Add this provider configuration to user-level ~/.codex/config.toml.'],
@@ -604,7 +604,7 @@ describe('ModelsPage', () => {
     ).toHaveAttribute('href', 'https://developers.openai.com/codex/config-reference')
     expect(screen.getByText('config.toml')).toBeInTheDocument()
     expect(screen.getByText(/model = "claude-sonnet"/)).toBeInTheDocument()
-    expect(screen.getByText(/model_reasoning_effort = "medium"/)).toBeInTheDocument()
+    expect(screen.queryByText(/model_reasoning_effort/)).not.toBeInTheDocument()
     expect(screen.getByText(/\[model_providers.oceans-llm\]/)).toBeInTheDocument()
     expect(
       screen.getByText(/env_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"/),
@@ -615,7 +615,7 @@ describe('ModelsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy TOML' }))
     expect(writeText).toHaveBeenLastCalledWith(
-      'model = "claude-sonnet"\nmodel_reasoning_effort = "medium"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nenv_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"\nrequires_openai_auth = false\nwire_api = "responses"\n\n[analytics]\nenabled = false\n\n[otel]\nlog_user_prompt = false\n',
+      'model = "claude-sonnet"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nenv_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"\nrequires_openai_auth = false\nwire_api = "responses"\n\n[analytics]\nenabled = false\n\n[otel]\nlog_user_prompt = false\n',
     )
   })
 
