@@ -4,6 +4,8 @@
 
 ![Model Config Page](../public/images/screenshot-model-client-config-opencode.jpeg)
 
+![Claude Code client config dialog](../public/images/screenshot-model-client-config-claude-code.png)
+
 Oceans generates client config snippets from the live model catalog. Users can point local agent harnesses at the gateway without writing model data by hand.
 
 Open `/admin/models`, select one or more configurable models, then click **Generate config**. You can also use the row-level client config action to generate a one-model snippet.

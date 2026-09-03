@@ -756,8 +756,9 @@ describe('ModelsPage', () => {
     })
     const dialog = await screen.findByRole('dialog', { name: 'Client config' })
     expect(dialog).toBeInTheDocument()
-    expect(within(dialog).getByText('fast')).toBeInTheDocument()
-    expect(within(dialog).getByText('claude-sonnet')).toBeInTheDocument()
+    expect(within(dialog).getByText('2 selected models')).toBeInTheDocument()
+    expect(within(dialog).queryByText('fast')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('claude-sonnet')).not.toBeInTheDocument()
     expect(within(dialog).getByText(/oceans-llm-openai-compatible/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('radio', { name: 'Pi' }))
@@ -768,7 +769,6 @@ describe('ModelsPage', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: 'Claude Code' }))
     expect(within(dialog).getByText(/claude-sonnet-4-6/)).toBeInTheDocument()
-    expect(within(dialog).getAllByText('claude-sonnet')).toHaveLength(2)
   })
 
   it('keeps selected models available when generating after pagination', async () => {
@@ -850,8 +850,9 @@ describe('ModelsPage', () => {
       data: { model_keys: ['claude-sonnet', 'fast'] },
     })
     const dialog = await screen.findByRole('dialog', { name: 'Client config' })
-    expect(within(dialog).getByText('claude-sonnet')).toBeInTheDocument()
-    expect(within(dialog).getByText('fast')).toBeInTheDocument()
+    expect(within(dialog).getByText('2 selected models')).toBeInTheDocument()
+    expect(within(dialog).queryByText('claude-sonnet')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('fast')).not.toBeInTheDocument()
   })
 
   it('shows all models and client config actions without admin controls to regular users', () => {
