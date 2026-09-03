@@ -34,9 +34,6 @@ import { Route as ObservabilityLeaderboardRouteImport } from './routes/observabi
 import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observability/mcp-invocations'
 import { Route as ObservabilityRequestLogsRouteImport } from './routes/observability/request-logs'
 import { Route as ObservabilityUsageCostsRouteImport } from './routes/observability/usage-costs'
-import { Route as SpendControlsCardsRouteImport } from './routes/spend-controls_/cards'
-import { Route as SpendControlsLedgerRouteImport } from './routes/spend-controls_/ledger'
-import { Route as SpendControlsWorkbenchRouteImport } from './routes/spend-controls_/workbench'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -168,21 +165,6 @@ const ObservabilityUsageCostsRoute = ObservabilityUsageCostsRouteImport.update({
   path: '/observability/usage-costs',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SpendControlsCardsRoute = SpendControlsCardsRouteImport.update({
-  id: '/spend-controls_/cards',
-  path: '/spend-controls/cards',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SpendControlsLedgerRoute = SpendControlsLedgerRouteImport.update({
-  id: '/spend-controls_/ledger',
-  path: '/spend-controls/ledger',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SpendControlsWorkbenchRoute = SpendControlsWorkbenchRouteImport.update({
-  id: '/spend-controls_/workbench',
-  path: '/spend-controls/workbench',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -209,9 +191,6 @@ export interface FileRoutesByFullPath {
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
-  '/spend-controls/cards': typeof SpendControlsCardsRoute
-  '/spend-controls/ledger': typeof SpendControlsLedgerRoute
-  '/spend-controls/workbench': typeof SpendControlsWorkbenchRoute
   '/mcp/': typeof McpIndexRoute
 }
 export interface FileRoutesByTo {
@@ -239,9 +218,6 @@ export interface FileRoutesByTo {
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
-  '/spend-controls/cards': typeof SpendControlsCardsRoute
-  '/spend-controls/ledger': typeof SpendControlsLedgerRoute
-  '/spend-controls/workbench': typeof SpendControlsWorkbenchRoute
   '/mcp': typeof McpIndexRoute
 }
 export interface FileRoutesById {
@@ -270,9 +246,6 @@ export interface FileRoutesById {
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
-  '/spend-controls_/cards': typeof SpendControlsCardsRoute
-  '/spend-controls_/ledger': typeof SpendControlsLedgerRoute
-  '/spend-controls_/workbench': typeof SpendControlsWorkbenchRoute
   '/mcp/': typeof McpIndexRoute
 }
 export interface FileRouteTypes {
@@ -302,9 +275,6 @@ export interface FileRouteTypes {
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
     | '/observability/usage-costs'
-    | '/spend-controls/cards'
-    | '/spend-controls/ledger'
-    | '/spend-controls/workbench'
     | '/mcp/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -332,9 +302,6 @@ export interface FileRouteTypes {
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
     | '/observability/usage-costs'
-    | '/spend-controls/cards'
-    | '/spend-controls/ledger'
-    | '/spend-controls/workbench'
     | '/mcp'
   id:
     | '__root__'
@@ -362,9 +329,6 @@ export interface FileRouteTypes {
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
     | '/observability/usage-costs'
-    | '/spend-controls_/cards'
-    | '/spend-controls_/ledger'
-    | '/spend-controls_/workbench'
     | '/mcp/'
   fileRoutesById: FileRoutesById
 }
@@ -393,9 +357,6 @@ export interface RootRouteChildren {
   ObservabilityMcpInvocationsRoute: typeof ObservabilityMcpInvocationsRoute
   ObservabilityRequestLogsRoute: typeof ObservabilityRequestLogsRoute
   ObservabilityUsageCostsRoute: typeof ObservabilityUsageCostsRoute
-  SpendControlsCardsRoute: typeof SpendControlsCardsRoute
-  SpendControlsLedgerRoute: typeof SpendControlsLedgerRoute
-  SpendControlsWorkbenchRoute: typeof SpendControlsWorkbenchRoute
   McpIndexRoute: typeof McpIndexRoute
 }
 
@@ -576,27 +537,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ObservabilityUsageCostsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/spend-controls_/cards': {
-      id: '/spend-controls_/cards'
-      path: '/spend-controls/cards'
-      fullPath: '/spend-controls/cards'
-      preLoaderRoute: typeof SpendControlsCardsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/spend-controls_/ledger': {
-      id: '/spend-controls_/ledger'
-      path: '/spend-controls/ledger'
-      fullPath: '/spend-controls/ledger'
-      preLoaderRoute: typeof SpendControlsLedgerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/spend-controls_/workbench': {
-      id: '/spend-controls_/workbench'
-      path: '/spend-controls/workbench'
-      fullPath: '/spend-controls/workbench'
-      preLoaderRoute: typeof SpendControlsWorkbenchRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -625,9 +565,6 @@ const rootRouteChildren: RootRouteChildren = {
   ObservabilityMcpInvocationsRoute: ObservabilityMcpInvocationsRoute,
   ObservabilityRequestLogsRoute: ObservabilityRequestLogsRoute,
   ObservabilityUsageCostsRoute: ObservabilityUsageCostsRoute,
-  SpendControlsCardsRoute: SpendControlsCardsRoute,
-  SpendControlsLedgerRoute: SpendControlsLedgerRoute,
-  SpendControlsWorkbenchRoute: SpendControlsWorkbenchRoute,
   McpIndexRoute: McpIndexRoute,
 }
 export const routeTree = rootRouteImport

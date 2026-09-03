@@ -13,16 +13,73 @@ import type {
   UpsertBudgetInput,
 } from '@/types/api'
 
-// Amount validation, payload shape, and budget-source labels are shared with the
-// current page so both stay in lockstep with the API contract.
-export {
-  budgetPayload,
-  budgetSourceLabel,
-  INHERITED_BUDGET_WARNING,
-  isInheritedBudgetSource,
-  normalizeBudgetAmount,
-  type BudgetSource,
-} from '../spend-controls/-utils'
+export type BudgetSource = NonNullable<SpendBudgetUserView['budget_source']>
+
+const BUDGET_SOURCE_LABELS: Record<string, string> = {
+  manual: 'Manual',
+  config_user_override: 'Config (user)',
+  config_user_default: 'Config default',
+  config_user_model_default: 'Config model default',
+  config_service_account: 'Config (service account)',
+}
+
+export function budgetSourceLabel(kind: string) {
+  return BUDGET_SOURCE_LABELS[kind] ?? kind
+}
+
+export function isInheritedBudgetSource(source: BudgetSource | null | undefined) {
+  return source != null && source.kind !== 'manual'
+}
+
+export const INHERITED_BUDGET_WARNING =
+  'This budget is inherited from configuration. Saving converts it to a manual budget that config reloads will not change.'
+
+export const INVALID_BUDGET_AMOUNT_MESSAGE =
+  'Amount must be greater than 0 with at most four decimal places'
+
+const BUDGET_AMOUNT_PATTERN = /^(\d+)(?:\.(\d{1,4}))?$/
+
+/**
+ * Normalises a user-entered USD amount to the 4-decimal string the API expects.
+ * Works on the string itself so no precision is lost and nothing is rounded:
+ * the server rejects more than four decimals, so the client does too.
+ */
+export function normalizeBudgetAmount(value: string): string | null {
+  const match = BUDGET_AMOUNT_PATTERN.exec(value.trim())
+  if (match === null) {
+    return null
+  }
+  const integer = match[1].replace(/^0+(?=\d)/, '')
+  const fraction = (match[2] ?? '').padEnd(4, '0')
+  if (/^0*$/.test(integer + fraction)) {
+    return null
+  }
+  return `${integer}.${fraction}`
+}
+
+export type BudgetPayloadResult =
+  | { ok: true; payload: UpsertBudgetInput }
+  | { ok: false; error: string }
+
+export function budgetPayload(
+  scope: BudgetScopeRequest,
+  settings: BudgetSettingsForm,
+): BudgetPayloadResult {
+  const amount = normalizeBudgetAmount(settings.amount_usd)
+  if (amount === null) {
+    return { ok: false, error: INVALID_BUDGET_AMOUNT_MESSAGE }
+  }
+  return {
+    ok: true,
+    payload: {
+      scope,
+      cadence: settings.cadence,
+      amount_usd: amount,
+      hard_limit: settings.hard_limit,
+      timezone: settings.timezone?.trim() || 'UTC',
+    },
+  }
+}
 
 export const USER_PAGE_SIZE = 15
 export const LOW_USAGE_RATIO = 0.2

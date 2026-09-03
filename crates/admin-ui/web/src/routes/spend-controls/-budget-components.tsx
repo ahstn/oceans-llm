@@ -1,5 +1,5 @@
 import { useState, useTransition, type Dispatch, type FormEvent, type SetStateAction } from 'react'
-import { Link, useRouter } from '@tanstack/react-router'
+import { useRouter } from '@tanstack/react-router'
 import {
   Alert02Icon,
   ArrowLeft01Icon,
@@ -92,37 +92,7 @@ import {
 } from './-budget-lib'
 
 // ---------------------------------------------------------------------------
-// Candidate navigation
-// ---------------------------------------------------------------------------
-
-export const CANDIDATES = [
-  { to: '/spend-controls', label: 'Current' },
-  { to: '/spend-controls/ledger', label: 'A · Ledger' },
-  { to: '/spend-controls/cards', label: 'B · Cards' },
-  { to: '/spend-controls/workbench', label: 'C · Workbench' },
-] as const
-
-export type CandidatePath = (typeof CANDIDATES)[number]['to']
-
-export function CandidateSwitcher({ current }: { current: CandidatePath }) {
-  return (
-    <nav aria-label="Design candidates" className="flex flex-wrap items-center gap-1">
-      {CANDIDATES.map((candidate) => (
-        <Button
-          key={candidate.to}
-          asChild
-          size="sm"
-          variant={candidate.to === current ? 'secondary' : 'ghost'}
-        >
-          <Link to={candidate.to}>{candidate.label}</Link>
-        </Button>
-      ))}
-    </nav>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Budget editor: dialog state, form, and mutations shared by every candidate.
+// Budget editor: dialog state, form, and mutations shared by the page.
 // ---------------------------------------------------------------------------
 
 export type BudgetDialogTarget =
