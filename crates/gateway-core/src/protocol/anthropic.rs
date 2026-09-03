@@ -94,7 +94,13 @@ pub fn anthropic_reasoning_blocks<'a>(
     provider_metadata: Option<&'a Value>,
     source: &str,
 ) -> Vec<&'a Value> {
-    const NAMESPACES: [&str; 3] = ["gcp_vertex", "aws_bedrock", "github_copilot"];
+    const NAMESPACES: [&str; 5] = [
+        "gcp_vertex",
+        "aws_bedrock",
+        "github_copilot",
+        "anthropic_compat",
+        "anthropic",
+    ];
 
     let Some(provider_metadata) = provider_metadata else {
         return Vec::new();
@@ -170,7 +176,13 @@ mod tests {
 
     #[test]
     fn message_conversion_preserves_native_anthropic_thinking_blocks() {
-        for namespace in ["gcp_vertex", "aws_bedrock", "github_copilot"] {
+        for namespace in [
+            "gcp_vertex",
+            "aws_bedrock",
+            "github_copilot",
+            "anthropic_compat",
+            "anthropic",
+        ] {
             let value = json!({
                 "id": "chatcmpl_1",
                 "choices": [{

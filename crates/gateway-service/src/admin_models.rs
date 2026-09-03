@@ -441,6 +441,16 @@ fn provider_capabilities(
         "openai_compat" | "gcp_cloud_run_openai_compat" => {
             ProviderCapabilities::openai_compat_baseline()
         }
+        "anthropic_compat" => ProviderCapabilities {
+            chat_completions: true,
+            responses: false,
+            stream: true,
+            embeddings: false,
+            tools: true,
+            vision: true,
+            json_schema: false,
+            developer_role: false,
+        },
         "gcp_vertex" => vertex_route_capabilities(route),
         "github_copilot" => github_copilot_route_capabilities(
             route.and_then(|route| route.compatibility.github_copilot.as_ref()),

@@ -191,6 +191,25 @@ fn openai_compat_can_route_to_openrouter_pricing_provider() {
 }
 
 #[test]
+fn anthropic_compat_can_route_to_opencode_pricing_provider() {
+    let target = pricing_target_for_route(
+        &anthropic_compat_provider("opencode"),
+        &route("opencode-zen", "claude-fable-5-1"),
+    );
+
+    match target {
+        PricingTarget::Exact {
+            pricing_provider_id,
+            model_id,
+        } => {
+            assert_eq!(pricing_provider_id, "opencode");
+            assert_eq!(model_id, "claude-fable-5-1");
+        }
+        other => panic!("unexpected pricing target: {other:?}"),
+    }
+}
+
+#[test]
 fn cloud_run_openai_compat_without_pricing_provider_is_unpriced() {
     let target = pricing_target_for_route(
         &cloud_run_provider(None),

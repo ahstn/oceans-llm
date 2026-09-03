@@ -187,6 +187,7 @@ fn pi_model(input: &ClientConfigInput) -> Map<String, Value> {
                 "medium": "medium",
                 "high": "high",
                 "xhigh": "xhigh",
+                "max": "max",
             }),
         );
     }

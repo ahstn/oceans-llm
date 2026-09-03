@@ -246,6 +246,17 @@ pub(super) fn openai_provider(pricing_provider_id: &str) -> ProviderConnection {
         secrets: None,
     }
 }
+pub(super) fn anthropic_compat_provider(pricing_provider_id: &str) -> ProviderConnection {
+    ProviderConnection {
+        provider_key: "opencode-zen".to_string(),
+        provider_type: "anthropic_compat".to_string(),
+        config: json!({
+            "base_url": "https://opencode.ai/zen",
+            "pricing_provider_id": pricing_provider_id
+        }),
+        secrets: None,
+    }
+}
 
 pub(super) fn cloud_run_provider(pricing_provider_id: Option<&str>) -> ProviderConnection {
     let mut config = serde_json::Map::from_iter([(

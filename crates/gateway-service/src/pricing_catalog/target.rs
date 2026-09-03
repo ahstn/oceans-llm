@@ -6,15 +6,17 @@ const GOOGLE_VERTEX_PRICING_PROVIDER_ID: &str = "google-vertex";
 const GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID: &str = "google-vertex-anthropic";
 const OPENAI_PRICING_PROVIDER_ID: &str = "openai";
 const OPENROUTER_PRICING_PROVIDER_ID: &str = "openrouter";
+const OPENCODE_PRICING_PROVIDER_ID: &str = "opencode";
 const BEDROCK_GPT_OSS_120B_PRICING_MODEL_ID: &str = "openai.gpt-oss-120b-1:0";
 const BEDROCK_GPT_OSS_20B_PRICING_MODEL_ID: &str = "openai.gpt-oss-20b-1:0";
 
-pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 5] = [
+pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 6] = [
     AMAZON_BEDROCK_PRICING_PROVIDER_ID,
     GOOGLE_VERTEX_PRICING_PROVIDER_ID,
     GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID,
     OPENAI_PRICING_PROVIDER_ID,
     OPENROUTER_PRICING_PROVIDER_ID,
+    OPENCODE_PRICING_PROVIDER_ID,
 ];
 
 #[derive(Debug, Clone)]
@@ -71,7 +73,7 @@ pub(crate) fn catalog_pricing_supported_for_route(
 
 fn catalog_identity_for_route(provider: &ProviderConnection, route: &ModelRoute) -> PricingTarget {
     match provider.provider_type.as_str() {
-        "openai_compat" | "gcp_cloud_run_openai_compat" | "github_copilot" => {
+        "openai_compat" | "gcp_cloud_run_openai_compat" | "github_copilot" | "anthropic_compat" => {
             openai_compatible_pricing_target(provider, route)
         }
         "gcp_vertex" => vertex_catalog_target(route),

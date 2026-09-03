@@ -10,6 +10,8 @@ pub enum ProviderConfig {
     OpenAiCompat(OpenAiCompatProviderConfig),
     #[serde(rename = "gcp_cloud_run_openai_compat")]
     GcpCloudRunOpenAiCompat(GcpCloudRunOpenAiCompatProviderConfig),
+    #[serde(rename = "anthropic_compat")]
+    AnthropicCompat(AnthropicCompatProviderConfig),
     GcpVertex(GcpVertexProviderConfig),
     AwsBedrock(AwsBedrockProviderConfig),
     #[serde(rename = "github_copilot")]
@@ -21,6 +23,7 @@ impl ProviderConfig {
         match self {
             Self::OpenAiCompat(provider) => &provider.id,
             Self::GcpCloudRunOpenAiCompat(provider) => &provider.id,
+            Self::AnthropicCompat(provider) => &provider.id,
             Self::GcpVertex(provider) => &provider.id,
             Self::AwsBedrock(provider) => &provider.id,
             Self::GitHubCopilot(provider) => &provider.id,
@@ -65,6 +68,46 @@ pub struct OpenAiCompatAuthConfig {
     pub kind: String,
     #[serde(default)]
     pub token: Option<String>,
+}
+#[derive(Debug, Clone, Deserialize)]
+pub struct AnthropicCompatProviderConfig {
+    pub id: String,
+    pub base_url: String,
+    #[serde(default)]
+    pub pricing_provider_id: String,
+    #[serde(default)]
+    pub auth: Option<AnthropicCompatAuthConfig>,
+    #[serde(default)]
+    pub default_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub timeouts: Option<ProviderTimeouts>,
+    #[serde(default)]
+    pub display: Option<ProviderDisplayConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AnthropicCompatAuthConfig {
+    #[serde(default)]
+    pub kind: AnthropicCompatAuthKindConfig,
+    #[serde(default)]
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AnthropicCompatAuthKindConfig {
+    #[default]
+    XApiKey,
+    Bearer,
+}
+
+impl AnthropicCompatAuthKindConfig {
+    pub(super) const fn into_provider_kind(self) -> gateway_providers::AnthropicCompatAuthKind {
+        match self {
+            Self::XApiKey => gateway_providers::AnthropicCompatAuthKind::XApiKey,
+            Self::Bearer => gateway_providers::AnthropicCompatAuthKind::Bearer,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
