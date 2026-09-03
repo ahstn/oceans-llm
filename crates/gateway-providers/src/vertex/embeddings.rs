@@ -31,18 +31,13 @@ pub(super) const VERTEX_PREDICT_MAX_INSTANCES: usize = 250;
 /// counted locally, so batches are bounded by [`estimated_tokens`] instead.
 pub(super) const VERTEX_PREDICT_MAX_TOKENS: usize = 20_000;
 
-/// Conservative token estimate without a tokenizer: two ASCII characters per token, and two
-/// tokens per non-ASCII character (CJK, emoji, and other scripts tokenize far denser than
-/// English prose). Over-estimating only makes batches smaller.
+/// Upper bound on the token count without a tokenizer: one token per UTF-8 byte. Gemini's
+/// SentencePiece tokenizer falls back to single bytes, so no input tokenizes to more tokens than
+/// bytes; dense ASCII (base64, hex, minified code) can approach that ceiling. Prose batches come
+/// out smaller than necessary, which only costs extra `predict` calls, while a batch can never
+/// exceed the upstream token cap.
 pub(super) fn estimated_tokens(text: &str) -> usize {
-    let (ascii, other) = text.chars().fold((0usize, 0usize), |(ascii, other), ch| {
-        if ch.is_ascii() {
-            (ascii + 1, other)
-        } else {
-            (ascii, other + 1)
-        }
-    });
-    ascii.div_ceil(2) + other * 2
+    text.len()
 }
 
 /// Upstream bodies for one embeddings request. `predict` bodies carry up to

@@ -597,7 +597,7 @@ fn pi_gemini_flash_config_matches_expected_full_shape() {
                             "name": "gemini-3.8-flash",
                             "reasoning": true,
                             "thinkingLevelMap": {
-                                "off": null,
+                                "off": "none",
                                 "minimal": "low",
                                 "low": "low",
                                 "medium": "medium",
@@ -625,7 +625,7 @@ fn pi_gemini_pro_collapses_unsupported_thinking_levels() {
     assert_eq!(
         model["thinkingLevelMap"],
         serde_json::json!({
-            "off": null,
+            "off": "none",
             "minimal": "low",
             "low": "low",
             "medium": "high",
@@ -647,7 +647,7 @@ fn pi_gemini_budget_models_map_levels_to_reasoning_effort() {
     assert_eq!(
         model["thinkingLevelMap"],
         serde_json::json!({
-            "off": null,
+            "off": "none",
             "minimal": "minimal",
             "low": "low",
             "medium": "medium",

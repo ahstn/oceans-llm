@@ -334,7 +334,7 @@ Supported native Vertex text-embedding upstream models:
 | `google/text-embedding-005` | 768 | Uses the same Vertex `:predict` text-embedding contract. Array input is batched up to 250 instances per request. |
 | `google/text-multilingual-embedding-002` | 768 | Uses the same Vertex `:predict` text-embedding contract. Array input is batched up to 250 instances per request. |
 
-Batched `:predict` requests also respect the Vertex 20,000-token aggregate limit. The gateway has no Gemini tokenizer, so batches are sized with a conservative estimate: two ASCII characters per token and two tokens per non-ASCII character. Over-estimating only produces smaller batches; a single input larger than the whole budget is still sent on its own and left for Vertex to truncate or reject according to `auto_truncate`.
+Batched `:predict` requests also respect the Vertex 20,000-token aggregate limit. The gateway has no Gemini tokenizer, so batches are sized with an upper bound of one token per UTF-8 byte; the tokenizer's byte fallback means no input can tokenize to more tokens than bytes. Prose batches come out smaller than strictly necessary, which only costs extra `:predict` calls. A single input larger than the whole budget is still sent on its own and left for Vertex to truncate or reject according to `auto_truncate`.
 
 Request example:
 

@@ -248,20 +248,20 @@ fn gemini_embedding_001_sends_one_instance_per_predict_body() {
 }
 
 #[test]
-fn token_estimate_is_conservative_for_non_ascii_text() {
-    // ASCII: two characters per token, rounded up.
-    assert_eq!(estimated_tokens("abcd"), 2);
-    assert_eq!(estimated_tokens("abcde"), 3);
-    // CJK and emoji count two tokens per character; the mix adds up.
-    assert_eq!(estimated_tokens("日本語"), 6);
-    assert_eq!(estimated_tokens("ok 🎉"), 4);
+fn token_estimate_is_an_upper_bound_of_one_token_per_byte() {
+    // Dense ASCII can tokenize to one token per character, so that is the bound.
+    assert_eq!(estimated_tokens("abcd"), 4);
+    assert_eq!(estimated_tokens("Zm9vYmFy"), 8);
+    // Multi-byte scripts are bounded by their UTF-8 length (byte fallback).
+    assert_eq!(estimated_tokens("日本語"), 9);
+    assert_eq!(estimated_tokens("ok 🎉"), 7);
     assert_eq!(estimated_tokens(""), 0);
 }
 
 #[test]
 fn predict_batches_are_bounded_by_estimated_tokens() {
     // Each input is just over half the budget, so no two fit in one body.
-    let long = "x".repeat(VERTEX_PREDICT_MAX_TOKENS + 2);
+    let long = "x".repeat(VERTEX_PREDICT_MAX_TOKENS / 2 + 1);
     let request = embedding_request(json!([long, long, long]));
 
     let mapped = map_google_embedding_request(
@@ -275,10 +275,10 @@ fn predict_batches_are_bounded_by_estimated_tokens() {
     assert_eq!(mapped.batch_sizes, vec![1, 1, 1]);
     assert_eq!(mapped.input_count, 3);
 
-    // The same character count in CJK is weighted heavier: three inputs of a third of the
-    // ASCII budget fit together in ASCII but each need their own body in CJK.
-    let ascii = "x".repeat(VERTEX_PREDICT_MAX_TOKENS / 2);
-    let cjk = "字".repeat(VERTEX_PREDICT_MAX_TOKENS / 4 + 1);
+    // The same character count in CJK weighs three bytes per character: three inputs of a
+    // third of the budget fit together in ASCII but each need their own body in CJK.
+    let ascii = "x".repeat(VERTEX_PREDICT_MAX_TOKENS / 3);
+    let cjk = "字".repeat(VERTEX_PREDICT_MAX_TOKENS / 3);
     for (input, expected_batches) in [(ascii, vec![3]), (cjk, vec![1, 1, 1])] {
         let request = embedding_request(json!([input, input, input]));
         let mapped = map_google_embedding_request(

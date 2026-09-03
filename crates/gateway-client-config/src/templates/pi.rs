@@ -200,7 +200,10 @@ fn pi_thinking_level_map(policy: ThinkingPolicy) -> Option<Value> {
             supports_minimal,
             supports_medium,
         } => Some(json!({
-            "off": null,
+            // Pi sends the `off` value as `reasoning_effort` when thinking is off; `none`
+            // makes the gateway request the lowest level and hide thoughts. `null` would send
+            // nothing and leave Gemini at its MEDIUM default.
+            "off": "none",
             "minimal": if supports_minimal { "minimal" } else { "low" },
             "low": "low",
             "medium": if supports_medium { "medium" } else { "high" },
@@ -209,7 +212,7 @@ fn pi_thinking_level_map(policy: ThinkingPolicy) -> Option<Value> {
             "max": "high",
         })),
         ThinkingPolicy::GeminiBudget => Some(json!({
-            "off": null,
+            "off": "none",
             "minimal": "minimal",
             "low": "low",
             "medium": "medium",
