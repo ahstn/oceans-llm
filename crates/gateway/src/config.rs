@@ -962,12 +962,14 @@ impl GatewayConfig {
 
         let mut model_defaults = std::collections::BTreeSet::new();
         for model_default in &self.budgets.users.model_defaults {
-            let model_key = normalize_config_model_key(&model_default.model)
-                .context("budgets.users.model_defaults model")?;
-            if !model_by_id.contains_key(model_key.as_str()) {
+            let model_key = model_default.model.trim();
+            if model_key.is_empty() {
+                bail!("budgets.users.model_defaults model: model key cannot be empty");
+            }
+            if !model_by_id.contains_key(model_key) {
                 bail!("budgets.users.model_defaults references unknown model `{model_key}`");
             }
-            if !model_defaults.insert(model_key.clone()) {
+            if !model_defaults.insert(model_key) {
                 bail!("duplicate budgets.users.model_defaults model `{model_key}`");
             }
             model_default.budget.validate(&format!(
@@ -2749,6 +2751,7 @@ pub struct UserModelBudgetDefaultConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BudgetConfig {
     pub cadence: BudgetCadence,
     pub amount_usd: String,
@@ -2765,8 +2768,8 @@ impl BudgetConfig {
         }
         let amount = Money4::from_decimal_str(&self.amount_usd)
             .map_err(|error| anyhow::anyhow!("{label} amount_usd is invalid: {error}"))?;
-        if amount.is_negative() {
-            bail!("{label} amount_usd cannot be negative");
+        if amount <= Money4::ZERO {
+            bail!("{label} amount_usd must be greater than zero");
         }
         Ok(())
     }
@@ -6345,6 +6348,55 @@ providers:
         let error_text = format!("{error:#}");
         assert!(
             error_text.contains("duplicate budgets.users.model_defaults model `fable-5`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_human_budget_field() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+budgets:
+  users:
+    default:
+      cadence: daily
+      amount_usd: "70.0000"
+      hard_limti: true
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("unknown field `hard_limti`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_zero_human_budget_amount() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+budgets:
+  users:
+    default:
+      cadence: daily
+      amount_usd: "0.0000"
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("budgets.users.default amount_usd must be greater than zero"),
             "unexpected error: {error_text}"
         );
     }

@@ -48,7 +48,7 @@ impl BudgetRepository for LibsqlStore {
                        created_at, updated_at, source_kind, source_key
                 FROM budgets
                 WHERE scope_key = ?1
-                ORDER BY updated_at DESC, created_at DESC
+                ORDER BY updated_at DESC, created_at DESC, is_active DESC, budget_id DESC
                 LIMIT 1
                 "#,
                 [scope.scope_key()],
@@ -153,15 +153,15 @@ impl BudgetRepository for LibsqlStore {
                     settings.cadence.as_str(),
                     settings.amount_usd.as_scaled_i64(),
                     if settings.hard_limit { 1 } else { 0 },
-                    settings.timezone.clone(),
+                    settings.timezone.as_str(),
                     updated_at.unix_timestamp(),
                     updated_at.unix_timestamp(),
                     source.kind.as_str(),
-                    source.key.clone(),
+                    source.key.as_deref(),
                 ],
             )
             .await
-            .map_err(to_query_error)?;
+            .map_err(to_write_error)?;
 
         self.get_active_budget_by_scope(scope)
             .await?
@@ -199,17 +199,17 @@ impl BudgetRepository for LibsqlStore {
                         settings.cadence.as_str(),
                         settings.amount_usd.as_scaled_i64(),
                         if settings.hard_limit { 1 } else { 0 },
-                        settings.timezone.clone(),
+                        settings.timezone.as_str(),
                         source.kind.as_str(),
-                        source.key.clone(),
+                        source.key.as_deref(),
                         updated_at.unix_timestamp(),
                         scope.scope_key(),
                         expected_source.kind.as_str(),
-                        expected_source.key.clone(),
+                        expected_source.key.as_deref(),
                     ],
                 )
                 .await
-                .map_err(to_query_error)?;
+                .map_err(to_write_error)?;
         } else {
             self.connection
                 .execute(
@@ -233,15 +233,15 @@ impl BudgetRepository for LibsqlStore {
                         settings.cadence.as_str(),
                         settings.amount_usd.as_scaled_i64(),
                         if settings.hard_limit { 1 } else { 0 },
-                        settings.timezone.clone(),
+                        settings.timezone.as_str(),
                         updated_at.unix_timestamp(),
                         updated_at.unix_timestamp(),
                         source.kind.as_str(),
-                        source.key.clone(),
+                        source.key.as_deref(),
                     ],
                 )
                 .await
-                .map_err(to_query_error)?;
+                .map_err(to_write_error)?;
         }
 
         match self.get_active_budget_by_scope(scope).await? {
@@ -276,7 +276,7 @@ impl BudgetRepository for LibsqlStore {
                 ],
             )
             .await
-            .map_err(to_query_error)?;
+            .map_err(to_write_error)?;
         Ok(updated > 0)
     }
 
@@ -302,11 +302,11 @@ impl BudgetRepository for LibsqlStore {
                     updated_at.unix_timestamp(),
                     scope.scope_key(),
                     source.kind.as_str(),
-                    source.key.clone(),
+                    source.key.as_deref(),
                 ],
             )
             .await
-            .map_err(to_query_error)?;
+            .map_err(to_write_error)?;
         Ok(updated > 0)
     }
 

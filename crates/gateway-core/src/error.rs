@@ -122,6 +122,10 @@ pub enum GatewayError {
         projected_cost_usd: Money4,
         limit_usd: Money4,
     },
+    #[error("request_id `{request_id}` has already been recorded for this owner")]
+    DuplicateUsageRecord { request_id: String },
+    #[error("batch `{batch_id}` usage was recorded concurrently with a different cost")]
+    BatchUsageConflict { batch_id: String },
     #[error("identity constraint violation: {0}")]
     IdentityConstraint(String),
     #[error("invalid request: {0}")]
@@ -167,7 +171,8 @@ impl GatewayError {
             | Self::Auth(AuthError::InsufficientPrivileges) => 403,
             Self::BudgetExceeded { .. } => 429,
             Self::IdentityConstraint(_) => 400,
-            Self::InvalidRequest(_) => 400,
+            Self::InvalidRequest(_) | Self::DuplicateUsageRecord { .. } => 400,
+            Self::BatchUsageConflict { .. } => 500,
             Self::UnprocessableEntity(_) => 422,
             Self::PayloadTooLarge { .. } => 413,
             Self::GuardrailDenied { .. } => 403,
@@ -208,7 +213,10 @@ impl GatewayError {
             Self::Auth(_) => "authentication_error",
             Self::BudgetExceeded { .. } => "budget_error",
             Self::IdentityConstraint(_) => "identity_error",
-            Self::InvalidRequest(_) | Self::UnprocessableEntity(_) => "invalid_request_error",
+            Self::InvalidRequest(_)
+            | Self::UnprocessableEntity(_)
+            | Self::DuplicateUsageRecord { .. } => "invalid_request_error",
+            Self::BatchUsageConflict { .. } => "internal_error",
             Self::GuardrailDenied { .. } => "policy_error",
             Self::Route(RouteError::ModelNotFound(_)) => "not_found_error",
             Self::Route(_) => "routing_error",
@@ -276,7 +284,8 @@ impl GatewayError {
             Self::Provider(ProviderError::UpstreamHttp { .. }) => "upstream_http_error",
             Self::Provider(ProviderError::NotImplemented(_)) => "provider_not_implemented",
             Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request",
-            Self::InvalidRequest(_) => "invalid_request",
+            Self::InvalidRequest(_) | Self::DuplicateUsageRecord { .. } => "invalid_request",
+            Self::BatchUsageConflict { .. } => "batch_usage_conflict",
             Self::UnprocessableEntity(_) => "validation_failed",
             Self::PayloadTooLarge { .. } => "request_body_too_large",
             Self::GuardrailDenied { .. } => "guardrail_policy_denied",

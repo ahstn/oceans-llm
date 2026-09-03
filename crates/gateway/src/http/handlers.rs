@@ -2130,12 +2130,17 @@ fn wrap_stream_with_request_logging(
             }
             Some(Err(error)) => {
                 state.finished = true;
+                state.collector.finish();
                 state
                     .stream_trace
                     .finish("stream_transport_error", Some("stream_transport_error"));
                 let error_message = error.to_string();
                 let retryable = error.is_retryable();
                 let gateway_error = GatewayError::from(error);
+                // The provider may have billed tokens before the transport failed.
+                if state.collector.usage().is_some() {
+                    account_stream_usage(&mut state).await;
+                }
                 tracing::warn!(
                     request_id = %state.request_log_context.request_id,
                     provider_key = %state.provider_key,
@@ -2213,22 +2218,11 @@ async fn finalize_stream(state: &mut LoggingBodyStreamState) {
         },
         failure.as_ref().map(|_| "stream_error_event"),
     );
-    if failure.is_none() {
-        let labels = state.metric_labels();
-        finalize_successful_usage_accounting_from_parts(
-            &state.service,
-            &state.metrics,
-            UsageAccountingContext {
-                auth: &state.auth,
-                model: &state.execution_model,
-                route: &state.route,
-                request_id: &state.request_log_context.request_id,
-                labels,
-                operation: state.request_log_context.operation,
-            },
-            state.collector.usage().cloned(),
-        )
-        .await;
+    // A clean stream is always accounted (unpriced when the provider sent no
+    // usage). A stream that ended with an error event is charged only when the
+    // provider reported usage before failing.
+    if failure.is_none() || state.collector.usage().is_some() {
+        account_stream_usage(state).await;
     }
     tracing::info!(
         request_id = %state.request_log_context.request_id,
@@ -2282,6 +2276,26 @@ async fn finalize_stream(state: &mut LoggingBodyStreamState) {
         state.request_log_context.operation,
         &tool_cardinality,
     );
+}
+
+/// Records the stream's usage against the ledger and budgets. `collector.usage()`
+/// is `None` when the provider reported nothing; the row is then unpriced.
+async fn account_stream_usage(state: &mut LoggingBodyStreamState) {
+    let labels = state.metric_labels();
+    finalize_successful_usage_accounting_from_parts(
+        &state.service,
+        &state.metrics,
+        UsageAccountingContext {
+            auth: &state.auth,
+            model: &state.execution_model,
+            route: &state.route,
+            request_id: &state.request_log_context.request_id,
+            labels,
+            operation: state.request_log_context.operation,
+        },
+        state.collector.usage().cloned(),
+    )
+    .await;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3000,6 +3014,53 @@ mod tests {
             .await
             .expect("read completed usage ledger");
         assert!(ledger.is_some());
+    }
+
+    #[tokio::test]
+    async fn transport_error_after_usage_still_charges_the_ledger() {
+        let harness = StreamTestHarness::new().await;
+        let request_id = "stream-transport-error-test";
+        let upstream: ProviderStream = Box::pin(stream::iter([
+            Ok(Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}\n\n",
+            )),
+            Err(ProviderError::Transport("connection reset".to_string())),
+        ]));
+        let (context, state) = harness.logging_state(request_id, upstream);
+        let mut body_stream = Box::pin(wrap_stream_with_request_logging(state));
+
+        body_stream
+            .next()
+            .await
+            .expect("usage chunk")
+            .expect("usage chunk succeeds");
+        let error = body_stream
+            .next()
+            .await
+            .expect("transport error item")
+            .expect_err("transport error surfaces to the client");
+        assert!(error.to_string().contains("connection reset"));
+        assert!(body_stream.next().await.is_none());
+        drop(body_stream);
+
+        let detail = harness
+            .service
+            .get_request_log_detail(context.request_log_id)
+            .await
+            .expect("transport error log persisted");
+        assert_eq!(detail.log.status_code, Some(502));
+        assert_eq!(detail.log.error_code.as_deref(), Some("upstream_transport"));
+        assert_eq!(detail.attempts.len(), 1);
+        assert_eq!(detail.attempts[0].status, RequestAttemptStatus::StreamError);
+
+        let ledger = harness
+            .store
+            .get_usage_ledger_by_request_and_scope(request_id, &harness.ownership_scope_key())
+            .await
+            .expect("read usage ledger")
+            .expect("usage billed before the transport failure is charged");
+        assert_eq!(ledger.prompt_tokens, Some(5));
+        assert_eq!(ledger.completion_tokens, Some(2));
     }
 
     async fn seed_stream_cancellation_test(store: &AnyStore) {

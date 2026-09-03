@@ -40,6 +40,7 @@ pub enum BudgetSourceKind {
     ConfigUserOverride,
     ConfigUserDefault,
     ConfigUserModelDefault,
+    ConfigServiceAccount,
 }
 
 impl BudgetSourceKind {
@@ -50,6 +51,7 @@ impl BudgetSourceKind {
             Self::ConfigUserOverride => "config_user_override",
             Self::ConfigUserDefault => "config_user_default",
             Self::ConfigUserModelDefault => "config_user_model_default",
+            Self::ConfigServiceAccount => "config_service_account",
         }
     }
 
@@ -60,6 +62,7 @@ impl BudgetSourceKind {
             "config_user_override" => Some(Self::ConfigUserOverride),
             "config_user_default" => Some(Self::ConfigUserDefault),
             "config_user_model_default" => Some(Self::ConfigUserModelDefault),
+            "config_service_account" => Some(Self::ConfigServiceAccount),
             _ => None,
         }
     }
@@ -115,6 +118,14 @@ impl BudgetSource {
         Self {
             kind: BudgetSourceKind::ConfigUserModelDefault,
             key: Some(format!("budgets.users.model_defaults:{}", model_key.into())),
+        }
+    }
+
+    #[must_use]
+    pub fn config_service_account(service_account_key: impl Into<String>) -> Self {
+        Self {
+            kind: BudgetSourceKind::ConfigServiceAccount,
+            key: Some(service_account_key.into()),
         }
     }
 

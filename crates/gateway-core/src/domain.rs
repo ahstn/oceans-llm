@@ -36,6 +36,11 @@ impl Money4 {
     }
 
     #[must_use]
+    pub const fn saturating_add(self, other: Self) -> Self {
+        Self::from_scaled(self.amount_10000.saturating_add(other.amount_10000))
+    }
+
+    #[must_use]
     pub fn checked_sub(self, other: Self) -> Option<Self> {
         self.amount_10000
             .checked_sub(other.amount_10000)
@@ -304,16 +309,15 @@ pub struct BudgetWindow {
     pub observed_end: OffsetDateTime,
 }
 
-pub fn budget_window_utc(
-    cadence: BudgetCadence,
-    occurred_at: OffsetDateTime,
-) -> Result<BudgetWindow, String> {
+/// Compute the UTC enforcement window that contains `occurred_at`.
+///
+/// `observed_end` is one second past `occurred_at` (capped at `period_end`) so
+/// spend sums include ledger rows stamped in the same second as the request.
+#[must_use]
+pub fn budget_window_utc(cadence: BudgetCadence, occurred_at: OffsetDateTime) -> BudgetWindow {
     let now_utc = occurred_at.to_offset(UtcOffset::UTC);
     let date = now_utc.date();
-    let day_start = date
-        .with_hms(0, 0, 0)
-        .map_err(|error| format!("invalid day start: {error}"))?
-        .assume_offset(UtcOffset::UTC);
+    let day_start = date.midnight().assume_offset(UtcOffset::UTC);
 
     let (period_start, period_end) = match cadence {
         BudgetCadence::Daily => (day_start, day_start + Duration::days(1)),
@@ -323,28 +327,26 @@ pub fn budget_window_utc(
             (start, start + Duration::days(7))
         }
         BudgetCadence::Monthly => {
-            let start_date = Date::from_calendar_date(date.year(), date.month(), 1)
-                .map_err(|error| format!("invalid month start: {error}"))?;
-            let start = start_date
-                .with_hms(0, 0, 0)
-                .map_err(|error| format!("invalid month start time: {error}"))?
+            let start = date
+                .replace_day(1)
+                .expect("day 1 is valid for every month")
+                .midnight()
                 .assume_offset(UtcOffset::UTC);
             let (next_year, next_month) = next_calendar_month(date.year(), date.month());
             let end = Date::from_calendar_date(next_year, next_month, 1)
-                .map_err(|error| format!("invalid next month start: {error}"))?
-                .with_hms(0, 0, 0)
-                .map_err(|error| format!("invalid next month start time: {error}"))?
+                .expect("day 1 is valid for every month")
+                .midnight()
                 .assume_offset(UtcOffset::UTC);
             (start, end)
         }
     };
     let observed_end = std::cmp::min(now_utc + Duration::seconds(1), period_end);
 
-    Ok(BudgetWindow {
+    BudgetWindow {
         period_start,
         period_end,
         observed_end,
-    })
+    }
 }
 
 const fn next_calendar_month(year: i32, month: Month) -> (i32, Month) {
