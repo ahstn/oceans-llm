@@ -42,7 +42,7 @@ pub(crate) mod tests {
     use std::collections::BTreeMap;
     use std::env;
 
-    use gateway_core::domain::ModelAllowlistPolicy;
+    use gateway_core::domain::{ModelAllowlistPolicy, ReasoningEffort};
     use gateway_core::{
         AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionTraceRepository,
         ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
@@ -256,6 +256,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: None,
             tags: Vec::new(),
             rank: 10,
@@ -1156,6 +1157,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: None,
             tags: vec![],
             rank: 10,
@@ -2130,6 +2132,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: Some("fast tier".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
@@ -2151,6 +2154,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "reasoning".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: Some("reasoning tier".to_string()),
                 tags: vec!["reasoning".to_string()],
                 rank: 20,
@@ -3222,6 +3226,325 @@ pub(crate) mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_service_account_source_migration_rebuild_preserves_existing_budgets() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+        conn.execute("PRAGMA foreign_keys = ON", ())
+            .await
+            .expect("enable foreign keys");
+
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS refinery_schema_history (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_on INTEGER NOT NULL,
+                checksum TEXT NOT NULL
+            )
+            "#,
+            (),
+        )
+        .await
+        .expect("schema history");
+
+        for migration in MIGRATION_REGISTRY
+            .iter()
+            .filter(|migration| migration.version < 51)
+        {
+            conn.execute_batch(migration.sql_for(MigrationBackend::Libsql))
+                .await
+                .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
+            conn.execute(
+                r#"
+                INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
+                VALUES (?1, ?2, unixepoch(), ?3)
+                "#,
+                libsql::params![migration.version as i64, migration.name, migration.checksum],
+            )
+            .await
+            .unwrap_or_else(|error| panic!("record migration {}: {error}", migration.version));
+        }
+
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        let user_id = Uuid::new_v4();
+        let service_account_id = Uuid::new_v4();
+        conn.execute(
+            r#"
+            INSERT INTO users (
+              user_id, name, email, email_normalized, global_role, auth_mode, status,
+              request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'User One', 'user@example.com', 'user@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
+            "#,
+            libsql::params![user_id.to_string(), now],
+        )
+        .await
+        .expect("user");
+        let team_id = Uuid::new_v4();
+        conn.execute(
+            r#"
+            INSERT INTO teams (team_id, team_key, team_name, status, model_access_mode, created_at, updated_at)
+            VALUES (?1, 'platform', 'Platform', 'active', 'all', ?2, ?2)
+            "#,
+            libsql::params![team_id.to_string(), now],
+        )
+        .await
+        .expect("team");
+        conn.execute(
+            r#"
+            INSERT INTO service_accounts (
+              service_account_id, team_id, service_account_key, service_account_name, status,
+              model_access_mode, metadata_json, created_at, updated_at
+            ) VALUES (?1, ?2, 'ci-indexer', 'CI Indexer', 'active', 'all', '{}', ?3, ?3)
+            "#,
+            libsql::params![service_account_id.to_string(), team_id.to_string(), now],
+        )
+        .await
+        .expect("service account");
+
+        let active_budget_id = Uuid::new_v4().to_string();
+        let inactive_budget_id = Uuid::new_v4().to_string();
+        let sa_budget_id = Uuid::new_v4().to_string();
+        let insert_budget = r#"
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, user_id, service_account_id, model_id, upstream_model,
+                cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at,
+                source_kind, source_key
+            ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+        "#;
+        conn.execute(
+            insert_budget,
+            libsql::params![
+                active_budget_id.as_str(),
+                "user",
+                format!("budget:v1:user:{user_id}"),
+                user_id.to_string(),
+                libsql::Value::Null,
+                libsql::Value::Null,
+                "monthly",
+                800_000_i64,
+                1_i64,
+                "Europe/London",
+                1_i64,
+                now - 100,
+                now - 50,
+                "config_user_override",
+                "user@example.com",
+            ],
+        )
+        .await
+        .expect("active user budget");
+        conn.execute(
+            insert_budget,
+            libsql::params![
+                inactive_budget_id.as_str(),
+                "user_model",
+                format!("budget:v1:user:{user_id}:upstream_model:gpt-4"),
+                user_id.to_string(),
+                libsql::Value::Null,
+                "gpt-4",
+                "daily",
+                400_000_i64,
+                0_i64,
+                "UTC",
+                0_i64,
+                now - 200,
+                now - 150,
+                "manual",
+                "deactivated",
+            ],
+        )
+        .await
+        .expect("inactive user model budget");
+        conn.execute(
+            insert_budget,
+            libsql::params![
+                sa_budget_id.as_str(),
+                "service_account",
+                format!("budget:v1:service_account:{service_account_id}"),
+                libsql::Value::Null,
+                service_account_id.to_string(),
+                libsql::Value::Null,
+                "weekly",
+                250_000_i64,
+                1_i64,
+                "UTC",
+                1_i64,
+                now - 10,
+                now - 5,
+                "manual",
+                libsql::Value::Null,
+            ],
+        )
+        .await
+        .expect("active service account budget");
+
+        run_migrations(&db_path).await.expect("apply v51");
+
+        let mut rows = conn
+            .query(
+                r#"
+                SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                       upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                       created_at, updated_at, source_kind, source_key
+                FROM budgets ORDER BY created_at
+                "#,
+                (),
+            )
+            .await
+            .expect("budgets after rebuild");
+        let mut survivors: Vec<Vec<libsql::Value>> = Vec::new();
+        while let Some(row) = rows.next().await.expect("row fetch") {
+            survivors.push(
+                (0..16)
+                    .map(|index| row.get_value(index).expect("column"))
+                    .collect(),
+            );
+        }
+        use libsql::Value::{Integer, Null, Text};
+        assert_eq!(
+            survivors,
+            vec![
+                vec![
+                    Text(inactive_budget_id.clone()),
+                    Text("user_model".into()),
+                    Text(format!("budget:v1:user:{user_id}:upstream_model:gpt-4")),
+                    Text(user_id.to_string()),
+                    Null,
+                    Null,
+                    Text("gpt-4".into()),
+                    Text("daily".into()),
+                    Integer(400_000),
+                    Integer(0),
+                    Text("UTC".into()),
+                    Integer(0),
+                    Integer(now - 200),
+                    Integer(now - 150),
+                    Text("manual".into()),
+                    Text("deactivated".into()),
+                ],
+                vec![
+                    Text(active_budget_id.clone()),
+                    Text("user".into()),
+                    Text(format!("budget:v1:user:{user_id}")),
+                    Text(user_id.to_string()),
+                    Null,
+                    Null,
+                    Null,
+                    Text("monthly".into()),
+                    Integer(800_000),
+                    Integer(1),
+                    Text("Europe/London".into()),
+                    Integer(1),
+                    Integer(now - 100),
+                    Integer(now - 50),
+                    Text("config_user_override".into()),
+                    Text("user@example.com".into()),
+                ],
+                vec![
+                    Text(sa_budget_id.clone()),
+                    Text("service_account".into()),
+                    Text(format!("budget:v1:service_account:{service_account_id}")),
+                    Null,
+                    Text(service_account_id.to_string()),
+                    Null,
+                    Null,
+                    Text("weekly".into()),
+                    Integer(250_000),
+                    Integer(1),
+                    Text("UTC".into()),
+                    Integer(1),
+                    Integer(now - 10),
+                    Integer(now - 5),
+                    Text("manual".into()),
+                    Null,
+                ],
+            ]
+        );
+
+        // The partial unique index on active scope keys survives the rebuild.
+        let duplicate_active = conn
+            .execute(
+                insert_budget,
+                libsql::params![
+                    Uuid::new_v4().to_string(),
+                    "user",
+                    format!("budget:v1:user:{user_id}"),
+                    user_id.to_string(),
+                    libsql::Value::Null,
+                    libsql::Value::Null,
+                    "daily",
+                    1_i64,
+                    1_i64,
+                    "UTC",
+                    1_i64,
+                    now,
+                    now,
+                    "manual",
+                    libsql::Value::Null,
+                ],
+            )
+            .await;
+        assert!(
+            duplicate_active
+                .as_ref()
+                .is_err_and(|error| error.to_string().contains("UNIQUE constraint failed")),
+            "second active budget for the same scope should be rejected: {duplicate_active:?}"
+        );
+
+        // The widened CHECK accepts the new service-account source kind.
+        conn.execute(
+            "UPDATE budgets SET source_kind = 'config_service_account', source_key = ?2 WHERE budget_id = ?1",
+            libsql::params![sa_budget_id.as_str(), service_account_id.to_string()],
+        )
+        .await
+        .expect("service account source kind accepted");
+        let rejected = conn
+            .execute(
+                "UPDATE budgets SET source_kind = 'bogus' WHERE budget_id = ?1",
+                [sa_budget_id.as_str()],
+            )
+            .await;
+        assert!(
+            rejected
+                .as_ref()
+                .is_err_and(|error| error.to_string().contains("CHECK constraint failed")),
+            "unknown source kind should be rejected: {rejected:?}"
+        );
+
+        // Foreign keys are re-declared with ON DELETE CASCADE.
+        conn.execute(
+            "DELETE FROM service_accounts WHERE service_account_id = ?1",
+            [service_account_id.to_string()],
+        )
+        .await
+        .expect("delete service account");
+        conn.execute(
+            "DELETE FROM users WHERE user_id = ?1",
+            [user_id.to_string()],
+        )
+        .await
+        .expect("delete user");
+        let mut remaining = conn
+            .query("SELECT COUNT(*) FROM budgets", ())
+            .await
+            .expect("count");
+        let count: i64 = remaining
+            .next()
+            .await
+            .expect("count fetch")
+            .expect("count row")
+            .get(0)
+            .expect("count value");
+        assert_eq!(count, 0, "budgets should cascade with their owners");
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn libsql_migration_commands_reject_legacy_history() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -3476,6 +3799,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
@@ -3993,6 +4317,7 @@ pub(crate) mod tests {
                     secrets: None,
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -4182,6 +4507,7 @@ pub(crate) mod tests {
                     secrets: None,
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -4355,6 +4681,7 @@ pub(crate) mod tests {
                     secrets: None,
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -4626,6 +4953,7 @@ pub(crate) mod tests {
                     secrets: None,
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -4881,6 +5209,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
+                max_reasoning_effort: Some(ReasoningEffort::Low),
                 description: Some("alias".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
@@ -4890,6 +5219,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: Some(ReasoningEffort::High),
                 description: Some("replacement".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 5,
@@ -4941,6 +5271,7 @@ pub(crate) mod tests {
             alias_model.alias_target_model_key.as_deref(),
             Some("fast-v2")
         );
+        assert_eq!(alias_model.max_reasoning_effort, Some(ReasoningEffort::Low));
 
         let api_key = store
             .get_api_key_by_public_id("dev123")
@@ -4957,12 +5288,20 @@ pub(crate) mod tests {
             accessible_models[0].alias_target_model_key.as_deref(),
             Some("fast-v2")
         );
+        assert_eq!(
+            accessible_models[0].max_reasoning_effort,
+            Some(ReasoningEffort::Low)
+        );
 
         let target_model = store
             .get_model_by_key("fast-v2")
             .await
             .expect("query target")
             .expect("target model exists");
+        assert_eq!(
+            target_model.max_reasoning_effort,
+            Some(ReasoningEffort::High)
+        );
         let routes = store
             .list_routes_for_model(target_model.id)
             .await
@@ -4985,6 +5324,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
+                max_reasoning_effort: Some(ReasoningEffort::High),
                 description: Some("alias".to_string()),
                 tags: Vec::new(),
                 rank: 10,
@@ -4997,6 +5337,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: Some("target".to_string()),
                 tags: Vec::new(),
                 rank: 20,
@@ -5017,6 +5358,10 @@ pub(crate) mod tests {
             .await
             .expect("query alias model")
             .expect("alias model exists");
+        assert_eq!(
+            alias_model.max_reasoning_effort,
+            Some(ReasoningEffort::High)
+        );
         let target_model = store
             .get_model_by_key("fast-v2")
             .await
@@ -5045,6 +5390,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
+                max_reasoning_effort: Some(ReasoningEffort::Low),
                 description: Some("alias".to_string()),
                 tags: Vec::new(),
                 rank: 10,
@@ -5057,6 +5403,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: Some("target".to_string()),
                 tags: Vec::new(),
                 rank: 20,
@@ -5068,6 +5415,15 @@ pub(crate) mod tests {
             .seed_from_inputs(&[], &updated_models, &[], &[], &[], &[], &[], &[])
             .await
             .expect("updated seed");
+        let updated_alias_model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("query updated alias model")
+            .expect("updated alias model exists");
+        assert_eq!(
+            updated_alias_model.max_reasoning_effort,
+            Some(ReasoningEffort::Low)
+        );
 
         let updated_policies = store
             .list_model_allowlists_for_models(&[alias_model.id, target_model.id])
@@ -5097,6 +5453,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "restricted".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: Some("restricted tier".to_string()),
             tags: Vec::new(),
             rank: 10,
@@ -6568,6 +6925,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fable-5".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: None,
             tags: Vec::new(),
             rank: 10,
@@ -6892,6 +7250,364 @@ pub(crate) mod tests {
                 .source
                 .is_manual_deactivation()
         );
+    }
+
+    /// Seeds one gateway model plus two users, records usage rows around a
+    /// one-hour window, and asserts each budget scope sums exactly the rows it
+    /// owns: `UserModel::Model` matches `model_id`, `UserModel::UpstreamModel`
+    /// matches unmapped upstream rows only, `User` covers both, unpriced rows
+    /// and rows at `window_end` are excluded, and `window_start` is inclusive.
+    async fn exercise_user_model_budget_window_sum<S>(store: &S)
+    where
+        S: GatewayStore + ?Sized,
+    {
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://api.openai.com/v1",
+                "timeout_ms": 120_000
+            }),
+            secrets: Some(json!({"token": "env.OPENAI_API_KEY"})),
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            max_reasoning_effort: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
+            }],
+            allowlist: None,
+        }];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "hash".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &api_keys,
+                &seed_api_key_service_accounts(),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed");
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("load api key")
+            .expect("api key");
+        let model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("load model")
+            .expect("model");
+        let mut users = Vec::with_capacity(2);
+        for email in ["member@example.com", "other@example.com"] {
+            users.push(
+                store
+                    .create_identity_user(
+                        "Member",
+                        email,
+                        email,
+                        GlobalRole::User,
+                        AuthMode::Password,
+                        UserStatus::Active,
+                    )
+                    .await
+                    .expect("create user")
+                    .user_id,
+            );
+        }
+        let (user_id, other_user_id) = (users[0], users[1]);
+
+        let window_start = OffsetDateTime::from_unix_timestamp(1_773_486_600).expect("start");
+        let window_end = window_start + Duration::hours(1);
+        let inside = window_start + Duration::minutes(10);
+        // (request id, owner, model_id, upstream model, status, cost, occurred_at)
+        let rows = [
+            (
+                "gateway-at-start",
+                user_id,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                1_000,
+                window_start,
+            ),
+            (
+                "gateway-unpriced",
+                user_id,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Unpriced,
+                100_000,
+                inside,
+            ),
+            (
+                "upstream-priced",
+                user_id,
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::LegacyEstimated,
+                2_000,
+                inside,
+            ),
+            (
+                "upstream-other-model",
+                user_id,
+                None,
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                4_000,
+                inside,
+            ),
+            (
+                "other-user-gateway",
+                other_user_id,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                8_000,
+                inside,
+            ),
+            (
+                "gateway-at-end",
+                user_id,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                16_000,
+                window_end,
+            ),
+            (
+                "upstream-before-start",
+                user_id,
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::Priced,
+                32_000,
+                window_start - Duration::seconds(1),
+            ),
+        ];
+        for (request_id, owner, model_id, upstream_model, status, cost, occurred_at) in rows {
+            let event = build_usage_ledger_record(
+                request_id,
+                format!("user:{owner}"),
+                api_key.id,
+                Some(owner),
+                None,
+                None,
+                model_id,
+                upstream_model,
+                status,
+                cost,
+                occurred_at,
+            );
+            assert!(
+                store
+                    .insert_usage_ledger_if_absent(&event)
+                    .await
+                    .expect("insert usage ledger")
+            );
+        }
+
+        let sum = |scope: BudgetScope| async move {
+            store
+                .sum_usage_cost_for_budget_scope_in_window(&scope, window_start, window_end)
+                .await
+                .expect("window sum")
+        };
+        let gateway_scope = |user_id| BudgetScope::UserModel {
+            user_id,
+            selector: BudgetModelSelector::Model { model_id: model.id },
+        };
+        assert_eq!(
+            sum(gateway_scope(user_id)).await,
+            Money4::from_scaled(1_000)
+        );
+        assert_eq!(
+            sum(BudgetScope::UserModel {
+                user_id,
+                selector: BudgetModelSelector::UpstreamModel {
+                    upstream_model: "claude-3-5-sonnet".to_string(),
+                },
+            })
+            .await,
+            Money4::from_scaled(2_000)
+        );
+        assert_eq!(
+            sum(BudgetScope::User { user_id }).await,
+            Money4::from_scaled(7_000)
+        );
+        assert_eq!(
+            sum(gateway_scope(other_user_id)).await,
+            Money4::from_scaled(8_000)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_user_model_budget_window_sum_matches_selector_and_window_bounds() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        exercise_user_model_budget_window_sum(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_seed_service_account_budget_yields_to_manual_edit_but_recreates_after_deactivation()
+     {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let service_accounts = seed_api_key_service_accounts();
+        let seed = || async {
+            store
+                .seed_from_inputs(
+                    &[],
+                    &[],
+                    &[],
+                    &service_accounts,
+                    &[],
+                    &[],
+                    &seed_api_key_teams(),
+                    &[],
+                )
+                .await
+                .expect("seed")
+        };
+        let scope = BudgetScope::ServiceAccount {
+            service_account_id: crate::seed::service_account_uuid("seed-workloads"),
+        };
+        let store_ref = &store;
+        let scope_ref = &scope;
+        let active = move || async move {
+            store_ref
+                .get_active_budget_by_scope(scope_ref)
+                .await
+                .expect("active budget")
+        };
+        let config_source = BudgetSource::config_service_account("seed-workloads");
+
+        seed().await;
+        let seeded = active().await.expect("seeded budget");
+        assert!(seeded.source.matches(&config_source));
+        assert_eq!(seeded.settings.amount_usd, Money4::from_scaled(100_000));
+
+        let manual_settings = BudgetSettings {
+            cadence: BudgetCadence::Weekly,
+            amount_usd: Money4::from_scaled(250_000),
+            hard_limit: false,
+            timezone: "UTC".to_string(),
+        };
+        store
+            .upsert_active_budget(&scope, &manual_settings, OffsetDateTime::now_utc())
+            .await
+            .expect("manual edit");
+        seed().await;
+        let after_manual_edit = active().await.expect("manual budget survives");
+        assert_eq!(after_manual_edit.source.kind, BudgetSourceKind::Manual);
+        assert_eq!(after_manual_edit.settings, manual_settings);
+
+        assert!(
+            store
+                .deactivate_active_budget(&scope, OffsetDateTime::now_utc())
+                .await
+                .expect("manual deactivation")
+        );
+        assert!(active().await.is_none());
+        seed().await;
+        let recreated = active().await.expect("config budget recreated");
+        assert!(recreated.source.matches(&config_source));
+        assert_eq!(recreated.settings.amount_usd, Money4::from_scaled(100_000));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_latest_budget_prefers_active_row_when_timestamps_tie() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let user = store
+            .create_identity_user(
+                "User",
+                "user@example.com",
+                "user@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("user");
+        let scope = BudgetScope::User {
+            user_id: user.user_id,
+        };
+        let settings = BudgetSettings {
+            cadence: BudgetCadence::Daily,
+            amount_usd: Money4::from_scaled(700_000),
+            hard_limit: true,
+            timezone: "UTC".to_string(),
+        };
+        let at = OffsetDateTime::from_unix_timestamp(1_773_486_600).expect("timestamp");
+
+        // Create, deactivate, and recreate within the same second so both rows
+        // share created_at and updated_at.
+        store
+            .upsert_active_budget(&scope, &settings, at)
+            .await
+            .expect("first budget");
+        assert!(
+            store
+                .deactivate_active_budget(&scope, at)
+                .await
+                .expect("deactivate")
+        );
+        let recreated = store
+            .upsert_active_budget(&scope, &settings, at)
+            .await
+            .expect("recreated budget");
+
+        let latest = store
+            .get_latest_budget_by_scope(&scope)
+            .await
+            .expect("latest budget")
+            .expect("latest budget exists");
+        assert!(latest.is_active);
+        assert_eq!(latest.budget_id, recreated.budget_id);
     }
 
     #[tokio::test]
@@ -7715,6 +8431,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string()],
             rank: 10,
@@ -8116,6 +8833,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
@@ -8773,6 +9491,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string()],
             rank: 10,
@@ -9132,6 +9851,33 @@ pub(crate) mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn postgres_user_model_budget_window_sum_matches_selector_and_window_bounds() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres user model budget window sum test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+        exercise_user_model_budget_window_sum(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_usage_leaderboard_ranks_users_and_aggregates_half_day_buckets() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!(
@@ -9191,6 +9937,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
+                max_reasoning_effort: Some(ReasoningEffort::Low),
                 description: Some("alias".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
@@ -9200,6 +9947,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: Some(ReasoningEffort::High),
                 description: Some("replacement".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 5,
@@ -9250,6 +9998,7 @@ pub(crate) mod tests {
             alias_model.alias_target_model_key.as_deref(),
             Some("fast-v2")
         );
+        assert_eq!(alias_model.max_reasoning_effort, Some(ReasoningEffort::Low));
 
         let api_key = store
             .get_api_key_by_public_id("dev123")
@@ -9266,12 +10015,20 @@ pub(crate) mod tests {
             accessible_models[0].alias_target_model_key.as_deref(),
             Some("fast-v2")
         );
+        assert_eq!(
+            accessible_models[0].max_reasoning_effort,
+            Some(ReasoningEffort::Low)
+        );
 
         let target_model = store
             .get_model_by_key("fast-v2")
             .await
             .expect("query target")
             .expect("target model exists");
+        assert_eq!(
+            target_model.max_reasoning_effort,
+            Some(ReasoningEffort::High)
+        );
         let routes = store
             .list_routes_for_model(target_model.id)
             .await

@@ -1,68 +1,141 @@
-import { useMemo, useState, useTransition } from 'react'
+import { lazy, Suspense } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { toast } from 'sonner'
 
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/layout/page-header'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import type { ChartConfig } from '@/components/ui/chart'
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Progress } from '@/components/ui/progress'
+import { Skeleton } from '@/components/ui/skeleton'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
-import { getSpendUsageReport, getUsageCosts } from '@/server/admin-data.functions'
-import type { SpendOwnerKind, SpendReportView } from '@/types/api'
+import { getUsageCosts } from '@/server/admin-data.functions'
+import type { SpendReportView } from '@/types/api'
+
+import { ExportMenu, ReportFilters } from './-usage-costs/controls'
+import {
+  CURRENCY_FORMATTER,
+  formatCount,
+  formatDay,
+  formatShare,
+  formatUsd,
+  pricingCoverage,
+  PERCENT_FORMATTER,
+  totalRequests,
+  useSpendReport,
+} from './-usage-costs/shared'
 
 export const Route = createFileRoute('/observability/usage-costs')({
   loader: () => getUsageCosts(),
   component: UsageCostsPage,
 })
 
-const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
+/** Breakdown cards show the top spenders only; the FOCUS export carries the full list. */
+const BREAKDOWN_LIMIT = 10
+
+const CHART_CONFIG: ChartConfig = {
+  cost: { label: 'Priced spend', color: 'var(--chart-3)' },
+}
+type SpendChartDatum = {
+  day: string
+  cost: number
+  requests: number
+}
+
+const SpendTrendChart = lazy(async () => {
+  const [
+    { Area, AreaChart, CartesianGrid, XAxis, YAxis },
+    { ChartContainer, ChartTooltip, ChartTooltipContent },
+  ] = await Promise.all([import('recharts'), import('@/components/ui/chart')])
+
+  function SpendTrendChartComponent({ data }: { data: SpendChartDatum[] }) {
+    return (
+      <ChartContainer config={CHART_CONFIG} className="h-64 w-full">
+        <AreaChart accessibilityLayer data={data} margin={{ left: 4, right: 12 }}>
+          <defs>
+            <linearGradient id="usage-costs-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="var(--color-cost)" stopOpacity={0.35} />
+              <stop offset="95%" stopColor="var(--color-cost)" stopOpacity={0.04} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey="day"
+            tickLine={false}
+            axisLine={false}
+            minTickGap={24}
+            tickFormatter={formatDay}
+          />
+          <YAxis
+            tickLine={false}
+            axisLine={false}
+            width={56}
+            tickFormatter={(value: number) => CURRENCY_FORMATTER.format(value)}
+          />
+          <ChartTooltip
+            cursor={false}
+            content={
+              <ChartTooltipContent
+                labelFormatter={(_, payload) => formatDay(String(payload?.[0]?.payload?.day ?? ''))}
+                formatter={(value, _name, item) => (
+                  <div className="flex w-full items-center justify-between gap-4">
+                    <span className="text-muted-foreground">
+                      {item.payload.requests} priced requests
+                    </span>
+                    <span className="font-mono font-medium tabular-nums">
+                      {CURRENCY_FORMATTER.format(Number(value))}
+                    </span>
+                  </div>
+                )}
+              />
+            }
+          />
+          <Area
+            dataKey="cost"
+            type="monotone"
+            stroke="var(--color-cost)"
+            fill="url(#usage-costs-fill)"
+            strokeWidth={2}
+          />
+        </AreaChart>
+      </ChartContainer>
+    )
+  }
+
+  return { default: SpendTrendChartComponent }
 })
 
-// The cost reports are ordered projections of one loaded range and shared pricing totals.
+// Executive dashboard: KPI strip, spend trend, and ranked share tables.
 // oxlint-disable-next-line eslint/max-lines-per-function
 export function UsageCostsPage() {
   const loaderData = Route.useLoaderData()
   const { session } = Route.useRouteContext()
   const isPlatformAdmin = isPlatformAdminSession(session)
-  const [report, setReport] = useState<SpendReportView>(loaderData.data)
-  const [windowDays, setWindowDays] = useState<7 | 30>((loaderData.data.window_days as 7 | 30) ?? 7)
-  const [ownerKind, setOwnerKind] = useState<SpendOwnerKind>(loaderData.data.owner_kind ?? 'all')
-  const [exportDay, setExportDay] = useState(() => formatUtcDate(new Date()))
-  const [isPending, startTransition] = useTransition()
+  const spend = useSpendReport(loaderData.data)
+  const { report, isPending } = spend
 
-  const maxDaily = useMemo(() => {
-    const values = report.daily.map((point) => point.priced_cost_usd_10000 / 10_000)
-    return Math.max(...values, 1)
-  }, [report.daily])
-
-  function refreshReport() {
-    startTransition(async () => {
-      try {
-        const response = await getSpendUsageReport({
-          data: {
-            days: windowDays,
-            owner_kind: ownerKind,
-          },
-        })
-        setReport(response.data)
-      } catch (error) {
-        toast.error(getErrorMessage(error))
-      }
-    })
-  }
+  const coverage = pricingCoverage(report.totals)
+  const requests = totalRequests(report.totals)
+  const chartData = report.daily.map((point) => ({
+    day: point.day_start,
+    cost: point.priced_cost_usd_10000 / 10_000,
+    requests: point.priced_request_count,
+  }))
+  // The API zero-fills every day in the window, so "no spend" is a value check, not a length check.
+  const peakDay = report.daily.reduce<SpendReportView['daily'][number] | null>(
+    (peak, point) =>
+      point.priced_cost_usd_10000 > (peak?.priced_cost_usd_10000 ?? 0) ? point : peak,
+    null,
+  )
+  const avgDaily =
+    report.window_days > 0 ? report.totals.priced_cost_usd_10000 / report.window_days : 0
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
@@ -74,321 +147,254 @@ export function UsageCostsPage() {
             ? 'Review costs over time and see how each account and model affects the total.'
             : 'Review your costs over time and see how each model affects the total.'
         }
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <ReportFilters
+              windowDays={spend.windowDays}
+              ownerKind={spend.ownerKind}
+              isPending={isPending}
+              isPlatformAdmin={isPlatformAdmin}
+              onWindowChange={spend.setWindowDays}
+              onOwnerKindChange={spend.setOwnerKind}
+              onRefresh={spend.refresh}
+            />
+            <ExportMenu
+              windowDays={spend.windowDays}
+              ownerKind={spend.ownerKind}
+              isPlatformAdmin={isPlatformAdmin}
+              origin={loaderData.exportOrigin}
+            />
+          </div>
+        }
       />
 
-      <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <CardTitle>Cost history</CardTitle>
-            <CardDescription>Choose a date range and review daily costs.</CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <Select
-              value={String(windowDays)}
-              onValueChange={(value) => setWindowDays(Number(value) as 7 | 30)}
-            >
-              <SelectTrigger className="w-[130px]">
-                <SelectValue placeholder="Window" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="7">Last 7 days</SelectItem>
-                  <SelectItem value="30">Last 30 days</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            {isPlatformAdmin ? (
-              <Select
-                value={ownerKind}
-                onValueChange={(value) => setOwnerKind(value as SpendOwnerKind)}
-              >
-                <SelectTrigger className="w-[130px]">
-                  <SelectValue placeholder="Owner" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="all">All owners</SelectItem>
-                    <SelectItem value="user">User owners</SelectItem>
-                    <SelectItem value="service_account">Service accounts</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            ) : null}
-            <Button type="button" variant="secondary" onClick={refreshReport} disabled={isPending}>
-              {isPending ? 'Refreshing...' : 'Refresh'}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-[var(--color-text)]">FOCUS billing export</p>
-              <p className="text-xs text-[var(--color-text-soft)]">
-                Downloads best-effort FOCUS CSV rows aggregated by UTC day. Unpriced and
-                usage-missing requests are excluded from charge rows and reported in response
-                diagnostics; current-window gaps are shown in the metrics below.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => downloadFocusRange(windowDays, ownerKind, !isPlatformAdmin)}
-              >
-                Export {windowDays}d CSV
-              </Button>
-              <label className="flex flex-col gap-1 text-xs font-medium text-[var(--color-text-soft)]">
-                Daily export
-                <Input
-                  type="date"
-                  value={exportDay}
-                  onChange={(event) => setExportDay(event.target.value)}
-                  className="h-9 w-[150px]"
-                />
-              </label>
-              <Button
-                type="button"
-                onClick={() => downloadFocusDay(exportDay, ownerKind, !isPlatformAdmin)}
-              >
-                Export day
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-4">
-            <MetricCard
-              label="Priced spend"
-              value={CURRENCY_FORMATTER.format(report.totals.priced_cost_usd_10000 / 10_000)}
-            />
-            <MetricCard
-              label="Priced requests"
-              value={String(report.totals.priced_request_count)}
-            />
-            <MetricCard
-              label="Unpriced requests"
-              value={String(report.totals.unpriced_request_count)}
-            />
-            <MetricCard
-              label="Usage-missing requests"
-              value={String(report.totals.usage_missing_request_count)}
-            />
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-3">
-            <MetricCard
-              label="Uncached input tokens"
-              value={report.totals.uncached_input_tokens?.toLocaleString() ?? 'Unavailable'}
-            />
-            <MetricCard
-              label="Cache-read tokens"
-              value={report.totals.cache_read_tokens?.toLocaleString() ?? 'Unavailable'}
-            />
-            <MetricCard
-              label="Cache-write tokens"
-              value={report.totals.cache_write_tokens?.toLocaleString() ?? 'Unavailable'}
-            />
-          </div>
-
-          <div className="flex flex-col gap-3 rounded-md border border-[color:var(--color-border)] p-4">
-            {report.daily.map((point) => {
-              const amount = point.priced_cost_usd_10000 / 10_000
-              const barWidth = maxDaily > 0 ? (amount / maxDaily) * 100 : 0
-              return (
-                <div
-                  key={point.day_start}
-                  className="grid grid-cols-[120px_1fr_130px] items-center gap-3"
-                >
-                  <span className="truncate text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
-                    {new Date(point.day_start).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}
-                  </span>
-                  <div className="h-3 rounded-full bg-[color:var(--color-surface-muted)]">
-                    <div
-                      className="h-3 rounded-full bg-[var(--color-primary)]"
-                      style={{ width: `${barWidth}%` }}
-                    />
-                  </div>
-                  <span className="text-right text-sm font-semibold text-[var(--color-text)]">
-                    {CURRENCY_FORMATTER.format(amount)}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi
+          label="Priced spend"
+          value={formatUsd(report.totals.priced_cost_usd_10000)}
+          hint={`${CURRENCY_FORMATTER.format(avgDaily / 10_000)} per day on average`}
+          pending={isPending}
+        />
+        <Kpi
+          label="Requests"
+          value={formatCount(requests)}
+          hint={`${formatCount(report.totals.priced_request_count)} priced`}
+          pending={isPending}
+        />
+        <Kpi
+          label="Pricing coverage"
+          value={PERCENT_FORMATTER.format(coverage)}
+          hint={
+            <span className="flex flex-col gap-1.5">
+              <Progress value={coverage * 100} aria-label="Pricing coverage" />
+              <span>
+                {formatCount(report.totals.unpriced_request_count)} unpriced ·{' '}
+                {formatCount(report.totals.usage_missing_request_count)} usage missing
+              </span>
+            </span>
+          }
+          tone={coverage < 0.95 ? 'warning' : 'default'}
+          pending={isPending}
+        />
+        <Kpi
+          label="Peak day"
+          value={peakDay ? formatUsd(peakDay.priced_cost_usd_10000) : '—'}
+          hint={peakDay ? formatDay(peakDay.day_start) : 'No priced spend in window'}
+          pending={isPending}
+        />
+      </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Owner Breakdown</CardTitle>
-          <CardDescription>
-            {isPlatformAdmin
+          <CardTitle>Spend trend</CardTitle>
+          <CardDescription>Priced spend per UTC day for the selected window.</CardDescription>
+          <CardAction>
+            <TokenSummary totals={report.totals} />
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          {isPending ? (
+            <Skeleton className="h-64 w-full rounded-xl" />
+          ) : peakDay === null ? (
+            <EmptyReport />
+          ) : (
+            <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+              <SpendTrendChart data={chartData} />
+            </Suspense>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <ShareTable
+          title="Owner breakdown"
+          description={
+            isPlatformAdmin
               ? 'Spend by user and service account ownership scopes.'
-              : 'Spend attributed to your user account.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-            <div className="grid grid-cols-[120px_minmax(0,1fr)_170px_120px_120px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
-              <span className="px-3 py-2 font-semibold">Owner type</span>
-              <span className="px-3 py-2 font-semibold">Owner</span>
-              <span className="px-3 py-2 font-semibold">Priced spend</span>
-              <span className="px-3 py-2 font-semibold">Unpriced</span>
-              <span className="px-3 py-2 font-semibold">Usage missing</span>
-            </div>
-            {report.owners.length === 0 ? (
-              <div className="px-3 py-8 text-sm text-[var(--color-text-soft)]">
-                No owner spend in this window.
-              </div>
-            ) : (
-              report.owners.map((owner) => (
-                <div
-                  key={`${owner.owner_kind}:${owner.owner_id}`}
-                  className="grid grid-cols-[120px_minmax(0,1fr)_170px_120px_120px] border-t border-[color:var(--color-border)]"
-                >
-                  <span className="px-3 py-3">
-                    <Badge>{formatOwnerKind(owner.owner_kind)}</Badge>
-                  </span>
-                  <span className="truncate px-3 py-3 text-sm text-[var(--color-text)]">
-                    {owner.owner_name}
-                  </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text)]">
-                    {CURRENCY_FORMATTER.format(owner.priced_cost_usd_10000 / 10_000)}
-                  </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
-                    {owner.unpriced_request_count}
-                  </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
-                    {owner.usage_missing_request_count}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Model Breakdown</CardTitle>
-          <CardDescription>Priced spend and pricing gaps by canonical model key.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-            <div className="grid grid-cols-[minmax(0,1fr)_170px_120px_120px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
-              <span className="px-3 py-2 font-semibold">Model</span>
-              <span className="px-3 py-2 font-semibold">Priced spend</span>
-              <span className="px-3 py-2 font-semibold">Unpriced</span>
-              <span className="px-3 py-2 font-semibold">Usage missing</span>
-            </div>
-            {report.models.length === 0 ? (
-              <div className="px-3 py-8 text-sm text-[var(--color-text-soft)]">
-                No model spend in this window.
-              </div>
-            ) : (
-              report.models.map((model) => (
-                <div
-                  key={model.model_key}
-                  className="grid grid-cols-[minmax(0,1fr)_170px_120px_120px] border-t border-[color:var(--color-border)]"
-                >
-                  <span className="truncate px-3 py-3 text-sm font-medium text-[var(--color-text)]">
-                    {model.model_key}
-                  </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text)]">
-                    {CURRENCY_FORMATTER.format(model.priced_cost_usd_10000 / 10_000)}
-                  </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
-                    {model.unpriced_request_count}
-                  </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
-                    {model.usage_missing_request_count}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
+              : 'Spend attributed to your user account.'
+          }
+          emptyMessage="No owner spend in this window."
+          total={report.totals.priced_cost_usd_10000}
+          pending={isPending}
+          rows={report.owners.map((owner) => ({
+            key: `${owner.owner_kind}:${owner.owner_id}`,
+            label: owner.owner_name,
+            cost: owner.priced_cost_usd_10000,
+            gaps: owner.unpriced_request_count + owner.usage_missing_request_count,
+          }))}
+        />
+        <ShareTable
+          title="Model breakdown"
+          description="Priced spend and pricing gaps by canonical model key."
+          emptyMessage="No model spend in this window."
+          total={report.totals.priced_cost_usd_10000}
+          pending={isPending}
+          rows={report.models.map((model) => ({
+            key: model.model_key,
+            label: model.model_key,
+            mono: true,
+            cost: model.priced_cost_usd_10000,
+            gaps: model.unpriced_request_count + model.usage_missing_request_count,
+          }))}
+        />
+      </div>
     </div>
   )
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function Kpi({
+  label,
+  value,
+  hint,
+  tone = 'default',
+  pending,
+}: {
+  label: string
+  value: string
+  hint: React.ReactNode
+  tone?: 'default' | 'warning'
+  pending: boolean
+}) {
   return (
-    <div className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-3">
-      <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
-        {label}
-      </p>
-      <p className="mt-1 text-lg font-semibold text-[var(--color-text)]">{value}</p>
-    </div>
+    <Card size="sm">
+      <CardHeader>
+        <CardDescription>{label}</CardDescription>
+        {pending ? (
+          <Skeleton className="h-7 w-28" />
+        ) : (
+          <CardTitle
+            className={
+              tone === 'warning'
+                ? 'text-2xl text-[var(--color-warning)] tabular-nums'
+                : 'text-2xl tabular-nums'
+            }
+          >
+            {value}
+          </CardTitle>
+        )}
+      </CardHeader>
+      <CardContent className="text-muted-foreground text-xs">{hint}</CardContent>
+    </Card>
   )
 }
 
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message
-  }
-  return 'Request failed'
+function TokenSummary({ totals }: { totals: SpendReportView['totals'] }) {
+  const items = [
+    ['Uncached input', totals.uncached_input_tokens],
+    ['Cache read', totals.cache_read_tokens],
+    ['Cache write', totals.cache_write_tokens],
+  ] as const
+  return (
+    <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
+      {items.map(([label, value]) => (
+        <div key={label} className="flex flex-col">
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="font-medium tabular-nums">{formatCount(value)}</dd>
+        </div>
+      ))}
+    </dl>
+  )
 }
 
-function formatOwnerKind(ownerKind: string) {
-  if (ownerKind === 'service_account') {
-    return 'service account'
-  }
-
-  return ownerKind
+type ShareRow = {
+  key: string
+  label: string
+  mono?: boolean
+  cost: number
+  gaps: number
 }
 
-function downloadFocusRange(
-  windowDays: 7 | 30,
-  ownerKind: SpendOwnerKind,
-  currentUserOnly: boolean,
-) {
-  const end = utcDateAtDayOffset(0)
-  const start = utcDateAtDayOffset(-(windowDays - 1))
-  const params = new URLSearchParams({
-    start,
-    end,
-    granularity: 'daily',
-  })
-  if (!currentUserOnly && ownerKind !== 'all') {
-    params.set('owner_kind', ownerKind)
-  }
-  const path = currentUserOnly ? '/api/v1/me/spend/focus.csv' : '/api/v1/admin/spend/focus.csv'
-  window.location.assign(`${path}?${params.toString()}`)
+function ShareTable({
+  title,
+  description,
+  emptyMessage,
+  total,
+  rows,
+  pending,
+}: {
+  title: string
+  description: string
+  emptyMessage: string
+  total: number
+  rows: ShareRow[]
+  pending: boolean
+}) {
+  const sorted = [...rows].sort((a, b) => b.cost - a.cost).slice(0, BREAKDOWN_LIMIT)
+  const max = sorted[0]?.cost ?? 0
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {pending ? (
+          <div className="flex flex-col gap-2">
+            {['a', 'b', 'c', 'd'].map((row) => (
+              <Skeleton key={row} className="h-9 w-full rounded-md" />
+            ))}
+          </div>
+        ) : sorted.length === 0 ? (
+          <p className="text-muted-foreground py-6 text-center text-sm">{emptyMessage}</p>
+        ) : (
+          <ol className="flex flex-col gap-1">
+            {sorted.map((row) => (
+              <li key={row.key} className="flex flex-col gap-1.5 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={row.mono ? 'truncate font-mono text-sm' : 'truncate text-sm'}>
+                      {row.label}
+                    </span>
+                    {row.gaps > 0 ? (
+                      <Badge variant="warning">{formatCount(row.gaps)} gaps</Badge>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 items-baseline gap-2">
+                    <span className="text-muted-foreground text-xs tabular-nums">
+                      {formatShare(row.cost, total)}
+                    </span>
+                    <span className="text-sm font-medium tabular-nums">{formatUsd(row.cost)}</span>
+                  </div>
+                </div>
+                <Progress value={max > 0 ? (row.cost / max) * 100 : 0} aria-hidden="true" />
+              </li>
+            ))}
+          </ol>
+        )}
+      </CardContent>
+    </Card>
+  )
 }
 
-function downloadFocusDay(day: string, ownerKind: SpendOwnerKind, currentUserOnly: boolean) {
-  if (!day) {
-    toast.error('Choose a day to export')
-    return
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
-    toast.error('Day must be in YYYY-MM-DD format')
-    return
-  }
-  const params = new URLSearchParams({
-    day,
-    granularity: 'daily',
-  })
-  if (!currentUserOnly && ownerKind !== 'all') {
-    params.set('owner_kind', ownerKind)
-  }
-  const path = currentUserOnly ? '/api/v1/me/spend/focus.csv' : '/api/v1/admin/spend/focus.csv'
-  window.location.assign(`${path}?${params.toString()}`)
-}
-
-function utcDateAtDayOffset(dayOffset: number) {
-  const date = new Date()
-  date.setUTCDate(date.getUTCDate() + dayOffset)
-  return formatUtcDate(date)
-}
-
-function formatUtcDate(date: Date) {
-  const year = date.getUTCFullYear()
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(date.getUTCDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+function EmptyReport() {
+  return (
+    <Empty className="rounded-xl border bg-[color:var(--color-surface-muted)]">
+      <EmptyHeader>
+        <EmptyTitle>No priced spend yet</EmptyTitle>
+        <EmptyDescription>
+          Daily costs appear once priced ledger events exist in the selected window.
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  )
 }

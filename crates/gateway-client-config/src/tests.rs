@@ -225,6 +225,7 @@ fn client_context_window_note_is_emitted_when_later_model_is_capped() {
 fn infers_safe_effort_for_newer_claude_models() {
     for model in [
         "anthropic/claude-fable-5",
+        "anthropic/claude-fable-5-1",
         "anthropic/claude-opus-4-8",
         "anthropic/claude-sonnet-4-6",
         "anthropic/claude-sonnet-5",

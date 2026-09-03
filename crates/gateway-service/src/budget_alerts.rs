@@ -107,7 +107,7 @@ where
                 continue;
             };
             let (window_start, window_end) =
-                usage_window_bounds(budget.settings.cadence, ledger.occurred_at)?;
+                usage_window_bounds(budget.settings.cadence, ledger.occurred_at);
             let spent_after = self
                 .repo
                 .sum_usage_cost_for_budget_scope_in_window(&scope, window_start, window_end)
@@ -236,8 +236,7 @@ where
             return Ok(());
         }
 
-        let window = budget_window_utc(evaluation.cadence, evaluation.occurred_at)
-            .map_err(GatewayError::Internal)?;
+        let window = budget_window_utc(evaluation.cadence, evaluation.occurred_at);
         let created_at = OffsetDateTime::now_utc();
         let alert = BudgetAlertRecord {
             budget_alert_id: Uuid::new_v4(),
@@ -400,9 +399,9 @@ fn is_at_or_below_threshold(remaining_budget: Money4, total_budget: Money4) -> b
 fn usage_window_bounds(
     cadence: BudgetCadence,
     occurred_at: OffsetDateTime,
-) -> Result<(OffsetDateTime, OffsetDateTime), GatewayError> {
-    let window = budget_window_utc(cadence, occurred_at).map_err(GatewayError::Internal)?;
-    Ok((window.period_start, window.observed_end))
+) -> (OffsetDateTime, OffsetDateTime) {
+    let window = budget_window_utc(cadence, occurred_at);
+    (window.period_start, window.observed_end)
 }
 
 fn render_budget_alert_email(task: &BudgetAlertDispatchTask) -> Result<String, GatewayError> {

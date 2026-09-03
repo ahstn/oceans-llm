@@ -6,7 +6,8 @@ use gateway_core::{
     GatewayError, IdentityRepository, McpToolInvocationRepository, ModelRepository, ModelRoute,
     Money4, NewBatchItem, NewBatchJob, PricingCatalogRepository, PricingResolution,
     ProviderRegistry, ProviderRepository, ProviderRequestContext, RequestLogRepository,
-    RoutePlanner, StoreHealth, is_supported_vertex_google_chat_upstream_model,
+    RoutePlanner, StoreHealth, enforce_reasoning_effort_value,
+    is_supported_vertex_google_chat_upstream_model,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -262,6 +263,16 @@ where
     }
 
     let resolved = service.resolve_request(auth, &input.model).await?;
+    for item in &input.items {
+        enforce_reasoning_effort_value(&item.body, resolved.selection.max_reasoning_effort)
+            .map_err(|error| match error {
+                GatewayError::InvalidRequest(message) => GatewayError::InvalidRequest(format!(
+                    "batch item `{}` {message}",
+                    item.custom_id
+                )),
+                error => error,
+            })?;
+    }
     let (route, provider) = resolved
         .routes
         .iter()

@@ -73,7 +73,7 @@ async fn builds_bearer_converse_request_with_encoded_model_path_and_headers() {
 }
 
 #[tokio::test]
-async fn builds_bearer_anthropic_invoke_request_with_encoded_model_path() {
+async fn builds_bearer_anthropic_invoke_request_with_authoritative_envelope() {
     let provider = BedrockProvider::new(BedrockProviderConfig {
         provider_key: "bedrock".to_string(),
         region: "us-east-1".to_string(),
@@ -93,15 +93,21 @@ async fn builds_bearer_anthropic_invoke_request_with_encoded_model_path() {
         extra: BTreeMap::from([("max_tokens".to_string(), json!(64))]),
     };
 
+    let mut context = context_with_api_style(
+        "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        AwsBedrockApiStyle::RuntimeAnthropicInvoke,
+        None,
+    );
+    context
+        .extra_body
+        .insert("model".to_string(), json!("route-override"));
+    context.extra_body.insert("stream".to_string(), json!(true));
+    context
+        .extra_body
+        .insert("anthropic_version".to_string(), json!("hostile-version"));
+
     let built = provider
-        .build_chat_request(
-            &request,
-            &context_with_api_style(
-                "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-                AwsBedrockApiStyle::RuntimeAnthropicInvoke,
-                None,
-            ),
-        )
+        .build_chat_request(&request, &context)
         .await
         .expect("request");
     let body: Value =
@@ -117,6 +123,8 @@ async fn builds_bearer_anthropic_invoke_request_with_encoded_model_path() {
     );
     assert_eq!(body["anthropic_version"], "bedrock-2023-05-31");
     assert_eq!(body["max_tokens"], 64);
+    assert!(body.get("model").is_none());
+    assert!(body.get("stream").is_none());
 }
 
 #[tokio::test]
@@ -858,7 +866,7 @@ async fn builds_mantle_openai_chat_request() {
 }
 
 #[tokio::test]
-async fn builds_mantle_anthropic_messages_api_key_request() {
+async fn builds_mantle_anthropic_messages_request_with_authoritative_envelope() {
     let provider = mantle_bearer_provider();
     let request = CoreChatRequest {
         model: "claude".to_string(),
@@ -875,6 +883,13 @@ async fn builds_mantle_anthropic_messages_api_key_request() {
         "x-api-key".to_string(),
         Value::String("route-should-not-win".to_string()),
     );
+    context
+        .extra_body
+        .insert("model".to_string(), json!("route-override"));
+    context
+        .extra_body
+        .insert("anthropic_version".to_string(), json!("hostile-version"));
+    context.extra_body.insert("stream".to_string(), json!(true));
 
     let built = provider
         .build_chat_request(&request, &context)
@@ -896,6 +911,7 @@ async fn builds_mantle_anthropic_messages_api_key_request() {
     assert_eq!(body["model"], "anthropic.claude-sonnet-4-5");
     assert!(body.get("anthropic_version").is_none());
     assert_eq!(body["max_tokens"], 64);
+    assert_eq!(body["stream"], false);
 }
 
 #[tokio::test]

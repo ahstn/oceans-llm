@@ -3,7 +3,7 @@ use crate::seed::{
     apply_human_budget_defaults_for_user, generate_seed_api_key_material, managed_api_key_uuid,
     prevalidate_seed_users, provided_seed_api_key_material, reconcile_human_budget_defaults,
     reconcile_seed_teams, reconcile_seed_users, service_account_uuid,
-    validate_seed_service_account_team_references,
+    upsert_unless_manually_overridden, validate_seed_service_account_team_references,
 };
 use crate::shared::{parse_uuid, serialize_json, serialize_optional_json};
 
@@ -235,10 +235,12 @@ impl PostgresStore {
             sqlx::query(
                 r#"
                 INSERT INTO gateway_models (
-                    id, model_key, alias_target_model_id, description, tags_json, rank, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+                    id, model_key, alias_target_model_id, max_reasoning_effort, description,
+                    tags_json, rank, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
                 ON CONFLICT(model_key) DO UPDATE SET
                     alias_target_model_id = excluded.alias_target_model_id,
+                    max_reasoning_effort = excluded.max_reasoning_effort,
                     description = excluded.description,
                     tags_json = excluded.tags_json,
                     rank = excluded.rank,
@@ -248,6 +250,7 @@ impl PostgresStore {
             .bind(model_id.to_string())
             .bind(model.model_key.as_str())
             .bind(Option::<String>::None)
+            .bind(model.max_reasoning_effort.map(|effort| effort.as_str()))
             .bind(model.description.clone())
             .bind(tags_json)
             .bind(model.rank)
@@ -470,7 +473,8 @@ impl PostgresStore {
                 .map_err(to_query_error)?;
             }
 
-            self.upsert_active_budget(
+            upsert_unless_manually_overridden(
+                self,
                 &gateway_core::BudgetScope::ServiceAccount { service_account_id },
                 &gateway_core::BudgetSettings {
                     cadence: service_account.budget.cadence,
@@ -478,6 +482,9 @@ impl PostgresStore {
                     hard_limit: service_account.budget.hard_limit,
                     timezone: service_account.budget.timezone.clone(),
                 },
+                &gateway_core::BudgetSource::config_service_account(
+                    &service_account.service_account_key,
+                ),
                 now,
             )
             .await?;

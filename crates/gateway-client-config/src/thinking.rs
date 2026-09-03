@@ -43,7 +43,7 @@ pub fn infer_anthropic_thinking_policy(
 fn contains_exact_model_marker(value: &str, marker: &str) -> bool {
     value.split(marker).skip(1).any(|rest| {
         rest.chars().next().is_none_or(|ch| {
-            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']')
+            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']' | '-')
         })
     })
 }
