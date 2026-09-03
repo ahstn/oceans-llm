@@ -310,6 +310,27 @@ async fn google_stream_accepts_lf_only_frames_and_ignores_comments() {
 }
 
 #[tokio::test]
+async fn google_stream_truncated_final_frame_is_an_error_not_a_clean_stop() {
+    // Upstream closes mid-frame: the delivered text is emitted, then the truncated tail is
+    // surfaced as a parse error instead of a successful finish + [DONE].
+    let raw = format!(
+        "data: {}\n\ndata: {{\"candidates\": [{{\"content\": {{\"parts\": [{{\"text\": \"lost\"",
+        text_object("kept")
+    );
+    let rendered = render_google_stream(vec![Bytes::from(raw)]).await;
+    let events = openai_stream_events(&rendered);
+
+    assert_eq!(concat_delta_field(&events, "content"), "kept");
+    let error = events
+        .iter()
+        .find(|event| event.get("error").is_some())
+        .expect("error chunk");
+    assert_eq!(error["error"]["code"], "google_stream_parse_error");
+    assert!(finish_events(&events).is_empty());
+    assert!(!rendered.contains("[DONE]"));
+}
+
+#[tokio::test]
 async fn google_stream_inline_error_emits_error_chunk_without_done() {
     let rendered = render_google_objects(&[
         text_object("partial"),

@@ -21,7 +21,9 @@ use tokio::{net::TcpListener, sync::Mutex};
 use super::{
     PublisherFamily, VertexAuthConfig, VertexProvider, VertexProviderConfig,
     anthropic::map_vertex_anthropic_request,
-    embeddings::{VERTEX_PREDICT_MAX_INSTANCES, map_google_embedding_request},
+    embeddings::{
+        VERTEX_PREDICT_MAX_CHARS, VERTEX_PREDICT_MAX_INSTANCES, map_google_embedding_request,
+    },
     error::VertexAdapterError,
     gemini::{GeminiModel, ThinkingControl},
     google_request::map_google_request,

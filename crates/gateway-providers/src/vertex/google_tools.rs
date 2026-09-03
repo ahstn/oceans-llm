@@ -192,6 +192,9 @@ pub(super) fn parse_openai_tool_arguments(
     let arguments = arguments
         .as_str()
         .ok_or(VertexAdapterError::InvalidToolCallArguments)?;
+    if arguments.trim().is_empty() {
+        return Ok(Value::Object(Map::new()));
+    }
     serde_json::from_str(arguments).map_err(VertexAdapterError::MalformedToolCallArguments)
 }
 
@@ -307,6 +310,7 @@ fn function_calling_config(
             _ => return Err(VertexAdapterError::UnsupportedToolChoice),
         },
         Value::Object(object) => match object.get("type").and_then(Value::as_str) {
+            Some("none") => mode("NONE"),
             Some("auto") => mode("AUTO"),
             Some("any") => mode("ANY"),
             Some("tool") => forced(
@@ -352,7 +356,7 @@ fn convert_openai_function_declarations(value: &Value) -> Result<Vec<Value>, Ver
             } else if object.contains_key("name") {
                 (object, "input_schema")
             } else {
-                continue;
+                return Err(VertexAdapterError::InvalidToolEntry);
             };
         let name = function
             .get("name")

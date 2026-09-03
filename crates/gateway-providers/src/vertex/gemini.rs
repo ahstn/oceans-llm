@@ -70,7 +70,8 @@ impl GeminiModel {
         Some(ThinkingControl::Budget(self.thinking_budget(effort)))
     }
 
-    /// Wire value that suppresses thinking as far as the model allows.
+    /// Wire value that suppresses thinking as far as the model allows. Gemini 2.5 Pro cannot
+    /// disable thinking and enforces a 128-token floor, so it gets the minimum budget instead.
     pub(super) fn disabled_thinking_control(self) -> Option<ThinkingControl> {
         if !self.supports_thinking() {
             return None;
@@ -78,6 +79,11 @@ impl GeminiModel {
         if self.uses_thinking_level() {
             return Some(ThinkingControl::Level(
                 self.thinking_level(ReasoningEffort::Minimal),
+            ));
+        }
+        if matches!(self.tier, GeminiTier::Pro) {
+            return Some(ThinkingControl::Budget(
+                self.thinking_budget(ReasoningEffort::Minimal),
             ));
         }
         Some(ThinkingControl::Budget(0))

@@ -24,11 +24,18 @@ const VERTEX_EMBED_CONTENT_MODEL_IDS: &[&str] = &["gemini-embedding-2"];
 /// Maximum `instances` per `predict` call for text embedding models.
 pub(super) const VERTEX_PREDICT_MAX_INSTANCES: usize = 250;
 
+/// Vertex caps one `predict` call at 20,000 input tokens across all instances. Tokens are not
+/// counted locally, so batches are bounded by a conservative 3-chars-per-token estimate instead.
+pub(super) const VERTEX_PREDICT_MAX_CHARS: usize = 60_000;
+
 /// Upstream bodies for one embeddings request. `predict` bodies carry up to
-/// [`VERTEX_PREDICT_MAX_INSTANCES`] inputs each; `embedContent` bodies carry exactly one.
+/// [`VERTEX_PREDICT_MAX_INSTANCES`] inputs and [`VERTEX_PREDICT_MAX_CHARS`] characters each;
+/// `embedContent` bodies carry exactly one input.
 #[derive(Debug)]
 pub(super) struct GoogleEmbeddingRequestMapping {
     pub(super) bodies: Vec<Value>,
+    /// Inputs carried by each body, aligned with `bodies`.
+    pub(super) batch_sizes: Vec<usize>,
     pub(super) input_count: usize,
 }
 
@@ -110,34 +117,48 @@ pub(super) fn map_google_embedding_request(
 
     let input_count = inputs.len();
     let mut bodies = Vec::with_capacity(input_count.div_ceil(VERTEX_PREDICT_MAX_INSTANCES));
-    let mut inputs = inputs.into_iter().peekable();
-    while inputs.peek().is_some() {
-        let instances = inputs
-            .by_ref()
-            .take(VERTEX_PREDICT_MAX_INSTANCES)
-            .map(|input| {
-                let mut instance = Map::new();
-                instance.insert("content".to_string(), Value::String(input));
-                if let Some(task_type) = &task_type {
-                    instance.insert("task_type".to_string(), Value::String(task_type.clone()));
-                }
-                if let Some(title) = &title {
-                    instance.insert("title".to_string(), Value::String(title.clone()));
-                }
-                Value::Object(instance)
-            })
-            .collect();
+    let mut batch_sizes = Vec::with_capacity(bodies.capacity());
+    let mut instances = Vec::new();
+    let mut batch_chars = 0usize;
+    let mut flush = |instances: &mut Vec<Value>, batch_chars: &mut usize| {
         let mut body = Map::new();
-        body.insert("instances".to_string(), Value::Array(instances));
+        batch_sizes.push(instances.len());
+        body.insert(
+            "instances".to_string(),
+            Value::Array(std::mem::take(instances)),
+        );
         if !parameters.is_empty() {
             body.insert("parameters".to_string(), Value::Object(parameters.clone()));
         }
         merge_object_overrides(&mut body, &context.extra_body);
         bodies.push(Value::Object(body));
+        *batch_chars = 0;
+    };
+    for input in inputs {
+        let chars = input.chars().count();
+        let full = instances.len() >= VERTEX_PREDICT_MAX_INSTANCES
+            || (!instances.is_empty() && batch_chars + chars > VERTEX_PREDICT_MAX_CHARS);
+        if full {
+            flush(&mut instances, &mut batch_chars);
+        }
+        let mut instance = Map::new();
+        instance.insert("content".to_string(), Value::String(input));
+        if let Some(task_type) = &task_type {
+            instance.insert("task_type".to_string(), Value::String(task_type.clone()));
+        }
+        if let Some(title) = &title {
+            instance.insert("title".to_string(), Value::String(title.clone()));
+        }
+        instances.push(Value::Object(instance));
+        batch_chars += chars;
+    }
+    if !instances.is_empty() {
+        flush(&mut instances, &mut batch_chars);
     }
 
     Ok(GoogleEmbeddingRequestMapping {
         bodies,
+        batch_sizes,
         input_count,
     })
 }
@@ -189,6 +210,7 @@ fn map_google_embed_content_request(
 
     Ok(GoogleEmbeddingRequestMapping {
         bodies,
+        batch_sizes: vec![1; input_count],
         input_count,
     })
 }
@@ -428,9 +450,11 @@ fn optional_bool_field(field: &str, value: &Value) -> Result<Option<bool>, Provi
 }
 
 /// Extracts every embedding in one upstream response, numbering them from `first_index`.
+/// The response must carry exactly `expected` predictions so later batches stay aligned.
 pub(super) fn extract_google_embedding_outputs(
     value: &Value,
     first_index: usize,
+    expected: usize,
     model_id: &str,
 ) -> Result<Vec<GoogleEmbeddingOutput>, ProviderError> {
     if uses_vertex_embed_content(model_id) {
@@ -445,6 +469,12 @@ pub(super) fn extract_google_embedding_outputs(
                 "invalid JSON from vertex embeddings: missing predictions[0]".to_string(),
             )
         })?;
+    if predictions.len() != expected {
+        return Err(ProviderError::Transport(format!(
+            "invalid JSON from vertex embeddings: expected {expected} predictions, got {}",
+            predictions.len()
+        )));
+    }
     predictions
         .iter()
         .zip(first_index..)

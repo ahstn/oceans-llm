@@ -340,6 +340,26 @@ fn maps_string_tool_choices_to_function_calling_modes() {
 
 #[test]
 fn none_tool_choice_disables_tools_for_google_payload() {
+    for choice in [json!("none"), json!({"type": "none"})] {
+        let mut request = chat_request(vec![user("do not use tools")]);
+        request
+            .extra
+            .insert("tools".to_string(), lookup_openai_tool());
+        request
+            .extra
+            .insert("tool_choice".to_string(), choice.clone());
+
+        let body = google_body(&request, &context("google/gemini-3.7-flash"), false)
+            .unwrap_or_else(|error| panic!("tool_choice {choice}: {error:?}"));
+        assert_eq!(
+            body["toolConfig"]["functionCallingConfig"]["mode"], "NONE",
+            "tool_choice {choice}"
+        );
+    }
+}
+
+#[test]
+fn none_tool_choice_string_removes_tools_from_google_payload() {
     let mut request = chat_request(vec![user("do not use tools")]);
     request
         .extra
@@ -569,6 +589,36 @@ fn rejects_tool_call_arguments_that_are_malformed_json() {
     let error = google_body(&request, &context("google/gemini-3.7-flash"), false)
         .expect_err("truncated arguments are rejected");
     invalid_request_containing(error, "must contain valid JSON");
+}
+
+#[test]
+fn empty_tool_call_arguments_map_to_an_empty_object() {
+    let request = chat_request(vec![
+        user("go"),
+        assistant_tool_calls(json!([{
+            "id": "call_1",
+            "type": "function",
+            "function": { "name": "lookup", "arguments": "  " }
+        }])),
+    ]);
+
+    let body = google_body(&request, &context("google/gemini-3.7-flash"), false).expect("mapped");
+    assert_eq!(
+        body["contents"][1]["parts"][0]["functionCall"]["args"],
+        json!({})
+    );
+}
+
+#[test]
+fn rejects_unsupported_tool_entries_instead_of_dropping_them() {
+    let mut request = chat_request(vec![user("search")]);
+    request
+        .extra
+        .insert("tools".to_string(), json!([{ "type": "retrieval" }]));
+
+    let error = google_body(&request, &context("google/gemini-3.7-flash"), false)
+        .expect_err("unknown tool shapes are rejected");
+    invalid_request_containing(error, "tool");
 }
 
 #[test]

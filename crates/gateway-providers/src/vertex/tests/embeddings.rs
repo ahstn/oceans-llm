@@ -149,8 +149,8 @@ fn extracts_every_prediction_numbered_from_first_index() {
         ]
     });
 
-    let outputs =
-        extract_google_embedding_outputs(&response, 250, "gemini-embedding-001").expect("outputs");
+    let outputs = extract_google_embedding_outputs(&response, 250, 3, "gemini-embedding-001")
+        .expect("outputs");
 
     assert_eq!(outputs.len(), 3);
     assert_eq!(
@@ -192,13 +192,67 @@ fn rejects_predict_responses_with_missing_or_non_numeric_embeddings() {
         ),
     ];
     for (name, response, expected) in cases {
+        let expected_count = response
+            .get("predictions")
+            .and_then(Value::as_array)
+            .map_or(1, Vec::len)
+            .max(1);
         let error =
-            extract_google_embedding_outputs(&response, 0, "gemini-embedding-001").expect_err(name);
+            extract_google_embedding_outputs(&response, 0, expected_count, "gemini-embedding-001")
+                .expect_err(name);
         assert!(
             matches!(&error, ProviderError::Transport(message) if message.contains(expected)),
             "{name}: {error}"
         );
     }
+}
+
+#[test]
+fn rejects_predict_responses_whose_prediction_count_differs_from_the_batch() {
+    for count in [1usize, 3] {
+        let predictions: Vec<Value> = (0..count)
+            .map(|_| json!({"embeddings": {"values": [1.0]}}))
+            .collect();
+        let response = json!({"predictions": predictions});
+        let error = extract_google_embedding_outputs(&response, 0, 2, "gemini-embedding-001")
+            .expect_err("mismatched prediction count");
+        assert!(
+            matches!(&error, ProviderError::Transport(message) if message.contains("expected 2 predictions")),
+            "{count}: {error}"
+        );
+    }
+}
+
+#[test]
+fn predict_batches_are_bounded_by_aggregate_characters() {
+    let long = "x".repeat(VERTEX_PREDICT_MAX_CHARS / 2 + 1);
+    let request = embedding_request(json!([long, long, long]));
+
+    let mapped = map_google_embedding_request(
+        &request,
+        &context("google/text-embedding-005"),
+        "text-embedding-005",
+    )
+    .expect("mapped embeddings request");
+
+    // Each input is over half the budget, so no two fit in one body.
+    assert_eq!(mapped.bodies.len(), 3);
+    assert_eq!(mapped.batch_sizes, vec![1, 1, 1]);
+    assert_eq!(mapped.input_count, 3);
+}
+
+#[test]
+fn single_oversized_input_still_gets_its_own_body() {
+    let request = embedding_request(json!(["x".repeat(VERTEX_PREDICT_MAX_CHARS * 2)]));
+
+    let mapped = map_google_embedding_request(
+        &request,
+        &context("google/text-embedding-005"),
+        "text-embedding-005",
+    )
+    .expect("mapped embeddings request");
+
+    assert_eq!(mapped.batch_sizes, vec![1]);
 }
 
 #[test]
@@ -209,7 +263,7 @@ fn extracts_embed_content_output_at_first_index() {
     });
 
     let outputs =
-        extract_google_embedding_outputs(&response, 3, "gemini-embedding-2").expect("outputs");
+        extract_google_embedding_outputs(&response, 3, 1, "gemini-embedding-2").expect("outputs");
 
     assert_eq!(outputs.len(), 1);
     assert_eq!(outputs[0].index, 3);

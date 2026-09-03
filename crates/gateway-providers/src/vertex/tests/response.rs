@@ -238,6 +238,7 @@ fn maps_finish_reasons_to_openai_vocabulary() {
         ("BLOCKLIST", "content_filter"),
         ("PROHIBITED_CONTENT", "content_filter"),
         ("SPII", "content_filter"),
+        ("OTHER", "stop"),
         ("FINISH_REASON_UNSPECIFIED", "stop"),
     ];
     for (upstream, expected) in cases {

@@ -13,52 +13,52 @@ const SAFE_EFFORT_MODEL_MARKERS: &[&str] = &[
 
 const SAFE_EFFORT_EXACT_MODEL_MARKERS: &[&str] = &["claude-fable-5", "claude-sonnet-5"];
 
+/// Infers the thinking policy from candidate identifiers in priority order. Callers pass the
+/// upstream model first, then aliases and provider metadata; the first value that names a
+/// known model family wins, so a provider key like `vertex-anthropic-prod` cannot reclassify
+/// a Gemini route.
 #[must_use]
 pub fn infer_thinking_policy(
     values: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> Option<ThinkingPolicy> {
-    let joined = values
+    values
         .into_iter()
-        .map(|value| value.as_ref().to_ascii_lowercase())
-        .collect::<Vec<_>>()
-        .join(" ");
+        .find_map(|value| classify(&value.as_ref().to_ascii_lowercase()))
+}
 
+fn classify(value: &str) -> Option<ThinkingPolicy> {
     if SAFE_EFFORT_MODEL_MARKERS
         .iter()
-        .any(|marker| joined.contains(marker))
+        .any(|marker| value.contains(marker))
         || SAFE_EFFORT_EXACT_MODEL_MARKERS
             .iter()
-            .any(|marker| contains_exact_model_marker(&joined, marker))
+            .any(|marker| contains_exact_model_marker(value, marker))
     {
         return Some(ThinkingPolicy::AnthropicSafeEffort);
     }
-
-    if joined.contains("anthropic") || joined.contains("claude") {
+    if value.contains("anthropic") || value.contains("claude") {
         return Some(ThinkingPolicy::AnthropicManualBudget);
     }
-
-    if joined.contains("gemini-3") {
-        let is_pro = is_gemini_3_pro(&joined);
+    if value.contains("gemini-3") {
+        let is_pro = is_gemini_3_pro(value);
         return Some(ThinkingPolicy::GeminiLevel {
             supports_minimal: !is_pro,
             supports_medium: !is_pro,
         });
     }
-
-    if joined.contains("gemini-2.5") {
+    if value.contains("gemini-2.5") {
         return Some(ThinkingPolicy::GeminiBudget);
     }
-
     None
 }
 
-/// Inspects only the `gemini-3…` model token so provider labels such as
-/// `vertex-prod` cannot masquerade as a Pro model.
+/// True when the `gemini-3…` token has `pro` as a whole hyphen-delimited tier segment, so
+/// `gemini-3.1-pro-preview` matches while `gemini-3-production` does not.
 fn is_gemini_3_pro(value: &str) -> bool {
     value.split("gemini-3").skip(1).any(|rest| {
-        rest.split(|ch: char| ch.is_ascii_whitespace())
+        rest.split(|ch: char| ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@'))
             .next()
-            .is_some_and(|token| token.contains("-pro"))
+            .is_some_and(|token| token.split('-').any(|segment| segment == "pro"))
     })
 }
 

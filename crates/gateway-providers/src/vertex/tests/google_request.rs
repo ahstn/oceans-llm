@@ -585,6 +585,73 @@ fn disables_thoughts_for_effort_none() {
         thinking_config("gemini-2.5-flash", &[("reasoning_effort", json!("none"))]),
         json!({"thinkingBudget": 0, "includeThoughts": false})
     );
+    // 2.5 Pro cannot disable thinking; it gets the 128-token floor instead of a rejected 0.
+    assert_eq!(
+        thinking_config("gemini-2.5-pro", &[("reasoning_effort", json!("none"))]),
+        json!({"thinkingBudget": 128, "includeThoughts": false})
+    );
+    // `off` is the gateway's other spelling of disabled thinking.
+    assert_eq!(
+        thinking_config("gemini-3.7-flash", &[("reasoning_effort", json!("OFF"))]),
+        json!({"thinkingLevel": "MINIMAL", "includeThoughts": false})
+    );
+}
+
+#[test]
+fn both_generation_config_aliases_merge_instead_of_replacing() {
+    let config = generation_config(
+        "gemini-3.7-flash",
+        &[
+            ("generationConfig", json!({"seed": 7, "temperature": 0.1})),
+            ("generation_config", json!({"topK": 5, "temperature": 0.9})),
+        ],
+    )
+    .expect("mapped");
+
+    assert_eq!(config["seed"], 7);
+    assert_eq!(config["topK"], 5);
+    // The later alias wins on overlap.
+    assert_eq!(config["temperature"], 0.9);
+}
+
+#[test]
+fn empty_user_content_array_gets_an_empty_text_part() {
+    let request = chat_request(vec![CoreChatMessage {
+        role: "user".to_string(),
+        content: json!([]),
+        name: None,
+        extra: BTreeMap::new(),
+    }]);
+
+    let body = google_body(&request, &context("google/gemini-3.7-flash"), false).expect("mapped");
+
+    assert_eq!(body["contents"][0]["parts"], json!([{"text": ""}]));
+}
+
+#[test]
+fn drops_additional_openai_only_fields_from_body_root() {
+    let body = google_body(
+        &ping_request(&[
+            ("modalities", json!(["text"])),
+            ("audio", json!({"voice": "alloy"})),
+            ("prediction", json!({"type": "content", "content": "x"})),
+            ("verbosity", json!("low")),
+            ("web_search_options", json!({})),
+        ]),
+        &context("google/gemini-3.7-flash"),
+        false,
+    )
+    .expect("mapped");
+    let rendered = body.to_string();
+    for key in [
+        "modalities",
+        "audio",
+        "prediction",
+        "verbosity",
+        "web_search_options",
+    ] {
+        assert!(!rendered.contains(key), "{key} leaked into the body");
+    }
 }
 
 #[test]

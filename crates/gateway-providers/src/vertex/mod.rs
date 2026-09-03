@@ -365,7 +365,7 @@ impl ProviderClient for VertexProvider {
         let mapped = map_google_embedding_request(request, context, model_id)?;
         let endpoint = self.model_endpoint(publisher, model_id, vertex_embedding_method(model_id));
         let mut outputs: Vec<GoogleEmbeddingOutput> = Vec::with_capacity(mapped.input_count);
-        for body in &mapped.bodies {
+        for (body, expected) in mapped.bodies.iter().zip(&mapped.batch_sizes) {
             let request = self.build_request(&endpoint, body, context).await?;
             let response = match execute_request(
                 &self.client,
@@ -418,7 +418,7 @@ impl ProviderClient for VertexProvider {
                     ));
                 }
             };
-            match extract_google_embedding_outputs(&value, outputs.len(), model_id) {
+            match extract_google_embedding_outputs(&value, outputs.len(), *expected, model_id) {
                 Ok(batch) => outputs.extend(batch),
                 Err(error) => return Err(partial_google_embedding_failure(error, &outputs, true)),
             }

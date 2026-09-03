@@ -512,6 +512,30 @@ fn gemini_pro_detection_ignores_provider_labels() {
             supports_medium: true,
         })
     );
+    // A provider named after Anthropic must not reclassify a Gemini route: the upstream model
+    // is consulted first.
+    assert_eq!(
+        infer_thinking_policy(["google/gemini-3.8-flash", "vertex-anthropic-prod"]),
+        Some(ThinkingPolicy::GeminiLevel {
+            supports_minimal: true,
+            supports_medium: true,
+        })
+    );
+    // Aliases containing `-pro` as part of a longer word are not Pro.
+    assert_eq!(
+        infer_thinking_policy(["google/gemini-3.8-flash", "gemini-3-production"]),
+        Some(ThinkingPolicy::GeminiLevel {
+            supports_minimal: true,
+            supports_medium: true,
+        })
+    );
+    assert_eq!(
+        infer_thinking_policy(["google/gemini-3.1-pro-preview"]),
+        Some(ThinkingPolicy::GeminiLevel {
+            supports_minimal: false,
+            supports_medium: false,
+        })
+    );
 }
 
 #[test]

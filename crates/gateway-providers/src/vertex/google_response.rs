@@ -89,8 +89,7 @@ pub(super) fn map_google_finish_reason(reason: &str) -> &'static str {
         | "PROHIBITED_CONTENT"
         | "SPII"
         | "IMAGE_SAFETY"
-        | "IMAGE_PROHIBITED_CONTENT"
-        | "OTHER" => "content_filter",
+        | "IMAGE_PROHIBITED_CONTENT" => "content_filter",
         _ => "stop",
     }
 }

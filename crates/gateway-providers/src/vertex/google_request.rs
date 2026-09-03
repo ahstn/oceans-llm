@@ -34,12 +34,14 @@ pub(super) fn map_google_request(
     let mut generation_config = Map::new();
     let mut thinking = ThinkingRequest::default();
     let mut response_format = None;
-    let mut caller_generation_config = None;
+    let mut caller_generation_configs = Vec::new();
     for (key, value) in &request.extra {
         match key.as_str() {
             // OpenAI-only fields with no Vertex equivalent; the official compat layer ignores them.
             "model" | "messages" | "stream" | "stream_options" | "user" | "store" | "metadata"
-            | "service_tier" | "logit_bias" | "prompt_cache_key" | "safety_identifier" => {}
+            | "service_tier" | "logit_bias" | "prompt_cache_key" | "safety_identifier"
+            | "modalities" | "audio" | "prediction" | "verbosity" | "web_search_options"
+            | "functions" | "function_call" => {}
             "temperature" => insert_config(&mut generation_config, "temperature", value),
             "top_p" => insert_config(&mut generation_config, "topP", value),
             "top_k" => insert_config(&mut generation_config, "topK", value),
@@ -70,14 +72,16 @@ pub(super) fn map_google_request(
             "reasoning_effort" => thinking.effort_field = Some(value),
             "reasoning" => thinking.reasoning_object = Some(value),
             "response_format" => response_format = Some(value),
-            "generationConfig" | "generation_config" => caller_generation_config = Some(value),
+            "generationConfig" | "generation_config" => caller_generation_configs.push(value),
             _ => {
                 body.insert(key.clone(), value.clone());
             }
         }
     }
 
-    if let Some(caller) = caller_generation_config {
+    // Caller-supplied native config wins over the mapped OpenAI sampling keys. Both aliases
+    // merge in; when both are present the later one wins on overlapping keys.
+    for caller in caller_generation_configs {
         let caller = caller
             .as_object()
             .ok_or(VertexAdapterError::InvalidGenerationConfig)?;
@@ -135,8 +139,12 @@ fn map_google_contents(
                 system_lines.push(message_content_as_text(&message.content)?);
             }
             "user" => {
-                let parts =
+                let mut parts =
                     map_google_parts(&message.content, Some(&known_tool_names), function_ids)?;
+                if parts.is_empty() {
+                    // Vertex rejects a content entry with no parts.
+                    parts.push(json!({ "text": "" }));
+                }
                 contents.push(json!({ "role": "user", "parts": parts }));
             }
             "assistant" => {
@@ -193,7 +201,7 @@ impl ThinkingRequest<'_> {
         let raw = raw
             .as_str()
             .ok_or(VertexAdapterError::InvalidReasoningEffortType)?;
-        if raw == "none" {
+        if raw.eq_ignore_ascii_case("none") || raw.eq_ignore_ascii_case("off") {
             return Ok(Some(None));
         }
         ReasoningEffort::from_db(raw)

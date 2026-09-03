@@ -186,6 +186,10 @@ where
             }
         }
 
+        if let Err(error) = parser.finish() {
+            yield Ok(openai_sse_error_chunk("google_stream_parse_error", &error.to_string()));
+            return;
+        }
         yield Ok(openai_sse_chunk(&state.finish()));
         yield Ok(done_sse_chunk());
     })
