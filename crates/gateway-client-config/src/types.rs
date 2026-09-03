@@ -13,7 +13,7 @@ pub enum AnthropicThinkingPolicy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 pub enum CodexReasoningEffort {
     Minimal,
     Low,

@@ -813,6 +813,16 @@ fn codex_emits_supported_explicit_reasoning_default() {
 }
 
 #[test]
+fn codex_xhigh_reasoning_effort_round_trips_with_codex_spelling() {
+    let encoded = serde_json::to_value(CodexReasoningEffort::XHigh).expect("serialize effort");
+    assert_eq!(encoded, serde_json::json!("xhigh"));
+
+    let decoded: CodexReasoningEffort =
+        serde_json::from_value(encoded).expect("deserialize effort");
+    assert_eq!(decoded, CodexReasoningEffort::XHigh);
+}
+
+#[test]
 fn codex_notes_do_not_include_thinking_variant_guidance() {
     let rendered = CodexConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::ManualBudget)));
 
