@@ -79,15 +79,22 @@ export function useBudgetEditor(): BudgetEditor {
     setForm(initialBudgetSettings)
   }
 
+  // The write and the reload fail independently: a saved budget stays saved even if the
+  // page cannot refresh, so `after` runs as soon as the write succeeds.
   function runMutation(mutation: () => Promise<unknown>, message: string, after?: () => void) {
     startTransition(async () => {
       try {
         await mutation()
-        toast.success(message)
-        await router.invalidate()
-        after?.()
       } catch (error) {
         toast.error(getErrorMessage(error))
+        return
+      }
+      toast.success(message)
+      after?.()
+      try {
+        await router.invalidate()
+      } catch {
+        toast.error(`${message}, but the page did not reload`)
       }
     })
   }

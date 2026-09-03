@@ -27,11 +27,10 @@ export type BudgetOwner = {
 }
 
 /**
- * - `idle`: no budget and no spend in the window.
- * - `no_budget`: spending without a budget.
- * - `low`: under `LOW_USAGE_RATIO` of the budget.
+ * `no_budget` owners have no usable spend figure: the API only sums usage inside an
+ * active budget's window, so unbudgeted owners always report zero.
  */
-export type UsageStatus = 'idle' | 'no_budget' | 'low' | 'on_track' | 'warning' | 'over'
+export type UsageStatus = 'no_budget' | 'low' | 'on_track' | 'warning' | 'over'
 
 export type BudgetUsage = {
   /** Spend divided by budget. `null` when no budget is set. */
@@ -47,7 +46,7 @@ export function budgetUsage(owner: BudgetOwner): BudgetUsage {
   if (!owner.budget || owner.budget.amount_usd_10000 <= 0) {
     return {
       ratio: null,
-      status: spendUsd === 0 ? 'idle' : 'no_budget',
+      status: 'no_budget',
       spendUsd,
       budgetUsd: null,
       remainingUsd: null,
@@ -71,14 +70,15 @@ function usageStatus(ratio: number): UsageStatus {
   return 'low'
 }
 
-/** Owners that need no attention right now: idle, or well under their budget. */
+/** Owners that need no attention right now: well under their budget. */
 export function isQuietUsage(usage: BudgetUsage) {
-  return usage.status === 'idle' || usage.status === 'low'
+  return usage.status === 'low'
 }
 
 export type BudgetSummary = {
-  totalSpendUsd: number
-  budgetedUsers: number
+  /** Spend counted against active budgets, each in its own current window. */
+  budgetedSpendUsd: number
+  budgeted: number
   overBudget: number
   nearLimit: number
 }
@@ -86,12 +86,12 @@ export type BudgetSummary = {
 export function summarizeUsage(usages: readonly BudgetUsage[]): BudgetSummary {
   return usages.reduce<BudgetSummary>(
     (summary, usage) => ({
-      totalSpendUsd: summary.totalSpendUsd + usage.spendUsd,
-      budgetedUsers: summary.budgetedUsers + (usage.ratio === null ? 0 : 1),
+      budgetedSpendUsd: summary.budgetedSpendUsd + usage.spendUsd,
+      budgeted: summary.budgeted + (usage.ratio === null ? 0 : 1),
       overBudget: summary.overBudget + (usage.status === 'over' ? 1 : 0),
       nearLimit: summary.nearLimit + (usage.status === 'warning' ? 1 : 0),
     }),
-    { totalSpendUsd: 0, budgetedUsers: 0, overBudget: 0, nearLimit: 0 },
+    { budgetedSpendUsd: 0, budgeted: 0, overBudget: 0, nearLimit: 0 },
   )
 }
 
@@ -100,7 +100,6 @@ export function summarizeUsage(usages: readonly BudgetUsage[]): BudgetSummary {
 // ---------------------------------------------------------------------------
 
 const STATUS_LABEL: Record<UsageStatus, string> = {
-  idle: 'Idle',
   no_budget: 'No budget',
   low: 'Low usage',
   on_track: 'On track',
@@ -112,7 +111,6 @@ const STATUS_BADGE_VARIANT: Record<
   UsageStatus,
   'outline' | 'secondary' | 'warning' | 'destructive'
 > = {
-  idle: 'outline',
   no_budget: 'outline',
   low: 'secondary',
   on_track: 'secondary',
@@ -121,7 +119,6 @@ const STATUS_BADGE_VARIANT: Record<
 }
 
 const STATUS_BAR_CLASS: Record<UsageStatus, string> = {
-  idle: '',
   no_budget: '',
   low: '[&>[data-slot=progress-indicator]]:bg-muted-foreground/60',
   on_track: '',
@@ -141,12 +138,7 @@ export function BudgetSourceBadge({ source }: { source: BudgetSource | null | un
 
 export function UsageBar({ usage }: { usage: BudgetUsage }) {
   if (usage.ratio === null) {
-    return (
-      <div className="flex min-w-0 flex-col gap-1">
-        <span className="text-sm font-medium">{CURRENCY_FORMATTER.format(usage.spendUsd)}</span>
-        <span className="text-muted-foreground text-xs">No budget set</span>
-      </div>
-    )
+    return <span className="text-muted-foreground text-xs">No budget set</span>
   }
   return (
     <div className="flex min-w-0 flex-col gap-1.5">

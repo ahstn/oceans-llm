@@ -92,7 +92,9 @@ export function SpendControlsPage() {
   } = budgets.data
   const editor = useBudgetEditor()
   const list = useUserBudgetList(users)
-  const summary = useMemo(() => summarizeUsage(users.map(budgetUsage)), [users])
+  // Users and service accounts are both budget owners; the strip covers both.
+  const owners = useMemo(() => [...users, ...serviceAccounts], [users, serviceAccounts])
+  const summary = useMemo(() => summarizeUsage(owners.map(budgetUsage)), [owners])
   const usersById = useMemo(() => new Map(users.map((user) => [user.user_id, user])), [users])
 
   return (
@@ -103,7 +105,7 @@ export function SpendControlsPage() {
         description="Set spending limits for users, automated accounts, and each user's model use. Review recent alerts."
       />
 
-      <SummaryStrip summary={summary} totalUsers={users.length} />
+      <SummaryStrip summary={summary} totalOwners={owners.length} />
 
       <Card className="min-w-0">
         <CardHeader>
@@ -143,7 +145,7 @@ export function SpendControlsPage() {
               <UserModelBudgetsTable
                 budgets={userModelBudgets}
                 usersById={usersById}
-                models={models.data.items}
+                models={models}
                 editor={editor}
               />
               <section className="flex flex-col gap-3 rounded-md border p-4">
@@ -153,7 +155,7 @@ export function SpendControlsPage() {
                     Model-specific budgets are evaluated before the user's general budget.
                   </p>
                 </div>
-                <UserModelBudgetForm users={users} models={models.data.items} editor={editor} />
+                <UserModelBudgetForm users={users} models={models} editor={editor} />
               </section>
             </TabsContent>
           </Tabs>
@@ -181,18 +183,18 @@ export function SpendControlsPage() {
 // Summary strip
 // ---------------------------------------------------------------------------
 
-function SummaryStrip({ summary, totalUsers }: { summary: BudgetSummary; totalUsers: number }) {
+function SummaryStrip({ summary, totalOwners }: { summary: BudgetSummary; totalOwners: number }) {
   return (
     <div className="grid gap-3 md:grid-cols-4">
       <StatTile
         icon={Wallet01Icon}
-        label="Total window spend"
-        value={CURRENCY_FORMATTER.format(summary.totalSpendUsd)}
+        label="Spend against budgets"
+        value={CURRENCY_FORMATTER.format(summary.budgetedSpendUsd)}
       />
       <StatTile
         icon={UserGroupIcon}
-        label="Budgeted users"
-        value={`${summary.budgetedUsers} / ${totalUsers}`}
+        label="Budgeted owners"
+        value={`${summary.budgeted} / ${totalOwners}`}
       />
       <StatTile
         icon={AlertDiamondIcon}
@@ -260,7 +262,7 @@ function UsersTable({ list, editor }: { list: UserBudgetList; editor: BudgetEdit
             <TableHead className="text-muted-foreground">Usage</TableHead>
             <TableHead className="text-muted-foreground">Status</TableHead>
             <TableHead className="text-muted-foreground">Alerts</TableHead>
-            <TableHead className="text-muted-foreground text-right">Actions</TableHead>
+            <TableHead className="text-muted-foreground">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -371,7 +373,7 @@ function ServiceAccountsTable({
             <TableHead className="text-muted-foreground">Usage</TableHead>
             <TableHead className="text-muted-foreground">Status</TableHead>
             <TableHead className="text-muted-foreground">Alerts</TableHead>
-            <TableHead className="text-muted-foreground text-right">Actions</TableHead>
+            <TableHead className="text-muted-foreground">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -469,7 +471,7 @@ function UserModelBudgetsTable({
             <TableHead className="text-muted-foreground">Scope</TableHead>
             <TableHead className="text-muted-foreground">Budget</TableHead>
             <TableHead className="text-muted-foreground">Usage</TableHead>
-            <TableHead className="text-muted-foreground text-right">Actions</TableHead>
+            <TableHead className="text-muted-foreground">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -552,7 +554,7 @@ function ActionsCell({
 }) {
   return (
     <TableCell>
-      <div className="flex items-center justify-end gap-1">
+      <div className="flex items-center gap-1">
         <Button type="button" size="sm" variant="outline" onClick={onConfigure}>
           <AppIcon icon={Settings02Icon} size={14} stroke={1.5} data-icon="inline-start" />
           Configure

@@ -24,6 +24,20 @@ const DELIVERY_INDICATOR_CLASS: Record<string, string> = {
   failed: 'border-destructive bg-destructive/10',
 }
 
+/** Only `sent` may claim the recipient was reached; other states describe the attempt. */
+function recipientSentence(alert: BudgetAlertHistoryItemView) {
+  switch (alert.delivery_status) {
+    case 'sent':
+      return `Notified ${alert.recipient_summary}.`
+    case 'pending':
+      return `Notifying ${alert.recipient_summary}.`
+    case 'failed':
+      return `Could not notify ${alert.recipient_summary}.`
+    default:
+      return `Recipient: ${alert.recipient_summary}.`
+  }
+}
+
 export function AlertTimeline({ items }: { items: BudgetAlertHistoryItemView[] }) {
   if (items.length === 0) {
     return (
@@ -52,8 +66,7 @@ export function AlertTimeline({ items }: { items: BudgetAlertHistoryItemView[] }
           </TimelineHeader>
           <TimelineContent>
             Crossed {alert.threshold_bps / 100}% of the {alert.cadence} budget with{' '}
-            {formatUsd10000(alert.remaining_budget_usd_10000)} remaining. Notified{' '}
-            {alert.recipient_summary}.
+            {formatUsd10000(alert.remaining_budget_usd_10000)} remaining. {recipientSentence(alert)}
             {alert.failure_reason ? (
               <span className="text-destructive mt-1 block text-xs">{alert.failure_reason}</span>
             ) : null}

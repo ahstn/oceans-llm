@@ -219,8 +219,8 @@ export function UserListToolbar({ list }: { list: UserBudgetList }) {
               <FieldContent>
                 <FieldLabel htmlFor="filter-hide-quiet">Hide quiet users</FieldLabel>
                 <FieldDescription>
-                  Users under {PERCENT_FORMATTER.format(LOW_USAGE_RATIO)} of their budget, or with
-                  no budget and no spend.
+                  Users under {PERCENT_FORMATTER.format(LOW_USAGE_RATIO)} of their budget. Users
+                  without a budget always show.
                 </FieldDescription>
               </FieldContent>
             </Field>

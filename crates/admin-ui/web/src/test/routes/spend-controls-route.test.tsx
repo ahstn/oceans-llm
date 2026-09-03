@@ -89,14 +89,14 @@ const lowSpender = user(2, {
   current_window_spend_usd_10000: 50_000,
 })
 
-const bigSpender = user(3, {
-  name: 'Big Spender',
-  // No budget but real spend: sorts first and is never "quiet".
-  current_window_spend_usd_10000: 900_000,
+const unbudgeted = user(3, {
+  name: 'No Budget',
+  // The API reports zero spend for unbudgeted users, so they are never "quiet" and always show.
+  current_window_spend_usd_10000: 0,
 })
 
 const budgets: SpendBudgetsView = {
-  users: [jane, lowSpender, bigSpender],
+  users: [jane, lowSpender, unbudgeted],
   service_accounts: [
     {
       service_account_id: 'service_account_1',
@@ -176,7 +176,7 @@ function renderPage(data: SpendBudgetsView = budgets) {
   routeMock.useLoaderData.mockReturnValue({
     budgets: { data },
     alerts: { data: { items: [], page: 1, page_size: 10, total: 0 } },
-    models: { data: { items: models } },
+    models,
   })
   render(<SpendControlsPage />)
 }
@@ -224,15 +224,28 @@ describe('SpendControlsPage', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Spend controls' })).toBeInTheDocument()
     const rows = userRows()
-    expect(rows[0]).toContain('Big Spender')
-    expect(rows[1]).toContain('Jane Admin')
+    expect(rows[0]).toContain('Jane Admin')
+    expect(rows[1]).toContain('No Budget')
     expect(rows).toHaveLength(2)
     expect(screen.getByText(/1 hidden by filters/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Filters/ }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Hide quiet users' }))
     await waitFor(() => expect(userRows()).toHaveLength(3))
-    expect(userRows()[2]).toContain('Low Spender')
+    expect(userRows()[1]).toContain('Low Spender')
+  })
+
+  it('summarises users and service accounts together', async () => {
+    renderPage()
+
+    // Jane $25 + Low Spender $5 + CI Indexer; unbudgeted users add nothing.
+    const serviceSpend = budgets.service_accounts[0].current_window_spend_usd_10000 / 10_000
+    expect(screen.getByText('Spend against budgets').nextElementSibling).toHaveTextContent(
+      new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+        30 + serviceSpend,
+      ),
+    )
+    expect(screen.getByText('Budgeted owners').nextElementSibling).toHaveTextContent('3 / 4')
   })
 
   it('pages users fifteen at a time', async () => {
@@ -274,7 +287,7 @@ describe('SpendControlsPage', () => {
   it('warns only when editing a config-sourced budget', async () => {
     renderPage()
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Configure' })[1])
+    fireEvent.click(screen.getAllByRole('button', { name: 'Configure' })[0])
     const manualDialog = screen.getByRole('dialog', { name: 'Configure budget' })
     expect(within(manualDialog).getByText(/for Jane Admin\./)).toBeInTheDocument()
     expect(within(manualDialog).queryByText(INHERITED_BUDGET_WARNING)).not.toBeInTheDocument()
@@ -292,7 +305,7 @@ describe('SpendControlsPage', () => {
     saveBudgetMock.mockResolvedValue({})
     renderPage()
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Configure' })[1])
+    fireEvent.click(screen.getAllByRole('button', { name: 'Configure' })[0])
     const dialog = screen.getByRole('dialog', { name: 'Configure budget' })
     const amount = within(dialog).getByLabelText('Amount (USD)')
 
