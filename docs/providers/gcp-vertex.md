@@ -120,7 +120,7 @@ models:
           json_schema: false
 ```
 
-Native Claude invocation requires `max_tokens`. If callers omit it, the gateway currently supplies `max_tokens: 1024` for Anthropic-on-Vertex routes.
+Native Claude invocation requires `max_tokens`. If callers omit both `max_tokens` and `max_completion_tokens`, the gateway supplies `max_tokens: 4096`, the same default as the direct `anthropic` provider. Earlier releases used `1024` on Vertex routes, which truncated most tool-using Claude turns; callers that depend on a lower ceiling should send `max_tokens` explicitly.
 
 Anthropic-on-Vertex routes can enable `tools: true` when the upstream Claude model supports tool use. The gateway maps OpenAI Chat Completions function tools, assistant `tool_calls`, tool-result continuations, and streaming tool-use deltas to and from the Anthropic Messages shape used by Vertex. Keep `vision: false` unless you have tested image/document content blocks for the exact route; the Anthropic-on-Vertex mapper still rejects non-text content blocks in this slice.
 
