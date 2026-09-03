@@ -235,10 +235,12 @@ impl PostgresStore {
             sqlx::query(
                 r#"
                 INSERT INTO gateway_models (
-                    id, model_key, alias_target_model_id, description, tags_json, rank, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+                    id, model_key, alias_target_model_id, max_reasoning_effort, description,
+                    tags_json, rank, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
                 ON CONFLICT(model_key) DO UPDATE SET
                     alias_target_model_id = excluded.alias_target_model_id,
+                    max_reasoning_effort = excluded.max_reasoning_effort,
                     description = excluded.description,
                     tags_json = excluded.tags_json,
                     rank = excluded.rank,
@@ -248,6 +250,7 @@ impl PostgresStore {
             .bind(model_id.to_string())
             .bind(model.model_key.as_str())
             .bind(Option::<String>::None)
+            .bind(model.max_reasoning_effort.map(|effort| effort.as_str()))
             .bind(model.description.clone())
             .bind(tags_json)
             .bind(model.rank)

@@ -89,6 +89,293 @@ fn maps_text_chat_request_to_anthropic_messages_invoke_body() {
 }
 
 #[test]
+fn preserves_native_anthropic_continuation_blocks_without_duplicate_tool_calls() {
+    let native_tool_use_id = "toolu.native:123";
+    let assistant_content = json!([
+        {
+            "type": "thinking",
+            "thinking": "private reasoning",
+            "signature": "sig-native",
+            "cache_control": {"type": "ephemeral"}
+        },
+        {
+            "type": "redacted_thinking",
+            "data": "encrypted-native",
+            "provider_extension": true
+        },
+        {
+            "type": "text",
+            "text": "Calling the tool",
+            "cache_control": {"type": "ephemeral"}
+        },
+        {
+            "type": "tool_use",
+            "id": native_tool_use_id,
+            "name": "lookup",
+            "input": {"query": "weather"},
+            "caller": {"type": "direct"}
+        },
+        {
+            "type": "server_tool_use",
+            "id": "srvtoolu_1",
+            "name": "tool_search",
+            "input": {"query": "weather"}
+        }
+    ]);
+    let tool_result_content = json!([
+        {
+            "type": "tool_result",
+            "tool_use_id": native_tool_use_id,
+            "content": [
+                {
+                    "type": "text",
+                    "text": "sunny",
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ],
+            "is_error": false,
+            "provider_extension": "preserve"
+        },
+        {
+            "type": "tool_search_tool_result",
+            "tool_use_id": "srvtoolu_1",
+            "content": {"type": "tool_search_tool_search_result", "tool_references": []}
+        },
+        {"type": "text", "text": "Continue", "cache_control": {"type": "ephemeral"}}
+    ]);
+    let mut assistant = CoreChatMessage {
+        role: "assistant".to_string(),
+        content: assistant_content.clone(),
+        name: None,
+        extra: BTreeMap::new(),
+    };
+    assistant.extra.insert(
+        "tool_calls".to_string(),
+        json!([
+            {
+                "id": native_tool_use_id,
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{\"query\":\"weather\"}"
+                }
+            },
+            {
+                "id": "toolu_additional",
+                "type": "function",
+                "function": {
+                    "name": "notify",
+                    "arguments": "{}"
+                }
+            },
+            {
+                "id": "toolu_additional",
+                "type": "function",
+                "function": {
+                    "name": "duplicate",
+                    "arguments": "{}"
+                }
+            }
+        ]),
+    );
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![
+            message("user", "Check the weather"),
+            assistant,
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: tool_result_content.clone(),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+        ],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(256))]),
+    };
+
+    let body =
+        map_chat_request_to_anthropic_messages(&request, &context("anthropic.claude-sonnet-4-5"))
+            .expect("mapped");
+
+    let mapped_assistant_content = body["messages"][1]["content"].as_array().unwrap();
+    assert_eq!(
+        &mapped_assistant_content[..assistant_content.as_array().unwrap().len()],
+        assistant_content.as_array().unwrap()
+    );
+    assert_eq!(
+        mapped_assistant_content.len(),
+        assistant_content.as_array().unwrap().len() + 1
+    );
+    assert_eq!(
+        mapped_assistant_content.last().unwrap(),
+        &json!({
+            "type": "tool_use",
+            "id": "toolu_additional",
+            "name": "notify",
+            "input": {}
+        })
+    );
+    assert_eq!(body["messages"][2]["content"], tool_result_content);
+}
+
+#[test]
+fn normalizes_anthropic_tool_result_aliases() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([
+                {
+                    "type": "tool_result",
+                    "toolUseId": "toolu_id_alias",
+                    "content": [{"type": "text", "text": "sunny"}],
+                    "is_error": false
+                },
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_text_alias",
+                    "content": null,
+                    "text": "rainy",
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ]),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(256))]),
+    };
+
+    let body =
+        map_chat_request_to_anthropic_messages(&request, &context("anthropic.claude-sonnet-4-5"))
+            .expect("mapped");
+
+    assert_eq!(
+        body["messages"][0]["content"],
+        json!([
+            {
+                "type": "tool_result",
+                "tool_use_id": "toolu_id_alias",
+                "content": [{"type": "text", "text": "sunny"}],
+                "is_error": false
+            },
+            {
+                "type": "tool_result",
+                "tool_use_id": "toolu_text_alias",
+                "content": "rainy",
+                "cache_control": {"type": "ephemeral"}
+            }
+        ])
+    );
+}
+
+#[test]
+fn rejects_invalid_canonical_anthropic_tool_result_fields() {
+    for invalid_content in [
+        json!({
+            "type": "tool_result",
+            "tool_use_id": 1,
+            "content": "sunny"
+        }),
+        json!({
+            "type": "tool_result",
+            "tool_use_id": "toolu_invalid_content",
+            "content": {"unexpected": true}
+        }),
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: json!([invalid_content]),
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: false,
+            extra: BTreeMap::from([("max_tokens".to_string(), json!(256))]),
+        };
+
+        let error = map_chat_request_to_anthropic_messages(
+            &request,
+            &context("anthropic.claude-sonnet-4-5"),
+        )
+        .expect_err("invalid tool result rejected")
+        .to_string();
+
+        assert!(error.contains("tool_result"), "{error}");
+    }
+}
+
+#[test]
+fn preserves_native_tool_use_id_for_role_tool_result() {
+    let tool_use_id = "toolu.native:123";
+    let mut tool_result = message("tool", "sunny");
+    tool_result
+        .extra
+        .insert("tool_call_id".to_string(), json!(tool_use_id));
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![
+            message("user", "Check the weather"),
+            CoreChatMessage {
+                role: "assistant".to_string(),
+                content: json!([{
+                    "type": "tool_use",
+                    "id": tool_use_id,
+                    "name": "lookup",
+                    "input": {"query": "weather"}
+                }]),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            tool_result,
+        ],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(256))]),
+    };
+
+    let body =
+        map_chat_request_to_anthropic_messages(&request, &context("anthropic.claude-sonnet-4-5"))
+            .expect("mapped");
+
+    assert_eq!(
+        body["messages"][1]["content"][0]["id"],
+        body["messages"][2]["content"][0]["tool_use_id"]
+    );
+    assert_eq!(
+        body["messages"][2]["content"][0]["tool_use_id"],
+        tool_use_id
+    );
+}
+
+#[test]
+fn validates_native_anthropic_text_before_preserving_it() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([{
+                "type": "text",
+                "text": {"not": "a string"},
+                "cache_control": {"type": "ephemeral"}
+            }]),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(256))]),
+    };
+
+    let error =
+        map_chat_request_to_anthropic_messages(&request, &context("anthropic.claude-sonnet-4-5"))
+            .expect_err("invalid text rejected")
+            .to_string();
+
+    assert!(error.contains("string `text`"), "{error}");
+}
+
+#[test]
 fn maps_converse_base64_image_blocks_and_rejects_remote_urls() {
     let request = CoreChatRequest {
         model: "nova".to_string(),

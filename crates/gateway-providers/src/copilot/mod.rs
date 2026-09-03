@@ -260,7 +260,6 @@ impl CopilotProvider {
         &self,
         mut request: reqwest::RequestBuilder,
         context: &ProviderRequestContext,
-        chat_api: Option<GitHubCopilotChatApi>,
     ) -> reqwest::RequestBuilder {
         let profile = VSCODE_CHAT_2026_06_01_PROFILE;
         request = request
@@ -271,10 +270,6 @@ impl CopilotProvider {
             .header("x-interaction-type", profile.interaction_type)
             .header("x-github-api-version", profile.github_api_version)
             .header("x-request-id", &context.request_id);
-
-        if chat_api == Some(GitHubCopilotChatApi::AnthropicMessages) {
-            request = request.header("anthropic-version", profile.anthropic_version);
-        }
 
         for (name, value) in &self.config.default_headers {
             request = request.header(name, value);
@@ -301,8 +296,16 @@ impl CopilotProvider {
         let token = self.token(context).await?;
         let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
         let req_builder = self.client.post(url).json(&body);
-        let req_builder = self.apply_copilot_headers(req_builder, context, chat_api);
+        let req_builder = self.apply_copilot_headers(req_builder, context);
         let mut request = req_builder.build().map_err(map_reqwest_error)?;
+        if chat_api == Some(GitHubCopilotChatApi::AnthropicMessages) {
+            request.headers_mut().insert(
+                "anthropic-version",
+                reqwest::header::HeaderValue::from_static(
+                    VSCODE_CHAT_2026_06_01_PROFILE.anthropic_version,
+                ),
+            );
+        }
         let mut authorization =
             reqwest::header::HeaderValue::from_bytes(format!("Bearer {token}").as_bytes())
                 .map_err(|_| {

@@ -363,7 +363,15 @@ pub(super) fn map_anthropic_content_blocks(content: &Value) -> Result<Vec<Value>
                     )
                 })?;
                 match kind {
-                    "text" | "input_text" => {
+                    "text" => {
+                        object.get("text").and_then(Value::as_str).ok_or_else(|| {
+                            ProviderError::InvalidRequest(
+                                "text content entries must include a string `text`".to_string(),
+                            )
+                        })?;
+                        blocks.push(item.clone());
+                    }
+                    "input_text" => {
                         let text = object.get("text").and_then(Value::as_str).ok_or_else(|| {
                             ProviderError::InvalidRequest(
                                 "text content entries must include a string `text`".to_string(),
@@ -377,11 +385,7 @@ pub(super) fn map_anthropic_content_blocks(content: &Value) -> Result<Vec<Value>
                     "tool_result" => {
                         blocks.push(map_anthropic_tool_result_content_block(object)?);
                     }
-                    other => {
-                        return Err(ProviderError::InvalidRequest(format!(
-                            "unsupported content type `{other}` for Anthropic Messages mapping"
-                        )));
-                    }
+                    _ => blocks.push(item.clone()),
                 }
             }
             Ok(blocks)
@@ -390,6 +394,55 @@ pub(super) fn map_anthropic_content_blocks(content: &Value) -> Result<Vec<Value>
             "message content must be a string or typed content array".to_string(),
         )),
     }
+}
+
+fn map_anthropic_tool_result_content_block(
+    object: &Map<String, Value>,
+) -> Result<Value, ProviderError> {
+    let tool_use_id = match object.get("tool_use_id") {
+        Some(value) => value.as_str(),
+        None => object.get("toolUseId").and_then(Value::as_str),
+    }
+    .ok_or_else(|| {
+        ProviderError::InvalidRequest(
+            "tool_result content must include a string tool_use_id".to_string(),
+        )
+    })?;
+    let content = match object.get("content") {
+        Some(value) if value.is_string() || value.is_array() => value.clone(),
+        Some(Value::Null) | None => object
+            .get("text")
+            .and_then(Value::as_str)
+            .map(|text| Value::String(text.to_string()))
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "tool_result content must include `content` or string `text`".to_string(),
+                )
+            })?,
+        Some(_) => {
+            return Err(ProviderError::InvalidRequest(
+                "tool_result `content` must be a string or array".to_string(),
+            ));
+        }
+    };
+
+    if object.contains_key("tool_use_id")
+        && object
+            .get("content")
+            .is_some_and(|value| value.is_string() || value.is_array())
+    {
+        return Ok(Value::Object(object.clone()));
+    }
+
+    let mut block = object.clone();
+    block.insert(
+        "tool_use_id".to_string(),
+        Value::String(tool_use_id.to_string()),
+    );
+    block.insert("content".to_string(), content);
+    block.remove("toolUseId");
+    block.remove("text");
+    Ok(Value::Object(block))
 }
 
 pub(super) fn map_anthropic_image_block(

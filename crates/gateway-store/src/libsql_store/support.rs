@@ -93,16 +93,26 @@ pub(super) fn decode_api_key_secret_material(
 
 pub(super) fn decode_gateway_model(row: &libsql::Row) -> Result<GatewayModel, StoreError> {
     let id: String = row.get(0).map_err(to_query_error)?;
-    let tags_json: String = row.get(4).map_err(to_query_error)?;
+    let max_reasoning_effort: Option<String> = row.get(3).map_err(to_query_error)?;
+    let max_reasoning_effort = max_reasoning_effort
+        .as_deref()
+        .map(|value| {
+            gateway_core::domain::ReasoningEffort::from_db(value).ok_or_else(|| {
+                StoreError::Serialization(format!("unknown reasoning effort `{value}`"))
+            })
+        })
+        .transpose()?;
+    let tags_json: String = row.get(5).map_err(to_query_error)?;
 
     Ok(GatewayModel {
         id: parse_uuid(&id)?,
         model_key: row.get(1).map_err(to_query_error)?,
         alias_target_model_key: row.get(2).map_err(to_query_error)?,
-        description: row.get(3).map_err(to_query_error)?,
+        max_reasoning_effort,
+        description: row.get(4).map_err(to_query_error)?,
         tags: serde_json::from_str(&tags_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
-        rank: row.get(5).map_err(to_query_error)?,
+        rank: row.get(6).map_err(to_query_error)?,
     })
 }
 

@@ -28,23 +28,27 @@ The live request path is single-route in this slice.
    - A concrete model key stays concrete.
    - A `tag:` selector picks one allowed gateway model; blocked allowlisted candidates are skipped.
    - An alias resolves to a canonical execution model after gateway-model authorization. Alias and target allowlists are independent.
-5. The route planner builds an ordered route list.
+5. The gateway computes the strictest `max_reasoning_effort` across the requested-model-to-target chain and validates every explicit categorical effort field.
+   - omitted policies, omitted effort fields, and explicit `null` values pass
+   - above-ceiling, unknown, and malformed values return `invalid_request`
+   - rejection happens before route planning, provider execution, or budget enforcement
+6. The route planner builds an ordered route list.
    - Lower `priority` wins first.
    - `weight` only matters inside the same priority bucket.
    - Disabled routes and non-positive weights drop out.
-6. Capability filtering removes routes that cannot satisfy the API family and feature requirements. For example, `/v1/responses` requires `responses`, while `/v1/chat/completions` requires `chat_completions`.
-7. The budget guard runs after access and model resolution, before provider execution.
+7. Capability filtering removes routes that cannot satisfy the API family and feature requirements. For example, `/v1/responses` requires `responses`, while `/v1/chat/completions` requires `chat_completions`.
+8. The budget guard runs after model policy and capability enforcement, before provider execution.
    - hard-limit rejection returns `429 budget_exceeded`
    - no provider call occurs on this path
-8. Route compatibility metadata is passed into the provider adapter.
-9. The provider adapter applies any declared compatibility transforms to the outbound provider request.
-10. The first eligible route executes.
-11. The provider execution attempt is recorded as request-attempt metadata when a request-log summary is written.
-12. MCP tool invocations, when enabled for the request path, are logged as separate request-correlated audit records.
-13. Request logs are written for the user-visible outcome.
-14. Usage is normalized when possible.
-15. Pricing is resolved exactly or the request is marked `unpriced`.
-16. When the request has usable usage data, the gateway prepares the ledger row, applies post-provider budget math, and commits the priced or unpriced ledger row in that order.
+9. Route compatibility metadata is passed into the provider adapter.
+10. The provider adapter applies any declared compatibility transforms to the outbound provider request.
+11. The first eligible route executes.
+12. The provider execution attempt is recorded as request-attempt metadata when a request-log summary is written.
+13. MCP tool invocations, when enabled for the request path, are logged as separate request-correlated audit records.
+14. Request logs are written for the user-visible outcome.
+15. Usage is normalized when possible.
+16. Pricing is resolved exactly or the request is marked `unpriced`.
+17. When the request has usable usage data, the gateway prepares the ledger row, applies post-provider budget math, and commits the priced or unpriced ledger row in that order.
 
 Compatibility transforms can affect the provider request body and stream options for the selected API family. They do not change the public request model identity, alias resolution, API-key grants, or request-log attribution. Current OpenAI-compatible profile transforms are Chat Completions-specific; Responses and Embeddings use their own typed provider paths.
 
@@ -140,8 +144,9 @@ These failures look similar from far away, but they mean different things.
 ### `invalid_request`
 
 - The model resolved.
-- Capability filtering removed every remaining route.
+- Model policy or capability filtering rejected the request.
 - Common causes:
+  - an explicit reasoning-effort value is above the effective model ceiling, unknown, or malformed
   - embeddings against a chat-only route
   - Responses requests against a route with `responses: false`
   - tools against a route with tools disabled

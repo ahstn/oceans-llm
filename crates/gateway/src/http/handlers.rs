@@ -16,7 +16,8 @@ use gateway_core::{
     CoreRequestRequirements, EmbeddingsRequest, GatewayError, ModelsListResponse,
     ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
     RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
-    anthropic_messages_request_to_core, core_chat_request_to_openai, openai_chat_request_to_core,
+    anthropic_messages_request_to_core, core_chat_request_to_openai, enforce_chat_reasoning_effort,
+    enforce_responses_reasoning_effort, openai_chat_request_to_core,
     openai_embeddings_request_to_core, openai_responses_request_to_core,
     protocol::{anthropic::anthropic_message_from_openai_chat, openai::ModelCard},
     vertex_route_capabilities_for_upstream_model,
@@ -142,6 +143,7 @@ async fn v1_messages_inner(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
+    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
@@ -418,6 +420,7 @@ pub async fn v1_chat_completions(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
+    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
@@ -825,6 +828,7 @@ pub async fn v1_responses(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
+    enforce_responses_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
@@ -3012,6 +3016,7 @@ mod tests {
                 &[SeedModel {
                     model_key: "fast".to_string(),
                     alias_target_model_key: None,
+                    max_reasoning_effort: None,
                     description: None,
                     tags: Vec::new(),
                     rank: 0,

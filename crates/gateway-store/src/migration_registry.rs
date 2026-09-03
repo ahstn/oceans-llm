@@ -270,10 +270,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 50,
+        name: "model_reasoning_effort_policy",
+        checksum: "V50__model_reasoning_effort_policy.sql",
+        libsql_sql: include_str!("../migrations/V50__model_reasoning_effort_policy.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V50__model_reasoning_effort_policy.sql"),
+    },
+    MigrationManifest {
+        version: 51,
         name: "budget_service_account_source",
-        checksum: "V50__budget_service_account_source.sql",
-        libsql_sql: include_str!("../migrations/V50__budget_service_account_source.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V50__budget_service_account_source.sql"),
+        checksum: "V51__budget_service_account_source.sql",
+        libsql_sql: include_str!("../migrations/V51__budget_service_account_source.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V51__budget_service_account_source.sql"),
     },
 ];
 

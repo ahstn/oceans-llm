@@ -42,7 +42,7 @@ pub(crate) mod tests {
     use std::collections::BTreeMap;
     use std::env;
 
-    use gateway_core::domain::ModelAllowlistPolicy;
+    use gateway_core::domain::{ModelAllowlistPolicy, ReasoningEffort};
     use gateway_core::{
         AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionTraceRepository,
         ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
@@ -256,6 +256,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: None,
             tags: Vec::new(),
             rank: 10,
@@ -1156,6 +1157,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: None,
             tags: vec![],
             rank: 10,
@@ -2130,6 +2132,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: Some("fast tier".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
@@ -2151,6 +2154,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "reasoning".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: Some("reasoning tier".to_string()),
                 tags: vec!["reasoning".to_string()],
                 rank: 20,
@@ -3476,6 +3480,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
@@ -3993,6 +3998,7 @@ pub(crate) mod tests {
                     secrets: None,
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -4182,6 +4188,7 @@ pub(crate) mod tests {
                     secrets: None,
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -4355,6 +4362,7 @@ pub(crate) mod tests {
                     secrets: None,
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -4626,6 +4634,7 @@ pub(crate) mod tests {
                     secrets: None,
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -4881,6 +4890,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
+                max_reasoning_effort: Some(ReasoningEffort::Low),
                 description: Some("alias".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
@@ -4890,6 +4900,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: Some(ReasoningEffort::High),
                 description: Some("replacement".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 5,
@@ -4941,6 +4952,7 @@ pub(crate) mod tests {
             alias_model.alias_target_model_key.as_deref(),
             Some("fast-v2")
         );
+        assert_eq!(alias_model.max_reasoning_effort, Some(ReasoningEffort::Low));
 
         let api_key = store
             .get_api_key_by_public_id("dev123")
@@ -4957,12 +4969,20 @@ pub(crate) mod tests {
             accessible_models[0].alias_target_model_key.as_deref(),
             Some("fast-v2")
         );
+        assert_eq!(
+            accessible_models[0].max_reasoning_effort,
+            Some(ReasoningEffort::Low)
+        );
 
         let target_model = store
             .get_model_by_key("fast-v2")
             .await
             .expect("query target")
             .expect("target model exists");
+        assert_eq!(
+            target_model.max_reasoning_effort,
+            Some(ReasoningEffort::High)
+        );
         let routes = store
             .list_routes_for_model(target_model.id)
             .await
@@ -4985,6 +5005,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
+                max_reasoning_effort: Some(ReasoningEffort::High),
                 description: Some("alias".to_string()),
                 tags: Vec::new(),
                 rank: 10,
@@ -4997,6 +5018,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: Some("target".to_string()),
                 tags: Vec::new(),
                 rank: 20,
@@ -5017,6 +5039,10 @@ pub(crate) mod tests {
             .await
             .expect("query alias model")
             .expect("alias model exists");
+        assert_eq!(
+            alias_model.max_reasoning_effort,
+            Some(ReasoningEffort::High)
+        );
         let target_model = store
             .get_model_by_key("fast-v2")
             .await
@@ -5045,6 +5071,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
+                max_reasoning_effort: Some(ReasoningEffort::Low),
                 description: Some("alias".to_string()),
                 tags: Vec::new(),
                 rank: 10,
@@ -5057,6 +5084,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: None,
                 description: Some("target".to_string()),
                 tags: Vec::new(),
                 rank: 20,
@@ -5068,6 +5096,15 @@ pub(crate) mod tests {
             .seed_from_inputs(&[], &updated_models, &[], &[], &[], &[], &[], &[])
             .await
             .expect("updated seed");
+        let updated_alias_model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("query updated alias model")
+            .expect("updated alias model exists");
+        assert_eq!(
+            updated_alias_model.max_reasoning_effort,
+            Some(ReasoningEffort::Low)
+        );
 
         let updated_policies = store
             .list_model_allowlists_for_models(&[alias_model.id, target_model.id])
@@ -5097,6 +5134,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "restricted".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: Some("restricted tier".to_string()),
             tags: Vec::new(),
             rank: 10,
@@ -6568,6 +6606,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fable-5".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: None,
             tags: Vec::new(),
             rank: 10,
@@ -6915,6 +6954,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: None,
             tags: Vec::new(),
             rank: 10,
@@ -8072,6 +8112,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string()],
             rank: 10,
@@ -8473,6 +8514,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
@@ -9130,6 +9172,7 @@ pub(crate) mod tests {
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
+            max_reasoning_effort: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string()],
             rank: 10,
@@ -9575,6 +9618,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
+                max_reasoning_effort: Some(ReasoningEffort::Low),
                 description: Some("alias".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
@@ -9584,6 +9628,7 @@ pub(crate) mod tests {
             SeedModel {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
+                max_reasoning_effort: Some(ReasoningEffort::High),
                 description: Some("replacement".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 5,
@@ -9634,6 +9679,7 @@ pub(crate) mod tests {
             alias_model.alias_target_model_key.as_deref(),
             Some("fast-v2")
         );
+        assert_eq!(alias_model.max_reasoning_effort, Some(ReasoningEffort::Low));
 
         let api_key = store
             .get_api_key_by_public_id("dev123")
@@ -9650,12 +9696,20 @@ pub(crate) mod tests {
             accessible_models[0].alias_target_model_key.as_deref(),
             Some("fast-v2")
         );
+        assert_eq!(
+            accessible_models[0].max_reasoning_effort,
+            Some(ReasoningEffort::Low)
+        );
 
         let target_model = store
             .get_model_by_key("fast-v2")
             .await
             .expect("query target")
             .expect("target model exists");
+        assert_eq!(
+            target_model.max_reasoning_effort,
+            Some(ReasoningEffort::High)
+        );
         let routes = store
             .list_routes_for_model(target_model.id)
             .await

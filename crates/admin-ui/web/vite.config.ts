@@ -5,6 +5,8 @@ import viteReact from '@vitejs/plugin-react'
 import autoprefixer from 'autoprefixer'
 import tailwindcss from '@tailwindcss/postcss'
 
+const port = Number(process.env.PORT ?? 3001)
+
 export default defineConfig({
   base: '/admin/',
   css: {
@@ -13,12 +15,12 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3001,
+    port,
     strictPort: true,
     hmr: {
       host: 'localhost',
-      port: 3001,
-      clientPort: 3001,
+      port,
+      clientPort: port,
     },
   },
   plugins: [tsConfigPaths(), tanstackStart(), viteReact()],

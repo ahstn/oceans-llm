@@ -1,8 +1,9 @@
 -- SQLite cannot alter a CHECK constraint in place, so the budgets table is
 -- rebuilt with the widened source_kind domain. 'config_service_account' marks
--- budgets seeded from `service_accounts[*].budget` so config reloads can
--- reconcile them without overwriting manual admin edits or deactivations.
-CREATE TABLE budgets_v50 (
+-- budgets seeded from `service_accounts[*].budget`. Config reloads never
+-- overwrite a manual admin edit to the active row; a manually deactivated
+-- service-account budget is re-created because active keys require one.
+CREATE TABLE budgets_v51 (
   budget_id TEXT PRIMARY KEY,
   scope_kind TEXT NOT NULL CHECK (scope_kind IN ('user', 'service_account', 'user_model')),
   scope_key TEXT NOT NULL,
@@ -51,7 +52,7 @@ CREATE TABLE budgets_v50 (
   FOREIGN KEY (model_id) REFERENCES gateway_models(id) ON DELETE CASCADE
 );
 
-INSERT INTO budgets_v50 (
+INSERT INTO budgets_v51 (
   budget_id, scope_kind, scope_key, user_id, service_account_id, model_id, upstream_model,
   cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at,
   source_kind, source_key
@@ -63,7 +64,7 @@ SELECT
 FROM budgets;
 
 DROP TABLE budgets;
-ALTER TABLE budgets_v50 RENAME TO budgets;
+ALTER TABLE budgets_v51 RENAME TO budgets;
 
 CREATE UNIQUE INDEX IF NOT EXISTS budgets_active_scope_uidx
   ON budgets (scope_key)
