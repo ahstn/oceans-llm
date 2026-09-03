@@ -145,6 +145,7 @@ pub fn map_anthropic_finish_reason(reason: &str) -> &'static str {
         "end_turn" | "stop_sequence" => "stop",
         "max_tokens" => "length",
         "tool_use" => "tool_calls",
+        "refusal" => "content_filter",
         _ => "stop",
     }
 }

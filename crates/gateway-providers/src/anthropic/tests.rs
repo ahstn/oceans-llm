@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use super::error::AnthropicAdapterError;
 use super::request::{AnthropicRequestOptions, map_anthropic_request};
-use super::response::normalize_anthropic_response;
+use super::response::{map_anthropic_finish_reason, normalize_anthropic_response};
 use super::streaming::normalize_anthropic_stream;
 use super::thinking::{
     ClaudeThinkingPolicy, apply_anthropic_thinking_compatibility, claude_thinking_policy,
@@ -30,6 +30,24 @@ fn test_context(upstream_model: &str) -> ProviderRequestContext {
         extra_body: serde_json::Map::new(),
         request_headers: BTreeMap::new(),
         compatibility: Default::default(),
+    }
+}
+
+#[test]
+fn maps_anthropic_stop_reasons_to_openai_finish_reasons() {
+    for (stop_reason, finish_reason) in [
+        ("end_turn", "stop"),
+        ("stop_sequence", "stop"),
+        ("max_tokens", "length"),
+        ("tool_use", "tool_calls"),
+        ("refusal", "content_filter"),
+        ("pause_turn", "stop"),
+    ] {
+        assert_eq!(
+            map_anthropic_finish_reason(stop_reason),
+            finish_reason,
+            "{stop_reason}"
+        );
     }
 }
 

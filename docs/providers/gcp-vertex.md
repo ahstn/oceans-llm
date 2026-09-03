@@ -32,7 +32,7 @@ providers:
       icon_key: vertexai
 ```
 
-`api_host` is optional. When omitted, the gateway uses `aiplatform.googleapis.com`, which is the right default for the global endpoint. For Vertex multi-region endpoints, set `api_host` explicitly to `aiplatform.us.rep.googleapis.com` or `aiplatform.eu.rep.googleapis.com`. For a regional endpoint, set it to the regional Vertex host such as `us-east5-aiplatform.googleapis.com`. Anthropic-on-Vertex pricing is currently supported only for `location: global`.
+`api_host` is optional. When omitted, the gateway derives it from `location`: `global` uses `aiplatform.googleapis.com`, the multi-region `us` and `eu` locations use `aiplatform.us.rep.googleapis.com` / `aiplatform.eu.rep.googleapis.com`, and any other region uses `{region}-aiplatform.googleapis.com` (for example `us-east5-aiplatform.googleapis.com`). Set `api_host` explicitly only to override that host, such as for a private endpoint. Anthropic-on-Vertex pricing is currently supported only for `location: global`.
 
 Service-account and bearer examples:
 
@@ -120,7 +120,7 @@ models:
           json_schema: false
 ```
 
-Native Claude invocation requires `max_tokens`. If callers omit it, the gateway currently supplies `max_tokens: 1024` for Anthropic-on-Vertex routes.
+Native Claude invocation requires `max_tokens`. If callers omit both `max_tokens` and `max_completion_tokens`, the gateway supplies `max_tokens: 4096`, the same default as the direct `anthropic` provider. Earlier releases used `1024` on Vertex routes, which truncated most tool-using Claude turns; callers that depend on a lower ceiling should send `max_tokens` explicitly.
 
 Anthropic-on-Vertex routes can enable `tools: true` when the upstream Claude model supports tool use. The gateway maps OpenAI Chat Completions function tools, assistant `tool_calls`, tool-result continuations, and streaming tool-use deltas to and from the Anthropic Messages shape used by Vertex. Keep `vision: false` unless you have tested image/document content blocks for the exact route; the Anthropic-on-Vertex mapper still rejects non-text content blocks in this slice.
 
@@ -178,6 +178,8 @@ Model behavior:
 | Claude Opus 4.5 | Adaptive thinking is rejected. `reasoning_effort` maps to `output_config.effort` only when a manual thinking budget is also supplied. |
 | Claude Sonnet/Haiku 4.5 and older Claude models | Adaptive thinking is rejected. These models require an explicit manual budget from `reasoning.budget_tokens`, `reasoning_budget_tokens`, `thinking_budget_tokens`, or caller-supplied `thinking.type: "enabled"` with `budget_tokens`; the gateway does not add `output_config.effort`. |
 
+Anthropic `stop_reason` values map to OpenAI `finish_reason`: `end_turn` and `stop_sequence` to `stop`, `max_tokens` to `length`, `tool_use` to `tool_calls`, and `refusal` to `content_filter`. This mapping is shared with the `anthropic_compat` provider.
+
 #### Per-message effort
 
 Anthropic documents [per-message effort](https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta) for Claude Fable 5.1 as a beta. The request includes `anthropic-beta: mid-conversation-output-config-2026-07-01` and an effort-only system message; the new value applies to the next user turn:
@@ -232,7 +234,7 @@ Chat Completions hides Claude thinking from normal `content` and `delta.content`
 
 ## Gemini Example
 
-Google publisher routes use Vertex `generateContent` and `streamGenerateContent`.
+Google publisher routes use Vertex `generateContent` and `streamGenerateContent?alt=sse`. Streamed output is folded into Chat Completions chunks; the `finish_reason` chunk is emitted once at end of stream so late `usageMetadata` is never dropped. Every Gemini stream ends with a candidate `finishReason` (or a prompt block with no candidates). If the upstream connection closes before that frame arrives, the gateway emits an error chunk (`google_stream_premature_eof`) instead of `finish_reason: "stop"` and `[DONE]`, so clients do not accept truncated output as complete.
 
 ```yaml
 models:
@@ -255,6 +257,29 @@ models:
 Vertex Google multimodal inputs map remote media to Vertex `fileData`; the gateway does not download or probe the media.
 
 Google Gemini routes support OpenAI Chat Completions function tools, assistant `tool_calls`, tool-result continuations (`role: tool`), and streaming function-call deltas. Named tool choice (`tool_choice: {"type": "function", "function": {"name": "..."}}`), `tool_choice: "required"` / `"any"`, `tool_choice: "none"`, and `tool_choice: "auto"` map to Gemini `toolConfig.functionCallingConfig.mode` and `allowedFunctionNames`. Thought signatures returned by Gemini 3 / thinking-capable models are preserved and relayed across tool continuations.
+
+### Gemini Reasoning and Sampling
+
+OpenAI-shaped `reasoning_effort` (or `reasoning.effort`) maps to `generationConfig.thinkingConfig` and is not forwarded. The wire shape follows the model generation:
+
+| Model | `reasoning_effort` mapping |
+| --- | --- |
+| Gemini 3.7 Flash and later (any tier) | `thinkingLevel`: `minimal`/`low` -> `LOW`, `medium` -> `MEDIUM`, `high`/`xhigh`/`max` -> `HIGH`. `MINIMAL` is not offered by these models. |
+| Gemini 3.0 to 3.6 Flash / Flash-Lite | `thinkingLevel` with all four levels, `minimal` -> `MINIMAL`. |
+| Gemini 3.x Pro | `thinkingLevel` `LOW` or `HIGH` only; `minimal` collapses to `LOW`, `medium` to `HIGH`. |
+| Gemini 2.5 | `thinkingBudget` per effort tier. `none` sends `0` on Flash / Flash-Lite; 2.5 Pro cannot disable thinking and gets the 128-token floor. |
+| Gemini 2.0 and older, or an unrecognised Gemini id | No thinking. Any `reasoning_effort` (including `none`) is rejected with `400 invalid_request_error` so a misconfigured client is visible instead of silently paying for a request it did not intend. Omit the field for these models. |
+
+Gemini 3.x cannot turn thinking off. `reasoning_effort: "none"` (or `"off"`) sends the lowest `thinkingLevel` the model accepts (`MINIMAL` before 3.7, `LOW` from 3.7 and on Pro) together with `includeThoughts: false`. That hides the thought text from the response; the model still thinks at that level and bills those tokens as `reasoning_tokens`.
+
+Gemini 3.6 and later deprecate the classic sampling parameters. The gateway follows the [3.6](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-6-flash) and [3.7](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-7-flash) model guides:
+
+- `temperature`, `top_p`, and `top_k` are ignored upstream, so the gateway drops them instead of forwarding.
+- `presence_penalty`, `frequency_penalty`, and `n` cause an upstream API error. The gateway accepts the no-op defaults (`0`, `0`, `1`) and rejects any other value with `400 invalid_request_error` naming the native field.
+- The rules run on the fully merged `generationConfig`, so they also cover a caller-supplied native `generationConfig` and a route's `extra_body`.
+- Gemini 3.5 and older keep the full sampling surface (`temperature`, `topP`, `topK`, `presencePenalty`, `frequencyPenalty`, `candidateCount`).
+
+A caller-supplied native `generationConfig` (or `generation_config`) is deep-merged over the mapped OpenAI fields.
 
 ### Gemini Remote Media
 
@@ -304,10 +329,12 @@ Supported native Vertex text-embedding upstream models:
 
 | Upstream model | Default/maximum output dimensions | Notes |
 | --- | ---: | --- |
-| `google/gemini-embedding-001` | 3072 | Supports lower `dimensions` values through Vertex `outputDimensionality`. The gateway fans out array input as independent embedding operations when needed to preserve OpenAI array semantics. |
+| `google/gemini-embedding-001` | 3072 | Supports lower `dimensions` values through Vertex `outputDimensionality`. Vertex accepts one input text per `:predict` request for this model, so the gateway sends one request per input and preserves OpenAI array order. |
 | `google/gemini-embedding-2` | 3072 | Uses Vertex `:embedContent`. The gateway supports text-only OpenAI-compatible embeddings; image, audio, video, and PDF multimodal inputs remain unsupported on `/v1/embeddings`. `task_type`, `input_type`, `title`, and `auto_truncate` are not accepted for this model; put task instructions in the input text. |
-| `google/text-embedding-005` | 768 | Uses the same Vertex `:predict` text-embedding contract. |
-| `google/text-multilingual-embedding-002` | 768 | Uses the same Vertex `:predict` text-embedding contract. |
+| `google/text-embedding-005` | 768 | Uses the same Vertex `:predict` text-embedding contract. Array input is batched up to 250 instances per request. |
+| `google/text-multilingual-embedding-002` | 768 | Uses the same Vertex `:predict` text-embedding contract. Array input is batched up to 250 instances per request. |
+
+Batched `:predict` requests also respect the Vertex 20,000-token aggregate limit. The gateway has no Gemini tokenizer, so batches are sized with an upper bound of one token per UTF-8 byte; the tokenizer's byte fallback means no input can tokenize to more tokens than bytes. A `title` is prepended to every instance upstream, so its bytes count once per instance. Prose batches come out smaller than strictly necessary, which only costs extra `:predict` calls. A single input larger than the whole budget is still sent on its own and left for Vertex to truncate or reject according to `auto_truncate`.
 
 Request example:
 
@@ -347,7 +374,7 @@ Parameter mapping:
 | Public request field | Vertex field | Gateway behavior |
 | --- | --- | --- |
 | `input: "text"` | `instances[].content` for `:predict`; `content.parts[].text` for `google/gemini-embedding-2` `:embedContent` | Returns one embedding with `index: 0`. Empty strings are rejected locally. |
-| `input: ["a", "b"]` | independent Vertex requests | Returns one embedding per input in original order. Empty arrays, nested arrays, token arrays, non-string values, and multimodal payloads are rejected locally. |
+| `input: ["a", "b"]` | batched `instances[]` for `:predict` models that allow it; one request per input for `google/gemini-embedding-001` and `:embedContent` | Returns one embedding per input in original order. A response whose prediction count differs from the batch is rejected. Empty arrays, nested arrays, token arrays, non-string values, and multimodal payloads are rejected locally. |
 | `dimensions` | `parameters.outputDimensionality` for `:predict`; `embedContentConfig.outputDimensionality` for `google/gemini-embedding-2` | Must be a positive integer within the supported model maximum. |
 | `output_dimensionality` / `outputDimensionality` | Same as `dimensions` | Provider-specific aliases; conflicting aliases are rejected locally. |
 | `encoding_format: "float"` or omitted | n/a | Accepted. `base64` is rejected locally. |
