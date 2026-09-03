@@ -258,7 +258,14 @@ function CodeBlockCopyButton({
       onClick={() => void copy()}
       {...props}
     >
-      {children ?? (state === 'copied' ? <CheckIcon /> : <CopyIcon />)}
+      {children ??
+        (state === 'copied' ? (
+          <CheckIcon />
+        ) : state === 'failed' ? (
+          <CopyErrorIcon />
+        ) : (
+          <CopyIcon />
+        ))}
     </Button>
   )
 }
@@ -288,6 +295,22 @@ function CheckIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  )
+}
+
+function CopyErrorIcon() {
+  return (
+    <svg
+      data-icon="inline-start"
+      data-copy-error-icon=""
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      className="text-destructive"
+    >
+      <path d="M12 8v5m0 3.5v.1" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.75" />
     </svg>
   )
 }

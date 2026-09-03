@@ -37,5 +37,8 @@ describe('CodeBlock', () => {
       'data-copy-state',
       'failed',
     )
+    expect(screen.getByRole('button', { name: 'Copy failed' })).toContainElement(
+      document.querySelector('[data-copy-error-icon]'),
+    )
   })
 })
