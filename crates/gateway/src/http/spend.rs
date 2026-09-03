@@ -256,14 +256,14 @@ pub async fn list_spend_budgets(
 
     let mut user_views = Vec::with_capacity(users.len());
     for user in users {
-        let user_email = user.user.email.clone();
+        let user_email = user.user.email;
         let scope = BudgetScope::User {
             user_id: user.user.user_id,
         };
         let budget = state.store.get_active_budget_by_scope(&scope).await?;
         let current_window_spend = if let Some(ref active_budget) = budget {
             let (window_start, window_end) =
-                budget_window_bounds_utc(active_budget.settings.cadence, now)?;
+                budget_window_bounds_utc(active_budget.settings.cadence, now);
             state
                 .store
                 .sum_usage_cost_for_budget_scope_in_window(&scope, window_start, window_end)
@@ -301,7 +301,7 @@ pub async fn list_spend_budgets(
         let budget = state.store.get_active_budget_by_scope(&scope).await?;
         let current_window_spend = if let Some(ref active_budget) = budget {
             let (window_start, window_end) =
-                budget_window_bounds_utc(active_budget.settings.cadence, now)?;
+                budget_window_bounds_utc(active_budget.settings.cadence, now);
             state
                 .store
                 .sum_usage_cost_for_budget_scope_in_window(&scope, window_start, window_end)
@@ -523,7 +523,7 @@ async fn active_user_model_budget_views(
             ),
             BudgetScope::User { .. } | BudgetScope::ServiceAccount { .. } => continue,
         };
-        let (window_start, window_end) = budget_window_bounds_utc(budget.settings.cadence, now)?;
+        let (window_start, window_end) = budget_window_bounds_utc(budget.settings.cadence, now);
         let current_window_spend = state
             .store
             .sum_usage_cost_for_budget_scope_in_window(&budget.scope, window_start, window_end)
@@ -626,7 +626,7 @@ async fn current_window_spend(
     budget: &BudgetRecord,
     now: OffsetDateTime,
 ) -> Result<Money4, AppError> {
-    let (window_start, window_end) = budget_window_bounds_utc(budget.settings.cadence, now)?;
+    let (window_start, window_end) = budget_window_bounds_utc(budget.settings.cadence, now);
     Ok(state
         .store
         .sum_usage_cost_for_budget_scope_in_window(&budget.scope, window_start, window_end)
@@ -667,10 +667,9 @@ fn scope_to_view(scope: &BudgetScope) -> BudgetScopeView {
 fn budget_window_bounds_utc(
     cadence: BudgetCadence,
     occurred_at: OffsetDateTime,
-) -> Result<(OffsetDateTime, OffsetDateTime), AppError> {
-    let window = budget_window_utc(cadence, occurred_at)
-        .map_err(|error| AppError(GatewayError::Internal(error)))?;
-    Ok((window.period_start, window.observed_end))
+) -> (OffsetDateTime, OffsetDateTime) {
+    let window = budget_window_utc(cadence, occurred_at);
+    (window.period_start, window.observed_end)
 }
 
 async fn active_team_budget_recipients(
@@ -937,11 +936,14 @@ fn parse_budget_alert_status(
 }
 
 fn parse_budget_amount(value: &str) -> Result<Money4, AppError> {
-    let amount = Money4::from_decimal_str(value)
-        .map_err(|error| AppError(GatewayError::InvalidRequest(error)))?;
-    if amount.is_negative() {
+    let amount = Money4::from_decimal_str(value).map_err(|error| {
+        AppError(GatewayError::InvalidRequest(format!(
+            "amount_usd is invalid: {error}"
+        )))
+    })?;
+    if amount <= Money4::ZERO {
         return Err(AppError(GatewayError::InvalidRequest(
-            "amount_usd must be non-negative".to_string(),
+            "amount_usd must be greater than zero".to_string(),
         )));
     }
     Ok(amount)
@@ -992,5 +994,46 @@ mod tests {
             result,
             Ok((Some(ApiKeyOwnerKind::ServiceAccount), None))
         ));
+    }
+
+    fn parse_budget_amount_error(raw: &str) -> GatewayError {
+        parse_budget_amount(raw)
+            .map_err(|error| error.0)
+            .expect_err("amount should be rejected")
+    }
+
+    #[test]
+    fn budget_amount_rejects_zero_and_negative() {
+        for raw in ["0", "0.0000", "-1.5000"] {
+            let error = parse_budget_amount_error(raw);
+            assert!(
+                matches!(
+                    &error,
+                    GatewayError::InvalidRequest(message)
+                        if message == "amount_usd must be greater than zero"
+                ),
+                "unexpected error for `{raw}`: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn budget_amount_names_field_on_parse_failure() {
+        let error = parse_budget_amount_error("abc");
+        assert!(
+            matches!(
+                &error,
+                GatewayError::InvalidRequest(message) if message.starts_with("amount_usd is invalid: ")
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[test]
+    fn budget_amount_accepts_positive_value() {
+        let amount = parse_budget_amount("12.5000")
+            .map_err(|error| error.0)
+            .expect("amount should parse");
+        assert_eq!(amount, Money4::from_scaled(125_000));
     }
 }

@@ -268,6 +268,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V49__provider_user_credentials.sql"),
         postgres_sql: include_str!("../migrations/postgres/V49__provider_user_credentials.sql"),
     },
+    MigrationManifest {
+        version: 50,
+        name: "budget_service_account_source",
+        checksum: "V50__budget_service_account_source.sql",
+        libsql_sql: include_str!("../migrations/V50__budget_service_account_source.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V50__budget_service_account_source.sql"),
+    },
 ];
 
 #[cfg(test)]

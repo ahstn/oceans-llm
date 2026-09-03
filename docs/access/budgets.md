@@ -44,7 +44,9 @@ Live enforcement windows currently use UTC:
 
 ## Hard And Soft Limits
 
-Hard budgets reject new chargeable traffic when the active window is already exhausted. If a synchronous request starts under the limit but its final priced usage would push the window over the budget, the gateway rejects that completed charge before recording it as spend. Asynchronous batch spend is already incurred when the final cost becomes available, so the gateway records that spend even when it pushes a hard budget over its limit. The updated ledger then blocks later traffic.
+Hard budgets reject new chargeable traffic with HTTP 429 `budget_exceeded` when the active window is already at or past its cap. This check runs before the request reaches a provider. Once a provider has answered, that spend is already incurred, so the gateway always records it in the ledger even when it pushes a hard budget over its limit. The request that caused the overrun still returns its completion; the updated ledger blocks the caller's next chargeable request. This applies equally to synchronous requests, streamed responses, and asynchronous batch results. Streamed responses are charged whenever the provider reports usage, including streams that end with a provider error event after usage was sent.
+
+In practice a hard budget can be exceeded by at most one request's cost. Set the cap with that headroom in mind.
 
 Soft budgets never reject traffic. They are useful for alerting and reporting when a team wants visibility before enforcing a hard cap.
 
@@ -108,8 +110,8 @@ curl -sS "$OCEANS_BASE_URL/api/v1/admin/spend/budgets" \
 
 Budget list and upsert responses include `budget_source` with:
 
-- `kind`: `manual`, `config_user_override`, `config_user_default`, or `config_user_model_default`
-- `key`: source-specific metadata that can identify the config path or seeded user email
+- `kind`: `manual`, `config_user_override`, `config_user_default`, `config_user_model_default`, or `config_service_account`
+- `key`: source-specific metadata that can identify the config path, seeded user email, or service account id
 
 Any `PUT /api/v1/admin/spend/budgets` request writes a manual budget, even when the previous row was inherited from config.
 
@@ -283,7 +285,7 @@ service_accounts:
           - fast
 ```
 
-The owning team must be declared in `teams`. The budget block is required.
+The owning team must be declared in `teams`. The budget block is required. The seeded budget carries `budget_source.kind: config_service_account`. It follows the same override rules as `users[*].budget`: a manual admin edit to the active budget is never overwritten by a config reload, while a manually deactivated service-account budget is re-activated because the declared value is the operator's explicit intent and active keys require it.
 
 User-specific model budget overrides are configured in `/admin/spend-controls` or with `PUT /api/v1/admin/spend/budgets`.
 

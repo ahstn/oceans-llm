@@ -37,7 +37,7 @@ impl BudgetRepository for PostgresStore {
                    created_at, updated_at, source_kind, source_key
             FROM budgets
             WHERE scope_key = $1
-            ORDER BY updated_at DESC, created_at DESC
+            ORDER BY updated_at DESC, created_at DESC, is_active DESC, budget_id DESC
             LIMIT 1
             "#,
         )

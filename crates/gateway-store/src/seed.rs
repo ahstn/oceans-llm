@@ -622,6 +622,43 @@ where
     Ok(())
 }
 
+/// Apply a declarative budget (`users[*].budget`, `service_accounts[*].budget`)
+/// unless an admin has taken ownership of the active row.
+///
+/// A `manual` active row wins over config; any other active source is replaced
+/// through the source guard so a concurrent admin edit cannot be clobbered. A
+/// manually deactivated scope is re-activated because the declarative value is
+/// still the operator's stated intent.
+pub(crate) async fn upsert_unless_manually_overridden<S>(
+    store: &S,
+    scope: &BudgetScope,
+    settings: &BudgetSettings,
+    source: &BudgetSource,
+    now: OffsetDateTime,
+) -> Result<(), StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    let existing = store.get_active_budget_by_scope(scope).await?;
+    if existing
+        .as_ref()
+        .is_some_and(|budget| budget.source.kind == BudgetSourceKind::Manual)
+    {
+        return Ok(());
+    }
+    let expected_current_source = existing.as_ref().map(|budget| &budget.source);
+    store
+        .upsert_active_budget_with_source_guard(
+            scope,
+            settings,
+            source,
+            expected_current_source,
+            now,
+        )
+        .await?;
+    Ok(())
+}
+
 async fn deactivate_stale_config_default_budgets<S>(
     store: &S,
     defaults: &SeedHumanBudgetDefaults,
@@ -647,7 +684,9 @@ where
                 Some(key) => !active_model_source_keys.contains(key),
                 None => true,
             },
-            BudgetSourceKind::Manual | BudgetSourceKind::ConfigUserOverride => false,
+            BudgetSourceKind::Manual
+            | BudgetSourceKind::ConfigUserOverride
+            | BudgetSourceKind::ConfigServiceAccount => false,
         };
         if should_deactivate {
             store
@@ -794,23 +833,7 @@ where
     };
     let source = BudgetSource::config_user_override(&seed_user.email_normalized);
     if let Some(budget) = &seed_user.budget {
-        let existing = store.get_active_budget_by_scope(&scope).await?;
-        if existing
-            .as_ref()
-            .is_some_and(|budget| budget.source.kind == BudgetSourceKind::Manual)
-        {
-            return Ok(());
-        }
-        let settings = budget_settings(budget);
-        let expected_current_source = existing.as_ref().map(|budget| &budget.source);
-        store
-            .upsert_active_budget_with_source_guard(
-                &scope,
-                &settings,
-                &source,
-                expected_current_source,
-                now,
-            )
+        upsert_unless_manually_overridden(store, &scope, &budget_settings(budget), &source, now)
             .await?;
     } else {
         store

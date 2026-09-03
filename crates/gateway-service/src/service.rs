@@ -30,7 +30,7 @@ use crate::{
         session_boundary_group_key,
     },
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
-    budget_guard::BudgetGuard,
+    budget_guard::{BudgetGuard, BudgetOverrun},
     budget_scopes::usage_ownership_scope_key,
     effective_route_metadata::{EffectiveRouteMetadata, resolve_effective_route_metadata},
     mcp_invocation_logging::{McpInvocationLogInput, McpInvocationLogging},
@@ -954,9 +954,11 @@ where
             );
         }
 
-        self.budget_guard
-            .enforce_and_record_usage(auth, &record)
+        let overruns = self
+            .budget_guard
+            .record_incurred_usage(auth, &record)
             .await?;
+        warn_budget_overruns(&overruns, request_id, &record.ownership_scope_key);
         if let Err(error) = self.budget_alerts.evaluate_after_usage(auth, &record).await {
             warn!(
                 request_id = %request_id,
@@ -968,7 +970,7 @@ where
 
         let recorded = RecordedChatUsage {
             pricing_status: record.pricing_status,
-            unpriced_reason: record.unpriced_reason.clone(),
+            unpriced_reason: record.unpriced_reason,
             prompt_tokens: record.prompt_tokens,
             uncached_input_tokens: record.uncached_input_tokens,
             cache_read_tokens: record.cache_read_tokens,
@@ -1024,10 +1026,9 @@ where
             if existing.computed_cost_usd == cost_usd {
                 return Ok(());
             }
-            return Err(GatewayError::Internal(format!(
-                "batch `{}` already has a different recorded cost",
-                job.batch_id
-            )));
+            return Err(GatewayError::BatchUsageConflict {
+                batch_id: job.batch_id.to_string(),
+            });
         }
         let (usage, usage_totals_complete) = aggregate_batch_usage(results, provider_usage)?;
         let result_set_complete = i64::try_from(results.len()).ok() == Some(job.request_count);
@@ -1092,61 +1093,45 @@ where
             computed_cost_usd: cost_usd,
             occurred_at,
         };
-        if let Err(error) = self
-            .budget_guard
-            .enforce_and_record_usage(auth, &record)
-            .await
-        {
-            if let Some(existing) = self
-                .store
-                .get_usage_ledger_by_request_and_scope(
-                    &record.request_id,
-                    &record.ownership_scope_key,
-                )
-                .await?
-            {
-                if existing.computed_cost_usd == cost_usd {
-                    return Ok(());
-                }
-                return Err(GatewayError::Internal(format!(
-                    "batch `{}` raced with a different recorded cost",
-                    job.batch_id
-                )));
+        match self.budget_guard.record_incurred_usage(auth, &record).await {
+            Ok(overruns) => {
+                warn_budget_overruns(&overruns, &record.request_id, &record.ownership_scope_key);
             }
-            if !matches!(error, GatewayError::BudgetExceeded { .. }) {
-                return Err(error);
-            }
-            if !self.store.insert_usage_ledger_if_absent(&record).await? {
+            Err(GatewayError::DuplicateUsageRecord { .. }) => {
+                // Two workers finalized the same batch; accept only an identical cost.
                 let existing = self
                     .store
                     .get_usage_ledger_by_request_and_scope(
                         &record.request_id,
                         &record.ownership_scope_key,
                     )
-                    .await?
-                    .ok_or_else(|| {
-                        GatewayError::Internal(
-                            "batch usage insert lost its idempotency race".to_string(),
-                        )
-                    })?;
-                if existing.computed_cost_usd == cost_usd {
-                    return Ok(());
+                    .await?;
+                if existing.is_none_or(|existing| existing.computed_cost_usd != cost_usd) {
+                    return Err(GatewayError::BatchUsageConflict {
+                        batch_id: job.batch_id.to_string(),
+                    });
                 }
-                return Err(GatewayError::Internal(format!(
-                    "batch `{}` raced with a different recorded cost",
-                    job.batch_id
-                )));
+                return Ok(());
             }
-            warn!(
-                batch_id = %job.batch_id,
-                error = %error,
-                "recorded incurred batch spend after a hard-budget overrun"
-            );
+            Err(error) => return Err(error),
         }
         if let Err(error) = self.budget_alerts.evaluate_after_usage(auth, &record).await {
             warn!(batch_id = %job.batch_id, error = %error, "budget alert evaluation failed after batch usage insert");
         }
         Ok(())
+    }
+}
+
+fn warn_budget_overruns(overruns: &[BudgetOverrun], request_id: &str, ownership_scope_key: &str) {
+    for overrun in overruns {
+        warn!(
+            request_id = %request_id,
+            ownership_scope_key = %ownership_scope_key,
+            budget_scope_key = %overrun.scope_key,
+            spent_usd = %overrun.spent_usd,
+            limit_usd = %overrun.limit_usd,
+            "recorded incurred spend past a hard budget; next chargeable request will be blocked"
+        );
     }
 }
 
@@ -1983,6 +1968,86 @@ mod tests {
                 ..
             } if projected_cost_usd == Money4::from_scaled(200)
                 && limit_usd == Money4::from_scaled(100)
+        ));
+    }
+
+    #[tokio::test]
+    async fn chat_usage_records_incurred_cost_after_hard_budget() {
+        // Budget $1.00 with nothing spent; a $2.00 completion lands anyway and
+        // the caller's next request is blocked. Dropping the row here would let
+        // every later request slip under the cap.
+        let auth = auth();
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "gpt-5".to_string();
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        });
+        let occurred_at = OffsetDateTime::now_utc();
+        let scope = BudgetScope::User {
+            user_id: auth.owner_user_id.expect("user owner"),
+        };
+        let repo = Arc::new(UsageAccountingRepo {
+            budget: Some(BudgetRecord {
+                budget_id: Uuid::new_v4(),
+                scope_key: scope.scope_key(),
+                scope,
+                settings: BudgetSettings {
+                    cadence: BudgetCadence::Daily,
+                    amount_usd: Money4::from_scaled(10_000),
+                    hard_limit: true,
+                    timezone: "UTC".to_string(),
+                },
+                source: BudgetSource::manual(),
+                is_active: true,
+                created_at: occurred_at,
+                updated_at: occurred_at,
+            }),
+            provider: Some(openai_provider(&route.provider_key)),
+            ..Default::default()
+        });
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+
+        let recorded = service
+            .record_chat_usage(
+                &auth,
+                &model,
+                &route,
+                "req_overrun",
+                Some(json!({
+                    "prompt_tokens": 1_000_000,
+                    "completion_tokens": 500_000,
+                    "total_tokens": 1_500_000
+                })),
+                occurred_at,
+            )
+            .await
+            .expect("incurred spend is recorded even past a hard budget");
+        assert_eq!(recorded.cost_usd, Some(2.0));
+        assert_eq!(repo.events.lock().expect("events lock").len(), 1);
+
+        let error = service
+            .enforce_pre_provider_budget(
+                &auth,
+                "req_after_overrun",
+                Some(model_id),
+                Some("gpt-5"),
+                occurred_at,
+            )
+            .await
+            .expect_err("recorded overrun must block later traffic");
+        assert!(matches!(
+            error,
+            GatewayError::BudgetExceeded {
+                projected_cost_usd,
+                limit_usd,
+                ..
+            } if projected_cost_usd == Money4::from_scaled(20_000)
+                && limit_usd == Money4::from_scaled(10_000)
         ));
     }
 

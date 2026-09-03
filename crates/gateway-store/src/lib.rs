@@ -6894,6 +6894,363 @@ pub(crate) mod tests {
         );
     }
 
+    /// Seeds one gateway model plus two users, records usage rows around a
+    /// one-hour window, and asserts each budget scope sums exactly the rows it
+    /// owns: `UserModel::Model` matches `model_id`, `UserModel::UpstreamModel`
+    /// matches unmapped upstream rows only, `User` covers both, unpriced rows
+    /// and rows at `window_end` are excluded, and `window_start` is inclusive.
+    async fn exercise_user_model_budget_window_sum<S>(store: &S)
+    where
+        S: GatewayStore + ?Sized,
+    {
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://api.openai.com/v1",
+                "timeout_ms": 120_000
+            }),
+            secrets: Some(json!({"token": "env.OPENAI_API_KEY"})),
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
+            }],
+            allowlist: None,
+        }];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "hash".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &api_keys,
+                &seed_api_key_service_accounts(),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed");
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("load api key")
+            .expect("api key");
+        let model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("load model")
+            .expect("model");
+        let mut users = Vec::with_capacity(2);
+        for email in ["member@example.com", "other@example.com"] {
+            users.push(
+                store
+                    .create_identity_user(
+                        "Member",
+                        email,
+                        email,
+                        GlobalRole::User,
+                        AuthMode::Password,
+                        UserStatus::Active,
+                    )
+                    .await
+                    .expect("create user")
+                    .user_id,
+            );
+        }
+        let (user_id, other_user_id) = (users[0], users[1]);
+
+        let window_start = OffsetDateTime::from_unix_timestamp(1_773_486_600).expect("start");
+        let window_end = window_start + Duration::hours(1);
+        let inside = window_start + Duration::minutes(10);
+        // (request id, owner, model_id, upstream model, status, cost, occurred_at)
+        let rows = [
+            (
+                "gateway-at-start",
+                user_id,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                1_000,
+                window_start,
+            ),
+            (
+                "gateway-unpriced",
+                user_id,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Unpriced,
+                100_000,
+                inside,
+            ),
+            (
+                "upstream-priced",
+                user_id,
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::LegacyEstimated,
+                2_000,
+                inside,
+            ),
+            (
+                "upstream-other-model",
+                user_id,
+                None,
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                4_000,
+                inside,
+            ),
+            (
+                "other-user-gateway",
+                other_user_id,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                8_000,
+                inside,
+            ),
+            (
+                "gateway-at-end",
+                user_id,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                16_000,
+                window_end,
+            ),
+            (
+                "upstream-before-start",
+                user_id,
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::Priced,
+                32_000,
+                window_start - Duration::seconds(1),
+            ),
+        ];
+        for (request_id, owner, model_id, upstream_model, status, cost, occurred_at) in rows {
+            let event = build_usage_ledger_record(
+                request_id,
+                format!("user:{owner}"),
+                api_key.id,
+                Some(owner),
+                None,
+                None,
+                model_id,
+                upstream_model,
+                status,
+                cost,
+                occurred_at,
+            );
+            assert!(
+                store
+                    .insert_usage_ledger_if_absent(&event)
+                    .await
+                    .expect("insert usage ledger")
+            );
+        }
+
+        let sum = |scope: BudgetScope| async move {
+            store
+                .sum_usage_cost_for_budget_scope_in_window(&scope, window_start, window_end)
+                .await
+                .expect("window sum")
+        };
+        let gateway_scope = |user_id| BudgetScope::UserModel {
+            user_id,
+            selector: BudgetModelSelector::Model { model_id: model.id },
+        };
+        assert_eq!(
+            sum(gateway_scope(user_id)).await,
+            Money4::from_scaled(1_000)
+        );
+        assert_eq!(
+            sum(BudgetScope::UserModel {
+                user_id,
+                selector: BudgetModelSelector::UpstreamModel {
+                    upstream_model: "claude-3-5-sonnet".to_string(),
+                },
+            })
+            .await,
+            Money4::from_scaled(2_000)
+        );
+        assert_eq!(
+            sum(BudgetScope::User { user_id }).await,
+            Money4::from_scaled(7_000)
+        );
+        assert_eq!(
+            sum(gateway_scope(other_user_id)).await,
+            Money4::from_scaled(8_000)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_user_model_budget_window_sum_matches_selector_and_window_bounds() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        exercise_user_model_budget_window_sum(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_seed_service_account_budget_yields_to_manual_edit_but_recreates_after_deactivation()
+     {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let service_accounts = seed_api_key_service_accounts();
+        let seed = || async {
+            store
+                .seed_from_inputs(
+                    &[],
+                    &[],
+                    &[],
+                    &service_accounts,
+                    &[],
+                    &[],
+                    &seed_api_key_teams(),
+                    &[],
+                )
+                .await
+                .expect("seed")
+        };
+        let scope = BudgetScope::ServiceAccount {
+            service_account_id: crate::seed::service_account_uuid("seed-workloads"),
+        };
+        let store_ref = &store;
+        let scope_ref = &scope;
+        let active = move || async move {
+            store_ref
+                .get_active_budget_by_scope(scope_ref)
+                .await
+                .expect("active budget")
+        };
+        let config_source = BudgetSource::config_service_account("seed-workloads");
+
+        seed().await;
+        let seeded = active().await.expect("seeded budget");
+        assert!(seeded.source.matches(&config_source));
+        assert_eq!(seeded.settings.amount_usd, Money4::from_scaled(100_000));
+
+        let manual_settings = BudgetSettings {
+            cadence: BudgetCadence::Weekly,
+            amount_usd: Money4::from_scaled(250_000),
+            hard_limit: false,
+            timezone: "UTC".to_string(),
+        };
+        store
+            .upsert_active_budget(&scope, &manual_settings, OffsetDateTime::now_utc())
+            .await
+            .expect("manual edit");
+        seed().await;
+        let after_manual_edit = active().await.expect("manual budget survives");
+        assert_eq!(after_manual_edit.source.kind, BudgetSourceKind::Manual);
+        assert_eq!(after_manual_edit.settings, manual_settings);
+
+        assert!(
+            store
+                .deactivate_active_budget(&scope, OffsetDateTime::now_utc())
+                .await
+                .expect("manual deactivation")
+        );
+        assert!(active().await.is_none());
+        seed().await;
+        let recreated = active().await.expect("config budget recreated");
+        assert!(recreated.source.matches(&config_source));
+        assert_eq!(recreated.settings.amount_usd, Money4::from_scaled(100_000));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_latest_budget_prefers_active_row_when_timestamps_tie() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let user = store
+            .create_identity_user(
+                "User",
+                "user@example.com",
+                "user@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("user");
+        let scope = BudgetScope::User {
+            user_id: user.user_id,
+        };
+        let settings = BudgetSettings {
+            cadence: BudgetCadence::Daily,
+            amount_usd: Money4::from_scaled(700_000),
+            hard_limit: true,
+            timezone: "UTC".to_string(),
+        };
+        let at = OffsetDateTime::from_unix_timestamp(1_773_486_600).expect("timestamp");
+
+        // Create, deactivate, and recreate within the same second so both rows
+        // share created_at and updated_at.
+        store
+            .upsert_active_budget(&scope, &settings, at)
+            .await
+            .expect("first budget");
+        assert!(
+            store
+                .deactivate_active_budget(&scope, at)
+                .await
+                .expect("deactivate")
+        );
+        let recreated = store
+            .upsert_active_budget(&scope, &settings, at)
+            .await
+            .expect("recreated budget");
+
+        let latest = store
+            .get_latest_budget_by_scope(&scope)
+            .await
+            .expect("latest budget")
+            .expect("latest budget exists");
+        assert!(latest.is_active);
+        assert_eq!(latest.budget_id, recreated.budget_id);
+    }
+
     #[tokio::test]
     #[serial]
     async fn libsql_seed_rejects_illegal_auth_mode_change_without_partial_profile_updates() {
@@ -9125,6 +9482,33 @@ pub(crate) mod tests {
             service_account_id,
         )
         .await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_user_model_budget_window_sum_matches_selector_and_window_bounds() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres user model budget window sum test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+        exercise_user_model_budget_window_sum(&store).await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;

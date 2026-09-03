@@ -2209,7 +2209,9 @@ async fn finalize_stream(state: &mut LoggingBodyStreamState) {
         },
         failure.as_ref().map(|_| "stream_error_event"),
     );
-    if failure.is_none() {
+    // A provider may bill tokens and then emit an error event. Charge whenever
+    // usage was reported; only a failure with no usage leaves the ledger alone.
+    if failure.is_none() || state.collector.usage().is_some() {
         let labels = state.metric_labels();
         finalize_successful_usage_accounting_from_parts(
             &state.service,
