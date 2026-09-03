@@ -22,7 +22,8 @@ use super::{
     PublisherFamily, VertexAuthConfig, VertexProvider, VertexProviderConfig,
     anthropic::map_vertex_anthropic_request,
     embeddings::{
-        VERTEX_PREDICT_MAX_CHARS, VERTEX_PREDICT_MAX_INSTANCES, map_google_embedding_request,
+        VERTEX_PREDICT_MAX_INSTANCES, VERTEX_PREDICT_MAX_TOKENS, estimated_tokens,
+        map_google_embedding_request, predict_max_instances,
     },
     error::VertexAdapterError,
     gemini::{GeminiModel, ThinkingControl},

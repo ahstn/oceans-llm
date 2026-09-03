@@ -58,12 +58,12 @@ fn batches_predict_inputs_up_to_max_instances_per_body() {
     request
         .extra
         .insert("task_type".to_string(), json!("RETRIEVAL_QUERY"));
-    let mut context = context("google/gemini-embedding-001");
+    let mut context = context("google/text-embedding-005");
     context
         .extra_body
         .insert("parameters".to_string(), json!({"autoTruncate": true}));
 
-    let mapped = map_google_embedding_request(&request, &context, "gemini-embedding-001")
+    let mapped = map_google_embedding_request(&request, &context, "text-embedding-005")
         .expect("mapped embeddings request");
 
     assert_eq!(mapped.input_count, count);
@@ -224,8 +224,44 @@ fn rejects_predict_responses_whose_prediction_count_differs_from_the_batch() {
 }
 
 #[test]
-fn predict_batches_are_bounded_by_aggregate_characters() {
-    let long = "x".repeat(VERTEX_PREDICT_MAX_CHARS / 2 + 1);
+fn gemini_embedding_001_sends_one_instance_per_predict_body() {
+    let request = embedding_request(json!(["first", "second"]));
+
+    let mapped = map_google_embedding_request(
+        &request,
+        &context("google/gemini-embedding-001"),
+        "gemini-embedding-001",
+    )
+    .expect("mapped embeddings request");
+
+    assert_eq!(mapped.batch_sizes, vec![1, 1]);
+    assert_eq!(mapped.bodies[0]["instances"], json!([{"content": "first"}]));
+    assert_eq!(
+        mapped.bodies[1]["instances"],
+        json!([{"content": "second"}])
+    );
+    assert_eq!(predict_max_instances("gemini-embedding-001"), 1);
+    assert_eq!(
+        predict_max_instances("text-embedding-005"),
+        VERTEX_PREDICT_MAX_INSTANCES
+    );
+}
+
+#[test]
+fn token_estimate_is_conservative_for_non_ascii_text() {
+    // ASCII: two characters per token, rounded up.
+    assert_eq!(estimated_tokens("abcd"), 2);
+    assert_eq!(estimated_tokens("abcde"), 3);
+    // CJK and emoji count two tokens per character; the mix adds up.
+    assert_eq!(estimated_tokens("日本語"), 6);
+    assert_eq!(estimated_tokens("ok 🎉"), 4);
+    assert_eq!(estimated_tokens(""), 0);
+}
+
+#[test]
+fn predict_batches_are_bounded_by_estimated_tokens() {
+    // Each input is just over half the budget, so no two fit in one body.
+    let long = "x".repeat(VERTEX_PREDICT_MAX_TOKENS + 2);
     let request = embedding_request(json!([long, long, long]));
 
     let mapped = map_google_embedding_request(
@@ -235,15 +271,29 @@ fn predict_batches_are_bounded_by_aggregate_characters() {
     )
     .expect("mapped embeddings request");
 
-    // Each input is over half the budget, so no two fit in one body.
     assert_eq!(mapped.bodies.len(), 3);
     assert_eq!(mapped.batch_sizes, vec![1, 1, 1]);
     assert_eq!(mapped.input_count, 3);
+
+    // The same character count in CJK is weighted heavier: three inputs of a third of the
+    // ASCII budget fit together in ASCII but each need their own body in CJK.
+    let ascii = "x".repeat(VERTEX_PREDICT_MAX_TOKENS / 2);
+    let cjk = "字".repeat(VERTEX_PREDICT_MAX_TOKENS / 4 + 1);
+    for (input, expected_batches) in [(ascii, vec![3]), (cjk, vec![1, 1, 1])] {
+        let request = embedding_request(json!([input, input, input]));
+        let mapped = map_google_embedding_request(
+            &request,
+            &context("google/text-embedding-005"),
+            "text-embedding-005",
+        )
+        .expect("mapped embeddings request");
+        assert_eq!(mapped.batch_sizes, expected_batches);
+    }
 }
 
 #[test]
 fn single_oversized_input_still_gets_its_own_body() {
-    let request = embedding_request(json!(["x".repeat(VERTEX_PREDICT_MAX_CHARS * 2)]));
+    let request = embedding_request(json!(["x".repeat(VERTEX_PREDICT_MAX_TOKENS * 4)]));
 
     let mapped = map_google_embedding_request(
         &request,
@@ -612,7 +662,7 @@ async fn vertex_provider_google_embedding_predict_splits_batches_and_reports_par
     let request = embedding_request(inputs(VERTEX_PREDICT_MAX_INSTANCES + 1));
 
     let error = provider
-        .embeddings(&request, &context("google/gemini-embedding-001"))
+        .embeddings(&request, &context("google/text-embedding-005"))
         .await
         .expect_err("second batch failure should surface partial usage");
 

@@ -21,15 +21,32 @@ const VERTEX_EMBEDDING_TASK_TYPES: &[&str] = &[
 
 const VERTEX_EMBED_CONTENT_MODEL_IDS: &[&str] = &["gemini-embedding-2"];
 
-/// Maximum `instances` per `predict` call for text embedding models.
+/// `predict` models that accept only one input text per request.
+const VERTEX_SINGLE_INSTANCE_PREDICT_MODEL_IDS: &[&str] = &["gemini-embedding-001"];
+
+/// Maximum `instances` per `predict` call for text embedding models that batch.
 pub(super) const VERTEX_PREDICT_MAX_INSTANCES: usize = 250;
 
 /// Vertex caps one `predict` call at 20,000 input tokens across all instances. Tokens are not
-/// counted locally, so batches are bounded by a conservative 3-chars-per-token estimate instead.
-pub(super) const VERTEX_PREDICT_MAX_CHARS: usize = 60_000;
+/// counted locally, so batches are bounded by [`estimated_tokens`] instead.
+pub(super) const VERTEX_PREDICT_MAX_TOKENS: usize = 20_000;
+
+/// Conservative token estimate without a tokenizer: two ASCII characters per token, and two
+/// tokens per non-ASCII character (CJK, emoji, and other scripts tokenize far denser than
+/// English prose). Over-estimating only makes batches smaller.
+pub(super) fn estimated_tokens(text: &str) -> usize {
+    let (ascii, other) = text.chars().fold((0usize, 0usize), |(ascii, other), ch| {
+        if ch.is_ascii() {
+            (ascii + 1, other)
+        } else {
+            (ascii, other + 1)
+        }
+    });
+    ascii.div_ceil(2) + other * 2
+}
 
 /// Upstream bodies for one embeddings request. `predict` bodies carry up to
-/// [`VERTEX_PREDICT_MAX_INSTANCES`] inputs and [`VERTEX_PREDICT_MAX_CHARS`] characters each;
+/// [`predict_max_instances`] inputs and [`VERTEX_PREDICT_MAX_TOKENS`] estimated tokens each;
 /// `embedContent` bodies carry exactly one input.
 #[derive(Debug)]
 pub(super) struct GoogleEmbeddingRequestMapping {
@@ -59,6 +76,15 @@ pub(super) fn validate_vertex_embedding_model(model_id: &str) -> Result<(), Prov
 
 fn uses_vertex_embed_content(model_id: &str) -> bool {
     VERTEX_EMBED_CONTENT_MODEL_IDS.contains(&model_id)
+}
+
+/// Inputs one `predict` call may carry for `model_id`.
+pub(super) fn predict_max_instances(model_id: &str) -> usize {
+    if VERTEX_SINGLE_INSTANCE_PREDICT_MODEL_IDS.contains(&model_id) {
+        1
+    } else {
+        VERTEX_PREDICT_MAX_INSTANCES
+    }
 }
 
 pub(super) fn vertex_embedding_method(model_id: &str) -> &'static str {
@@ -116,11 +142,12 @@ pub(super) fn map_google_embedding_request(
     }
 
     let input_count = inputs.len();
-    let mut bodies = Vec::with_capacity(input_count.div_ceil(VERTEX_PREDICT_MAX_INSTANCES));
+    let max_instances = predict_max_instances(model_id);
+    let mut bodies = Vec::with_capacity(input_count.div_ceil(max_instances));
     let mut batch_sizes = Vec::with_capacity(bodies.capacity());
     let mut instances = Vec::new();
-    let mut batch_chars = 0usize;
-    let mut flush = |instances: &mut Vec<Value>, batch_chars: &mut usize| {
+    let mut batch_tokens = 0usize;
+    let mut flush = |instances: &mut Vec<Value>, batch_tokens: &mut usize| {
         let mut body = Map::new();
         batch_sizes.push(instances.len());
         body.insert(
@@ -132,14 +159,14 @@ pub(super) fn map_google_embedding_request(
         }
         merge_object_overrides(&mut body, &context.extra_body);
         bodies.push(Value::Object(body));
-        *batch_chars = 0;
+        *batch_tokens = 0;
     };
     for input in inputs {
-        let chars = input.chars().count();
-        let full = instances.len() >= VERTEX_PREDICT_MAX_INSTANCES
-            || (!instances.is_empty() && batch_chars + chars > VERTEX_PREDICT_MAX_CHARS);
+        let tokens = estimated_tokens(&input);
+        let full = instances.len() >= max_instances
+            || (!instances.is_empty() && batch_tokens + tokens > VERTEX_PREDICT_MAX_TOKENS);
         if full {
-            flush(&mut instances, &mut batch_chars);
+            flush(&mut instances, &mut batch_tokens);
         }
         let mut instance = Map::new();
         instance.insert("content".to_string(), Value::String(input));
@@ -150,10 +177,10 @@ pub(super) fn map_google_embedding_request(
             instance.insert("title".to_string(), Value::String(title.clone()));
         }
         instances.push(Value::Object(instance));
-        batch_chars += chars;
+        batch_tokens += tokens;
     }
     if !instances.is_empty() {
-        flush(&mut instances, &mut batch_chars);
+        flush(&mut instances, &mut batch_tokens);
     }
 
     Ok(GoogleEmbeddingRequestMapping {

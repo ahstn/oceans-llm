@@ -178,6 +178,8 @@ Model behavior:
 | Claude Opus 4.5 | Adaptive thinking is rejected. `reasoning_effort` maps to `output_config.effort` only when a manual thinking budget is also supplied. |
 | Claude Sonnet/Haiku 4.5 and older Claude models | Adaptive thinking is rejected. These models require an explicit manual budget from `reasoning.budget_tokens`, `reasoning_budget_tokens`, `thinking_budget_tokens`, or caller-supplied `thinking.type: "enabled"` with `budget_tokens`; the gateway does not add `output_config.effort`. |
 
+Anthropic `stop_reason` values map to OpenAI `finish_reason`: `end_turn` and `stop_sequence` to `stop`, `max_tokens` to `length`, `tool_use` to `tool_calls`, and `refusal` to `content_filter`. This mapping is shared with the `anthropic_compat` provider.
+
 #### Per-message effort
 
 Anthropic documents [per-message effort](https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta) for Claude Fable 5.1 as a beta. The request includes `anthropic-beta: mid-conversation-output-config-2026-07-01` and an effort-only system message; the new value applies to the next user turn:
@@ -324,10 +326,12 @@ Supported native Vertex text-embedding upstream models:
 
 | Upstream model | Default/maximum output dimensions | Notes |
 | --- | ---: | --- |
-| `google/gemini-embedding-001` | 3072 | Supports lower `dimensions` values through Vertex `outputDimensionality`. The gateway fans out array input as independent embedding operations when needed to preserve OpenAI array semantics. |
+| `google/gemini-embedding-001` | 3072 | Supports lower `dimensions` values through Vertex `outputDimensionality`. Vertex accepts one input text per `:predict` request for this model, so the gateway sends one request per input and preserves OpenAI array order. |
 | `google/gemini-embedding-2` | 3072 | Uses Vertex `:embedContent`. The gateway supports text-only OpenAI-compatible embeddings; image, audio, video, and PDF multimodal inputs remain unsupported on `/v1/embeddings`. `task_type`, `input_type`, `title`, and `auto_truncate` are not accepted for this model; put task instructions in the input text. |
-| `google/text-embedding-005` | 768 | Uses the same Vertex `:predict` text-embedding contract. |
-| `google/text-multilingual-embedding-002` | 768 | Uses the same Vertex `:predict` text-embedding contract. |
+| `google/text-embedding-005` | 768 | Uses the same Vertex `:predict` text-embedding contract. Array input is batched up to 250 instances per request. |
+| `google/text-multilingual-embedding-002` | 768 | Uses the same Vertex `:predict` text-embedding contract. Array input is batched up to 250 instances per request. |
+
+Batched `:predict` requests also respect the Vertex 20,000-token aggregate limit. The gateway has no Gemini tokenizer, so batches are sized with a conservative estimate: two ASCII characters per token and two tokens per non-ASCII character. Over-estimating only produces smaller batches; a single input larger than the whole budget is still sent on its own and left for Vertex to truncate or reject according to `auto_truncate`.
 
 Request example:
 
@@ -367,7 +371,7 @@ Parameter mapping:
 | Public request field | Vertex field | Gateway behavior |
 | --- | --- | --- |
 | `input: "text"` | `instances[].content` for `:predict`; `content.parts[].text` for `google/gemini-embedding-2` `:embedContent` | Returns one embedding with `index: 0`. Empty strings are rejected locally. |
-| `input: ["a", "b"]` | independent Vertex requests | Returns one embedding per input in original order. Empty arrays, nested arrays, token arrays, non-string values, and multimodal payloads are rejected locally. |
+| `input: ["a", "b"]` | batched `instances[]` for `:predict` models that allow it; one request per input for `google/gemini-embedding-001` and `:embedContent` | Returns one embedding per input in original order. A response whose prediction count differs from the batch is rejected. Empty arrays, nested arrays, token arrays, non-string values, and multimodal payloads are rejected locally. |
 | `dimensions` | `parameters.outputDimensionality` for `:predict`; `embedContentConfig.outputDimensionality` for `google/gemini-embedding-2` | Must be a positive integer within the supported model maximum. |
 | `output_dimensionality` / `outputDimensionality` | Same as `dimensions` | Provider-specific aliases; conflicting aliases are rejected locally. |
 | `encoding_format: "float"` or omitted | n/a | Accepted. `base64` is rejected locally. |
