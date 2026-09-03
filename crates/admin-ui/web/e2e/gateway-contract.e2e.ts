@@ -259,6 +259,19 @@ test('service-account budget update triggers hard-limit enforcement for service-
   }
   const serviceAccountId = serviceAccount.service_account_id
 
+  const seedSpendResponse = await request.post(`${root}/v1/chat/completions`, {
+    headers: {
+      authorization: `Bearer ${gatewayApiKey}`,
+      'content-type': 'application/json',
+      'idempotency-key': 'e2e-service-account-budget-seed-spend',
+    },
+    data: {
+      model: 'fast',
+      messages: [{ role: 'user', content: 'seed service account spend' }],
+    },
+  })
+  expect(seedSpendResponse.status()).toBe(200)
+
   const upsertBudgetResponse = await request.put(`${root}/api/v1/admin/spend/budgets`, {
     headers: {
       cookie: adminCookie,
@@ -270,7 +283,7 @@ test('service-account budget update triggers hard-limit enforcement for service-
         service_account_id: serviceAccountId,
       },
       cadence: 'daily',
-      amount_usd: '0.0000',
+      amount_usd: '0.0001',
       hard_limit: true,
       timezone: 'UTC',
     },

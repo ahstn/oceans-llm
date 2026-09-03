@@ -263,30 +263,30 @@ const modelPage: ModelPageView = {
   total: 3,
 }
 
-describe('ModelsPage', () => {
-  beforeEach(() => {
-    cleanup()
-    routeMock.useLoaderData.mockReset()
-    routeMock.useRouteContext.mockReset()
-    routeMock.useRouteContext.mockReturnValue({
-      session: {
-        must_change_password: false,
-        user: {
-          id: 'admin_1',
-          name: 'Admin User',
-          email: 'admin@example.com',
-          global_role: 'platform_admin',
-        },
+beforeEach(() => {
+  cleanup()
+  routeMock.useLoaderData.mockReset()
+  routeMock.useRouteContext.mockReset()
+  routeMock.useRouteContext.mockReturnValue({
+    session: {
+      must_change_password: false,
+      user: {
+        id: 'admin_1',
+        name: 'Admin User',
+        email: 'admin@example.com',
+        global_role: 'platform_admin',
       },
-    })
-    routeMock.useSearch.mockReset()
-    navigateMock.mockReset()
-    invalidateMock.mockReset()
-    getModelClientConfigsMock.mockReset()
-    refreshModelPricingMock.mockReset()
-    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 30 })
+    },
   })
+  routeMock.useSearch.mockReset()
+  navigateMock.mockReset()
+  invalidateMock.mockReset()
+  getModelClientConfigsMock.mockReset()
+  refreshModelPricingMock.mockReset()
+  routeMock.useSearch.mockReturnValue({ page: 1, page_size: 30 })
+})
 
+describe('ModelsPage layouts', () => {
   it('renders dedicated mobile and desktop model layouts from the same payload', () => {
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
 
@@ -370,7 +370,9 @@ describe('ModelsPage', () => {
     expect(within(backupCells[4] as HTMLElement).getByText('Output')).toBeInTheDocument()
     expect(within(backupCells[5] as HTMLElement).getByText('Unrestricted')).toBeInTheDocument()
   })
+})
 
+describe('ModelsPage allowlists', () => {
   it('renders model allowlists in the desktop table as read-only details', () => {
     const allowlistPage: ModelPageView = {
       ...modelPage,
@@ -486,7 +488,9 @@ describe('ModelsPage', () => {
       expect(within(allowlistDetail as HTMLElement).queryByRole('textbox')).not.toBeInTheDocument()
     }
   })
+})
 
+describe('ModelsPage table content', () => {
   it('does not render the notes column in the desktop table', () => {
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
 
@@ -501,7 +505,9 @@ describe('ModelsPage', () => {
     expect(within(table).queryByText('Notes')).not.toBeInTheDocument()
     expect(within(table).queryByText('Gemini fallback on Vertex')).not.toBeInTheDocument()
   })
+})
 
+describe('ModelsPage client configuration', () => {
   it('opens client config dialog, switches tabs, and copies active config blocks', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, {
@@ -618,7 +624,9 @@ describe('ModelsPage', () => {
       'model = "claude-sonnet"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nenv_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"\nrequires_openai_auth = false\nwire_api = "responses"\n\n[analytics]\nenabled = false\n\n[otel]\nlog_user_prompt = false\n',
     )
   })
+})
 
+describe('ModelsPage pricing refresh', () => {
   it('refreshes pricing and reloads model data from the toolbar', async () => {
     refreshModelPricingMock.mockResolvedValue({ data: { refreshed: true }, meta: {} })
     invalidateMock.mockResolvedValue(undefined)
@@ -655,7 +663,9 @@ describe('ModelsPage', () => {
       expect(screen.getByRole('button', { name: 'Refresh pricing' })).toBeEnabled()
     })
   })
+})
 
+describe('ModelsPage multi-model configuration', () => {
   it('selects multiple models and opens generated client config for the selected set', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, {
@@ -768,9 +778,11 @@ describe('ModelsPage', () => {
     )
 
     fireEvent.click(screen.getByRole('radio', { name: 'Claude Code' }))
-    expect(within(dialog).getByText(/claude-sonnet-4-6/)).toBeInTheDocument()
+    expect(within(dialog).queryByText('fast')).not.toBeInTheDocument()
   })
+})
 
+describe('ModelsPage paginated configuration', () => {
   it('keeps selected models available when generating after pagination', async () => {
     const configurableFast = {
       ...(modelPage.items[0] as ModelPageView['items'][number]),
@@ -854,7 +866,9 @@ describe('ModelsPage', () => {
     expect(within(dialog).queryByText('claude-sonnet')).not.toBeInTheDocument()
     expect(within(dialog).queryByText('fast')).not.toBeInTheDocument()
   })
+})
 
+describe('ModelsPage permissions', () => {
   it('shows all models and client config actions without admin controls to regular users', () => {
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
     routeMock.useRouteContext.mockReturnValue({

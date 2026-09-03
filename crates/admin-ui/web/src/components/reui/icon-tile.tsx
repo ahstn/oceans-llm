@@ -1,7 +1,7 @@
-import { cva, type VariantProps } from "class-variance-authority"
-import { Slot } from "radix-ui"
+import { cva, type VariantProps } from 'class-variance-authority'
+import { Slot } from 'radix-ui'
 
-import { cn } from "@/lib/utils"
+import { cn } from '@/lib/utils'
 
 /**
  * CSS variable architecture:
@@ -25,46 +25,46 @@ import { cn } from "@/lib/utils"
  */
 const iconTileVariants = cva(
   [
-    "relative inline-flex shrink-0 items-center justify-center align-middle",
-    "size-(--icon-tile-size) rounded-(--icon-tile-radius)",
-    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=size-])]:size-(--icon-tile-icon-size)",
+    'relative inline-flex shrink-0 items-center justify-center align-middle',
+    'size-(--icon-tile-size) rounded-(--icon-tile-radius)',
+    '[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=size-])]:size-(--icon-tile-icon-size)',
   ],
   {
     variants: {
       variant: {
         /** Plain bordered surface. The quiet default for list rows and toolbars. */
-        outline: "border border-border bg-background dark:bg-input/32",
+        outline: 'border border-border bg-background dark:bg-input/32',
         /** Raised muted fill with a background-colored ring. Reads as a physical chip. */
         elevated:
-          "border-2 border-background bg-muted text-accent-foreground shadow-[0_1px_3px_0_rgb(0_0_0/0.14)] dark:border",
+          'border-2 border-background bg-muted text-accent-foreground shadow-[0_1px_3px_0_rgb(0_0_0/0.14)] dark:border',
         /**
          * Tinted double container: an opacity-filled outer ring with no border
          * around a bordered inner card, all derived from `currentColor`. The
          * quiet, colorful sibling of `frame`. Retint with a text color class.
          */
         soft: [
-          "isolate p-(--icon-tile-inset) text-primary bg-current/10",
-          "after:absolute after:-z-10 after:inset-(--icon-tile-inset)",
-          "after:rounded-[calc(var(--icon-tile-radius)-var(--icon-tile-inset))]",
-          "after:border after:border-current/20 after:bg-current/5",
+          'isolate p-(--icon-tile-inset) text-primary bg-current/10',
+          'after:absolute after:-z-10 after:inset-(--icon-tile-inset)',
+          'after:rounded-[calc(var(--icon-tile-radius)-var(--icon-tile-inset))]',
+          'after:border after:border-current/20 after:bg-current/5',
         ],
         /** Filled tone with a contrasting glyph. Retint with `bg-*` + a text color. */
-        solid: "bg-primary text-primary-foreground",
+        solid: 'bg-primary text-primary-foreground',
         /** Double container - a muted ring around an inset card, matching Frame. */
         frame: [
-          "isolate border border-border bg-muted/50 p-(--icon-tile-inset)",
-          "after:absolute after:-z-10 after:inset-(--icon-tile-inset)",
-          "after:rounded-[calc(var(--icon-tile-radius)-var(--icon-tile-inset))]",
-          "after:border after:border-border after:bg-card after:shadow-xs",
+          'isolate border border-border bg-muted/50 p-(--icon-tile-inset)',
+          'after:absolute after:-z-10 after:inset-(--icon-tile-inset)',
+          'after:rounded-[calc(var(--icon-tile-radius)-var(--icon-tile-inset))]',
+          'after:border after:border-border after:bg-card after:shadow-xs',
         ],
       },
       size: {
-        xs: "[--icon-tile-size:--spacing(6)] [--icon-tile-icon-size:--spacing(3.5)] [--icon-tile-inset:--spacing(0.5)]",
-        sm: "[--icon-tile-size:--spacing(8)] [--icon-tile-icon-size:--spacing(4)] [--icon-tile-inset:--spacing(0.5)]",
+        xs: '[--icon-tile-size:--spacing(6)] [--icon-tile-icon-size:--spacing(3.5)] [--icon-tile-inset:--spacing(0.5)]',
+        sm: '[--icon-tile-size:--spacing(8)] [--icon-tile-icon-size:--spacing(4)] [--icon-tile-inset:--spacing(0.5)]',
         default:
-          "[--icon-tile-size:--spacing(10)] [--icon-tile-icon-size:--spacing(4.5)] [--icon-tile-inset:--spacing(0.75)]",
-        lg: "[--icon-tile-size:--spacing(12)] [--icon-tile-icon-size:--spacing(5.5)] [--icon-tile-inset:--spacing(0.75)]",
-        xl: "[--icon-tile-size:--spacing(14)] [--icon-tile-icon-size:--spacing(7)] [--icon-tile-inset:--spacing(1)]",
+          '[--icon-tile-size:--spacing(10)] [--icon-tile-icon-size:--spacing(4.5)] [--icon-tile-inset:--spacing(0.75)]',
+        lg: '[--icon-tile-size:--spacing(12)] [--icon-tile-icon-size:--spacing(5.5)] [--icon-tile-inset:--spacing(0.75)]',
+        xl: '[--icon-tile-size:--spacing(14)] [--icon-tile-icon-size:--spacing(7)] [--icon-tile-inset:--spacing(1)]',
       },
       /**
        * `default`: active style radius. `full`: circular.
@@ -81,32 +81,32 @@ const iconTileVariants = cva(
        */
       radius: {
         default:
-          "[--icon-tile-radius:min(var(--radius-md),calc(var(--icon-tile-size)/3))] [--icon-tile-radius:min(var(--radius-md),calc(var(--icon-tile-size)/3))]",
-        full: "[--icon-tile-radius:calc(infinity*1px)]",
+          '[--icon-tile-radius:min(var(--radius-md),calc(var(--icon-tile-size)/3))] [--icon-tile-radius:min(var(--radius-md),calc(var(--icon-tile-size)/3))]',
+        full: '[--icon-tile-radius:calc(infinity*1px)]',
       },
     },
     defaultVariants: {
-      variant: "outline",
-      size: "default",
-      radius: "default",
+      variant: 'outline',
+      size: 'default',
+      radius: 'default',
     },
-  }
+  },
 )
 
 interface IconTileProps
-  extends React.ComponentProps<"span">, VariantProps<typeof iconTileVariants> {
+  extends React.ComponentProps<'span'>, VariantProps<typeof iconTileVariants> {
   asChild?: boolean
 }
 
 function IconTile({
   className,
-  variant = "outline",
-  size = "default",
-  radius = "default",
+  variant = 'outline',
+  size = 'default',
+  radius = 'default',
   asChild = false,
   ...props
 }: IconTileProps) {
-  const Comp = asChild ? Slot.Root : "span"
+  const Comp = asChild ? Slot.Root : 'span'
 
   return (
     <Comp
@@ -119,4 +119,4 @@ function IconTile({
   )
 }
 
-export { IconTile, iconTileVariants, type IconTileProps }
+export { IconTile, type IconTileProps }

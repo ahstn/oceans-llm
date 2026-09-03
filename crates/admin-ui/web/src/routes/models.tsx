@@ -1116,8 +1116,10 @@ function ClientConfigDialog({
                       labels={{
                         copy: copyConfigLabel(block.filename),
                         copied: 'Copied',
+                        failed: 'Copy failed',
                       }}
                       onCopy={() => toast.success('Client config copied')}
+                      onCopyError={() => toast.error('Clipboard access failed')}
                     />
                   </CodeBlockHeader>
                 </CodeBlock>
