@@ -19,6 +19,29 @@ pub enum ThinkingPolicy {
     GeminiBudget,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CodexReasoningEffort {
+    Minimal,
+    Low,
+    Medium,
+    High,
+    XHigh,
+}
+
+impl CodexReasoningEffort {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Minimal => "minimal",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::XHigh => "xhigh",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ClientModelCapabilities {
     #[serde(default)]
@@ -46,6 +69,8 @@ pub struct ClientConfigInput {
     pub output_window_tokens: Option<i64>,
     pub capabilities: ClientModelCapabilities,
     pub thinking_policy: Option<ThinkingPolicy>,
+    /// An explicit Codex default. A gateway maximum is a ceiling and must not populate this field.
+    pub codex_reasoning_effort: Option<CodexReasoningEffort>,
 }
 
 impl ClientConfigInput {
@@ -131,6 +156,7 @@ impl Default for ClientConfigInput {
             output_window_tokens: None,
             capabilities: ClientModelCapabilities::default(),
             thinking_policy: None,
+            codex_reasoning_effort: None,
         }
     }
 }

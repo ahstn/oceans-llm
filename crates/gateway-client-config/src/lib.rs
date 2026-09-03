@@ -12,8 +12,8 @@ pub use templates::{
 pub use thinking::infer_thinking_policy;
 pub use types::{
     ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
-    ClientConfigSetupItem, ClientConfigTemplate, ClientModelCapabilities, DEFAULT_API_KEY_ENV_VAR,
-    DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, ThinkingPolicy,
+    ClientConfigSetupItem, ClientConfigTemplate, ClientModelCapabilities, CodexReasoningEffort,
+    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, ThinkingPolicy,
 };
 
 #[cfg(test)]

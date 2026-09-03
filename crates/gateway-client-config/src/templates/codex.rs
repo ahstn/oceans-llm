@@ -12,7 +12,6 @@ use crate::{
 };
 
 const CODEX_WIRE_API_RESPONSES: &str = "responses";
-const CODEX_MODEL_REASONING_EFFORT: &str = "medium";
 const CODEX_CONFIG_DOCS_URL: &str = "https://developers.openai.com/codex/config-reference";
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -35,7 +34,7 @@ impl ClientConfigTemplate for CodexConfigTemplate {
 
         let config = CodexConfigToml {
             model: input.model_id.clone(),
-            model_reasoning_effort: CODEX_MODEL_REASONING_EFFORT,
+            model_reasoning_effort: input.codex_reasoning_effort.map(|effort| effort.as_str()),
             model_provider: input.provider_id.clone(),
             model_providers,
             analytics: CodexAnalyticsConfig { enabled: false },
@@ -85,7 +84,8 @@ fn codex_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
 #[derive(Debug, Serialize)]
 struct CodexConfigToml {
     model: String,
-    model_reasoning_effort: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_reasoning_effort: Option<&'static str>,
     model_provider: String,
     model_providers: BTreeMap<String, CodexModelProviderConfig>,
     analytics: CodexAnalyticsConfig,
