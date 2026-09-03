@@ -1,15 +1,15 @@
 [workspace]
 members = [
-    "crates/agent-session-analysis",
-    "crates/admin-ui",
-    "crates/gateway-client-config",
-    "crates/gateway-guardrails",
-    "crates/gateway",
-    "crates/gateway-core",
-    "crates/gateway-mcp",
-    "crates/gateway-providers",
-    "crates/gateway-service",
-    "crates/gateway-store",
+  "crates/agent-session-analysis",
+  "crates/admin-ui",
+  "crates/gateway-client-config",
+  "crates/gateway-guardrails",
+  "crates/gateway",
+  "crates/gateway-core",
+  "crates/gateway-mcp",
+  "crates/gateway-providers",
+  "crates/gateway-service",
+  "crates/gateway-store",
 ]
 resolver = "2"
 
@@ -41,30 +41,82 @@ futures-core = "0.3"
 futures-util = "0.3"
 http = "1"
 itertools = "0.14"
-lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "pool", "smtp-transport", "tokio1", "tokio1-rustls-tls"] }
+lettre = { version = "0.11", default-features = false, features = [
+  "builder",
+  "hostname",
+  "pool",
+  "smtp-transport",
+  "tokio1",
+  "tokio1-rustls-tls",
+] }
 libsql = "0.9"
 openidconnect = "4.0.1"
 opentelemetry = { version = "0.32", features = ["metrics", "trace"] }
 opentelemetry-http = "0.32"
-opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "metrics", "trace"] }
-opentelemetry_sdk = { version = "0.32", features = ["metrics", "rt-tokio", "trace"] }
+opentelemetry-otlp = { version = "0.32", features = [
+  "grpc-tonic",
+  "metrics",
+  "trace",
+] }
+opentelemetry_sdk = { version = "0.32", features = [
+  "metrics",
+  "rt-tokio",
+  "trace",
+] }
 percent-encoding = "2"
 rand = "0.8"
-reqwest = { version = "0.13", default-features = false, features = ["form", "json", "multipart", "query", "rustls", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = [
+  "form",
+  "json",
+  "multipart",
+  "query",
+  "rustls",
+  "stream",
+] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
 sha2 = "0.10"
-sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-rustls"] }
+sqlx = { version = "0.8", default-features = false, features = [
+  "postgres",
+  "runtime-tokio-rustls",
+] }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "parsing", "serde"] }
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1", features = [
+  "macros",
+  "net",
+  "rt-multi-thread",
+  "signal",
+  "sync",
+  "time",
+] }
 toml = "0.8"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["request-id", "trace", "util"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.33"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+tracing-subscriber = { version = "0.3", features = [
+  "env-filter",
+  "fmt",
+  "json",
+] }
 utoipa = { version = "5", features = ["axum_extras", "time", "uuid"] }
 url = "2"
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
+
+# No debuginfo in dev builds. With Mach-O split debug maps, file:line
+# backtraces require retaining every .rcgu.o — ~1 GB per linked test binary
+# (static CPython), >100 GB target dirs. Panic locations survive via
+# #[track_caller] and symbol names via the symbol table; use the
+# `release-profiling` profile when line-level debug info is actually needed.
+# Mirrored in .cargo/config.toml so user-global [profile.dev] config cannot
+# override it.
+[profile.dev]
+debug = false
+split-debuginfo = "off"
+# Cold builds do not benefit from incremental bookkeeping. Disabling it also
+# makes workspace crates cacheable by sccache; 256 CGUs preserve parallel
+# backend codegen rather than falling back to the non-incremental default.
+incremental = false
+codegen-units = 256

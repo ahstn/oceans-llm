@@ -1,8 +1,8 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"ffb10caee2f6333d617d0b2103014e1f\"",
-    "fetched_at": "2026-09-03T13:47:53.370468Z"
+    "etag": "\"561973dbbe1a65b5ce415053cf198958\"",
+    "fetched_at": "2026-09-03T21:51:24.347245Z"
   },
   "providers": {
     "amazon-bedrock": {
@@ -10505,9 +10505,9 @@
           "release_date": "2025-08-21",
           "last_updated": "2025-08-21",
           "cost": {
-            "input": "0.2500",
-            "output": "0.9500",
-            "cache_read": "0.1300",
+            "input": "0.5500",
+            "output": "1.6500",
+            "cache_read": "0.5500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -10515,7 +10515,7 @@
           "limit": {
             "context": 163840,
             "input": null,
-            "output": 32768
+            "output": 144900
           },
           "modalities": {
             "input": [
@@ -10694,9 +10694,9 @@
           "release_date": "2026-04-24",
           "last_updated": "2026-04-24",
           "cost": {
-            "input": "0.0871",
-            "output": "0.1742",
-            "cache_read": "0.0174",
+            "input": "0.0778",
+            "output": "0.1557",
+            "cache_read": "0.0156",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -10776,9 +10776,9 @@
           "release_date": "2026-04-24",
           "last_updated": "2026-04-24",
           "cost": {
-            "input": "1.0393",
-            "output": "2.0786",
-            "cache_read": "0.0866",
+            "input": "1.0275",
+            "output": "2.0549",
+            "cache_read": "0.0856",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -10803,9 +10803,9 @@
           "release_date": "2026-08-12",
           "last_updated": "2026-08-22",
           "cost": {
-            "input": "1.1154",
-            "output": "3.3462",
-            "cache_read": "0.0372",
+            "input": "0.6600",
+            "output": "1.9800",
+            "cache_read": "0.0220",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -11954,6 +11954,33 @@
             "context": 262144,
             "input": null,
             "output": 32768
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "inclusionai/ling-3.0-flash-fin": {
+          "id": "inclusionai/ling-3.0-flash-fin",
+          "display_name": "Ling 3.0 Flash Fin",
+          "release_date": "2026-08-27",
+          "last_updated": "2026-08-27",
+          "cost": {
+            "input": "0.0600",
+            "output": "0.1800",
+            "cache_read": "0.0120",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -17240,9 +17267,9 @@
           "release_date": "2026-04-17",
           "last_updated": "2026-04-17",
           "cost": {
-            "input": "0.0500",
-            "output": "0.7000",
-            "cache_read": null,
+            "input": "0.1000",
+            "output": "0.9000",
+            "cache_read": "0.0500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -17250,7 +17277,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 16384
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -17465,10 +17492,10 @@
           "release_date": "2026-08-14",
           "last_updated": "2026-08-14",
           "cost": {
-            "input": "0.4250",
-            "output": "2.5500",
+            "input": "0.4200",
+            "output": "3.0000",
             "cache_read": "0.0850",
-            "cache_write": "0.5313",
+            "cache_write": null,
             "input_audio": null,
             "output_audio": null
           },
@@ -17964,9 +17991,9 @@
           "release_date": "2026-07-06",
           "last_updated": "2026-07-06",
           "cost": {
-            "input": "0.1320",
-            "output": "0.5280",
-            "cache_read": "0.0330",
+            "input": "0.0825",
+            "output": "0.3300",
+            "cache_read": "0.0206",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -19198,9 +19225,9 @@
           "release_date": "2026-04-27",
           "last_updated": "2026-04-27",
           "cost": {
-            "input": "2.5500",
-            "output": "12.7500",
-            "cache_read": "0.2560",
+            "input": "2.5000",
+            "output": "14.0000",
+            "cache_read": "0.2900",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -19314,9 +19341,9 @@
           "release_date": "2026-08-27",
           "last_updated": "2026-08-27",
           "cost": {
-            "input": "0.0750",
-            "output": "0.2500",
-            "cache_read": "0.0150",
+            "input": "0.0712",
+            "output": "0.2375",
+            "cache_read": "0.0143",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -19324,7 +19351,7 @@
           "limit": {
             "context": 1310720,
             "input": null,
-            "output": 943718
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -19343,9 +19370,9 @@
           "release_date": "2026-08-19",
           "last_updated": "2026-08-19",
           "cost": {
-            "input": "1.1340",
-            "output": "3.5640",
-            "cache_read": "0.1863",
+            "input": "1.1480",
+            "output": "3.6080",
+            "cache_read": "0.1886",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
