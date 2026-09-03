@@ -142,6 +142,9 @@ pub(super) fn map_google_embedding_request(
     let mut batch_sizes = Vec::with_capacity(bodies.capacity());
     let mut instances = Vec::new();
     let mut batch_tokens = 0usize;
+    // Vertex prepends `title` to every instance's text before tokenizing, so it counts
+    // against the aggregate budget once per instance.
+    let title_tokens = title.as_deref().map_or(0, estimated_tokens);
     let mut flush = |instances: &mut Vec<Value>, batch_tokens: &mut usize| {
         let mut body = Map::new();
         batch_sizes.push(instances.len());
@@ -157,7 +160,7 @@ pub(super) fn map_google_embedding_request(
         *batch_tokens = 0;
     };
     for input in inputs {
-        let tokens = estimated_tokens(&input);
+        let tokens = estimated_tokens(&input) + title_tokens;
         let full = instances.len() >= max_instances
             || (!instances.is_empty() && batch_tokens + tokens > VERTEX_PREDICT_MAX_TOKENS);
         if full {

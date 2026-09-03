@@ -306,6 +306,29 @@ fn single_oversized_input_still_gets_its_own_body() {
 }
 
 #[test]
+fn repeated_title_counts_against_the_batch_budget_per_instance() {
+    // Two inputs of exactly half the budget fit together without a title. Vertex prepends the
+    // title to every instance, so with one the pair must split.
+    let half = "x".repeat(VERTEX_PREDICT_MAX_TOKENS / 2);
+    let bare = embedding_request(json!([half, half]));
+    let mut titled = embedding_request(json!([half, half]));
+    titled
+        .extra
+        .insert("task_type".to_string(), json!("RETRIEVAL_DOCUMENT"));
+    titled.extra.insert("title".to_string(), json!("Doc title"));
+
+    for (request, expected_batches) in [(bare, vec![2]), (titled, vec![1, 1])] {
+        let mapped = map_google_embedding_request(
+            &request,
+            &context("google/text-embedding-005"),
+            "text-embedding-005",
+        )
+        .expect("mapped embeddings request");
+        assert_eq!(mapped.batch_sizes, expected_batches);
+    }
+}
+
+#[test]
 fn extracts_embed_content_output_at_first_index() {
     let response = json!({
         "embedding": {"values": [0.5, 0.25]},
