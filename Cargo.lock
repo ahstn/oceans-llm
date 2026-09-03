@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "admin-ui"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "axum 0.8.9",
  "reqwest 0.13.4",
@@ -52,7 +52,7 @@ dependencies = [
 
 [[package]]
 name = "agent-session-analysis"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1669,7 +1669,7 @@ dependencies = [
 
 [[package]]
 name = "gateway"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "admin-ui",
  "anyhow",
@@ -1713,7 +1713,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-client-config"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1722,7 +1722,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-core"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "aes-gcm",
  "agent-session-analysis",
@@ -1740,7 +1740,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-guardrails"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -1759,7 +1759,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-mcp"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "futures-util",
  "reqwest 0.13.4",
@@ -1772,7 +1772,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-providers"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1802,7 +1802,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-service"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "agent-session-analysis",
  "anyhow",
@@ -1830,7 +1830,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "agent-session-analysis",
  "anyhow",
