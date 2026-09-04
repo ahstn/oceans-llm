@@ -249,6 +249,36 @@ mod tests {
 
     #[async_trait]
     impl BudgetRepository for InMemoryBudgetRepo {
+        async fn get_budget_states_by_scope_keys(
+            &self,
+            _scope_keys: &[String],
+        ) -> Result<Vec<BudgetRecord>, StoreError> {
+            unreachable!("batch operations are not used by this fixture")
+        }
+
+        async fn upsert_active_budgets_with_source_guard(
+            &self,
+            _upserts: &[gateway_core::BudgetUpsert<'_>],
+            _updated_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            unreachable!("batch operations are not used by this fixture")
+        }
+
+        async fn deactivate_budgets_by_source(
+            &self,
+            _budgets: &[&BudgetRecord],
+            _updated_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            unreachable!("batch operations are not used by this fixture")
+        }
+
+        async fn sum_usage_cost_by_budget_scope(
+            &self,
+            _windows: &[gateway_core::BudgetScopeWindow<'_>],
+        ) -> Result<std::collections::HashMap<String, Money4>, StoreError> {
+            unreachable!("batch operations are not used by this fixture")
+        }
+
         async fn get_active_budget_by_scope(
             &self,
             scope: &BudgetScope,

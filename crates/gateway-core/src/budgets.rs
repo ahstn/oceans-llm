@@ -337,6 +337,32 @@ pub struct BudgetRecord {
     pub updated_at: OffsetDateTime,
 }
 
+/// A source-guarded config-default write. Borrow settings and sources across a batch.
+#[derive(Debug)]
+pub struct BudgetUpsert<'a> {
+    pub scope: BudgetScope,
+    pub settings: &'a BudgetSettings,
+    pub source: &'a BudgetSource,
+    pub expected_current_source: Option<&'a BudgetSource>,
+}
+
+/// Spend bounds remain per scope so mixed cadences use their original windows.
+#[derive(Debug)]
+pub struct BudgetScopeWindow<'a> {
+    pub scope: &'a BudgetScope,
+    pub window_start: OffsetDateTime,
+    pub window_end: OffsetDateTime,
+}
+
+/// User email and the team whose budget alerts they can receive.
+/// Inactive users and non-admin memberships have no eligible alert team.
+#[derive(Debug)]
+pub struct BudgetContact {
+    pub user_id: Uuid,
+    pub email: String,
+    pub alert_team_id: Option<Uuid>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{BudgetModelSelector, BudgetScope};

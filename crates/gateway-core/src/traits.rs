@@ -351,6 +351,32 @@ pub trait AdminIdentityRepository: Send + Sync {
 
 #[async_trait]
 pub trait BudgetRepository: Send + Sync {
+    /// Fetch active rows and the latest row per requested scope in one query.
+    async fn get_budget_states_by_scope_keys(
+        &self,
+        scope_keys: &[String],
+    ) -> Result<Vec<BudgetRecord>, StoreError>;
+    /// Apply config-default writes in one statement. Recheck source ownership
+    /// and manual deactivation sentinels at the write boundary. A missing
+    /// expected source permits insertion only; it never overwrites an active row.
+    async fn upsert_active_budgets_with_source_guard(
+        &self,
+        upserts: &[crate::BudgetUpsert<'_>],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    /// Deactivate only the same budget rows that still have the observed source.
+    async fn deactivate_budgets_by_source(
+        &self,
+        budgets: &[&BudgetRecord],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    /// Sum priced usage in each scope's half-open window with one grouped query.
+    /// Callers must supply at most one window for each scope key.
+    async fn sum_usage_cost_by_budget_scope(
+        &self,
+        windows: &[crate::BudgetScopeWindow<'_>],
+    ) -> Result<std::collections::HashMap<String, Money4>, StoreError>;
+
     async fn get_active_budget_by_scope(
         &self,
         scope: &BudgetScope,

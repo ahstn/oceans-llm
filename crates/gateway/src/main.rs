@@ -149,7 +149,7 @@ where
     let human_budget_defaults = config.seed_human_budget_defaults()?;
 
     store
-        .seed_from_inputs(
+        .seed_from_inputs_with_user_budget_default(
             &providers_seed,
             &models_seed,
             &[],
@@ -158,6 +158,7 @@ where
             &oauth_providers_seed,
             &teams_seed,
             &users_seed,
+            human_budget_defaults.default_user_budget.as_ref(),
         )
         .await
         .context("failed to seed foundational config data")?;

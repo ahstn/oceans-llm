@@ -3,6 +3,37 @@ use crate::shared::{parse_uuid, unix_to_datetime};
 
 #[async_trait]
 impl BudgetRepository for PostgresStore {
+    async fn get_budget_states_by_scope_keys(
+        &self,
+        scope_keys: &[String],
+    ) -> Result<Vec<BudgetRecord>, StoreError> {
+        super::budget_batch::get_budget_states_by_scope_keys(self, scope_keys).await
+    }
+
+    async fn upsert_active_budgets_with_source_guard(
+        &self,
+        upserts: &[gateway_core::BudgetUpsert<'_>],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        super::budget_batch::upsert_active_budgets_with_source_guard(self, upserts, updated_at)
+            .await
+    }
+
+    async fn deactivate_budgets_by_source(
+        &self,
+        budgets: &[&BudgetRecord],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        super::budget_batch::deactivate_budgets_by_source(self, budgets, updated_at).await
+    }
+
+    async fn sum_usage_cost_by_budget_scope(
+        &self,
+        windows: &[gateway_core::BudgetScopeWindow<'_>],
+    ) -> Result<std::collections::HashMap<String, Money4>, StoreError> {
+        super::budget_batch::sum_usage_cost_by_budget_scope(self, windows).await
+    }
+
     async fn get_active_budget_by_scope(
         &self,
         scope: &BudgetScope,

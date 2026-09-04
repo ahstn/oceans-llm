@@ -7,10 +7,9 @@ use axum::{
 use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
     BudgetAlertRepository, BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetRepository,
-    BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource, GatewayError, GlobalRole,
-    IdentityRepository, MembershipRole, ModelRepository, Money4, UserStatus, budget_window_utc,
+    BudgetScope, BudgetSettings, BudgetSource, GatewayError, GlobalRole, IdentityRepository,
+    ModelRepository, Money4, UserStatus, budget_window_utc,
 };
-use gateway_store::GatewayStore;
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
@@ -23,8 +22,7 @@ use crate::http::{
         BudgetUserModelByModelScopeView, BudgetUserModelByUpstreamModelScopeView,
         BudgetUserModelScopeKind, BudgetUserScopeKind, BudgetUserScopeView,
         DeactivateBudgetRequest, DeactivateBudgetResultView, Envelope, FocusExportQuery,
-        FocusSelfExportQuery, SpendBudgetServiceAccountView, SpendBudgetUserModelView,
-        SpendBudgetUserView, SpendBudgetsView, SpendDailyPointView, SpendModelBreakdownView,
+        FocusSelfExportQuery, SpendBudgetsView, SpendDailyPointView, SpendModelBreakdownView,
         SpendOwnerBreakdownView, SpendReportQuery, SpendReportView, SpendTotalsView,
         UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
     },
@@ -249,102 +247,12 @@ pub async fn list_spend_budgets(
     headers: HeaderMap,
 ) -> Result<Json<Envelope<SpendBudgetsView>>, AppError> {
     require_platform_admin(&state, &headers).await?;
-    let now = OffsetDateTime::now_utc();
-
-    let users = state.store.list_identity_users().await?;
-    let service_accounts = state.store.list_active_service_accounts().await?;
-
-    let mut user_views = Vec::with_capacity(users.len());
-    for user in users {
-        let user_email = user.user.email;
-        let scope = BudgetScope::User {
-            user_id: user.user.user_id,
-        };
-        let budget = state.store.get_active_budget_by_scope(&scope).await?;
-        let current_window_spend = if let Some(ref active_budget) = budget {
-            let (window_start, window_end) =
-                budget_window_bounds_utc(active_budget.settings.cadence, now);
-            state
-                .store
-                .sum_usage_cost_for_budget_scope_in_window(&scope, window_start, window_end)
-                .await?
-        } else {
-            Money4::ZERO
-        };
-
-        user_views.push(SpendBudgetUserView {
-            user_id: user.user.user_id.to_string(),
-            name: user.user.name,
-            email: user_email.clone(),
-            team_id: user.team_id.map(|value| value.to_string()),
-            team_name: user.team_name,
-            budget: budget.as_ref().map(budget_to_settings_view),
-            budget_source: budget
-                .as_ref()
-                .map(|budget| budget_source_to_view(&budget.source)),
-            current_window_spend_usd_10000: current_window_spend.as_scaled_i64(),
-            alert_email_ready: true,
-            alert_recipient_summary: user_email,
-        });
-    }
-
-    let teams = state.store.list_teams().await?;
-    let team_map = teams
-        .iter()
-        .map(|team| (team.team_id, team))
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut service_account_views = Vec::with_capacity(service_accounts.len());
-    for account in service_accounts {
-        let scope = BudgetScope::ServiceAccount {
-            service_account_id: account.service_account_id,
-        };
-        let budget = state.store.get_active_budget_by_scope(&scope).await?;
-        let current_window_spend = if let Some(ref active_budget) = budget {
-            let (window_start, window_end) =
-                budget_window_bounds_utc(active_budget.settings.cadence, now);
-            state
-                .store
-                .sum_usage_cost_for_budget_scope_in_window(&scope, window_start, window_end)
-                .await?
-        } else {
-            Money4::ZERO
-        };
-        let recipients =
-            active_team_budget_recipients(state.store.as_ref(), account.team_id).await?;
-        let team = team_map.get(&account.team_id).ok_or_else(|| {
-            AppError(GatewayError::InvalidRequest(format!(
-                "service account `{}` references missing team",
-                account.service_account_id
-            )))
-        })?;
-        service_account_views.push(SpendBudgetServiceAccountView {
-            service_account_id: account.service_account_id.to_string(),
-            service_account_name: account.service_account_name,
-            service_account_key: account.service_account_key,
-            team_id: team.team_id.to_string(),
-            team_name: team.team_name.clone(),
-            team_key: team.team_key.clone(),
-            budget: budget.as_ref().map(budget_to_settings_view),
-            budget_source: budget
-                .as_ref()
-                .map(|budget| budget_source_to_view(&budget.source)),
-            current_window_spend_usd_10000: current_window_spend.as_scaled_i64(),
-            alert_email_ready: !recipients.is_empty(),
-            alert_recipient_summary: if recipients.is_empty() {
-                "No active team owners/admins with email addresses".to_string()
-            } else {
-                recipients.join(", ")
-            },
-        });
-    }
-
-    let user_model_budgets = active_user_model_budget_views(&state, now).await?;
-
-    Ok(Json(envelope(SpendBudgetsView {
-        users: user_views,
-        service_accounts: service_account_views,
-        user_model_budgets,
-    })))
+    let view = super::spend_budget_listing::load_budget_listing(
+        state.store.as_ref(),
+        OffsetDateTime::now_utc(),
+    )
+    .await?;
+    Ok(Json(envelope(view)))
 }
 
 #[utoipa::path(
@@ -488,7 +396,7 @@ pub async fn list_budget_alert_history(
     })))
 }
 
-fn budget_to_settings_view(record: &BudgetRecord) -> BudgetSettingsView {
+pub(super) fn budget_to_settings_view(record: &BudgetRecord) -> BudgetSettingsView {
     BudgetSettingsView {
         cadence: record.settings.cadence.as_str().to_string(),
         amount_usd: record.settings.amount_usd.to_string(),
@@ -498,53 +406,11 @@ fn budget_to_settings_view(record: &BudgetRecord) -> BudgetSettingsView {
     }
 }
 
-fn budget_source_to_view(source: &BudgetSource) -> BudgetSourceView {
+pub(super) fn budget_source_to_view(source: &BudgetSource) -> BudgetSourceView {
     BudgetSourceView {
         kind: source.kind.as_str().to_string(),
         key: source.key.clone(),
     }
-}
-
-async fn active_user_model_budget_views(
-    state: &AppState,
-    now: OffsetDateTime,
-) -> Result<Vec<SpendBudgetUserModelView>, AppError> {
-    let budgets = state
-        .store
-        .list_active_budgets(Some(BudgetScopeKind::UserModel))
-        .await?;
-    let mut views = Vec::with_capacity(budgets.len());
-    for budget in budgets {
-        let (user_id, model_id, upstream_model) = match &budget.scope {
-            BudgetScope::UserModel { user_id, selector } => (
-                *user_id,
-                selector.model_id().map(|value| value.to_string()),
-                selector.upstream_model().map(ToOwned::to_owned),
-            ),
-            BudgetScope::User { .. } | BudgetScope::ServiceAccount { .. } => continue,
-        };
-        let (window_start, window_end) = budget_window_bounds_utc(budget.settings.cadence, now);
-        let current_window_spend = state
-            .store
-            .sum_usage_cost_for_budget_scope_in_window(&budget.scope, window_start, window_end)
-            .await?;
-        let user = state.store.get_user_by_id(user_id).await?;
-        views.push(SpendBudgetUserModelView {
-            budget_id: budget.budget_id.to_string(),
-            scope_key: budget.scope_key.clone(),
-            user_id: user_id.to_string(),
-            model_id,
-            upstream_model,
-            budget: budget_to_settings_view(&budget),
-            budget_source: budget_source_to_view(&budget.source),
-            current_window_spend_usd_10000: current_window_spend.as_scaled_i64(),
-            alert_email_ready: user.is_some(),
-            alert_recipient_summary: user
-                .map(|user| user.email)
-                .unwrap_or_else(|| "Budget user no longer exists".to_string()),
-        });
-    }
-    Ok(views)
 }
 
 fn parse_budget_scope(request: &BudgetScopeRequest) -> Result<BudgetScope, AppError> {
@@ -664,40 +530,12 @@ fn scope_to_view(scope: &BudgetScope) -> BudgetScopeView {
     }
 }
 
-fn budget_window_bounds_utc(
+pub(super) fn budget_window_bounds_utc(
     cadence: BudgetCadence,
     occurred_at: OffsetDateTime,
 ) -> (OffsetDateTime, OffsetDateTime) {
     let window = budget_window_utc(cadence, occurred_at);
     (window.period_start, window.observed_end)
-}
-
-async fn active_team_budget_recipients(
-    store: &gateway_store::AnyStore,
-    team_id: Uuid,
-) -> Result<Vec<String>, AppError> {
-    let memberships = GatewayStore::list_team_memberships(store, team_id).await?;
-    let mut recipients = Vec::new();
-
-    for membership in memberships {
-        if !matches!(
-            membership.role,
-            MembershipRole::Owner | MembershipRole::Admin
-        ) {
-            continue;
-        }
-        let Some(user) = store.get_user_by_id(membership.user_id).await? else {
-            continue;
-        };
-        if user.status != UserStatus::Active {
-            continue;
-        }
-        recipients.push(user.email);
-    }
-
-    recipients.sort();
-    recipients.dedup();
-    Ok(recipients)
 }
 
 fn report_window_bounds_utc(
