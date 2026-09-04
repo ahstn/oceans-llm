@@ -1035,7 +1035,8 @@ function ClientConfigDialog({
                 }}
                 variant="outline"
                 size="sm"
-                spacing={0}
+                spacing={1}
+                className="max-w-full min-w-0 flex-wrap"
                 aria-label="Client config"
               >
                 {clientConfigurations.map((config) => (

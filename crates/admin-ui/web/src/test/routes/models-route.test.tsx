@@ -544,6 +544,11 @@ describe('ModelsPage client configuration', () => {
       'max-w-[calc(100vw-2rem)]',
       'overflow-y-auto',
     )
+    const harnessSelector = within(clientConfigDialog).getByRole('radiogroup', {
+      name: 'Client config',
+    })
+    expect(harnessSelector).toHaveClass('min-w-0', 'max-w-full', 'flex-wrap')
+    expect(harnessSelector).toHaveAttribute('data-spacing', '1')
     expect(clientConfigDialog.querySelectorAll('[data-agent-harness-icon]')).toHaveLength(4)
     expect(screen.getByText('~/.config/opencode/opencode.json')).toBeInTheDocument()
     expect(screen.getByText('Base URL')).toBeInTheDocument()
