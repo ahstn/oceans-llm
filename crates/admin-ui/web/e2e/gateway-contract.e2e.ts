@@ -259,6 +259,18 @@ test('service-account budget update triggers hard-limit enforcement for service-
   }
   const serviceAccountId = serviceAccount.service_account_id
 
+  // Record spend in this test so it also works without the preceding tests.
+  const completionResponse = await request.post(`${root}/v1/chat/completions`, {
+    headers: {
+      authorization: `Bearer ${gatewayApiKey}`,
+    },
+    data: {
+      model: 'fast',
+      messages: [{ role: 'user', content: 'record spend before lowering the budget' }],
+    },
+  })
+  expect(completionResponse.status()).toBe(200)
+
   const upsertBudgetResponse = await request.put(`${root}/api/v1/admin/spend/budgets`, {
     headers: {
       cookie: adminCookie,
@@ -270,7 +282,7 @@ test('service-account budget update triggers hard-limit enforcement for service-
         service_account_id: serviceAccountId,
       },
       cadence: 'daily',
-      amount_usd: '0.0000',
+      amount_usd: '0.0001',
       hard_limit: true,
       timezone: 'UTC',
     },
