@@ -27,7 +27,14 @@ describe('CodeBlock', () => {
       </CodeBlock>,
     )
 
-    expect(screen.getByRole('region', { name: 'text code' })).toHaveStyle({
+    const viewport = screen.getByRole('region', { name: 'text code' })
+    expect(viewport.closest('[data-slot="code-block"]')).toHaveClass(
+      'min-w-0',
+      'max-w-full',
+      'overflow-hidden',
+    )
+    expect(viewport).toHaveClass('min-w-0', 'max-w-full', 'overflow-auto')
+    expect(viewport).toHaveStyle({
       maxHeight: 'calc(2 * 1.5rem + 2rem)',
     })
     fireEvent.click(screen.getByRole('button', { name: 'Copy code' }))

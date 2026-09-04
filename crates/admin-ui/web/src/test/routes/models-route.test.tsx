@@ -539,6 +539,11 @@ describe('ModelsPage client configuration', () => {
     })
     const clientConfigDialog = await screen.findByRole('dialog', { name: 'Client config' })
     expect(clientConfigDialog).toBeInTheDocument()
+    expect(clientConfigDialog).toHaveClass(
+      'max-h-[min(880px,calc(100dvh-2rem))]',
+      'max-w-[calc(100vw-2rem)]',
+      'overflow-y-auto',
+    )
     expect(clientConfigDialog.querySelectorAll('[data-agent-harness-icon]')).toHaveLength(4)
     expect(screen.getByText('~/.config/opencode/opencode.json')).toBeInTheDocument()
     expect(screen.getByText('Base URL')).toBeInTheDocument()
@@ -778,7 +783,10 @@ describe('ModelsPage multi-model configuration', () => {
     )
 
     fireEvent.click(screen.getByRole('radio', { name: 'Claude Code' }))
-    expect(within(dialog).queryByText('fast')).not.toBeInTheDocument()
+    const claudeCode = within(dialog).getByRole('region', { name: 'json code' })
+    expect(claudeCode).toHaveTextContent('"claude-sonnet-4-6": "claude-sonnet"')
+    expect(claudeCode).not.toHaveTextContent('fast')
+    expect(claudeCode).toHaveStyle({ maxHeight: 'calc(10 * 1.5rem + 2rem)' })
   })
 })
 
