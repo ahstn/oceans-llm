@@ -32,5 +32,8 @@ jobs:
         with:
           install_args: rust bun
 
+      - name: Cache Cargo artifacts
+        uses: ./.github/actions/rust-cache
+
       - name: Check generated admin contract
         run: mise run admin-contract-check

@@ -32,6 +32,9 @@ jobs:
         with:
           install_args: rust bun node
 
+      - name: Cache Cargo artifacts
+        uses: ./.github/actions/rust-cache
+
       - name: Run end-to-end contract tests
         run: mise run e2e-test
 
