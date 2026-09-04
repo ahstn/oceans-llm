@@ -2,6 +2,7 @@ mod agent_analysis;
 mod api_keys;
 mod batches;
 mod budget_alerts;
+mod budget_batch;
 mod budgets;
 mod guardrail_decisions;
 mod identity;
@@ -755,6 +756,36 @@ impl GatewayStore for LibsqlStore {
             users,
         )
         .await
+    }
+
+    async fn seed_from_inputs_with_user_budget_default(
+        &self,
+        providers: &[gateway_core::SeedProvider],
+        models: &[gateway_core::SeedModel],
+        api_keys: &[gateway_core::SeedApiKey],
+        service_accounts: &[gateway_core::SeedServiceAccount],
+        oidc_providers: &[gateway_core::SeedOidcProvider],
+        oauth_providers: &[gateway_core::SeedOauthProvider],
+        teams: &[gateway_core::SeedTeam],
+        users: &[gateway_core::SeedUser],
+        default_user_budget: Option<&gateway_core::SeedBudget>,
+    ) -> Result<(), StoreError> {
+        self.seed_from_inputs_with_user_budget_default(
+            providers,
+            models,
+            api_keys,
+            service_accounts,
+            oidc_providers,
+            oauth_providers,
+            teams,
+            users,
+            default_user_budget,
+        )
+        .await
+    }
+
+    async fn list_budget_contacts(&self) -> Result<Vec<gateway_core::BudgetContact>, StoreError> {
+        self.list_budget_contacts().await
     }
 
     async fn reconcile_human_budget_defaults(

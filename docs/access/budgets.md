@@ -228,6 +228,10 @@ users:
 
 Omitting `budget` for a listed config-seeded user does not deactivate that user's active budget. Absence inherits the global default user budget when configured, or leaves any existing manual/API state alone.
 
+When a config reload removes a per-user override and a global default is configured, seeding replaces the override in the same active budget row. The user remains budgeted even if a later startup phase fails. Manual overrides and manual deactivation markers remain protected.
+
+Default reconciliation uses batched reads and guarded writes for each configured default. The number of database queries grows with the number of model defaults, rather than the number of users. The admin budget list also loads budgets, alert contacts, and window spend in batches. Budget ownership and UTC window rules are unchanged.
+
 Set a default user budget for all human users with `budgets.users.default`:
 
 ```yaml

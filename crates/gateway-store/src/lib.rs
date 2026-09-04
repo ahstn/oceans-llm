@@ -13,6 +13,7 @@ mod any_store_mcp_registry;
 mod any_store_mcp_token_overhead;
 mod any_store_provider_user_credentials;
 mod any_store_review_agent;
+mod budget_batch;
 mod libsql_store;
 mod migrate;
 mod migration_registry;
@@ -36,6 +37,9 @@ pub(crate) use migrate::{MigrationTestHook, run_migrations_with_options_for_test
 
 #[cfg(test)]
 mod agent_analysis_tests;
+
+#[cfg(test)]
+mod budget_reconciliation_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -69,11 +73,10 @@ pub(crate) mod tests {
         ReviewAgentProvider, ReviewAgentPullRequestState, ReviewAgentRepository,
         ReviewAgentRepositoryStatus, ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility,
         RoutePricingOverride, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
-        SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
-        SeedOauthProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
-        SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountStatus,
-        SessionLifecycleState, StoreError, StoreHealth, UpdateExternalMcpServerRecord,
-        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+        SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
+        SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
+        ServiceAccountStatus, SessionLifecycleState, StoreError, StoreHealth,
+        UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
         UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
         UpsertReviewAgentPullRequestRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
@@ -6901,288 +6904,6 @@ pub(crate) mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn libsql_human_budget_defaults_inherit_until_manual_override_or_deactivation() {
-        let tmp = tempdir().expect("tempdir");
-        let db_path = tmp.path().join("gateway.db");
-        run_migrations(&db_path).await.expect("migrations");
-
-        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
-            .await
-            .expect("store");
-        let users = vec![SeedUser {
-            name: "Member".to_string(),
-            email: "member@example.com".to_string(),
-            email_normalized: "member@example.com".to_string(),
-            global_role: GlobalRole::User,
-            auth_mode: AuthMode::Password,
-            request_logging_enabled: true,
-            tags: None,
-            oidc_provider_key: None,
-            oauth_provider_key: None,
-            membership: None,
-            budget: None,
-        }];
-        let models = vec![SeedModel {
-            model_key: "fable-5".to_string(),
-            alias_target_model_key: None,
-            max_reasoning_effort: None,
-            description: None,
-            tags: Vec::new(),
-            rank: 10,
-            routes: Vec::new(),
-            allowlist: None,
-        }];
-
-        store
-            .seed_from_inputs(&[], &models, &[], &[], &[], &[], &[], &users)
-            .await
-            .expect("seed user");
-        let bootstrap_user = store
-            .upsert_bootstrap_admin_user("Admin", "admin@local", true)
-            .await
-            .expect("bootstrap admin");
-        let user = store
-            .get_user_by_email_normalized("member@example.com")
-            .await
-            .expect("load user")
-            .expect("user exists");
-        let model_id = crate::seed::model_uuid("fable-5");
-        let defaults = SeedHumanBudgetDefaults {
-            default_user_budget: Some(SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(700_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            }),
-            model_defaults: vec![SeedUserModelBudgetDefault {
-                model_key: "fable-5".to_string(),
-                model_id,
-                budget: SeedBudget {
-                    cadence: BudgetCadence::Daily,
-                    amount_usd: Money4::from_scaled(400_000),
-                    hard_limit: true,
-                    timezone: "UTC".to_string(),
-                },
-            }],
-        };
-        let now = OffsetDateTime::now_utc();
-
-        store
-            .reconcile_human_budget_defaults(&defaults, now)
-            .await
-            .expect("apply defaults");
-
-        let user_scope = BudgetScope::User {
-            user_id: user.user_id,
-        };
-        let inherited_user_budget = store
-            .get_active_budget_by_scope(&user_scope)
-            .await
-            .expect("load inherited user budget")
-            .expect("inherited user budget exists");
-        assert_eq!(
-            inherited_user_budget.source.kind,
-            BudgetSourceKind::ConfigUserDefault
-        );
-        assert_eq!(
-            inherited_user_budget.settings.amount_usd,
-            Money4::from_scaled(700_000)
-        );
-        let bootstrap_scope = BudgetScope::User {
-            user_id: bootstrap_user.user_id,
-        };
-        let bootstrap_budget = store
-            .get_active_budget_by_scope(&bootstrap_scope)
-            .await
-            .expect("load bootstrap budget")
-            .expect("bootstrap budget exists");
-        assert_eq!(
-            bootstrap_budget.source.kind,
-            BudgetSourceKind::ConfigUserDefault
-        );
-        assert_eq!(
-            bootstrap_budget.settings.amount_usd,
-            Money4::from_scaled(700_000)
-        );
-
-        let model_scope = BudgetScope::UserModel {
-            user_id: user.user_id,
-            selector: BudgetModelSelector::Model { model_id },
-        };
-        let inherited_model_budget = store
-            .get_active_budget_by_scope(&model_scope)
-            .await
-            .expect("load inherited model budget")
-            .expect("inherited model budget exists");
-        assert_eq!(
-            inherited_model_budget.source.kind,
-            BudgetSourceKind::ConfigUserModelDefault
-        );
-        assert_eq!(
-            inherited_model_budget.settings.amount_usd,
-            Money4::from_scaled(400_000)
-        );
-
-        let defaults_without_model = SeedHumanBudgetDefaults {
-            default_user_budget: defaults.default_user_budget.clone(),
-            model_defaults: Vec::new(),
-        };
-        store
-            .reconcile_human_budget_defaults(&defaults_without_model, now + Duration::seconds(1))
-            .await
-            .expect("remove model default");
-        assert!(
-            store
-                .get_active_budget_by_scope(&model_scope)
-                .await
-                .expect("load model budget after default removal")
-                .is_none()
-        );
-        assert_eq!(
-            store
-                .get_latest_budget_by_scope(&model_scope)
-                .await
-                .expect("latest model budget")
-                .expect("inactive model budget remains")
-                .source
-                .kind,
-            BudgetSourceKind::ConfigUserModelDefault
-        );
-        store
-            .reconcile_human_budget_defaults(&defaults, now + Duration::seconds(2))
-            .await
-            .expect("restore model default");
-        let restored_model_budget = store
-            .get_active_budget_by_scope(&model_scope)
-            .await
-            .expect("load restored model budget")
-            .expect("restored model budget exists");
-        assert_eq!(
-            restored_model_budget.source.kind,
-            BudgetSourceKind::ConfigUserModelDefault
-        );
-        assert_eq!(
-            restored_model_budget.settings.amount_usd,
-            Money4::from_scaled(400_000)
-        );
-
-        let override_users = vec![SeedUser {
-            name: "Override".to_string(),
-            email: "override@example.com".to_string(),
-            email_normalized: "override@example.com".to_string(),
-            global_role: GlobalRole::User,
-            auth_mode: AuthMode::Password,
-            request_logging_enabled: true,
-            tags: None,
-            oidc_provider_key: None,
-            oauth_provider_key: None,
-            membership: None,
-            budget: Some(SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(250_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            }),
-        }];
-        store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &override_users)
-            .await
-            .expect("seed explicit user override");
-        store
-            .reconcile_human_budget_defaults(&defaults, now + Duration::seconds(3))
-            .await
-            .expect("reconcile defaults with explicit override");
-        let override_user = store
-            .get_user_by_email_normalized("override@example.com")
-            .await
-            .expect("load override user")
-            .expect("override user exists");
-        let override_scope = BudgetScope::User {
-            user_id: override_user.user_id,
-        };
-        let config_override_budget = store
-            .get_active_budget_by_scope(&override_scope)
-            .await
-            .expect("load config override budget")
-            .expect("config override budget exists");
-        assert_eq!(
-            config_override_budget.source.kind,
-            BudgetSourceKind::ConfigUserOverride
-        );
-        assert_eq!(
-            config_override_budget.settings.amount_usd,
-            Money4::from_scaled(250_000)
-        );
-
-        let inherited_users = vec![SeedUser {
-            budget: None,
-            ..override_users[0].clone()
-        }];
-        store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &inherited_users)
-            .await
-            .expect("remove explicit user override");
-        store
-            .reconcile_human_budget_defaults(&defaults, now + Duration::seconds(4))
-            .await
-            .expect("reconcile defaults after override removal");
-        let inherited_override_budget = store
-            .get_active_budget_by_scope(&override_scope)
-            .await
-            .expect("load inherited budget after override removal")
-            .expect("inherited budget exists");
-        assert_eq!(
-            inherited_override_budget.source.kind,
-            BudgetSourceKind::ConfigUserDefault
-        );
-        assert_eq!(
-            inherited_override_budget.settings.amount_usd,
-            Money4::from_scaled(700_000)
-        );
-
-        store
-            .upsert_active_budget(
-                &user_scope,
-                &BudgetSettings {
-                    cadence: BudgetCadence::Daily,
-                    amount_usd: Money4::from_scaled(250_000),
-                    hard_limit: true,
-                    timezone: "UTC".to_string(),
-                },
-                now + Duration::seconds(5),
-            )
-            .await
-            .expect("manual user override");
-        store
-            .deactivate_active_budget(&model_scope, now + Duration::seconds(5))
-            .await
-            .expect("manual model deactivation");
-        store
-            .reconcile_human_budget_defaults(&defaults, now + Duration::seconds(6))
-            .await
-            .expect("reapply defaults");
-
-        let manual_user_budget = store
-            .get_active_budget_by_scope(&user_scope)
-            .await
-            .expect("load manual user budget")
-            .expect("manual user budget remains");
-        assert_eq!(manual_user_budget.source.kind, BudgetSourceKind::Manual);
-        assert_eq!(
-            manual_user_budget.settings.amount_usd,
-            Money4::from_scaled(250_000)
-        );
-        assert!(
-            store
-                .get_active_budget_by_scope(&model_scope)
-                .await
-                .expect("load model budget after deactivation")
-                .is_none()
-        );
-    }
-
-    #[tokio::test]
-    #[serial]
     async fn libsql_guarded_config_budget_upsert_does_not_recreate_after_deactivation() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -7430,6 +7151,44 @@ pub(crate) mod tests {
                     .await
                     .expect("insert usage ledger")
             );
+        }
+
+        let scopes = [
+            BudgetScope::User { user_id },
+            BudgetScope::UserModel {
+                user_id,
+                selector: BudgetModelSelector::Model { model_id: model.id },
+            },
+            BudgetScope::UserModel {
+                user_id,
+                selector: BudgetModelSelector::UpstreamModel {
+                    upstream_model: "  claude-3-5-sonnet  ".into(),
+                },
+            },
+            BudgetScope::User {
+                user_id: other_user_id,
+            },
+            BudgetScope::ServiceAccount {
+                service_account_id: Uuid::new_v4(),
+            },
+        ];
+        let windows = scopes
+            .iter()
+            .enumerate()
+            .map(|(index, scope)| gateway_core::BudgetScopeWindow {
+                scope,
+                // A separate model window must not inherit the user's broader window.
+                window_start: if index == 1 { inside } else { window_start },
+                window_end,
+            })
+            .collect::<Vec<_>>();
+        let totals = store
+            .sum_usage_cost_by_budget_scope(&windows)
+            .await
+            .expect("grouped sums");
+        assert_eq!(totals.len(), scopes.len());
+        for (scope, expected) in scopes.iter().zip([7_000, 0, 2_000, 8_000, 0]) {
+            assert_eq!(totals[&scope.scope_key()], Money4::from_scaled(expected));
         }
 
         let sum = |scope: BudgetScope| async move {
