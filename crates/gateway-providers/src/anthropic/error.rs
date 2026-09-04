@@ -15,6 +15,24 @@ pub enum AnthropicAdapterError {
     MissingContentText,
     #[error("message content must be a string or typed content array")]
     InvalidMessageContent,
+    #[error("Anthropic system content must contain text blocks")]
+    InvalidSystemContentType,
+    #[error("`stop` must be a string, an array of strings, or null")]
+    InvalidStop,
+    #[error("`stop` conflicts with `stop_sequences` for Anthropic mapping")]
+    ConflictingStop,
+    #[error("`parallel_tool_calls` must be a boolean or null")]
+    InvalidParallelToolCalls,
+    #[error("`parallel_tool_calls` conflicts with `tool_choice.disable_parallel_tool_use`")]
+    ConflictingParallelToolCalls,
+    #[error(
+        "`stream_options` only supports the boolean `include_usage` hint for Anthropic mapping"
+    )]
+    UnsupportedStreamOptions,
+    #[error(
+        "`store` must be false or null for Anthropic mapping; stored Chat completions are unsupported"
+    )]
+    UnsupportedStore,
     #[error("`max_completion_tokens` conflicts with `max_tokens` for Anthropic mapping")]
     ConflictingMaxTokens,
     #[error("image content entries must include `image_url` or `source`")]

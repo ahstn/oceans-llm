@@ -114,13 +114,68 @@ impl ChatRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(try_from = "ChatMessageFields")]
 pub struct ChatMessage {
     pub role: String,
     pub content: Value,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
+}
+
+#[derive(Deserialize)]
+struct ChatMessageFields {
+    role: String,
+    // Preserve the difference between an absent field and an explicit JSON null.
+    #[serde(default, deserialize_with = "deserialize_present_content")]
+    content: Option<Value>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
+}
+
+fn deserialize_present_content<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(deserializer).map(Some)
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("message with role `{role}` requires `content` unless it is an assistant tool call")]
+struct MissingChatContent {
+    role: String,
+}
+
+impl TryFrom<ChatMessageFields> for ChatMessage {
+    type Error = MissingChatContent;
+
+    fn try_from(fields: ChatMessageFields) -> Result<Self, Self::Error> {
+        let content = match fields.content {
+            Some(content) => content,
+            None if fields.role == "assistant"
+                && (fields
+                    .extra
+                    .get("tool_calls")
+                    .and_then(Value::as_array)
+                    .is_some_and(|calls| !calls.is_empty())
+                    || fields
+                        .extra
+                        .get("function_call")
+                        .is_some_and(Value::is_object)) =>
+            {
+                Value::Null
+            }
+            None => return Err(MissingChatContent { role: fields.role }),
+        };
+        Ok(Self {
+            role: fields.role,
+            content,
+            name: fields.name,
+            extra: fields.extra,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

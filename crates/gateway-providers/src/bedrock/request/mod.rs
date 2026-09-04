@@ -121,9 +121,7 @@ pub(super) fn map_openai_chat_request(
     context: &ProviderRequestContext,
     stream: bool,
 ) -> Result<Value, ProviderError> {
-    let mut request = request.clone();
-    request.stream = stream;
-    let wire_request = core_chat_request_to_openai(&request);
+    let wire_request = core_chat_request_to_openai(request);
     let mut body = serde_json::to_value(wire_request)
         .map_err(|error| ProviderError::Transport(error.to_string()))?;
     if let Some(object) = body.as_object_mut() {
@@ -134,6 +132,7 @@ pub(super) fn map_openai_chat_request(
         for (key, value) in &context.extra_body {
             object.insert(key.clone(), value.clone());
         }
+        object.insert("stream".to_string(), Value::Bool(stream));
     }
     Ok(body)
 }
@@ -143,9 +142,7 @@ pub(super) fn map_openai_responses_request(
     context: &ProviderRequestContext,
     stream: bool,
 ) -> Result<Value, ProviderError> {
-    let mut request = request.clone();
-    request.stream = stream;
-    let wire_request = core_responses_request_to_openai(&request);
+    let wire_request = core_responses_request_to_openai(request);
     let mut body = serde_json::to_value(wire_request)
         .map_err(|error| ProviderError::Transport(error.to_string()))?;
     if let Some(object) = body.as_object_mut() {
@@ -155,6 +152,7 @@ pub(super) fn map_openai_responses_request(
         );
         merge_responses_route_overrides(object, &context.extra_body)?;
         enforce_bedrock_responses_hosted_tool_compatibility(object, context)?;
+        object.insert("stream".to_string(), Value::Bool(stream));
     }
     crate::replay_id::normalize_openai_responses_replay_ids(&mut body)?;
     Ok(body)
@@ -404,10 +402,7 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     for message in &request.messages {
         match message.role.as_str() {
             "system" | "developer" => {
-                let text = message_content_as_text(&message.content)?;
-                if !text.is_empty() {
-                    system.push(text);
-                }
+                crate::anthropic::request::append_system_blocks(&mut system, &message.content)?;
             }
             "user" => {
                 messages.push(json!({
@@ -453,7 +448,7 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     }
 
     if !system.is_empty() {
-        body.insert("system".to_string(), Value::String(system.join("\n")));
+        body.insert("system".to_string(), Value::Array(system));
     }
     body.insert("messages".to_string(), Value::Array(messages));
 
