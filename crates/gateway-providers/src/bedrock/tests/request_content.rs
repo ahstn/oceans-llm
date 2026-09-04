@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn empty_system_strings_are_omitted_on_both_messages_targets() {
+    let request = CoreChatRequest {
+        model: "claude".into(),
+        messages: vec![
+            message("system", ""),
+            message("developer", ""),
+            message("user", "hello"),
+        ],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".into(), json!(64))]),
+    };
+    for target in [
+        AnthropicMessagesTarget::RuntimeInvoke,
+        AnthropicMessagesTarget::MantleMessages,
+    ] {
+        let body = map_chat_request_to_anthropic_messages_target(
+            &request,
+            &context("anthropic.claude-sonnet-4-6"),
+            target,
+        )
+        .unwrap();
+        assert!(body.get("system").is_none());
+        assert_eq!(body["messages"][0]["content"][0]["text"], "hello");
+    }
+}
+
+#[test]
 fn native_system_cache_blocks_survive_both_messages_targets() {
     let native = serde_json::from_value(json!({
         "model": "claude", "max_tokens": 64,

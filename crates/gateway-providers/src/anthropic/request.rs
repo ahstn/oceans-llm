@@ -157,6 +157,7 @@ pub(crate) fn append_system_blocks(
 ) -> Result<(), AnthropicAdapterError> {
     match content {
         Value::Null => {}
+        Value::String(text) if text.is_empty() => {}
         Value::String(text) => blocks.push(json!({"type": "text", "text": text})),
         Value::Array(items) => {
             for item in items {
