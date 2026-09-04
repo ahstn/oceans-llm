@@ -1,5 +1,8 @@
+mod controls;
 pub mod error;
 pub mod request;
+#[cfg(test)]
+mod request_tests;
 pub mod response;
 pub mod streaming;
 #[cfg(test)]

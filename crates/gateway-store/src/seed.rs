@@ -1,15 +1,20 @@
-use std::collections::{BTreeMap, BTreeSet};
+mod budgets;
+use budgets::budget_settings;
+pub(crate) use budgets::{
+    apply_human_budget_defaults_for_user, reconcile_human_budget_defaults,
+    upsert_unless_manually_overridden,
+};
+use std::collections::BTreeMap;
 
 use gateway_core::{
     ApiKeyRecord, ApiKeySecretStorageKind, AuthMode, BatchEndpoint, BatchJobRecord,
-    BatchPollUpdate, BatchPricingStatus, BatchStatus, BudgetModelSelector, BudgetScope,
-    BudgetSettings, BudgetSource, BudgetSourceKind, GatewayModel, GlobalRole, IdentityUserRecord,
-    MembershipRole, ModelRoute, Money4, NewBatchItem, NewBatchJob, OauthProviderRecord,
-    OidcProviderRecord, ProviderBatchResult, ProviderBatchState, ProviderRequestContext,
-    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKeySecretMaterial, SeedHumanBudgetDefaults,
-    SeedManagedServiceAccountApiKey, SeedServiceAccount, SeedTeam, SeedUser,
-    SeedUserModelBudgetDefault, StoreError, TeamRecord, UserStatus, encrypt_gateway_api_key_secret,
-    generate_gateway_api_key_value, hash_gateway_key_secret, parse_gateway_api_key,
+    BatchPollUpdate, BatchPricingStatus, BatchStatus, BudgetScope, BudgetSource, GatewayModel,
+    GlobalRole, IdentityUserRecord, MembershipRole, ModelRoute, Money4, NewBatchItem, NewBatchJob,
+    OauthProviderRecord, OidcProviderRecord, ProviderBatchResult, ProviderBatchState,
+    ProviderRequestContext, SeedApiKeySecretMaterial, SeedManagedServiceAccountApiKey,
+    SeedServiceAccount, SeedTeam, SeedUser, StoreError, TeamRecord, UserStatus,
+    encrypt_gateway_api_key_secret, generate_gateway_api_key_value, hash_gateway_key_secret,
+    parse_gateway_api_key,
 };
 use serde_json::json;
 use time::OffsetDateTime;
@@ -489,222 +494,17 @@ pub(crate) async fn reconcile_seed_users<S>(
     store: &S,
     teams_by_key: &BTreeMap<String, TeamRecord>,
     users: &[SeedUser],
+    default_user_budget: Option<&gateway_core::SeedBudget>,
     now: OffsetDateTime,
 ) -> Result<(), StoreError>
 where
     S: GatewayStore + ?Sized,
 {
     for user in users {
-        reconcile_seed_user(store, teams_by_key, user, now).await?;
+        reconcile_seed_user(store, teams_by_key, user, default_user_budget, now).await?;
     }
 
     Ok(())
-}
-
-pub(crate) async fn reconcile_human_budget_defaults<S>(
-    store: &S,
-    defaults: &SeedHumanBudgetDefaults,
-    now: OffsetDateTime,
-) -> Result<(), StoreError>
-where
-    S: GatewayStore + ?Sized,
-{
-    let mut user_ids = BTreeSet::new();
-    for identity_user in store.list_identity_users().await? {
-        user_ids.insert(identity_user.user.user_id);
-    }
-
-    let bootstrap_admin_user_id = Uuid::parse_str(SYSTEM_BOOTSTRAP_ADMIN_USER_ID)
-        .map_err(|error| StoreError::Unexpected(error.to_string()))?;
-    if store
-        .get_user_by_id(bootstrap_admin_user_id)
-        .await?
-        .is_some()
-    {
-        user_ids.insert(bootstrap_admin_user_id);
-    }
-
-    for user_id in user_ids {
-        apply_human_budget_defaults_for_user(store, defaults, user_id, now).await?;
-    }
-
-    deactivate_stale_config_default_budgets(store, defaults, now).await
-}
-
-pub(crate) async fn apply_human_budget_defaults_for_user<S>(
-    store: &S,
-    defaults: &SeedHumanBudgetDefaults,
-    user_id: Uuid,
-    now: OffsetDateTime,
-) -> Result<(), StoreError>
-where
-    S: GatewayStore + ?Sized,
-{
-    if let Some(default_budget) = defaults.default_user_budget.as_ref() {
-        let scope = BudgetScope::User { user_id };
-        upsert_if_config_default_allowed(
-            store,
-            &scope,
-            &budget_settings(default_budget),
-            &BudgetSource::config_user_default(),
-            now,
-        )
-        .await?;
-    }
-
-    for model_default in &defaults.model_defaults {
-        apply_user_model_default(store, model_default, user_id, now).await?;
-    }
-
-    Ok(())
-}
-
-async fn apply_user_model_default<S>(
-    store: &S,
-    model_default: &SeedUserModelBudgetDefault,
-    user_id: Uuid,
-    now: OffsetDateTime,
-) -> Result<(), StoreError>
-where
-    S: GatewayStore + ?Sized,
-{
-    let scope = BudgetScope::UserModel {
-        user_id,
-        selector: BudgetModelSelector::Model {
-            model_id: model_default.model_id,
-        },
-    };
-    upsert_if_config_default_allowed(
-        store,
-        &scope,
-        &budget_settings(&model_default.budget),
-        &BudgetSource::config_user_model_default(&model_default.model_key),
-        now,
-    )
-    .await
-}
-
-async fn upsert_if_config_default_allowed<S>(
-    store: &S,
-    scope: &BudgetScope,
-    settings: &BudgetSettings,
-    source: &BudgetSource,
-    now: OffsetDateTime,
-) -> Result<(), StoreError>
-where
-    S: GatewayStore + ?Sized,
-{
-    let existing = store.get_active_budget_by_scope(scope).await?;
-    if existing
-        .as_ref()
-        .is_some_and(|budget| !budget.source.matches(source))
-    {
-        return Ok(());
-    }
-
-    if let Some(latest) = store.get_latest_budget_by_scope(scope).await?
-        && !latest.is_active
-        && latest.source.is_manual_deactivation()
-    {
-        return Ok(());
-    }
-
-    let expected_current_source = existing.as_ref().map(|budget| &budget.source);
-    store
-        .upsert_active_budget_with_source_guard(
-            scope,
-            settings,
-            source,
-            expected_current_source,
-            now,
-        )
-        .await?;
-    Ok(())
-}
-
-/// Apply a declarative budget (`users[*].budget`, `service_accounts[*].budget`)
-/// unless an admin has taken ownership of the active row.
-///
-/// A `manual` active row wins over config; any other active source is replaced
-/// through the source guard so a concurrent admin edit cannot be clobbered. A
-/// manually deactivated scope is re-activated because the declarative value is
-/// still the operator's stated intent.
-pub(crate) async fn upsert_unless_manually_overridden<S>(
-    store: &S,
-    scope: &BudgetScope,
-    settings: &BudgetSettings,
-    source: &BudgetSource,
-    now: OffsetDateTime,
-) -> Result<(), StoreError>
-where
-    S: GatewayStore + ?Sized,
-{
-    let existing = store.get_active_budget_by_scope(scope).await?;
-    if existing
-        .as_ref()
-        .is_some_and(|budget| budget.source.kind == BudgetSourceKind::Manual)
-    {
-        return Ok(());
-    }
-    let expected_current_source = existing.as_ref().map(|budget| &budget.source);
-    store
-        .upsert_active_budget_with_source_guard(
-            scope,
-            settings,
-            source,
-            expected_current_source,
-            now,
-        )
-        .await?;
-    Ok(())
-}
-
-async fn deactivate_stale_config_default_budgets<S>(
-    store: &S,
-    defaults: &SeedHumanBudgetDefaults,
-    now: OffsetDateTime,
-) -> Result<(), StoreError>
-where
-    S: GatewayStore + ?Sized,
-{
-    let active_model_source_keys = defaults
-        .model_defaults
-        .iter()
-        .map(|default| {
-            BudgetSource::config_user_model_default(&default.model_key)
-                .key
-                .expect("model default source key")
-        })
-        .collect::<std::collections::BTreeSet<_>>();
-
-    for budget in store.list_active_budgets(None).await? {
-        let should_deactivate = match budget.source.kind {
-            BudgetSourceKind::ConfigUserDefault => defaults.default_user_budget.is_none(),
-            BudgetSourceKind::ConfigUserModelDefault => match budget.source.key.as_ref() {
-                Some(key) => !active_model_source_keys.contains(key),
-                None => true,
-            },
-            BudgetSourceKind::Manual
-            | BudgetSourceKind::ConfigUserOverride
-            | BudgetSourceKind::ConfigServiceAccount => false,
-        };
-        if should_deactivate {
-            store
-                .deactivate_active_budget_by_source(&budget.scope, &budget.source, now)
-                .await?;
-        }
-    }
-
-    Ok(())
-}
-
-fn budget_settings(budget: &gateway_core::SeedBudget) -> BudgetSettings {
-    BudgetSettings {
-        cadence: budget.cadence,
-        amount_usd: budget.amount_usd,
-        hard_limit: budget.hard_limit,
-        timezone: budget.timezone.clone(),
-    }
 }
 
 async fn prevalidate_seed_user<S>(
@@ -740,6 +540,7 @@ async fn reconcile_seed_user<S>(
     store: &S,
     teams_by_key: &BTreeMap<String, TeamRecord>,
     seed_user: &SeedUser,
+    default_user_budget: Option<&gateway_core::SeedBudget>,
     now: OffsetDateTime,
 ) -> Result<(), StoreError>
 where
@@ -834,6 +635,18 @@ where
     let source = BudgetSource::config_user_override(&seed_user.email_normalized);
     if let Some(budget) = &seed_user.budget {
         upsert_unless_manually_overridden(store, &scope, &budget_settings(budget), &source, now)
+            .await?;
+    } else if let Some(default_budget) = default_user_budget {
+        // Replace the override in place. A crash before later reconciliation
+        // must not leave a previously budgeted user without enforcement.
+        store
+            .upsert_active_budget_with_source_guard(
+                &scope,
+                &budget_settings(default_budget),
+                &BudgetSource::config_user_default(),
+                Some(&source),
+                now,
+            )
             .await?;
     } else {
         store

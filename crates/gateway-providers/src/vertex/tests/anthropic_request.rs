@@ -36,7 +36,10 @@ fn maps_openai_request_to_vertex_anthropic_payload() {
     assert_eq!(mapped["stream"], false);
     assert_eq!(mapped["messages"][0]["role"], "user");
     assert_eq!(mapped["messages"][0]["content"], "ping");
-    assert_eq!(mapped["system"], "be concise");
+    assert_eq!(
+        mapped["system"],
+        json!([{"type": "text", "text": "be concise"}])
+    );
     assert!(mapped.get("anthropic_beta").is_none());
 }
 

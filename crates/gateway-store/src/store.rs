@@ -3,16 +3,17 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, AgentSessionAnalysisRepository,
-    ApiKeyRepository, AuthMode, BatchRepository, BudgetAlertRepository, BudgetRepository,
-    GlobalRole, GuardrailDecisionRepository, IdentityRepository, IdentityUserRecord,
-    McpAccessRepository, McpAggregateSessionRepository, McpOauthStateRecord, McpRegistryRepository,
-    McpTokenOverheadRepository, McpToolInvocationRepository, McpUpstreamCredentialRepository,
-    MembershipRole, ModelRepository, OauthLoginStateRecord, OauthProviderRecord,
-    OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogRepository,
-    ProviderRepository, ProviderUserCredentialRepository, RequestLogRepository, RequestTag,
-    ReviewAgentRepository, SeedApiKey, SeedHumanBudgetDefaults, SeedModel, SeedOauthProvider,
-    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, StoreError,
-    StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
+    ApiKeyRepository, AuthMode, BatchRepository, BudgetAlertRepository, BudgetRecord,
+    BudgetRepository, GlobalRole, GuardrailDecisionRepository, IdentityRepository,
+    IdentityUserRecord, McpAccessRepository, McpAggregateSessionRepository, McpOauthStateRecord,
+    McpRegistryRepository, McpTokenOverheadRepository, McpToolInvocationRepository,
+    McpUpstreamCredentialRepository, MembershipRole, ModelRepository, Money4,
+    OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord,
+    PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository,
+    ProviderUserCredentialRepository, RequestLogRepository, RequestTag, ReviewAgentRepository,
+    SeedApiKey, SeedHumanBudgetDefaults, SeedModel, SeedOauthProvider, SeedOidcProvider,
+    SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, StoreError, StoreHealth,
+    TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
     UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
@@ -388,6 +389,7 @@ pub trait GatewayStore:
         request_logging_enabled: bool,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
+    async fn list_budget_contacts(&self) -> Result<Vec<gateway_core::BudgetContact>, StoreError>;
     async fn seed_from_inputs(
         &self,
         providers: &[SeedProvider],
@@ -398,6 +400,18 @@ pub trait GatewayStore:
         oauth_providers: &[SeedOauthProvider],
         teams: &[SeedTeam],
         users: &[SeedUser],
+    ) -> Result<(), StoreError>;
+    async fn seed_from_inputs_with_user_budget_default(
+        &self,
+        providers: &[SeedProvider],
+        models: &[SeedModel],
+        api_keys: &[SeedApiKey],
+        service_accounts: &[SeedServiceAccount],
+        oidc_providers: &[SeedOidcProvider],
+        oauth_providers: &[SeedOauthProvider],
+        teams: &[SeedTeam],
+        users: &[SeedUser],
+        default_user_budget: Option<&gateway_core::SeedBudget>,
     ) -> Result<(), StoreError>;
     async fn reconcile_human_budget_defaults(
         &self,
@@ -713,6 +727,39 @@ impl AdminIdentityRepository for AnyStore {
 
 #[async_trait]
 impl BudgetRepository for AnyStore {
+    async fn get_budget_states_by_scope_keys(
+        &self,
+        scope_keys: &[String],
+    ) -> Result<Vec<BudgetRecord>, StoreError> {
+        dispatch_store!(self, get_budget_states_by_scope_keys(scope_keys))
+    }
+
+    async fn upsert_active_budgets_with_source_guard(
+        &self,
+        upserts: &[gateway_core::BudgetUpsert<'_>],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            upsert_active_budgets_with_source_guard(upserts, updated_at)
+        )
+    }
+
+    async fn deactivate_budgets_by_source(
+        &self,
+        budgets: &[&BudgetRecord],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, deactivate_budgets_by_source(budgets, updated_at))
+    }
+
+    async fn sum_usage_cost_by_budget_scope(
+        &self,
+        windows: &[gateway_core::BudgetScopeWindow<'_>],
+    ) -> Result<std::collections::HashMap<String, Money4>, StoreError> {
+        dispatch_store!(self, sum_usage_cost_by_budget_scope(windows))
+    }
+
     async fn get_active_budget_by_scope(
         &self,
         scope: &gateway_core::BudgetScope,
@@ -1829,6 +1876,10 @@ impl GatewayStore for AnyStore {
         )
     }
 
+    async fn list_budget_contacts(&self) -> Result<Vec<gateway_core::BudgetContact>, StoreError> {
+        dispatch_store!(self, list_budget_contacts())
+    }
+
     async fn seed_from_inputs(
         &self,
         providers: &[SeedProvider],
@@ -1851,6 +1902,34 @@ impl GatewayStore for AnyStore {
                 oauth_providers,
                 teams,
                 users
+            )
+        )
+    }
+
+    async fn seed_from_inputs_with_user_budget_default(
+        &self,
+        providers: &[SeedProvider],
+        models: &[SeedModel],
+        api_keys: &[SeedApiKey],
+        service_accounts: &[SeedServiceAccount],
+        oidc_providers: &[SeedOidcProvider],
+        oauth_providers: &[SeedOauthProvider],
+        teams: &[SeedTeam],
+        users: &[SeedUser],
+        default_user_budget: Option<&gateway_core::SeedBudget>,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            seed_from_inputs_with_user_budget_default(
+                providers,
+                models,
+                api_keys,
+                service_accounts,
+                oidc_providers,
+                oauth_providers,
+                teams,
+                users,
+                default_user_budget
             )
         )
     }

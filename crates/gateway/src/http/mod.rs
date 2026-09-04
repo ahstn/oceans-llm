@@ -23,6 +23,7 @@ mod request_tracing;
 pub mod response_cache;
 pub mod review_agent;
 pub mod spend;
+mod spend_budget_listing;
 pub mod state;
 
 use admin_ui::{AdminUiConfig, mount_admin_ui};

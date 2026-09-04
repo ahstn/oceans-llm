@@ -42,13 +42,31 @@ impl CodexReasoningEffort {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientModelCapabilities {
+    #[serde(default = "default_chat_completions")]
+    pub chat_completions: bool,
     #[serde(default)]
     pub responses: bool,
     pub tool_calling: bool,
     pub attachments: bool,
     pub vision: bool,
+}
+
+const fn default_chat_completions() -> bool {
+    true
+}
+
+impl Default for ClientModelCapabilities {
+    fn default() -> Self {
+        Self {
+            chat_completions: true,
+            responses: false,
+            tool_calling: false,
+            attachments: false,
+            vision: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

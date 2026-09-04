@@ -10,6 +10,9 @@ pub struct ParsedSseEvent {
 pub struct SseEventParser {
     utf8: Utf8ChunkDecoder,
     buffer: String,
+    // Byte offset, deliberately not a string slice boundary. At most three old
+    // bytes need another scan when a four-byte CRLF delimiter spans chunks.
+    scan_offset: usize,
 }
 
 impl SseEventParser {
@@ -18,11 +21,15 @@ impl SseEventParser {
         self.buffer.push_str(&text);
 
         let mut events = Vec::new();
-        while let Some((delimiter_index, delimiter_len)) = find_sse_delimiter(&self.buffer) {
-            let block = self.buffer[..delimiter_index]
+        let mut consumed = 0;
+        while let Some((delimiter_index, delimiter_len)) =
+            find_sse_delimiter(self.buffer.as_bytes(), self.scan_offset)
+        {
+            let block = self.buffer[consumed..delimiter_index]
                 .replace("\r\n", "\n")
                 .replace('\r', "\n");
-            self.buffer.drain(..delimiter_index + delimiter_len);
+            consumed = delimiter_index + delimiter_len;
+            self.scan_offset = consumed;
 
             let mut event_type = None;
             let mut data_lines = Vec::new();
@@ -38,6 +45,13 @@ impl SseEventParser {
                 event: event_type,
                 data: data_lines.join("\n"),
             });
+        }
+
+        self.scan_offset = self.buffer.len().saturating_sub(3).max(consumed) - consumed;
+        // Compact once per input chunk, not once per event. A large chunk with
+        // many small events must not repeatedly move the unconsumed suffix.
+        if consumed > 0 {
+            self.buffer.drain(..consumed);
         }
 
         Ok(events)
@@ -109,20 +123,88 @@ impl Utf8ChunkDecoder {
     }
 }
 
-fn find_sse_delimiter(input: &str) -> Option<(usize, usize)> {
-    [
-        input.find("\r\n\r\n").map(|index| (index, 4)),
-        input.find("\n\n").map(|index| (index, 2)),
-        input.find("\r\r").map(|index| (index, 2)),
-    ]
-    .into_iter()
-    .flatten()
-    .min_by_key(|(index, _)| *index)
+fn find_sse_delimiter(input: &[u8], from: usize) -> Option<(usize, usize)> {
+    for index in from..input.len().saturating_sub(1) {
+        let suffix = &input[index..];
+        if suffix.starts_with(b"\r\n\r\n") {
+            return Some((index, 4));
+        }
+        if suffix.starts_with(b"\n\n") || suffix.starts_with(b"\r\r") {
+            return Some((index, 2));
+        }
+    }
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::{SseEventParser, Utf8ChunkDecoder};
+
+    #[test]
+    fn sse_events_survive_every_chunk_boundary_and_single_byte_chunks() {
+        for delimiter in ["\n\n", "\r\r", "\r\n\r\n"] {
+            let input = format!("event: update\ndata: 🙂 café{delimiter}data: next{delimiter}");
+            for split in 0..=input.len() {
+                let mut parser = SseEventParser::default();
+                let mut events = parser.push_bytes(&input.as_bytes()[..split]).unwrap();
+                events.extend(parser.push_bytes(&input.as_bytes()[split..]).unwrap());
+                assert_eq!(events.len(), 2, "split {split}, delimiter {delimiter:?}");
+                assert_eq!(events[0].event.as_deref(), Some("update"));
+                assert_eq!(events[0].data, "🙂 café");
+                assert_eq!(events[1].data, "next");
+                parser.finish().unwrap();
+            }
+            let mut parser = SseEventParser::default();
+            let mut events = Vec::new();
+            for byte in input.as_bytes() {
+                events.extend(parser.push_bytes(&[*byte]).unwrap());
+            }
+            assert_eq!(events.len(), 2);
+            assert_eq!(events[0].data, "🙂 café");
+            assert_eq!(events[1].data, "next");
+            parser.finish().unwrap();
+        }
+    }
+
+    #[test]
+    fn sse_scan_retains_only_delimiter_overlap_for_large_incomplete_events() {
+        let mut parser = SseEventParser::default();
+        let chunk = "🙂".repeat(1024);
+        parser.push_bytes(b"data: ").unwrap();
+        for _ in 0..256 {
+            assert!(parser.push_bytes(chunk.as_bytes()).unwrap().is_empty());
+            assert_eq!(parser.scan_offset, parser.buffer.len() - 3);
+        }
+        let events = parser.push_bytes(b"\n\n").unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, chunk.repeat(256));
+        assert!(parser.buffer.is_empty());
+        assert_eq!(parser.scan_offset, 0);
+        parser.finish().unwrap();
+    }
+
+    #[test]
+    fn sse_compaction_preserves_partial_suffix_after_many_events() {
+        let mut parser = SseEventParser::default();
+        let input = format!("{}data: partial", "data: complete\n\n".repeat(10_000));
+        let events = parser.push_bytes(input.as_bytes()).unwrap();
+        assert_eq!(events.len(), 10_000);
+        assert!(events.iter().all(|event| event.data == "complete"));
+        assert!(parser.finish().is_err());
+        let events = parser.push_bytes(b" suffix\r\n\r\n").unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "partial suffix");
+        parser.finish().unwrap();
+    }
+
+    #[test]
+    fn sse_parser_rejects_invalid_or_truncated_utf8() {
+        let mut parser = SseEventParser::default();
+        assert!(parser.push_bytes(b"data: \xff").is_err());
+        let mut parser = SseEventParser::default();
+        parser.push_bytes(b"data: \xf0\x9f").unwrap();
+        assert!(parser.finish().is_err());
+    }
 
     #[test]
     fn utf8_decoder_reassembles_split_codepoints() {

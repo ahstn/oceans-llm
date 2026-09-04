@@ -259,18 +259,17 @@ test('service-account budget update triggers hard-limit enforcement for service-
   }
   const serviceAccountId = serviceAccount.service_account_id
 
-  const seedSpendResponse = await request.post(`${root}/v1/chat/completions`, {
+  // Record spend in this test so it also works without the preceding tests.
+  const completionResponse = await request.post(`${root}/v1/chat/completions`, {
     headers: {
       authorization: `Bearer ${gatewayApiKey}`,
-      'content-type': 'application/json',
-      'idempotency-key': 'e2e-service-account-budget-seed-spend',
     },
     data: {
       model: 'fast',
-      messages: [{ role: 'user', content: 'seed service account spend' }],
+      messages: [{ role: 'user', content: 'record spend before lowering the budget' }],
     },
   })
-  expect(seedSpendResponse.status()).toBe(200)
+  expect(completionResponse.status()).toBe(200)
 
   const upsertBudgetResponse = await request.put(`${root}/api/v1/admin/spend/budgets`, {
     headers: {

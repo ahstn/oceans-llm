@@ -7,7 +7,7 @@ use std::{
 use async_stream::stream;
 use async_trait::async_trait;
 use aws_config::{Region, default_provider::credentials::DefaultCredentialsChain};
-use aws_credential_types::{Credentials, provider::ProvideCredentials};
+use aws_credential_types::Credentials;
 use aws_sigv4::{
     http_request::{SignableBody, SignableRequest, SigningSettings, sign},
     sign::v4,
@@ -114,7 +114,8 @@ impl BedrockProviderConfig {
 pub struct BedrockProvider {
     config: BedrockProviderConfig,
     client: reqwest::Client,
-    default_credentials_chain: Arc<OnceCell<DefaultCredentialsChain>>,
+    default_credentials_chain:
+        Arc<OnceCell<credentials::CachedCredentials<DefaultCredentialsChain>>>,
 }
 
 impl BedrockProvider {
@@ -455,11 +456,10 @@ impl BedrockProvider {
             }
             BedrockAuthConfig::DefaultChain => {
                 let provider = self.default_credentials_provider().await;
-                let credentials = provider.provide_credentials().await.map_err(|error| {
-                    ProviderError::Transport(format!(
-                        "failed to resolve aws_bedrock default credentials: {error}"
-                    ))
-                })?;
+                let credentials = provider
+                    .credentials()
+                    .await
+                    .map_err(|error| ProviderError::Transport(error.to_string()))?;
                 self.sign_request(request, credentials)
             }
             BedrockAuthConfig::StaticCredentials {
@@ -479,14 +479,16 @@ impl BedrockProvider {
         }
     }
 
-    async fn default_credentials_provider(&self) -> &DefaultCredentialsChain {
-        let region = self.config.region.clone();
+    async fn default_credentials_provider(
+        &self,
+    ) -> &credentials::CachedCredentials<DefaultCredentialsChain> {
         self.default_credentials_chain
-            .get_or_init(|| async move {
-                DefaultCredentialsChain::builder()
-                    .region(Region::new(region))
+            .get_or_init(|| async {
+                let provider = DefaultCredentialsChain::builder()
+                    .region(Region::new(self.config.region.clone()))
                     .build()
-                    .await
+                    .await;
+                credentials::CachedCredentials::new(provider)
             })
             .await
     }
@@ -776,6 +778,7 @@ fn encode_bedrock_model_id(model_id: &str) -> String {
     }
 }
 
+mod credentials;
 mod eventstream;
 mod request;
 mod response;
