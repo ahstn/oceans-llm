@@ -69,10 +69,23 @@ impl<P: ProvideCredentials> CachedCredentials<P> {
         let now = now();
         let entry = match result.and_then(|credentials| CachedEntry::fresh(credentials, now)) {
             Ok(entry) => entry,
-            Err(error) => CachedEntry {
-                result: Err(error),
-                refresh_at: now + FAILURE_RETRY_DELAY,
-            },
+            Err(error) => {
+                // An early refresh failure does not invalidate an identity.
+                // Bound the retry by its actual expiry so cached fallback can
+                // never extend its lifetime, even by part of a second.
+                if let Some(previous) = cached.as_mut()
+                    && let Ok(credentials) = &previous.result
+                    && let Some(expiry) = credentials.expiry()
+                    && now < expiry
+                {
+                    previous.refresh_at = (now + FAILURE_RETRY_DELAY).min(expiry);
+                    return previous.result.clone();
+                }
+                CachedEntry {
+                    result: Err(error),
+                    refresh_at: now + FAILURE_RETRY_DELAY,
+                }
+            }
         };
         let result = entry.result.clone();
         *cached = Some(entry);

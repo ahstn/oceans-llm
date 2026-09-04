@@ -186,6 +186,129 @@ async fn concurrent_failed_refresh_is_shared_until_retry_delay_passes() {
 }
 
 #[tokio::test]
+async fn proactive_refresh_failure_keeps_valid_credentials_and_recovers() {
+    let now = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+    let cache = Arc::new(CachedCredentials::new(SequenceProvider::new([
+        Ok(credentials("old", Some(now + Duration::from_secs(300)))),
+        Err(CredentialsError::not_loaded("mock STS outage")),
+        Ok(credentials(
+            "recovered",
+            Some(now + Duration::from_secs(600)),
+        )),
+        Err(CredentialsError::not_loaded("mock STS outage after expiry")),
+    ])));
+    cache.credentials_with_clock(|| now).await.unwrap();
+    let refresh = now + Duration::from_secs(240);
+    let mut tasks = tokio::task::JoinSet::new();
+    for _ in 0..20 {
+        let cache = Arc::clone(&cache);
+        tasks.spawn(async move { cache.credentials_with_clock(|| refresh).await });
+    }
+    while let Some(result) = tasks.join_next().await {
+        assert_eq!(result.unwrap().unwrap().access_key_id(), "old");
+    }
+    assert_eq!(cache.provider.calls.load(Ordering::SeqCst), 2);
+    for (time, expected_key, expected_calls) in [
+        (refresh + Duration::from_millis(500), "old", 2),
+        (refresh + FAILURE_RETRY_DELAY, "recovered", 3),
+    ] {
+        assert_eq!(
+            cache
+                .credentials_with_clock(|| time)
+                .await
+                .unwrap()
+                .access_key_id(),
+            expected_key
+        );
+        assert_eq!(cache.provider.calls.load(Ordering::SeqCst), expected_calls);
+    }
+    assert!(matches!(
+        cache
+            .credentials_with_clock(|| now + Duration::from_secs(600))
+            .await,
+        Err(CredentialCacheError::Resolve(_))
+    ));
+    assert_eq!(cache.provider.calls.load(Ordering::SeqCst), 4);
+}
+
+#[tokio::test]
+async fn failed_refresh_retry_never_extends_past_credential_expiry() {
+    let now = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+    let expiry = now + Duration::from_secs(300);
+    let cache = CachedCredentials::new(SequenceProvider::new([
+        Ok(credentials("old", Some(expiry))),
+        Err(CredentialsError::not_loaded("mock STS outage")),
+        Err(CredentialsError::not_loaded("mock STS still unavailable")),
+    ]));
+    cache.credentials_with_clock(|| now).await.unwrap();
+    for time in [
+        expiry - Duration::from_millis(500),
+        expiry - Duration::from_nanos(1),
+    ] {
+        assert_eq!(
+            cache
+                .credentials_with_clock(|| time)
+                .await
+                .unwrap()
+                .access_key_id(),
+            "old"
+        );
+        assert_eq!(cache.provider.calls.load(Ordering::SeqCst), 2);
+    }
+    for time in [expiry, expiry + Duration::from_millis(500)] {
+        assert!(matches!(
+            cache.credentials_with_clock(|| time).await,
+            Err(CredentialCacheError::Resolve(_))
+        ));
+        assert_eq!(cache.provider.calls.load(Ordering::SeqCst), 3);
+    }
+}
+
+#[tokio::test]
+async fn failed_refresh_checks_expiry_after_resolution_finishes() {
+    let now = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+    let expiry = now + Duration::from_secs(300);
+    let cache = CachedCredentials::new(SequenceProvider::new([
+        Ok(credentials("old", Some(expiry))),
+        Err(CredentialsError::not_loaded("mock slow STS failure")),
+    ]));
+    cache.credentials_with_clock(|| now).await.unwrap();
+    let clock_reads = std::cell::Cell::new(0);
+    let result = cache
+        .credentials_with_clock(|| {
+            let read = clock_reads.get();
+            clock_reads.set(read + 1);
+            if read == 0 {
+                expiry - Duration::from_secs(1)
+            } else {
+                expiry
+            }
+        })
+        .await;
+    assert!(matches!(result, Err(CredentialCacheError::Resolve(_))));
+    assert_eq!(cache.provider.calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn undated_credentials_are_not_extended_after_failed_refresh() {
+    let now = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+    let cache = CachedCredentials::new(SequenceProvider::new([
+        Ok(credentials("undated", None)),
+        Err(CredentialsError::not_loaded(
+            "mock credential source unavailable",
+        )),
+    ]));
+    cache.credentials_with_clock(|| now).await.unwrap();
+    assert!(matches!(
+        cache
+            .credentials_with_clock(|| now + UNDATED_CREDENTIAL_TTL)
+            .await,
+        Err(CredentialCacheError::Resolve(_))
+    ));
+    assert_eq!(cache.provider.calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
 async fn sdk_assume_role_uses_one_mock_sts_call_for_repeated_and_concurrent_requests() {
     use aws_config::{BehaviorVersion, Region, sts::AssumeRoleProvider};
     use axum::{Router, routing::post};
