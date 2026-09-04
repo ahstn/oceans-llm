@@ -58,15 +58,8 @@ pub struct ChatCompletionsRequest {
     pub extra: BTreeMap<String, Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: Value,
-    #[serde(default)]
-    pub name: Option<String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Value>,
-}
+// The core and OpenAI message contracts are identical, including extension fields.
+pub use super::core::ChatMessage;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmbeddingsRequest {
@@ -137,9 +130,64 @@ pub struct ResponsesStreamEvent {
 
 #[cfg(test)]
 mod tests {
+    use super::ChatMessage;
     use crate::error::GatewayError;
+    use serde_json::{Value, json};
 
     use super::OpenAiErrorEnvelope;
+
+    #[test]
+    fn assistant_tool_history_accepts_omitted_content_and_preserves_extensions() {
+        for tool in [
+            json!({"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}),
+            json!({"function_call":{"name":"lookup","arguments":"{}"}}),
+        ] {
+            let mut message = tool;
+            message["role"] = json!("assistant");
+            message["reasoning_details"] = json!([{"type":"reasoning.encrypted","data":"opaque"}]);
+            let decoded: ChatMessage =
+                serde_json::from_value(message.clone()).expect("valid tool history");
+            assert_eq!(decoded.content, Value::Null);
+            let wire = serde_json::to_value(decoded).unwrap();
+            assert!(wire.get("name").is_none());
+            assert_eq!(wire["reasoning_details"], message["reasoning_details"]);
+            for key in ["tool_calls", "function_call"] {
+                assert_eq!(wire.get(key), message.get(key));
+            }
+            let core: crate::CoreChatMessage =
+                serde_json::from_value(message).expect("core accepts the same contract");
+            assert_eq!(core.content, Value::Null);
+        }
+    }
+
+    #[test]
+    fn missing_content_requires_an_assistant_tool_call() {
+        for message in [
+            json!({"role":"user"}),
+            json!({"role":"system"}),
+            json!({"role":"tool","tool_call_id":"call_1"}),
+            json!({"role":"assistant"}),
+            json!({"role":"assistant","tool_calls":[]}),
+        ] {
+            assert!(serde_json::from_value::<ChatMessage>(message).is_err());
+        }
+    }
+
+    #[test]
+    fn chat_content_forms_names_and_unknown_fields_round_trip() {
+        for content in [
+            Value::Null,
+            json!("hello"),
+            json!([{"type":"text","text":"hello"}]),
+        ] {
+            let message = json!({"role":"assistant","content":content,"name":"helper","custom":{"flag":true}});
+            let decoded: ChatMessage = serde_json::from_value(message.clone()).unwrap();
+            assert_eq!(serde_json::to_value(decoded).unwrap(), message);
+        }
+        let unnamed: ChatMessage =
+            serde_json::from_value(json!({"role":"user","content":"hello"})).unwrap();
+        assert!(serde_json::to_value(unnamed).unwrap().get("name").is_none());
+    }
 
     #[test]
     fn serializes_openai_error_envelope() {
