@@ -19,6 +19,12 @@ import { toast } from 'sonner'
 import { BrandIcon } from '@/components/icons/brand-icon'
 import { AppIcon } from '@/components/icons/app-icon'
 import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
+import {
+  CodeBlock,
+  CodeBlockCopyButton,
+  CodeBlockHeader,
+  CodeBlockTitle,
+} from '@/components/reui/code-block/code-block'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/layout/page-header'
@@ -594,7 +600,6 @@ export function ModelsPage() {
         onActiveKeyChange={(activeKey) =>
           setConfigDialog((current) => (current ? { ...current, activeKey } : current))
         }
-        onCopy={(content) => handleCopyValue(content, 'Client config copied')}
         onOpenChange={(open) => {
           if (!open) {
             setConfigDialog(null)
@@ -993,7 +998,6 @@ function ClientConfigDialog({
   activeConfig,
   clientConfigurations,
   onActiveKeyChange,
-  onCopy,
   onOpenChange,
 }: {
   models: ModelView[]
@@ -1001,7 +1005,6 @@ function ClientConfigDialog({
   activeConfig: ModelView['client_configurations'][number] | null
   clientConfigurations: ModelView['client_configurations']
   onActiveKeyChange: (key: string) => void
-  onCopy: (content: string) => void
   onOpenChange: (open: boolean) => void
 }) {
   const isOpen = models.length > 0
@@ -1010,17 +1013,10 @@ function ClientConfigDialog({
     models.length === 1 && firstModel
       ? `${firstModel.id} via ${providerTypeLabel(firstModel)}`
       : `${models.length} selected models`
-  const activeModelCount = activeConfig?.model_ids.length ?? 0
-  const activeModelSummary =
-    activeModelCount === 1
-      ? activeConfig?.model_ids[0]
-      : activeModelCount > 1
-        ? `${activeModelCount} models`
-        : 'No applicable models'
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-[min(920px,calc(100vw-2rem))] md:min-w-[35vw]">
+      <DialogContent className="max-h-[min(880px,calc(100dvh-2rem))] max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[min(920px,calc(100vw-2rem))] md:min-w-[35vw]">
         <DialogHeader>
           <DialogTitle>Client config</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -1028,13 +1024,6 @@ function ClientConfigDialog({
 
         {isOpen && activeConfig ? (
           <div className="flex min-w-0 flex-col gap-4">
-            <div className="flex flex-wrap gap-2">
-              {models.map((model) => (
-                <Badge key={model.id} variant="secondary">
-                  {model.id}
-                </Badge>
-              ))}
-            </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <ToggleGroup
                 type="single"
@@ -1046,12 +1035,15 @@ function ClientConfigDialog({
                 }}
                 variant="outline"
                 size="sm"
-                spacing={0}
+                spacing={1}
+                className="max-w-full min-w-0 flex-wrap"
                 aria-label="Client config"
               >
                 {clientConfigurations.map((config) => (
                   <ToggleGroupItem key={config.key} value={config.key} aria-label={config.label}>
-                    <AgentHarnessLabel harnessKey={config.key}>{config.label}</AgentHarnessLabel>
+                    <AgentHarnessLabel className="px-2" harnessKey={config.key}>
+                      {config.label}
+                    </AgentHarnessLabel>
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
@@ -1106,30 +1098,32 @@ function ClientConfigDialog({
 
             <div className="flex min-w-0 flex-col gap-4">
               {activeConfig.blocks.map((block) => (
-                <div
+                <CodeBlock
                   key={`${block.label}:${block.filename}`}
-                  className="flex min-w-0 flex-col gap-3"
+                  code={block.content}
+                  language={configLanguage(block.filename)}
+                  showLineNumbers
+                  maxLines={activeConfig.key === 'claude-code' ? 10 : undefined}
                 >
-                  <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-3 text-sm">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <Badge variant="secondary">{block.filename}</Badge>
-                      {block.label !== block.filename ? <span>{block.label}</span> : null}
-                      <span>{activeModelSummary}</span>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onCopy(block.content)}
-                    >
-                      {copyConfigLabel(block.filename)}
-                    </Button>
-                  </div>
-
-                  <pre className="bg-muted text-muted-foreground max-h-[min(42vh,420px)] min-h-[220px] overflow-auto rounded-md border p-4 text-xs leading-6">
-                    <code>{block.content}</code>
-                  </pre>
-                </div>
+                  <CodeBlockHeader>
+                    <CodeBlockTitle>{block.filename}</CodeBlockTitle>
+                    {block.label !== block.filename ? (
+                      <span className="text-muted-foreground min-w-0 truncate text-xs">
+                        {block.label}
+                      </span>
+                    ) : null}
+                    <CodeBlockCopyButton
+                      className="ml-auto"
+                      labels={{
+                        copy: copyConfigLabel(block.filename),
+                        copied: 'Copied',
+                        failed: 'Copy failed',
+                      }}
+                      onCopy={() => toast.success('Client config copied')}
+                      onCopyError={() => toast.error('Clipboard access failed')}
+                    />
+                  </CodeBlockHeader>
+                </CodeBlock>
               ))}
             </div>
 
@@ -1155,6 +1149,16 @@ function copyConfigLabel(filename: string) {
     return 'Copy TOML'
   }
   return 'Copy config'
+}
+
+function configLanguage(filename: string) {
+  if (filename.endsWith('.json')) {
+    return 'json'
+  }
+  if (filename.endsWith('.toml')) {
+    return 'toml'
+  }
+  return 'text'
 }
 
 function MetricDetail({

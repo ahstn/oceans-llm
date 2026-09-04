@@ -119,4 +119,4 @@ function IconTile({
   )
 }
 
-export { IconTile, iconTileVariants, type IconTileProps }
+export { IconTile, type IconTileProps }
