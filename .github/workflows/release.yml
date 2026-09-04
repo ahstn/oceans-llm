@@ -101,6 +101,7 @@ jobs:
           subject-name: ghcr.io/ahstn/${{ matrix.image }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+          create-storage-record: false
 
   publish-helm-chart:
     runs-on: ubuntu-latest
