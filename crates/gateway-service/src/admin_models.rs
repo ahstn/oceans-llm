@@ -413,6 +413,7 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
         input_window_tokens: context.limits.input,
         output_window_tokens: context.limits.output,
         capabilities: ClientModelCapabilities {
+            chat_completions: capabilities.chat_completions,
             responses: capabilities.responses,
             tool_calling: capabilities.tools,
             attachments: context
@@ -1769,6 +1770,66 @@ mod tests {
                 .content
                 .contains("model_reasoning_effort")
         );
+    }
+
+    #[test]
+    fn responses_only_route_capabilities_reach_harness_configuration() {
+        let model = GatewayModel {
+            id: Uuid::new_v4(),
+            model_key: "mantle-gpt".into(),
+            alias_target_model_key: None,
+            max_reasoning_effort: None,
+            description: None,
+            tags: vec![],
+            rank: 0,
+        };
+        let provider = ProviderConnection {
+            provider_key: "mantle".into(),
+            provider_type: "aws_bedrock".into(),
+            config: json!({}),
+            secrets: None,
+        };
+        let route = ModelRoute {
+            id: Uuid::new_v4(),
+            model_id: model.id,
+            provider_key: provider.provider_key.clone(),
+            upstream_model: "openai.gpt-model".into(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            context_window_tokens: None,
+            pricing_override: None,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities: ProviderCapabilities {
+                chat_completions: false,
+                responses: true,
+                ..ProviderCapabilities::openai_compat_baseline()
+            },
+            compatibility: Default::default(),
+        };
+        let input = super::build_client_config_input(super::ClientConfigContext {
+            model: &model,
+            execution_model: &model,
+            primary_route: Some(&route),
+            primary_provider: Some(&provider),
+            provider_display: None,
+            route_capabilities: Some(route.capabilities),
+            metadata: None,
+            limits: &PricingLimits {
+                context: None,
+                input: None,
+                output: None,
+            },
+            gateway_base_url: "https://gateway.example",
+        })
+        .expect("configured route");
+        assert!(!input.capabilities.chat_completions);
+        assert!(input.capabilities.responses);
+        let configs = gateway_client_config::render_default_configs(&input);
+        let pi = configs.iter().find(|config| config.key == "pi").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&pi.blocks[0].content).unwrap();
+        assert_eq!(value["providers"]["oceans-llm"]["api"], "openai-responses");
     }
 
     #[test]

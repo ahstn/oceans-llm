@@ -20,6 +20,7 @@ fn input(policy: Option<ThinkingPolicy>) -> ClientConfigInput {
         context_window_tokens: Some(200_000),
         output_window_tokens: Some(64_000),
         capabilities: ClientModelCapabilities {
+            chat_completions: true,
             responses: true,
             tool_calling: true,
             attachments: true,
@@ -36,12 +37,69 @@ fn non_anthropic_input() -> ClientConfigInput {
         display_name: "Qwen Coder".to_string(),
         upstream_model: Some("qwen/qwen3-coder".to_string()),
         capabilities: ClientModelCapabilities {
+            chat_completions: true,
             responses: false,
             tool_calling: true,
             attachments: false,
             vision: false,
         },
         ..ClientConfigInput::default()
+    }
+}
+
+#[test]
+fn responses_only_models_use_responses_even_with_claude_aliases() {
+    for model_id in ["mantle-gpt", "zen-gpt", "claude-alias"] {
+        let mut input = non_anthropic_input();
+        input.model_id = model_id.into();
+        input.capabilities.chat_completions = false;
+        input.capabilities.responses = true;
+        input.gateway_base_url = "https://gateway.example/v1/".into();
+        let configs = render_default_configs(&input);
+        let pi = configs.iter().find(|config| config.key == "pi").unwrap();
+        let value: Value = serde_json::from_str(&pi.blocks[0].content).unwrap();
+        let provider = &value["providers"]["oceans-llm"];
+        assert_eq!(provider["api"], "openai-responses");
+        assert_eq!(provider["baseUrl"], "https://gateway.example/v1");
+        assert!(
+            provider.get("compat").is_none(),
+            "Chat-only flags must not reach the Responses adapter"
+        );
+        assert!(configs.iter().any(|config| config.key == "codex"));
+        assert!(!configs.iter().any(|config| config.key == "claude-code"));
+        let opencode = configs
+            .iter()
+            .find(|config| config.key == "opencode")
+            .unwrap();
+        assert!(opencode.blocks[0].content.contains("@ai-sdk/openai\""));
+    }
+}
+
+#[test]
+fn pi_groups_responses_chat_and_native_messages_without_losing_models() {
+    let chat = non_anthropic_input();
+    let mut responses = chat.clone();
+    responses.model_id = "responses-only".into();
+    responses.capabilities.chat_completions = false;
+    responses.capabilities.responses = true;
+    let native = input(Some(ThinkingPolicy::AnthropicSafeEffort));
+    let config =
+        PiConfigTemplate.render_many(&ClientConfigInputSet::new(vec![chat, responses, native]));
+    let value: Value = serde_json::from_str(&config.blocks[0].content).unwrap();
+    let providers = value["providers"].as_object().unwrap();
+    assert_eq!(providers.len(), 3);
+    for (suffix, api, model) in [
+        ("openai-compatible", "openai-completions", "qwen-coder"),
+        ("openai-responses", "openai-responses", "responses-only"),
+        (
+            "anthropic-messages-adaptive-thinking",
+            "anthropic-messages",
+            "claude-sonnet",
+        ),
+    ] {
+        let provider = &providers[&format!("oceans-llm-{suffix}")];
+        assert_eq!(provider["api"], api);
+        assert_eq!(provider["models"][0]["id"], model);
     }
 }
 
@@ -55,6 +113,7 @@ fn gemini_input(model_id: &str, upstream_model: &str) -> ClientConfigInput {
         context_window_tokens: Some(1_000_000),
         output_window_tokens: Some(65_536),
         capabilities: ClientModelCapabilities {
+            chat_completions: true,
             responses: false,
             tool_calling: true,
             attachments: true,
@@ -420,6 +479,7 @@ fn pi_fable_5_1_config_matches_expected_shape() {
         input_window_tokens: None,
         output_window_tokens: Some(128_000),
         capabilities: ClientModelCapabilities {
+            chat_completions: true,
             responses: false,
             tool_calling: true,
             attachments: false,
