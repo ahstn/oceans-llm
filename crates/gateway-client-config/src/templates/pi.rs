@@ -108,7 +108,9 @@ fn pi_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
 
 fn pi_base_url(input: &ClientConfigInput, style: ClientApiStyle) -> String {
     match style {
-        ClientApiStyle::OpenAiCompatible => input.openai_compatible_client_base_url(),
+        ClientApiStyle::OpenAiCompatible | ClientApiStyle::OpenAiResponses => {
+            input.openai_compatible_client_base_url()
+        }
         ClientApiStyle::AnthropicMessages => input.client_base_url(),
     }
 }
@@ -116,6 +118,7 @@ fn pi_base_url(input: &ClientConfigInput, style: ClientApiStyle) -> String {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum PiProviderGroup {
     OpenAiCompatible,
+    OpenAiResponses,
     AnthropicMessages,
     AnthropicMessagesAdaptiveThinking,
 }
@@ -124,6 +127,7 @@ impl PiProviderGroup {
     fn for_input(input: &ClientConfigInput) -> Self {
         match client_api_style(input) {
             ClientApiStyle::OpenAiCompatible => Self::OpenAiCompatible,
+            ClientApiStyle::OpenAiResponses => Self::OpenAiResponses,
             ClientApiStyle::AnthropicMessages
                 if input.thinking_policy == Some(ThinkingPolicy::AnthropicSafeEffort) =>
             {
@@ -136,6 +140,7 @@ impl PiProviderGroup {
     const fn api_style(self) -> ClientApiStyle {
         match self {
             Self::OpenAiCompatible => ClientApiStyle::OpenAiCompatible,
+            Self::OpenAiResponses => ClientApiStyle::OpenAiResponses,
             Self::AnthropicMessages | Self::AnthropicMessagesAdaptiveThinking => {
                 ClientApiStyle::AnthropicMessages
             }
@@ -228,7 +233,7 @@ fn pi_group_compat(group: PiProviderGroup, inputs: &[&ClientConfigInput]) -> Opt
         PiProviderGroup::OpenAiCompatible | PiProviderGroup::AnthropicMessagesAdaptiveThinking => {
             pi_provider_compat(inputs[0])
         }
-        PiProviderGroup::AnthropicMessages => None,
+        PiProviderGroup::AnthropicMessages | PiProviderGroup::OpenAiResponses => None,
     }
 }
 
@@ -243,6 +248,7 @@ fn provider_id_for_group(
 
     match group {
         PiProviderGroup::OpenAiCompatible => format!("{}-openai-compatible", input.provider_id),
+        PiProviderGroup::OpenAiResponses => format!("{}-openai-responses", input.provider_id),
         PiProviderGroup::AnthropicMessages => format!("{}-anthropic-messages", input.provider_id),
         PiProviderGroup::AnthropicMessagesAdaptiveThinking => {
             format!("{}-anthropic-messages-adaptive-thinking", input.provider_id)

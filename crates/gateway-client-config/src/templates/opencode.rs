@@ -103,7 +103,9 @@ fn opencode_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
 
 fn opencode_base_url(input: &ClientConfigInput, style: ClientApiStyle) -> String {
     match style {
-        ClientApiStyle::OpenAiCompatible => input.openai_compatible_client_base_url(),
+        ClientApiStyle::OpenAiCompatible | ClientApiStyle::OpenAiResponses => {
+            input.openai_compatible_client_base_url()
+        }
         ClientApiStyle::AnthropicMessages => input.client_base_url(),
     }
 }
@@ -209,6 +211,7 @@ fn provider_id_for_style(
 
     match style {
         ClientApiStyle::OpenAiCompatible => format!("{}-openai-compatible", input.provider_id),
+        ClientApiStyle::OpenAiResponses => format!("{}-openai-responses", input.provider_id),
         ClientApiStyle::AnthropicMessages => format!("{}-anthropic-messages", input.provider_id),
     }
 }
@@ -224,6 +227,7 @@ fn provider_name_for_style(
 
     match style {
         ClientApiStyle::OpenAiCompatible => format!("{} OpenAI-compatible", input.provider_name),
+        ClientApiStyle::OpenAiResponses => format!("{} Responses", input.provider_name),
         ClientApiStyle::AnthropicMessages => format!("{} Anthropic Messages", input.provider_name),
     }
 }

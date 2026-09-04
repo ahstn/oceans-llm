@@ -277,9 +277,7 @@ impl OpenAiCompatProvider {
         context: &ProviderRequestContext,
         bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
-        let mut stream_request = request.clone();
-        stream_request.stream = true;
-        let wire_request = core_chat_request_to_openai(&stream_request);
+        let wire_request = core_chat_request_to_openai(request);
         let mut body = serde_json::to_value(wire_request)
             .map_err(|error| ProviderError::Transport(error.to_string()))?;
 
@@ -339,9 +337,7 @@ impl OpenAiCompatProvider {
         context: &ProviderRequestContext,
         bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
-        let mut stream_request = request.clone();
-        stream_request.stream = true;
-        let wire_request = core_responses_request_to_openai(&stream_request);
+        let wire_request = core_responses_request_to_openai(request);
         let mut body = serde_json::to_value(wire_request)
             .map_err(|error| ProviderError::Transport(error.to_string()))?;
 
@@ -422,6 +418,8 @@ impl OpenAiCompatProvider {
         apply_openai_compat_empty_tools_profile(&mut body, context)?;
         if apply_compatibility_profile {
             apply_openai_compat_request_profile(&mut body, context);
+        }
+        if matches!(endpoint_suffix, "chat/completions" | "responses") {
             apply_openrouter_routing_policy(&mut body, context)?;
         }
         if let Some(object) = body.as_object_mut()
@@ -1326,20 +1324,52 @@ mod tests {
     }
 
     #[test]
-    fn openrouter_policy_is_not_applied_to_responses_requests() {
+    fn openrouter_policy_overrides_caller_and_route_fields_for_both_responses_modes() {
         let provider = provider();
-        let request = responses_request(false);
-        let context = context_with_openrouter_policy(OpenRouterProviderRouting {
+        let mut request = responses_request(false);
+        request
+            .extra
+            .insert("provider".into(), json!({"zdr": false, "only": ["other"]}));
+        let mut context = context_with_openrouter_policy(OpenRouterProviderRouting {
             zdr: Some(true),
+            only: vec!["openai".into()],
+            ignore: vec!["other".into()],
+            max_price: Some(OpenRouterMaxPrice {
+                prompt: Some(1.0),
+                ..Default::default()
+            }),
             ..Default::default()
         });
+        context
+            .extra_body
+            .insert("provider".into(), json!({"zdr": false}));
+        for built in [
+            provider.build_responses_request(&request, &context),
+            provider.build_responses_stream_request(&request, &context),
+        ] {
+            let body = request_body_json(&built.expect("build request"));
+            assert_eq!(
+                body["provider"],
+                json!({"zdr":true,"only":["openai"],"ignore":["other"],"max_price":{"prompt":1.0}})
+            );
+            assert_eq!(body["reasoning"], json!({"effort":"medium"}));
+            assert_eq!(body.get("tools"), request.tools.as_ref());
+        }
+    }
 
-        let built = provider
-            .build_responses_request(&request, &context)
-            .expect("build request");
-        let body_json = request_body_json(&built);
-
-        assert!(body_json.get("provider").is_none());
+    #[test]
+    fn responses_without_route_policy_preserves_caller_provider_preferences() {
+        let mut request = responses_request(false);
+        request
+            .extra
+            .insert("provider".into(), json!({"only":["openai"]}));
+        let built = provider()
+            .build_responses_request(&request, &default_context())
+            .unwrap();
+        assert_eq!(
+            request_body_json(&built)["provider"],
+            json!({"only":["openai"]})
+        );
     }
 
     #[test]

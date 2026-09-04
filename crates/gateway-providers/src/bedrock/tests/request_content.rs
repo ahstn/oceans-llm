@@ -1,6 +1,56 @@
 use super::*;
 
 #[test]
+fn empty_system_strings_are_omitted_on_both_messages_targets() {
+    let request = CoreChatRequest {
+        model: "claude".into(),
+        messages: vec![
+            message("system", ""),
+            message("developer", ""),
+            message("user", "hello"),
+        ],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".into(), json!(64))]),
+    };
+    for target in [
+        AnthropicMessagesTarget::RuntimeInvoke,
+        AnthropicMessagesTarget::MantleMessages,
+    ] {
+        let body = map_chat_request_to_anthropic_messages_target(
+            &request,
+            &context("anthropic.claude-sonnet-4-6"),
+            target,
+        )
+        .unwrap();
+        assert!(body.get("system").is_none());
+        assert_eq!(body["messages"][0]["content"][0]["text"], "hello");
+    }
+}
+
+#[test]
+fn native_system_cache_blocks_survive_both_messages_targets() {
+    let native = serde_json::from_value(json!({
+        "model": "claude", "max_tokens": 64,
+        "system": [{"type": "text", "text": "stable", "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+                   {"type": "text", "text": "suffix"}],
+        "messages": [{"role": "user", "content": "hello"}]
+    })).unwrap();
+    let request = gateway_core::anthropic_messages_request_to_core(&native);
+    for target in [
+        AnthropicMessagesTarget::RuntimeInvoke,
+        AnthropicMessagesTarget::MantleMessages,
+    ] {
+        let body = map_chat_request_to_anthropic_messages_target(
+            &request,
+            &context("anthropic.claude-sonnet-4-6"),
+            target,
+        )
+        .unwrap();
+        assert_eq!(&body["system"], native.system.as_ref().unwrap());
+    }
+}
+
+#[test]
 fn maps_text_chat_request_to_converse_body() {
     let request = CoreChatRequest {
         model: "claude".to_string(),
@@ -75,7 +125,7 @@ fn maps_text_chat_request_to_anthropic_messages_invoke_body() {
         json!({
             "anthropic_version": "bedrock-2023-05-31",
             "anthropic_beta": ["token-efficient-tools-2025-02-19"],
-            "system": "Be terse.\nPrefer SI units.",
+            "system": [{"type": "text", "text": "Be terse."}, {"type": "text", "text": "Prefer SI units."}],
             "messages": [{
                 "role": "user",
                 "content": [{"type": "text", "text": "Hello"}]

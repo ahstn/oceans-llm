@@ -72,10 +72,7 @@ pub fn map_anthropic_request(
         && !body.contains_key("system")
         && !context.extra_body.contains_key("system")
     {
-        body.insert(
-            "system".to_string(),
-            Value::String(instructions.join("\n\n")),
-        );
+        body.insert("system".to_string(), Value::Array(instructions));
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
@@ -103,6 +100,7 @@ pub fn map_anthropic_request(
     body.insert("stream".to_string(), Value::Bool(stream));
 
     convert_openai_tools_for_anthropic(&mut body, &context.upstream_model)?;
+    super::controls::translate_chat_controls(&mut body)?;
     apply_anthropic_thinking_compatibility(&mut body, &context.upstream_model)?;
     validate_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
 
@@ -111,14 +109,14 @@ pub fn map_anthropic_request(
 
 fn map_chat_messages(
     messages: &[CoreChatMessage],
-) -> Result<(Vec<Value>, Vec<String>), ProviderError> {
+) -> Result<(Vec<Value>, Vec<Value>), ProviderError> {
     let mut mapped_messages = Vec::with_capacity(messages.len());
     let mut instructions = Vec::new();
 
     for message in messages {
         match message.role.as_str() {
             "system" | "developer" => {
-                instructions.push(message_content_as_text(&message.content)?);
+                append_system_blocks(&mut instructions, &message.content)?;
             }
             "user" => {
                 let content = map_anthropic_message_content(message, false)?;
@@ -150,6 +148,42 @@ fn map_chat_messages(
     }
 
     Ok((mapped_messages, instructions))
+}
+
+/// Preserve native block boundaries, including cache breakpoints and their TTL.
+pub(crate) fn append_system_blocks(
+    blocks: &mut Vec<Value>,
+    content: &Value,
+) -> Result<(), AnthropicAdapterError> {
+    match content {
+        Value::Null => {}
+        Value::String(text) if text.is_empty() => {}
+        Value::String(text) => blocks.push(json!({"type": "text", "text": text})),
+        Value::Array(items) => {
+            for item in items {
+                let object = item
+                    .as_object()
+                    .ok_or(AnthropicAdapterError::InvalidContentEntry)?;
+                let kind = object
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .ok_or(AnthropicAdapterError::MissingContentType)?;
+                if !matches!(kind, "text" | "input_text") {
+                    return Err(AnthropicAdapterError::InvalidSystemContentType);
+                }
+                if !object.get("text").is_some_and(Value::is_string) {
+                    return Err(AnthropicAdapterError::MissingContentText);
+                }
+                let mut block = object.clone();
+                if kind == "input_text" {
+                    block.insert("type".into(), Value::String("text".into()));
+                }
+                blocks.push(Value::Object(block));
+            }
+        }
+        _ => return Err(AnthropicAdapterError::InvalidMessageContent),
+    }
+    Ok(())
 }
 
 fn map_anthropic_message_content(

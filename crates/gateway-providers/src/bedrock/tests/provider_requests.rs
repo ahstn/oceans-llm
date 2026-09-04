@@ -1,5 +1,54 @@
 use super::*;
 
+#[tokio::test]
+async fn openai_transport_mode_wins_over_body_overrides() {
+    let provider = mantle_bearer_provider();
+    for stream in [false, true] {
+        let mut chat_context = context_with_api_style(
+            "openai.gpt",
+            AwsBedrockApiStyle::MantleOpenaiChat,
+            Some("/v1"),
+        );
+        chat_context
+            .extra_body
+            .insert("stream".into(), json!(!stream));
+        let chat = CoreChatRequest {
+            model: "gpt".into(),
+            messages: vec![message("user", "hello")],
+            stream: !stream,
+            extra: Default::default(),
+        };
+        let built = if stream {
+            provider
+                .build_chat_stream_request(&chat, &chat_context)
+                .await
+        } else {
+            provider.build_chat_request(&chat, &chat_context).await
+        }
+        .unwrap();
+        let body: Value =
+            serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).unwrap();
+        assert_eq!(body["stream"], stream);
+        assert_eq!(body["messages"][0]["content"], "hello");
+        let mut responses_context = context_with_api_style(
+            "openai.gpt",
+            AwsBedrockApiStyle::MantleOpenaiResponses,
+            Some("/v1"),
+        );
+        responses_context
+            .extra_body
+            .insert("stream".into(), json!(!stream));
+        let built = provider
+            .build_responses_request(&responses_request(!stream), &responses_context, stream)
+            .await
+            .unwrap();
+        let body: Value =
+            serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).unwrap();
+        assert_eq!(body["stream"], stream);
+        assert_eq!(body["input"][0]["content"], "hello");
+    }
+}
+
 #[test]
 fn provider_capabilities_include_responses_for_mantle_routes() {
     let capabilities = mantle_bearer_provider().capabilities();
