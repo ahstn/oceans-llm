@@ -46,22 +46,19 @@ jobs:
         with:
           install_args: rust
 
+      - name: Cache Cargo artifacts
+        uses: ./.github/actions/rust-cache
+
       - name: Check Rust formatting
         run: mise run rust-fmt-check
 
       - name: Lint Rust workspace
         run: mise run rust-lint
 
-      - name: Run gateway-store Postgres check
-        run: mise run //crates/gateway-store:check
-
-      - name: Test Rust workspace
-        run: mise run rust-test
-
-      - name: Run gateway-store Postgres tests
+      - name: Test Rust workspace including Postgres
         env:
           TEST_POSTGRES_URL: ${{ env.POSTGRES_CONNECTION }}
-        run: mise run //crates/gateway-store:test:postgres
+        run: mise run rust-test
 
       - name: Run gateway Postgres smoke checks
         env:

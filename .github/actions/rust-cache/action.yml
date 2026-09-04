@@ -1,0 +1,23 @@
+name: Cache Cargo artifacts
+description: Cache Cargo dependencies and both configured artifact directories after mise setup.
+
+runs:
+  using: composite
+  steps:
+    - name: Locate Cargo artifact directories
+      id: directories
+      shell: bash
+      run: |
+        metadata="$(mise exec -- cargo metadata --format-version 1 --no-deps)"
+        build_dir="$(jq -r '.build_directory' <<< "$metadata")"
+        target_dir="$(jq -r '.target_directory' <<< "$metadata")"
+        echo "build=$(realpath -m --relative-to="$GITHUB_WORKSPACE" "$build_dir")" >> "$GITHUB_OUTPUT"
+        echo "target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" "$target_dir")" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Cargo cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        cmd-format: mise exec -- {0}
+        workspaces: |
+          . -> ${{ steps.directories.outputs.build }}
+          . -> ${{ steps.directories.outputs.target }}
