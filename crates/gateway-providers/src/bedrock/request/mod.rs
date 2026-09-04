@@ -404,10 +404,7 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     for message in &request.messages {
         match message.role.as_str() {
             "system" | "developer" => {
-                let text = message_content_as_text(&message.content)?;
-                if !text.is_empty() {
-                    system.push(text);
-                }
+                crate::anthropic::request::append_system_blocks(&mut system, &message.content)?;
             }
             "user" => {
                 messages.push(json!({
@@ -453,7 +450,7 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     }
 
     if !system.is_empty() {
-        body.insert("system".to_string(), Value::String(system.join("\n")));
+        body.insert("system".to_string(), Value::Array(system));
     }
     body.insert("messages".to_string(), Value::Array(messages));
 

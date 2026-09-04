@@ -664,7 +664,10 @@ async fn builds_claude_messages_request_with_authoritative_contract() {
     assert_eq!(anthropic_version, "2023-06-01");
     assert_eq!(plugin_version, DEFAULT_COPILOT_PLUGIN_VERSION);
     assert_eq!(body["model"], "claude-3-7-sonnet");
-    assert_eq!(body["system"], "System prompt");
+    assert_eq!(
+        body["system"],
+        json!([{"type": "text", "text": "System prompt"}])
+    );
     assert_eq!(body["messages"][0]["role"], "user");
     assert_eq!(body["messages"][0]["content"][0]["text"], "Hello Claude");
     assert_eq!(body["max_tokens"], 4096);
