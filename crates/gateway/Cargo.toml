@@ -45,5 +45,6 @@ uuid.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
+serial_test = "4"
 tempfile = "3"
 url.workspace = true

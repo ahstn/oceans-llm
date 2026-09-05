@@ -1,7 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use gateway_providers::{BearerAuthHeader, BedrockEndpointKind};
+use anyhow::{Context, bail};
+use gateway_providers::{BearerAuthHeader, BedrockEndpointKind, BedrockProviderConfig};
+use gateway_service::{ProviderIconKey, is_supported_pricing_provider_id};
 use serde::{Deserialize, Serialize};
+
+use super::references::{resolve_copilot_private_key, resolve_secret_reference};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -301,4 +305,526 @@ impl GcpVertexProviderConfig {
             .clone()
             .unwrap_or_else(|| gateway_providers::vertex_api_host_for_location(&self.location))
     }
+}
+
+pub(super) fn validate_providers(providers: &[ProviderConfig]) -> anyhow::Result<()> {
+    let mut provider_ids = BTreeSet::new();
+    for provider in providers {
+        if !provider_ids.insert(provider.id()) {
+            bail!("duplicate provider id `{}`", provider.id());
+        }
+        match provider {
+            ProviderConfig::OpenAiCompat(provider) => provider.validate()?,
+            ProviderConfig::AnthropicCompat(provider) => provider.validate()?,
+            ProviderConfig::GcpCloudRunOpenAiCompat(provider) => provider.validate()?,
+            ProviderConfig::GcpVertex(provider) => provider.validate()?,
+            ProviderConfig::AwsBedrock(provider) => provider.validate()?,
+            ProviderConfig::GitHubCopilot(provider) => provider.validate()?,
+        }
+    }
+    Ok(())
+}
+
+impl OpenAiCompatProviderConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.id.trim().is_empty() {
+            bail!("openai_compat provider id cannot be empty");
+        }
+        if self.base_url.trim().is_empty() {
+            bail!(
+                "openai_compat provider `{}` base_url cannot be empty",
+                self.id
+            );
+        }
+        validate_http_url(
+            &self.base_url,
+            &format!("openai_compat provider `{}` base_url", self.id),
+        )?;
+        if self.pricing_provider_id.trim().is_empty() {
+            bail!(
+                "openai_compat provider `{}` pricing_provider_id cannot be empty",
+                self.id
+            );
+        }
+        if !is_supported_pricing_provider_id(&self.pricing_provider_id) {
+            bail!(
+                "openai_compat provider `{}` pricing_provider_id `{}` is not supported",
+                self.id,
+                self.pricing_provider_id
+            );
+        }
+        if let Some(batch) = &self.batch {
+            if let Some(base_url) = batch.base_url.as_deref() {
+                if base_url.trim().is_empty() {
+                    bail!(
+                        "openai_compat provider `{}` batch.base_url cannot be empty",
+                        self.id
+                    );
+                }
+                let parsed = url::Url::parse(base_url).with_context(|| {
+                    format!(
+                        "openai_compat provider `{}` batch.base_url is invalid",
+                        self.id
+                    )
+                })?;
+                if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+                    bail!(
+                        "openai_compat provider `{}` batch.base_url must be an HTTP URL with a host",
+                        self.id
+                    );
+                }
+            }
+            if batch.dialect == OpenAiBatchDialectConfig::OpenRouter && batch.base_url.is_none() {
+                bail!(
+                    "openai_compat provider `{}` OpenRouter batch mode requires batch.base_url",
+                    self.id
+                );
+            }
+        }
+        validate_provider_display_config(self.id.as_str(), self.display.as_ref())?;
+        Ok(())
+    }
+}
+
+impl AnthropicCompatProviderConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.id.trim().is_empty() {
+            bail!("anthropic_compat provider id cannot be empty");
+        }
+        if self.base_url.trim().is_empty() {
+            bail!(
+                "anthropic_compat provider `{}` base_url cannot be empty",
+                self.id
+            );
+        }
+        let parsed = url::Url::parse(&self.base_url).with_context(|| {
+            format!(
+                "anthropic_compat provider `{}` base_url is invalid",
+                self.id
+            )
+        })?;
+        if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+            bail!(
+                "anthropic_compat provider `{}` base_url must be an HTTP URL with a host",
+                self.id
+            );
+        }
+        if parsed.query().is_some() || parsed.fragment().is_some() {
+            bail!(
+                "anthropic_compat provider `{}` base_url cannot include query parameters or fragments",
+                self.id
+            );
+        }
+        if self.pricing_provider_id.trim().is_empty() {
+            bail!(
+                "anthropic_compat provider `{}` pricing_provider_id cannot be empty",
+                self.id
+            );
+        }
+        if !is_supported_pricing_provider_id(&self.pricing_provider_id) {
+            bail!(
+                "anthropic_compat provider `{}` pricing_provider_id `{}` is not supported",
+                self.id,
+                self.pricing_provider_id
+            );
+        }
+        validate_provider_display_config(self.id.as_str(), self.display.as_ref())?;
+        Ok(())
+    }
+}
+
+impl GcpCloudRunOpenAiCompatProviderConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.id.trim().is_empty() {
+            bail!("gcp_cloud_run_openai_compat provider id cannot be empty");
+        }
+        validate_cloud_run_base_url(&self.id, &self.base_url)?;
+        if self.pricing_provider_id.trim().is_empty() {
+            bail!(
+                "gcp_cloud_run_openai_compat provider `{}` pricing_provider_id cannot be empty",
+                self.id
+            );
+        }
+        if !is_supported_pricing_provider_id(&self.pricing_provider_id) {
+            bail!(
+                "gcp_cloud_run_openai_compat provider `{}` pricing_provider_id `{}` is not supported",
+                self.id,
+                self.pricing_provider_id
+            );
+        }
+        if let Some(audience) = self.audience.as_deref()
+            && audience.trim().is_empty()
+        {
+            bail!(
+                "gcp_cloud_run_openai_compat provider `{}` audience cannot be empty",
+                self.id
+            );
+        }
+        match &self.auth {
+            GcpCloudRunOpenAiCompatAuthConfig::Adc => {}
+            GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { credentials_path } => {
+                if credentials_path.trim().is_empty() {
+                    bail!(
+                        "gcp_cloud_run_openai_compat provider `{}` service_account.credentials_path cannot be empty",
+                        self.id
+                    );
+                }
+            }
+            GcpCloudRunOpenAiCompatAuthConfig::Bearer { token } => {
+                if token.trim().is_empty() {
+                    bail!(
+                        "gcp_cloud_run_openai_compat provider `{}` bearer.token cannot be empty",
+                        self.id
+                    );
+                }
+            }
+        }
+        validate_provider_display_config(self.id.as_str(), self.display.as_ref())?;
+        Ok(())
+    }
+}
+
+impl GcpVertexProviderConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.id.trim().is_empty() {
+            bail!("gcp_vertex provider id cannot be empty");
+        }
+        if self.project_id.trim().is_empty() {
+            bail!(
+                "gcp_vertex provider `{}` project_id cannot be empty",
+                self.id
+            );
+        }
+        if self.location.trim().is_empty() {
+            bail!("gcp_vertex provider `{}` location cannot be empty", self.id);
+        }
+        if self
+            .api_host
+            .as_deref()
+            .is_some_and(|host| host.trim().is_empty())
+        {
+            bail!("gcp_vertex provider `{}` api_host cannot be empty", self.id);
+        }
+        if let Some(batch) = &self.batch {
+            if batch.dataset.trim().is_empty() {
+                bail!(
+                    "gcp_vertex provider `{}` batch.dataset cannot be empty",
+                    self.id
+                );
+            }
+            if batch
+                .bigquery_project_id
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+            {
+                bail!(
+                    "gcp_vertex provider `{}` batch.bigquery_project_id cannot be empty",
+                    self.id
+                );
+            }
+        }
+
+        match &self.auth {
+            GcpVertexAuthConfig::Adc => {}
+            GcpVertexAuthConfig::ServiceAccount { credentials_path } => {
+                if credentials_path.trim().is_empty() {
+                    bail!(
+                        "gcp_vertex provider `{}` service_account.credentials_path cannot be empty",
+                        self.id
+                    );
+                }
+            }
+            GcpVertexAuthConfig::Bearer { token } => {
+                if token.trim().is_empty() {
+                    bail!(
+                        "gcp_vertex provider `{}` bearer.token cannot be empty",
+                        self.id
+                    );
+                }
+            }
+        }
+
+        validate_provider_display_config(self.id.as_str(), self.display.as_ref())?;
+        Ok(())
+    }
+}
+
+impl AwsBedrockProviderConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.id.trim().is_empty() {
+            bail!("aws_bedrock provider id cannot be empty");
+        }
+        if self.region.trim().is_empty() {
+            bail!("aws_bedrock provider `{}` region cannot be empty", self.id);
+        }
+        if let Some(endpoint_url) = self.endpoint_url.as_deref() {
+            validate_bedrock_endpoint_url(&self.id, endpoint_url)?;
+        }
+        let _ = BedrockProviderConfig::resolved_endpoint_url(
+            self.endpoint_kind,
+            self.region.trim(),
+            self.endpoint_url.as_deref(),
+        )
+        .with_context(|| format!("aws_bedrock provider `{}` endpoint_url is invalid", self.id))?;
+        match &self.auth {
+            AwsBedrockAuthConfig::DefaultChain => {}
+            AwsBedrockAuthConfig::Bearer { token } => {
+                if token.trim().is_empty() {
+                    bail!(
+                        "aws_bedrock provider `{}` bearer.token cannot be empty",
+                        self.id
+                    );
+                }
+                let _ = resolve_secret_reference(token)
+                    .with_context(|| format!("aws_bedrock provider `{}` bearer.token", self.id))?;
+            }
+            AwsBedrockAuthConfig::StaticCredentials {
+                access_key_id,
+                secret_access_key,
+                session_token,
+            } => {
+                let access_key_id = resolve_secret_reference(access_key_id).with_context(|| {
+                    format!(
+                        "aws_bedrock provider `{}` static_credentials.access_key_id",
+                        self.id
+                    )
+                })?;
+                if access_key_id.trim().is_empty() {
+                    bail!(
+                        "aws_bedrock provider `{}` static_credentials.access_key_id cannot be empty",
+                        self.id
+                    );
+                }
+                let secret_access_key =
+                    resolve_secret_reference(secret_access_key).with_context(|| {
+                        format!(
+                            "aws_bedrock provider `{}` static_credentials.secret_access_key",
+                            self.id
+                        )
+                    })?;
+                if secret_access_key.trim().is_empty() {
+                    bail!(
+                        "aws_bedrock provider `{}` static_credentials.secret_access_key cannot be empty",
+                        self.id
+                    );
+                }
+                if let Some(session_token) = session_token {
+                    let session_token =
+                        resolve_secret_reference(session_token).with_context(|| {
+                            format!(
+                                "aws_bedrock provider `{}` static_credentials.session_token",
+                                self.id
+                            )
+                        })?;
+                    if session_token.trim().is_empty() {
+                        bail!(
+                            "aws_bedrock provider `{}` static_credentials.session_token cannot be empty",
+                            self.id
+                        );
+                    }
+                }
+            }
+        }
+        validate_provider_display_config(self.id.as_str(), self.display.as_ref())?;
+        Ok(())
+    }
+}
+
+impl GitHubCopilotProviderConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.id.trim().is_empty() {
+            bail!("github_copilot provider id cannot be empty");
+        }
+        if self.base_url.trim().is_empty() {
+            bail!(
+                "github_copilot provider `{}` base_url cannot be empty",
+                self.id
+            );
+        }
+        validate_http_url(
+            &self.base_url,
+            &format!("github_copilot provider `{}` base_url", self.id),
+        )?;
+        if let Some(github_api_url) = self.github_api_url.as_deref() {
+            validate_http_url(
+                github_api_url,
+                &format!("github_copilot provider `{}` github_api_url", self.id),
+            )?;
+        }
+        if self.editor_version.trim().is_empty() {
+            bail!(
+                "github_copilot provider `{}` editor_version cannot be empty",
+                self.id
+            );
+        }
+        if self.integration_id.trim().is_empty() {
+            bail!(
+                "github_copilot provider `{}` integration_id cannot be empty",
+                self.id
+            );
+        }
+        if let Some(pricing_provider_id) = self.pricing_provider_id.as_deref() {
+            if pricing_provider_id.trim().is_empty() {
+                bail!(
+                    "github_copilot provider `{}` pricing_provider_id cannot be empty",
+                    self.id
+                );
+            }
+            if !is_supported_pricing_provider_id(pricing_provider_id) {
+                bail!(
+                    "github_copilot provider `{}` specifies unsupported pricing_provider_id `{pricing_provider_id}`",
+                    self.id
+                );
+            }
+        }
+        match &self.auth {
+            GitHubCopilotAuthConfig::GitHubApp {
+                app_id,
+                private_key,
+                installation_id,
+                repository_id,
+            } => {
+                if *app_id == 0 {
+                    bail!(
+                        "github_copilot provider `{}` auth.app_id cannot be 0",
+                        self.id
+                    );
+                }
+                if *installation_id == 0 {
+                    bail!(
+                        "github_copilot provider `{}` auth.installation_id cannot be 0",
+                        self.id
+                    );
+                }
+                if *repository_id == 0 {
+                    bail!(
+                        "github_copilot provider `{}` auth.repository_id cannot be 0",
+                        self.id
+                    );
+                }
+                if private_key.trim().is_empty() {
+                    bail!(
+                        "github_copilot provider `{}` auth.private_key cannot be empty",
+                        self.id
+                    );
+                }
+                let _ = resolve_copilot_private_key(private_key).with_context(|| {
+                    format!("github_copilot provider `{}` auth.private_key", self.id)
+                })?;
+            }
+            GitHubCopilotAuthConfig::GitHubUser => {}
+            GitHubCopilotAuthConfig::Bearer { token } => {
+                if token.trim().is_empty() {
+                    bail!(
+                        "github_copilot provider `{}` bearer.token cannot be empty",
+                        self.id
+                    );
+                }
+                let _ = resolve_secret_reference(token).with_context(|| {
+                    format!("github_copilot provider `{}` bearer.token", self.id)
+                })?;
+            }
+        }
+        validate_provider_display_config(self.id.as_str(), self.display.as_ref())?;
+        Ok(())
+    }
+}
+
+fn validate_cloud_run_base_url(provider_id: &str, base_url: &str) -> anyhow::Result<()> {
+    let trimmed = base_url.trim();
+    if trimmed.is_empty() {
+        bail!("gcp_cloud_run_openai_compat provider `{provider_id}` base_url cannot be empty");
+    }
+    if trimmed.len() != base_url.len() {
+        bail!(
+            "gcp_cloud_run_openai_compat provider `{provider_id}` base_url cannot include leading or trailing whitespace"
+        );
+    }
+
+    let parsed = url::Url::parse(base_url).map_err(|error| {
+        anyhow::anyhow!(
+            "gcp_cloud_run_openai_compat provider `{provider_id}` base_url `{base_url}` is invalid: {error}"
+        )
+    })?;
+
+    if parsed.scheme() != "https" {
+        bail!("gcp_cloud_run_openai_compat provider `{provider_id}` base_url must use https");
+    }
+    if parsed.host().is_none() {
+        bail!("gcp_cloud_run_openai_compat provider `{provider_id}` base_url must include a host");
+    }
+
+    Ok(())
+}
+pub(super) fn resolved_cloud_run_audience(
+    configured_audience: Option<&str>,
+    base_url: &str,
+) -> anyhow::Result<String> {
+    if let Some(audience) = configured_audience {
+        let trimmed = audience.trim();
+        if trimmed.is_empty() {
+            bail!("audience cannot be empty");
+        }
+        return Ok(trimmed.to_string());
+    }
+
+    let mut parsed = url::Url::parse(base_url.trim())
+        .with_context(|| format!("base_url `{base_url}` is invalid"))?;
+    parsed.set_path("/");
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+    Ok(parsed.to_string())
+}
+fn validate_bedrock_endpoint_url(provider_id: &str, endpoint_url: &str) -> anyhow::Result<()> {
+    if endpoint_url.trim().is_empty() {
+        bail!("aws_bedrock provider `{provider_id}` endpoint_url cannot be empty");
+    }
+
+    let parsed = url::Url::parse(endpoint_url).map_err(|error| {
+        anyhow::anyhow!(
+            "aws_bedrock provider `{provider_id}` endpoint_url `{endpoint_url}` is invalid: {error}"
+        )
+    })?;
+
+    match parsed.scheme() {
+        "http" | "https" => {}
+        scheme => bail!(
+            "aws_bedrock provider `{provider_id}` endpoint_url scheme `{scheme}` is not supported"
+        ),
+    }
+    if parsed.host().is_none() {
+        bail!("aws_bedrock provider `{provider_id}` endpoint_url must include a host");
+    }
+
+    Ok(())
+}
+fn validate_provider_display_config(
+    provider_id: &str,
+    display: Option<&ProviderDisplayConfig>,
+) -> anyhow::Result<()> {
+    let Some(display) = display else {
+        return Ok(());
+    };
+
+    if let Some(label) = display.label.as_deref()
+        && label.trim().is_empty()
+    {
+        bail!("provider `{provider_id}` display.label cannot be empty");
+    }
+
+    if let Some(icon_key) = display.icon_key.as_deref()
+        && ProviderIconKey::parse(icon_key).is_none()
+    {
+        bail!("provider `{provider_id}` display.icon_key `{icon_key}` is not supported");
+    }
+
+    Ok(())
+}
+
+fn validate_http_url(value: &str, field: &str) -> anyhow::Result<()> {
+    let parsed = url::Url::parse(value).with_context(|| format!("{field} is invalid"))?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        bail!("{field} must be an HTTP URL with a host");
+    }
+    Ok(())
 }

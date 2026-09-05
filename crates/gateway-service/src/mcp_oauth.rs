@@ -537,11 +537,42 @@ mod tests {
         assert_eq!(error.error_code(), "invalid_request");
     }
 
-    #[test]
-    fn oauth_endpoint_error_does_not_include_provider_response_details() {
-        let error = oauth_endpoint_error(reqwest::StatusCode::BAD_REQUEST);
-        assert_eq!(error.error_code(), "upstream_transport");
-        assert!(!error.to_string().contains("invalid_grant"));
+    #[tokio::test]
+    async fn token_response_errors_do_not_expose_provider_details() {
+        for (status, body, expected_code) in [
+            (
+                400,
+                r#"{"error":"invalid_grant","error_description":"private-refresh-token"}"#,
+                "upstream_transport",
+            ),
+            (
+                200,
+                r#"{"error":"invalid_grant","access_token":"private-access-token"}"#,
+                "upstream_transport",
+            ),
+            (
+                503,
+                r#"{"error":"private-provider-detail"}"#,
+                "upstream_http_error",
+            ),
+            (
+                400,
+                "malformed private-provider-detail",
+                "upstream_http_error",
+            ),
+        ] {
+            let response = axum::http::Response::builder()
+                .status(status)
+                .body(body)
+                .expect("token response")
+                .into();
+            let error = parse_token_response(response, "google", "resource", &[], None)
+                .await
+                .expect_err("provider error must be rejected");
+            assert_eq!(error.error_code(), expected_code);
+            assert!(!error.to_string().contains("private-"));
+            assert!(!error.to_string().contains("invalid_grant"));
+        }
     }
 
     #[test]

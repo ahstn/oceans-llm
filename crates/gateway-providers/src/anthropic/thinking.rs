@@ -2,54 +2,10 @@ use serde_json::{Map, Value, json};
 
 use super::error::AnthropicAdapterError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClaudeThinkingPolicy {
-    AdaptiveOnly,
-    AdaptivePreferred,
-    ManualWithEffort,
-    ManualOnly,
-    MythosPreview,
-}
-
-#[must_use]
-pub fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
-    let model = upstream_model.to_ascii_lowercase();
-    if model.contains("claude-mythos-preview") {
-        ClaudeThinkingPolicy::MythosPreview
-    } else if is_adaptive_only_claude(&model) {
-        ClaudeThinkingPolicy::AdaptiveOnly
-    } else if model.contains("claude-opus-4-6") || model.contains("claude-sonnet-4-6") {
-        ClaudeThinkingPolicy::AdaptivePreferred
-    } else if model.contains("claude-opus-4-5") {
-        ClaudeThinkingPolicy::ManualWithEffort
-    } else {
-        ClaudeThinkingPolicy::ManualOnly
-    }
-}
-
-pub fn is_adaptive_only_claude(model: &str) -> bool {
-    is_opus_4_7_or_later(model)
-        || contains_exact_claude_model_marker(model, "claude-fable-5")
-        || contains_exact_claude_model_marker(model, "claude-sonnet-5")
-}
-
-pub fn contains_exact_claude_model_marker(model: &str, marker: &str) -> bool {
-    model.split(marker).skip(1).any(|rest| {
-        rest.chars().next().is_none_or(|ch| {
-            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']' | '-')
-        })
-    })
-}
-
-fn is_opus_4_7_or_later(model: &str) -> bool {
-    let Some(rest) = model.split("claude-opus-4-").nth(1) else {
-        return false;
-    };
-    rest.split(|ch: char| !ch.is_ascii_digit())
-        .next()
-        .and_then(|minor| minor.parse::<u16>().ok())
-        .is_some_and(|minor| minor >= 7)
-}
+pub use super::model::{
+    ClaudeThinkingPolicy, claude_thinking_policy, contains_exact_claude_model_marker,
+    is_adaptive_only_claude,
+};
 
 const ADAPTIVE_EFFORT_LEVELS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 

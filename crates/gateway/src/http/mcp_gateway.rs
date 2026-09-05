@@ -518,7 +518,7 @@ async fn guard_mcp_sse_result(
         if data == "[DONE]" {
             continue;
         }
-        let parsed = parse_guarded_mcp_sse_json(&data).map_err(|_| None)?;
+        let parsed = serde_json::from_str::<Value>(&data).map_err(|_| None)?;
         let (payload_field, payload) = guarded_mcp_sse_payload(&parsed);
         event_by_block[block_index] = Some(event_values.len());
         event_values.push(payload);
@@ -591,10 +591,6 @@ async fn guard_mcp_sse_result(
         .collect::<Vec<_>>()
         .join(&event_separator);
     Ok((Bytes::from(rendered), Some(evaluation)))
-}
-
-fn parse_guarded_mcp_sse_json(data: &str) -> serde_json::Result<Value> {
-    serde_json::from_str(data)
 }
 
 fn guarded_mcp_sse_payload(value: &Value) -> (Option<&'static str>, Value) {
@@ -955,97 +951,4 @@ fn mcp_error_response(error: GatewayError) -> Response<Body> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::http::{HeaderMap, HeaderValue};
-
-    #[test]
-    fn guarded_mcp_sse_rejects_non_json_data() {
-        assert!(parse_guarded_mcp_sse_json("private content").is_err());
-    }
-
-    #[test]
-    fn guarded_mcp_sse_extracts_enveloped_and_bare_payloads() {
-        let result = json!({"jsonrpc": "2.0", "id": 1, "result": {"content": "allowed"}});
-        let error = json!({"jsonrpc": "2.0", "id": 1, "error": {"message": "private content"}});
-        let bare = json!({"content": "non-standard"});
-
-        assert_eq!(
-            guarded_mcp_sse_payload(&result),
-            (Some("result"), json!({"content": "allowed"}))
-        );
-        assert_eq!(
-            guarded_mcp_sse_payload(&error),
-            (Some("error"), json!({"message": "private content"}))
-        );
-        assert_eq!(guarded_mcp_sse_payload(&bare), (None, bare));
-    }
-
-    #[test]
-    fn auth_extractor_accepts_authorization_only() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            AUTHORIZATION,
-            HeaderValue::from_static("Bearer gwk_id.secret"),
-        );
-        assert_eq!(
-            extract_mcp_gateway_api_key(&headers).expect("token"),
-            "gwk_id.secret"
-        );
-    }
-
-    #[test]
-    fn auth_extractor_accepts_explicit_header_only() {
-        let mut headers = HeaderMap::new();
-        headers.insert(X_OCEANS_API_KEY, HeaderValue::from_static("gwk_id.secret"));
-        assert_eq!(
-            extract_mcp_gateway_api_key(&headers).expect("token"),
-            "gwk_id.secret"
-        );
-    }
-
-    #[test]
-    fn auth_extractor_accepts_identical_dual_headers() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            AUTHORIZATION,
-            HeaderValue::from_static("Bearer gwk_id.secret"),
-        );
-        headers.insert(X_OCEANS_API_KEY, HeaderValue::from_static("gwk_id.secret"));
-        assert_eq!(
-            extract_mcp_gateway_api_key(&headers).expect("token"),
-            "gwk_id.secret"
-        );
-    }
-
-    #[test]
-    fn auth_extractor_rejects_missing_credentials() {
-        let headers = HeaderMap::new();
-        let error = extract_mcp_gateway_api_key(&headers).expect_err("missing");
-        assert!(matches!(error, AuthError::MissingAuthorizationHeader));
-    }
-
-    #[test]
-    fn auth_extractor_rejects_malformed_authorization_even_with_explicit_header() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            AUTHORIZATION,
-            HeaderValue::from_static("Basic gwk_id.secret"),
-        );
-        headers.insert(X_OCEANS_API_KEY, HeaderValue::from_static("gwk_id.secret"));
-        let error = extract_mcp_gateway_api_key(&headers).expect_err("malformed");
-        assert!(matches!(error, AuthError::InvalidAuthorizationHeader));
-    }
-
-    #[test]
-    fn auth_extractor_rejects_conflicting_dual_headers() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            AUTHORIZATION,
-            HeaderValue::from_static("Bearer gwk_id.secret"),
-        );
-        headers.insert(X_OCEANS_API_KEY, HeaderValue::from_static("gwk_id.other"));
-        let error = extract_mcp_gateway_api_key(&headers).expect_err("conflict");
-        assert!(matches!(error, AuthError::ConflictingApiKeyHeaders));
-    }
-}
+mod tests;

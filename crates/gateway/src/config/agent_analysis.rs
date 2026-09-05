@@ -4,7 +4,9 @@ use anyhow::bail;
 use gateway_service::{AnalysisMetricPolicy, AnalysisPolicy, CacheProfileRule, CacheTtl};
 use serde::Deserialize;
 
-use super::default_enabled;
+const fn default_enabled() -> bool {
+    true
+}
 
 const MAX_RETENTION_DAYS: u64 = 36_500;
 
