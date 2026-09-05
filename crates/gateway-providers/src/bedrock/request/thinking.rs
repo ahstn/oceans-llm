@@ -1,52 +1,5 @@
 use super::*;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ClaudeThinkingPolicy {
-    AdaptiveOnly,
-    AdaptivePreferred,
-    ManualWithEffortBeta,
-    ManualOnly,
-    MythosPreview,
-}
-
-pub(super) fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
-    let model = upstream_model.to_ascii_lowercase();
-    if model.contains("claude-mythos-preview") {
-        ClaudeThinkingPolicy::MythosPreview
-    } else if is_adaptive_only_claude(&model) {
-        ClaudeThinkingPolicy::AdaptiveOnly
-    } else if model.contains("claude-opus-4-6") || model.contains("claude-sonnet-4-6") {
-        ClaudeThinkingPolicy::AdaptivePreferred
-    } else if model.contains("claude-opus-4-5") {
-        ClaudeThinkingPolicy::ManualWithEffortBeta
-    } else {
-        ClaudeThinkingPolicy::ManualOnly
-    }
-}
-
-pub(super) fn is_adaptive_only_claude(model: &str) -> bool {
-    is_opus_4_7_or_later(model)
-        || contains_exact_claude_model_marker(model, "claude-fable-5")
-        || contains_exact_claude_model_marker(model, "claude-sonnet-5")
-}
-
-pub(super) fn contains_exact_claude_model_marker(model: &str, marker: &str) -> bool {
-    model.split(marker).skip(1).any(|rest| {
-        rest.chars().next().is_none_or(|ch| {
-            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']' | '-')
-        })
-    })
-}
-
-pub(super) fn is_opus_4_7_or_later(model: &str) -> bool {
-    let Some(rest) = model.split("claude-opus-4-").nth(1) else {
-        return false;
-    };
-    rest.split(|ch: char| !ch.is_ascii_digit())
-        .next()
-        .and_then(|minor| minor.parse::<u16>().ok())
-        .is_some_and(|minor| minor >= 7)
-}
+use crate::anthropic::{ClaudeThinkingPolicy, claude_thinking_policy};
 
 pub(super) fn apply_anthropic_thinking_compatibility(
     body: &mut Map<String, Value>,
@@ -70,7 +23,7 @@ pub(super) fn apply_anthropic_thinking_compatibility(
                 ensure_anthropic_adaptive_thinking(body, upstream_model)?;
                 merge_anthropic_output_effort(body, effort, upstream_model)?;
             }
-            ClaudeThinkingPolicy::ManualWithEffortBeta => {
+            ClaudeThinkingPolicy::ManualWithEffort => {
                 if let Some(budget_tokens) =
                     budget_tokens.or_else(|| existing_manual_thinking_budget(body))
                 {
@@ -103,7 +56,7 @@ pub(super) fn apply_anthropic_thinking_compatibility(
                 )));
             }
             ClaudeThinkingPolicy::AdaptivePreferred
-            | ClaudeThinkingPolicy::ManualWithEffortBeta
+            | ClaudeThinkingPolicy::ManualWithEffort
             | ClaudeThinkingPolicy::ManualOnly
             | ClaudeThinkingPolicy::MythosPreview => {
                 ensure_anthropic_manual_thinking(body, budget_tokens, upstream_model)?;
@@ -241,7 +194,7 @@ pub(super) fn validate_caller_thinking_for_policy(
                 )));
             }
         }
-        ClaudeThinkingPolicy::ManualWithEffortBeta => {
+        ClaudeThinkingPolicy::ManualWithEffort => {
             if thinking_type == Some("adaptive") {
                 return Err(ProviderError::InvalidRequest(format!(
                     "`thinking.type: adaptive` is not supported for `{upstream_model}`; use `thinking.type: enabled` with `budget_tokens`"
@@ -427,7 +380,7 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
                 )?;
                 merge_converse_thinking_field(additional, "effort", effort, upstream_model)?;
             }
-            ClaudeThinkingPolicy::ManualWithEffortBeta => {
+            ClaudeThinkingPolicy::ManualWithEffort => {
                 let budget_tokens = budget_tokens
                     .or_else(|| existing_converse_manual_thinking_budget(additional))
                     .ok_or_else(|| {
@@ -479,7 +432,7 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
                 )));
             }
             ClaudeThinkingPolicy::AdaptivePreferred
-            | ClaudeThinkingPolicy::ManualWithEffortBeta
+            | ClaudeThinkingPolicy::ManualWithEffort
             | ClaudeThinkingPolicy::ManualOnly
             | ClaudeThinkingPolicy::MythosPreview => {
                 merge_converse_thinking_field(
@@ -558,7 +511,7 @@ pub(super) fn validate_converse_caller_thinking_for_policy_object(
                 )));
             }
         }
-        ClaudeThinkingPolicy::ManualOnly | ClaudeThinkingPolicy::ManualWithEffortBeta => {
+        ClaudeThinkingPolicy::ManualOnly | ClaudeThinkingPolicy::ManualWithEffort => {
             if thinking_type == Some("adaptive") {
                 return Err(ProviderError::InvalidRequest(format!(
                     "`additionalModelRequestFields.thinking.type: adaptive` is not supported for `{upstream_model}`; use manual `budget_tokens`"
