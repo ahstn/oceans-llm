@@ -11,7 +11,13 @@ use serde_json::{Map, Value};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::http::admin_contract::format_timestamp;
+use crate::http::admin_contract::{AdminModelClientConfigView, format_timestamp};
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpConnectionInfoPayload {
+    pub(super) endpoint: String,
+    pub(super) client_configurations: Vec<AdminModelClientConfigView>,
+}
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct McpServersQuery {

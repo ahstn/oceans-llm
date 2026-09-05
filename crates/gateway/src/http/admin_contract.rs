@@ -379,6 +379,35 @@ pub struct AdminModelClientConfigView {
     pub notes: Vec<String>,
 }
 
+impl From<gateway_client_config::ClientConfig> for AdminModelClientConfigView {
+    fn from(config: gateway_client_config::ClientConfig) -> Self {
+        Self {
+            key: config.key,
+            label: config.label,
+            model_ids: config.model_ids,
+            setup: config
+                .setup
+                .into_iter()
+                .map(|item| AdminModelClientConfigSetupItemView {
+                    label: item.label,
+                    value: item.value,
+                    href: item.href,
+                })
+                .collect(),
+            blocks: config
+                .blocks
+                .into_iter()
+                .map(|block| AdminModelClientConfigBlockView {
+                    label: block.label,
+                    filename: block.filename,
+                    content: block.content,
+                })
+                .collect(),
+            notes: config.notes,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AdminModelClientConfigSetupItemView {
     pub label: String,
@@ -1820,6 +1849,7 @@ pub struct AgentSessionDetailView {
         crate::http::guardrails::evaluate_guardrail,
         crate::http::guardrails::get_guardrail_policies,
         crate::http::guardrails::list_guardrail_decisions,
+        crate::http::mcp_registry::get_mcp_connection_info,
         crate::http::mcp_registry::list_recommended_mcp_servers,
         crate::http::mcp_registry::list_mcp_servers,
         crate::http::mcp_registry::create_mcp_server,
@@ -1831,6 +1861,7 @@ pub struct AgentSessionDetailView {
         crate::http::mcp_registry::create_mcp_toolset,
         crate::http::mcp_registry::update_mcp_toolset,
         crate::http::mcp_registry::disable_mcp_toolset,
+        crate::http::mcp_registry::list_mcp_toolset_tools,
         crate::http::mcp_registry::replace_mcp_toolset_tools,
         crate::http::mcp_registry::list_mcp_grants,
         crate::http::mcp_registry::upsert_mcp_grant,
@@ -1944,6 +1975,7 @@ mod tests {
                 "/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}"
             )
         );
+        assert!(paths.contains_key("/api/v1/admin/mcp/connection-info"));
         assert!(paths.contains_key("/api/v1/admin/mcp/recommended-servers"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}"));
@@ -1953,7 +1985,11 @@ mod tests {
         assert!(paths.contains_key("/api/v1/admin/mcp/toolsets"));
         assert!(paths.contains_key("/api/v1/admin/mcp/toolsets/{toolset_id}"));
         assert!(paths.contains_key("/api/v1/admin/mcp/toolsets/{toolset_id}/disable"));
-        assert!(paths.contains_key("/api/v1/admin/mcp/toolsets/{toolset_id}/tools"));
+        let membership_path = paths
+            .get("/api/v1/admin/mcp/toolsets/{toolset_id}/tools")
+            .expect("tool set membership path");
+        assert!(membership_path.get.is_some());
+        assert!(membership_path.put.is_some());
         assert!(paths.contains_key("/api/v1/admin/mcp/grants"));
         assert!(paths.contains_key("/api/v1/admin/mcp/credential-bindings"));
         assert!(

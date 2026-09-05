@@ -268,6 +268,7 @@ impl McpAccessRepository for PostgresStore {
         &self,
         toolset_id: Uuid,
     ) -> Result<Vec<McpToolsetToolRecord>, StoreError> {
+        load_toolset(&self.pool, toolset_id).await?;
         let rows = sqlx::query(
             "SELECT toolset_id, mcp_tool_id, created_at FROM mcp_toolset_tools WHERE toolset_id = $1 ORDER BY mcp_tool_id",
         )
@@ -573,4 +574,63 @@ async fn collect_catalog_toolset_tools(
         out.insert(record.tool.mcp_tool_id, record);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::{create_postgres_test_database, drop_postgres_test_database};
+    use crate::{StoreConnectionOptions, run_migrations_with_options};
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn postgres_toolset_membership_distinguishes_missing_and_empty_sets() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping PostgreSQL membership test: TEST_POSTGRES_URL is not set");
+            return;
+        };
+        run_migrations_with_options(&StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        })
+        .await
+        .expect("migrations");
+        let store = PostgresStore::connect(&test_db.database_url, 2)
+            .await
+            .expect("store");
+        let now = OffsetDateTime::now_utc();
+        let toolset = store
+            .create_mcp_toolset(&NewMcpToolsetRecord {
+                toolset_key: "empty".into(),
+                display_name: "Empty".into(),
+                description: None,
+                created_at: now,
+            })
+            .await
+            .expect("create set");
+        assert!(
+            store
+                .list_mcp_toolset_tools(toolset.toolset_id)
+                .await
+                .expect("empty set")
+                .is_empty()
+        );
+        store
+            .disable_mcp_toolset(toolset.toolset_id, now)
+            .await
+            .expect("disable set");
+        assert!(
+            store
+                .list_mcp_toolset_tools(toolset.toolset_id)
+                .await
+                .expect("disabled set")
+                .is_empty()
+        );
+        assert!(matches!(
+            store.list_mcp_toolset_tools(Uuid::new_v4()).await,
+            Err(StoreError::NotFound(_))
+        ));
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
 }

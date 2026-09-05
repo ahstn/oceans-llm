@@ -324,6 +324,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/connection-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_mcp_connection_info"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/mcp/credential-bindings": {
         parameters: {
             query?: never;
@@ -539,7 +555,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["list_mcp_toolset_tools"];
         put: operations["replace_mcp_toolset_tools"];
         post?: never;
         delete?: never;
@@ -2829,6 +2845,13 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_McpConnectionInfoPayload: {
+            data: {
+                client_configurations: components["schemas"]["AdminModelClientConfigView"][];
+                endpoint: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_McpCredentialBindingPayload: {
             data: {
                 binding: components["schemas"]["McpCredentialBindingView"];
@@ -3270,6 +3293,10 @@ export interface components {
             pack_id: string;
             rule_id: string;
             safer_action: string;
+        };
+        McpConnectionInfoPayload: {
+            client_configurations: components["schemas"]["AdminModelClientConfigView"][];
+            endpoint: string;
         };
         McpCredentialBindingPayload: {
             binding: components["schemas"]["McpCredentialBindingView"];
@@ -4600,6 +4627,33 @@ export interface operations {
             };
         };
     };
+    get_mcp_connection_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpConnectionInfoPayload"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
     list_mcp_credential_bindings: {
         parameters: {
             query?: {
@@ -5085,6 +5139,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_McpToolsetPayload"];
+                };
+            };
+        };
+    };
+    list_mcp_toolset_tools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description MCP tool set identifier */
+                toolset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolsetToolsPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
         };

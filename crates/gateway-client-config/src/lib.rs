@@ -1,10 +1,12 @@
 mod api_style;
 mod cost;
 mod format;
+mod mcp;
 mod templates;
 mod thinking;
 mod types;
 
+pub use mcp::render_mcp_client_configs;
 pub use templates::{
     ClaudeCodeConfigTemplate, CodexConfigTemplate, OpenCodeConfigTemplate, PiConfigTemplate,
     render_default_configs, render_default_configs_for_models,
@@ -14,6 +16,7 @@ pub use types::{
     ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
     ClientConfigSetupItem, ClientConfigTemplate, ClientModelCapabilities, CodexReasoningEffort,
     DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, ThinkingPolicy,
+    normalize_gateway_base_url,
 };
 
 #[cfg(test)]

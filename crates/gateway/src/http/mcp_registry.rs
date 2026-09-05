@@ -1,11 +1,17 @@
 mod views;
 
+#[cfg(test)]
+mod tests;
+
 use std::time::Instant;
 
 use axum::{
     Json,
     extract::{Path, Query, State},
     http::HeaderMap,
+};
+use gateway_client_config::{
+    DEFAULT_GATEWAY_BASE_URL, normalize_gateway_base_url, render_mcp_client_configs,
 };
 use gateway_core::{
     GatewayError, McpAccessRepository, McpGrantSubject, McpToolGrantSubjectKind,
@@ -26,6 +32,52 @@ use crate::http::{
 };
 use crate::observability::McpDiscoveryRefreshMetric;
 use views::*;
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/mcp/connection-info",
+    responses(
+        (status = 200, body = Envelope<McpConnectionInfoPayload>),
+        (status = 500, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
+pub async fn get_mcp_connection_info(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<McpConnectionInfoPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let gateway_base_url = state
+        .client_config_gateway_base_url
+        .as_ref()
+        .as_deref()
+        .unwrap_or(DEFAULT_GATEWAY_BASE_URL);
+    let invalid_base_url = || {
+        AppError(GatewayError::Internal(
+            "GATEWAY_CLIENT_CONFIG_BASE_URL must be an HTTP(S) URL with a host and no credentials, query, or fragment for MCP connections".to_string(),
+        ))
+    };
+    let parsed = url::Url::parse(gateway_base_url).map_err(|_| invalid_base_url())?;
+    if gateway_base_url.trim() != gateway_base_url
+        || !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(invalid_base_url());
+    }
+    let endpoint = format!("{}/mcp", normalize_gateway_base_url(gateway_base_url));
+    let client_configurations = render_mcp_client_configs(&endpoint)
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    Ok(Json(envelope(McpConnectionInfoPayload {
+        endpoint,
+        client_configurations,
+    })))
+}
 
 #[utoipa::path(
     get,
@@ -349,6 +401,33 @@ pub async fn disable_mcp_toolset(
         .await?;
     Ok(Json(envelope(McpToolsetPayload {
         toolset: map_toolset(toolset),
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/mcp/toolsets/{toolset_id}/tools",
+    params(("toolset_id" = String, Path, description = "MCP tool set identifier")),
+    responses(
+        (status = 200, body = Envelope<McpToolsetToolsPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView),
+        (status = 404, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
+pub async fn list_mcp_toolset_tools(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(toolset_id): Path<String>,
+) -> Result<Json<Envelope<McpToolsetToolsPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let toolset_id = parse_uuid(&toolset_id, "toolset_id")?;
+    let tools = state.store.list_mcp_toolset_tools(toolset_id).await?;
+    Ok(Json(envelope(McpToolsetToolsPayload {
+        tool_ids: tools
+            .into_iter()
+            .map(|tool| tool.mcp_tool_id.to_string())
+            .collect(),
     })))
 }
 

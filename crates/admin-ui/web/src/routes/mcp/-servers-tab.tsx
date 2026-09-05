@@ -1,28 +1,9 @@
-import {
-  useEffect,
-  useState,
-  useTransition,
-  type CSSProperties,
-  type FormEvent,
-  type ReactNode,
-} from 'react'
-import awsIcon from '@lobehub/icons-static-svg/icons/aws.svg'
-import cloudflareIcon from '@lobehub/icons-static-svg/icons/cloudflare.svg'
-import exaIcon from '@lobehub/icons-static-svg/icons/exa.svg'
-import figmaIcon from '@lobehub/icons-static-svg/icons/figma.svg'
-import githubIcon from '@lobehub/icons-static-svg/icons/github.svg'
-import googleIcon from '@lobehub/icons-static-svg/icons/google.svg'
-import huggingFaceIcon from '@lobehub/icons-static-svg/icons/huggingface.svg'
-import n8nIcon from '@lobehub/icons-static-svg/icons/n8n.svg'
-import notionIcon from '@lobehub/icons-static-svg/icons/notion.svg'
-import obsidianIcon from '@lobehub/icons-static-svg/icons/obsidian.svg'
-import snowflakeIcon from '@lobehub/icons-static-svg/icons/snowflake.svg'
+import { useEffect, useState, useTransition, type CSSProperties, type FormEvent } from 'react'
 import {
   Cancel01Icon,
   Configuration01Icon,
   Delete02Icon,
   Edit02Icon,
-  McpServerIcon,
   RefreshIcon,
   ShieldKeyIcon,
   ToolsIcon,
@@ -32,6 +13,9 @@ import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { McpServerIconMark } from '@/components/mcp/mcp-server-mark'
+import { ServerRegistry } from '@/components/mcp/server-registry'
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -42,7 +26,6 @@ import {
   DialogFooter,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import {
   Sidebar,
   SidebarContent,
@@ -53,15 +36,6 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from '@/components/ui/sidebar'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   addMcpServer,
   disableExternalMcpServer,
@@ -114,14 +88,12 @@ export function ServersTab({
   servers,
   recommended,
   selectedServerId,
-  workspaceHeader,
   onSelectServer,
   onAddToToolset,
 }: {
   servers: McpServerView[]
   recommended: RecommendedMcpServerView[]
   selectedServerId: string | null
-  workspaceHeader?: ReactNode
   onSelectServer: (serverId: string | null) => void
   onAddToToolset: (toolIds: string[]) => void
 }) {
@@ -138,14 +110,19 @@ export function ServersTab({
   const [credentialForm, setCredentialForm] = useState<CredentialBindingFormState>(() =>
     emptyCredentialBindingForm(),
   )
-  const [refreshStatus, setRefreshStatus] = useState<string | null>(null)
-  const [refreshErrorSummary, setRefreshErrorSummary] = useState<string | null>(null)
+  const [refreshingServerIds, setRefreshingServerIds] = useState<string[]>([])
+  const [refreshResults, setRefreshResults] = useState<
+    Record<string, { status: string; errorSummary: string | null; revision: number }>
+  >({})
+  const [catalogOpen, setCatalogOpen] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editingServer, setEditingServer] = useState<McpServerView | null>(null)
   const [formState, setFormState] = useState<ServerFormState>(() => emptyServerForm())
 
   const selectedServer = servers.find((server) => server.id === selectedServerId) ?? null
-  const activeCount = servers.filter((server) => server.status === 'active').length
+  const selectedRefresh = selectedServer ? refreshResults[selectedServer.id] : null
+  // Refresh responses omit inactive tools; reload the complete list after each result.
+  const discoveryRevision = selectedRefresh?.revision ?? 0
 
   useEffect(() => {
     setSelectedToolIds([])
@@ -179,7 +156,7 @@ export function ServersTab({
     return () => {
       cancelled = true
     }
-  }, [selectedServer])
+  }, [selectedServer, discoveryRevision])
 
   useEffect(() => {
     if (!selectedServer) {
@@ -224,21 +201,23 @@ export function ServersTab({
   }
 
   function handleSelectServer(serverId: string) {
-    setRefreshStatus(null)
-    setRefreshErrorSummary(null)
     setSection('overview')
     onSelectServer(serverId)
   }
 
   async function selectServerAfterMutation(serverId: string) {
-    setRefreshStatus(null)
-    setRefreshErrorSummary(null)
+    setRefreshResults((current) => {
+      const next = { ...current }
+      delete next[serverId]
+      return next
+    })
     await router.invalidate()
     onSelectServer(serverId)
   }
 
   function openCreateDialog(server?: RecommendedMcpServerView) {
     setFormState(server ? formFromRecommended(server) : emptyServerForm())
+    setCatalogOpen(false)
     setCreateDialogOpen(true)
   }
 
@@ -274,6 +253,7 @@ export function ServersTab({
           data: { recommended_catalog_key: server.catalog_key },
         })
         toast.success('MCP server imported')
+        setCatalogOpen(false)
         await selectServerAfterMutation(response.data.server.id)
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to import MCP server')
@@ -316,27 +296,47 @@ export function ServersTab({
     })
   }
 
-  function handleRefreshDiscovery(server: McpServerView) {
-    setRefreshStatus('pending')
-    setRefreshErrorSummary(null)
-    startTransition(async () => {
-      try {
-        const response = await refreshExternalMcpServerDiscovery({ data: { serverId: server.id } })
-        setTools(response.data.tools)
-        setRefreshStatus(response.data.status)
-        setRefreshErrorSummary(response.data.error_summary ?? null)
-        if (response.data.status === 'success') {
-          toast.success('Discovery refreshed')
-        } else {
-          toast.error(response.data.error_summary ?? `Discovery ${response.data.status}`)
-        }
-        await router.invalidate()
-      } catch (error) {
-        setRefreshStatus('failed')
-        setRefreshErrorSummary(error instanceof Error ? error.message : 'Discovery refresh failed')
-        toast.error(error instanceof Error ? error.message : 'Discovery refresh failed')
+  async function handleRefreshDiscovery(server: McpServerView) {
+    if (refreshingServerIds.includes(server.id)) return
+    setRefreshingServerIds((current) => [...current, server.id])
+    setRefreshResults((current) => ({
+      ...current,
+      [server.id]: {
+        status: 'pending',
+        errorSummary: null,
+        revision: current[server.id]?.revision ?? 0,
+      },
+    }))
+    try {
+      const response = await refreshExternalMcpServerDiscovery({ data: { serverId: server.id } })
+      setRefreshResults((current) => ({
+        ...current,
+        [server.id]: {
+          status: response.data.status,
+          errorSummary: response.data.error_summary ?? null,
+          revision: (current[server.id]?.revision ?? 0) + 1,
+        },
+      }))
+      if (response.data.status === 'success') {
+        toast.success('Discovery refreshed')
+      } else {
+        toast.error(response.data.error_summary ?? `Discovery ${response.data.status}`)
       }
-    })
+      await router.invalidate()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Discovery refresh failed'
+      setRefreshResults((current) => ({
+        ...current,
+        [server.id]: {
+          status: 'failed',
+          errorSummary: message,
+          revision: current[server.id]?.revision ?? 0,
+        },
+      }))
+      toast.error(message)
+    } finally {
+      setRefreshingServerIds((current) => current.filter((id) => id !== server.id))
+    }
   }
 
   function handleCreateCredentialBinding(event: FormEvent<HTMLFormElement>) {
@@ -390,44 +390,31 @@ export function ServersTab({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <Card>
-        <CardHeader className="gap-4">
-          {workspaceHeader}
-          <div className="col-span-full grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
-            <div className="flex min-w-0 flex-col gap-1">
-              <CardTitle>Servers</CardTitle>
-              <CardDescription>
-                {servers.length} registered · {activeCount} active
-              </CardDescription>
-            </div>
-            <Button
-              type="button"
-              className="justify-self-start sm:justify-self-end"
-              onClick={() => openCreateDialog()}
-            >
-              Add server
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <ServerTable
-            servers={servers}
-            actionPending={isPending}
-            refreshStatus={refreshStatus}
-            onSelectServer={handleSelectServer}
-            onEdit={openEditDialog}
-            onDisable={handleDisableServer}
-            onRefresh={handleRefreshDiscovery}
-          />
-        </CardContent>
-      </Card>
-
-      <RecommendedCatalog
-        recommended={recommended}
-        pending={isPending}
-        onCustomize={openCreateDialog}
-        onImport={handleImportRecommended}
+      <ServerRegistry
+        servers={servers}
+        actionPending={isPending}
+        refreshingServerIds={refreshingServerIds}
+        onManage={handleSelectServer}
+        onRefresh={handleRefreshDiscovery}
+        onAdd={() => openCreateDialog()}
+        onCatalog={() => setCatalogOpen(true)}
       />
+
+      <Dialog open={catalogOpen} onOpenChange={setCatalogOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogTitle>Browse MCP catalog</DialogTitle>
+          <DialogDescription>
+            Import a recommended endpoint, or customize its settings before registration.
+          </DialogDescription>
+          <RecommendedCatalog
+            recommended={recommended}
+            servers={servers}
+            pending={isPending}
+            onCustomize={openCreateDialog}
+            onImport={handleImportRecommended}
+          />
+        </DialogContent>
+      </Dialog>
 
       <ServerFormDialog
         mode="create"
@@ -451,9 +438,11 @@ export function ServersTab({
         credentialBindingsPending={credentialBindingsPending}
         credentialBindingsError={credentialBindingsError}
         credentialForm={credentialForm}
-        refreshStatus={refreshStatus}
-        refreshErrorSummary={refreshErrorSummary}
-        actionPending={isPending}
+        refreshStatus={selectedRefresh?.status ?? null}
+        refreshErrorSummary={selectedRefresh?.errorSummary ?? null}
+        actionPending={
+          isPending || Boolean(selectedServer && refreshingServerIds.includes(selectedServer.id))
+        }
         onOpenChange={(open) => {
           if (!open) {
             setEditingServer(null)
@@ -474,154 +463,6 @@ export function ServersTab({
         onCredentialRevoke={handleRevokeCredentialBinding}
       />
     </div>
-  )
-}
-
-function ServerTable({
-  servers,
-  actionPending,
-  refreshStatus,
-  onSelectServer,
-  onEdit,
-  onDisable,
-  onRefresh,
-}: {
-  servers: McpServerView[]
-  actionPending: boolean
-  refreshStatus: string | null
-  onSelectServer: (serverId: string) => void
-  onEdit: (server: McpServerView) => void
-  onDisable: (server: McpServerView) => void
-  onRefresh: (server: McpServerView) => void
-}) {
-  if (servers.length === 0) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>No MCP servers</EmptyTitle>
-          <EmptyDescription>Add a catalog server or create a custom one.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    )
-  }
-
-  return (
-    <TooltipProvider>
-      <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-        <Table className="text-left" data-testid="mcp-server-list">
-          <TableHeader className="bg-[color:var(--color-surface-muted)]">
-            <TableRow>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                Server
-              </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                URL
-              </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                Auth type
-              </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                Status
-              </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                Actions
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {servers.map((server) => (
-              <TableRow key={server.id}>
-                <TableCell className="px-3 py-3">
-                  <button
-                    type="button"
-                    aria-label={`Open ${server.display_name}`}
-                    className="flex min-w-0 items-center gap-3 text-left"
-                    onClick={() => onSelectServer(server.id)}
-                  >
-                    <McpServerIconMark server={server} />
-                    <span className="flex min-w-0 flex-col gap-1">
-                      <span className="truncate font-medium">{server.display_name}</span>
-                      <span className="text-muted-foreground truncate font-mono text-xs">
-                        {server.server_key}
-                      </span>
-                    </span>
-                  </button>
-                </TableCell>
-                <TableCell className="text-muted-foreground max-w-[20rem] truncate px-3 py-3 font-mono text-xs">
-                  {server.server_url}
-                </TableCell>
-                <TableCell className="px-3 py-3">{formatAuthMode(server.auth_mode)}</TableCell>
-                <TableCell className="px-3 py-3">
-                  <ServerStatusBadge status={server.status} />
-                </TableCell>
-                <TableCell className="px-3 py-3">
-                  <div className="flex justify-start gap-1">
-                    <ServerActionButton
-                      label={`Refresh ${server.display_name}`}
-                      tooltip="Refresh discovery"
-                      icon={RefreshIcon}
-                      onClick={() => onRefresh(server)}
-                      disabled={actionPending || server.status !== 'active'}
-                    />
-                    <ServerActionButton
-                      label={`Edit ${server.display_name}`}
-                      tooltip="Edit server"
-                      icon={Edit02Icon}
-                      onClick={() => onEdit(server)}
-                    />
-                    <ServerActionButton
-                      label={`Disable ${server.display_name}`}
-                      tooltip="Disable server"
-                      icon={Delete02Icon}
-                      variant="destructive"
-                      onClick={() => onDisable(server)}
-                      disabled={actionPending || server.status !== 'active'}
-                    />
-                  </div>
-                  {refreshStatus === 'pending' ? (
-                    <span className="sr-only">Discovery refresh pending</span>
-                  ) : null}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </TooltipProvider>
-  )
-}
-
-function ServerActionButton({
-  label,
-  tooltip,
-  icon,
-  variant = 'secondary',
-  disabled = false,
-  onClick,
-}: {
-  label: string
-  tooltip: string
-  icon: typeof RefreshIcon
-  variant?: 'secondary' | 'destructive'
-  disabled?: boolean
-  onClick: () => void
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant={variant}
-          aria-label={label}
-          onClick={onClick}
-          disabled={disabled}
-        >
-          <AppIcon icon={icon} stroke={1.5} aria-hidden />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{tooltip}</TooltipContent>
-    </Tooltip>
   )
 }
 
@@ -880,17 +721,26 @@ function ServerDetailDialog({
 
 export function RecommendedCatalog({
   recommended,
+  servers,
   pending,
   onCustomize,
   onImport,
 }: {
   recommended: RecommendedMcpServerView[]
+  servers: McpServerView[]
   pending: boolean
   onCustomize: (server: RecommendedMcpServerView) => void
   onImport: (server: RecommendedMcpServerView) => void
 }) {
   if (recommended.length === 0) {
-    return null
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>No catalog servers available</EmptyTitle>
+          <EmptyDescription>Use Add server to configure a custom endpoint.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    )
   }
 
   return (
@@ -902,7 +752,7 @@ export function RecommendedCatalog({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-2">
           {recommended.map((server) => (
             <div
               key={server.catalog_key}
@@ -923,11 +773,22 @@ export function RecommendedCatalog({
                   size="sm"
                   variant="outline"
                   onClick={() => onCustomize(server)}
+                  disabled={pending}
                 >
                   Customize
                 </Button>
-                <Button type="button" size="sm" onClick={() => onImport(server)} disabled={pending}>
-                  Import
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => onImport(server)}
+                  disabled={
+                    pending ||
+                    servers.some((registered) => registered.server_key === server.catalog_key)
+                  }
+                >
+                  {servers.some((registered) => registered.server_key === server.catalog_key)
+                    ? 'Registered'
+                    : 'Import'}
                 </Button>
               </div>
             </div>
@@ -936,97 +797,4 @@ export function RecommendedCatalog({
       </CardContent>
     </Card>
   )
-}
-
-function formatAuthMode(authMode: string) {
-  return authMode.replaceAll('_', ' ')
-}
-
-type McpIconSubject = {
-  catalog_key?: string
-  display_name: string
-  server_key?: string
-  server_url?: string
-}
-
-const MCP_LOBE_ICON_MATCHERS = [
-  { aliases: ['github'], src: githubIcon },
-  { aliases: ['snowflake'], src: snowflakeIcon },
-  { aliases: ['notion'], src: notionIcon },
-  { aliases: ['google'], src: googleIcon },
-  { aliases: ['figma'], src: figmaIcon },
-  { aliases: ['aws', 'amazon web services'], src: awsIcon },
-  { aliases: ['cloudflare'], src: cloudflareIcon },
-  { aliases: ['exa'], src: exaIcon },
-  { aliases: ['huggingface', 'hugging face'], src: huggingFaceIcon },
-  { aliases: ['n8n'], src: n8nIcon },
-  { aliases: ['obsidian'], src: obsidianIcon },
-] as const
-
-function McpServerIconMark({
-  server,
-  size = 18,
-  bare = false,
-}: {
-  server: McpIconSubject
-  size?: number
-  bare?: boolean
-}) {
-  const iconSrc = resolveMcpLobeIcon(server)
-
-  const icon = iconSrc ? (
-    <img
-      alt=""
-      aria-hidden="true"
-      className="shrink-0 object-contain"
-      src={iconSrc}
-      style={{
-        filter: bare ? 'brightness(0) invert(1)' : 'brightness(0) invert(0.72)',
-        height: size,
-        width: size,
-      }}
-    />
-  ) : (
-    <AppIcon icon={McpServerIcon} size={size} stroke={1.5} aria-hidden />
-  )
-
-  if (bare) {
-    return icon
-  }
-
-  return (
-    <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
-      {icon}
-    </span>
-  )
-}
-
-function resolveMcpLobeIcon(server: McpIconSubject) {
-  const searchableText = [
-    server.server_key,
-    server.catalog_key,
-    server.display_name,
-    server.server_url,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-
-  const normalizedText = searchableText.replace(/[^a-z0-9]+/g, ' ')
-
-  return MCP_LOBE_ICON_MATCHERS.find(({ aliases }) =>
-    aliases.some((alias) => {
-      const normalizedAlias = alias
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, ' ')
-        .trim()
-      if (!normalizedAlias) {
-        return false
-      }
-      const escapedAlias = normalizedAlias
-        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        .replace(/\s+/g, '\\s+')
-      return new RegExp(`(^|\\s)${escapedAlias}(\\s|$)`).test(normalizedText)
-    }),
-  )?.src
 }

@@ -1681,6 +1681,7 @@ dependencies = [
  "clap",
  "cron",
  "futures-util",
+ "gateway-client-config",
  "gateway-core",
  "gateway-guardrails",
  "gateway-mcp",

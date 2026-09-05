@@ -24,6 +24,7 @@ import {
   getHarnessUsage,
   getGuardrailPolicies,
   getMcpInvocationDetail,
+  getMcpConnectionInfo as getGatewayMcpConnectionInfo,
   previewMcpEffectiveAccess,
   listRecommendedMcpServers,
   getSession,
@@ -41,6 +42,7 @@ import {
   listMcpCredentialBindings,
   listMcpGrants,
   listMcpToolsets,
+  listMcpToolsetTools,
   listSpendBudgets,
   listTeams,
   listTeamDirectory,
@@ -490,6 +492,10 @@ export const getObservabilityMcpInvocationDetail = createServerFn({ method: 'GET
   },
 )
 
+export const getMcpConnectionInfo = createServerFn({ method: 'GET' }).handler(async () => {
+  return getGatewayMcpConnectionInfo()
+})
+
 export const getRecommendedMcpServers = createServerFn({ method: 'GET' }).handler(async () => {
   return listRecommendedMcpServers()
 })
@@ -574,6 +580,32 @@ export const addMcpToolset = createServerFn({ method: 'POST' }).handler(
   },
 )
 
+function validateMcpToolsetId(input: unknown): { toolsetId: string } {
+  const data = requireObject(input, 'Tool set input')
+  if (typeof data.toolsetId !== 'string' || data.toolsetId.trim().length === 0) {
+    throw new Error('A valid tool set ID is required')
+  }
+  return { toolsetId: data.toolsetId }
+}
+
+function validateMcpToolsetMembership(input: unknown): { toolsetId: string; toolIds: string[] } {
+  const { toolsetId } = validateMcpToolsetId(input)
+  const data = requireObject(input, 'Tool set membership')
+  if (
+    !Array.isArray(data.toolIds) ||
+    !data.toolIds.every((id): id is string => typeof id === 'string' && id.trim().length > 0)
+  ) {
+    throw new Error('Tool IDs must be an array of nonempty strings')
+  }
+  return { toolsetId, toolIds: data.toolIds }
+}
+
+export const getMcpToolsetTools = createServerFn({ method: 'GET' })
+  .validator(validateMcpToolsetId)
+  .handler(async ({ data }) => {
+    return listMcpToolsetTools(data.toolsetId)
+  })
+
 export const saveMcpToolset = createServerFn({ method: 'POST' }).handler(
   async ({
     data,
@@ -593,18 +625,11 @@ export const disableExternalMcpToolset = createServerFn({ method: 'POST' }).hand
   },
 )
 
-export const saveMcpToolsetTools = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data: {
-      toolsetId: string
-      toolIds: string[]
-    }
-  }) => {
+export const saveMcpToolsetTools = createServerFn({ method: 'POST' })
+  .validator(validateMcpToolsetMembership)
+  .handler(async ({ data }) => {
     return replaceMcpToolsetTools(data.toolsetId, data.toolIds)
-  },
-)
+  })
 
 export const getMcpGrants = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data?: Parameters<typeof listMcpGrants>[0] }) => {
