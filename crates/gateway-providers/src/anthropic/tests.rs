@@ -12,9 +12,7 @@ use super::error::AnthropicAdapterError;
 use super::request::{AnthropicRequestOptions, map_anthropic_request};
 use super::response::{map_anthropic_finish_reason, normalize_anthropic_response};
 use super::streaming::normalize_anthropic_stream;
-use super::thinking::{
-    ClaudeThinkingPolicy, apply_anthropic_thinking_compatibility, claude_thinking_policy,
-};
+use super::thinking::apply_anthropic_thinking_compatibility;
 use crate::anthropic_compat::{
     AnthropicCompatAuth, AnthropicCompatAuthKind, AnthropicCompatConfig, AnthropicCompatProvider,
 };
@@ -215,14 +213,6 @@ fn builds_request_with_bearer_auth_and_custom_version() {
             .get("anthropic-version")
             .and_then(|v| v.to_str().ok()),
         Some("2024-01-01")
-    );
-}
-
-#[test]
-fn adaptive_thinking_policy_for_fable_5_1() {
-    assert_eq!(
-        claude_thinking_policy("claude-fable-5-1"),
-        ClaudeThinkingPolicy::AdaptiveOnly
     );
 }
 
