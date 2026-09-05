@@ -45,6 +45,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
+gateway-guardrails = { workspace = true, features = ["test-utils"] }
 serial_test = "4"
 tempfile = "3"
 url.workspace = true

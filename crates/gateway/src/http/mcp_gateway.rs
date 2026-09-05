@@ -1,11 +1,9 @@
 mod aggregate;
+mod guardrails;
 mod json_rpc;
 mod upstream;
 
-use std::{
-    error::Error as _,
-    time::{Duration, Instant},
-};
+use std::{error::Error as _, time::Instant};
 
 use axum::{
     Json,
@@ -21,19 +19,19 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthError, GatewayError, McpToolInvocationStatus, McpToolPolicyResult,
     OpenAiErrorEnvelope, ProviderError, auth::extract_bearer_token,
 };
-use gateway_guardrails::{
-    DecisionAction, EvaluationInput, EvaluationPayload, GuardrailEvaluation, McpCall,
-    PolicyResolver, PolicyTarget,
-};
+use gateway_guardrails::EvaluationPayload;
 use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput, McpInvocationLogging};
+use guardrails::{
+    enforce_direct_mcp_result, evaluate_mcp_call, evaluate_mcp_result, guardrail_decision_metadata,
+    guardrail_denied_response,
+};
 use json_rpc::{McpRpcRequest, mcp_jsonrpc_error_response, mcp_request_id, parse_mcp_rpc_request};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
-use tokio::time::timeout;
 use upstream::{proxy_tools_list, proxy_upstream};
 use uuid::Uuid;
 
-use crate::http::{guardrail_events::record_guardrail_evaluation, state::AppState};
+use crate::http::state::AppState;
 
 const X_OCEANS_API_KEY: &str = "x-oceans-api-key";
 const MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
@@ -145,7 +143,7 @@ pub async fn mcp_streamable_http_proxy(
             .await;
             let (status, error_code) = response_outcome(&outcome);
             let mut log_input = tool_invocation_log_input(
-                &upstream,
+                &upstream.server,
                 &id,
                 None,
                 None,
@@ -185,10 +183,6 @@ pub async fn mcp_streamable_http_proxy(
             proxy_upstream(&state.mcp_http_client, &method, &headers, body, &upstream).await
         }
         Err(error) => {
-            let log_upstream = gateway_service::McpGatewayUpstream {
-                server: server.clone(),
-                headers: None,
-            };
             let _ = invocation_logger
                 .log_invocation(
                     &auth,
@@ -196,9 +190,9 @@ pub async fn mcp_streamable_http_proxy(
                         mcp_tool_invocation_id: None,
                         request_log_id: None,
                         request_id: Uuid::new_v4().to_string(),
-                        server_id: Some(log_upstream.server.mcp_server_id),
-                        server_display_key: log_upstream.server.server_key.clone(),
-                        server_display_name: log_upstream.server.display_name.clone(),
+                        server_id: Some(server.mcp_server_id),
+                        server_display_key: server.server_key,
+                        server_display_name: server.display_name,
                         tool_id: None,
                         tool_display_key: "unknown".to_string(),
                         tool_display_name: "unknown".to_string(),
@@ -244,367 +238,6 @@ fn body_read_exceeded_limit(error: &axum::Error) -> bool {
         || error.to_string().contains("length limit exceeded")
 }
 
-async fn evaluate_mcp_call(
-    state: &AppState,
-    request_id: Option<&str>,
-    mcp_tool_invocation_id: Option<Uuid>,
-    server: &str,
-    tool: &str,
-    arguments: Value,
-) -> GuardrailEvaluation {
-    let policy =
-        PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::McpServer(server));
-    let evaluation = state
-        .guardrail_engine
-        .evaluate(
-            &policy,
-            &state.guardrail_config,
-            EvaluationInput::new(
-                gateway_guardrails::GuardPhase::McpCall,
-                EvaluationPayload::McpCall {
-                    call: McpCall {
-                        server: server.to_string(),
-                        tool: tool.to_string(),
-                        arguments,
-                    },
-                },
-            ),
-        )
-        .await;
-    record_guardrail_evaluation(state, request_id, mcp_tool_invocation_id, &evaluation).await;
-    evaluation
-}
-
-async fn evaluate_mcp_result(
-    state: &AppState,
-    request_id: Option<&str>,
-    mcp_tool_invocation_id: Option<Uuid>,
-    server: &str,
-    tool: &str,
-    result: Value,
-) -> GuardrailEvaluation {
-    let policy =
-        PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::McpServer(server));
-    let evaluation = state
-        .guardrail_engine
-        .evaluate(
-            &policy,
-            &state.guardrail_config,
-            EvaluationInput::new(
-                gateway_guardrails::GuardPhase::McpResult,
-                EvaluationPayload::McpResult {
-                    server: server.to_string(),
-                    tool: tool.to_string(),
-                    result,
-                },
-            ),
-        )
-        .await;
-    record_guardrail_evaluation(state, request_id, mcp_tool_invocation_id, &evaluation).await;
-    evaluation
-}
-
-fn guardrail_decision_metadata(evaluation: &GuardrailEvaluation) -> Map<String, Value> {
-    let relevant = evaluation
-        .decisions
-        .iter()
-        .rev()
-        .find(|decision| decision.action != DecisionAction::Allow);
-    let action = match evaluation.action {
-        DecisionAction::Allow => "allowed",
-        DecisionAction::Audit => "audit",
-        DecisionAction::Deny => "denied",
-        DecisionAction::Transformed => "transformed",
-    };
-    Map::from_iter([
-        ("guardrail_decision".to_string(), json!(action)),
-        (
-            "guardrail_decision_id".to_string(),
-            relevant
-                .map(|decision| json!(decision.decision_id.to_string()))
-                .unwrap_or(Value::Null),
-        ),
-        (
-            "guardrail_reason_code".to_string(),
-            relevant
-                .map(|decision| json!(decision.reason_code.as_str()))
-                .unwrap_or(Value::Null),
-        ),
-    ])
-}
-
-fn guardrail_denied_response(
-    id: Option<&Value>,
-    evaluation: &GuardrailEvaluation,
-) -> Response<Body> {
-    let reason_code = evaluation
-        .decisions
-        .iter()
-        .find(|decision| decision.action == DecisionAction::Deny)
-        .map(|decision| decision.reason_code.as_str())
-        .unwrap_or("guardrail.policy_denied");
-    mcp_jsonrpc_error_response(
-        StatusCode::FORBIDDEN,
-        id,
-        GUARDRAIL_POLICY_DENIED_CODE,
-        &format!("MCP operation denied by guardrail policy ({reason_code})"),
-    )
-}
-
-async fn enforce_direct_mcp_result(
-    state: &AppState,
-    server: &str,
-    tool: &str,
-    id: Option<&Value>,
-    mcp_tool_invocation_id: Uuid,
-    response: Response<Body>,
-) -> (Response<Body>, Option<GuardrailEvaluation>, bool) {
-    let policy =
-        PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::McpServer(server));
-    if !policy.enabled {
-        return (response, None, false);
-    }
-    let (mut parts, body) = response.into_parts();
-    let buffer_timeout = Duration::from_millis(policy.stream_buffer_timeout_ms);
-    let bytes = match timeout(buffer_timeout, to_bytes(body, policy.stream_buffer_bytes)).await {
-        Ok(Ok(bytes)) => bytes,
-        Ok(Err(_)) => {
-            return (
-                mcp_jsonrpc_error_response(
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    id,
-                    GUARDRAIL_POLICY_DENIED_CODE,
-                    "MCP result exceeded the configured guardrail buffer",
-                ),
-                None,
-                true,
-            );
-        }
-        Err(_) => {
-            return (
-                mcp_jsonrpc_error_response(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    id,
-                    GUARDRAIL_POLICY_DENIED_CODE,
-                    "MCP result did not complete within the guardrail buffer timeout",
-                ),
-                None,
-                true,
-            );
-        }
-    };
-    let request_id = mcp_request_id(&id.cloned());
-    let output = if parts
-        .headers
-        .get(axum::http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.starts_with("text/event-stream"))
-    {
-        match guard_mcp_sse_result(
-            state,
-            &request_id,
-            mcp_tool_invocation_id,
-            server,
-            tool,
-            &bytes,
-        )
-        .await
-        {
-            Ok((output, evaluation)) => (output, evaluation),
-            Err(evaluation) => {
-                let response = evaluation.as_ref().map_or_else(
-                    || {
-                        mcp_jsonrpc_error_response(
-                            StatusCode::FORBIDDEN,
-                            id,
-                            GUARDRAIL_POLICY_DENIED_CODE,
-                            "MCP result was not valid guarded SSE",
-                        )
-                    },
-                    |evaluation| guardrail_denied_response(id, evaluation),
-                );
-                return (response, evaluation, true);
-            }
-        }
-    } else {
-        let mut parsed = serde_json::from_slice::<Value>(&bytes)
-            .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()));
-        let (payload_field, result_payload) = if let Some(result) = parsed.get("result") {
-            (Some("result"), result.clone())
-        } else if let Some(error) = parsed.get("error") {
-            (Some("error"), error.clone())
-        } else {
-            (None, parsed.clone())
-        };
-        let evaluation = evaluate_mcp_result(
-            state,
-            Some(&request_id),
-            Some(mcp_tool_invocation_id),
-            server,
-            tool,
-            result_payload,
-        )
-        .await;
-        if evaluation.denied() {
-            return (
-                guardrail_denied_response(id, &evaluation),
-                Some(evaluation),
-                true,
-            );
-        }
-        let output = if evaluation
-            .decisions
-            .iter()
-            .any(|decision| decision.transformed)
-        {
-            match &evaluation.output {
-                EvaluationPayload::McpResult { result, .. } => {
-                    if let Some(payload_field) = payload_field
-                        && let Some(slot) = parsed.get_mut(payload_field)
-                    {
-                        *slot = result.clone();
-                        serde_json::to_vec(&parsed)
-                            .map(Bytes::from)
-                            .unwrap_or(bytes)
-                    } else {
-                        serde_json::to_vec(result).map(Bytes::from).unwrap_or(bytes)
-                    }
-                }
-                _ => bytes,
-            }
-        } else {
-            bytes
-        };
-        (output, Some(evaluation))
-    };
-    parts.headers.remove(axum::http::header::CONTENT_LENGTH);
-    (
-        Response::from_parts(parts, Body::from(output.0)),
-        output.1,
-        false,
-    )
-}
-
-async fn guard_mcp_sse_result(
-    state: &AppState,
-    request_id: &str,
-    mcp_tool_invocation_id: Uuid,
-    server: &str,
-    tool: &str,
-    bytes: &Bytes,
-) -> Result<(Bytes, Option<GuardrailEvaluation>), Option<GuardrailEvaluation>> {
-    let source = std::str::from_utf8(bytes).map_err(|_| None)?;
-    let separator = if source.contains("\r\n") {
-        "\r\n"
-    } else {
-        "\n"
-    };
-    let event_separator = format!("{separator}{separator}");
-    let blocks = source.split(&event_separator).collect::<Vec<_>>();
-    let mut event_values = Vec::new();
-    let mut event_envelopes = Vec::new();
-    let mut event_payload_fields = Vec::new();
-    let mut event_by_block = vec![None; blocks.len()];
-    for (block_index, block) in blocks.iter().enumerate() {
-        let data = block
-            .split(separator)
-            .filter_map(|line| line.strip_prefix("data:"))
-            .map(|data| data.strip_prefix(' ').unwrap_or(data))
-            .collect::<Vec<_>>();
-        if data.is_empty() {
-            continue;
-        }
-        let data = data.join("\n");
-        if data == "[DONE]" {
-            continue;
-        }
-        let parsed = serde_json::from_str::<Value>(&data).map_err(|_| None)?;
-        let (payload_field, payload) = guarded_mcp_sse_payload(&parsed);
-        event_by_block[block_index] = Some(event_values.len());
-        event_values.push(payload);
-        event_envelopes.push(parsed);
-        event_payload_fields.push(payload_field);
-    }
-    if event_values.is_empty() {
-        return Ok((bytes.clone(), None));
-    }
-
-    let event_count = event_values.len();
-    let evaluation = evaluate_mcp_result(
-        state,
-        Some(request_id),
-        Some(mcp_tool_invocation_id),
-        server,
-        tool,
-        Value::Array(event_values),
-    )
-    .await;
-    if evaluation.denied() {
-        return Err(Some(evaluation));
-    }
-    if !evaluation
-        .decisions
-        .iter()
-        .any(|decision| decision.transformed)
-    {
-        return Ok((bytes.clone(), Some(evaluation)));
-    }
-    let replacements = match &evaluation.output {
-        EvaluationPayload::McpResult { result, .. } => result
-            .as_array()
-            .filter(|result| result.len() == event_count),
-        _ => None,
-    }
-    .ok_or_else(|| Some(evaluation.clone()))?;
-
-    let rendered = blocks
-        .into_iter()
-        .enumerate()
-        .map(|(block_index, block)| {
-            let Some(event_index) = event_by_block[block_index] else {
-                return block.to_string();
-            };
-            let mut envelope = event_envelopes[event_index].clone();
-            if let Some(payload_field) = event_payload_fields[event_index] {
-                envelope[payload_field] = replacements[event_index].clone();
-            } else {
-                envelope = replacements[event_index].clone();
-            }
-            let replacement =
-                serde_json::to_string(&envelope).expect("guardrail MCP envelope is valid JSON");
-            let mut replaced = false;
-            block
-                .split(separator)
-                .filter_map(|line| {
-                    if line.strip_prefix("data:").is_none() {
-                        return Some(line.to_string());
-                    }
-                    if replaced {
-                        return None;
-                    }
-                    replaced = true;
-                    Some(format!("data: {replacement}"))
-                })
-                .collect::<Vec<_>>()
-                .join(separator)
-        })
-        .collect::<Vec<_>>()
-        .join(&event_separator);
-    Ok((Bytes::from(rendered), Some(evaluation)))
-}
-
-fn guarded_mcp_sse_payload(value: &Value) -> (Option<&'static str>, Value) {
-    value
-        .get("result")
-        .map(|result| (Some("result"), result.clone()))
-        .or_else(|| {
-            value
-                .get("error")
-                .map(|error| (Some("error"), error.clone()))
-        })
-        .unwrap_or_else(|| (None, value.clone()))
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn handle_tools_call(
     state: &AppState,
@@ -621,10 +254,6 @@ async fn handle_tools_call(
     let access = McpAccess::new(state.store.clone());
     let invocation_logger = McpInvocationLogging::new(state.store.clone());
     let mcp_tool_invocation_id = Uuid::new_v4();
-    let log_upstream = gateway_service::McpGatewayUpstream {
-        server: server.clone(),
-        headers: None,
-    };
     let allowed_tool = match access
         .allowed_tool_for_call(auth, server.mcp_server_id, &tool_name)
         .await
@@ -637,7 +266,7 @@ async fn handle_tools_call(
             .log_invocation(
                 auth,
                 tool_invocation_log_input(
-                    &log_upstream,
+                    &server,
                     &id,
                     Some(mcp_tool_invocation_id),
                     None,
@@ -672,7 +301,7 @@ async fn handle_tools_call(
     .await;
     if guardrail_evaluation.denied() {
         let mut log_input = tool_invocation_log_input(
-            &log_upstream,
+            &server,
             &id,
             Some(mcp_tool_invocation_id),
             Some(tool.mcp_tool_id),
@@ -710,14 +339,17 @@ async fn handle_tools_call(
 
     let gateway = McpGatewayService::new(state.store.clone())
         .with_oauth_runtime(state.mcp_oauth_runtime.clone());
-    let upstream = match gateway.prepare_upstream_for_auth(auth, server).await {
+    let upstream = match gateway
+        .prepare_upstream_for_auth(auth, server.clone())
+        .await
+    {
         Ok(upstream) => upstream,
         Err(error) => {
             let _ = invocation_logger
                 .log_invocation(
                     auth,
                     tool_invocation_log_input(
-                        &log_upstream,
+                        &server,
                         &id,
                         Some(mcp_tool_invocation_id),
                         Some(tool.mcp_tool_id),
@@ -776,7 +408,7 @@ async fn handle_tools_call(
         ),
     };
     let mut log_input = tool_invocation_log_input(
-        &upstream,
+        &upstream.server,
         &id,
         Some(mcp_tool_invocation_id),
         Some(tool.mcp_tool_id),
@@ -839,7 +471,7 @@ fn tools_list_metadata(
 
 #[allow(clippy::too_many_arguments)]
 fn tool_invocation_log_input(
-    upstream: &gateway_service::McpGatewayUpstream,
+    server: &gateway_core::ExternalMcpServerRecord,
     id: &Option<serde_json::Value>,
     mcp_tool_invocation_id: Option<Uuid>,
     tool_id: Option<uuid::Uuid>,
@@ -856,9 +488,9 @@ fn tool_invocation_log_input(
         mcp_tool_invocation_id,
         request_log_id: None,
         request_id: mcp_request_id(id),
-        server_id: Some(upstream.server.mcp_server_id),
-        server_display_key: upstream.server.server_key.clone(),
-        server_display_name: upstream.server.display_name.clone(),
+        server_id: Some(server.mcp_server_id),
+        server_display_key: server.server_key.clone(),
+        server_display_name: server.display_name.clone(),
         tool_id,
         tool_display_key: tool_display_key.to_string(),
         tool_display_name: tool_display_name.to_string(),

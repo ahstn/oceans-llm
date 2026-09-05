@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, sync::Arc, time::Duration as StdDuration};
+use std::{collections::BTreeSet, sync::Arc};
 
 use axum::{
     body::to_bytes,
@@ -8,21 +8,15 @@ use axum::{
 use gateway_core::{
     AuthMode, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
     ExternalMcpTransport, GlobalRole, McpRegistryRepository, NewExternalMcpServerRecord,
-    ProviderRegistry, SeedHumanBudgetDefaults, UpsertExternalMcpToolRecord, UserStatus,
+    UpsertExternalMcpToolRecord, UserStatus,
 };
-use gateway_guardrails::{GuardrailConfig, GuardrailEngine};
-use gateway_service::{GatewayService, McpOauthRuntime, WeightedRoutePlanner};
-use gateway_store::{AnyStore, GatewayStore, StoreConnectionOptions, run_migrations_with_options};
+use gateway_service::{mcp_oauth_server_config, supports_public_discovery};
+use gateway_store::GatewayStore;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use time::Duration;
 
 use super::*;
-use crate::{
-    config::{AgentAnalysisRuntimeCapabilities, PermissionsConfig},
-    http::response_cache::ResponseCache,
-    observability::GatewayMetrics,
-};
 
 struct TestContext {
     state: AppState,
@@ -31,44 +25,7 @@ struct TestContext {
 
 impl TestContext {
     async fn new() -> Self {
-        let directory = tempfile::tempdir().expect("temporary database directory");
-        let options = StoreConnectionOptions::Libsql {
-            path: directory.path().join("gateway.db"),
-        };
-        run_migrations_with_options(&options)
-            .await
-            .expect("migrate database");
-        let store = Arc::new(AnyStore::connect(&options).await.expect("connect database"));
-        let state = AppState {
-            service: Arc::new(GatewayService::new(
-                store.clone(),
-                Arc::new(WeightedRoutePlanner::default()),
-            )),
-            store,
-            providers: ProviderRegistry::new(),
-            copilot_user_provider_keys: Arc::new(Vec::new()),
-            guardrail_engine: Arc::new(GuardrailEngine::new(Vec::new(), Default::default())),
-            guardrail_config: Arc::new(GuardrailConfig::default()),
-            metrics: Arc::new(GatewayMetrics::new()),
-            mcp_http_client: reqwest::Client::new(),
-            mcp_oauth_runtime: Arc::new(McpOauthRuntime::new(None, Vec::new())),
-            identity_token_secret: Arc::new("membership-test-secret".to_string()),
-            oidc_public_base_url: Arc::new(None),
-            oauth_public_base_url: Arc::new(None),
-            client_config_gateway_base_url: Arc::new(None),
-            budget_defaults: Arc::new(SeedHumanBudgetDefaults::default()),
-            agent_analysis: AgentAnalysisRuntimeCapabilities {
-                passive_analysis_enabled: false,
-                shadow_diagnostics_visible: false,
-                calibrated_score_visible: false,
-                team_admin_analytics_enabled: false,
-            },
-            admin_permissions: Arc::new(
-                PermissionsConfig::default().resolve().expect("permissions"),
-            ),
-            leaderboard_cache: Arc::new(ResponseCache::new(StdDuration::from_secs(1))),
-            harness_usage_cache: Arc::new(ResponseCache::new(StdDuration::from_secs(1))),
-        };
+        let (directory, state) = crate::http::test_support::app_state().await;
         Self {
             state,
             _directory: directory,
@@ -150,6 +107,92 @@ async fn read_json_response(response: impl IntoResponse) -> (StatusCode, Value) 
         status,
         serde_json::from_slice(&body).expect("JSON response"),
     )
+}
+
+#[tokio::test]
+async fn server_read_update_preserves_oauth_settings_without_secret_blobs() {
+    let context = TestContext::new().await;
+    let headers = context.session_headers(GlobalRole::PlatformAdmin).await;
+    let expected_auth = json!({
+        "token_exchange": "required",
+        "provider_key": "google",
+        "resource": "https://drivemcp.googleapis.com/mcp/v1",
+        "scopes": ["https://www.googleapis.com/auth/drive.readonly"],
+        "discovery_auth": "none",
+        "discovery_tool_allowlist": ["list_files", "get_file"]
+    });
+    let mut stored_auth = expected_auth.as_object().expect("auth object").clone();
+    stored_auth.insert("client_secret".to_string(), json!("secret-marker"));
+    stored_auth.insert(
+        "token_type".to_string(),
+        json!({"access_token": "nested-secret-marker"}),
+    );
+    let server = context
+        .state
+        .store
+        .create_external_mcp_server(&NewExternalMcpServerRecord {
+            server_key: "google_drive".to_string(),
+            display_name: "Google Drive".to_string(),
+            description: None,
+            transport: ExternalMcpTransport::StreamableHttp,
+            server_url: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
+            auth_mode: ExternalMcpAuthMode::OauthObo,
+            auth_config: stored_auth,
+            timeout_ms: 30_000,
+            created_at: OffsetDateTime::now_utc(),
+        })
+        .await
+        .expect("seed OAuth server");
+
+    let response = list_mcp_servers(
+        State(context.state.clone()),
+        headers.clone(),
+        Query(McpServersQuery {
+            include_disabled: false,
+        }),
+    )
+    .await;
+    let (status, body) = read_json_response(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!body.to_string().contains("secret-marker"));
+    let mut server_view = body["data"]["items"][0].clone();
+    assert_eq!(server_view["auth_config"], expected_auth);
+
+    // The admin editor sends the displayed configuration back when renaming a server.
+    server_view["display_name"] = json!("Team Drive");
+    let request = serde_json::from_value(server_view).expect("server edit request");
+    let response = update_mcp_server(
+        State(context.state.clone()),
+        headers,
+        Path(server.mcp_server_id.to_string()),
+        Json(request),
+    )
+    .await;
+    let (status, body) = read_json_response(response).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["data"]["server"]["display_name"], "Team Drive");
+    assert_eq!(body["data"]["server"]["auth_config"], expected_auth);
+    let saved = context
+        .state
+        .store
+        .get_external_mcp_server(server.mcp_server_id)
+        .await
+        .expect("read saved server")
+        .expect("saved server");
+    let oauth = mcp_oauth_server_config(&saved.auth_config).expect("valid OAuth settings");
+    assert_eq!(oauth.provider_key, "google");
+    assert_eq!(
+        oauth.scopes,
+        ["https://www.googleapis.com/auth/drive.readonly"]
+    );
+    assert_eq!(
+        oauth.discovery_tool_allowlist,
+        Some(BTreeSet::from([
+            "list_files".to_string(),
+            "get_file".to_string()
+        ]))
+    );
+    assert!(supports_public_discovery(&saved));
 }
 
 #[tokio::test]

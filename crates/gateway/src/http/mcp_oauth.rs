@@ -382,7 +382,11 @@ async fn load_oauth_server(
 fn normalize_connection_redirect(value: Option<&str>) -> String {
     value
         .filter(|value| {
-            if !value.starts_with('/') || value.starts_with("//") || value.contains('\\') {
+            if !value.starts_with('/')
+                || value.starts_with("//")
+                || value.contains('\\')
+                || value.chars().any(char::is_control)
+            {
                 return false;
             }
             let Ok(url) = url::Url::parse(&format!("https://oceans.invalid{value}")) else {
@@ -408,10 +412,6 @@ fn token_hash(token: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes()))
 }
 
-fn callback_session_matches(session_user_id: Option<Uuid>, transaction_user_id: Uuid) -> bool {
-    session_user_id == Some(transaction_user_id)
-}
-
 fn callback_transaction_error(
     transaction: &McpOauthStateRecord,
     provider_key: &str,
@@ -420,9 +420,7 @@ fn callback_transaction_error(
 ) -> Option<&'static str> {
     if transaction.expires_at <= now {
         Some("state_expired")
-    } else if transaction.provider_key != provider_key
-        || !callback_session_matches(Some(session_user_id), transaction.user_id)
-    {
+    } else if transaction.provider_key != provider_key || session_user_id != transaction.user_id {
         Some("state_invalid")
     } else {
         None

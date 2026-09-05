@@ -193,7 +193,7 @@ impl StreamableHttpClient {
             .timeout(timeout)
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|error| McpClientError::Transport(error.to_string()))?;
+            .map_err(classify_reqwest_error)?;
         Ok(Self {
             client,
             endpoint,
@@ -328,10 +328,10 @@ impl StreamableHttpClient {
             .headers(request_headers)
             .json(request)
             .build()
-            .map_err(|error| McpClientError::Transport(error.to_string()))
+            .map_err(classify_reqwest_error)
     }
 
-    async fn send<T: Serialize, R: DeserializeOwned + Default>(
+    async fn send<T: Serialize, R: DeserializeOwned>(
         &self,
         request: JsonRpcRequest<T>,
         headers: Option<&BTreeMap<String, String>>,
@@ -349,7 +349,10 @@ impl StreamableHttpClient {
             JsonRpcRequest::new(
                 JsonRpcId::Number(1),
                 "initialize",
-                Some(InitializeRequest::default()),
+                Some(InitializeRequest {
+                    protocol_version: self.protocol_version.clone(),
+                    ..InitializeRequest::default()
+                }),
             ),
             headers,
         )
@@ -377,7 +380,7 @@ impl StreamableHttpClient {
         Ok(())
     }
 
-    async fn send_with_session<T: Serialize, R: DeserializeOwned + Default>(
+    async fn send_with_session<T: Serialize, R: DeserializeOwned>(
         &self,
         request: JsonRpcRequest<T>,
         headers: Option<&BTreeMap<String, String>>,
@@ -416,25 +419,27 @@ impl StreamableHttpClient {
         let result = if is_sse {
             decode_sse_json_rpc_result_for_id(&body, Some(&request.id))?
         } else {
-            decode_json_rpc_result(&body)?
+            decode_json_rpc_result_for_id(&body, Some(&request.id))?.ok_or_else(|| {
+                McpClientError::InvalidResponse {
+                    message: "JSON-RPC response id does not match the request".to_string(),
+                }
+            })?
         };
         Ok((result, session_id))
     }
 }
 
-pub fn decode_json_rpc_result<T: DeserializeOwned + Default>(
-    body: &str,
-) -> Result<T, McpClientError> {
+pub fn decode_json_rpc_result<T: DeserializeOwned>(body: &str) -> Result<T, McpClientError> {
     decode_json_rpc_result_for_id(body, None)?.ok_or_else(|| McpClientError::InvalidResponse {
         message: "JSON-RPC response is missing result".to_string(),
     })
 }
 
-fn decode_json_rpc_result_for_id<T: DeserializeOwned + Default>(
+fn decode_json_rpc_result_for_id<T: DeserializeOwned>(
     body: &str,
     expected_id: Option<&JsonRpcId>,
 ) -> Result<Option<T>, McpClientError> {
-    let response: JsonRpcResponse<T> =
+    let response: JsonRpcResponse<Value> =
         serde_json::from_str(body).map_err(|error| McpClientError::InvalidResponse {
             message: error.to_string(),
         })?;
@@ -454,24 +459,31 @@ fn decode_json_rpc_result_for_id<T: DeserializeOwned + Default>(
     if let Some(error) = response.error {
         return Err(McpClientError::JsonRpc(error));
     }
-    response
+    let result = response
         .result
         .ok_or_else(|| McpClientError::InvalidResponse {
             message: "JSON-RPC response is missing result".to_string(),
+        })?;
+    serde_json::from_value(result)
+        .map_err(|error| McpClientError::InvalidResponse {
+            message: error.to_string(),
         })
         .map(Some)
 }
 
-pub fn decode_sse_json_rpc_result<T: DeserializeOwned + Default>(
-    body: &str,
-) -> Result<T, McpClientError> {
+pub fn decode_sse_json_rpc_result<T: DeserializeOwned>(body: &str) -> Result<T, McpClientError> {
     decode_sse_json_rpc_result_for_id(body, None)
 }
 
-fn decode_sse_json_rpc_result_for_id<T: DeserializeOwned + Default>(
+fn decode_sse_json_rpc_result_for_id<T: DeserializeOwned>(
     body: &str,
     expected_id: Option<&JsonRpcId>,
 ) -> Result<T, McpClientError> {
+    let body = body
+        .strip_prefix('\u{feff}')
+        .unwrap_or(body)
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
     let mut data_lines = Vec::new();
     let mut saw_data_event = false;
     for line in body.lines() {
@@ -512,7 +524,7 @@ async fn read_bounded_body(response: reqwest::Response) -> Result<String, McpCli
     let mut body = Vec::new();
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| McpClientError::Transport(error.to_string()))?;
+        let chunk = chunk.map_err(classify_reqwest_error)?;
         if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BODY_BYTES {
             return Err(McpClientError::ResponseTooLarge {
                 limit_bytes: MAX_RESPONSE_BODY_BYTES,
@@ -598,7 +610,7 @@ fn classify_reqwest_error(error: reqwest::Error) -> McpClientError {
     if error.is_timeout() {
         McpClientError::Timeout
     } else {
-        McpClientError::Transport(error.to_string())
+        McpClientError::Transport(error.without_url().to_string())
     }
 }
 
@@ -612,7 +624,7 @@ fn bounded_body(body: &str) -> String {
 
 #[derive(Debug, thiserror::Error)]
 pub enum McpClientError {
-    #[error("invalid MCP server URL `{url}`: {message}")]
+    #[error("invalid MCP server URL: {message}")]
     InvalidUrl { url: String, message: String },
     #[error("invalid MCP request header: {0}")]
     InvalidHeader(String),
@@ -635,6 +647,22 @@ pub enum McpClientError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_server_url_errors_do_not_disclose_endpoint() {
+        let endpoint = "http://upstream-user:upstream-password@[invalid]/mcp?api_key=query-secret";
+        let error = StreamableHttpClient::new(endpoint, Duration::from_secs(5))
+            .expect_err("invalid IPv6 host");
+        let McpClientError::InvalidUrl { message, .. } = &error else {
+            panic!("expected invalid URL error");
+        };
+
+        assert_eq!(
+            error.to_string(),
+            format!("invalid MCP server URL: {message}")
+        );
+        assert!(!error.to_string().contains("query-secret"));
+    }
 
     #[test]
     fn parses_json_rpc_result() {
