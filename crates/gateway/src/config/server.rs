@@ -57,9 +57,12 @@ fn validate_otel_endpoint(field: &str, endpoint: Option<&str>) -> anyhow::Result
     let Some(endpoint) = endpoint else {
         return Ok(());
     };
-    let _: http::Uri = endpoint
+    let uri: http::Uri = endpoint
         .parse()
         .with_context(|| format!("{field} `{endpoint}` is not a valid URI"))?;
+    if !matches!(uri.scheme_str(), Some("http" | "https")) || uri.host().is_none() {
+        bail!("{field} must be an absolute HTTP URI with a host");
+    }
     Ok(())
 }
 
@@ -77,4 +80,37 @@ const fn default_otel_export_interval_secs() -> u64 {
 
 const fn default_otel_trace_sample_ratio() -> f64 {
     1.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ServerConfig;
+
+    #[test]
+    fn telemetry_endpoints_require_absolute_http_uris() {
+        for metrics in [false, true] {
+            for (endpoint, accepted) in [
+                ("/v1/traces", false),
+                ("collector:4317", false),
+                ("ftp://collector:4317", false),
+                ("http://127.0.0.1:4317", true),
+                ("https://collector.example.com:4317", true),
+            ] {
+                let mut config = ServerConfig::default();
+                let field = if metrics {
+                    config.otel_metrics_endpoint = Some(endpoint.to_string());
+                    "server.otel_metrics_endpoint"
+                } else {
+                    config.otel_endpoint = Some(endpoint.to_string());
+                    "server.otel_endpoint"
+                };
+                if accepted {
+                    config.validate().expect("valid telemetry endpoint");
+                } else {
+                    let error = config.validate().expect_err("invalid telemetry endpoint");
+                    assert!(format!("{error:#}").contains(field), "{error:#}");
+                }
+            }
+        }
+    }
 }

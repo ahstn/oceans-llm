@@ -1,9 +1,11 @@
+use super::environment::TestEnvironment;
 use super::*;
 use serial_test::serial;
 
 #[test]
 #[serial]
 fn production_config_requires_bootstrap_password_change() {
+    let _environment = TestEnvironment::capture(&["POSTGRES_URL"]);
     let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.prod.yaml");
     unsafe {
         env::set_var(
@@ -76,6 +78,7 @@ auth:
 #[test]
 #[serial]
 fn resolves_enabled_oauth_client_id_env_reference() {
+    let _environment = TestEnvironment::capture(&["OCEANS_TEST_GITHUB_CLIENT_ID"]);
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
     unsafe {
@@ -135,6 +138,10 @@ auth:
 #[test]
 #[serial]
 fn disabled_oauth_provider_allows_unset_secret_references() {
+    let _environment = TestEnvironment::capture(&[
+        "OCEANS_TEST_MISSING_GITHUB_CLIENT_ID",
+        "OCEANS_TEST_MISSING_GITHUB_CLIENT_SECRET",
+    ]);
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
     unsafe {

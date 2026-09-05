@@ -17,6 +17,8 @@ use super::{
     },
 };
 
+const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 120_000;
+
 impl GatewayConfig {
     pub fn openai_compatible_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {
         let mut configs = Vec::new();
@@ -31,7 +33,7 @@ impl GatewayConfig {
                         .timeouts
                         .as_ref()
                         .map(|timeouts| timeouts.total_ms)
-                        .unwrap_or(120_000);
+                        .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS);
                     if let Some(batch) = &provider.batch {
                         config.batch = gateway_providers::OpenAiBatchConfig {
                             dialect: match batch.dialect {
@@ -93,7 +95,7 @@ impl GatewayConfig {
                         .timeouts
                         .as_ref()
                         .map(|timeouts| timeouts.total_ms)
-                        .unwrap_or(120_000);
+                        .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS);
 
                     configs.push(config);
                 }
@@ -125,7 +127,7 @@ impl GatewayConfig {
                 .timeouts
                 .as_ref()
                 .map(|timeouts| timeouts.total_ms)
-                .unwrap_or(120_000);
+                .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS);
 
             if let Some(auth) = &provider.auth
                 && let Some(token) = &auth.token
@@ -173,7 +175,7 @@ impl GatewayConfig {
                     .timeouts
                     .as_ref()
                     .map(|timeouts| timeouts.total_ms)
-                    .unwrap_or(120_000),
+                    .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS),
                 batch: provider.batch.as_ref().map(|batch| VertexBatchConfig {
                     bigquery_project_id: batch
                         .bigquery_project_id
@@ -237,7 +239,7 @@ impl GatewayConfig {
                     .timeouts
                     .as_ref()
                     .map(|timeouts| timeouts.total_ms)
-                    .unwrap_or(120_000),
+                    .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS),
             });
         }
 
@@ -294,7 +296,7 @@ impl GatewayConfig {
                 .timeouts
                 .as_ref()
                 .map(|timeouts| timeouts.total_ms)
-                .unwrap_or(120_000);
+                .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS);
 
             configs.push(config);
         }

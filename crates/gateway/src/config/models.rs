@@ -63,6 +63,7 @@ pub struct ModelAllowlistConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelConfig {
     pub id: String,
     #[serde(default)]
@@ -124,6 +125,13 @@ pub(super) fn validate_models(
                 model.max_reasoning_effort,
                 provider_by_id.get(route.provider.as_str()).copied(),
             )?;
+            if !provider_by_id.contains_key(route.provider.as_str()) {
+                bail!(
+                    "model `{}` route references unknown provider `{}`",
+                    model.id,
+                    route.provider
+                );
+            }
         }
     }
 

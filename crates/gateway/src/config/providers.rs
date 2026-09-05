@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, bail};
 use gateway_providers::{BearerAuthHeader, BedrockEndpointKind, BedrockProviderConfig};
@@ -308,7 +308,11 @@ impl GcpVertexProviderConfig {
 }
 
 pub(super) fn validate_providers(providers: &[ProviderConfig]) -> anyhow::Result<()> {
+    let mut provider_ids = BTreeSet::new();
     for provider in providers {
+        if !provider_ids.insert(provider.id()) {
+            bail!("duplicate provider id `{}`", provider.id());
+        }
         match provider {
             ProviderConfig::OpenAiCompat(provider) => provider.validate()?,
             ProviderConfig::AnthropicCompat(provider) => provider.validate()?,
@@ -332,6 +336,10 @@ impl OpenAiCompatProviderConfig {
                 self.id
             );
         }
+        validate_http_url(
+            &self.base_url,
+            &format!("openai_compat provider `{}` base_url", self.id),
+        )?;
         if self.pricing_provider_id.trim().is_empty() {
             bail!(
                 "openai_compat provider `{}` pricing_provider_id cannot be empty",
@@ -633,16 +641,15 @@ impl GitHubCopilotProviderConfig {
                 self.id
             );
         }
-        let _ = url::Url::parse(&self.base_url).with_context(|| {
-            format!("github_copilot provider `{}` base_url is invalid", self.id)
-        })?;
+        validate_http_url(
+            &self.base_url,
+            &format!("github_copilot provider `{}` base_url", self.id),
+        )?;
         if let Some(github_api_url) = self.github_api_url.as_deref() {
-            let _ = url::Url::parse(github_api_url).with_context(|| {
-                format!(
-                    "github_copilot provider `{}` github_api_url is invalid",
-                    self.id
-                )
-            })?;
+            validate_http_url(
+                github_api_url,
+                &format!("github_copilot provider `{}` github_api_url", self.id),
+            )?;
         }
         if self.editor_version.trim().is_empty() {
             bail!(
@@ -811,5 +818,13 @@ fn validate_provider_display_config(
         bail!("provider `{provider_id}` display.icon_key `{icon_key}` is not supported");
     }
 
+    Ok(())
+}
+
+fn validate_http_url(value: &str, field: &str) -> anyhow::Result<()> {
+    let parsed = url::Url::parse(value).with_context(|| format!("{field} is invalid"))?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        bail!("{field} must be an HTTP URL with a host");
+    }
     Ok(())
 }

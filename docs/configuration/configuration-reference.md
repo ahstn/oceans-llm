@@ -9,7 +9,7 @@ This page owns config syntax and parse-time rules. It does not own the full runt
 ## Source of Truth
 
 - config parsing and validation:
-  - [../crates/gateway/src/config.rs](../../crates/gateway/src/config.rs)
+  - [../crates/gateway/src/config/mod.rs](../../crates/gateway/src/config/mod.rs)
 - provider capability defaults:
   - [../crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs)
 - checked-in examples:
@@ -18,6 +18,8 @@ This page owns config syntax and parse-time rules. It does not own the full runt
   - [../deploy/config/gateway.yaml](../../deploy/config/gateway.yaml)
 
 ## Top-Level Sections
+
+Unknown top-level, model, user, and user-membership fields are rejected. Correct misspelled keys instead of relying on silently ignored values.
 
 - `server`
 - `database`
@@ -414,7 +416,9 @@ Purge fields:
   - defaults to `7d`
   - valid values are `1d`, `3d`, and `7d`
 - `purge.schedule`
-  - standard 5-field cron expression for the recurring purge worker
+  - five fields: minute, hour, day of month, month, day of week
+  - weekday numbers follow the Rust `cron` crate: `1` is Sunday through `7` Saturday; Unix Sunday `0` is not accepted
+  - prefer weekday names (`SUN`, `MON`, etc.) to avoid numbering ambiguity
   - defaults to `0 0 * * *`
   - must describe a daily or less frequent schedule
 
@@ -1153,6 +1157,16 @@ models:
 - `mantle_openai_responses`
 - `mantle_openai_chat`
 - `mantle_anthropic_messages`
+
+Every Bedrock route must include an explicit `capabilities` block. Omitted capability fields default to `true`; defaults are not inferred from `api_style`. Configure these fields for the selected style:
+
+| API style | Required capability settings |
+| --- | --- |
+| `runtime_converse`, `runtime_openai_chat`, `mantle_openai_chat`, `mantle_anthropic_messages` | `responses: false`, `json_schema: false` |
+| `runtime_anthropic_invoke` | `responses: false`, `json_schema: false`, `stream: false` |
+| `mantle_openai_responses` | `chat_completions: false` |
+
+Also disable API families that the selected upstream model does not support, such as `embeddings`. Configuration validation rejects conflicting capabilities; it does not establish live model support.
 
 `compatibility.aws_bedrock.supports_strict_tools` is optional. When unset, Runtime Converse routes infer support from transparent upstream model IDs and omit `strict` for Claude Opus 4.7/4.8. Set it to `false` for opaque application-inference-profile IDs or ARNs backed by those models; explicit `true` or `false` overrides inference.
 

@@ -580,3 +580,69 @@ fn managed_bedrock_credentials_accept_file_references() {
         );
     }
 }
+
+#[test]
+fn bedrock_api_styles_require_explicit_compatible_capabilities() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    for (api_style, endpoint_kind, capabilities) in [
+        (
+            "runtime_converse",
+            "bedrock_runtime",
+            "responses: false, json_schema: false",
+        ),
+        (
+            "runtime_anthropic_invoke",
+            "bedrock_runtime",
+            "responses: false, json_schema: false, stream: false",
+        ),
+        (
+            "runtime_openai_chat",
+            "bedrock_runtime",
+            "responses: false, json_schema: false",
+        ),
+        (
+            "mantle_openai_chat",
+            "bedrock_mantle",
+            "responses: false, json_schema: false",
+        ),
+        (
+            "mantle_anthropic_messages",
+            "bedrock_mantle",
+            "responses: false, json_schema: false",
+        ),
+        (
+            "mantle_openai_responses",
+            "bedrock_mantle",
+            "chat_completions: false",
+        ),
+    ] {
+        let base_path = if api_style.contains("openai") {
+            "\n            openai_base_path: /openai/v1"
+        } else {
+            ""
+        };
+        let yaml = format!(
+            "providers:\n  - id: bedrock\n    type: aws_bedrock\n    region: us-east-1\n    endpoint_kind: {endpoint_kind}\nmodels:\n  - id: model\n    routes:\n      - provider: bedrock\n        upstream_model: upstream\n        compatibility:\n          aws_bedrock:\n            api_style: {api_style}{base_path}\n"
+        );
+        write_config(&config_path, &yaml);
+        let error = GatewayConfig::from_path(&config_path)
+            .expect_err("permissive defaults must conflict with each Bedrock style");
+        let expected = if api_style == "mantle_openai_responses" {
+            "cannot enable chat_completions capability"
+        } else {
+            "cannot enable responses capability"
+        };
+        assert!(
+            format!("{error:#}").contains(expected),
+            "{api_style}: {error:#}"
+        );
+
+        write_config(
+            &config_path,
+            &format!("{yaml}        capabilities: {{ {capabilities}, embeddings: false }}\n"),
+        );
+        GatewayConfig::from_path(&config_path)
+            .unwrap_or_else(|error| panic!("explicit capabilities for {api_style}: {error:#}"));
+    }
+}

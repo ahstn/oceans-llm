@@ -149,6 +149,29 @@ pub struct AuthOauthConfig {
     pub providers: Vec<OauthProviderConfig>,
 }
 
+fn resolve_public_base_url(
+    raw: Option<&str>,
+    field: &'static str,
+) -> anyhow::Result<Option<String>> {
+    let Some(raw_url) = raw else {
+        return Ok(None);
+    };
+    let resolved_url = resolve_secret_reference(raw_url).context(field)?;
+    let trimmed = resolved_url.trim().trim_end_matches('/').to_string();
+    if trimmed.is_empty() {
+        bail!("{field} cannot be empty");
+    }
+    let parsed_url = url::Url::parse(&trimmed).with_context(|| format!("{field} is invalid"))?;
+    match parsed_url.scheme() {
+        "http" | "https" => {}
+        scheme => bail!("{field} scheme `{scheme}` is not supported"),
+    }
+    if parsed_url.host().is_none() {
+        bail!("{field} must include a host");
+    }
+    Ok(Some(trimmed))
+}
+
 impl AuthOidcConfig {
     pub(super) fn provider_keys(&self) -> anyhow::Result<std::collections::BTreeSet<String>> {
         self.providers
@@ -222,25 +245,7 @@ impl AuthOidcConfig {
     }
 
     pub fn resolved_public_base_url(&self) -> anyhow::Result<Option<String>> {
-        let Some(raw_url) = self.public_base_url.as_deref() else {
-            return Ok(None);
-        };
-        let resolved_url =
-            resolve_secret_reference(raw_url).context("auth.oidc.public_base_url")?;
-        let trimmed = resolved_url.trim().trim_end_matches('/').to_string();
-        if trimmed.is_empty() {
-            bail!("auth.oidc.public_base_url cannot be empty");
-        }
-        let parsed_url =
-            url::Url::parse(&trimmed).context("auth.oidc.public_base_url is invalid")?;
-        match parsed_url.scheme() {
-            "http" | "https" => {}
-            scheme => bail!("auth.oidc.public_base_url scheme `{scheme}` is not supported"),
-        }
-        if parsed_url.host().is_none() {
-            bail!("auth.oidc.public_base_url must include a host");
-        }
-        Ok(Some(trimmed))
+        resolve_public_base_url(self.public_base_url.as_deref(), "auth.oidc.public_base_url")
     }
 }
 
@@ -329,25 +334,10 @@ impl AuthOauthConfig {
     }
 
     pub fn resolved_public_base_url(&self) -> anyhow::Result<Option<String>> {
-        let Some(raw_url) = self.public_base_url.as_deref() else {
-            return Ok(None);
-        };
-        let resolved_url =
-            resolve_secret_reference(raw_url).context("auth.oauth.public_base_url")?;
-        let trimmed = resolved_url.trim().trim_end_matches('/').to_string();
-        if trimmed.is_empty() {
-            bail!("auth.oauth.public_base_url cannot be empty");
-        }
-        let parsed_url =
-            url::Url::parse(&trimmed).context("auth.oauth.public_base_url is invalid")?;
-        match parsed_url.scheme() {
-            "http" | "https" => {}
-            scheme => bail!("auth.oauth.public_base_url scheme `{scheme}` is not supported"),
-        }
-        if parsed_url.host().is_none() {
-            bail!("auth.oauth.public_base_url must include a host");
-        }
-        Ok(Some(trimmed))
+        resolve_public_base_url(
+            self.public_base_url.as_deref(),
+            "auth.oauth.public_base_url",
+        )
     }
 }
 
@@ -412,6 +402,7 @@ pub struct OauthProviderConfig {
 impl OauthProviderConfig {
     pub(super) fn seed_provider(&self) -> anyhow::Result<SeedOauthProvider> {
         let provider_key = normalize_config_auth_provider_key(&self.key)?;
+        let domain_field = format!("oauth provider `{provider_key}` allowed_email_domains");
         Ok(SeedOauthProvider {
             provider_type: self.provider_type.trim().to_string(),
             label: if self.label.trim().is_empty() {
@@ -429,7 +420,7 @@ impl OauthProviderConfig {
             scopes: self.scopes.clone(),
             allowed_email_domains: normalize_allowed_email_domains(
                 &self.allowed_email_domains,
-                "auth.oauth.providers[].allowed_email_domains",
+                &domain_field,
             )?,
             sso_email_verification_enabled: self.sso_email_verification_enabled,
             enabled: self.enabled,

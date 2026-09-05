@@ -80,6 +80,7 @@ pub use providers::{
 };
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GatewayConfig {
     #[serde(default)]
     pub server: ServerConfig,

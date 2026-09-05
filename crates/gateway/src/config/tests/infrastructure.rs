@@ -337,3 +337,34 @@ fn rejects_invalid_budget_alert_email_config() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn purge_schedule_uses_named_or_sunday_based_weekdays() {
+    use chrono::{Datelike, TimeZone, Utc, Weekday};
+    let tmp = tempdir().unwrap();
+    let path = tmp.path().join("gateway.yaml");
+    let start = Utc.with_ymd_and_hms(2026, 9, 5, 12, 0, 0).unwrap();
+    for (day, weekday) in [
+        ("SUN", Weekday::Sun),
+        ("1", Weekday::Sun),
+        ("MON", Weekday::Mon),
+        ("2", Weekday::Mon),
+        ("7", Weekday::Sat),
+    ] {
+        write_config(
+            &path,
+            &format!("request_logging:\n  purge:\n    schedule: '0 0 * * {day}'\n"),
+        );
+        let config = GatewayConfig::from_path(&path).expect("weekly schedule");
+        let schedule: cron::Schedule = format!("0 {}", config.request_logging.purge.schedule)
+            .parse()
+            .unwrap();
+        assert_eq!(schedule.after(&start).next().unwrap().weekday(), weekday);
+    }
+    write_config(
+        &path,
+        "request_logging:\n  purge:\n    schedule: '0 0 * * 0'\n",
+    );
+    let error = GatewayConfig::from_path(&path).unwrap_err();
+    assert!(format!("{error:#}").contains("weekdays use SUN-SAT or 1=SUN through 7=SAT"));
+}

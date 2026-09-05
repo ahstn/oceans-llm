@@ -111,7 +111,12 @@ models:
 "#,
     );
 
-    GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}")
+            .contains("gcp_vertex routes require upstream_model in <publisher>/<model_id> format"),
+        "unexpected error: {error:#}"
+    );
 }
 
 #[test]
@@ -279,8 +284,12 @@ models:
 "#,
     );
 
-    GatewayConfig::from_path(&config_path)
+    let error = GatewayConfig::from_path(&config_path)
         .expect_err("floating-point YAML pricing must be rejected");
+    assert!(
+        format!("{error:#}").contains("expected a quoted decimal string"),
+        "unexpected error: {error:#}"
+    );
 }
 
 #[test]
@@ -364,4 +373,52 @@ models:
             "unexpected error for `{input_rate}`: {error:#}"
         );
     }
+}
+
+#[test]
+fn rejects_routes_for_unknown_providers() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+models:
+  - id: fast
+    routes:
+      - provider: missing
+        upstream_model: upstream
+"#,
+    );
+    let error = GatewayConfig::from_path(&config_path).expect_err("unknown provider must fail");
+    assert!(
+        format!("{error:#}").contains("model `fast` route references unknown provider `missing`"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn rejects_misspelled_model_reasoning_limit() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: openai
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    max_reasoning_efort: high
+    routes:
+      - provider: openai
+        upstream_model: upstream
+"#,
+    );
+    let error = GatewayConfig::from_path(&config_path).expect_err("policy typo must fail");
+    assert!(
+        format!("{error:#}").contains("unknown field `max_reasoning_efort`"),
+        "unexpected error: {error:#}"
+    );
 }

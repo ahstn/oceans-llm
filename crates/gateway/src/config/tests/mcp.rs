@@ -80,20 +80,49 @@ fn google_mcp_oauth_endpoints_are_pinned() {
     };
     config.validate().expect("official Google endpoints");
 
-    for invalid in [
-        "https://oauth2.googleapis.com.evil.example/token",
-        "https://user@oauth2.googleapis.com/token",
-        "https://oauth2.googleapis.com:8443/token",
-        "https://oauth2.googleapis.com/other",
-        "https://oauth2.googleapis.com/token?tenant=x",
-        "https://oauth2.googleapis.com/token#fragment",
+    for (field, invalid_urls) in [
+        (
+            "token_url",
+            [
+                "https://oauth2.googleapis.com.evil.example/token",
+                "https://user@oauth2.googleapis.com/token",
+                "https://oauth2.googleapis.com:8443/token",
+                "https://oauth2.googleapis.com/other",
+                "https://oauth2.googleapis.com/token?tenant=x",
+                "https://oauth2.googleapis.com/token#fragment",
+            ],
+        ),
+        (
+            "authorization_url",
+            [
+                "https://accounts.google.com.evil.example/o/oauth2/v2/auth",
+                "https://user@accounts.google.com/o/oauth2/v2/auth",
+                "https://accounts.google.com:8443/o/oauth2/v2/auth",
+                "https://accounts.google.com/other",
+                "https://accounts.google.com/o/oauth2/v2/auth?tenant=x",
+                "https://accounts.google.com/o/oauth2/v2/auth#fragment",
+            ],
+        ),
     ] {
-        let mut provider = provider.clone();
-        provider.token_url = invalid.to_string();
-        let config = McpOauthConfig {
-            public_base_url: Some("https://gateway.example.com".to_string()),
-            providers: vec![provider],
-        };
-        assert!(config.validate().is_err(), "accepted {invalid}");
+        for invalid in invalid_urls {
+            let mut provider = provider.clone();
+            let endpoint = match field {
+                "token_url" => &mut provider.token_url,
+                "authorization_url" => &mut provider.authorization_url,
+                _ => unreachable!(),
+            };
+            *endpoint = invalid.to_string();
+            let config = McpOauthConfig {
+                public_base_url: Some("https://gateway.example.com".to_string()),
+                providers: vec![provider],
+            };
+            let error = config
+                .validate()
+                .expect_err("unofficial endpoint must fail");
+            assert!(
+                error.to_string().contains(&format!("{field} must be")),
+                "unexpected rejection for {invalid}: {error:#}"
+            );
+        }
     }
 }

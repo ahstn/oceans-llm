@@ -234,7 +234,6 @@ providers:
   - id: upstream
     type: openai_compat
     base_url: https://example.com/v1
-    api_key: literal.test
     pricing_provider_id: openai
 models:
   - id: public

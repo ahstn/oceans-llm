@@ -1,3 +1,4 @@
+use super::environment::TestEnvironment;
 use super::*;
 use serial_test::serial;
 
@@ -83,6 +84,11 @@ users:
 #[test]
 #[serial]
 fn accepts_multiple_managed_keys_for_same_service_account() {
+    let _environment = TestEnvironment::capture(&[
+        "OCEANS_TEST_SEED_API_KEY_ONE",
+        "OCEANS_TEST_SEED_API_KEY_TWO",
+        "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
+    ]);
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
     unsafe {
@@ -136,6 +142,7 @@ service_accounts:
 #[test]
 #[serial]
 fn parses_generated_service_account_key_without_encryption_key() {
+    let _environment = TestEnvironment::capture(&["OCEANS_API_KEY_SECRET_ENCRYPTION_KEY"]);
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
     unsafe {
@@ -282,6 +289,10 @@ users:
 #[test]
 #[serial]
 fn parses_service_accounts_with_managed_key_and_budget() {
+    let _environment = TestEnvironment::capture(&[
+        "OCEANS_TEST_SEED_API_KEY",
+        "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
+    ]);
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
     unsafe {

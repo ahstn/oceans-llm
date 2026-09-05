@@ -580,3 +580,84 @@ models:
         );
     }
 }
+
+#[test]
+fn rejects_duplicate_provider_ids_across_provider_types() {
+    let tmp = tempdir().expect("tempdir");
+    let path = tmp.path().join("gateway.yaml");
+    for second_type in ["openai_compat", "anthropic_compat"] {
+        write_config(
+            &path,
+            &format!(
+                r#"
+providers:
+  - id: upstream
+    type: openai_compat
+    base_url: https://api.example.com/v1
+    pricing_provider_id: openai
+  - id: upstream
+    type: {second_type}
+    base_url: https://other.example.com/v1
+    pricing_provider_id: openai
+"#
+            ),
+        );
+        let error = GatewayConfig::from_path(&path).expect_err("duplicate provider");
+        assert!(format!("{error:#}").contains("duplicate provider id `upstream`"));
+    }
+}
+
+#[test]
+fn validates_http_provider_urls_at_config_load() {
+    let tmp = tempdir().expect("tempdir");
+    let path = tmp.path().join("gateway.yaml");
+    for (provider_type, field) in [
+        ("openai_compat", "base_url"),
+        ("github_copilot", "base_url"),
+        ("github_copilot", "github_api_url"),
+    ] {
+        for (url, accepted) in [
+            ("/relative/path", false),
+            ("file:///tmp/upstream", false),
+            ("ftp://example.com/api", false),
+            ("https://", false),
+            ("http://127.0.0.1:8080/v1", true),
+            ("https://api.example.com/v1", true),
+        ] {
+            let base_url = if field == "base_url" {
+                url
+            } else {
+                "https://api.example.com"
+            };
+            let github_api = if field == "github_api_url" {
+                format!("    github_api_url: '{url}'\n")
+            } else {
+                String::new()
+            };
+            let auth = if provider_type == "github_copilot" {
+                "    auth:\n      mode: github_user\n"
+            } else {
+                ""
+            };
+            write_config(
+                &path,
+                &format!(
+                    "providers:\n  - id: upstream\n    type: {provider_type}\n    base_url: '{base_url}'\n    pricing_provider_id: openai\n{github_api}{auth}"
+                ),
+            );
+            let result = GatewayConfig::from_path(&path);
+            if accepted {
+                result.unwrap_or_else(|error| {
+                    panic!("{provider_type}.{field} rejected {url}: {error:#}")
+                });
+            } else {
+                let error = result.expect_err("invalid provider URL");
+                assert!(
+                    format!("{error:#}")
+                        .contains(&format!("{provider_type} provider `upstream` {field}")),
+                    "{error:#}"
+                );
+            }
+        }
+    }
+}

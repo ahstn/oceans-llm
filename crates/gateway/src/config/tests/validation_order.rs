@@ -51,3 +51,27 @@ fn reports_first_invalid_domain_in_existing_validation_order() {
         );
     }
 }
+
+#[test]
+fn rejects_misspelled_top_level_and_identity_policy_fields() {
+    let tmp = tempdir().unwrap();
+    let path = tmp.path().join("gateway.yaml");
+    for (yaml, field) in [
+        ("guardrail: {}", "guardrail"),
+        (
+            "users: [{name: Person, email: person@example.com, auth_mode: password, oidc_provider: corp}]",
+            "oidc_provider",
+        ),
+        (
+            "users: [{name: Person, email: person@example.com, auth_mode: password, membership: {team: corp, rol: admin}}]",
+            "rol",
+        ),
+    ] {
+        write_config(&path, yaml);
+        let error = GatewayConfig::from_path(&path).unwrap_err();
+        assert!(
+            format!("{error:#}").contains(&format!("unknown field `{field}`")),
+            "{error:#}"
+        );
+    }
+}

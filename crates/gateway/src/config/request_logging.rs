@@ -30,12 +30,14 @@ fn validate_daily_cron_schedule(field_name: &str, schedule: &str) -> anyhow::Res
     let schedule = schedule.trim();
     let fields = schedule.split_whitespace().count();
     if fields != 5 {
-        bail!("{field_name} must use standard 5-field cron syntax");
+        bail!(
+            "{field_name} must use 5-field cron syntax (weekdays SUN-SAT or 1=SUN through 7=SAT)"
+        );
     }
 
-    let parsed: cron::Schedule = format!("0 {schedule}")
-        .parse()
-        .with_context(|| format!("{field_name} `{schedule}` is invalid"))?;
+    let parsed: cron::Schedule = format!("0 {schedule}").parse().with_context(|| {
+        format!("{field_name} `{schedule}` is invalid; weekdays use SUN-SAT or 1=SUN through 7=SAT")
+    })?;
     let mut upcoming = parsed.upcoming(chrono::Utc);
     let first = upcoming
         .next()

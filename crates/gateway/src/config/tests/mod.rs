@@ -28,6 +28,7 @@ mod auth;
 mod batch;
 mod bedrock;
 mod budgets;
+mod environment;
 mod github_copilot;
 mod identity;
 mod infrastructure;

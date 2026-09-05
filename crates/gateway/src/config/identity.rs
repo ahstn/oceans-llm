@@ -85,6 +85,7 @@ pub struct ServiceAccountKeyConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UserConfig {
     pub name: String,
     pub email: String,
@@ -106,6 +107,7 @@ pub struct UserConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UserMembershipConfig {
     pub team: String,
     #[serde(default = "default_membership_role")]
