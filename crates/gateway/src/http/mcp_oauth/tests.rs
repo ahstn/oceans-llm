@@ -41,16 +41,28 @@ fn connection_success_redirect_preserves_existing_query() {
 }
 
 #[tokio::test]
-async fn oauth_callback_requires_the_initiating_browser_session() {
+async fn oauth_callback_rejects_wrong_owner_or_provider_without_consuming_state() {
     let (_directory, state) = crate::http::test_support::app_state().await;
-    let (initiator, _) = oauth_session(&state).await;
+    let (initiator, initiator_headers) = oauth_session(&state).await;
     let (_, other_headers) = oauth_session(&state).await;
     let server = oauth_server(&state).await;
     let now = OffsetDateTime::now_utc();
-    for (headers, expected_status, expected_location) in [
-        (HeaderMap::new(), axum::http::StatusCode::UNAUTHORIZED, None),
+    for (headers, provider_key, expected_status, expected_location) in [
+        (
+            HeaderMap::new(),
+            "google",
+            axum::http::StatusCode::UNAUTHORIZED,
+            None,
+        ),
         (
             other_headers,
+            "google",
+            axum::http::StatusCode::TEMPORARY_REDIRECT,
+            Some("/admin/account/connections?oauth_error=state_invalid"),
+        ),
+        (
+            initiator_headers.clone(),
+            "other-provider",
             axum::http::StatusCode::TEMPORARY_REDIRECT,
             Some("/admin/account/connections?oauth_error=state_invalid"),
         ),
@@ -77,10 +89,10 @@ async fn oauth_callback_requires_the_initiating_browser_session() {
         let response = mcp_oauth_callback(
             State(state.clone()),
             headers,
-            Path("google".to_string()),
+            Path(provider_key.to_string()),
             Query(McpOauthCallbackQuery {
                 code: Some("unused-code".to_string()),
-                state: Some(raw_state),
+                state: Some(raw_state.clone()),
                 error: None,
             }),
         )
@@ -94,6 +106,30 @@ async fn oauth_callback_requires_the_initiating_browser_session() {
                 .map(|value| value.to_str().expect("location")),
             expected_location,
         );
+        // A provider cancellation completes the state check without an external token exchange.
+        for expected_error in ["access_denied", "state_invalid"] {
+            let retry = mcp_oauth_callback(
+                State(state.clone()),
+                initiator_headers.clone(),
+                Path("google".to_string()),
+                Query(McpOauthCallbackQuery {
+                    code: None,
+                    state: Some(raw_state.clone()),
+                    error: Some("access_denied".to_string()),
+                }),
+            )
+            .await
+            .into_response();
+            assert_eq!(retry.status(), axum::http::StatusCode::TEMPORARY_REDIRECT);
+            assert_eq!(
+                retry
+                    .headers()
+                    .get("location")
+                    .and_then(|value| value.to_str().ok()),
+                Some(format!("/admin/account/connections?oauth_error={expected_error}").as_str()),
+                "the initiating user must consume the preserved transaction exactly once",
+            );
+        }
     }
     assert!(
         state
@@ -267,7 +303,7 @@ async fn oauth_start_persists_only_hashed_state_and_bound_pkce_transaction() {
     assert!(
         state
             .store
-            .consume_mcp_oauth_state(raw_state, now)
+            .consume_mcp_oauth_state(raw_state, user.user_id, "google", now)
             .await
             .expect("raw state lookup")
             .is_none(),
@@ -276,7 +312,7 @@ async fn oauth_start_persists_only_hashed_state_and_bound_pkce_transaction() {
     let expected_hash = URL_SAFE_NO_PAD.encode(Sha256::digest(raw_state.as_bytes()));
     let transaction = state
         .store
-        .consume_mcp_oauth_state(&expected_hash, now)
+        .consume_mcp_oauth_state(&expected_hash, user.user_id, "google", now)
         .await
         .expect("hashed state lookup")
         .expect("persisted transaction");
@@ -314,7 +350,7 @@ async fn oauth_start_persists_only_hashed_state_and_bound_pkce_transaction() {
     assert!(
         state
             .store
-            .consume_mcp_oauth_state(&expected_hash, now)
+            .consume_mcp_oauth_state(&expected_hash, user.user_id, "google", now)
             .await
             .expect("replay lookup")
             .is_none(),

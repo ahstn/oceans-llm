@@ -270,7 +270,7 @@ pub async fn mcp_oauth_callback(
     let now = OffsetDateTime::now_utc();
     let Some(transaction) = state
         .store
-        .consume_mcp_oauth_state(&token_hash(state_token), now)
+        .consume_mcp_oauth_state(&token_hash(state_token), user.user_id, &provider_key, now)
         .await?
     else {
         return Ok(connection_error_redirect("state_invalid"));

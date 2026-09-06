@@ -259,18 +259,6 @@ run = [
 description = "Run admin UI dev server"
 run = "bun run --cwd crates/admin-ui/web dev"
 
-[tasks.ui-designs]
-description = "Preview the three MCP server design candidates with sample data"
-depends = ["ui-install"]
-dir = "crates/admin-ui/web"
-run = "bun --bun vite --config vite.designs.config.ts --open /designs/index.html"
-
-[tasks.ui-designs-build]
-description = "Build the isolated MCP server design preview"
-depends = ["ui-install"]
-dir = "crates/admin-ui/web"
-run = "bun --bun vite build --config vite.designs.config.ts"
-
 [tasks.ui-build]
 description = "Build admin UI"
 depends = ["ui-install"]

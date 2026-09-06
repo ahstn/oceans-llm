@@ -932,60 +932,60 @@ function DataGridProvider<TData extends object>({
   )
 }
 
+const defaultDataGridProps = {
+  loadingMode: 'skeleton',
+  tableLayout: {
+    dense: false,
+    cellBorder: false,
+    rowBorder: true,
+    rowRounded: false,
+    stripped: false,
+    headerSticky: false,
+    headerBackground: false,
+    footerBackground: false,
+    headerBorder: true,
+    width: 'fixed',
+    columnsVisibility: false,
+    columnsResizable: false,
+    // columnsResizeMode has no default on purpose: when unset, the
+    // consumer's tanstack columnResizeMode (default "onEnd") is honored.
+    columnsPinnable: false,
+    columnsMovable: false,
+    columnsDraggable: false,
+    rowsDraggable: false,
+    rowsPinnable: false,
+    cellSelection: false,
+    cellFillHandle: false,
+  },
+  tableClassNames: {
+    base: '',
+    header: '',
+    headerRow: '',
+    // z-40 keeps the sticky header above pinned body cells (zIndex 30 in
+    // getPinningStyles), which would otherwise paint over it while
+    // scrolling vertically with columnsPinnable enabled.
+    headerSticky: 'sticky top-0 z-40 bg-background/90 backdrop-blur-xs',
+    body: '',
+    bodyRow: '',
+    footer: '',
+    edgeCell: '',
+  },
+} satisfies Partial<DataGridLayoutProps<object>>
+
 function DataGrid<TFeatures extends TableFeatures, TData extends object>({
   children,
   table,
   ...props
 }: DataGridProps<TFeatures, TData>) {
-  const defaultProps: Partial<DataGridProps<TFeatures, TData>> = {
-    loadingMode: 'skeleton',
-    tableLayout: {
-      dense: false,
-      cellBorder: false,
-      rowBorder: true,
-      rowRounded: false,
-      stripped: false,
-      headerSticky: false,
-      headerBackground: false,
-      footerBackground: false,
-      headerBorder: true,
-      width: 'fixed',
-      columnsVisibility: false,
-      columnsResizable: false,
-      // columnsResizeMode has no default on purpose: when unset, the
-      // consumer's tanstack columnResizeMode (default "onEnd") is honored.
-      columnsPinnable: false,
-      columnsMovable: false,
-      columnsDraggable: false,
-      rowsDraggable: false,
-      rowsPinnable: false,
-      cellSelection: false,
-      cellFillHandle: false,
-    },
-    tableClassNames: {
-      base: '',
-      header: '',
-      headerRow: '',
-      // z-40 keeps the sticky header above pinned body cells (zIndex 30 in
-      // getPinningStyles), which would otherwise paint over it while
-      // scrolling vertically with columnsPinnable enabled.
-      headerSticky: 'sticky top-0 z-40 bg-background/90 backdrop-blur-xs',
-      body: '',
-      bodyRow: '',
-      footer: '',
-      edgeCell: '',
-    },
-  }
-
   const mergedProps: DataGridProps<TFeatures, TData> = {
-    ...defaultProps,
+    ...defaultDataGridProps,
     ...props,
     tableLayout: {
-      ...defaultProps.tableLayout,
+      ...defaultDataGridProps.tableLayout,
       ...props.tableLayout,
     },
     tableClassNames: {
-      ...defaultProps.tableClassNames,
+      ...defaultDataGridProps.tableClassNames,
       ...props.tableClassNames,
     },
   }

@@ -347,6 +347,7 @@ export async function runMcpCanaries(options) {
 export async function verifyNoMcpGrant({ page, baseURL, rawKey, apiKeyId, candidates, adminJson, actions }) {
   const aggregate = client(baseURL, rawKey);
   const proofs = [];
+  let verificationFailed = false;
   try {
     await aggregate.initialize();
     for (const candidate of candidates) {
@@ -363,8 +364,16 @@ export async function verifyNoMcpGrant({ page, baseURL, rawKey, apiKeyId, candid
       proofs.push({ candidate: candidate.key, visibleToolCount: 0, httpStatus: denied.status, ...log });
       actions.push({ action: "reject MCP tool before grant", result: `${candidate.key}: policy denied` });
     }
+  } catch (error) {
+    verificationFailed = true;
+    actions.push({ action: "verify MCP access before grant", result: "failed", failureClass: failureClass(error) });
+    throw error;
   } finally {
-    await aggregate.close();
+    try { await aggregate.close(); }
+    catch (error) {
+      actions.push({ action: "close pre-grant aggregate session", result: "failed", failureClass: failureClass(error) });
+      if (!verificationFailed) throw error;
+    }
   }
   return proofs;
 }

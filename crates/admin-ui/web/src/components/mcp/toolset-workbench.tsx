@@ -395,6 +395,20 @@ function ToolsetSaveButton({
   )
 }
 
+function groupCatalogTools(servers: McpServerView[], tools: McpToolView[], term: string) {
+  const groups = new Map<string, { server: McpServerView; tools: McpToolView[] }>()
+  for (const server of servers) {
+    if (server.status === 'active') groups.set(server.id, { server, tools: [] })
+  }
+  for (const tool of tools) {
+    const group = groups.get(tool.server_id)
+    if (!group) continue
+    const text = `${tool.display_name} ${tool.upstream_name} ${tool.description ?? ''} ${group.server.display_name}`
+    if (text.toLowerCase().includes(term)) group.tools.push(tool)
+  }
+  return [...groups.values()].filter((group) => group.tools.length > 0)
+}
+
 function WorkbenchCatalog(
   props: ToolsetWorkbenchProps & { selected: McpToolsetView; selectableIds: Set<string> },
 ) {
@@ -402,19 +416,11 @@ function WorkbenchCatalog(
   const term = query.trim().toLowerCase()
   const member = props.memberships[props.selected.id]
   const disabled = props.busy || !member || member.loading || Boolean(member.error) || member.saving
-  const groups = props.servers
-    .filter((server) => server.status === 'active')
-    .map((server) => ({
-      server,
-      tools: props.tools.filter(
-        (tool) =>
-          tool.server_id === server.id &&
-          `${tool.display_name} ${tool.upstream_name} ${tool.description ?? ''} ${server.display_name}`
-            .toLowerCase()
-            .includes(term),
-      ),
-    }))
-    .filter((group) => group.tools.length > 0)
+  const groups = useMemo(
+    () => groupCatalogTools(props.servers, props.tools, term),
+    [props.servers, props.tools, term],
+  )
+  const selectedToolIds = new Set(member?.toolIds)
   return (
     <div className="flex max-w-full min-w-0 flex-col gap-4" aria-label="Tool catalog">
       <div className="flex flex-col gap-1">
@@ -496,7 +502,7 @@ function WorkbenchCatalog(
                       <WorkbenchToolRow
                         key={tool.id}
                         tool={tool}
-                        checked={member?.toolIds.includes(tool.id) ?? false}
+                        checked={selectedToolIds.has(tool.id)}
                         disabled={Boolean(disabled)}
                         onToggle={props.onToggleTool}
                       />

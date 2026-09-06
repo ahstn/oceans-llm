@@ -775,13 +775,24 @@ impl LibsqlStore {
     pub async fn consume_mcp_oauth_state(
         &self,
         state_hash: &str,
+        user_id: Uuid,
+        provider_key: &str,
         consumed_at: OffsetDateTime,
     ) -> Result<Option<McpOauthStateRecord>, StoreError> {
         let updated = self
             .connection
             .execute(
-                "UPDATE mcp_oauth_states SET consumed_at = ?1 WHERE state_hash = ?2 AND consumed_at IS NULL AND expires_at > ?1",
-                libsql::params![consumed_at.unix_timestamp(), state_hash],
+                r#"
+                UPDATE mcp_oauth_states SET consumed_at = ?1
+                WHERE state_hash = ?2 AND user_id = ?3 AND provider_key = ?4
+                    AND consumed_at IS NULL AND expires_at > ?1
+                "#,
+                libsql::params![
+                    consumed_at.unix_timestamp(),
+                    state_hash,
+                    user_id.to_string(),
+                    provider_key
+                ],
             )
             .await
             .map_err(to_write_error)?;

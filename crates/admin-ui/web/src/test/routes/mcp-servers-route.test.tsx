@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type { McpServerView, McpToolView, RecommendedMcpServerView } from '@/types/api'
 
 const navigateMock = vi.fn()
@@ -138,7 +139,7 @@ async function renderServersTab(
     )
   }
 
-  render(<ServersTabHarness />)
+  render(<ServersTabHarness />, { wrapper: TooltipProvider })
 
   return { onAddToToolset }
 }
@@ -419,6 +420,8 @@ describe('ServersTab', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Needs attention' }))
     expect(screen.getByText('Showing 2 of 5 servers')).toBeInTheDocument()
     const registry = within(screen.getByTestId('mcp-server-list'))
+    expect(screen.getByTestId('mcp-server-list')).toHaveClass('min-w-0')
+    expect(registry.getByTestId('mcp-server-table-scroll')).toHaveClass('overflow-x-auto')
     expect(registry.getByText('Discovery failed')).toBeInTheDocument()
     expect(registry.getByText('Authentication required')).toBeInTheDocument()
     expect(registry.getByText('12')).toBeInTheDocument()

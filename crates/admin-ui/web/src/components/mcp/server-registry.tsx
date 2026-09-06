@@ -24,9 +24,17 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Spinner } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { McpServerView } from '@/types/api'
 
 type ServerFilter = 'all' | 'attention' | 'active' | 'disabled'
+
+const discoveryLabels: Record<string, string> = {
+  success: 'Discovered',
+  failed: 'Discovery failed',
+  auth_required: 'Authentication required',
+  disabled: 'Discovery disabled',
+}
 
 interface RegistryProps {
   servers: McpServerView[]
@@ -36,6 +44,10 @@ interface RegistryProps {
   onRefresh: (server: McpServerView) => void
   onAdd: () => void
   onCatalog: () => void
+}
+
+type RegistryRowsProps = Omit<RegistryProps, 'refreshingServerIds'> & {
+  refreshingServerIds: ReadonlySet<string>
 }
 
 export function ServerRegistry(props: RegistryProps) {
@@ -217,6 +229,7 @@ function RegistryTable(
     sorting,
     onSortingChange,
   } = props
+  const refreshingIds = useMemo(() => new Set(refreshingServerIds), [refreshingServerIds])
   const columns = useMemo<ColumnDef<DataGridFeatures, McpServerView>[]>(
     () => [
       {
@@ -284,14 +297,14 @@ function RegistryTable(
           <RegistryActions
             server={row.original}
             actionPending={actionPending}
-            refreshing={refreshingServerIds.includes(row.original.id)}
+            refreshing={refreshingIds.has(row.original.id)}
             onManage={onManage}
             onRefresh={onRefresh}
           />
         ),
       },
     ],
-    [onManage, onRefresh, refreshingServerIds, actionPending],
+    [onManage, onRefresh, refreshingIds, actionPending],
   )
   const table = useTable({
     features: dataGridFeatures,
@@ -311,13 +324,13 @@ function RegistryTable(
           tableLayout={{ rowBorder: true, headerBackground: true }}
         >
           <DataGridContainer>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" data-testid="mcp-server-table-scroll">
               <DataGridTable />
             </div>
           </DataGridContainer>
         </DataGrid>
       </div>
-      <MobileRegistry {...props} />
+      <MobileRegistry {...props} refreshingServerIds={refreshingIds} />
     </>
   )
 }
@@ -328,7 +341,7 @@ function MobileRegistry({
   refreshingServerIds,
   onManage,
   onRefresh,
-}: RegistryProps) {
+}: RegistryRowsProps) {
   return (
     <div
       className="flex flex-col divide-y rounded-lg border md:hidden"
@@ -357,7 +370,7 @@ function MobileRegistry({
             <RegistryActions
               server={server}
               actionPending={actionPending}
-              refreshing={refreshingServerIds.includes(server.id)}
+              refreshing={refreshingServerIds.has(server.id)}
               onManage={onManage}
               onRefresh={onRefresh}
             />
@@ -389,20 +402,25 @@ function RegistryActions({
       >
         Manage
       </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label={`Refresh ${server.display_name}`}
-        disabled={actionPending || refreshing || server.status !== 'active'}
-        onClick={() => onRefresh(server)}
-      >
-        {refreshing ? (
-          <Spinner aria-label={`Refreshing ${server.display_name}`} />
-        ) : (
-          <AppIcon icon={RefreshIcon} aria-hidden />
-        )}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Refresh ${server.display_name}`}
+            disabled={actionPending || refreshing || server.status !== 'active'}
+            onClick={() => onRefresh(server)}
+          >
+            {refreshing ? (
+              <Spinner aria-label={`Refreshing ${server.display_name}`} />
+            ) : (
+              <AppIcon icon={RefreshIcon} aria-hidden />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Refresh {server.display_name} tools</TooltipContent>
+      </Tooltip>
     </div>
   )
 }
@@ -416,14 +434,8 @@ function RegistrationBadge({ server }: { server: McpServerView }) {
 }
 
 function DiscoveryResult({ server }: { server: McpServerView }) {
-  const labels: Record<string, string> = {
-    success: 'Discovered',
-    failed: 'Discovery failed',
-    auth_required: 'Authentication required',
-    disabled: 'Discovery disabled',
-  }
   const label = server.last_discovery_status
-    ? (labels[server.last_discovery_status] ?? server.last_discovery_status)
+    ? (discoveryLabels[server.last_discovery_status] ?? server.last_discovery_status)
     : 'Not discovered'
   return (
     <div className="flex flex-col items-start gap-1.5">

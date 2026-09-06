@@ -176,6 +176,8 @@ function useImportedTools(
   memberships: ReturnType<typeof useToolsetMemberships>,
 ) {
   const [pendingIds, setPendingIds] = useState(props.seedToolIds)
+  // Pin this import to its first valid destination while that set's membership loads.
+  // Deriving it from the current selection would move the import when the user switches sets.
   const [targetId, setTargetId] = useState<string | null>(null)
   const seedKey = props.seedToolIds.join(',')
   const entry = targetId ? memberships.entries[targetId] : undefined
@@ -184,6 +186,7 @@ function useImportedTools(
     if (props.seedToolIds.length === 0) return
     setPendingIds((ids) => [...new Set([...ids, ...props.seedToolIds])])
     setTargetId(props.selectedToolsetId)
+    // Remove the consumed route seed so a reload does not import it a second time.
     props.onSeedConsumed()
   })
   useEffect(() => {

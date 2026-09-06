@@ -159,6 +159,7 @@ function safeLocation(error) {
 
 function validateConfig(value) {
   if (!Array.isArray(value.candidates) || value.candidates.length < 1 || value.candidates.length > 4) throw new Error("Supply one to four MCP candidates, including any negative-auth control");
+  if (!value.candidates.some((candidate) => candidate.required !== false)) throw new Error("At least one MCP candidate must be required");
   const seen = new Set();
   for (const candidate of value.candidates) {
     if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(candidate.key) || seen.has(candidate.key)) throw new Error("Candidate key must be unique and URL-safe");

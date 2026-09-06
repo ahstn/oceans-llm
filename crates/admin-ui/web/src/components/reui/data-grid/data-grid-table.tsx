@@ -1437,7 +1437,14 @@ function DataGridTableBodyRow<TData extends object>({
       // 1-based after the header row; row.index is the position in the data,
       // so the announced index stays absolute across pagination.
       aria-rowindex={props.tableLayout?.cellSelection ? row.index + 2 : undefined}
-      onClick={() => props.onRowClick && props.onRowClick(row.original)}
+      tabIndex={props.onRowClick ? 0 : undefined}
+      onClick={props.onRowClick ? () => props.onRowClick?.(row.original) : undefined}
+      onKeyDown={(event) => {
+        if (!props.onRowClick || event.target !== event.currentTarget || event.repeat) return
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        props.onRowClick(row.original)
+      }}
       className={cn(
         'hover:bg-muted/40 data-[state=selected]:bg-muted/50',
         /* Pinned cells hide scrolled content behind an OPAQUE background,
@@ -2151,60 +2158,54 @@ const MemoizedDataGridTableBodyRows = memo(
     !!next.table.state.columnResizing.isResizingColumn || next.table._isSelectingCells === true,
 ) as typeof DataGridTableBodyRows
 
-function DataGridTableHeader() {
+function DataGridTableHeaderContent() {
   const { table, props } = useDataGrid()
   const mergedHeaderGroups = getDataGridTableMergedHeaderGroups(table)
   const hasRightPinnedColumns = hasDataGridTableRightPinnedColumns(table)
 
   return (
+    <DataGridTableHead>
+      {mergedHeaderGroups.map((headerGroup) => {
+        const leadingCells: ReactNode[] = []
+        const endPinnedCells: ReactNode[] = []
+        for (const header of headerGroup.headers) {
+          const { column } = header
+          const cell = (
+            <DataGridTableHeadRowCell header={header} key={header.id}>
+              {header.isPlaceholder
+                ? null
+                : flexRender(column.columnDef.header, header.getContext())}
+              {props.tableLayout?.columnsResizable && column.getCanResize() && (
+                <DataGridTableHeadRowCellResize header={header} />
+              )}
+            </DataGridTableHeadRowCell>
+          )
+          if (column.getIsPinned() === 'end') endPinnedCells.push(cell)
+          else leadingCells.push(cell)
+        }
+
+        return (
+          <DataGridTableHeadRow key={headerGroup.id} rowId={headerGroup.id}>
+            {leadingCells}
+            {props.tableLayout?.columnsResizable && hasRightPinnedColumns && (
+              <DataGridTableFillHeadCell />
+            )}
+            {endPinnedCells}
+            {props.tableLayout?.columnsResizable && !hasRightPinnedColumns && (
+              <DataGridTableFillHeadCell />
+            )}
+          </DataGridTableHeadRow>
+        )
+      })}
+    </DataGridTableHead>
+  )
+}
+
+function DataGridTableHeader() {
+  return (
     <DataGridTableViewport>
       <DataGridTableBase>
-        <DataGridTableHead>
-          {mergedHeaderGroups.map((headerGroup) => {
-            return (
-              <DataGridTableHeadRow key={headerGroup.id} rowId={headerGroup.id}>
-                {headerGroup.headers
-                  .filter((header) => header.column.getIsPinned() !== 'end')
-                  .map((header) => {
-                    const { column } = header
-
-                    return (
-                      <DataGridTableHeadRowCell header={header} key={header.id}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(header.column.columnDef.header, header.getContext())}
-                        {props.tableLayout?.columnsResizable && column.getCanResize() && (
-                          <DataGridTableHeadRowCellResize header={header} />
-                        )}
-                      </DataGridTableHeadRowCell>
-                    )
-                  })}
-                {props.tableLayout?.columnsResizable && hasRightPinnedColumns ? (
-                  <DataGridTableFillHeadCell />
-                ) : null}
-                {headerGroup.headers
-                  .filter((header) => header.column.getIsPinned() === 'end')
-                  .map((header) => {
-                    const { column } = header
-
-                    return (
-                      <DataGridTableHeadRowCell header={header} key={header.id}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(header.column.columnDef.header, header.getContext())}
-                        {props.tableLayout?.columnsResizable && column.getCanResize() && (
-                          <DataGridTableHeadRowCellResize header={header} />
-                        )}
-                      </DataGridTableHeadRowCell>
-                    )
-                  })}
-                {props.tableLayout?.columnsResizable && !hasRightPinnedColumns ? (
-                  <DataGridTableFillHeadCell />
-                ) : null}
-              </DataGridTableHeadRow>
-            )
-          })}
-        </DataGridTableHead>
+        <DataGridTableHeaderContent />
       </DataGridTableBase>
     </DataGridTableViewport>
   )
@@ -2218,60 +2219,11 @@ function DataGridTable({
   renderHeader?: boolean
 }) {
   const { table, props } = useDataGrid()
-  const mergedHeaderGroups = getDataGridTableMergedHeaderGroups(table)
-  const hasRightPinnedColumns = hasDataGridTableRightPinnedColumns(table)
 
   return (
     <DataGridTableViewport>
       <DataGridTableBase>
-        {renderHeader && (
-          <DataGridTableHead>
-            {mergedHeaderGroups.map((headerGroup) => {
-              return (
-                <DataGridTableHeadRow key={headerGroup.id} rowId={headerGroup.id}>
-                  {headerGroup.headers
-                    .filter((header) => header.column.getIsPinned() !== 'end')
-                    .map((header) => {
-                      const { column } = header
-
-                      return (
-                        <DataGridTableHeadRowCell header={header} key={header.id}>
-                          {header.isPlaceholder
-                            ? null
-                            : flexRender(header.column.columnDef.header, header.getContext())}
-                          {props.tableLayout?.columnsResizable && column.getCanResize() && (
-                            <DataGridTableHeadRowCellResize header={header} />
-                          )}
-                        </DataGridTableHeadRowCell>
-                      )
-                    })}
-                  {props.tableLayout?.columnsResizable && hasRightPinnedColumns ? (
-                    <DataGridTableFillHeadCell />
-                  ) : null}
-                  {headerGroup.headers
-                    .filter((header) => header.column.getIsPinned() === 'end')
-                    .map((header) => {
-                      const { column } = header
-
-                      return (
-                        <DataGridTableHeadRowCell header={header} key={header.id}>
-                          {header.isPlaceholder
-                            ? null
-                            : flexRender(header.column.columnDef.header, header.getContext())}
-                          {props.tableLayout?.columnsResizable && column.getCanResize() && (
-                            <DataGridTableHeadRowCellResize header={header} />
-                          )}
-                        </DataGridTableHeadRowCell>
-                      )
-                    })}
-                  {props.tableLayout?.columnsResizable && !hasRightPinnedColumns ? (
-                    <DataGridTableFillHeadCell />
-                  ) : null}
-                </DataGridTableHeadRow>
-              )
-            })}
-          </DataGridTableHead>
-        )}
+        {renderHeader && <DataGridTableHeaderContent />}
 
         {renderHeader && (props.tableLayout?.stripped || !props.tableLayout?.rowBorder) && (
           <DataGridTableRowSpacer />

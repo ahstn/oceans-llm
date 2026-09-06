@@ -41,7 +41,7 @@ The [candidate example](../examples/mcp-candidates.json) uses these endpoint and
 
 Set `OCEANS_MCP_DISCOVERY_EXA_INVALID_VERIFY` to an arbitrary invalid value, not a real credential. The control sets `expect_tool_error: true`; it requires discovery to succeed, then an aggregate tool result with `isError: true`, an authentication marker, and an `upstream_error` invocation. A successful invalid-key call does not pass the control.
 
-The JSON file accepts one to four candidates. Each needs a unique URL-safe `key`, a `label`, an HTTPS `server_url`, an `auth_mode`, an `auth_config`, and a reviewed `call` with `name` and object `arguments`. Secret references must use `env/OCEANS_MCP_DISCOVERY_*`; do not put credentials in URLs or JSON values. Each candidate is required unless it explicitly sets `required: false`. Report optional failures as gaps.
+The JSON file accepts one to four candidates. Each needs a unique URL-safe `key`, a `label`, an HTTPS `server_url`, an `auth_mode`, an `auth_config`, and a reviewed `call` with `name` and object `arguments`. Secret references must use `env/OCEANS_MCP_DISCOVERY_*`; do not put credentials in URLs or JSON values. Each candidate is required unless it explicitly sets `required: false`. At least one candidate must be required; an all-optional configuration is rejected before the browser starts. Report optional failures as gaps.
 
 ```bash
 export OCEANS_VERIFY_MCP_CANDIDATES_FILE=/absolute/path/to/mcp-candidates.json
@@ -55,6 +55,12 @@ export OCEANS_VERIFY_MCP_CANDIDATES_FILE=/absolute/path/to/mcp-candidates.json
 - **Create caller access.** Through `Create API key`, the driver chooses one owner and one explicit model grant because the current UI requires at least one model. It records the chosen model but never calls it. Before an MCP grant, aggregate search must be empty and a direct tool call must return HTTP 403 with a `policy_denied` invocation. Through `Grant subject`, `Grant target`, and `Save grant`, it grants only the saved tool set and checks exact effective tool IDs.
 - **Call tools and inspect records.** For each positive candidate, direct `tools/list` must expose only its selected tool and its call must succeed. Aggregate `tools/list` must expose only `search_tools`, `describe_tool`, and `call_tool`; the driver searches within the server, describes the granted address, then calls it with the returned schema hash. Each call must have a matching invocation. The driver applies `mcp-filter-request-id`, checks `mcp-invocations-table`, and opens `Inspect` to match the detail IDs.
 - **Retain proof and clean up.** A `finally` block revokes the owned grant and API key, requires HTTP 401 on aggregate and direct routes, and disables the owned tool sets and servers through production admin APIs. It confirms the disabled states and retains the records. Require `mcp-proof.json` to show `passed: true` and `cleanup.passed: true`; the `evidence mcp` command checks file presence only. Run stack `cleanup`, then `evidence mcp` again.
+
+Run the local verifier regression tests without upstream calls:
+
+```bash
+mise exec -- node --test .agents/skills/verify-oceans-admin/scripts/mcp-verification.test.mjs
+```
 
 ## Gotchas
 

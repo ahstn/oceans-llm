@@ -120,6 +120,7 @@ async function renderToolsetsTab({
   initialToolsetId = toolset.id as string | null,
   initialSeedIds = [] as string[],
   initialToolsets = [toolset, secondToolset],
+  servers = [server],
 } = {}) {
   const { ToolsetsTab } = await import('@/routes/mcp/-toolsets-tab')
   const onSeedConsumed = vi.fn()
@@ -135,7 +136,7 @@ async function renderToolsetsTab({
     return (
       <ToolsetsTab
         toolsets={toolsets}
-        servers={[server]}
+        servers={servers}
         selectedToolsetId={selectedToolsetId}
         onSelectToolset={setSelectedToolsetId}
         seedToolIds={seedToolIds}
@@ -246,8 +247,8 @@ describe('ToolsetsTab Workbench', () => {
     expect(saveButton()).toBeEnabled()
     expect(getMcpConnectionInfoMock).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Connection Info', exact: true }))
-    const dialog = await screen.findByRole('dialog', { name: 'Connection Info', exact: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Connection Info' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Connection Info' })
     await waitFor(() => expect(dialog).toHaveTextContent('https://gateway.example.com/oceans/mcp'))
     expect(getMcpConnectionInfoMock).toHaveBeenCalledExactlyOnceWith()
     expect(dialog).toHaveTextContent(toolset.display_name)
@@ -293,6 +294,90 @@ describe('ToolsetsTab Workbench', () => {
     fireEvent.click(secondCheckbox)
     expect(saveButton()).toBeDisabled()
     expect(row().getByText('1 tool')).toBeInTheDocument()
+    expect(saveMcpToolsetToolsMock).not.toHaveBeenCalled()
+  })
+
+  it('prevents selecting an inactive tool returned by an active server', async () => {
+    getMcpServerToolsMock.mockResolvedValue({
+      data: { items: [firstTool, { ...secondTool, is_active: false }] },
+    })
+    await renderToolsetsTab()
+    expect(await ready()).toBeChecked()
+    const inactiveTool = screen.getByRole('checkbox', { name: secondTool.display_name })
+    expect(inactiveTool).toBeDisabled()
+    expect(inactiveTool).not.toBeChecked()
+    expect(saveButton()).toBeDisabled()
+
+    fireEvent.click(inactiveTool)
+
+    expect(inactiveTool).not.toBeChecked()
+    expect(row().getByText('1 tool')).toBeInTheDocument()
+    expect(saveButton()).toBeDisabled()
+    expect(saveMcpToolsetToolsMock).not.toHaveBeenCalled()
+  })
+
+  it('preserves server order and checked membership when searching across active server groups', async () => {
+    const docsServer: McpServerView = {
+      ...server,
+      id: 'server_docs',
+      server_key: 'context7',
+      display_name: 'Context7',
+    }
+    const disabledServer: McpServerView = {
+      ...server,
+      id: 'server_disabled',
+      display_name: 'Legacy docs',
+      status: 'disabled',
+    }
+    const docsTool: McpToolView = {
+      ...firstTool,
+      id: 'tool_docs',
+      server_id: docsServer.id,
+      display_name: 'Resolve library',
+      upstream_name: 'resolve_library',
+      description: 'Resolve a library documentation identifier.',
+    }
+    const disabledServerTool: McpToolView = {
+      ...firstTool,
+      id: 'tool_legacy',
+      server_id: disabledServer.id,
+      display_name: 'Read legacy docs',
+    }
+    const toolsByServer: Record<string, McpToolView[]> = {
+      [docsServer.id]: [docsTool],
+      [server.id]: [firstTool, { ...secondTool, description: 'Read an individual pull request.' }],
+      [disabledServer.id]: [disabledServerTool],
+    }
+    getMcpServerToolsMock.mockImplementation(({ data }: { data: { serverId: string } }) =>
+      Promise.resolve({ data: { items: toolsByServer[data.serverId] } }),
+    )
+    getMcpToolsetToolsMock.mockResolvedValue({ data: { tool_ids: [firstTool.id, docsTool.id] } })
+    await renderToolsetsTab({ servers: [docsServer, disabledServer, server] })
+    expect(await ready()).toBeChecked()
+    const catalog = within(screen.getByTestId('toolset-catalog-groups'))
+    const groups = catalog.getAllByRole('group', { name: /available/ })
+    expect(groups).toHaveLength(2)
+    expect(groups[0]).toHaveAccessibleName(/Context7\s*1 available/)
+    expect(groups[1]).toHaveAccessibleName(/GitHub\s*2 available/)
+    expect(catalog.queryByRole('checkbox', { name: disabledServerTool.display_name })).toBeNull()
+    expect(catalog.getByRole('checkbox', { name: docsTool.display_name })).toBeChecked()
+
+    const search = screen.getByRole('textbox', { name: 'Search available tools' })
+    fireEvent.change(search, { target: { value: 'sEaRcH RePoSiToRiEs' } })
+    expect(catalog.getAllByRole('checkbox')).toHaveLength(1)
+    expect(catalog.getByRole('checkbox', { name: firstTool.display_name })).toBeChecked()
+    fireEvent.change(search, { target: { value: 'cOnTeXt7' } })
+    expect(catalog.getAllByRole('checkbox')).toHaveLength(1)
+    expect(catalog.getByRole('checkbox', { name: docsTool.display_name })).toBeChecked()
+    expect(row().getByText('2 tools')).toBeInTheDocument()
+    expect(saveButton()).toBeDisabled()
+
+    fireEvent.change(search, { target: { value: '' } })
+    expect(catalog.getByRole('checkbox', { name: firstTool.display_name })).toBeChecked()
+    expect(catalog.getByRole('checkbox', { name: docsTool.display_name })).toBeChecked()
+    expect(catalog.getByRole('checkbox', { name: secondTool.display_name })).not.toBeChecked()
+    expect(catalog.getAllByRole('group', { name: /available/ })).toHaveLength(2)
+    expect(saveButton()).toBeDisabled()
     expect(saveMcpToolsetToolsMock).not.toHaveBeenCalled()
   })
 
@@ -392,6 +477,47 @@ describe('ToolsetsTab Workbench', () => {
         data: { toolsetId: toolset.id, toolIds: ['tool_1', 'tool_2'] },
       }),
     )
+  })
+
+  it('pins carried tools to their original set when selection changes during its membership read', async () => {
+    const pendingRead = deferred<{ data: { tool_ids: string[] } }>()
+    getMcpToolsetToolsMock.mockImplementation(({ data }: { data: { toolsetId: string } }) =>
+      data.toolsetId === toolset.id
+        ? pendingRead.promise
+        : Promise.resolve({ data: { tool_ids: ['tool_1'] } }),
+    )
+    const { onSeedConsumed } = await renderToolsetsTab({ initialSeedIds: ['tool_2'] })
+    expect(saveButton()).toBeDisabled()
+    fireEvent.click(screen.getByRole('radio', { name: `Select ${secondToolset.display_name}` }))
+    expect(await ready()).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: secondTool.display_name })).not.toBeChecked()
+    expect(saveButton(secondToolset)).toBeDisabled()
+
+    await act(async () => pendingRead.resolve({ data: { tool_ids: ['tool_1'] } }))
+
+    await waitFor(() => expect(saveButton()).toBeEnabled())
+    expect(onSeedConsumed).toHaveBeenCalledTimes(1)
+    expect(row().getByText('2 tools')).toBeInTheDocument()
+    expect(row(secondToolset).getByText('1 tool')).toBeInTheDocument()
+    expect(
+      screen.getByRole('radio', { name: `Select ${secondToolset.display_name}` }),
+    ).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: firstTool.display_name })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: secondTool.display_name })).not.toBeChecked()
+    expect(saveButton(secondToolset)).toBeDisabled()
+    fireEvent.click(saveButton())
+
+    await waitFor(() =>
+      expect(saveMcpToolsetToolsMock).toHaveBeenCalledExactlyOnceWith({
+        data: { toolsetId: toolset.id, toolIds: ['tool_1', 'tool_2'] },
+      }),
+    )
+    await waitFor(() => expect(saveButton()).toBeDisabled())
+    expect(screen.getByRole('checkbox', { name: secondTool.display_name })).not.toBeChecked()
+    expect(saveButton(secondToolset)).toBeDisabled()
+    fireEvent.click(screen.getByRole('radio', { name: `Select ${toolset.display_name}` }))
+    expect(screen.getByRole('checkbox', { name: firstTool.display_name })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: secondTool.display_name })).toBeChecked()
   })
 
   it('keeps carried tools unassigned until the first tool set is chosen', async () => {

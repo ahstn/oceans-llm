@@ -85,4 +85,4 @@ Validation after these changes:
 - Focused React Doctor `0.9.13` reported zero errors and seven warnings for the grid. This is not a clean warning-blocking CI result. The PR workflow blocks on warnings; its earlier full scan reported three errors and 52 warnings.
 - Standalone TypeScript checking still reported 194 diagnostics outside the two grid files. A successful project-wide typecheck is not claimed.
 
-The existing OAuth-state consumption and ID-less upstream-error review findings also exist in the base branch. They remain separate follow-up work. No review replies were posted and no review discussions were resolved by this verification.
+The OAuth-state consumption and ID-less upstream-error findings also existed in the base branch. They were fixed in the subsequent [PR review follow-up](2026-09-06-pr338-review.md), which records the local regressions and database checks. That follow-up also removed the isolated previews and their tasks. The live results above still refer to the recorded runtime commit; they are not a repeat canary result for the review fixes.
