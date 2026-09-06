@@ -70,6 +70,10 @@ export async function run(): Promise<void> {
   })
 
   let result: ReviewResult | undefined
+  const cancellation = new AbortController()
+  const cancel = () => cancellation.abort(new Error('Review job was cancelled'))
+  process.once('SIGINT', cancel)
+  process.once('SIGTERM', cancel)
   try {
     result = await invokePi(
       {
@@ -80,7 +84,9 @@ export async function run(): Promise<void> {
       },
       inputs.oceansApiKey,
       inputs.timeoutMinutes,
+      { signal: cancellation.signal },
     )
+    cancellation.signal.throwIfAborted()
     const publisher = new GitHubPublisher(github.getOctokit(inputs.githubToken))
     const [owner, repo] = pullRequestContext.repository.full_name.split('/')
     const publishMetrics = await publisher.publish({
@@ -96,16 +102,22 @@ export async function run(): Promise<void> {
       dryRun: inputs.dryRun,
     })
     const metrics = completeMetrics(result, publishMetrics)
+    cancellation.signal.throwIfAborted()
     await core.summary.addRaw(buildJobSummary(result, result.degradedFeatures)).write()
     await client.completeRun(started.run.id, metrics)
   } catch (error) {
     const metrics = result ? failureMetrics(result) : { status: 'failed' as const }
-    await client
-      .failRun(started.run.id, redactor.errorSummary(error), metrics)
-      .catch((failError) => {
-        core.warning(redactor.errorSummary(failError))
-      })
+    await (
+      cancellation.signal.aborted
+        ? client.completeRun(started.run.id, { ...metrics, status: 'cancelled' })
+        : client.failRun(started.run.id, redactor.errorSummary(error), metrics)
+    ).catch((failError) => {
+      core.warning(redactor.errorSummary(failError))
+    })
     throw error
+  } finally {
+    process.removeListener('SIGINT', cancel)
+    process.removeListener('SIGTERM', cancel)
   }
 }
 

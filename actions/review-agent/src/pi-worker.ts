@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeSync } from 'node:fs'
 import { runPiSession } from './pi-session'
 import type { PiReviewRequest } from './pi'
 
@@ -15,6 +15,6 @@ try {
   for (const [name, value] of Object.entries(process.env)) {
     if (name.endsWith('_KEY') && value) message = message.replaceAll(value, '[REDACTED]')
   }
-  console.error(message)
+  writeSync(2, `${message}\n`)
   process.exit(1)
 }

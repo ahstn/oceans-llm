@@ -56,6 +56,9 @@ export interface EffectiveConfig {
   max_inline_comments?: number | null
   request_changes_on_high_severity?: boolean
   oceans_base_url?: string | null
+  model_context_window_tokens?: number | null
+  model_input_window_tokens?: number | null
+  model_max_output_tokens?: number | null
   [key: string]: unknown
 }
 

@@ -14,6 +14,7 @@ import { Type, type Static } from 'typebox'
 import { registerSubagentCapabilityCeiling } from 'pi-subagents/capability-ceiling'
 import type { PiReviewRequest } from './pi'
 import { loadReviewDiff, type ReviewDiff } from './review-diff'
+import { oceansModelLimits } from './model-limits'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 export const reviewPackages = ['pi-mcp-adapter', 'pi-subagents', 'pi-web-access'] as const
@@ -121,8 +122,7 @@ function writeRuntimeConfig(request: PiReviewRequest, agentDir: string): string 
               name: config.model_id,
               reasoning: false,
               input: ['text'],
-              contextWindow: 128000,
-              maxTokens: 8192,
+              ...oceansModelLimits(config),
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             },
           ],
@@ -147,15 +147,14 @@ export async function runPiSession(request: PiReviewRequest, resultPath: string)
   })
   const model = runtime.getModel(modelName.slice(0, separator), modelName.slice(separator + 1))
   if (!model) throw new Error(`Pi model is not configured: ${modelName}`)
-  const diff = loadReviewDiff(request.workspace, request.context)
   const diffPath = join(dirname(resultPath), 'review.diff')
-  writeFileSync(diffPath, diff.text)
+  const diff = await loadReviewDiff(request.workspace, request.context, diffPath)
   const settings = SettingsManager.inMemory({
     defaultProjectTrust: 'never',
     enableInstallTelemetry: false,
   })
   const loader = new DefaultResourceLoader({
-    cwd: request.workspace,
+    cwd: dirname(agentDir),
     agentDir,
     settingsManager: settings,
     noExtensions: true,
@@ -178,14 +177,14 @@ export async function runPiSession(request: PiReviewRequest, resultPath: string)
     )
   let submission: Submission | undefined
   const { session } = await createAgentSession({
-    cwd: request.workspace,
+    cwd: dirname(agentDir),
     agentDir,
     modelRuntime: runtime,
     model,
     thinkingLevel: 'off',
     settingsManager: settings,
     resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(request.workspace),
+    sessionManager: SessionManager.inMemory(dirname(agentDir)),
     tools: reviewTools,
     customTools: [
       resultTool(diff, (result) => {
@@ -206,7 +205,7 @@ export async function runPiSession(request: PiReviewRequest, resultPath: string)
   try {
     await session.bindExtensions({})
     await session.prompt(
-      `Review this PR using the code-review skill.\n${JSON.stringify(request.context)}\nDiff path: ${diffPath}\nFeature settings: ${JSON.stringify(request.effectiveConfig)}`,
+      `Review this PR using the code-review skill.\n${JSON.stringify(request.context)}\nSource directory: ${request.workspace}\nUse absolute paths under that source directory to inspect files; the runtime cwd is isolated. Give delegated reviewers the same source and diff paths.\nDiff path: ${diffPath}\nFeature settings: ${JSON.stringify(request.effectiveConfig)}`,
     )
     const lastAssistant = session.messages.at(-1)
     if (
@@ -218,9 +217,21 @@ export async function runPiSession(request: PiReviewRequest, resultPath: string)
       )
     }
     if (!submission) throw new Error('Pi finished without calling submit_review')
+    const unavailableFeatures = ['linked_issue_detection', 'linked_issue_assessment'].filter(
+      (feature) => request.effectiveConfig[`${feature}_enabled`],
+    )
     writeFileSync(
       resultPath,
-      JSON.stringify({ ...submission, metrics: { files_changed: diff.anchors.size } }),
+      JSON.stringify({
+        ...submission,
+        degraded_features: [
+          ...new Set([...unavailableFeatures, ...submission.degraded_features]),
+        ].slice(0, 20),
+        metrics: {
+          files_changed: diff.filesChanged,
+          linked_issue_status: unavailableFeatures.length ? 'degraded' : undefined,
+        },
+      }),
     )
   } finally {
     ceiling.dispose()

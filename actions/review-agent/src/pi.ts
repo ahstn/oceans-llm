@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { readReviewResult } from './result-artifact'
+import { sandboxCommand } from './worker-sandbox'
 import type { EffectiveConfig, PullRequestContext, ReviewResult } from './types'
 
 const executeFile = promisify(execFile)
@@ -36,7 +37,7 @@ const providerEnvironment = [
 
 export function reviewEnvironment(tempDir: string, oceansApiKey: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
-    PATH: `${join(actionRoot, 'node_modules/.bin')}:${process.env.PATH ?? ''}`,
+    PATH: `${join(actionRoot, 'node_modules/.bin')}:${dirname(process.execPath)}:/usr/bin:/bin`,
     HOME: tempDir,
     TMPDIR: tempDir,
     PI_CODING_AGENT_DIR: join(tempDir, 'agent'),
@@ -55,28 +56,33 @@ export async function invokePi(
   request: PiReviewRequest,
   oceansApiKey: string,
   timeoutMinutes: number,
+  options: { signal?: AbortSignal; sandbox?: boolean } = {},
 ): Promise<ReviewResult> {
   const tempDir = mkdtempSync(join(tmpdir(), 'oceans-review-agent-'))
   const requestPath = join(tempDir, 'request.json')
   const resultPath = join(tempDir, 'result.json')
   writeFileSync(requestPath, JSON.stringify(request), { mode: 0o600 })
   try {
-    await executeFile(
-      process.execPath,
-      [
-        '--import',
-        fileURLToPath(import.meta.resolve('tsx')),
-        join(actionRoot, 'src/pi-worker.ts'),
-        requestPath,
-        resultPath,
-      ],
-      {
-        cwd: actionRoot,
-        env: reviewEnvironment(tempDir, oceansApiKey),
-        timeout: timeoutMinutes * 60_000,
-        maxBuffer: 1024 * 1024,
-      },
-    )
+    const workerArgs = [
+      '--import',
+      fileURLToPath(import.meta.resolve('tsx')),
+      join(actionRoot, 'src/pi-worker.ts'),
+      requestPath,
+      resultPath,
+    ]
+    // Only deterministic tests may opt out on non-Linux development machines.
+    // The action has no input or environment override for this boundary.
+    const worker =
+      options.sandbox === false
+        ? { command: process.execPath, args: workerArgs }
+        : sandboxCommand(actionRoot, request.workspace, tempDir, workerArgs)
+    await executeFile(worker.command, worker.args, {
+      cwd: tempDir,
+      env: reviewEnvironment(tempDir, oceansApiKey),
+      timeout: timeoutMinutes * 60_000,
+      maxBuffer: 1024 * 1024,
+      signal: options.signal,
+    })
     return readReviewResult(resultPath)
   } catch (error) {
     const failure = error as Error & { stderr?: string; killed?: boolean }

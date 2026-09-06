@@ -16,12 +16,17 @@ export function readGitHubContext(env: NodeJS.ProcessEnv): GitHubRuntimeContext 
     throw new Error('GITHUB_EVENT_PATH is required')
   }
   return {
-    eventName: env.GITHUB_EVENT_NAME ?? '',
+    // Both carry the same PR payload. The target event keeps executable workflow
+    // code on the trusted branch; the control-plane protocol uses pull_request.
+    eventName:
+      env.GITHUB_EVENT_NAME === 'pull_request_target'
+        ? 'pull_request'
+        : (env.GITHUB_EVENT_NAME ?? ''),
     eventPayload: JSON.parse(readFileSync(eventPath, 'utf8')),
     repository: env.GITHUB_REPOSITORY ?? '',
     runId: env.GITHUB_RUN_ID,
     runAttempt: env.GITHUB_RUN_ATTEMPT ? Number(env.GITHUB_RUN_ATTEMPT) : undefined,
-    workspace: env.GITHUB_WORKSPACE ?? process.cwd(),
+    workspace: env.OCEANS_REVIEW_WORKSPACE || env.GITHUB_WORKSPACE || process.cwd(),
   }
 }
 

@@ -546,6 +546,9 @@ pub struct EffectiveReviewAgentConfig {
     pub model_execution_mode: String,
     pub provider_key: Option<String>,
     pub oceans_base_url: Option<String>,
+    pub model_context_window_tokens: Option<i64>,
+    pub model_input_window_tokens: Option<i64>,
+    pub model_max_output_tokens: Option<i64>,
     pub inline_review_enabled: bool,
     pub pr_summary_enabled: bool,
     pub diagrams_enabled: bool,
@@ -735,6 +738,9 @@ async fn resolve_effective_config(
     }
 
     let config = EffectiveReviewAgentConfig {
+        model_context_window_tokens: None,
+        model_input_window_tokens: None,
+        model_max_output_tokens: None,
         model_id,
         model_execution_mode: model_execution_mode.clone(),
         provider_key: overrides.provider_key.clone(),

@@ -1,7 +1,7 @@
 name: oceans-review-agent
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: oceans-review-agent-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   MISE_EXPERIMENTAL: true
@@ -22,10 +22,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout PR head
+      - name: Checkout trusted workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout PR as review data
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          path: .review-source
           fetch-depth: 0
           persist-credentials: false
 
@@ -57,6 +65,7 @@ jobs:
       - name: Review pull request with Pi and OpenRouter
         uses: ./actions/review-agent
         with:
+          review-workspace: ${{ github.workspace }}/.review-source
           oceans-url: ${{ steps.oceans.outputs.url }}
           oceans-api-key: ${{ steps.oceans.outputs.api-key }}
           model-mode: oceans

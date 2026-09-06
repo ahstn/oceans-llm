@@ -538,9 +538,21 @@ pub async fn resolve_review_agent_action_config(
     Json(request): Json<ActionConfigResolveRequest>,
 ) -> Result<Json<Envelope<ActionConfigResolveResponse>>, AppError> {
     let auth = authenticate_action(&state, &headers).await?;
-    let output = review_agent_service(&state)
+    let mut output = review_agent_service(&state)
         .resolve_config(&auth, map_config_resolve_request(request)?)
         .await?;
+    if output.effective_config.model_execution_mode == "oceans"
+        && let Some(model_id) = output.effective_config.model_id.as_deref()
+    {
+        let models = gateway_service::AdminModelsService::new(state.store.clone())
+            .list_models()
+            .await?;
+        if let Some(model) = models.iter().find(|model| model.id == model_id) {
+            output.effective_config.model_context_window_tokens = model.context_window_tokens;
+            output.effective_config.model_input_window_tokens = model.input_window_tokens;
+            output.effective_config.model_max_output_tokens = model.output_window_tokens;
+        }
+    }
     Ok(Json(envelope(ActionConfigResolveResponse {
         repository: map_repository(output.repository),
         pull_request_id: output.pull_request.pull_request_id.to_string(),
@@ -879,7 +891,10 @@ fn sanitize_effective_config_json(value: Value) -> Result<Value, AppError> {
             | "linked_issue_detection_enabled"
             | "linked_issue_assessment_enabled"
             | "request_changes_on_high_severity" => optional_bool_value(&key, value)?,
-            "max_inline_comments" => optional_non_negative_i64_value(&key, value)?,
+            "max_inline_comments"
+            | "model_context_window_tokens"
+            | "model_input_window_tokens"
+            | "model_max_output_tokens" => optional_non_negative_i64_value(&key, value)?,
             _ => {
                 return invalid_json_blob(&format!(
                     "effective_config_json contains unsupported field `{key}`"
@@ -1146,7 +1161,10 @@ mod tests {
             sanitize_effective_config_json(json!({
                 "model_id": "fast",
                 "inline_review_enabled": true,
-                "max_inline_comments": 10
+                "max_inline_comments": 10,
+                "model_context_window_tokens": 4096,
+                "model_input_window_tokens": null,
+                "model_max_output_tokens": 512
             }))
             .is_ok()
         );
@@ -1158,6 +1176,9 @@ mod tests {
             .is_err()
         );
         assert!(sanitize_effective_config_json(json!({"max_inline_comments": -1})).is_err());
+        assert!(
+            sanitize_effective_config_json(json!({"model_context_window_tokens": "4096"})).is_err()
+        );
     }
 
     #[test]

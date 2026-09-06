@@ -32,5 +32,11 @@ jobs:
         with:
           install_args: node bun
 
+      - name: Install review worker sandbox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+
       - name: Check review agent action
+        # The tests use synthetic credentials and probe the real Linux sandbox.
         run: mise run review-agent-action-check

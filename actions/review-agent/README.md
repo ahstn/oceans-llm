@@ -2,7 +2,7 @@
 
 This composite GitHub Action runs TypeScript source with Node.js 24 and `tsx`. It installs the exact dependencies in `bun.lock` with Bun 1.3.14. There is no build step or committed JavaScript bundle.
 
-The action resolves the repository configuration from Oceans, records a run, and starts a Pi SDK session. Pi reads the commit diff and uses the review rubric in `prompts/review.md` and `skills/code-review/SKILL.md`. The `submit_review` tool validates each finding against changed RIGHT-side lines. The action then publishes the review and reports run metrics to Oceans. A missing or invalid submission fails the run.
+The action resolves the repository configuration from Oceans, records a run, and starts a Pi SDK session. Pi reads the commit diff and uses the review rubric in `prompts/review.md` and `skills/code-review/SKILL.md`. The `submit_review` tool validates each finding against changed RIGHT-side lines. The action then publishes the review and reports run metrics to Oceans. A missing accepted submission fails the run; the model can correct rejected anchors and resubmit. Linked-issue detection and assessment are reported as degraded when enabled because this worker does not fetch issue data.
 
 ## Use from another repository
 
@@ -10,7 +10,9 @@ Replace `ACTION_COMMIT_SHA` with a reviewed commit of this repository that conta
 
 ```yaml
 name: Oceans review
-on: pull_request
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
   pull-requests: write
@@ -19,7 +21,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
@@ -34,7 +36,7 @@ jobs:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
 ```
 
-Set `dry-run` to `false` to publish. Dry runs still call the model and record the run in Oceans. See `action.yml` for all inputs. The action source runs from `github.action_path`; the reviewed repository is `GITHUB_WORKSPACE`.
+Set `dry-run` to `false` to publish. Dry runs still call the model and record the run in Oceans. See `action.yml` for all inputs. The action source runs from `github.action_path`; the reviewed repository defaults to `GITHUB_WORKSPACE`. Set `review-workspace` when the PR is checked out separately from the trusted runtime. The workflow must be on the default branch before GitHub can trigger it. Never execute tasks, install dependencies, or load actions from the PR checkout in this credentialed job.
 
 ## Pi packages and credentials
 
@@ -49,9 +51,9 @@ The SDK and the following packages are local, locked dependencies. The resource 
 
 No MCP server has been selected for this action. To add one, change the action-owned MCP configuration in `writeRuntimeConfig` after reviewing that server's access requirements. The action does not import MCP server commands from the reviewed repository or runner home directory.
 
-Oceans mode uses the gateway's `/v1` OpenAI-compatible endpoint and the supplied Oceans key. Direct mode requires a Pi `provider/model` ID and its provider credential in the workflow environment. The `provider-key` input remains part of Oceans configuration resolution; it does not fetch a secret from Oceans. The worker forwards only the explicit credential names listed in `src/pi.ts`, including `EXA_API_KEY`, `BRAVE_API_KEY`, and `TAVILY_API_KEY` for search.
+Oceans mode uses the gateway's `/v1` OpenAI-compatible endpoint and the supplied Oceans key. It requires context and output limits from the gateway's resolved route metadata; unknown limits fail before the model request instead of using guessed capacities. Direct mode requires a Pi `provider/model` ID and its provider credential in the workflow environment. The `provider-key` input remains part of Oceans configuration resolution; it does not fetch a secret from Oceans. The worker forwards only the explicit credential names listed in `src/pi.ts`, including `EXA_API_KEY`, `BRAVE_API_KEY`, and `TAVILY_API_KEY` for search.
 
-Each review uses a temporary home and Pi configuration directory. GitHub publishing credentials stay in the parent process. The main session has no shell, write, or edit tool. Subagent calls accept only the bounded foreground form described in the prompt. These are tool restrictions, not an operating-system sandbox; use a runner whose filesystem and network access are suitable for the review.
+Each review requires Linux and Bubblewrap (`bwrap`). The worker runs in a mount and PID namespace with a temporary home and runtime directory. Only system libraries, the trusted action, the PR source, and its own temporary files are visible. Source and runtime code are read-only; `/proc` is empty, so file tools cannot read process environments. Runner home files, the gateway database, and GitHub credentials are outside this filesystem. Network access remains available for model and search requests. The main session has no shell, write, or edit tool. Subagent calls accept only the bounded foreground form described in the prompt. Both parent and child SDK sessions use the isolated runtime directory, so PR-owned TypeScript and Pi configuration cannot control package loading.
 
 ## Search defaults and API keys
 
@@ -105,10 +107,10 @@ The action check installs from the lockfile, typechecks, runs unit tests, applie
 
 The SDK smoke checks extension tool registration, resolved bearer credentials, provider error reporting, valid and invalid result handling, and foreground delegation. A separate search smoke exercises the installed package's quota fallback from anonymous Exa to Parallel MCP and verifies that authentication errors remain visible. Both checks are deterministic and do not prove live model quality or external MCP/search connectivity. The manual self-hosted smoke exercises the action lifecycle against a mock Oceans API with GitHub publishing disabled.
 
-The repository's `oceans-review-agent.yml` workflow runs this action on same-repository PR creation, updates, reopening, and transition to ready. Drafts are skipped by both the action and backend. It builds a temporary real gateway, creates a service account with an explicit `openai/gpt-5.6-luna` grant and a $2 daily hard budget, and routes Pi through Oceans to OpenRouter using the repository's `OPENROUTER_API_KEY` secret. It posts a managed summary and up to ten inline findings. Each job has a new database and budget; these limits are not a repository-wide spending cap.
+The repository's `oceans-review-agent.yml` workflow uses `pull_request_target` for same-repository PR creation, updates, reopening, and transition to ready. It checks out the trusted workflow revision for executable code and a separate PR checkout as review data. Updates are serialized rather than cancelling a live review; SIGINT and SIGTERM also trigger a best-effort cancelled run report. Forced runner termination cannot guarantee a final report. Drafts are skipped by both the action and backend. It builds a temporary real gateway, creates a service account with an explicit `openai/gpt-5.6-luna` grant and a $2 daily hard budget, and routes Pi through Oceans to OpenRouter using the repository's `OPENROUTER_API_KEY` secret. It posts a managed summary and up to ten inline findings. Each job has a new database and budget; these limits are not a repository-wide spending cap.
 
 The workflow verifies the persisted review status, reviewed commit, published comment ID, successful OpenRouter requests, and returned token usage. It uploads only sanitized evidence, then removes the temporary database and credentials. The gateway is temporary because this repository has no configured external Oceans instance; review summaries remain on GitHub, while full control-plane history does not persist between jobs.
 
-This integration workflow tests the action from the PR head. It therefore trusts contributors who can create branches in this repository with the job's provider and publishing credentials. The same-repository check excludes forks; it does not isolate hostile code from a contributor with repository write access. Use this workflow only where that trust is intended. A deployment that must review untrusted code needs a separately trusted action revision and execution boundary.
+The privileged workflow does not test PR-head executable code. The separate `review-agent-ci.yml` workflow tests the changed action with synthetic credentials and read-only GitHub permissions, including real Linux sandbox checks. Local macOS SDK checks use only synthetic credentials without Bubblewrap; Linux-only sandbox and lifecycle checks run in CI. The smoke scripts are permanent regression coverage, not disposable live-validation scripts.
 
-The live run on [PR #339, commit `193a099b`](https://github.com/ahstn/oceans-llm/actions/runs/34055604877) passed with 13 successful OpenRouter requests, nonzero token usage, a published summary, and one inline finding. This proves the model, control-plane, and publishing path for that run; it does not prove review accuracy or every optional search provider.
+Before sandbox hardening, the live run on [PR #339, commit `193a099b`](https://github.com/ahstn/oceans-llm/actions/runs/34055604877) passed with 13 successful OpenRouter requests, nonzero token usage, a published summary, and one inline finding. This proves the model, control-plane, and publishing path for that run; it does not prove review accuracy or every optional search provider.

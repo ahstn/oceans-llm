@@ -60,7 +60,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     method,
     headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(30_000),
   })
   if (!response.ok) {
     const error = (await response.json()) as { error?: { message?: string } }
@@ -147,6 +147,8 @@ async function start(): Promise<void> {
   await waitForReady(Date.now() + 60_000)
   await request('POST', '/api/v1/auth/login/password', { email: 'review-ci@local', password })
   core.setSecret(cookie)
+  // Populate authoritative route limits before the action resolves its model.
+  await request('POST', '/api/v1/admin/models/pricing-catalog/refresh', {})
   const team = await request<{ id: string }>('POST', '/api/v1/admin/identity/teams', {
     name: 'Review CI',
     admin_user_ids: [],
