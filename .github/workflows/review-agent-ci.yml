@@ -33,9 +33,7 @@ jobs:
           install_args: node bun
 
       - name: Install review worker sandbox
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bubblewrap
+        run: mise exec -- bash actions/review-agent/scripts/setup-sandbox.sh
 
       - name: Check review agent action
         # The tests use synthetic credentials and probe the real Linux sandbox.
