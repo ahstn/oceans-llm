@@ -208,6 +208,15 @@ export async function runPiSession(request: PiReviewRequest, resultPath: string)
     await session.prompt(
       `Review this PR using the code-review skill.\n${JSON.stringify(request.context)}\nDiff path: ${diffPath}\nFeature settings: ${JSON.stringify(request.effectiveConfig)}`,
     )
+    const lastAssistant = session.messages.at(-1)
+    if (
+      lastAssistant?.role === 'assistant' &&
+      ['error', 'aborted'].includes(lastAssistant.stopReason)
+    ) {
+      throw new Error(
+        `Pi model ${lastAssistant.stopReason}: ${lastAssistant.errorMessage || 'no provider error detail'}`,
+      )
+    }
     if (!submission) throw new Error('Pi finished without calling submit_review')
     writeFileSync(
       resultPath,

@@ -16,12 +16,21 @@ const git = (...args: string[]) =>
   execFileSync('git', args, { cwd: workspace, encoding: 'utf8' }).trim()
 const requests: { tools?: { function: { name: string } }[]; messages: { content: unknown }[] }[] =
   []
-let scenario: 'success' | 'invalid' | 'missing' | 'delegation' = 'success'
+let scenario: 'success' | 'invalid' | 'missing' | 'delegation' | 'provider-error' = 'success'
 const lifecycle: string[] = []
 const server = createServer(async (req, res) => {
   let body = ''
   for await (const chunk of req) body += chunk
   const input = JSON.parse(body)
+  if (scenario === 'provider-error') {
+    res.writeHead(400, { 'content-type': 'application/json' })
+    res.end(
+      JSON.stringify({
+        error: { message: 'Synthetic provider rejection', type: 'invalid_request_error' },
+      }),
+    )
+    return
+  }
   if (req.url?.startsWith('/api/v1/review-agent/action/')) {
     lifecycle.push(req.url)
     res.writeHead(200, { 'content-type': 'application/json' })
@@ -125,6 +134,8 @@ try {
   await assert.rejects(invokePi(request, 'local-test-key', 2), /without calling submit_review/)
   scenario = 'missing'
   await assert.rejects(invokePi(request, 'local-test-key', 2), /without calling submit_review/)
+  scenario = 'provider-error'
+  await assert.rejects(invokePi(request, 'local-test-key', 2), /Synthetic provider rejection/)
   scenario = 'delegation'
   await invokePi(request, 'local-test-key', 2)
   assert(
