@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -93,6 +93,7 @@ const reviewPolicy: ExtensionFactory = (pi) => {
 
 function writeRuntimeConfig(request: PiReviewRequest, agentDir: string): string {
   mkdirSync(agentDir, { recursive: true })
+  copyFileSync(join(root, 'config/web-search.json'), join(agentDir, 'web-search.json'))
   mkdirSync(join(agentDir, 'extensions/subagent'), { recursive: true })
   writeFileSync(join(agentDir, 'mcp.json'), JSON.stringify({ mcpServers: {} }))
   writeFileSync(

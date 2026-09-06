@@ -28,6 +28,10 @@ const providerEnvironment = [
   'EXA_API_KEY',
   'BRAVE_API_KEY',
   'TAVILY_API_KEY',
+  'FIRECRAWL_API_KEY',
+  'PARALLEL_API_KEY',
+  'TINYFISH_API_KEY',
+  'PERPLEXITY_API_KEY',
 ]
 
 export function reviewEnvironment(tempDir: string, oceansApiKey: string): NodeJS.ProcessEnv {

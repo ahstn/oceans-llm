@@ -8,9 +8,9 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "lint": "oxlint -c ../.oxlintrc.json src scripts",
-    "fmt": "oxfmt -c ../.oxfmtrc.json src scripts",
-    "fmt:check": "oxfmt -c ../.oxfmtrc.json --check src scripts",
-    "smoke": "node --import tsx scripts/smoke-sdk.ts"
+    "fmt": "oxfmt -c ../.oxfmtrc.json src scripts config",
+    "fmt:check": "oxfmt -c ../.oxfmtrc.json --check src scripts config",
+    "smoke": "node --import tsx scripts/smoke-search.ts && node --import tsx scripts/smoke-sdk.ts"
   },
   "dependencies": {
     "@actions/core": "3.0.1",

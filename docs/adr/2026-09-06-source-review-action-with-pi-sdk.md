@@ -20,6 +20,8 @@ Consumers can import `actions/review-agent` at a reviewed commit without buildin
 
 The wrapper provides tool restrictions and credential separation, not an operating-system sandbox. Runner access remains a deployment concern. Direct providers use explicit workflow credentials; Oceans credential labels do not retrieve secrets. Live model, search, and MCP service checks remain separate from deterministic CI tests.
 
+Search uses the action-owned `config/web-search.json`. Prefer anonymous Exa and Parallel MCP, then optional keyed providers and first-party search supported by the package. Keep Firecrawl last because its anonymous IP checks can return authentication errors that stop fallback. Provider key setup and benchmark evidence are recorded in the action README. Do not add unsupported provider names such as `anthropic` to the route.
+
 ## Verification
 
 `review-agent-action-check` covers type checking, unit tests, lint, formatting, and real SDK calls to a local model mock. The self-hosted workflow covers the run lifecycle with a mock Oceans API and publishing disabled. Hosted workflow execution and live provider quality require deployment checks after the change is published.
