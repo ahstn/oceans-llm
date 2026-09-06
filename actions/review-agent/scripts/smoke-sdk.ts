@@ -22,6 +22,11 @@ const server = createServer(async (req, res) => {
   let body = ''
   for await (const chunk of req) body += chunk
   const input = JSON.parse(body)
+  if (req.headers.authorization !== 'Bearer local-test-key') {
+    res.writeHead(401, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ error: { message: 'SDK did not resolve the gateway credential' } }))
+    return
+  }
   if (scenario === 'provider-error') {
     res.writeHead(400, { 'content-type': 'application/json' })
     res.end(

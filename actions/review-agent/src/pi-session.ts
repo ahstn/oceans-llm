@@ -114,7 +114,7 @@ function writeRuntimeConfig(request: PiReviewRequest, agentDir: string): string 
         oceans: {
           baseUrl,
           api: 'openai-completions',
-          apiKey: 'OCEANS_REVIEW_API_KEY',
+          apiKey: '$OCEANS_REVIEW_API_KEY',
           models: [
             {
               id: config.model_id,
