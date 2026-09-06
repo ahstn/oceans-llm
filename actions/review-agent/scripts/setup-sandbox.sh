@@ -8,10 +8,19 @@ if [[ "${RUNNER_ENVIRONMENT:-}" == "github-hosted" ]]; then
   sudo apt-get install -y bubblewrap apparmor
   if [[ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] &&
     [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == "1" ]]; then
-    # Ubuntu ships this restricted profile disabled on some runner images.
-    # Enable the distro policy: bwrap gets namespace capabilities, its children
-    # do not. Keep the system-wide user-namespace restriction enabled.
-    sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+    # Prefer the distro policy. Some Noble images omit it, so use the upstream
+    # ABI-4 profile with a verified digest on those disposable runners.
+    profile=/etc/apparmor.d/bwrap-userns-restrict
+    if [[ ! -f "$profile" ]]; then
+      profile=$(mktemp)
+      trap 'rm -f "$profile"' EXIT
+      curl --fail --silent --show-error --location \
+        https://gitlab.com/apparmor/apparmor/-/raw/v4.1.0/profiles/apparmor/profiles/extras/bwrap-userns-restrict \
+        --output "$profile"
+      echo "634d3d3427c483f123cb5ed53b71ea13040187e07d9f67ca74421d42a6170f0e  $profile" | sha256sum --check
+    fi
+    # The policy strips child capabilities; the global restriction stays on.
+    sudo apparmor_parser -r "$profile"
   fi
 fi
 

@@ -55,7 +55,7 @@ Oceans mode uses the gateway's `/v1` OpenAI-compatible endpoint and the supplied
 
 Each review requires Linux and Bubblewrap (`bwrap`). The worker runs in a mount and PID namespace with a temporary home and runtime directory. Only system libraries, the trusted action, the PR source, and its own temporary files are visible. Source and runtime code are read-only; `/proc` is empty, so file tools cannot read process environments. Runner home files, the gateway database, and GitHub credentials are outside this filesystem. Network access remains available for model and search requests. The main session has no shell, write, or edit tool. Subagent calls accept only the bounded foreground form described in the prompt. Both parent and child SDK sessions use the isolated runtime directory, so PR-owned TypeScript and Pi configuration cannot control package loading.
 
-On disposable GitHub-hosted Ubuntu runners, setup installs Bubblewrap and activates Ubuntu's restricted `bwrap-userns-restrict` AppArmor profile when needed. It does not disable the system-wide user-namespace restriction. Self-hosted runners must provision Bubblewrap and a suitable AppArmor policy themselves.
+On disposable GitHub-hosted Ubuntu runners, setup installs Bubblewrap and activates the restricted `bwrap-userns-restrict` AppArmor profile when needed. If Ubuntu omits that profile, setup downloads the upstream AppArmor 4.1.0 profile and checks its SHA-256 digest before loading it. The system-wide user-namespace restriction stays enabled. Self-hosted runners must provision Bubblewrap and a suitable AppArmor policy themselves.
 
 ## Search defaults and API keys
 
