@@ -27,6 +27,7 @@ import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as McpIndexRouteImport } from './routes/mcp/index'
 import { Route as McpAccessRouteImport } from './routes/mcp/access'
 import { Route as McpServersRouteImport } from './routes/mcp/servers'
+import { Route as McpToolsetsRouteImport } from './routes/mcp/toolsets'
 import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
 import { Route as ObservabilityAgentSessionsRouteImport } from './routes/observability/agent-sessions'
 import { Route as ObservabilityGuardrailsRouteImport } from './routes/observability/guardrails'
@@ -125,6 +126,11 @@ const McpServersRoute = McpServersRouteImport.update({
   path: '/mcp/servers',
   getParentRoute: () => rootRouteImport,
 } as any)
+const McpToolsetsRoute = McpToolsetsRouteImport.update({
+  id: '/mcp/toolsets',
+  path: '/mcp/toolsets',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ObservabilityAgentHarnessesRoute =
   ObservabilityAgentHarnessesRouteImport.update({
     id: '/observability/agent-harnesses',
@@ -184,6 +190,7 @@ export interface FileRoutesByFullPath {
   '/invite/$token': typeof InviteTokenRoute
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
+  '/mcp/toolsets': typeof McpToolsetsRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
@@ -211,6 +218,7 @@ export interface FileRoutesByTo {
   '/invite/$token': typeof InviteTokenRoute
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
+  '/mcp/toolsets': typeof McpToolsetsRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
@@ -239,6 +247,7 @@ export interface FileRoutesById {
   '/invite/$token': typeof InviteTokenRoute
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
+  '/mcp/toolsets': typeof McpToolsetsRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
@@ -268,6 +277,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/mcp/access'
     | '/mcp/servers'
+    | '/mcp/toolsets'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
     | '/observability/guardrails'
@@ -295,6 +305,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/mcp/access'
     | '/mcp/servers'
+    | '/mcp/toolsets'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
     | '/observability/guardrails'
@@ -322,6 +333,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/mcp/access'
     | '/mcp/servers'
+    | '/mcp/toolsets'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
     | '/observability/guardrails'
@@ -350,6 +362,7 @@ export interface RootRouteChildren {
   InviteTokenRoute: typeof InviteTokenRoute
   McpAccessRoute: typeof McpAccessRoute
   McpServersRoute: typeof McpServersRoute
+  McpToolsetsRoute: typeof McpToolsetsRoute
   ObservabilityAgentHarnessesRoute: typeof ObservabilityAgentHarnessesRoute
   ObservabilityAgentSessionsRoute: typeof ObservabilityAgentSessionsRoute
   ObservabilityGuardrailsRoute: typeof ObservabilityGuardrailsRoute
@@ -488,6 +501,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof McpServersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mcp/toolsets': {
+      id: '/mcp/toolsets'
+      path: '/mcp/toolsets'
+      fullPath: '/mcp/toolsets'
+      preLoaderRoute: typeof McpToolsetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/observability/agent-harnesses': {
       id: '/observability/agent-harnesses'
       path: '/observability/agent-harnesses'
@@ -558,6 +578,7 @@ const rootRouteChildren: RootRouteChildren = {
   InviteTokenRoute: InviteTokenRoute,
   McpAccessRoute: McpAccessRoute,
   McpServersRoute: McpServersRoute,
+  McpToolsetsRoute: McpToolsetsRoute,
   ObservabilityAgentHarnessesRoute: ObservabilityAgentHarnessesRoute,
   ObservabilityAgentSessionsRoute: ObservabilityAgentSessionsRoute,
   ObservabilityGuardrailsRoute: ObservabilityGuardrailsRoute,

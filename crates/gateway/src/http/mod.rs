@@ -252,6 +252,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             get(list_guardrail_decisions),
         )
         .route(
+            "/api/v1/admin/mcp/connection-info",
+            get(get_mcp_connection_info),
+        )
+        .route(
             "/api/v1/admin/mcp/recommended-servers",
             get(list_recommended_mcp_servers),
         )
@@ -289,7 +293,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         )
         .route(
             "/api/v1/admin/mcp/toolsets/{toolset_id}/tools",
-            axum::routing::put(replace_mcp_toolset_tools),
+            get(list_mcp_toolset_tools).put(replace_mcp_toolset_tools),
         )
         .route(
             "/api/v1/admin/mcp/grants",

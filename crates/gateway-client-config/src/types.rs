@@ -5,6 +5,13 @@ pub const DEFAULT_API_KEY_ENV_VAR: &str = "OCEANS_LLM_API_KEY";
 pub const DEFAULT_PROVIDER_ID: &str = "oceans-llm";
 pub const MAX_CLIENT_CONTEXT_WINDOW_TOKENS: i64 = 200_000;
 
+/// Returns the gateway root shared by native and OpenAI-compatible clients.
+#[must_use]
+pub fn normalize_gateway_base_url(gateway_base_url: &str) -> &str {
+    let trimmed = gateway_base_url.trim_end_matches('/');
+    trimmed.strip_suffix("/v1").unwrap_or(trimmed)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ThinkingPolicy {
@@ -109,8 +116,7 @@ impl ClientConfigInput {
 
     #[must_use]
     pub fn client_base_url(&self) -> String {
-        let trimmed = self.gateway_base_url.trim_end_matches('/');
-        trimmed.strip_suffix("/v1").unwrap_or(trimmed).to_string()
+        normalize_gateway_base_url(&self.gateway_base_url).to_string()
     }
 
     #[must_use]

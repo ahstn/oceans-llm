@@ -43,6 +43,7 @@ import type {
   McpInvocationPageView,
   McpOauthConnectionView,
   McpOauthStartResponse,
+  McpConnectionInfoPayload,
   McpDiscoveryRefreshPayload,
   McpCredentialBindingPayload,
   McpCredentialBindingsPayload,
@@ -424,6 +425,11 @@ export async function getMcpInvocationDetail(
   )
 }
 
+export async function getMcpConnectionInfo(): Promise<ApiEnvelope<McpConnectionInfoPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/admin/mcp/connection-info'))
+}
+
 export async function listRecommendedMcpServers(): Promise<
   ApiEnvelope<RecommendedMcpServersPayload>
 > {
@@ -527,6 +533,17 @@ export async function createMcpToolset(
 ): Promise<ApiEnvelope<McpToolsetPayload>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(await client.POST('/api/v1/admin/mcp/toolsets', { body: input }))
+}
+
+export async function listMcpToolsetTools(
+  toolsetId: string,
+): Promise<ApiEnvelope<McpToolsetToolsPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/mcp/toolsets/{toolset_id}/tools', {
+      params: { path: { toolset_id: toolsetId } },
+    }),
+  )
 }
 
 export async function updateMcpToolset(

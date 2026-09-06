@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type { McpServerView, McpToolView, RecommendedMcpServerView } from '@/types/api'
 
 const navigateMock = vi.fn()
@@ -118,7 +119,10 @@ const recommended: RecommendedMcpServerView = {
   tags: ['tickets'],
 }
 
-async function renderServersTab(initialSelectedServerId: string | null = null) {
+async function renderServersTab(
+  initialSelectedServerId: string | null = null,
+  servers: McpServerView[] = [server],
+) {
   const { ServersTab } = await import('@/routes/mcp/-servers-tab')
   const onAddToToolset = vi.fn()
 
@@ -126,7 +130,7 @@ async function renderServersTab(initialSelectedServerId: string | null = null) {
     const [selectedServerId, setSelectedServerId] = useState<string | null>(initialSelectedServerId)
     return (
       <ServersTab
-        servers={[server]}
+        servers={servers}
         recommended={[recommended]}
         selectedServerId={selectedServerId}
         onSelectServer={setSelectedServerId}
@@ -135,7 +139,7 @@ async function renderServersTab(initialSelectedServerId: string | null = null) {
     )
   }
 
-  render(<ServersTabHarness />)
+  render(<ServersTabHarness />, { wrapper: TooltipProvider })
 
   return { onAddToToolset }
 }
@@ -187,10 +191,12 @@ describe('ServersTab', () => {
   it('renders server diagnostics and discovered tools', async () => {
     await renderServersTab()
 
-    expect(screen.getByText(/registered/)).toBeInTheDocument()
-    expect(screen.getByTestId('mcp-server-list')).toBeInTheDocument()
-    expect(screen.getByText('https://api.githubcopilot.com/mcp/')).toBeInTheDocument()
-    expect(screen.getByText('gateway bearer token')).toBeInTheDocument()
+    expect(screen.getByText('active registrations')).toBeInTheDocument()
+    const registry = within(screen.getByTestId('mcp-server-list'))
+    expect(registry.getByText('api.githubcopilot.com')).toHaveAttribute('title', server.server_url)
+    expect(registry.getByText('Gateway bearer token')).toBeInTheDocument()
+    expect(registry.getByText('Discovered')).toBeInTheDocument()
+    expect(registry.getByText(/27 May 2026/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     expect(screen.getByText('/mcp/github')).toBeInTheDocument()
@@ -296,8 +302,28 @@ describe('ServersTab', () => {
     expect(screen.queryByText('old upstream failure')).not.toBeInTheDocument()
   })
 
+  it('clears earlier refresh feedback after a successful configuration change', async () => {
+    refreshExternalMcpServerDiscoveryMock.mockResolvedValueOnce({
+      data: { server, status: 'failed', error_summary: 'Previous endpoint failed', tools: [] },
+    })
+    await renderServersTab('server_1')
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh GitHub' }))
+    await waitFor(() => expect(screen.getByText('Previous endpoint failed')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Edit GitHub' }))
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'https://example.test/mcp' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(saveMcpServerMock).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.queryByText('Previous endpoint failed')).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByText('Discovery failed')).not.toBeInTheDocument()
+  })
+
   it('imports recommended servers through the server function', async () => {
     await renderServersTab()
+    fireEvent.click(screen.getByRole('button', { name: 'Browse catalog' }))
     fireEvent.click(screen.getByRole('button', { name: 'Import' }))
 
     await waitFor(() => {
@@ -344,6 +370,7 @@ describe('ServersTab', () => {
 
   it('disables active servers through the server function', async () => {
     await renderServersTab()
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     fireEvent.click(screen.getByRole('button', { name: 'Disable GitHub' }))
 
     await waitFor(() => {
@@ -351,5 +378,214 @@ describe('ServersTab', () => {
         data: { serverId: 'server_1' },
       })
     })
+  })
+
+  it('combines search with discovery filters without changing registry summary counts', async () => {
+    const failed: McpServerView = {
+      ...server,
+      id: 'failed',
+      display_name: 'Notion',
+      server_key: 'notion',
+      server_url: 'https://mcp.notion.com/mcp',
+      description: 'Shared documents',
+      last_discovery_status: 'failed',
+      last_tool_count: 12,
+    }
+    const authRequired: McpServerView = {
+      ...server,
+      id: 'auth',
+      display_name: 'Figma',
+      server_key: 'figma',
+      last_discovery_status: 'auth_required',
+      last_tool_count: null,
+    }
+    const disabled: McpServerView = {
+      ...failed,
+      id: 'disabled',
+      display_name: 'Legacy',
+      status: 'disabled',
+    }
+    const unrun: McpServerView = {
+      ...server,
+      id: 'unrun',
+      display_name: 'Exa',
+      server_key: 'exa',
+      last_discovery_status: null,
+      last_discovery_at: null,
+      last_tool_count: 0,
+    }
+    await renderServersTab(null, [server, failed, authRequired, disabled, unrun])
+
+    expect(screen.getByRole('button', { name: '2 need attention' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'Needs attention' }))
+    expect(screen.getByText('Showing 2 of 5 servers')).toBeInTheDocument()
+    const registry = within(screen.getByTestId('mcp-server-list'))
+    expect(screen.getByTestId('mcp-server-list')).toHaveClass('min-w-0')
+    expect(registry.getByTestId('mcp-server-table-scroll')).toHaveClass('overflow-x-auto')
+    expect(registry.getByText('Discovery failed')).toBeInTheDocument()
+    expect(registry.getByText('Authentication required')).toBeInTheDocument()
+    expect(registry.getByText('12')).toBeInTheDocument()
+    expect(registry.getByText('—')).toBeInTheDocument()
+    expect(registry.queryByText('Legacy')).not.toBeInTheDocument()
+    expect(registry.queryByText('Exa')).not.toBeInTheDocument()
+
+    for (const search of [' NOTION ', 'mcp.notion.com', 'Shared documents']) {
+      fireEvent.change(screen.getByRole('textbox', { name: 'Search servers' }), {
+        target: { value: search },
+      })
+      expect(screen.getByText('Showing 1 of 5 servers')).toBeInTheDocument()
+      expect(registry.getByText('Notion')).toBeInTheDocument()
+    }
+    expect(screen.getByRole('button', { name: '2 need attention' })).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search servers' }), {
+      target: { value: 'unknown' },
+    })
+    expect(screen.getByText('No matching servers')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(screen.getByText('Showing 5 of 5 servers')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'Disabled' }))
+    expect(screen.getByText('Showing 1 of 5 servers')).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('mcp-server-list')).getByRole('button', { name: 'Refresh Legacy' }),
+    ).toBeDisabled()
+  })
+
+  it('retains discovery, count, endpoint, and authentication details in mobile rows', async () => {
+    await renderServersTab()
+    const mobile = within(screen.getByTestId('mcp-server-list-mobile'))
+    expect(mobile.getByText('api.githubcopilot.com')).toBeInTheDocument()
+    expect(mobile.getByText('Gateway bearer token')).toBeInTheDocument()
+    expect(mobile.getByText('Discovered')).toBeInTheDocument()
+    expect(mobile.getByText(/27 May 2026/)).toBeInTheDocument()
+    expect(mobile.getByText('1 tool')).toBeInTheDocument()
+    fireEvent.click(mobile.getByRole('button', { name: 'Manage GitHub' }))
+    expect(screen.getByRole('dialog', { name: 'Manage MCP server' })).toBeInTheDocument()
+  })
+
+  it('uses deterministic UTC discovery timestamps with unknown and missing date fallbacks', async () => {
+    await renderServersTab(null, [
+      { ...server, last_discovery_at: '2026-09-05T17:09:00+01:00' },
+      { ...server, id: 'invalid', display_name: 'Invalid date', last_discovery_at: 'invalid' },
+      { ...server, id: 'unrun', display_name: 'Not discovered', last_discovery_at: null },
+    ])
+    const registry = within(screen.getByTestId('mcp-server-list'))
+    expect(registry.getByText('5 Sep 2026, 16:09 UTC')).toHaveAttribute(
+      'datetime',
+      '2026-09-05T17:09:00+01:00',
+    )
+    expect(registry.getByText('Unknown discovery time')).toBeInTheDocument()
+    expect(registry.getByText('No discovery yet')).toBeInTheDocument()
+  })
+
+  it('preserves sorting when a search has no matching rows', async () => {
+    const second = { ...server, id: 'second', display_name: 'Alpha', server_key: 'alpha' }
+    await renderServersTab(null, [server, second])
+    const registry = within(screen.getByTestId('mcp-server-list'))
+    fireEvent.click(registry.getByRole('button', { name: 'Server' }))
+    expect(registry.getAllByRole('button', { name: /^Open / })[0]).toHaveAccessibleName(
+      'Open Alpha',
+    )
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search servers' }), {
+      target: { value: 'no match' },
+    })
+    expect(screen.getByText('No matching servers')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(
+      within(screen.getByTestId('mcp-server-list')).getAllByRole('button', { name: /^Open / })[0],
+    ).toHaveAccessibleName('Open Alpha')
+  })
+
+  it('keeps refresh pending on its server until both the request and invalidation finish', async () => {
+    let finishRefresh!: (value: unknown) => void
+    let finishInvalidation!: () => void
+    refreshExternalMcpServerDiscoveryMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRefresh = resolve
+        }),
+    )
+    invalidateMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishInvalidation = resolve
+        }),
+    )
+    const second = { ...server, id: 'second', display_name: 'Notion', server_key: 'notion' }
+    await renderServersTab(null, [server, second])
+    const registry = within(screen.getByTestId('mcp-server-list'))
+    fireEvent.click(registry.getByRole('button', { name: 'Refresh GitHub' }))
+    expect(registry.getByRole('button', { name: 'Refresh GitHub' })).toBeDisabled()
+    expect(registry.getByRole('status', { name: 'Refreshing GitHub' })).toBeInTheDocument()
+    expect(registry.getByRole('button', { name: 'Refresh Notion' })).toBeEnabled()
+
+    await act(async () => {
+      finishRefresh({
+        data: { server, status: 'success', error_summary: null, tools: [activeTool] },
+      })
+    })
+    expect(registry.getByRole('button', { name: 'Refresh GitHub' })).toBeDisabled()
+    await act(async () => {
+      finishInvalidation()
+    })
+    expect(registry.getByRole('button', { name: 'Refresh GitHub' })).toBeEnabled()
+  })
+
+  it('does not replace another server tools or diagnostics when a row refresh finishes', async () => {
+    let finishRefresh!: (value: unknown) => void
+    refreshExternalMcpServerDiscoveryMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRefresh = resolve
+        }),
+    )
+    const second = { ...server, id: 'second', display_name: 'Notion', server_key: 'notion' }
+    getMcpServerToolsMock.mockResolvedValue({
+      data: { items: [{ ...activeTool, server_id: 'second' }] },
+    })
+    await renderServersTab(null, [server, second])
+    const registry = within(screen.getByTestId('mcp-server-list'))
+    fireEvent.click(registry.getByRole('button', { name: 'Refresh GitHub' }))
+    fireEvent.click(registry.getByRole('button', { name: 'Manage Notion' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+    await waitFor(() => expect(screen.getByText('query_docs')).toBeInTheDocument())
+
+    await act(async () => {
+      finishRefresh({
+        data: { server, status: 'failed', error_summary: 'GitHub failed', tools: [tool] },
+      })
+    })
+    expect(screen.getByText('query_docs')).toBeInTheDocument()
+    expect(screen.queryByText('Create issue')).not.toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Overview' })[0])
+    expect(screen.queryByText('GitHub failed')).not.toBeInTheDocument()
+  })
+
+  it('reloads inactive tools after discovery instead of replacing them with its active-only result', async () => {
+    getMcpServerToolsMock.mockResolvedValue({ data: { items: [activeTool, tool] } })
+    refreshExternalMcpServerDiscoveryMock.mockResolvedValueOnce({
+      data: { server, status: 'success', error_summary: null, tools: [activeTool] },
+    })
+    await renderServersTab('server_1')
+    await waitFor(() => expect(getMcpServerToolsMock).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh GitHub' }))
+    await waitFor(() => expect(getMcpServerToolsMock).toHaveBeenCalledTimes(2))
+    expect(getMcpServerToolsMock).toHaveBeenLastCalledWith({
+      data: { serverId: 'server_1', include_inactive: true },
+    })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+    await waitFor(() => expect(screen.getByText('Create issue')).toBeInTheDocument())
+    expect(screen.getByRole('checkbox', { name: 'Select create_issue' })).toBeDisabled()
+  })
+
+  it('opens catalog customization with prefilled values and prevents duplicate direct imports', async () => {
+    await renderServersTab(null, [{ ...server, server_key: 'linear', status: 'disabled' }])
+    expect(screen.queryByText('Recommended catalog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Browse catalog' }))
+    expect(screen.getByRole('button', { name: 'Registered' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Customize' }))
+    expect(screen.queryByRole('dialog', { name: 'Browse MCP catalog' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Server key')).toHaveValue('linear')
+    expect(screen.getByLabelText('Display name')).toHaveValue('Linear')
+    expect(screen.getByLabelText('Server URL')).toHaveValue('https://mcp.linear.app/mcp')
   })
 })

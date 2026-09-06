@@ -1681,6 +1681,7 @@ dependencies = [
  "clap",
  "cron",
  "futures-util",
+ "gateway-client-config",
  "gateway-core",
  "gateway-guardrails",
  "gateway-mcp",
@@ -1762,12 +1763,14 @@ dependencies = [
 name = "gateway-mcp"
 version = "0.30.0"
 dependencies = [
+ "axum 0.8.9",
  "futures-util",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.20",
+ "tokio",
  "url",
 ]
 

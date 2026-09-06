@@ -11,7 +11,13 @@ use serde_json::{Map, Value};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::http::admin_contract::format_timestamp;
+use crate::http::admin_contract::{AdminModelClientConfigView, format_timestamp};
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpConnectionInfoPayload {
+    pub(super) endpoint: String,
+    pub(super) client_configurations: Vec<AdminModelClientConfigView>,
+}
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct McpServersQuery {
@@ -467,13 +473,27 @@ fn sanitized_auth_config(
         ExternalMcpAuthMode::GatewayStaticHeader => &["header_name", "secret_ref"],
         ExternalMcpAuthMode::GatewayBearerToken => &["secret_ref"],
         ExternalMcpAuthMode::UserPassthrough => &["header", "token_type"],
-        ExternalMcpAuthMode::OauthObo => &["token_exchange", "token_type"],
+        ExternalMcpAuthMode::OauthObo => &[
+            "token_exchange",
+            "token_type",
+            "provider_key",
+            "resource",
+            "scopes",
+            "discovery_auth",
+            "discovery_tool_allowlist",
+        ],
     };
     allowed_fields
         .iter()
         .filter_map(|field| {
             auth_config
                 .get(*field)
+                .filter(|value| match *field {
+                    "scopes" | "discovery_tool_allowlist" => value
+                        .as_array()
+                        .is_some_and(|items| items.iter().all(Value::is_string)),
+                    _ => value.is_string(),
+                })
                 .map(|value| ((*field).to_string(), value.clone()))
         })
         .collect()

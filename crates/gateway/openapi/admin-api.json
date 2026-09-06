@@ -1061,6 +1061,41 @@
         ]
       }
     },
+    "/api/v1/admin/mcp/connection-info": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "get_mcp_connection_info",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpConnectionInfoPayload"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/mcp/credential-bindings": {
       "get": {
         "tags": [
@@ -1909,6 +1944,60 @@
       }
     },
     "/api/v1/admin/mcp/toolsets/{toolset_id}/tools": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_mcp_toolset_tools",
+        "parameters": [
+          {
+            "name": "toolset_id",
+            "in": "path",
+            "description": "MCP tool set identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolsetToolsPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
       "put": {
         "tags": [
           "crate::http::mcp_registry"
@@ -10981,6 +11070,36 @@
           }
         }
       },
+      "Envelope_McpConnectionInfoPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "endpoint",
+              "client_configurations"
+            ],
+            "properties": {
+              "client_configurations": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminModelClientConfigView"
+                }
+              },
+              "endpoint": {
+                "type": "string"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_McpCredentialBindingPayload": {
         "type": "object",
         "required": [
@@ -12807,6 +12926,24 @@
             "type": "string"
           },
           "safer_action": {
+            "type": "string"
+          }
+        }
+      },
+      "McpConnectionInfoPayload": {
+        "type": "object",
+        "required": [
+          "endpoint",
+          "client_configurations"
+        ],
+        "properties": {
+          "client_configurations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelClientConfigView"
+            }
+          },
+          "endpoint": {
             "type": "string"
           }
         }

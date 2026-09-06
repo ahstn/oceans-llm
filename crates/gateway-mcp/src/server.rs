@@ -96,6 +96,25 @@ pub fn parse_client_message(body: &[u8]) -> Result<McpServerMessage, McpServerPa
         .as_object()
         .is_some_and(|object| !object.contains_key("method") && object.contains_key("id"))
     {
+        let has_result = value.get("result").is_some();
+        let has_error = value.get("error").is_some();
+        let response: JsonRpcResponse =
+            serde_json::from_value(value).map_err(|error| McpServerParseError {
+                code: JSON_RPC_INVALID_REQUEST,
+                message: error.to_string(),
+                id: None,
+            })?;
+        if response.jsonrpc != "2.0"
+            || has_result == has_error
+            || (has_error && response.error.is_none())
+            || (has_result && response.id.is_none())
+        {
+            return Err(McpServerParseError {
+                code: JSON_RPC_INVALID_REQUEST,
+                message: "invalid JSON-RPC response envelope".to_string(),
+                id: response.id,
+            });
+        }
         return Ok(McpServerMessage::ClientResponse);
     }
     let raw: RawJsonRpcMessage =
@@ -262,9 +281,36 @@ mod tests {
     }
 
     #[test]
-    fn accepts_client_responses_for_accepted_http_response() {
-        let message = parse_client_message(br#"{"jsonrpc":"2.0","id":1,"result":{}}"#)
-            .expect("client response");
-        assert_eq!(message, McpServerMessage::ClientResponse);
+    fn accepts_valid_client_response_envelopes() {
+        for body in [
+            r#"{"jsonrpc":"2.0","id":1,"result":{}}"#,
+            r#"{"jsonrpc":"2.0","id":"request-1","result":null}"#,
+            r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"unknown method"}}"#,
+            r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"parse error"}}"#,
+        ] {
+            assert_eq!(
+                parse_client_message(body.as_bytes()).expect("client response"),
+                McpServerMessage::ClientResponse,
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_client_response_envelopes() {
+        for body in [
+            r#"{"id":1}"#,
+            r#"{"jsonrpc":"1.0","id":1,"result":{}}"#,
+            r#"{"jsonrpc":"2.0","id":true,"result":{}}"#,
+            r#"{"jsonrpc":"2.0","id":null,"result":{}}"#,
+            r#"{"jsonrpc":"2.0","id":1}"#,
+            r#"{"jsonrpc":"2.0","id":1,"result":{},"error":{"code":-32601,"message":"error"}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"result":{},"error":null}"#,
+            r#"{"jsonrpc":"2.0","id":1,"error":null}"#,
+            r#"{"jsonrpc":"2.0","id":1,"error":{"message":"missing code"}}"#,
+        ] {
+            let error = parse_client_message(body.as_bytes()).expect_err(body);
+            assert_eq!(error.code, JSON_RPC_INVALID_REQUEST, "{body}");
+        }
     }
 }

@@ -678,13 +678,21 @@ impl PostgresStore {
     pub async fn consume_mcp_oauth_state(
         &self,
         state_hash: &str,
+        user_id: Uuid,
+        provider_key: &str,
         consumed_at: OffsetDateTime,
     ) -> Result<Option<McpOauthStateRecord>, StoreError> {
         let updated = sqlx::query(
-            "UPDATE mcp_oauth_states SET consumed_at = $1 WHERE state_hash = $2 AND consumed_at IS NULL AND expires_at > $1",
+            r#"
+            UPDATE mcp_oauth_states SET consumed_at = $1
+            WHERE state_hash = $2 AND user_id = $3 AND provider_key = $4
+                AND consumed_at IS NULL AND expires_at > $1
+            "#,
         )
         .bind(consumed_at.unix_timestamp())
         .bind(state_hash)
+        .bind(user_id.to_string())
+        .bind(provider_key)
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;

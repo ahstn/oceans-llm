@@ -7,6 +7,7 @@ target/
 node_modules/
 crates/admin-ui/web/node_modules/
 crates/admin-ui/web/dist/
+crates/admin-ui/web/dist-designs/
 crates/admin-ui/web/.tanstack/
 crates/admin-ui/web/playwright-report/
 crates/admin-ui/web/test-results/

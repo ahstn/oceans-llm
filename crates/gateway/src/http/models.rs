@@ -11,8 +11,7 @@ use gateway_service::{
 use crate::http::{
     admin_auth::{require_active_session, require_platform_admin},
     admin_contract::{
-        AdminModelAllowlistView, AdminModelClientConfigBlockView,
-        AdminModelClientConfigSetupItemView, AdminModelClientConfigView, AdminModelListQuery,
+        AdminModelAllowlistView, AdminModelClientConfigView, AdminModelListQuery,
         AdminModelPageView, AdminModelView, EffectiveMetadataSourceKindView,
         EffectiveMetadataSourceView, Envelope, GenerateModelClientConfigsRequest,
         GenerateModelClientConfigsResponse, RefreshModelPricingCatalogResponse, envelope,
@@ -85,30 +84,7 @@ pub async fn generate_model_client_configs(
         .render_client_configurations(&request.model_keys)
         .await?
         .into_iter()
-        .map(|config| AdminModelClientConfigView {
-            key: config.key,
-            label: config.label,
-            model_ids: config.model_ids,
-            setup: config
-                .setup
-                .into_iter()
-                .map(|item| AdminModelClientConfigSetupItemView {
-                    label: item.label,
-                    value: item.value,
-                    href: item.href,
-                })
-                .collect(),
-            blocks: config
-                .blocks
-                .into_iter()
-                .map(|block| AdminModelClientConfigBlockView {
-                    label: block.label,
-                    filename: block.filename,
-                    content: block.content,
-                })
-                .collect(),
-            notes: config.notes,
-        })
+        .map(AdminModelClientConfigView::from)
         .collect();
 
     Ok(Json(envelope(GenerateModelClientConfigsResponse {
@@ -189,30 +165,7 @@ fn map_model_summary(model: AdminModelSummary, include_allowlist: bool) -> Admin
         client_configurations: model
             .client_configurations
             .into_iter()
-            .map(|config| AdminModelClientConfigView {
-                key: config.key,
-                label: config.label,
-                model_ids: config.model_ids,
-                setup: config
-                    .setup
-                    .into_iter()
-                    .map(|item| AdminModelClientConfigSetupItemView {
-                        label: item.label,
-                        value: item.value,
-                        href: item.href,
-                    })
-                    .collect(),
-                blocks: config
-                    .blocks
-                    .into_iter()
-                    .map(|block| AdminModelClientConfigBlockView {
-                        label: block.label,
-                        filename: block.filename,
-                        content: block.content,
-                    })
-                    .collect(),
-                notes: config.notes,
-            })
+            .map(AdminModelClientConfigView::from)
             .collect(),
     }
 }

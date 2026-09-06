@@ -12,6 +12,7 @@ async-trait.workspace = true
 axum.workspace = true
 futures-util.workspace = true
 gateway-core.workspace = true
+gateway-client-config.workspace = true
 gateway-guardrails.workspace = true
 gateway-mcp.workspace = true
 gateway-providers.workspace = true
@@ -44,6 +45,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
+gateway-guardrails = { workspace = true, features = ["test-utils"] }
 serial_test = "4"
 tempfile = "3"
 url.workspace = true

@@ -13,12 +13,16 @@ export type ToolCatalog = {
 }
 
 /**
- * Loads the active-tool catalog across every active server in parallel. Shared
+ * Loads the tool catalog across every active server in parallel. Shared
  * by the Toolsets membership editor and the Access grant/effective pickers so
  * tools can be chosen by name instead of by pasting UUIDs. Inactive tools are
- * excluded — toolsets and grants only ever reference callable tools.
+ * excluded by default. The membership editor includes them to identify saved
+ * tools that are no longer available; it cannot select them as new members.
  */
-export function useToolCatalog(servers: McpServerView[]): ToolCatalog {
+export function useToolCatalog(
+  servers: McpServerView[],
+  { includeInactive = false }: { includeInactive?: boolean } = {},
+): ToolCatalog {
   const [tools, setTools] = useState<McpToolView[]>([])
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -48,7 +52,7 @@ export function useToolCatalog(servers: McpServerView[]): ToolCatalog {
     setError(null)
     void Promise.all(
       activeServerIds.map((serverId) =>
-        getMcpServerTools({ data: { serverId, include_inactive: false } }).then(
+        getMcpServerTools({ data: { serverId, include_inactive: includeInactive } }).then(
           (response) => response.data.items,
         ),
       ),
@@ -73,7 +77,7 @@ export function useToolCatalog(servers: McpServerView[]): ToolCatalog {
     return () => {
       cancelled = true
     }
-  }, [serverKey, nonce])
+  }, [serverKey, nonce, includeInactive])
 
   const byServer = useMemo(() => {
     const map = new Map<string, McpToolView[]>()

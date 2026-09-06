@@ -193,7 +193,7 @@ impl StreamableHttpClient {
             .timeout(timeout)
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|error| McpClientError::Transport(error.to_string()))?;
+            .map_err(classify_reqwest_error)?;
         Ok(Self {
             client,
             endpoint,
@@ -328,10 +328,10 @@ impl StreamableHttpClient {
             .headers(request_headers)
             .json(request)
             .build()
-            .map_err(|error| McpClientError::Transport(error.to_string()))
+            .map_err(classify_reqwest_error)
     }
 
-    async fn send<T: Serialize, R: DeserializeOwned + Default>(
+    async fn send<T: Serialize, R: DeserializeOwned>(
         &self,
         request: JsonRpcRequest<T>,
         headers: Option<&BTreeMap<String, String>>,
@@ -349,7 +349,10 @@ impl StreamableHttpClient {
             JsonRpcRequest::new(
                 JsonRpcId::Number(1),
                 "initialize",
-                Some(InitializeRequest::default()),
+                Some(InitializeRequest {
+                    protocol_version: self.protocol_version.clone(),
+                    ..InitializeRequest::default()
+                }),
             ),
             headers,
         )
@@ -377,7 +380,7 @@ impl StreamableHttpClient {
         Ok(())
     }
 
-    async fn send_with_session<T: Serialize, R: DeserializeOwned + Default>(
+    async fn send_with_session<T: Serialize, R: DeserializeOwned>(
         &self,
         request: JsonRpcRequest<T>,
         headers: Option<&BTreeMap<String, String>>,
@@ -416,26 +419,35 @@ impl StreamableHttpClient {
         let result = if is_sse {
             decode_sse_json_rpc_result_for_id(&body, Some(&request.id))?
         } else {
-            decode_json_rpc_result(&body)?
+            decode_json_rpc_result_for_id(&body, Some(&request.id))?.ok_or_else(|| {
+                McpClientError::InvalidResponse {
+                    message: "JSON-RPC response id does not match the request".to_string(),
+                }
+            })?
         };
         Ok((result, session_id))
     }
 }
 
-pub fn decode_json_rpc_result<T: DeserializeOwned + Default>(
-    body: &str,
-) -> Result<T, McpClientError> {
+pub fn decode_json_rpc_result<T: DeserializeOwned>(body: &str) -> Result<T, McpClientError> {
     decode_json_rpc_result_for_id(body, None)?.ok_or_else(|| McpClientError::InvalidResponse {
         message: "JSON-RPC response is missing result".to_string(),
     })
 }
 
-fn decode_json_rpc_result_for_id<T: DeserializeOwned + Default>(
+fn decode_json_rpc_result_for_id<T: DeserializeOwned>(
     body: &str,
     expected_id: Option<&JsonRpcId>,
 ) -> Result<Option<T>, McpClientError> {
-    let response: JsonRpcResponse<T> =
+    let envelope: Value =
         serde_json::from_str(body).map_err(|error| McpClientError::InvalidResponse {
+            message: error.to_string(),
+        })?;
+    // Option<JsonRpcId> loses the distinction between an absent ID and explicit null.
+    let has_id = envelope.get("id").is_some();
+    let is_request_or_notification = envelope.get("method").is_some();
+    let response: JsonRpcResponse<Value> =
+        serde_json::from_value(envelope).map_err(|error| McpClientError::InvalidResponse {
             message: error.to_string(),
         })?;
     if response.jsonrpc != "2.0" {
@@ -443,35 +455,51 @@ fn decode_json_rpc_result_for_id<T: DeserializeOwned + Default>(
             message: "JSON-RPC version must be 2.0".to_string(),
         });
     }
-    if let Some(expected_id) = expected_id {
-        match response.id.as_ref() {
-            Some(actual_id) if actual_id == expected_id => {}
-            Some(_) => return Ok(None),
-            None if response.error.is_none() => return Ok(None),
-            None => {}
+    if !has_id || is_request_or_notification {
+        return Ok(None);
+    }
+    match response.id.as_ref() {
+        Some(actual_id) if expected_id.is_some_and(|expected| actual_id != expected) => {
+            return Ok(None);
         }
+        // JSON-RPC permits null when a parse/invalid-request error prevents ID detection.
+        None if !response
+            .error
+            .as_ref()
+            .is_some_and(|error| matches!(error.code, -32700 | -32600)) =>
+        {
+            return Ok(None);
+        }
+        _ => {}
     }
     if let Some(error) = response.error {
         return Err(McpClientError::JsonRpc(error));
     }
-    response
+    let result = response
         .result
         .ok_or_else(|| McpClientError::InvalidResponse {
             message: "JSON-RPC response is missing result".to_string(),
+        })?;
+    serde_json::from_value(result)
+        .map_err(|error| McpClientError::InvalidResponse {
+            message: error.to_string(),
         })
         .map(Some)
 }
 
-pub fn decode_sse_json_rpc_result<T: DeserializeOwned + Default>(
-    body: &str,
-) -> Result<T, McpClientError> {
+pub fn decode_sse_json_rpc_result<T: DeserializeOwned>(body: &str) -> Result<T, McpClientError> {
     decode_sse_json_rpc_result_for_id(body, None)
 }
 
-fn decode_sse_json_rpc_result_for_id<T: DeserializeOwned + Default>(
+fn decode_sse_json_rpc_result_for_id<T: DeserializeOwned>(
     body: &str,
     expected_id: Option<&JsonRpcId>,
 ) -> Result<T, McpClientError> {
+    let body = body
+        .strip_prefix('\u{feff}')
+        .unwrap_or(body)
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
     let mut data_lines = Vec::new();
     let mut saw_data_event = false;
     for line in body.lines() {
@@ -512,7 +540,7 @@ async fn read_bounded_body(response: reqwest::Response) -> Result<String, McpCli
     let mut body = Vec::new();
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| McpClientError::Transport(error.to_string()))?;
+        let chunk = chunk.map_err(classify_reqwest_error)?;
         if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BODY_BYTES {
             return Err(McpClientError::ResponseTooLarge {
                 limit_bytes: MAX_RESPONSE_BODY_BYTES,
@@ -598,7 +626,7 @@ fn classify_reqwest_error(error: reqwest::Error) -> McpClientError {
     if error.is_timeout() {
         McpClientError::Timeout
     } else {
-        McpClientError::Transport(error.to_string())
+        McpClientError::Transport(error.without_url().to_string())
     }
 }
 
@@ -612,7 +640,7 @@ fn bounded_body(body: &str) -> String {
 
 #[derive(Debug, thiserror::Error)]
 pub enum McpClientError {
-    #[error("invalid MCP server URL `{url}`: {message}")]
+    #[error("invalid MCP server URL: {message}")]
     InvalidUrl { url: String, message: String },
     #[error("invalid MCP request header: {0}")]
     InvalidHeader(String),
@@ -635,6 +663,22 @@ pub enum McpClientError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_server_url_errors_do_not_disclose_endpoint() {
+        let endpoint = "http://upstream-user:upstream-password@[invalid]/mcp?api_key=query-secret";
+        let error = StreamableHttpClient::new(endpoint, Duration::from_secs(5))
+            .expect_err("invalid IPv6 host");
+        let McpClientError::InvalidUrl { message, .. } = &error else {
+            panic!("expected invalid URL error");
+        };
+
+        assert_eq!(
+            error.to_string(),
+            format!("invalid MCP server URL: {message}")
+        );
+        assert!(!error.to_string().contains("query-secret"));
+    }
 
     #[test]
     fn parses_json_rpc_result() {
@@ -687,6 +731,71 @@ mod tests {
     }
 
     #[test]
+    fn errors_without_ids_do_not_match_json_rpc_requests() {
+        for code in [-32601, -32700, -32600] {
+            let body = json!({
+                "jsonrpc": "2.0",
+                "error": {"code": code, "message": "upstream error"},
+            })
+            .to_string();
+            let result = decode_json_rpc_result_for_id::<Value>(&body, Some(&JsonRpcId::Number(1)))
+                .expect("an error without an ID cannot match a request");
+            assert!(result.is_none());
+            assert!(matches!(
+                decode_json_rpc_result::<Value>(&body),
+                Err(McpClientError::InvalidResponse { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn null_ids_only_identify_json_rpc_request_decoding_errors() {
+        for code in [-32700, -32600, -32601, -32000] {
+            let body = json!({
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {"code": code, "message": "upstream error"},
+            })
+            .to_string();
+            let result = decode_json_rpc_result_for_id::<Value>(&body, Some(&JsonRpcId::Number(1)));
+            if matches!(code, -32700 | -32600) {
+                assert!(
+                    matches!(result, Err(McpClientError::JsonRpc(error)) if error.code == code)
+                );
+            } else {
+                assert!(
+                    result
+                        .expect("ordinary errors require a matching ID")
+                        .is_none()
+                );
+                assert!(matches!(
+                    decode_json_rpc_result::<Value>(&body),
+                    Err(McpClientError::InvalidResponse { .. })
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn json_rpc_response_ids_match_by_value_and_type() {
+        let expected_id = JsonRpcId::Number(1);
+        for id in [json!(1), json!(2), json!("1"), Value::Null] {
+            let body = json!({"jsonrpc": "2.0", "id": id, "result": {"tools": []}}).to_string();
+            let result =
+                decode_json_rpc_result_for_id::<ToolsListResponse>(&body, Some(&expected_id))
+                    .expect("decode response");
+            assert_eq!(result.is_some(), id == json!(1));
+        }
+        let body =
+            r#"{"jsonrpc":"2.0","id":"tool-call","error":{"code":-32601,"message":"missing"}}"#;
+        let result = decode_json_rpc_result_for_id::<Value>(
+            body,
+            Some(&JsonRpcId::String("tool-call".to_string())),
+        );
+        assert!(matches!(result, Err(McpClientError::JsonRpc(_))));
+    }
+
+    #[test]
     fn request_includes_protocol_version_header() {
         let client =
             StreamableHttpClient::new("https://mcp.example.com/mcp", Duration::from_secs(5))
@@ -724,7 +833,7 @@ mod tests {
             "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{\"progress\":1}}\n",
             "\n",
             "event: message\n",
-            "data: {\"jsonrpc\":\"2.0\",\"id\":99,\"method\":\"sampling/createMessage\",\"params\":{}}\n",
+            "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"sampling/createMessage\",\"params\":{}}\n",
             "\n",
             "event: message\n",
             "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"search\",\"inputSchema\":{\"type\":\"object\"}}]}}\n",
@@ -736,6 +845,43 @@ mod tests {
 
         assert_eq!(result.tools.len(), 1);
         assert_eq!(result.tools[0].name, "search");
+    }
+
+    #[test]
+    fn sse_ignores_uncorrelated_errors_before_the_matching_response() {
+        for error in [
+            json!({"jsonrpc": "2.0", "error": {"code": -32601, "message": "missing ID"}}),
+            json!({"jsonrpc": "2.0", "error": {"code": -32700, "message": "missing ID"}}),
+            json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32601, "message": "null ID"}}),
+            json!({"jsonrpc": "2.0", "id": "1", "error": {"code": -32601, "message": "other ID"}}),
+        ] {
+            let body = format!(
+                "data: {error}\n\ndata: {{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"tools\":[]}}}}\n\n"
+            );
+            let result: ToolsListResponse =
+                decode_sse_json_rpc_result_for_id(&body, Some(&JsonRpcId::Number(1)))
+                    .expect("decode the correlated result after an unrelated error");
+            assert!(result.tools.is_empty());
+
+            let body = format!("data: {error}\n\n");
+            let error =
+                decode_sse_json_rpc_result_for_id::<Value>(&body, Some(&JsonRpcId::Number(1)))
+                    .expect_err("a matching response is required before the stream ends");
+            assert!(matches!(error, McpClientError::InvalidResponse { .. }));
+        }
+    }
+
+    #[test]
+    fn sse_preserves_explicit_null_request_decoding_errors() {
+        for code in [-32700, -32600] {
+            let body = format!(
+                "data: {{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{{\"code\":{code},\"message\":\"invalid request\"}}}}\n\n"
+            );
+            let error =
+                decode_sse_json_rpc_result_for_id::<Value>(&body, Some(&JsonRpcId::Number(1)))
+                    .expect_err("preserve the JSON-RPC request decoding failure");
+            assert!(matches!(error, McpClientError::JsonRpc(error) if error.code == code));
+        }
     }
 
     #[test]

@@ -4,7 +4,7 @@ This directory is the maintained source for verification of the user-facing Ocea
 
 ## Baseline preconditions
 
-- Start the real gateway and admin UI with `control-oceans-admin launch`, which runs `mise run dev-stack` from a temporary port-adjusted copy of `gateway.yaml` on recorded alternate ports.
+- Start the real gateway and admin UI with `control-oceans-admin launch`, which runs `mise run dev-stack` with the recorded alternate ports exported as `GATEWAY_PORT` and `UI_PORT`.
 - Use only the stack started for the current `OCEANS_VERIFY_RUN_ID`.
 - Require `control-oceans-admin doctor` to report the recorded gateway PID, ready state, and gateway version.
 - Use the seeded `admin@local` / `admin` platform-admin account unless a feature requires a narrower role.
@@ -20,8 +20,9 @@ This directory is the maintained source for verification of the user-facing Ocea
 - Use `control-oceans-admin drive models` for the automated Models proof.
 - Use `control-oceans-admin drive observability` for the combined Leaderboard and Agent Harnesses proof.
 - Use `control-oceans-admin drive backend-gateway` for the bounded OpenRouter, deterministic guardrail, generated-tool decision, and request-log proof.
+- Use `control-oceans-admin drive mcp` for the MCP registry, Tool Sets workbench, grant checks, bounded live tool calls, and invocation proof. Read its credential preconditions before launch.
 - Extend the harness before reporting another path as automated. Manual Playwright steps in this map remain the contract for that extension.
-- Do not mutate provider credentials or call a live provider during read-only control-plane verification. Use the live LLM request recipe only when the changed request behavior warrants paid integration proof.
+- Read-only control-plane verification does not call upstream services. Use the live LLM recipe when changed model-request behavior warrants paid integration proof. Use the MCP recipe for authorized, reviewed read-only tool calls; these can consume upstream service quota. Neither recipe permits unrelated upstream mutations.
 
 ## Proof and skip reporting
 
@@ -54,3 +55,4 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Request logs](./request-logs.md) covers the seeded request list, filters, and request detail.
 - [Live LLM requests](./live-llm-requests.md) covers bounded paid canaries through OpenRouter or Bedrock and their request-log evidence.
 - [Backend gateway](./backend-gateway.md) covers the OpenRouter route for `deepseek-v4-flash-0731`, deterministic and generated-tool guardrails, request-log evidence, and temporary key cleanup.
+- [MCP](./mcp.md) covers registry discovery, Tool Sets, generated client configuration, explicit grants, direct and aggregate tool calls, upstream authentication failure, invocation records, and cleanup.

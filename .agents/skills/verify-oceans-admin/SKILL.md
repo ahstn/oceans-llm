@@ -1,11 +1,11 @@
 ---
 name: verify-oceans-admin
-description: Verify the Oceans LLM admin control plane and backend gateway against the real local stack, seeded demo data, and bounded live providers when required. Use for user-path checks of sign-in, models, API keys, observability, agent sessions, request logs, OpenRouter routing, and guardrails.
+description: Verify the Oceans LLM admin control plane and backend gateway against the real local stack, seeded demo data, and bounded live providers when required. Use for user-path checks of sign-in, models, API keys, observability, agent sessions, request logs, MCP registry and tool access, OpenRouter routing, and guardrails.
 ---
 
 # Verify Oceans Admin
 
-Use this skill to drive the embedded TanStack Start admin UI through the gateway. The primary surface is the browser UI at `/admin`. The gateway API is a secondary surface for health checks, read-only confirmation, and bounded live LLM requests when the change affects the request path.
+Use this skill to drive the embedded TanStack Start admin UI through the gateway. The primary surface is the browser UI at `/admin`. The gateway API is a secondary surface for health checks, saved-state confirmation, bounded MCP tool calls, and bounded live LLM requests when the change affects the request path.
 
 Read [features/README.md](./features/README.md) before you choose a proof. Use the exact feature recipe for the path under test.
 
@@ -79,6 +79,15 @@ Prove backend gateway routing and generated-tool guardrails through OpenRouter:
 
 The Backend Gateway driver opens the real API Keys page, creates a temporary user key limited to `deepseek-v4-flash-0731`, evaluates one synthetic destructive command without executing it, and sends one bounded forced-tool Chat Completions request through OpenRouter. It confirms the request-linked guardrail decision and request-log attempt, writes sanitized evidence, revokes the key, and confirms that the revoked key is rejected. Use [features/backend-gateway.md](./features/backend-gateway.md) for the exact contract.
 
+Prove the MCP registry, Tool Sets workbench, grants, and live tool routing:
+
+```bash
+export OCEANS_VERIFY_MCP_CANDIDATES_FILE=/absolute/path/to/mcp-candidates.json
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive mcp
+```
+
+Read [features/mcp.md](./features/mcp.md) before launch. It defines the required gateway credential aliases and the candidate file. The MCP driver creates temporary servers, two tool sets, and one API key through the UI. It verifies saved membership, independent drafts, client configurations, grant enforcement, direct and aggregate tool calls, and invocation records. The API key UI requires one explicit model grant; the driver selects one model but sends no model request. This proof uses public access or static upstream credentials and does not test OAuth consent or token refresh.
+
 ## Live LLM requests
 
 Read-only control-plane verification is the default and does not call an upstream provider. Add one short, paid live request when the change affects request routing, provider authentication, request or response translation, streaming, tool calls, usage accounting, request logging, provider error mapping, or another behavior that a configured model list cannot prove. Do not add a paid request for UI-only, documentation-only, seed-only, or unrelated configuration changes.
@@ -119,6 +128,14 @@ The Backend Gateway proof produces:
 - `backend-gateway-canary-proof.json` with the gateway model, OpenRouter provider, configured upstream model, request ID, status, usage presence, tool count, guardrail rule, payload capture mode, gateway version, and action log.
 - No prompt, response, gateway key, provider credential, or authorization header.
 
+The MCP proof produces:
+
+- Screenshots and ARIA snapshots for sign-in, discovery, saved membership, independent drafts, client configuration, mobile layout, grants, and filtered invocation lists.
+- `mcp-proof.json` with candidate results, saved IDs, gateway version, grant checks, request and invocation IDs, transport type, authentication-error control, and cleanup results.
+- No raw key, authorization header, tool arguments, or tool-result payload in the proof JSON. Invocation detail is inspected in memory and is not captured.
+
+Require `mcp-proof.json` to report `passed: true` and inspect each candidate result. An optional candidate failure remains a reported gap. Check `control-oceans-admin evidence mcp` before and after stack cleanup.
+
 Mocks are valid only when the production boundary already isolates an external system. This Models proof uses no mock. Do not interpret a rendered configured provider as proof that its credentials or live upstream service work.
 
 ## Cleanup
@@ -149,9 +166,10 @@ control-oceans-admin doctor
 control-oceans-admin drive models
 control-oceans-admin drive observability
 control-oceans-admin drive backend-gateway
-control-oceans-admin evidence [models|observability|live-llm|backend-gateway]
+control-oceans-admin drive mcp
+control-oceans-admin evidence [models|observability|live-llm|backend-gateway|mcp]
 control-oceans-admin cleanup
 
 ```
 
-The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), and [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs). Call them through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.
+The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs), and [scripts/drive-mcp.mjs](./scripts/drive-mcp.mjs). The MCP driver uses [scripts/mcp-browser.mjs](./scripts/mcp-browser.mjs) and [scripts/mcp-canary.mjs](./scripts/mcp-canary.mjs). Call the drivers through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.

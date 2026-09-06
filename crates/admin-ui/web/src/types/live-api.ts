@@ -139,6 +139,7 @@ export type GuardrailDecisionFiltersInput = NonNullable<
   operations['list_guardrail_decisions']['parameters']['query']
 >
 export type RecommendedMcpServerView = components['schemas']['RecommendedMcpServerView']
+export type McpConnectionInfoPayload = components['schemas']['McpConnectionInfoPayload']
 export type RecommendedMcpServersPayload = components['schemas']['RecommendedMcpServersPayload']
 export type McpServerView = components['schemas']['McpServerView']
 export type McpServersPayload = components['schemas']['McpServersPayload']

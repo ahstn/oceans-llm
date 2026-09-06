@@ -314,6 +314,7 @@ impl McpAccessRepository for LibsqlStore {
         &self,
         toolset_id: Uuid,
     ) -> Result<Vec<McpToolsetToolRecord>, StoreError> {
+        load_toolset(&self.connection, toolset_id).await?;
         let mut rows = self
             .connection
             .query(

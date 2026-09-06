@@ -1,15 +1,6 @@
-import { useState } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import { PageHeader } from '@/components/layout/page-header'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   getApiKeys,
   getMcpGrants,
@@ -20,25 +11,23 @@ import {
 } from '@/server/admin-data.functions'
 import { AccessTab } from './-access-tab'
 import { ServersTab } from './-servers-tab'
-import { ToolsetsTab } from './-toolsets-tab'
-import { SegmentedTabs } from './-shell'
+import { McpNavigation } from './-navigation'
+import { normalizeToolsetsSearch, type ToolsetsSearch } from './-search'
 
 type McpTab = 'servers' | 'toolsets' | 'access'
 
-type McpSearch = {
+type McpSearch = ToolsetsSearch & {
   tab: McpTab
   server_id?: string
-  toolset_id?: string
 }
-
-const workspaceTabs = [
-  { value: 'servers', label: 'Servers' },
-  { value: 'toolsets', label: 'Toolsets' },
-  { value: 'access', label: 'Access' },
-]
 
 export const Route = createFileRoute('/mcp/')({
   validateSearch: (search: Record<string, unknown>) => normalizeMcpSearch(search),
+  beforeLoad: ({ search }) => {
+    if (search.tab === 'toolsets') {
+      throw redirect({ to: '/mcp/toolsets', search: normalizeToolsetsSearch(search) })
+    }
+  },
   loader: async () => {
     const [servers, recommended, toolsets, grants, apiKeys, identity] = await Promise.all([
       getMcpServers({ data: { include_disabled: true } }),
@@ -66,30 +55,16 @@ export function McpWorkspacePage() {
   const data = Route.useLoaderData()
   const search = Route.useSearch()
   const router = useRouter()
-  const [seedToolIds, setSeedToolIds] = useState<string[]>([])
 
   const selectedServerId = search.server_id ?? null
-  const selectedToolsetId = search.toolset_id ?? null
 
   function applySearch(next: Partial<McpSearch>) {
     void router.navigate({ to: '/mcp', search: normalizeMcpSearch({ ...search, ...next }) })
   }
 
   function handleAddToToolset(toolIds: string[]) {
-    setSeedToolIds(toolIds)
-    applySearch({ tab: 'toolsets' })
+    void router.navigate({ to: '/mcp/toolsets', search: { tool_ids: toolIds } })
   }
-
-  const workspaceNavigation = (
-    <CardAction>
-      <SegmentedTabs
-        ariaLabel="MCP workspace sections"
-        value={search.tab}
-        onValueChange={(value) => applySearch({ tab: value as McpTab })}
-        items={workspaceTabs}
-      />
-    </CardAction>
-  )
 
   const workspaceContent =
     search.tab === 'servers' ? (
@@ -97,32 +72,18 @@ export function McpWorkspacePage() {
         servers={data.servers}
         recommended={data.recommended}
         selectedServerId={selectedServerId}
-        workspaceHeader={workspaceNavigation}
         onSelectServer={(serverId) => applySearch({ server_id: serverId ?? undefined })}
         onAddToToolset={handleAddToToolset}
       />
     ) : (
       <Card className="min-w-0">
         <CardHeader>
-          <CardTitle>{search.tab === 'toolsets' ? 'Toolsets' : 'Access rules'}</CardTitle>
+          <CardTitle>Access rules</CardTitle>
           <CardDescription>
-            {search.tab === 'toolsets'
-              ? 'Combine related tools so that you can manage them as one group.'
-              : 'Choose which people and accounts can use each tool or group of tools.'}
+            Choose which people and accounts can use each tool or group of tools.
           </CardDescription>
-          {workspaceNavigation}
         </CardHeader>
         <CardContent className="min-w-0">
-          {search.tab === 'toolsets' ? (
-            <ToolsetsTab
-              toolsets={data.toolsets}
-              servers={data.servers}
-              selectedToolsetId={selectedToolsetId}
-              onSelectToolset={(toolsetId) => applySearch({ toolset_id: toolsetId ?? undefined })}
-              seedToolIds={seedToolIds}
-              onSeedConsumed={() => setSeedToolIds([])}
-            />
-          ) : null}
           {search.tab === 'access' ? (
             <AccessTab
               grants={data.grants}
@@ -142,11 +103,15 @@ export function McpWorkspacePage() {
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
-      <PageHeader
-        section="Control Plane"
-        title="MCP"
-        description="Manage the servers and tools exposed to applications and end users."
-      />
+      <McpNavigation current={search.tab === 'access' ? 'access' : 'servers'} />
+      {search.tab === 'access' ? (
+        <header className="flex flex-col gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Access</h1>
+          <p className="text-muted-foreground text-sm">
+            Manage who can use your MCP tools and tool sets.
+          </p>
+        </header>
+      ) : null}
       {workspaceContent}
     </div>
   )
@@ -155,10 +120,9 @@ export function McpWorkspacePage() {
 function normalizeMcpSearch(search: Record<string, unknown>): McpSearch {
   const tab = search.tab
   return {
+    ...normalizeToolsetsSearch(search),
     tab: tab === 'toolsets' || tab === 'access' ? tab : 'servers',
     server_id:
       typeof search.server_id === 'string' && search.server_id ? search.server_id : undefined,
-    toolset_id:
-      typeof search.toolset_id === 'string' && search.toolset_id ? search.toolset_id : undefined,
   }
 }

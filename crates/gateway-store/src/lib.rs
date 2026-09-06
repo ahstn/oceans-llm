@@ -1551,8 +1551,30 @@ pub(crate) mod tests {
             .create_mcp_oauth_state(&oauth_state)
             .await
             .expect("create MCP OAuth state");
+        for (callback_user_id, provider_key) in
+            [(Uuid::new_v4(), "google"), (user_id, "other-provider")]
+        {
+            assert!(
+                store
+                    .consume_mcp_oauth_state(
+                        &oauth_state.state_hash,
+                        callback_user_id,
+                        provider_key,
+                        now,
+                    )
+                    .await
+                    .expect("reject mismatched MCP OAuth callback")
+                    .is_none(),
+                "a wrong user or provider must not consume the state",
+            );
+        }
         let consumed_state = store
-            .consume_mcp_oauth_state(&oauth_state.state_hash, now + Duration::seconds(1))
+            .consume_mcp_oauth_state(
+                &oauth_state.state_hash,
+                user_id,
+                "google",
+                now + Duration::seconds(1),
+            )
             .await
             .expect("consume MCP OAuth state")
             .expect("MCP OAuth state exists");
@@ -1562,7 +1584,12 @@ pub(crate) mod tests {
         assert_eq!(consumed_state.scopes, oauth_state.scopes);
         assert!(
             store
-                .consume_mcp_oauth_state(&oauth_state.state_hash, now + Duration::seconds(2),)
+                .consume_mcp_oauth_state(
+                    &oauth_state.state_hash,
+                    user_id,
+                    "google",
+                    now + Duration::seconds(2)
+                )
                 .await
                 .expect("reject reused MCP OAuth state")
                 .is_none()
@@ -1586,7 +1613,7 @@ pub(crate) mod tests {
             .expect("create expired MCP OAuth state");
         assert!(
             store
-                .consume_mcp_oauth_state(&expired_state.state_hash, now)
+                .consume_mcp_oauth_state(&expired_state.state_hash, user_id, "google", now)
                 .await
                 .expect("reject expired MCP OAuth state")
                 .is_none()

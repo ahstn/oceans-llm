@@ -39,6 +39,14 @@ https://<gateway-origin>/mcp/{server_key}
 
 Use an Oceans API key for inbound auth. The gateway does not accept provider tokens, upstream MCP tokens, or query-string credentials at this endpoint.
 
+## Connection info in the admin UI
+
+Open **MCP → Tool Sets**, select a tool set, and choose **Connection Info**. The dialog provides the gateway endpoint and copyable Claude Code and Codex configuration. Set `OCEANS_LLM_API_KEY` in the environment used to launch the client, using an Oceans API key owned by a user or service account.
+
+Connection Info uses `GATEWAY_CLIENT_CONFIG_BASE_URL` from the gateway process, as the Models page does. If it is unset, the endpoint is `http://127.0.0.1:3000/mcp`. A terminal `/v1` is removed before `/mcp` is added; deployment path prefixes are preserved. For example, `https://gateway.example.com/oceans/v1` becomes `https://gateway.example.com/oceans/mcp`.
+
+Tool sets share this endpoint. Use **Manage access** to grant the selected set to the API key or its owner. The client can use all tools granted to that key; choosing a tool set in the admin UI does not restrict the client to that set. Save tool selection changes before clients use them.
+
 ## Before Connecting A Client
 
 Ask an admin to confirm:
@@ -83,7 +91,7 @@ Add the HTTP MCP server with the aggregate gateway URL and an Oceans API key hea
       "type": "http",
       "url": "https://gateway.example.com/mcp",
       "headers": {
-        "Authorization": "Bearer ${OCEANS_API_KEY}"
+        "Authorization": "Bearer ${OCEANS_LLM_API_KEY}"
       }
     }
   }
@@ -97,7 +105,7 @@ Configure an HTTP MCP server that points at the same gateway endpoint:
 ```toml
 [mcp_servers.oceans]
 url = "https://gateway.example.com/mcp"
-headers = { Authorization = "Bearer ${OCEANS_API_KEY}" }
+headers = { Authorization = "Bearer ${OCEANS_LLM_API_KEY}" }
 ```
 
 ## Cursor
@@ -110,7 +118,7 @@ Use a Streamable HTTP server entry:
     "oceans": {
       "url": "https://gateway.example.com/mcp",
       "headers": {
-        "Authorization": "Bearer ${OCEANS_API_KEY}"
+        "Authorization": "Bearer ${OCEANS_LLM_API_KEY}"
       }
     }
   }

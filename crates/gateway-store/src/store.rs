@@ -153,9 +153,12 @@ pub trait GatewayStore:
         consumed_at: OffsetDateTime,
     ) -> Result<Option<OauthLoginStateRecord>, StoreError>;
     async fn create_mcp_oauth_state(&self, state: &McpOauthStateRecord) -> Result<(), StoreError>;
+    /// Atomically consumes an unexpired, unused state for its initiating user and provider.
     async fn consume_mcp_oauth_state(
         &self,
         state_hash: &str,
+        user_id: Uuid,
+        provider_key: &str,
         consumed_at: OffsetDateTime,
     ) -> Result<Option<McpOauthStateRecord>, StoreError>;
     async fn get_user_by_email_normalized(
@@ -1349,9 +1352,14 @@ impl GatewayStore for AnyStore {
     async fn consume_mcp_oauth_state(
         &self,
         state_hash: &str,
+        user_id: Uuid,
+        provider_key: &str,
         consumed_at: OffsetDateTime,
     ) -> Result<Option<McpOauthStateRecord>, StoreError> {
-        dispatch_store!(self, consume_mcp_oauth_state(state_hash, consumed_at))
+        dispatch_store!(
+            self,
+            consume_mcp_oauth_state(state_hash, user_id, provider_key, consumed_at)
+        )
     }
 
     async fn get_user_by_email_normalized(
