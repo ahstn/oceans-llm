@@ -27,10 +27,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup mise and Bun
+      - name: Setup mise, Node.js and Bun
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: bun
+          install_args: node bun
+
+      - name: Install review worker sandbox
+        run: mise exec -- bash actions/review-agent/scripts/setup-sandbox.sh
 
       - name: Check review agent action
+        # The tests use synthetic credentials and probe the real Linux sandbox.
         run: mise run review-agent-action-check

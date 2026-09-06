@@ -4,6 +4,7 @@ pitchfork.local.toml
 
 target/
 .local/
+gha-research/
 node_modules/
 crates/admin-ui/web/node_modules/
 crates/admin-ui/web/dist/
