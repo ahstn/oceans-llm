@@ -127,7 +127,7 @@ service_accounts:
         auto_create: true
         allowed_models:
           - openai-fast
-          - gpt-5.6-sol
+          - gpt-6-astra
 
   - id: local-eval-worker
     name: Local Eval Worker
@@ -342,23 +342,23 @@ providers:
       icon_key: aws
 
 models:
-  - id: gpt-5.6-sol
-    description: OpenAI via compatible adapter with weighted route selection
+  - id: gpt-6-astra
+    description: GPT-6 Astra via OpenAI with weighted route selection; use Responses for tools
     routes:
       - provider: openai-prod
-        upstream_model: gpt-5.6-sol
+        upstream_model: gpt-6-astra
         weight: 9.0
       - provider: openai-secondary
-        upstream_model: gpt-5.6-sol
+        upstream_model: gpt-6-astra
         weight: 1.0
 
   - id: openai-fast
     description: Alias kept for backward compatibility
-    alias_of: gpt-5.6-sol
+    alias_of: gpt-6-astra
 
   - id: openai-fast-v2
     description: Legacy local demo alias
-    alias_of: gpt-5.6-sol
+    alias_of: gpt-6-astra
 
   - id: copilot-gpt-5.6-luna
     description: GPT-5.6 Luna through GitHub Copilot user-token authentication

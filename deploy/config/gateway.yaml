@@ -162,15 +162,15 @@ providers:
 
 models:
   - id: openai-fast-v2
-    description: OpenAI via compatible adapters with weighted route selection
+    description: GPT-6 Astra via OpenAI with weighted route selection; use Responses for tools
     routes:
       - provider: openai-prod
-        upstream_model: gpt-5
+        upstream_model: gpt-6-astra
         # Optional route context and pricing overrides are documented in
         # docs/configuration/configuration-reference.md.
         weight: 9.0
       - provider: openai-secondary
-        upstream_model: gpt-5
+        upstream_model: gpt-6-astra
         weight: 1.0
 
   - id: openai-fast

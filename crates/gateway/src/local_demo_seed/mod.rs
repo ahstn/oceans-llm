@@ -527,7 +527,7 @@ async fn seed_demo_batches(
         .find(|key| key.owner_service_account_id == Some(service_account.service_account_id))
         .ok_or_else(|| anyhow::anyhow!("local-ci-runner managed API key is missing"))?;
     let execution_model = store
-        .get_model_by_key("gpt-5.6-sol")
+        .get_model_by_key("gpt-6-astra")
         .await
         .context("failed loading batch seed execution model")?
         .ok_or_else(|| anyhow::anyhow!("batch seed execution model is missing"))?;
@@ -959,7 +959,7 @@ mod tests {
         let models = models::LOCAL_DEMO_MODEL_KEYS
             .iter()
             .copied()
-            .chain(std::iter::once("gpt-5.6-sol"))
+            .chain(std::iter::once("gpt-6-astra"))
             .map(|model_key| SeedModel {
                 model_key: model_key.to_string(),
                 alias_target_model_key: None,
@@ -967,10 +967,10 @@ mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 0,
-                routes: if model_key == "gpt-5.6-sol" {
+                routes: if model_key == "gpt-6-astra" {
                     vec![SeedModelRoute {
                         provider_key: "openai-prod".to_string(),
-                        upstream_model: "gpt-5.6-sol".to_string(),
+                        upstream_model: "gpt-6-astra".to_string(),
                         priority: 0,
                         weight: 1.0,
                         enabled: true,
@@ -1006,7 +1006,7 @@ mod tests {
             secret_hash: hash_gateway_key_secret("local-ci-runner-test-secret")
                 .expect("hash service account API key"),
             service_account_key: "local-ci-runner".to_string(),
-            allowed_models: vec!["openai-fast".to_string(), "gpt-5.6-sol".to_string()],
+            allowed_models: vec!["openai-fast".to_string(), "gpt-6-astra".to_string()],
         }];
         let teams = teams::LOCAL_DEMO_TEAM_KEYS
             .iter()

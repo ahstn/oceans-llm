@@ -1,0 +1,162 @@
+{
+  "repository": "https://github.com/getsentry/warden",
+  "commit": "6d361c0473a3236cc31c4fbe4a0a281b84679eb8",
+  "files": [
+    {
+      "file": "code-review-skill.md",
+      "title": "code-review skill and review rubric",
+      "path": "packages/warden/src/builtin-skills/code-review/SKILL.md",
+      "line": 1
+    },
+    {
+      "file": "code-review-specification.md",
+      "title": "code-review behavioural specification",
+      "path": "packages/warden/src/builtin-skills/code-review/SPEC.md",
+      "line": 1
+    },
+    {
+      "file": "code-review-javascript-typescript-rubric.md",
+      "title": "code-review: javascript-typescript rubric",
+      "path": "packages/warden/src/builtin-skills/code-review/references/javascript-typescript.md",
+      "line": 1
+    },
+    {
+      "file": "code-review-python-rubric.md",
+      "title": "code-review: python rubric",
+      "path": "packages/warden/src/builtin-skills/code-review/references/python.md",
+      "line": 1
+    },
+    {
+      "file": "code-review-github-workflows-rubric.md",
+      "title": "code-review: github-workflows rubric",
+      "path": "packages/warden/src/builtin-skills/code-review/references/github-workflows.md",
+      "line": 1
+    },
+    {
+      "file": "security-review-skill.md",
+      "title": "security-review skill and review rubric",
+      "path": "packages/warden/src/builtin-skills/security-review/SKILL.md",
+      "line": 1
+    },
+    {
+      "file": "security-review-specification.md",
+      "title": "security-review behavioural specification",
+      "path": "packages/warden/src/builtin-skills/security-review/SPEC.md",
+      "line": 1
+    },
+    {
+      "file": "security-review-javascript-typescript-rubric.md",
+      "title": "security-review: javascript-typescript rubric",
+      "path": "packages/warden/src/builtin-skills/security-review/references/javascript-typescript.md",
+      "line": 1
+    },
+    {
+      "file": "security-review-python-rubric.md",
+      "title": "security-review: python rubric",
+      "path": "packages/warden/src/builtin-skills/security-review/references/python.md",
+      "line": 1
+    },
+    {
+      "file": "security-review-github-workflows-rubric.md",
+      "title": "security-review: github-workflows rubric",
+      "path": "packages/warden/src/builtin-skills/security-review/references/github-workflows.md",
+      "line": 1
+    },
+    {
+      "file": "architecture-review-repository-skill.md",
+      "title": "Repository architecture-review skill",
+      "path": ".agents/skills/architecture-review/SKILL.md",
+      "line": 1
+    },
+    {
+      "file": "hunk-analysis-system-prompt.md",
+      "title": "Hunk analysis system prompt",
+      "path": "packages/warden/src/sdk/prompt.ts",
+      "line": 22
+    },
+    {
+      "file": "hunk-analysis-user-prompt.md",
+      "title": "Hunk analysis user prompt",
+      "path": "packages/warden/src/sdk/prompt.ts",
+      "line": 103
+    },
+    {
+      "file": "finding-verifier-system-prompt.md",
+      "title": "Finding verifier system prompt",
+      "path": "packages/warden/src/sdk/verify.ts",
+      "line": 72
+    },
+    {
+      "file": "finding-verifier-user-prompt.md",
+      "title": "Finding verifier user prompt",
+      "path": "packages/warden/src/sdk/verify.ts",
+      "line": 107
+    },
+    {
+      "file": "finding-json-repair-prompt.md",
+      "title": "Finding JSON extraction repair prompt",
+      "path": "packages/warden/src/sdk/extract.ts",
+      "line": 225
+    },
+    {
+      "file": "cross-location-merge-prompt.md",
+      "title": "Cross-location root-cause merge prompt",
+      "path": "packages/warden/src/sdk/extract.ts",
+      "line": 557
+    },
+    {
+      "file": "existing-comment-deduplication-prompt.md",
+      "title": "Existing-comment semantic deduplication prompt",
+      "path": "packages/warden/src/output/dedup.ts",
+      "line": 512
+    },
+    {
+      "file": "batch-finding-consolidation-prompt.md",
+      "title": "Batch finding consolidation prompt",
+      "path": "packages/warden/src/output/dedup.ts",
+      "line": 821
+    },
+    {
+      "file": "fix-evaluation-judge-prompt.md",
+      "title": "Fix-evaluation judge prompt",
+      "path": "packages/warden/src/action/fix-evaluation/judge.ts",
+      "line": 71
+    },
+    {
+      "file": "fix-evaluation-judge-prompt-builder.md",
+      "title": "Fix-evaluation judge prompt builder",
+      "path": "packages/warden/src/action/fix-evaluation/judge.ts",
+      "line": 71
+    },
+    {
+      "file": "runtime-agent-contracts.md",
+      "title": "Review and auxiliary agent contracts",
+      "path": "packages/warden/src/sdk/runtimes/types.ts",
+      "line": 1
+    },
+    {
+      "file": "pi-structured-output-system-prompt-builder.md",
+      "title": "Pi auxiliary system prompt builder",
+      "path": "packages/warden/src/sdk/runtimes/pi.ts",
+      "line": 825
+    },
+    {
+      "file": "pi-review-agent-session-definition.md",
+      "title": "Pi review agent session definition",
+      "path": "packages/warden/src/sdk/runtimes/pi.ts",
+      "line": 575
+    },
+    {
+      "file": "claude-review-agent-query-definition.md",
+      "title": "Claude review agent query definition",
+      "path": "packages/warden/src/sdk/runtimes/claude.ts",
+      "line": 392
+    },
+    {
+      "file": "checked-in-workflow-and-skill-selection.md",
+      "title": "Checked-in workflow and skill selection",
+      "path": ".github/workflows/warden.yml",
+      "line": 1
+    }
+  ]
+}

@@ -84,6 +84,32 @@ The model ID is the stable name callers send in the `model` field. Each route id
 
 See [Configuration Reference](configuration-reference.md) for complete field syntax, provider credentials, compatibility profiles, and validation constraints.
 
+### Use the GPT-6 Astra routes
+
+The root and deployment gateway configurations route `openai-fast` and `openai-fast-v2` to `gpt-6-astra`. The root local configuration also exposes `gpt-6-astra` directly. The two OpenAI routes retain their 9:1 weights and existing credential references.
+
+Clients must follow the [official OpenAI migration guide](https://developers.openai.com/api/docs/guides/latest-model):
+
+- Send tool calls through `/v1/responses`. Astra supports Chat Completions for requests without tools. Oceans does not convert Chat Completions requests into Responses requests.
+- Replace explicit `none` or `minimal` reasoning effort with `low`. Preserve other supported effort settings. Use `reasoning.effort` in Responses and `reasoning_effort` in Chat Completions.
+- Omit `temperature`, `top_p`, and `top_logprobs`. Also omit `logprobs` in Chat Completions and `message.output_text.logprobs` from Responses `include`.
+- When upgrading a client from GPT-5.5 or earlier, replace `prompt_cache_retention` with `prompt_cache_options: {"ttl": "30m"}`.
+- For EU data residency, use Standard processing; omit `fast` and `priority` service tiers.
+
+For example, send this body to `/v1/responses` through an authorized gateway key:
+
+```json
+{
+  "model": "openai-fast",
+  "input": "Explain the purpose of a gateway model alias in one sentence.",
+  "reasoning": { "effort": "low" }
+}
+```
+
+The gateway forwards client parameters; these route changes do not remove unsupported fields or change client reasoning settings. General route capabilities do not express Astra's endpoint-specific tool restriction. Check client request bodies before switching existing traffic.
+
+Apply changed configuration through the normal config-seeding workflow. Editing these files does not update an already seeded deployment. Confirm Astra access for both OpenAI credentials, refresh pricing metadata, and verify a Responses request before enabling traffic. Configuration validation does not prove provider access or live inference. See [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md) for pricing refresh and missing-price behavior.
+
 ## Understand requested and resolved models
 
 Oceans keeps two model identities:
