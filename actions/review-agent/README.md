@@ -36,7 +36,26 @@ jobs:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
 ```
 
-Set `dry-run` to `false` to publish. Dry runs still call the model and record the run in Oceans. See `action.yml` for all inputs. The action source runs from `github.action_path`; the reviewed repository defaults to `GITHUB_WORKSPACE`. Set `review-workspace` when the PR is checked out separately from the trusted runtime. The workflow must be on the default branch before GitHub can trigger it. Never execute tasks, install dependencies, or load actions from the PR checkout in this credentialed job.
+Set `dry-run` to `false` to publish. Dry runs still call the model and, by default, record the run in Oceans. See `action.yml` for all inputs. The action source runs from `github.action_path`; the reviewed repository defaults to `GITHUB_WORKSPACE`. Set `review-workspace` when the PR is checked out separately from the trusted runtime. The workflow must be on the default branch before GitHub can trigger it. Never execute tasks, install dependencies, or load actions from the PR checkout in this credentialed job.
+
+### Reviews without Oceans reporting
+
+Set `report-to-oceans: 'false'` to skip run creation, status updates, and metrics reporting. GitHub reviews and the job summary still work. Reporting is enabled by default.
+
+For standalone use, provide a Pi `provider/model` ID and its provider credential. No Oceans URL, key, or repository registration is required. Direct mode is the default when reporting is disabled; review settings come from action inputs.
+
+```yaml
+      - uses: ahstn/oceans-llm/actions/review-agent@ACTION_COMMIT_SHA
+        with:
+          report-to-oceans: 'false'
+          model-mode: direct
+          model-id: openrouter/openai/gpt-5.6-luna
+          github-token: ${{ github.token }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+```
+
+To keep gateway model routing without review reporting, also set `model-mode: oceans` and provide `oceans-url` and `oceans-api-key`. This mode still calls Oceans to resolve repository configuration and model limits, and model traffic remains subject to gateway request logging and billing. The reporting switch controls review-run reporting only.
 
 ## Pi packages and credentials
 

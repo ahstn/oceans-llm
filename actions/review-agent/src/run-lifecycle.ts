@@ -45,13 +45,17 @@ export async function run(): Promise<void> {
   }
 
   const client = new OceansClient(inputs.oceansUrl, inputs.oceansApiKey)
-  const resolved = await client.resolveConfig({
-    eventName: runtime.eventName,
-    repository: pullRequestContext.repository,
-    pullRequest: pullRequestContext.pullRequest,
-    overrides: buildOverrides(inputs),
-  })
-  const config = resolved.effective_config
+  const config: EffectiveConfig =
+    !inputs.reportToOceans && inputs.modelMode === 'direct'
+      ? buildOverrides(inputs)
+      : (
+          await client.resolveConfig({
+            eventName: runtime.eventName,
+            repository: pullRequestContext.repository,
+            pullRequest: pullRequestContext.pullRequest,
+            overrides: buildOverrides(inputs),
+          })
+        ).effective_config
   if (!hasEffectiveModel(config)) {
     core.warning('No effective review model is configured; skipping review agent run.')
     await core.summary
@@ -60,14 +64,16 @@ export async function run(): Promise<void> {
     return
   }
 
-  const started = await client.startRun({
-    eventName: runtime.eventName,
-    repository: pullRequestContext.repository,
-    pullRequest: pullRequestContext.pullRequest,
-    githubRunId: runtime.runId,
-    githubRunAttempt: runtime.runAttempt,
-    effectiveConfig: config,
-  })
+  const started = inputs.reportToOceans
+    ? await client.startRun({
+        eventName: runtime.eventName,
+        repository: pullRequestContext.repository,
+        pullRequest: pullRequestContext.pullRequest,
+        githubRunId: runtime.runId,
+        githubRunAttempt: runtime.runAttempt,
+        effectiveConfig: config,
+      })
+    : undefined
 
   let result: ReviewResult | undefined
   const cancellation = new AbortController()
@@ -104,16 +110,17 @@ export async function run(): Promise<void> {
     const metrics = completeMetrics(result, publishMetrics)
     cancellation.signal.throwIfAborted()
     await core.summary.addRaw(buildJobSummary(result, result.degradedFeatures)).write()
-    await client.completeRun(started.run.id, metrics)
+    if (started) await client.completeRun(started.run.id, metrics)
   } catch (error) {
     const metrics = result ? failureMetrics(result) : { status: 'failed' as const }
-    await (
-      cancellation.signal.aborted
-        ? client.completeRun(started.run.id, { ...metrics, status: 'cancelled' })
-        : client.failRun(started.run.id, redactor.errorSummary(error), metrics)
-    ).catch((failError) => {
-      core.warning(redactor.errorSummary(failError))
-    })
+    if (started)
+      await (
+        cancellation.signal.aborted
+          ? client.completeRun(started.run.id, { ...metrics, status: 'cancelled' })
+          : client.failRun(started.run.id, redactor.errorSummary(error), metrics)
+      ).catch((failError) => {
+        core.warning(redactor.errorSummary(failError))
+      })
     throw error
   } finally {
     process.removeListener('SIGINT', cancel)

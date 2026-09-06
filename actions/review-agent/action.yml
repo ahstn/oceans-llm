@@ -1,20 +1,24 @@
 name: Oceans LLM Review Agent
 description: Run the Oceans LLM review agent on same-repository pull requests.
 inputs:
+  report-to-oceans:
+    description: Report review runs and metrics to Oceans. Disable for standalone direct-provider reviews.
+    required: false
+    default: "true"
   review-workspace:
     description: Absolute path of the PR checkout to inspect as data, separate from the trusted action checkout.
     required: false
   oceans-url:
-    description: Base URL for the Oceans LLM gateway.
-    required: true
+    description: Base URL for the Oceans LLM gateway. Required for reporting or oceans model mode.
+    required: false
   oceans-api-key:
-    description: Service account API key bound to this repository in Oceans.
-    required: true
+    description: Service account API key. Required for reporting or oceans model mode.
+    required: false
   model-id:
     description: Optional model key override.
     required: false
   model-mode:
-    description: Optional execution mode override, either oceans or direct.
+    description: Execution mode, either oceans or direct. Defaults to direct when reporting is disabled.
     required: false
   provider-key:
     description: Optional direct-provider credential key configured in Oceans.
@@ -81,6 +85,7 @@ runs:
     - name: Run Oceans LLM review agent
       shell: bash
       env:
+        INPUT_REPORT-TO-OCEANS: ${{ inputs.report-to-oceans }}
         OCEANS_REVIEW_WORKSPACE: ${{ inputs.review-workspace || github.workspace }}
         GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
         INPUT_OCEANS-URL: ${{ inputs.oceans-url }}

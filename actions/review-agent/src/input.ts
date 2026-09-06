@@ -3,18 +3,30 @@ import type { ActionInputs } from './types'
 type InputReader = (name: string) => string
 
 export function parseInputs(readInput: InputReader): ActionInputs {
-  const oceansUrl = required(readInput, 'oceans-url')
-  const oceansApiKey = required(readInput, 'oceans-api-key')
+  const reportToOceans = parseBoolean(readInput('report-to-oceans') || 'true', 'report-to-oceans')
+  const modelMode = optional(readInput('model-mode')) || (reportToOceans ? undefined : 'direct')
+  const needsOceans = reportToOceans || modelMode !== 'direct'
+  const oceansUrl = needsOceans
+    ? required(readInput, 'oceans-url')
+    : optional(readInput('oceans-url'))
+  const oceansApiKey = needsOceans
+    ? required(readInput, 'oceans-api-key')
+    : readInput('oceans-api-key')
+  const modelId =
+    !reportToOceans && modelMode === 'direct'
+      ? required(readInput, 'model-id')
+      : optional(readInput('model-id'))
   const timeoutMinutes = parsePositiveInteger(
     readInput('timeout-minutes') || '20',
     'timeout-minutes',
   )
 
   return {
-    oceansUrl: normalizeUrl(oceansUrl),
+    reportToOceans,
+    oceansUrl: oceansUrl ? normalizeUrl(oceansUrl) : '',
     oceansApiKey,
-    modelId: optional(readInput('model-id')),
-    modelMode: optional(readInput('model-mode')),
+    modelId,
+    modelMode,
     providerKey: optional(readInput('provider-key')),
     inlineReview: parseOptionalBoolean(readInput('inline-review'), 'inline-review'),
     prSummary: parseOptionalBoolean(readInput('pr-summary'), 'pr-summary'),

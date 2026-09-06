@@ -1,6 +1,7 @@
 export type BoolInput = boolean | undefined
 
 export interface ActionInputs {
+  reportToOceans: boolean
   oceansUrl: string
   oceansApiKey: string
   modelId?: string
