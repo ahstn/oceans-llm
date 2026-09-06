@@ -16,10 +16,11 @@ const actions = []
 
 await fs.mkdir(evidenceDir, { recursive: true })
 const browser = await chromium.launch({ headless: true })
+let page
 
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
-  const page = await context.newPage()
+  page = await context.newPage()
   page.on('console', (message) => console.log(`browser console ${message.type()}: ${message.text()}`))
   page.on('pageerror', (error) => console.log(`browser page error: ${error.message}`))
   page.on('requestfailed', (request) =>
@@ -121,7 +122,9 @@ try {
     .getByRole('button', { name: 'Generate client config for gpt-5.6-sol', exact: true })
     .click()
   const configDialog = page.getByRole('dialog', { name: 'Client config' })
-  await configDialog.getByText('gpt-5.6-sol', { exact: true }).first().waitFor()
+  await configDialog.waitFor()
+  await configDialog.getByText(/^gpt-5\.6-sol via /).waitFor()
+  const clientConfigs = await verifyClientConfigs(page, configDialog)
   actions.push({ action: 'generate gpt-5.6-sol client config', result: 'Client config dialog visible' })
   await capture(page, '05-model-client-config')
 
@@ -135,14 +138,56 @@ try {
     renderedCount,
     totalCount,
     apiCount,
+    clientConfigs,
     actions,
     generatedAt: new Date().toISOString(),
   }
   await fs.writeFile(path.join(evidenceDir, 'models-proof.json'), `${JSON.stringify(proof, null, 2)}\n`)
   console.log(`models proof passed: ${displayedCount} displayed and ${totalCount} total UI models matched the rendered rows and API total`)
   console.log(`evidence: ${evidenceDir}`)
+} catch (error) {
+  if (page && !page.isClosed()) {
+    await capture(page, '99-models-failure').catch(() => {})
+  }
+  throw error
 } finally {
   await browser.close()
+}
+
+async function verifyClientConfigs(page, dialog) {
+  const response = await page.evaluate(async () => {
+    const result = await fetch('/api/v1/admin/models/client-configs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_keys: ['gpt-5.6-sol'] }),
+    })
+    if (!result.ok) throw new Error(`Client configuration API returned ${result.status}`)
+    return result.json()
+  })
+  const configs = response.data.client_configurations
+  if (configs.length === 0) throw new Error('Client configuration API returned no configurations.')
+  const choices = dialog.getByRole('radiogroup', { name: 'Client config', exact: true })
+  const results = []
+  for (const config of configs) {
+    await choices.getByRole('radio', { name: config.label, exact: true }).check()
+    for (const block of config.blocks) {
+      const rendered = dialog.locator('[data-slot="code-block"]').filter({
+        has: page.getByText(block.filename, { exact: true }),
+      })
+      await rendered.waitFor()
+      const content = await rendered.locator('[data-slot="code-block-line"]').evaluateAll((lines) =>
+        lines.map((line) => line.lastElementChild.textContent.replace(/\u200b/g, '')).join('\n'),
+      )
+      if (content !== block.content.replace(/\r\n?/g, '\n')) {
+        throw new Error(`Rendered ${config.label} ${block.filename} did not match the configuration API.`)
+      }
+    }
+    await capture(page, `05-model-client-config-${config.key}`)
+    results.push({ key: config.key, label: config.label, files: config.blocks.map((block) => block.filename), matchesApi: true })
+  }
+  await choices.getByRole('radio', { name: configs[0].label, exact: true }).check()
+  actions.push({ action: 'compare rendered client configurations with production API', result: `${results.length} configurations matched` })
+  return results
 }
 
 async function capture(page, name) {

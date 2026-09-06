@@ -1,6 +1,14 @@
 'use client'
 
-import { createContext, useContext, useEffect, useId, useMemo, useRef } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react'
 import type { ReactNode } from 'react'
 import {
   mergeDataGridI18n,
@@ -436,36 +444,26 @@ function getDataGridAutoSizeState(store: object): DataGridAutoSizeReflowState {
 }
 
 function createDataGridAutoSizeController<TData extends object>(
-  /**
-   * A getter, not the table itself.
-   *
-   * v8 handed back one stable table whose state mutated in place, so a
-   * controller could close over it. v9 returns a NEW table wrapper on every
-   * state change, and a captured one keeps reporting the state it was built
-   * with - here that meant `columnSizing` looked permanently empty, the
-   * applied-once guard re-armed on every measurement, and the fill overwrote
-   * whatever width the user had just dragged the column to.
-   */
-  getTable: () => DataGridTableInstance<TData>,
+  table: DataGridTableInstance<TData>,
+  getCommittedTable: () => DataGridTableInstance<TData>,
 ): DataGridAutoSizeController {
   // Reflow coalescing: a live window drag streams a measurement per frame,
   // and every accepted commit re-renders the table. One leading commit
   // keeps single snaps (a maximize) instant; the rest of the stream parks
   // its latest value behind one trailing timer, so a continuous drag costs
   // two commits instead of sixty a second. The trailing timer may fire
-  // after the grid unmounts; it re-reads the table then, and a sizing
+  // after the grid unmounts; it reads the live sizing atom, and a sizing
   // write to the consumer's store is inert once nothing renders it.
   const SETTLE_MS = 150
 
-  const reflow = (freeSpace: number): boolean => {
-    const table = getTable()
-    const state = getDataGridAutoSizeState(table.store)
+  const reflow = (freeSpace: number, currentTable = table): boolean => {
+    const state = getDataGridAutoSizeState(currentTable.store)
     // LIVE state, never the render snapshot: a measurement can run between
     // our own sizing commit and React's re-render, and the stale snapshot
     // would hide the width this controller just wrote.
-    const columnSizing = table.atoms.columnSizing?.get() ?? table.state.columnSizing
+    const columnSizing = currentTable.atoms.columnSizing?.get() ?? currentTable.state.columnSizing
     if (!state.applied) return false
-    const autoSizeColumn = table
+    const autoSizeColumn = currentTable
       .getVisibleLeafColumns()
       .find((column) => column.columnDef.meta?.autoSize && column.getCanResize())
     if (!autoSizeColumn || autoSizeColumn.id !== state.applied.columnId) return false
@@ -484,7 +482,7 @@ function createDataGridAutoSizeController<TData extends object>(
     const target = Math.max(floor, state.applied.base + freeAtBase)
     if (Math.abs(target - state.applied.grown) < 1) return false
     state.applied = { ...state.applied, grown: target }
-    table.setColumnSizing((old) => ({
+    currentTable.setColumnSizing((old) => ({
       ...old,
       [state.applied!.columnId]: target,
     }))
@@ -493,7 +491,6 @@ function createDataGridAutoSizeController<TData extends object>(
 
   return {
     apply(freeSpace: number) {
-      const table = getTable()
       const state = getDataGridAutoSizeState(table.store)
       // Same live read as `reflow`; the snapshot race is what made the
       // re-arm check clear the bookkeeping right after the first absorb.
@@ -510,6 +507,11 @@ function createDataGridAutoSizeController<TData extends object>(
         .getVisibleLeafColumns()
         .find((column) => column.columnDef.meta?.autoSize && column.getCanResize())
 
+      if (state.settleTimer !== null && autoSizeColumn?.id !== state.applied?.columnId) {
+        clearTimeout(state.settleTimer)
+        state.settleTimer = null
+      }
+
       if (autoSizeColumn && state.applied?.columnId === autoSizeColumn.id) {
         state.pendingFreeSpace = freeSpace
         const now = Date.now()
@@ -521,7 +523,10 @@ function createDataGridAutoSizeController<TData extends object>(
         state.settleTimer = setTimeout(() => {
           state.settleTimer = null
           state.lastCommitAt = Date.now()
-          reflow(state.pendingFreeSpace)
+          const committedTable = getCommittedTable()
+          if (committedTable.store === table.store) {
+            reflow(state.pendingFreeSpace, committedTable)
+          }
         }, SETTLE_MS)
         return false
       }
@@ -682,8 +687,7 @@ export interface DataGridProps<TFeatures extends TableFeatures, TData extends ob
   onRowClick?: (row: TData) => void
   /**
    * Receives every spreadsheet write batch (paste, cut, clear, fill, edit).
-   * Served through the props getter like `onRowClick`, so an inline identity
-   * never republishes the context. Absent: copy still works, writes no-op.
+   * Absent: copy still works, writes no-op.
    */
   onCellsChange?: (details: DataGridCellsChangeDetails<TData>) => void
   /**
@@ -844,25 +848,15 @@ function DataGridProvider<TData extends object>({
   table: DataGridTableInstance<TData>
   children?: ReactNode
 }) {
-  // Latest-props ref: context reads always resolve fresh props through the
-  // getter below without the memoized context value depending on unstable
   // Stable for the grid's lifetime; ARIA ids and relations hang off it.
   const gridId = useId()
-  // ReactNode/function prop identities (inline emptyMessage/onRowClick would
-  // otherwise publish a new context value on every consumer render - at
-  // mousemove rate during a resize drag, piercing the body-rows memo).
-  const propsRef = useRef(props)
-  propsRef.current = props
   const i18n = mergeDataGridI18n(props.i18n)
-  const i18nRef = useRef(i18n)
-  i18nRef.current = i18n
-
-  // Same treatment for the table itself, which v9 - unlike v8 - re-creates on
-  // every state change. Depending on it directly would republish the context
-  // on each resize tick, which is exactly what the memo below exists to
-  // prevent; the getter still hands every consumer the current instance.
-  const tableRef = useRef(table)
-  tableRef.current = table
+  // Only delayed resize work reads this ref. Rendering and child layout
+  // measurements use the table snapshot supplied by the current render.
+  const committedTableRef = useRef(table)
+  useLayoutEffect(() => {
+    committedTableRef.current = table
+  }, [table])
 
   // Re-assert an explicit tableLayout resize mode so consumer-level useTable
   // options cannot flip it back between drags. v9 makes `table.options`
@@ -902,72 +896,30 @@ function DataGridProvider<TData extends object>({
     if (previousPageKeyRef.current === pageKey) return
     previousPageKeyRef.current = pageKey
     if (!cellSelectionOn || table.atoms.cellSelection == null) return
-    tableRef.current.resetCellSelection(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageKey, cellSelectionOn])
+    table.resetCellSelection(true)
+  }, [table, pageKey, cellSelectionOn])
 
-  // One autoSize coordinator per table instance so split header/body viewports
-  // cannot apply the growth twice. Keyed on `table.store`, which v9 keeps
-  // stable for the life of the table, rather than on `table` itself: the
-  // wrapper is re-created on every state change, and re-creating the
-  // controller with it would reset its applied-once bookkeeping mid-drag.
+  // Each controller uses this render's table, including when a child measures
+  // its viewport during commit. The shared table.store bookkeeping keeps
+  // header/body controllers and later render snapshots from applying growth
+  // twice or replacing a width the user dragged.
   const autoSize = useMemo(
-    () => createDataGridAutoSizeController(() => tableRef.current),
-    // This controller is deliberately renewed only when the underlying store changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [table.store],
+    () => createDataGridAutoSizeController(table, () => committedTableRef.current),
+    [table],
   )
 
-  const tableState = table.state
-
-  // Memoize context value so consumers don't re-render during column resize.
-  // Column sizing state is intentionally excluded from deps -- CSS variables
-  // on the <table> element handle width updates without React re-renders.
-  // ReactNode/function props (messages, onRowClick) are also excluded: they
-  // are served fresh through the props getter, so unstable inline identities
-  // cannot invalidate the context value.
-  // `cellSelection` state is excluded on purpose too: a drag writes it once
-  // per cell crossed, and nothing reads it through context - cells and the
-  // selection bar subscribe to `table.atoms.cellSelection` directly.
-  const value = useMemo(
-    () => ({
-      get props() {
-        return propsRef.current
-      },
-      get table() {
-        return tableRef.current
-      },
-      get i18n() {
-        return i18nRef.current
-      },
-      recordCount: props.recordCount,
-      isLoading: props.isLoading || false,
-      gridId,
-      autoSize,
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      autoSize,
-      props.recordCount,
-      props.isLoading,
-      props.loadingMode,
-      props.className,
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      JSON.stringify(props.tableLayout),
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      JSON.stringify(props.tableClassNames),
-      tableState.sorting,
-      tableState.pagination,
-      tableState.columnFilters,
-      tableState.rowSelection,
-      tableState.rowPinning,
-      tableState.expanded,
-      tableState.columnVisibility,
-      tableState.columnOrder,
-      tableState.columnPinning,
-      tableState.globalFilter,
-    ],
-  )
+  // Consumers read these values during render. Publish the current snapshot
+  // so changed labels, layout, table state, and callbacks reach memoized rows.
+  // Ref getters would either mutate during render or expose the prior commit.
+  const value = {
+    props,
+    table,
+    i18n,
+    recordCount: props.recordCount,
+    isLoading: props.isLoading || false,
+    gridId,
+    autoSize,
+  }
 
   return (
     // One React context serves every TData, but v9 declares both TFeatures and

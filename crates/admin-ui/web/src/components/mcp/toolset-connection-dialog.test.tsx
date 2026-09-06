@@ -96,7 +96,7 @@ describe('ToolsetConnectionDialog', () => {
       'data-orientation',
       'horizontal',
     )
-    const connection = screen.getByRole('radio', { name: 'Connection', exact: true })
+    const connection = screen.getByRole('radio', { name: 'Connection' })
     fireEvent.click(connection)
     expect(connection).toBeChecked()
     expect(codex).not.toBeChecked()

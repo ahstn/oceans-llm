@@ -106,19 +106,20 @@ describe('MCP navigation', () => {
     })
   })
 
-  it('redirects the legacy Toolsets tab while preserving the selected set', async () => {
+  it('redirects the legacy Toolsets tab while preserving the selected set and carried tools', async () => {
     await import('@/routes/mcp/index')
     const route = routeOptions.get('/mcp/')!
     const search = route.validateSearch({
       tab: 'toolsets',
       toolset_id: 'toolset_1',
       server_id: 'server_1',
+      tool_ids: ['tool_1', '', 7, 'tool_1', 'tool_2'],
     })
 
     expect(() => route.beforeLoad?.({ search })).toThrow('MCP redirect')
     expect(redirectMock).toHaveBeenCalledWith({
       to: '/mcp/toolsets',
-      search: { toolset_id: 'toolset_1', tool_ids: undefined },
+      search: { toolset_id: 'toolset_1', tool_ids: ['tool_1', 'tool_2'] },
     })
   })
 

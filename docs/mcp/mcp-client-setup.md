@@ -91,7 +91,7 @@ Add the HTTP MCP server with the aggregate gateway URL and an Oceans API key hea
       "type": "http",
       "url": "https://gateway.example.com/mcp",
       "headers": {
-        "Authorization": "Bearer ${OCEANS_API_KEY}"
+        "Authorization": "Bearer ${OCEANS_LLM_API_KEY}"
       }
     }
   }
@@ -105,7 +105,7 @@ Configure an HTTP MCP server that points at the same gateway endpoint:
 ```toml
 [mcp_servers.oceans]
 url = "https://gateway.example.com/mcp"
-headers = { Authorization = "Bearer ${OCEANS_API_KEY}" }
+headers = { Authorization = "Bearer ${OCEANS_LLM_API_KEY}" }
 ```
 
 ## Cursor
@@ -118,7 +118,7 @@ Use a Streamable HTTP server entry:
     "oceans": {
       "url": "https://gateway.example.com/mcp",
       "headers": {
-        "Authorization": "Bearer ${OCEANS_API_KEY}"
+        "Authorization": "Bearer ${OCEANS_LLM_API_KEY}"
       }
     }
   }

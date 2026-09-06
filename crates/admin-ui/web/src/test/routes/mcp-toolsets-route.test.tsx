@@ -260,31 +260,12 @@ describe('ToolsetsTab Workbench', () => {
     expect(saveMcpToolsetToolsMock).not.toHaveBeenCalled()
   })
 
-  it('keeps an explicit route selection while its tool set has not reached the loader data', async () => {
-    const { ToolsetsTab } = await import('@/routes/mcp/-toolsets-tab')
-    const onSelectToolset = vi.fn()
-    const props = {
-      servers: [server],
-      selectedToolsetId: secondToolset.id,
-      onSelectToolset,
-      seedToolIds: [],
-      onSeedConsumed: vi.fn(),
-    }
-    const { rerender } = render(<ToolsetsTab {...props} toolsets={[toolset]} />, {
-      wrapper: TooltipProvider,
-    })
+  it('falls back to the first tool set when a stale link selects a missing set', async () => {
+    await renderToolsetsTab({ initialToolsetId: 'missing_toolset' })
 
-    await waitFor(() => expect(row().getByText('1 tool')).toBeInTheDocument())
-    expect(onSelectToolset).not.toHaveBeenCalled()
-    expect(screen.getByRole('radio', { name: `Select ${toolset.display_name}` })).not.toBeChecked()
-    rerender(<ToolsetsTab {...props} toolsets={[toolset, secondToolset]} />)
-
-    await ready()
-    expect(
-      screen.getByRole('radio', { name: `Select ${secondToolset.display_name}` }),
-    ).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: secondTool.display_name })).toBeChecked()
-    expect(onSelectToolset).not.toHaveBeenCalled()
+    expect(await ready()).toBeChecked()
+    expect(screen.getByRole('radio', { name: `Select ${toolset.display_name}` })).toBeChecked()
+    expect(saveButton()).toBeDisabled()
   })
 
   it('saves the draft and returns its navigator status to saved', async () => {
@@ -423,6 +404,25 @@ describe('ToolsetsTab Workbench', () => {
     expect(saveButton()).toBeDisabled()
   })
 
+  it('keeps carried tools assignable when a stale link selects a missing set', async () => {
+    await renderToolsetsTab({
+      initialToolsetId: 'missing_toolset',
+      initialSeedIds: ['tool_1'],
+    })
+    expect(screen.getByText('Choose a tool set')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: `Select ${secondToolset.display_name}` }))
+
+    expect(await ready()).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: secondTool.display_name })).toBeChecked()
+    expect(saveButton(secondToolset)).toBeEnabled()
+    fireEvent.click(saveButton(secondToolset))
+    await waitFor(() =>
+      expect(saveMcpToolsetToolsMock).toHaveBeenCalledWith({
+        data: { toolsetId: secondToolset.id, toolIds: ['tool_2', 'tool_1'] },
+      }),
+    )
+  })
+
   it('assigns carried tools to a newly created set', async () => {
     await renderToolsetsTab({ initialToolsetId: null, initialSeedIds: ['tool_1'] })
     fireEvent.click(screen.getByRole('button', { name: 'New tool set' }))
@@ -435,6 +435,52 @@ describe('ToolsetsTab Workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: /Create tool ?set/ }))
     await waitFor(() => expect(saveButton(createdToolset)).toBeEnabled())
     expect(screen.getByRole('checkbox', { name: firstTool.display_name })).toBeChecked()
+    fireEvent.click(saveButton(createdToolset))
+    await waitFor(() =>
+      expect(saveMcpToolsetToolsMock).toHaveBeenCalledWith({
+        data: { toolsetId: createdToolset.id, toolIds: ['tool_1'] },
+      }),
+    )
+  })
+
+  it('retains a newly created draft until its tool set reaches the loader data', async () => {
+    const { ToolsetsTab } = await import('@/routes/mcp/-toolsets-tab')
+    invalidateMock.mockResolvedValue(undefined)
+    function DelayedLoader({ toolsets }: { toolsets: McpToolsetView[] }) {
+      const [selectedToolsetId, onSelectToolset] = useState<string | null>(null)
+      const [seedToolIds, setSeedToolIds] = useState(['tool_1'])
+      return (
+        <ToolsetsTab
+          toolsets={toolsets}
+          servers={[server]}
+          selectedToolsetId={selectedToolsetId}
+          onSelectToolset={onSelectToolset}
+          seedToolIds={seedToolIds}
+          onSeedConsumed={() => setSeedToolIds([])}
+        />
+      )
+    }
+    const { rerender } = render(<DelayedLoader toolsets={[toolset]} />, {
+      wrapper: TooltipProvider,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'New tool set' }))
+    fireEvent.change(screen.getByLabelText('Key'), {
+      target: { value: createdToolset.toolset_key },
+    })
+    fireEvent.change(screen.getByLabelText('Display name'), {
+      target: { value: createdToolset.display_name },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Create tool ?set/ }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByRole('radio', { name: `Select ${toolset.display_name}` })).not.toBeChecked()
+
+    rerender(<DelayedLoader toolsets={[toolset, createdToolset]} />)
+
+    expect(await ready()).toBeChecked()
+    expect(
+      screen.getByRole('radio', { name: `Select ${createdToolset.display_name}` }),
+    ).toBeChecked()
+    expect(saveButton(createdToolset)).toBeEnabled()
     fireEvent.click(saveButton(createdToolset))
     await waitFor(() =>
       expect(saveMcpToolsetToolsMock).toHaveBeenCalledWith({

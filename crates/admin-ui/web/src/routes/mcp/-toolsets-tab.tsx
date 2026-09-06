@@ -59,19 +59,21 @@ export function ToolsetsTab(props: ToolsetsTabProps) {
   const [detailsTarget, setDetailsTarget] = useState<McpToolsetView | 'new' | null>(null)
   const [clearTarget, setClearTarget] = useState<string | null>(null)
   const selected = toolsets.find((toolset) => toolset.id === selectedToolsetId) ?? null
-  const carriedCount = useImportedTools(props, memberships)
+  // A newly created set already has a draft while its loader data catches up.
+  const knownSelection = Boolean(
+    selected || (selectedToolsetId && memberships.entries[selectedToolsetId]),
+  )
+  const carriedCount = useImportedTools(
+    { ...props, selectedToolsetId: knownSelection ? selectedToolsetId : null },
+    memberships,
+  )
   const selectDefault = useEffectEvent(() => onSelectToolset(toolsets[0]?.id ?? null))
 
   useEffect(() => {
-    if (
-      selectedToolsetId === null &&
-      toolsets.length > 0 &&
-      carriedCount === 0 &&
-      seedToolIds.length === 0
-    ) {
+    if (!knownSelection && toolsets.length > 0 && carriedCount === 0 && seedToolIds.length === 0) {
       selectDefault()
     }
-  }, [selectedToolsetId, toolsets.length, carriedCount, seedToolIds.length])
+  }, [knownSelection, toolsets.length, carriedCount, seedToolIds.length])
 
   async function saveMembers(id: string) {
     if (catalog.pending || catalog.error || busy) return

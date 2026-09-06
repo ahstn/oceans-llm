@@ -12,14 +12,13 @@ import {
 import { AccessTab } from './-access-tab'
 import { ServersTab } from './-servers-tab'
 import { McpNavigation } from './-navigation'
-import { normalizeToolsetsSearch } from './-search'
+import { normalizeToolsetsSearch, type ToolsetsSearch } from './-search'
 
 type McpTab = 'servers' | 'toolsets' | 'access'
 
-type McpSearch = {
+type McpSearch = ToolsetsSearch & {
   tab: McpTab
   server_id?: string
-  toolset_id?: string
 }
 
 export const Route = createFileRoute('/mcp/')({
@@ -121,10 +120,9 @@ export function McpWorkspacePage() {
 function normalizeMcpSearch(search: Record<string, unknown>): McpSearch {
   const tab = search.tab
   return {
+    ...normalizeToolsetsSearch(search),
     tab: tab === 'toolsets' || tab === 'access' ? tab : 'servers',
     server_id:
       typeof search.server_id === 'string' && search.server_id ? search.server_id : undefined,
-    toolset_id:
-      typeof search.toolset_id === 'string' && search.toolset_id ? search.toolset_id : undefined,
   }
 }

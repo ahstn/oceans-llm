@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { getMcpToolsetTools, saveMcpToolsetTools } from '@/server/admin-data.functions'
 import {
   createApiKey,
   deactivateUser,
@@ -33,6 +34,25 @@ const PATCH = vi.fn()
 const PUT = vi.fn()
 const DELETE = vi.fn()
 const fetchGatewayJson = vi.fn()
+
+// Vitest does not compile TanStack server functions. Keep their validators and
+// handlers together while replacing only the framework transport boundary.
+vi.mock('@tanstack/react-start', () => ({
+  createServerFn: () => {
+    let validate = (input: unknown) => input
+    const builder = {
+      validator: (validator: (input: unknown) => unknown) => {
+        validate = validator
+        return builder
+      },
+      handler:
+        (handler: (input: { data: unknown }) => unknown) =>
+        async ({ data }: { data: unknown }) =>
+          handler({ data: validate(data) }),
+    }
+    return builder
+  },
+}))
 
 vi.mock('@/server/gateway-client.server', () => ({
   createGatewayApiClient: () => ({
@@ -941,6 +961,41 @@ describe('server-side admin data wrappers', () => {
       params: { path: { user_id: 'user_1' } },
       body: { global_role: 'platform_admin' },
     })
+  })
+
+  it('normalizes tool set IDs before reading and replacing membership through the gateway', async () => {
+    const response = { data: { tool_ids: ['tool_1', 'tool_2'] } }
+    GET.mockResolvedValueOnce({ data: response })
+    PUT.mockResolvedValueOnce({ data: response })
+
+    await expect(getMcpToolsetTools({ data: { toolsetId: ' \tset_1\n' } })).resolves.toEqual(
+      response,
+    )
+    await expect(
+      saveMcpToolsetTools({
+        data: { toolsetId: ' \tset_1\n', toolIds: [' tool_1 ', '\ttool_2\n'] },
+      }),
+    ).resolves.toEqual(response)
+
+    expect(GET).toHaveBeenCalledWith('/api/v1/admin/mcp/toolsets/{toolset_id}/tools', {
+      params: { path: { toolset_id: 'set_1' } },
+    })
+    expect(PUT).toHaveBeenCalledWith('/api/v1/admin/mcp/toolsets/{toolset_id}/tools', {
+      params: { path: { toolset_id: 'set_1' } },
+      body: { tool_ids: ['tool_1', 'tool_2'] },
+    })
+  })
+
+  it('rejects blank tool set and member IDs before sending a gateway request', async () => {
+    await expect(getMcpToolsetTools({ data: { toolsetId: ' \t\n' } })).rejects.toThrow(
+      'A valid tool set ID is required',
+    )
+    await expect(
+      saveMcpToolsetTools({ data: { toolsetId: 'set_1', toolIds: ['tool_1', ' \t\n'] } }),
+    ).rejects.toThrow('Tool IDs must be an array of nonempty strings')
+
+    expect(GET).not.toHaveBeenCalled()
+    expect(PUT).not.toHaveBeenCalled()
   })
 
   it('wires logout to the documented gateway path', async () => {

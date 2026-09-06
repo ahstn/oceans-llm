@@ -1,0 +1,72 @@
+{
+  "expected_gateway_url": "http://127.0.0.1:38090/mcp",
+  "candidates": [
+    {
+      "key": "context7",
+      "label": "Context7",
+      "server_url": "https://mcp.context7.com/mcp",
+      "auth_mode": "none",
+      "auth_config": {},
+      "call": {
+        "name": "resolve-library-id",
+        "arguments": {
+          "libraryName": "React",
+          "query": "Find the official React documentation for useState."
+        }
+      }
+    },
+    {
+      "key": "github",
+      "label": "GitHub read-only repositories",
+      "server_url": "https://api.githubcopilot.com/mcp/x/repos/readonly",
+      "auth_mode": "gateway_bearer_token",
+      "auth_config": {
+        "secret_ref": "env/OCEANS_MCP_DISCOVERY_GITHUB_VERIFY"
+      },
+      "call": {
+        "name": "get_file_contents",
+        "arguments": {
+          "owner": "octocat",
+          "repo": "Hello-World",
+          "path": "README",
+          "ref": "refs/heads/master"
+        }
+      }
+    },
+    {
+      "key": "exa",
+      "label": "Exa keyed search",
+      "server_url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
+      "auth_mode": "gateway_static_header",
+      "auth_config": {
+        "header_name": "x-api-key",
+        "secret_ref": "env/OCEANS_MCP_DISCOVERY_EXA_VERIFY"
+      },
+      "call": {
+        "name": "web_search_exa",
+        "arguments": {
+          "query": "Official React documentation for the useState hook",
+          "numResults": 1
+        }
+      }
+    },
+    {
+      "key": "exa-invalid",
+      "label": "Exa invalid key control",
+      "server_url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
+      "auth_mode": "gateway_static_header",
+      "auth_config": {
+        "header_name": "x-api-key",
+        "secret_ref": "env/OCEANS_MCP_DISCOVERY_EXA_INVALID_VERIFY"
+      },
+      "call": {
+        "name": "web_search_exa",
+        "arguments": {
+          "query": "Official React documentation for the useState hook",
+          "numResults": 1
+        }
+      },
+      "expect_tool_error": true
+    }
+  ]
+}

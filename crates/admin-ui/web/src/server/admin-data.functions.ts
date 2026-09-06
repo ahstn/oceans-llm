@@ -585,7 +585,7 @@ function validateMcpToolsetId(input: unknown): { toolsetId: string } {
   if (typeof data.toolsetId !== 'string' || data.toolsetId.trim().length === 0) {
     throw new Error('A valid tool set ID is required')
   }
-  return { toolsetId: data.toolsetId }
+  return { toolsetId: data.toolsetId.trim() }
 }
 
 function validateMcpToolsetMembership(input: unknown): { toolsetId: string; toolIds: string[] } {
@@ -597,7 +597,7 @@ function validateMcpToolsetMembership(input: unknown): { toolsetId: string; tool
   ) {
     throw new Error('Tool IDs must be an array of nonempty strings')
   }
-  return { toolsetId, toolIds: data.toolIds }
+  return { toolsetId, toolIds: data.toolIds.map((id) => id.trim()) }
 }
 
 export const getMcpToolsetTools = createServerFn({ method: 'GET' })
