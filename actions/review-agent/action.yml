@@ -49,9 +49,6 @@ inputs:
     description: Enable extra diagnostic logging without secrets or raw review text.
     required: false
     default: "false"
-  pi-binary:
-    description: Explicit Pi binary path. Defaults to the globally installed `pi` CLI.
-    required: false
   github-token:
     description: GitHub token for PR access and publishing. Defaults to GITHUB_TOKEN.
     required: false
@@ -63,13 +60,15 @@ runs:
       with:
         node-version: "24"
 
-    - name: Configure npm release age gate
-      shell: bash
-      run: npm config set min-release-age 3
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: "1.3.14"
 
-    - name: Install Pi coding agent
+    - name: Install action dependencies
       shell: bash
-      run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+      working-directory: ${{ github.action_path }}
+      run: bun install --frozen-lockfile
 
     - name: Run Oceans LLM review agent
       shell: bash
@@ -90,6 +89,6 @@ runs:
         INPUT_REQUEST-CHANGES-ON-HIGH-SEVERITY: ${{ inputs.request-changes-on-high-severity }}
         INPUT_DRY-RUN: ${{ inputs.dry-run }}
         INPUT_DEBUG: ${{ inputs.debug }}
-        INPUT_PI-BINARY: ${{ inputs.pi-binary || 'pi' }}
         INPUT_GITHUB-TOKEN: ${{ inputs.github-token || github.token }}
-      run: node "${GITHUB_ACTION_PATH}/dist/index.js"
+      working-directory: ${{ github.action_path }}
+      run: node --import tsx src/main.ts

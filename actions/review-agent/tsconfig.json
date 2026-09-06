@@ -7,8 +7,15 @@
     "allowJs": true,
     "checkJs": true,
     "skipLibCheck": true,
-    "types": ["bun-types", "node"],
-    "noEmit": true
+    "types": [
+      "bun-types",
+      "node"
+    ],
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.ts", "rolldown.config.mjs"]
+  "include": [
+    "src/**/*.ts",
+    "scripts/**/*.ts"
+  ]
 }

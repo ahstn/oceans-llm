@@ -34,7 +34,7 @@ jobs:
       - name: Setup mise and Node.js
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: node
+          install_args: node bun
 
       - name: Checkout PR head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,6 +123,25 @@ jobs:
               const body = await readBody(request);
               console.log(`${request.method} ${url.pathname}`);
 
+              if (request.method === "POST" && url.pathname === "/v1/chat/completions") {
+                const done = body.messages.some((message) => message.role === "tool");
+                const delta = done ? { content: "Review complete." } : {
+                  tool_calls: [{ index: 0, id: "smoke-review", type: "function", function: {
+                    name: "submit_review",
+                    arguments: JSON.stringify({ summary: "Deterministic SDK smoke; no model assessment.", findings: [], degraded_features: [] })
+                  } }]
+                };
+                response.writeHead(200, { "content-type": "text/event-stream" });
+                for (const choice of [
+                  { index: 0, delta, finish_reason: null },
+                  { index: 0, delta: {}, finish_reason: done ? "stop" : "tool_calls" }
+                ]) {
+                  response.write(`data: ${JSON.stringify({ id: "smoke", object: "chat.completion.chunk", created: 0, model: "smoke-model", choices: [choice] })}\n\n`);
+                }
+                response.end("data: [DONE]\n\n");
+                return;
+              }
+
               if (request.method === "POST" && url.pathname === "/api/v1/review-agent/action/config/resolve") {
                 send(response, 200, {
                   repository: body.repository,
@@ -198,7 +217,7 @@ jobs:
 
           echo "MOCK_OCEANS_URL=$(cat "${mock_url_file}")" >> "${GITHUB_ENV}"
 
-      - name: Run packaged review-agent action
+      - name: Run source review-agent action
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -209,8 +228,7 @@ jobs:
           echo "action_root=${action_root}"
           echo "target_workspace=${target_workspace}"
           git -C "${target_workspace}" rev-parse HEAD
-          npm install -g --ignore-scripts --min-release-age=3 @earendil-works/pi-coding-agent@0.84.4
-          command -v pi
+          mise run review-agent-action-install
 
           env \
             "GITHUB_EVENT_NAME=pull_request" \
@@ -220,9 +238,8 @@ jobs:
             "INPUT_OCEANS-API-KEY=smoke-oceans-api-key" \
             "INPUT_DRY-RUN=true" \
             "INPUT_TIMEOUT-MINUTES=2" \
-            "INPUT_PI-BINARY=pi" \
             "INPUT_GITHUB-TOKEN=${GH_TOKEN}" \
-            mise exec -- node "${action_root}/dist/index.js"
+            mise exec -- node --import "${action_root}/node_modules/tsx/dist/loader.mjs" "${action_root}/src/main.ts"
 
       - name: Stop mock Oceans API
         if: always()

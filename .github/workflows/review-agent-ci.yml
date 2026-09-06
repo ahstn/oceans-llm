@@ -27,10 +27,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup mise and Bun
+      - name: Setup mise, Node.js and Bun
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: bun
+          install_args: node bun
 
       - name: Check review agent action
         run: mise run review-agent-action-check
