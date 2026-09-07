@@ -332,9 +332,10 @@ try {
     })
     const execution = launchLifecycle()
     const rejected = assert.rejects(execution, (error: unknown) => {
-      const failure = error as Error & { stderr?: string }
-      assert(failure.stderr?.includes('The operation was aborted'))
-      assert(!failure.stderr?.includes('Pi review exceeded'))
+      const failure = error as Error & { stdout?: string }
+      // core.setFailed emits the action's error annotation on stdout.
+      assert(failure.stdout?.includes('The operation was aborted'))
+      assert(!failure.stdout?.includes('Pi review exceeded'))
       return true
     })
     try {
