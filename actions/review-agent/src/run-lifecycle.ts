@@ -6,7 +6,7 @@ import { validateCheckoutHead, validatePullRequestPreflight } from './preflight'
 import { OceansClient } from './oceans-client'
 import { invokePi } from './pi'
 import { Redactor } from './redaction'
-import { buildJobSummary, GitHubPublisher } from './summary'
+import { buildJobSummary, GitHubPublisher, StaleReviewError } from './summary'
 import type { EffectiveConfig, ReviewResult, RunMetrics } from './types'
 
 export async function run(): Promise<void> {
@@ -106,12 +106,14 @@ export async function run(): Promise<void> {
       maxInlineComments: config.max_inline_comments ?? 20,
       requestChangesOnHighSeverity: config.request_changes_on_high_severity ?? false,
       dryRun: inputs.dryRun,
+      signal: cancellation.signal,
     })
     const metrics = completeMetrics(result, publishMetrics)
     cancellation.signal.throwIfAborted()
     await core.summary.addRaw(buildJobSummary(result, result.degradedFeatures)).write()
     if (started) await client.completeRun(started.run.id, metrics)
   } catch (error) {
+    if (error instanceof StaleReviewError) cancel()
     const metrics = result ? failureMetrics(result) : { status: 'failed' as const }
     if (started)
       await (

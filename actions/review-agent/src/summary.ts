@@ -17,7 +17,10 @@ export interface PublishInput {
   maxInlineComments: number
   requestChangesOnHighSeverity: boolean
   dryRun: boolean
+  signal?: AbortSignal
 }
+
+export class StaleReviewError extends Error {}
 
 export function buildJobSummary(result: ReviewResult, degradedFeatures: string[]): string {
   const high = result.findings.filter((finding) => isHighSeverity(finding)).length
@@ -77,6 +80,7 @@ export class GitHubPublisher implements Publisher {
           ? 'REQUEST_CHANGES'
           : 'COMMENT'
       if (comments.length > 0 || event === 'REQUEST_CHANGES') {
+        await assertCurrentHead(this.octokit, input)
         await this.octokit.rest.pulls.createReview({
           owner: input.owner,
           repo: input.repo,
@@ -85,6 +89,7 @@ export class GitHubPublisher implements Publisher {
           event,
           body: buildManagedComment(input.result),
           comments,
+          request: { signal: input.signal },
         })
       }
       metrics.inline_comments_created = comments.length
@@ -99,14 +104,16 @@ async function upsertManagedComment(
   octokit: any,
   input: PublishInput,
 ): Promise<{ id: number; action: string }> {
-  const body = buildManagedComment(input.result)
+  const body = `${buildManagedComment(input.result)}\n\nReviewed commit: ${input.headSha}`
   const existing = await findManagedComment(octokit, input)
+  await assertCurrentHead(octokit, input)
   if (existing) {
     await octokit.rest.issues.updateComment({
       owner: input.owner,
       repo: input.repo,
       comment_id: existing.id,
       body,
+      request: { signal: input.signal },
     })
     return { id: existing.id, action: 'updated' }
   }
@@ -115,6 +122,7 @@ async function upsertManagedComment(
     repo: input.repo,
     issue_number: input.prNumber,
     body,
+    request: { signal: input.signal },
   })
   return { id: created.data.id, action: 'created' }
 }
@@ -129,6 +137,7 @@ async function findManagedComment(octokit: any, input: PublishInput): Promise<an
       issue_number: input.prNumber,
       per_page: 100,
       page,
+      request: { signal: input.signal },
     })
     const existing = response.data.find(
       (comment: any) => typeof comment.body === 'string' && comment.body.includes(MARKER),
@@ -136,5 +145,21 @@ async function findManagedComment(octokit: any, input: PublishInput): Promise<an
     if (existing || response.data.length < 100) {
       return existing
     }
+  }
+}
+
+async function assertCurrentHead(octokit: any, input: PublishInput): Promise<void> {
+  input.signal?.throwIfAborted()
+  const response = await octokit.rest.pulls.get({
+    owner: input.owner,
+    repo: input.repo,
+    pull_number: input.prNumber,
+    request: { signal: input.signal },
+  })
+  input.signal?.throwIfAborted()
+  if (response.data.head.sha !== input.headSha) {
+    throw new StaleReviewError(
+      'PR head changed; this review is stale and publication was cancelled',
+    )
   }
 }

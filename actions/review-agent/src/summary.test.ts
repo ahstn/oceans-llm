@@ -31,6 +31,7 @@ describe('summary publishing', () => {
           },
         },
         pulls: {
+          get: async () => ({ data: { head: { sha: 'abc' } } }),
           createReview: async () => calls.push('review'),
         },
       },
@@ -64,6 +65,7 @@ describe('summary publishing', () => {
           createComment: async () => ({ data: { id: 100 } }),
         },
         pulls: {
+          get: async () => ({ data: { head: { sha: 'abc' } } }),
           createReview: async (input: any) => reviews.push(input),
         },
       },
@@ -88,3 +90,43 @@ describe('summary publishing', () => {
     expect(reviews[0].body).toContain('High severity findings: 1')
   })
 })
+
+for (const advanceAfterSummary of [false, true]) {
+  test(`stale head blocks publication, after summary: ${advanceAfterSummary}`, async () => {
+    const writes: string[] = []
+    const publisher = new GitHubPublisher({
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            writes.push('summary')
+            return { data: { id: 1 } }
+          },
+        },
+        pulls: {
+          get: async () => ({
+            data: { head: { sha: advanceAfterSummary && writes.length === 0 ? 'abc' : 'new' } },
+          }),
+          createReview: async () => {
+            writes.push('review')
+          },
+        },
+      },
+    })
+    await expect(
+      publisher.publish({
+        owner: 'octo',
+        repo: 'repo',
+        prNumber: 1,
+        headSha: 'abc',
+        result,
+        inlineReview: true,
+        prSummary: true,
+        maxInlineComments: 10,
+        requestChangesOnHighSeverity: false,
+        dryRun: false,
+      }),
+    ).rejects.toThrow('PR head changed')
+    expect(writes).toEqual(advanceAfterSummary ? ['summary'] : [])
+  })
+}

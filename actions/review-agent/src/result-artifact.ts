@@ -16,9 +16,22 @@ export function readReviewResult(path: string): ReviewResult {
       inline_comments_skipped: metrics.inline_comments_skipped ?? 0,
     },
     degradedFeatures: Array.isArray(parsed.degraded_features)
-      ? parsed.degraded_features.filter((item: unknown) => typeof item === 'string').slice(0, 20)
+      ? parsed.degraded_features
+          .filter((item: unknown) => typeof item === 'string')
+          .slice(0, 20)
+          .map(sanitizeDegradedFeature)
       : [],
   }
+}
+
+function sanitizeDegradedFeature(value: string): string {
+  let output = ''
+  for (const character of value) {
+    const next = /\p{Cc}/u.test(character) ? ' ' : character
+    if (Buffer.byteLength(output + next, 'utf8') > 100) break
+    output += next
+  }
+  return output
 }
 
 export function sanitizeMetrics(input: Record<string, unknown>): RunMetrics {

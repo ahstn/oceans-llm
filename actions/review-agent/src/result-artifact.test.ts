@@ -24,7 +24,7 @@ describe('result artifact', () => {
           inline_comments_created: -1,
           managed_comment_status: 'ok',
         },
-        degraded_features: ['linked_issues'],
+        degraded_features: ['linked_issues', 'a\n\t\u0085b', 'é'.repeat(60), '😀'.repeat(30)],
       }),
     )
 
@@ -32,7 +32,12 @@ describe('result artifact', () => {
     expect(result.findings).toHaveLength(1)
     expect(result.metrics.files_changed).toBe(5)
     expect(result.metrics.inline_comments_created).toBeUndefined()
-    expect(result.degradedFeatures).toEqual(['linked_issues'])
+    expect(result.degradedFeatures).toEqual([
+      'linked_issues',
+      'a   b',
+      'é'.repeat(50),
+      '😀'.repeat(25),
+    ])
   })
 
   test('sanitizes only numeric and short status metrics', () => {

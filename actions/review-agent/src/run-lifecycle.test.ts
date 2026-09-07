@@ -5,7 +5,7 @@ import * as pi from './pi'
 import * as context from './github-context'
 import * as preflight from './preflight'
 import { OceansClient } from './oceans-client'
-import { GitHubPublisher } from './summary'
+import { GitHubPublisher, StaleReviewError } from './summary'
 import { run } from './run-lifecycle'
 
 const restores: (() => void)[] = []
@@ -69,7 +69,7 @@ function fixture(mode: 'direct' | 'oceans') {
     fail,
   ])
     restores.push(() => spy.mockRestore())
-  return { invoke, publish, resolve, start, complete, fail }
+  return { inputs, invoke, publish, resolve, start, complete, fail }
 }
 
 for (const mode of ['direct', 'oceans'] as const) {
@@ -92,3 +92,14 @@ for (const mode of ['direct', 'oceans'] as const) {
     expect(f.fail).not.toHaveBeenCalled()
   })
 }
+
+test('a stale result is reported as cancelled instead of failed', async () => {
+  const f = fixture('oceans')
+  f.inputs['report-to-oceans'] = 'true'
+  f.start.mockResolvedValue({ run: { id: 'run-1', status: 'running' } })
+  f.complete.mockResolvedValue({ run: { id: 'run-1', status: 'cancelled' } })
+  f.publish.mockRejectedValue(new StaleReviewError('PR head changed'))
+  await assert.rejects(run(), /PR head changed/)
+  expect(f.complete.mock.calls[0]?.[1].status).toBe('cancelled')
+  expect(f.fail).not.toHaveBeenCalled()
+})
