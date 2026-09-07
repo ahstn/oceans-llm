@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: oceans-review-agent-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   MISE_EXPERIMENTAL: true

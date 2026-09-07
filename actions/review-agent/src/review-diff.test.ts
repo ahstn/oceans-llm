@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadReviewDiff } from './review-diff'
+import { loadReviewDiff, parseDiffAnchors } from './review-diff'
 import type { PullRequestContext } from './types'
 
 test('counts deletions, binary changes and mode changes separately from anchors; streams large diffs', async () => {
@@ -41,9 +41,40 @@ test('counts deletions, binary changes and mode changes separately from anchors;
     const diffPath = join(workspace, 'review.diff')
     const diff = await loadReviewDiff(workspace, context, diffPath)
     expect(diff.filesChanged).toBe(4)
+    expect(diff.additions).toBe(1)
+    expect(diff.deletions).toBe(1)
     expect([...diff.anchors.keys()]).toEqual(['large.txt'])
     expect([...diff.anchors.get('large.txt')!]).toEqual([1])
     expect(statSync(diffPath).size).toBeGreaterThan(8 * 1024 * 1024)
+  } finally {
+    rmSync(workspace, { recursive: true, force: true })
+  }
+})
+test('reads Git-quoted paths and ignores header-like added content', () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'review-path-test-'))
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: workspace, encoding: 'utf8' })
+  const paths = [
+    'space name.txt',
+    'tab\tname.txt',
+    'quote"name.txt',
+    'back\\name.txt',
+    'new\nline.txt',
+    'é.txt',
+  ]
+  try {
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.test')
+    git('config', 'user.name', 'Test')
+    for (const path of paths) writeFileSync(join(workspace, path), 'one\nkeep\nthree\n')
+    git('add', '.')
+    git('commit', '-qm', 'base')
+    for (const path of paths) writeFileSync(join(workspace, path), '++ b/phantom\nkeep\nchanged\n')
+    for (const quotePath of ['true', 'false']) {
+      const diff = git('-c', `core.quotePath=${quotePath}`, 'diff', '--no-color', '--unified=0')
+      const anchors = parseDiffAnchors(diff)
+      expect([...anchors.keys()].sort()).toEqual([...paths].sort())
+      for (const path of paths) expect([...anchors.get(path)!]).toEqual([1, 3])
+    }
   } finally {
     rmSync(workspace, { recursive: true, force: true })
   }

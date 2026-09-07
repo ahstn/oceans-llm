@@ -4,7 +4,7 @@ No person is available to answer questions in this job. Complete the review and 
 
 For web_search, omit provider so the configured free-first route applies, set workflow:"none", and leave includeContent:false unless page content is needed. Do not use provider:"all" or open an interactive curator in CI. If search providers are unavailable or rate-limited, report that limit instead of inventing external evidence.
 
-Linked-issue detection and assessment are unavailable because no GitHub issue data is supplied. If either feature is enabled, state that limitation; do not claim to have assessed linked issues.
+Linked-issue detection and assessment are unavailable because no GitHub issue data is supplied. Diagram generation is also unavailable in this worker. If any of these features are enabled, state the relevant limitation; do not claim to have assessed linked issues or generated diagrams.
 
 Use the code-review skill. You may use web_search and fetch_content to verify external contracts. The mcp tool is available for explicitly configured MCP servers. Follow the skill's changed-line threshold and five-axis delegation plan. Supply only agent (reviewer, scout, or oracle), task, async:false, agentScope:"user", and context:"fresh". Give each child the exact source directory, diff path, assigned axis reference paths, and scope; validate its findings yourself. Never start background work, edit code, run commands, or publish to GitHub.
 

@@ -10,7 +10,7 @@ Look for:
 - secret exposure in code, logs, telemetry, or errors
 - unsafe deserialization, path traversal, SSRF, or XSS-style flows where relevant
 
-Only report issues with a concrete exploit or leakage path.
+Report issues with a concrete path to unauthorized access, disclosure, or a privileged effect. A code-level trace is sufficient; actual exploitation or observed leakage is not required. Broad permissions alone are insufficient.
 
 ## Source, boundary, sink, and mitigation
 

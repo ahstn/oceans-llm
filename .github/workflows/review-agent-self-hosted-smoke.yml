@@ -149,6 +149,8 @@ jobs:
                   effective_config: {
                     model_id: "smoke-model",
                     model_execution_mode: "oceans",
+                    model_context_window_tokens: 32768,
+                    model_max_output_tokens: 1024,
                     inline_review_enabled: true,
                     pr_summary_enabled: true,
                     diagrams_enabled: false,

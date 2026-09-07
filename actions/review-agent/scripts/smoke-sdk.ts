@@ -211,9 +211,25 @@ try {
   const result = await runSdk(request)
   assert.equal(result.findings[0]?.path, 'example.ts')
   assert.equal(result.metrics.files_changed, 1)
+  assert.equal(result.metrics.additions, 1)
+  assert.equal(result.metrics.deletions, 1)
+  assert.equal(result.metrics.changed_loc, 2)
+  assert(Number.isInteger(result.metrics.duration_ms) && result.metrics.duration_ms! > 0)
+  assert.equal(result.metrics.diagram_status, undefined)
   assert.equal(result.metrics.linked_issue_status, 'degraded')
   assert(result.degradedFeatures.includes('linked_issue_detection'))
   assert.equal(requests[0]?.max_completion_tokens ?? requests[0]?.max_tokens, 1024)
+  const diagramResult = await runSdk({
+    ...request,
+    effectiveConfig: {
+      ...request.effectiveConfig,
+      diagrams_enabled: true,
+      linked_issue_detection_enabled: false,
+    },
+  })
+  assert.equal(diagramResult.metrics.diagram_status, 'degraded')
+  assert.equal(diagramResult.metrics.linked_issue_status, undefined)
+  assert(diagramResult.degradedFeatures.includes('diagrams'))
   scenario = 'retry'
   assert.equal((await runSdk(request)).findings[0]?.line, 1)
   if (isLinux) {
@@ -239,7 +255,16 @@ try {
   scenario = 'provider-error'
   await assert.rejects(runSdk(request), /Synthetic provider rejection/)
   scenario = 'delegation'
+  const delegationStart = requests.length
   await runSdk(request)
+  if (isLinux) {
+    const delegatedMessages = JSON.stringify(
+      requests.slice(delegationStart).map((request) => request.messages),
+    )
+    assert(!delegatedMessages.includes('local-test-key'))
+    assert(!delegatedMessages.includes('HOST_SECRET_MUST_NOT_REACH_MODEL'))
+    assert(delegatedMessages.includes('/proc/self/environ'))
+  }
   assert(
     requests.some((r) => JSON.stringify(r.messages).includes('CHILD_REVIEW_VERIFIED')),
     'Foreground child result must reach the parent',
@@ -306,7 +331,12 @@ try {
       providerStarted = resolve
     })
     const execution = launchLifecycle()
-    const rejected = assert.rejects(execution)
+    const rejected = assert.rejects(execution, (error: unknown) => {
+      const failure = error as Error & { stderr?: string }
+      assert(failure.stderr?.includes('The operation was aborted'))
+      assert(!failure.stderr?.includes('Pi review exceeded'))
+      return true
+    })
     try {
       await started
       execution.child.kill('SIGTERM')

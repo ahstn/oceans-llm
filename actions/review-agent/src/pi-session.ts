@@ -217,9 +217,11 @@ export async function runPiSession(request: PiReviewRequest, resultPath: string)
       )
     }
     if (!submission) throw new Error('Pi finished without calling submit_review')
-    const unavailableFeatures = ['linked_issue_detection', 'linked_issue_assessment'].filter(
-      (feature) => request.effectiveConfig[`${feature}_enabled`],
-    )
+    const unavailableFeatures = [
+      'linked_issue_detection',
+      'linked_issue_assessment',
+      'diagrams',
+    ].filter((feature) => request.effectiveConfig[`${feature}_enabled`])
     writeFileSync(
       resultPath,
       JSON.stringify({
@@ -229,7 +231,15 @@ export async function runPiSession(request: PiReviewRequest, resultPath: string)
         ].slice(0, 20),
         metrics: {
           files_changed: diff.filesChanged,
-          linked_issue_status: unavailableFeatures.length ? 'degraded' : undefined,
+          additions: diff.additions,
+          deletions: diff.deletions,
+          changed_loc: diff.additions + diff.deletions,
+          linked_issue_status: unavailableFeatures.some((feature) =>
+            feature.startsWith('linked_issue'),
+          )
+            ? 'degraded'
+            : undefined,
+          diagram_status: request.effectiveConfig.diagrams_enabled ? 'degraded' : undefined,
         },
       }),
     )

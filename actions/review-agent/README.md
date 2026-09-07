@@ -2,7 +2,11 @@
 
 This composite GitHub Action runs TypeScript source with Node.js 24 and `tsx`. It installs the exact dependencies in `bun.lock` with Bun 1.3.14. There is no build step or committed JavaScript bundle.
 
-The action resolves the repository configuration from Oceans, records a run, and starts a Pi SDK session. Pi reads the commit diff and uses the review rubric in `prompts/review.md` and `skills/code-review/SKILL.md`. The skill covers five review axes and requires four read-only child passes for changes of 80 or more counted lines; smaller changes can use one reviewer. Maintainability and architecture share a child pass to fit the four-child limit. Its bundled references define counting, evidence, structural review, and GitHub comment rules. The `submit_review` tool validates each finding against changed RIGHT-side lines. The action then publishes the review and reports run metrics to Oceans. A missing accepted submission fails the run; the model can correct rejected anchors and resubmit. Linked-issue detection and assessment are reported as degraded when enabled because this worker does not fetch issue data.
+The action starts a Pi SDK session after resolving the repository configuration from Oceans. Standalone direct mode (`report-to-oceans: 'false'` with `model-mode: 'direct'`) uses the supplied model configuration without contacting Oceans. Run recording and metrics reporting require `report-to-oceans: 'true'`. GitHub publication follows the resolved comment settings and is skipped when `dry-run: 'true'`.
+
+Pi reads the commit diff and uses the review rubric in `prompts/review.md` and `skills/code-review/SKILL.md`. The skill covers five review axes and requires four read-only child passes for changes of 80 or more counted lines; smaller changes can use one reviewer. Maintainability and architecture share a child pass to fit the four-child limit. Its bundled references define counting, evidence, structural review, and GitHub comment rules.
+
+The `submit_review` tool validates each finding against changed RIGHT-side lines. A missing accepted submission fails the run; the model can correct rejected anchors and resubmit. Linked-issue detection, assessment, and diagram generation are reported as degraded when enabled because this worker does not implement those features. Diff metrics count added and deleted text lines, including tests and documentation; binary and mode-only changes contribute to the file count. Review duration covers worker execution and result retrieval, before GitHub publication.
 
 ## Use from another repository
 

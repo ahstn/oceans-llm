@@ -20,4 +20,4 @@ Trace dependency direction, state ownership, and the sites that must change toge
 
 Prefer fewer concepts over more files. Keep tightly coupled logic together when extraction would force readers through helpers meaningful only in sequence. Share a canonical invariant when independent copies can drift; retain local duplication when the contracts differ. Respect staged migrations, compatibility, and rollback needs.
 
-Review rollout order, in-flight state, old/new schema compatibility, and removed entry points when the diff changes them. These are investigation questions, not a quota for broad concerns. Use a valid changed anchor or the GitHub summary for supported concerns without one.
+Review rollout order, in-flight state, old/new schema compatibility, and removed entry points when the diff changes them. These are investigation questions, not a quota for broad concerns. Put an issue in `findings` only when its path and line identify a changed RIGHT-side line. Put supported cross-file or deletion-only concerns with no valid anchor in `summary`; never invent an anchor.

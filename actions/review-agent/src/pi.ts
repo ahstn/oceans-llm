@@ -58,6 +58,7 @@ export async function invokePi(
   timeoutMinutes: number,
   options: { signal?: AbortSignal; sandbox?: boolean } = {},
 ): Promise<ReviewResult> {
+  const startedAt = performance.now()
   const tempDir = mkdtempSync(join(tmpdir(), 'oceans-review-agent-'))
   const requestPath = join(tempDir, 'request.json')
   const resultPath = join(tempDir, 'result.json')
@@ -83,7 +84,9 @@ export async function invokePi(
       maxBuffer: 1024 * 1024,
       signal: options.signal,
     })
-    return readReviewResult(resultPath)
+    const result = readReviewResult(resultPath)
+    result.metrics.duration_ms = Math.round(performance.now() - startedAt)
+    return result
   } catch (error) {
     const failure = error as Error & { stderr?: string; killed?: boolean }
     if (failure.killed)
