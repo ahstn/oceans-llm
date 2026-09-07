@@ -278,6 +278,19 @@ try {
       childRequest.tools?.every((t) => ['read', 'grep', 'find', 'ls'].includes(t.function.name)),
     )
   }
+  scenario = 'cancel'
+  const cancellation = new AbortController()
+  providerStarted = () => cancellation.abort(new Error('Review job was cancelled'))
+  await assert.rejects(
+    invokePi(request, 'local-test-key', 2, { sandbox: isLinux, signal: cancellation.signal }),
+    (error: unknown) => {
+      assert(error instanceof Error)
+      assert.match(error.message, /aborted|cancelled/)
+      assert(!error.message.includes('Pi review exceeded'))
+      return true
+    },
+  )
+  providerStarted = undefined
   scenario = 'success'
   const eventPath = join(workspace, 'event.json')
   const summaryPath = join(workspace, 'summary.md')
@@ -332,9 +345,17 @@ try {
     })
     const execution = launchLifecycle()
     const rejected = assert.rejects(execution, (error: unknown) => {
-      const failure = error as Error & { stdout?: string }
+      const failure = error as Error & { stdout?: string; stderr?: string }
       // core.setFailed emits the action's error annotation on stdout.
-      assert(failure.stdout?.includes('The operation was aborted'))
+      assert.match(
+        failure.stdout ?? '',
+        /The operation was aborted|Review job was cancelled/,
+        JSON.stringify({
+          message: failure.message,
+          stdout: failure.stdout,
+          stderr: failure.stderr,
+        }),
+      )
       assert(!failure.stdout?.includes('Pi review exceeded'))
       return true
     })
