@@ -88,6 +88,9 @@ export async function invokePi(
     result.metrics.duration_ms = Math.round(performance.now() - startedAt)
     return result
   } catch (error) {
+    if (options.signal?.aborted) {
+      throw new Error('Review job was cancelled', { cause: error })
+    }
     const failure = error as Error & { stderr?: string; killed?: boolean }
     if (failure.killed)
       throw new Error(`Pi review exceeded ${timeoutMinutes} minutes`, { cause: error })

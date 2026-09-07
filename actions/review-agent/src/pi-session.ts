@@ -22,7 +22,6 @@ const readTools = ['read', 'grep', 'find', 'ls']
 const reviewTools = [
   ...readTools,
   'web_search',
-  'fetch_content',
   'get_search_content',
   'mcp',
   'subagent',
@@ -75,6 +74,28 @@ function resultTool(
 
 const reviewPolicy: ExtensionFactory = (pi) => {
   pi.on('tool_call', async (event) => {
+    if (event.toolName === 'web_search') {
+      const allowed = new Set([
+        'query',
+        'queries',
+        'numResults',
+        'recencyFilter',
+        'domainFilter',
+        'workflow',
+        'includeContent',
+      ])
+      if (
+        event.input.workflow !== 'none' ||
+        event.input.includeContent === true ||
+        Object.keys(event.input).some((key) => !allowed.has(key))
+      ) {
+        return {
+          block: true,
+          reason:
+            'Use configured search providers with workflow:"none", includeContent:false, and no provider or proxy override. Runner-side page fetching is disabled.',
+        }
+      }
+    }
     if (event.toolName !== 'subagent') return
     // Keep the package's management, script, output-path, and worktree APIs out of CI reviews.
     const allowed = new Set(['agent', 'task', 'async', 'agentScope', 'context'])

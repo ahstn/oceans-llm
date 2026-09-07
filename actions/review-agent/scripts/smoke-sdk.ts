@@ -28,6 +28,7 @@ let scenario:
   | 'provider-error'
   | 'retry'
   | 'boundary'
+  | 'research-boundary'
   | 'cancel' = 'success'
 const lifecycle: string[] = []
 const completions: { status?: string }[] = []
@@ -52,6 +53,31 @@ function nextCompletion(input: {
     (t: { function: { name: string } }) => t.function.name === 'submit_review',
   )
   const toolResponses = input.messages.filter((m: { role: string }) => m.role === 'tool').length
+  const blockedResearchCalls = [
+    { name: 'fetch_content', arguments: { url: 'http://127.0.0.1/private' } },
+    { name: 'web_search', arguments: { query: 'test', workflow: 'none', includeContent: true } },
+    {
+      name: 'web_search',
+      arguments: { query: 'test', workflow: 'none', proxy: 'http://127.0.0.1:80' },
+    },
+    { name: 'web_search', arguments: { query: 'test', workflow: 'none', provider: 'searxng' } },
+  ]
+  if (scenario === 'research-boundary' && toolResponses < blockedResearchCalls.length) {
+    const call = blockedResearchCalls[toolResponses]
+    return {
+      toolDone: false,
+      delta: {
+        tool_calls: [
+          {
+            index: 0,
+            id: `blocked-${toolResponses}`,
+            type: 'function',
+            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+          },
+        ],
+      },
+    }
+  }
   const delegate = scenario === 'delegation' && !child && toolResponses === 0
   const boundaryPath =
     scenario === 'boundary'
@@ -64,11 +90,13 @@ function nextCompletion(input: {
     (child ||
       scenario === 'missing' ||
       toolResponses >=
-        (scenario === 'delegation' || scenario === 'retry'
-          ? 2
-          : scenario === 'boundary'
-            ? forbiddenPaths.length + 1
-            : 1))
+        (scenario === 'research-boundary'
+          ? blockedResearchCalls.length + 1
+          : scenario === 'delegation' || scenario === 'retry'
+            ? 2
+            : scenario === 'boundary'
+              ? forbiddenPaths.length + 1
+              : 1))
   const delta = toolDone
     ? { content: child ? 'CHILD_REVIEW_VERIFIED' : 'Review complete.' }
     : {
@@ -246,7 +274,13 @@ try {
   const names = requests[0]?.tools?.map((t) => t.function.name) ?? []
   for (const name of ['submit_review', 'mcp', 'subagent', 'web_search'])
     assert(names.includes(name), `Missing tool ${name}: ${names.join(', ')}`)
-  assert(!names.includes('bash') && !names.includes('write'))
+  assert(!names.includes('bash') && !names.includes('write') && !names.includes('fetch_content'))
+  scenario = 'research-boundary'
+  const researchStart = requests.length
+  await runSdk(request)
+  const researchMessages = JSON.stringify(requests.slice(researchStart).map((r) => r.messages))
+  assert(researchMessages.includes('not found'))
+  assert(researchMessages.includes('Runner-side page fetching is disabled'))
   assert(JSON.stringify(requests[0]?.messages).includes('code-review'))
   scenario = 'invalid'
   await assert.rejects(runSdk(request), /without calling submit_review/)

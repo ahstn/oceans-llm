@@ -544,14 +544,12 @@ pub async fn resolve_review_agent_action_config(
     if output.effective_config.model_execution_mode == "oceans"
         && let Some(model_id) = output.effective_config.model_id.as_deref()
     {
-        let models = gateway_service::AdminModelsService::new(state.store.clone())
-            .list_models()
+        let limits = gateway_service::AdminModelsService::new(state.store.clone())
+            .model_limits(model_id)
             .await?;
-        if let Some(model) = models.iter().find(|model| model.id == model_id) {
-            output.effective_config.model_context_window_tokens = model.context_window_tokens;
-            output.effective_config.model_input_window_tokens = model.input_window_tokens;
-            output.effective_config.model_max_output_tokens = model.output_window_tokens;
-        }
+        output.effective_config.model_context_window_tokens = limits.context;
+        output.effective_config.model_input_window_tokens = limits.input;
+        output.effective_config.model_max_output_tokens = limits.output;
     }
     Ok(Json(envelope(ActionConfigResolveResponse {
         repository: map_repository(output.repository),
