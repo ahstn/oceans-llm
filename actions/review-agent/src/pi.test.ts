@@ -1,35 +1,21 @@
-import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { cleanupPiInvocation, createFakePiBinary, invokePi, preparePiInvocation } from "./pi";
+import { describe, expect, test } from 'bun:test'
+import { reviewEnvironment } from './pi'
+import { parseDiffAnchors } from './review-diff'
 
-describe("Pi invocation", () => {
-  test("uses temp files and reads the result artifact", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "oceans-fake-pi-"));
-    const piPath = join(tempDir, "pi");
-    createFakePiBinary(piPath, {
-      findings: [{ path: "src/main.ts", line: 1, message: "Check", severity: "low" }],
-      metrics: { files_changed: 1 }
-    });
+describe('Pi review boundary', () => {
+  test('does not forward action publishing credentials or ambient Pi configuration', () => {
+    const env = reviewEnvironment('/tmp/isolated-review', 'gateway-test-key')
+    expect(env.GITHUB_TOKEN).toBeUndefined()
+    expect(env.NODE_OPTIONS).toBeUndefined()
+    expect(env.HOME).toBe('/tmp/isolated-review')
+    expect(env.PI_CODING_AGENT_DIR).toBe('/tmp/isolated-review/agent')
+    expect(env.PI_MCP_CONFIG_MODE).toBe('exclusive')
+    expect(env.OCEANS_REVIEW_API_KEY).toBe('gateway-test-key')
+  })
 
-    const invocation = preparePiInvocation({
-      piBinary: piPath,
-      context: {
-        repository: { provider: "github", owner: "octo", name: "repo", full_name: "octo/repo" },
-        pullRequest: {
-          pr_number: 1,
-          head_repository_full_name: "octo/repo",
-          base_repository_full_name: "octo/repo",
-          is_draft: false
-        }
-      },
-      effectiveConfig: { model_id: "gpt-5" }
-    });
-    expect(invocation.args).toContain("--context");
-    const result = invokePi(invocation, 1);
-    expect(result.findings).toHaveLength(1);
-    cleanupPiInvocation(invocation);
-    expect(existsSync(invocation.tempDir)).toBe(false);
-  });
-});
+  test('anchors only changed right-side lines, including multi-line hunks', () => {
+    const diff =
+      'diff --git a/a.ts b/a.ts\n+++ b/a.ts\n@@ -1 +1,2 @@\n+x\n+y\n@@ -8,2 +9,0 @@\n-old\n-old\n'
+    expect([...parseDiffAnchors(diff).get('a.ts')!]).toEqual([1, 2])
+  })
+})

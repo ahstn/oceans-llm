@@ -1,17 +1,24 @@
 name: Oceans LLM Review Agent
 description: Run the Oceans LLM review agent on same-repository pull requests.
 inputs:
+  report-to-oceans:
+    description: Report review runs and metrics to Oceans. Disable for standalone direct-provider reviews.
+    required: false
+    default: "true"
+  review-workspace:
+    description: Absolute path of the PR checkout to inspect as data, separate from the trusted action checkout.
+    required: false
   oceans-url:
-    description: Base URL for the Oceans LLM gateway.
-    required: true
+    description: Base URL for the Oceans LLM gateway. Required for reporting or oceans model mode.
+    required: false
   oceans-api-key:
-    description: Service account API key bound to this repository in Oceans.
-    required: true
+    description: Service account API key. Required for reporting or oceans model mode.
+    required: false
   model-id:
     description: Optional model key override.
     required: false
   model-mode:
-    description: Optional execution mode override, either oceans or direct.
+    description: Execution mode, either oceans or direct. Defaults to direct when reporting is disabled.
     required: false
   provider-key:
     description: Optional direct-provider credential key configured in Oceans.
@@ -49,9 +56,6 @@ inputs:
     description: Enable extra diagnostic logging without secrets or raw review text.
     required: false
     default: "false"
-  pi-binary:
-    description: Explicit Pi binary path. Defaults to the globally installed `pi` CLI.
-    required: false
   github-token:
     description: GitHub token for PR access and publishing. Defaults to GITHUB_TOKEN.
     required: false
@@ -63,17 +67,26 @@ runs:
       with:
         node-version: "24"
 
-    - name: Configure npm release age gate
-      shell: bash
-      run: npm config set min-release-age 3
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      with:
+        bun-version: "1.3.14"
 
-    - name: Install Pi coding agent
+    - name: Install action dependencies
       shell: bash
-      run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+      working-directory: ${{ github.action_path }}
+      run: bun install --frozen-lockfile
+
+    - name: Install review worker sandbox
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: bash scripts/setup-sandbox.sh
 
     - name: Run Oceans LLM review agent
       shell: bash
       env:
+        INPUT_REPORT-TO-OCEANS: ${{ inputs.report-to-oceans }}
+        OCEANS_REVIEW_WORKSPACE: ${{ inputs.review-workspace || github.workspace }}
         GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
         INPUT_OCEANS-URL: ${{ inputs.oceans-url }}
         INPUT_OCEANS-API-KEY: ${{ inputs.oceans-api-key }}
@@ -90,6 +103,6 @@ runs:
         INPUT_REQUEST-CHANGES-ON-HIGH-SEVERITY: ${{ inputs.request-changes-on-high-severity }}
         INPUT_DRY-RUN: ${{ inputs.dry-run }}
         INPUT_DEBUG: ${{ inputs.debug }}
-        INPUT_PI-BINARY: ${{ inputs.pi-binary || 'pi' }}
         INPUT_GITHUB-TOKEN: ${{ inputs.github-token || github.token }}
-      run: node "${GITHUB_ACTION_PATH}/dist/index.js"
+      working-directory: ${{ github.action_path }}
+      run: node --import tsx src/main.ts

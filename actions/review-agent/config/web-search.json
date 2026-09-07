@@ -1,0 +1,17 @@
+{
+  "firecrawlBaseUrl": "https://api.firecrawl.dev",
+  "searchRouting": {
+    "providers": [
+      "exa",
+      "parallel-mcp",
+      "tinyfish",
+      "parallel",
+      "openai",
+      "gemini",
+      "perplexity",
+      "firecrawl"
+    ],
+    "useCurrentModel": true,
+    "fallbackOn": ["unsupported", "transient", "quota", "network", "invalid-response"]
+  }
+}

@@ -114,6 +114,7 @@ depends = [
   "rust-lint",
   "ui-lint",
   "review-agent-action-typecheck",
+  "review-agent-action-lint",
   "harness-integration-typecheck",
 ]
 
@@ -288,11 +289,6 @@ run = "bun run --cwd crates/admin-ui/web test"
 description = "Install review agent action dependencies"
 run = "bun install --cwd actions/review-agent --frozen-lockfile"
 
-[tasks.review-agent-action-build]
-description = "Build the checked-in review agent action dist bundle"
-depends = ["review-agent-action-install"]
-run = "bun run --cwd actions/review-agent build"
-
 [tasks.review-agent-action-test]
 description = "Run review agent action unit tests"
 depends = ["review-agent-action-install"]
@@ -304,11 +300,16 @@ depends = ["review-agent-action-install"]
 run = "bun run --cwd actions/review-agent typecheck"
 
 [tasks.review-agent-action-check]
-description = "Typecheck, test, verify dist, and smoke test the review agent action"
-depends = ["review-agent-action-typecheck", "review-agent-action-test"]
+description = "Typecheck, test, lint, format-check, and exercise the real Pi SDK"
+depends = ["review-agent-action-typecheck", "review-agent-action-test", "review-agent-action-lint"]
+run = "bun run --cwd actions/review-agent smoke"
+
+[tasks.review-agent-action-lint]
+description = "Lint and format-check the review agent action"
+depends = ["review-agent-action-install"]
 run = """
-bun run --cwd actions/review-agent check:dist
-bun run --cwd actions/review-agent smoke:no-install
+bun run --cwd actions/review-agent lint
+bun run --cwd actions/review-agent fmt:check
 """
 
 [tasks.e2e-install]

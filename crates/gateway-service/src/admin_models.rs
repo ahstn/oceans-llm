@@ -106,6 +106,54 @@ where
             .collect())
     }
 
+    /// Resolve conservative limits for one public model, including aliases.
+    pub async fn model_limits(&self, model_key: &str) -> Result<PricingLimits, GatewayError> {
+        let Some(original) = self.repo.get_model_by_key(model_key).await? else {
+            return Ok(PricingLimits {
+                context: None,
+                input: None,
+                output: None,
+            });
+        };
+        let mut current = original.clone();
+        let mut seen = HashSet::from([current.model_key.clone()]);
+        while let Some(target) = current.alias_target_model_key.as_deref() {
+            let next = self.repo.get_model_by_key(target).await?;
+            let Some(next) = next.filter(|model| seen.insert(model.model_key.clone())) else {
+                // Match list_models: invalid aliases use the original model's routes.
+                current = original;
+                break;
+            };
+            current = next;
+        }
+        let routes = self.repo.list_routes_for_model(current.id).await?;
+        let provider_keys = routes
+            .iter()
+            .map(|route| route.provider_key.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let providers = self.repo.list_providers_by_keys(&provider_keys).await?;
+        let pricing_time = OffsetDateTime::now_utc();
+        let mut metadata = Vec::new();
+        for route in routes
+            .iter()
+            .filter(|route| route_is_eligible(&providers, route))
+        {
+            metadata.push((
+                route.id,
+                resolve_effective_route_metadata(
+                    self.repo.as_ref(),
+                    providers.get(&route.provider_key),
+                    route,
+                    pricing_time,
+                )
+                .await?,
+            ));
+        }
+        Ok(aggregate_model_metadata(&metadata).limits)
+    }
+
     pub async fn render_client_configurations(
         &self,
         model_keys: &[String],
@@ -713,6 +761,7 @@ mod tests {
         providers_by_key: HashMap<String, ProviderConnection>,
         pricing_by_key: HashMap<(String, String), ModelPricingRecord>,
         allowlists_by_model: HashMap<Uuid, ModelAllowlistPolicy>,
+        list_models_calls: AtomicUsize,
         list_routes_for_model_calls: AtomicUsize,
         list_routes_for_models_calls: AtomicUsize,
         list_model_allowlists_for_models_calls: AtomicUsize,
@@ -724,6 +773,7 @@ mod tests {
     #[async_trait]
     impl ModelRepository for CountingRepo {
         async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError> {
+            self.list_models_calls.fetch_add(1, Ordering::SeqCst);
             Ok(self.models.clone())
         }
 
@@ -1222,6 +1272,28 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["opencode", "pi", "codex"]
         );
+
+        let limits = service
+            .model_limits("friendly-alias")
+            .await
+            .expect("alias limits");
+        assert_eq!(limits.context, alias.context_window_tokens);
+        assert_eq!(limits.input, alias.input_window_tokens);
+        assert_eq!(limits.output, alias.output_window_tokens);
+        assert_eq!(repo.list_models_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.list_routes_for_model_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.list_routes_for_models_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            repo.list_model_allowlists_for_models_calls
+                .load(Ordering::SeqCst),
+            1
+        );
+        let missing = service
+            .model_limits("missing")
+            .await
+            .expect("unknown model");
+        assert_eq!(missing.context, None);
+        assert_eq!(missing.output, None);
 
         let duplicate_error = service
             .render_client_configurations(&[
