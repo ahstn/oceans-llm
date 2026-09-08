@@ -1,6 +1,8 @@
 mod inference;
 #[cfg(test)]
 mod inference_tests;
+#[cfg(test)]
+mod model_metadata_tests;
 
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
@@ -90,6 +92,17 @@ pub async fn api_health() -> Json<serde_json::Value> {
         "service": "gateway",
         "version": env!("CARGO_PKG_VERSION"),
     }))
+}
+
+pub async fn v1_model_metadata(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<gateway_service::model_metadata::ModelMetadataResponse>, AppError> {
+    let auth = state
+        .service
+        .authenticate(extract_anthropic_authorization_header(&headers).as_deref())
+        .await?;
+    Ok(Json(state.service.model_metadata_for_api_key(&auth).await?))
 }
 
 pub async fn v1_models(

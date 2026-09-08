@@ -338,11 +338,13 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                             (
                                 "us.anthropic.claude-sonnet-4-6".to_string(),
                                 PricingCatalogModelDocument {
+                                    metadata: Default::default(),
                                     id: "us.anthropic.claude-sonnet-4-6".to_string(),
                                     display_name: "Claude Sonnet 4.6 (US)".to_string(),
                                     release_date: "2026-02-17".to_string(),
                                     last_updated: "2026-03-13".to_string(),
                                     cost: PricingCatalogCostDocument {
+                                        conditions: Default::default(),
                                         input: Some("3.0000".to_string()),
                                         output: Some("15.0000".to_string()),
                                         cache_read: Some("0.3000".to_string()),
@@ -368,11 +370,13 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                             (
                                 "openai.gpt-oss-120b-1:0".to_string(),
                                 PricingCatalogModelDocument {
+                                    metadata: Default::default(),
                                     id: "openai.gpt-oss-120b-1:0".to_string(),
                                     display_name: "gpt-oss-120b".to_string(),
                                     release_date: "2024-12-01".to_string(),
                                     last_updated: "2024-12-01".to_string(),
                                     cost: PricingCatalogCostDocument {
+                                        conditions: Default::default(),
                                         input: Some("0.1500".to_string()),
                                         output: Some("0.6000".to_string()),
                                         cache_read: None,
@@ -401,11 +405,13 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                         models: BTreeMap::from([(
                             "gpt-5".to_string(),
                             PricingCatalogModelDocument {
+                                metadata: Default::default(),
                                 id: "gpt-5".to_string(),
                                 display_name: "GPT-5".to_string(),
                                 release_date: "2025-08-07".to_string(),
                                 last_updated: "2025-08-07".to_string(),
                                 cost: PricingCatalogCostDocument {
+                                    conditions: Default::default(),
                                     input: Some("1.2500".to_string()),
                                     output: Some("10.0000".to_string()),
                                     cache_read: Some("0.1250".to_string()),
@@ -433,11 +439,13 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                         models: BTreeMap::from([(
                             "deepseek/deepseek-v4-flash".to_string(),
                             PricingCatalogModelDocument {
+                                metadata: Default::default(),
                                 id: "deepseek/deepseek-v4-flash".to_string(),
                                 display_name: "DeepSeek V4 Flash".to_string(),
                                 release_date: "2026-07-01".to_string(),
                                 last_updated: "2026-07-01".to_string(),
                                 cost: PricingCatalogCostDocument {
+                                    conditions: Default::default(),
                                     input: Some("0.0900".to_string()),
                                     output: Some("0.1800".to_string()),
                                     cache_read: Some("0.0180".to_string()),
@@ -466,11 +474,13 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                             (
                                 "gemini-2.5-flash".to_string(),
                                 PricingCatalogModelDocument {
+                                    metadata: Default::default(),
                                     id: "gemini-2.5-flash".to_string(),
                                     display_name: "Gemini 2.5 Flash".to_string(),
                                     release_date: "2025-06-17".to_string(),
                                     last_updated: "2025-06-17".to_string(),
                                     cost: PricingCatalogCostDocument {
+                                        conditions: Default::default(),
                                         input: Some("0.3000".to_string()),
                                         output: Some("2.5000".to_string()),
                                         cache_read: Some("0.0750".to_string()),
@@ -498,11 +508,13 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                             (
                                 "gemini-embedding-001".to_string(),
                                 PricingCatalogModelDocument {
+                                    metadata: Default::default(),
                                     id: "gemini-embedding-001".to_string(),
                                     display_name: "Gemini Embedding".to_string(),
                                     release_date: "2025-05-20".to_string(),
                                     last_updated: "2025-05-20".to_string(),
                                     cost: PricingCatalogCostDocument {
+                                        conditions: Default::default(),
                                         input: Some("0.1500".to_string()),
                                         output: None,
                                         cache_read: None,
@@ -531,11 +543,13 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                         models: BTreeMap::from([(
                             "claude-sonnet-4-6@default".to_string(),
                             PricingCatalogModelDocument {
+                                metadata: Default::default(),
                                 id: "claude-sonnet-4-6@default".to_string(),
                                 display_name: "Claude Sonnet 4.6".to_string(),
                                 release_date: "2026-02-17".to_string(),
                                 last_updated: "2026-03-13".to_string(),
                                 cost: PricingCatalogCostDocument {
+                                    conditions: Default::default(),
                                     input: Some("3.0000".to_string()),
                                     output: Some("15.0000".to_string()),
                                     cache_read: Some("0.3000".to_string()),
@@ -568,11 +582,13 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                             (
                                 "claude-fable-5-1".to_string(),
                                 PricingCatalogModelDocument {
+                                    metadata: Default::default(),
                                     id: "claude-fable-5-1".to_string(),
                                     display_name: "Claude Fable 5.1".to_string(),
                                     release_date: "2026-09-01".to_string(),
                                     last_updated: "2026-09-01".to_string(),
                                     cost: PricingCatalogCostDocument {
+                                        conditions: Default::default(),
                                         input: Some("10.0000".to_string()),
                                         output: Some("50.0000".to_string()),
                                         cache_read: Some("0.2500".to_string()),
@@ -598,11 +614,13 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                             (
                                 "claude-sonnet-5".to_string(),
                                 PricingCatalogModelDocument {
+                                    metadata: Default::default(),
                                     id: "claude-sonnet-5".to_string(),
                                     display_name: "Claude Sonnet 5".to_string(),
                                     release_date: "2026-05-15".to_string(),
                                     last_updated: "2026-05-15".to_string(),
                                     cost: PricingCatalogCostDocument {
+                                        conditions: Default::default(),
                                         input: Some("3.0000".to_string()),
                                         output: Some("15.0000".to_string()),
                                         cache_read: Some("0.3000".to_string()),

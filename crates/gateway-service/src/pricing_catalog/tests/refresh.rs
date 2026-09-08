@@ -398,11 +398,13 @@ async fn remote_failure_falls_back_to_store_then_vendored_snapshot() {
                         models: BTreeMap::from([(
                             "gpt-5".to_string(),
                             PricingCatalogModelDocument {
+                                metadata: Default::default(),
                                 id: "gpt-5".to_string(),
                                 display_name: "GPT-5 Cached".to_string(),
                                 release_date: "2025-08-07".to_string(),
                                 last_updated: "2025-08-08".to_string(),
                                 cost: PricingCatalogCostDocument {
+                                    conditions: Default::default(),
                                     input: Some("2.0000".to_string()),
                                     output: Some("20.0000".to_string()),
                                     cache_read: None,

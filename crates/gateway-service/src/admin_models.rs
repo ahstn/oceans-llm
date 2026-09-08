@@ -476,7 +476,7 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
     })
 }
 
-fn effective_provider_route_capabilities(
+pub(crate) fn effective_provider_route_capabilities(
     route_capabilities: Option<ProviderCapabilities>,
     provider: Option<&ProviderConnection>,
     route: Option<&ModelRoute>,
