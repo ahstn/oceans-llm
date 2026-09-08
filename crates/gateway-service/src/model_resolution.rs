@@ -11,6 +11,26 @@ use serde_json::Value;
 
 use crate::redaction::mask_secret_leaf_values;
 
+const MAX_MODEL_ALIAS_DEPTH: usize = 8;
+
+pub(crate) fn execution_model_from_snapshot<'a>(
+    models: &HashMap<&str, &'a GatewayModel>,
+    model: &'a GatewayModel,
+) -> Option<&'a GatewayModel> {
+    let mut current = model;
+    let mut seen = BTreeSet::new();
+    for _ in 0..=MAX_MODEL_ALIAS_DEPTH {
+        if !seen.insert(current.model_key.as_str()) {
+            return None;
+        }
+        let Some(target) = current.alias_target_model_key.as_deref() else {
+            return Some(current);
+        };
+        current = models.get(target)?;
+    }
+    None
+}
+
 fn strictest_reasoning_effort(
     current: Option<ReasoningEffort>,
     candidate: Option<ReasoningEffort>,
@@ -67,8 +87,6 @@ impl<R> ModelResolver<R>
 where
     R: ModelRepository,
 {
-    const MAX_ALIAS_DEPTH: usize = 8;
-
     #[must_use]
     pub fn new(repo: Arc<R>) -> Self {
         Self { repo }
@@ -103,7 +121,7 @@ where
                 });
             };
 
-            if alias_hops >= Self::MAX_ALIAS_DEPTH {
+            if alias_hops >= MAX_MODEL_ALIAS_DEPTH {
                 break;
             }
 

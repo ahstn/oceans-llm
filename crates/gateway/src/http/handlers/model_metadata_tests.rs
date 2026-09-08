@@ -29,6 +29,21 @@ async fn model_metadata_requires_authentication_and_matches_visible_models() {
         .unwrap()
         .0;
     assert_eq!(metadata.schema_version, 1);
+    let provenance = serde_json::to_value(&metadata.supplement).unwrap();
+    let provenance = provenance.as_object().unwrap();
+    let provenance_fields = [
+        "source",
+        "provider_id",
+        "generated_at",
+        "models_dev_sha256",
+        "litellm_sha256",
+    ];
+    assert_eq!(provenance.len(), provenance_fields.len());
+    assert!(
+        provenance_fields
+            .iter()
+            .all(|field| provenance.contains_key(*field))
+    );
     assert_eq!(
         metadata
             .data

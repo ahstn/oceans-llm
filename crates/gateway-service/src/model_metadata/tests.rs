@@ -198,10 +198,10 @@ fn broken_and_cyclic_aliases_have_no_execution_metadata() {
         tags: vec![],
         rank: 0,
     };
-    assert!(execution_model(&HashMap::new(), &model).is_none());
+    assert!(execution_model_from_snapshot(&HashMap::new(), &model).is_none());
     let cycle = GatewayModel {
         alias_target_model_key: Some("alias".into()),
         ..model
     };
-    assert!(execution_model(&HashMap::from([("alias", &cycle)]), &cycle).is_none());
+    assert!(execution_model_from_snapshot(&HashMap::from([("alias", &cycle)]), &cycle).is_none());
 }

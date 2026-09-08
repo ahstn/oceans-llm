@@ -5,22 +5,28 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::pricing_catalog::{
-    PricingCatalogCostDocument, PricingCatalogLimitDocument, metadata::CatalogModelMetadata,
+    PricingCatalogCostDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
+    PricingCatalogSnapshot, metadata::CatalogModelMetadata,
 };
 
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct Supplement {
+#[derive(Debug, Deserialize)]
+pub(super) struct Supplement {
+    #[serde(flatten)]
+    pub provenance: SupplementProvenance,
+    models: BTreeMap<String, SupplementModel>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SupplementProvenance {
     pub source: String,
     pub provider_id: String,
     pub generated_at: String,
     pub models_dev_sha256: String,
     pub litellm_sha256: String,
-    #[serde(skip_serializing)]
-    pub models: BTreeMap<String, SupplementModel>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct SupplementModel {
+struct SupplementModel {
     pub metadata: CatalogModelMetadata,
     pub pricing: PricingCatalogCostDocument,
     pub limits: PricingCatalogLimitDocument,
@@ -40,15 +46,62 @@ pub struct FieldConflict {
     pub litellm: Value,
 }
 
-pub(crate) fn snapshot() -> &'static Supplement {
+pub(super) fn snapshot() -> &'static Supplement {
     static SNAPSHOT: OnceLock<Supplement> = OnceLock::new();
     SNAPSHOT.get_or_init(|| {
-        serde_json::from_str(include_str!("../data/model_metadata_supplement.json"))
+        serde_json::from_str(include_str!("../../data/model_metadata_supplement.json"))
             .expect("reviewed model metadata supplement must deserialize")
     })
 }
 
-pub(crate) fn merge(
+#[derive(Default)]
+pub(super) struct CatalogModel {
+    pub metadata: Option<CatalogModelMetadata>,
+    pub limits: PricingCatalogLimitDocument,
+    pub pricing: Option<PricingCatalogCostDocument>,
+    pub modalities: Option<PricingCatalogModalitiesDocument>,
+    pub deprecated_date: Option<String>,
+    pub merge_report: MergeReport,
+}
+
+pub(super) fn resolve(
+    target: Option<&(String, String)>,
+    catalog: &PricingCatalogSnapshot,
+) -> CatalogModel {
+    let Some((provider_id, model_id)) = target else {
+        return CatalogModel::default();
+    };
+    let primary = catalog
+        .document
+        .providers
+        .get(provider_id)
+        .and_then(|provider| provider.models.get(model_id));
+    let supplement = snapshot();
+    let secondary = (provider_id == &supplement.provenance.provider_id)
+        .then(|| supplement.models.get(model_id))
+        .flatten();
+    if primary.is_none() && secondary.is_none() {
+        return CatalogModel::default();
+    }
+    let mut metadata = primary
+        .map(|model| model.metadata.clone())
+        .unwrap_or_default();
+    let mut limits = primary.map(|model| model.limit.clone()).unwrap_or_default();
+    let mut pricing = primary.map(|model| model.cost.clone()).unwrap_or_default();
+    let merge_report = secondary
+        .map(|secondary| merge(&mut metadata, &mut limits, &mut pricing, secondary))
+        .unwrap_or_default();
+    CatalogModel {
+        metadata: Some(metadata),
+        limits,
+        pricing: Some(pricing),
+        modalities: primary.map(|model| model.modalities.clone()),
+        deprecated_date: secondary.and_then(|model| model.deprecated_date.clone()),
+        merge_report,
+    }
+}
+
+fn merge(
     metadata: &mut CatalogModelMetadata,
     limits: &mut PricingCatalogLimitDocument,
     pricing: &mut PricingCatalogCostDocument,
@@ -108,7 +161,7 @@ fn canonical_decimal(value: &str) -> &str {
 }
 
 impl MergeReport {
-    fn field<T: PartialEq + Serialize>(
+    fn field<T: PartialEq + Clone + Into<Value>>(
         &mut self,
         field: &'static str,
         primary: &mut Option<T>,
@@ -124,8 +177,8 @@ impl MergeReport {
             }
             Some(value) if value != &secondary => self.conflicts.push(FieldConflict {
                 field,
-                models_dev: serde_json::to_value(value).expect("scalar metadata serializes"),
-                litellm: serde_json::to_value(secondary).expect("scalar metadata serializes"),
+                models_dev: value.clone().into(),
+                litellm: secondary.into(),
             }),
             Some(_) => {}
         }

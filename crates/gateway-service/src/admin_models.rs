@@ -11,10 +11,13 @@ use gateway_client_config::{
 use gateway_core::{
     GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
     PricingCatalogRepository, PricingLimits, PricingModalities, ProviderCapabilities,
-    ProviderConnection, ProviderRepository, github_copilot_route_capabilities,
-    vertex_route_capabilities_for_upstream_model,
+    ProviderConnection, ProviderRepository,
 };
 use time::OffsetDateTime;
+
+use crate::effective_route_metadata::effective_provider_route_capabilities;
+#[cfg(test)]
+use crate::effective_route_metadata::provider_capabilities;
 
 use crate::{
     EffectiveMetadataSource, EffectiveRouteMetadata, ModelIconKey, ProviderIconKey,
@@ -474,57 +477,6 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
         // max_reasoning_effort is an enforcement ceiling, not a client default.
         codex_reasoning_effort: None,
     })
-}
-
-pub(crate) fn effective_provider_route_capabilities(
-    route_capabilities: Option<ProviderCapabilities>,
-    provider: Option<&ProviderConnection>,
-    route: Option<&ModelRoute>,
-) -> ProviderCapabilities {
-    provider
-        .map(|provider| provider_capabilities(provider, route))
-        .unwrap_or_default()
-        .intersect(route_capabilities.unwrap_or_default())
-}
-
-fn provider_capabilities(
-    provider: &ProviderConnection,
-    route: Option<&ModelRoute>,
-) -> ProviderCapabilities {
-    match provider.provider_type.as_str() {
-        "openai_compat" | "gcp_cloud_run_openai_compat" => {
-            ProviderCapabilities::openai_compat_baseline()
-        }
-        "anthropic_compat" => ProviderCapabilities {
-            chat_completions: true,
-            responses: false,
-            stream: true,
-            embeddings: false,
-            tools: true,
-            vision: true,
-            json_schema: false,
-            developer_role: false,
-        },
-        "gcp_vertex" => vertex_route_capabilities(route),
-        "github_copilot" => github_copilot_route_capabilities(
-            route.and_then(|route| route.compatibility.github_copilot.as_ref()),
-        ),
-        "aws_bedrock" => ProviderCapabilities {
-            chat_completions: true,
-            responses: true,
-            stream: true,
-            embeddings: false,
-            tools: true,
-            vision: true,
-            json_schema: true,
-            developer_role: true,
-        },
-        _ => ProviderCapabilities::all_enabled(),
-    }
-}
-
-fn vertex_route_capabilities(route: Option<&ModelRoute>) -> ProviderCapabilities {
-    vertex_route_capabilities_for_upstream_model(route.map(|route| route.upstream_model.as_str()))
 }
 
 #[derive(Debug)]

@@ -19,7 +19,6 @@ pub mod mcp_token_overhead;
 pub mod mcp_upstream_auth;
 pub mod model_access;
 pub mod model_metadata;
-mod model_metadata_supplement;
 pub mod model_resolution;
 mod payload_bounding;
 pub mod pricing_catalog;

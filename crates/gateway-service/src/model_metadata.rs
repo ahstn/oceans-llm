@@ -1,6 +1,9 @@
 //! API-key-scoped discovery. Reads stored catalogs only; no upstream requests.
+mod catalog;
+pub use catalog::{FieldConflict, MergeReport, SupplementProvenance};
 use std::collections::{BTreeSet, HashMap};
 
+use crate::model_resolution::execution_model_from_snapshot;
 use gateway_core::{
     GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderConnection, ProviderRepository,
 };
@@ -16,7 +19,7 @@ use crate::pricing_catalog::{
 pub struct ModelMetadataResponse {
     pub schema_version: u32,
     pub catalog: PricingCatalogSnapshotMetadata,
-    pub supplement: serde_json::Value,
+    pub supplement: SupplementProvenance,
     pub data: Vec<ModelMetadata>,
 }
 
@@ -40,7 +43,7 @@ pub struct ModelCapabilities {
 
 #[derive(Debug, Serialize)]
 pub struct RouteMetadata {
-    pub merge_report: crate::model_metadata_supplement::MergeReport,
+    pub merge_report: MergeReport,
     pub deprecated_date: Option<String>,
     pub limits: PricingCatalogLimitDocument,
     pub capabilities: ModelCapabilities,
@@ -66,7 +69,7 @@ where
         .collect::<HashMap<_, _>>();
     let executions = models
         .iter()
-        .map(|model| execution_model(&by_key, model))
+        .map(|model| execution_model_from_snapshot(&by_key, model))
         .collect::<Vec<_>>();
     let ids = executions
         .iter()
@@ -102,28 +105,9 @@ where
     Ok(ModelMetadataResponse {
         schema_version: 1,
         catalog: snapshot.metadata.clone(),
-        supplement: serde_json::to_value(crate::model_metadata_supplement::snapshot())
-            .map_err(|error| GatewayError::Internal(error.to_string()))?,
+        supplement: catalog::snapshot().provenance.clone(),
         data,
     })
-}
-
-fn execution_model<'a>(
-    models: &HashMap<&str, &'a GatewayModel>,
-    model: &'a GatewayModel,
-) -> Option<&'a GatewayModel> {
-    let mut current = model;
-    let mut seen = BTreeSet::new();
-    for _ in 0..=8 {
-        if !seen.insert(current.model_key.as_str()) {
-            return None;
-        }
-        let Some(target) = current.alias_target_model_key.as_deref() else {
-            return Some(current);
-        };
-        current = models.get(target)?;
-    }
-    None
 }
 
 fn route_metadata(
@@ -132,29 +116,8 @@ fn route_metadata(
     snapshot: &PricingCatalogSnapshot,
 ) -> RouteMetadata {
     let target = provider.and_then(|provider| catalog_metadata_target_for_route(provider, route));
-    let catalog = target
-        .as_ref()
-        .and_then(|(provider, model)| snapshot.document.providers.get(provider)?.models.get(model));
-    let mut limits = catalog.map(|model| model.limit.clone()).unwrap_or_default();
-    let mut metadata = catalog
-        .map(|model| model.metadata.clone())
-        .unwrap_or_default();
-    let mut catalog_pricing = catalog.map(|model| model.cost.clone()).unwrap_or_default();
-    let supplement = crate::model_metadata_supplement::snapshot();
-    let secondary = target
-        .as_ref()
-        .filter(|(id, _)| id == &supplement.provider_id)
-        .and_then(|(_, id)| supplement.models.get(id));
-    let merge_report = secondary
-        .map(|secondary| {
-            crate::model_metadata_supplement::merge(
-                &mut metadata,
-                &mut limits,
-                &mut catalog_pricing,
-                secondary,
-            )
-        })
-        .unwrap_or_default();
+    let catalog = catalog::resolve(target.as_ref(), snapshot);
+    let mut limits = catalog.limits;
     if let Some(configured) = route.context_window_tokens {
         limits.context = Some(
             limits
@@ -166,23 +129,27 @@ fn route_metadata(
         limits.input = limits.input.map(|value| value.min(context));
         limits.output = limits.output.map(|value| value.min(context));
     }
-    let transport = crate::admin_models::effective_provider_route_capabilities(
+    let transport = crate::effective_route_metadata::effective_provider_route_capabilities(
         Some(route.capabilities),
         provider,
         Some(route),
     );
+    let metadata = catalog.metadata.as_ref();
     let capabilities = ModelCapabilities {
-        reasoning: metadata.reasoning,
-        tools: gated(transport.tools && provider.is_some(), metadata.tool_call),
+        reasoning: metadata.and_then(|metadata| metadata.reasoning),
+        tools: gated(
+            transport.tools && provider.is_some(),
+            metadata.and_then(|metadata| metadata.tool_call),
+        ),
         structured_output: gated(
             transport.json_schema && provider.is_some(),
-            metadata.structured_output,
+            metadata.and_then(|metadata| metadata.structured_output),
         ),
         vision: gated(
             transport.vision && provider.is_some(),
-            catalog.and_then(|model| {
-                (!model.modalities.input.is_empty())
-                    .then(|| model.modalities.input.iter().any(|value| value == "image"))
+            catalog.modalities.as_ref().and_then(|modalities| {
+                (!modalities.input.is_empty())
+                    .then(|| modalities.input.iter().any(|value| value == "image"))
             }),
         ),
     };
@@ -205,20 +172,18 @@ fn route_metadata(
         .zip(target.as_ref())
         .is_some_and(|(provider, (id, _))| catalog_pricing_supported_for_route(provider, route, id))
     {
-        (
-            (catalog.is_some() || secondary.is_some()).then_some(catalog_pricing),
-            (catalog.is_some() || secondary.is_some()).then_some("catalog"),
-        )
+        let source = catalog.pricing.as_ref().map(|_| "catalog");
+        (catalog.pricing, source)
     } else {
         (None, None)
     };
     RouteMetadata {
         limits,
         capabilities,
-        catalog_metadata: (catalog.is_some() || secondary.is_some()).then_some(metadata),
-        merge_report,
-        deprecated_date: secondary.and_then(|model| model.deprecated_date.clone()),
-        modalities: catalog.map(|model| model.modalities.clone()),
+        catalog_metadata: catalog.metadata,
+        merge_report: catalog.merge_report,
+        deprecated_date: catalog.deprecated_date,
+        modalities: catalog.modalities,
         pricing,
         pricing_source,
     }
