@@ -25,3 +25,9 @@ A separate endpoint requires explicit client integration but avoids changing the
 A Codex-native catalog export is deferred until there is a verified consumer contract and a need beyond the existing TOML export. Do not derive harness instructions from third-party model metadata.
 
 Validation: service catalog and aggregation tests, an authenticated handler test, importer tests, workspace Clippy, Rust formatting, and `mise run //docs:build`.
+
+## Upgrade fallback and bounded alias reads (2026-09-10)
+
+The v2 cache remains a read-only fallback when the v3 cache is absent or invalid. Refreshes never send the legacy ETag or store the old projection under the v3 key. This preserves active pricing during an offline upgrade and permits a full v3 fetch when the source recovers.
+
+Discovery reuses visible models and loads only missing alias targets in batches, bounded by the existing alias depth limit. It does not reload the full model table. A merged cost document with no rates is unknown; explicit zero rates, audio rates, and condition-only prices remain present.

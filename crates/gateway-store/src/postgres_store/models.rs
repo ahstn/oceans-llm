@@ -21,6 +21,22 @@ impl ModelRepository for PostgresStore {
         rows.iter().map(decode_gateway_model).collect()
     }
 
+    async fn list_models_by_keys(
+        &self,
+        model_keys: &[String],
+    ) -> Result<Vec<GatewayModel>, StoreError> {
+        if model_keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query(
+            "SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
+             FROM gateway_models gm
+             LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
+             WHERE gm.model_key = ANY($1) ORDER BY gm.rank ASC, gm.model_key ASC"
+        ).bind(model_keys).fetch_all(&self.pool).await.map_err(to_query_error)?;
+        rows.iter().map(decode_gateway_model).collect()
+    }
+
     async fn get_model_by_key(&self, model_key: &str) -> Result<Option<GatewayModel>, StoreError> {
         let row = sqlx::query(
             r#"

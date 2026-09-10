@@ -39,6 +39,7 @@ pub(super) use super::super::{
 
 #[derive(Clone, Default)]
 pub(super) struct InMemoryRepo {
+    pub(super) legacy_cache: Arc<Mutex<Option<PricingCatalogCacheRecord>>>,
     pub(super) cache: Arc<Mutex<Option<PricingCatalogCacheRecord>>>,
     pub(super) pricing_rows: Arc<Mutex<Vec<ModelPricingRecord>>>,
     pub(super) cache_reads: Arc<AtomicUsize>,
@@ -53,9 +54,12 @@ pub(super) struct InMemoryRepo {
 impl PricingCatalogRepository for InMemoryRepo {
     async fn get_pricing_catalog_cache(
         &self,
-        _catalog_key: &str,
+        catalog_key: &str,
     ) -> Result<Option<PricingCatalogCacheRecord>, StoreError> {
         self.cache_reads.fetch_add(1, Ordering::Relaxed);
+        if catalog_key == super::super::PREVIOUS_PRICING_CATALOG_CACHE_KEY {
+            return Ok(self.legacy_cache.lock().expect("legacy cache lock").clone());
+        }
         Ok(self.cache.lock().expect("cache lock").clone())
     }
 

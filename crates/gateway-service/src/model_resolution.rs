@@ -13,6 +13,36 @@ use crate::redaction::mask_secret_leaf_values;
 
 const MAX_MODEL_ALIAS_DEPTH: usize = 8;
 
+pub(crate) async fn load_missing_alias_targets<R: ModelRepository>(
+    repo: &R,
+    visible: &[GatewayModel],
+) -> Result<Vec<GatewayModel>, GatewayError> {
+    let mut known = visible
+        .iter()
+        .map(|model| model.model_key.clone())
+        .collect::<BTreeSet<_>>();
+    let mut pending = visible
+        .iter()
+        .filter_map(|model| model.alias_target_model_key.clone())
+        .collect::<BTreeSet<_>>();
+    let mut targets = Vec::new();
+    for _ in 0..MAX_MODEL_ALIAS_DEPTH {
+        let missing = pending.difference(&known).cloned().collect::<Vec<_>>();
+        if missing.is_empty() {
+            break;
+        }
+        // Remember absent keys as well, so broken aliases are not fetched again.
+        known.extend(missing.iter().cloned());
+        let fetched = repo.list_models_by_keys(&missing).await?;
+        pending = fetched
+            .iter()
+            .filter_map(|model| model.alias_target_model_key.clone())
+            .collect();
+        targets.extend(fetched);
+    }
+    Ok(targets)
+}
+
 pub(crate) fn execution_model_from_snapshot<'a>(
     models: &HashMap<&str, &'a GatewayModel>,
     model: &'a GatewayModel,

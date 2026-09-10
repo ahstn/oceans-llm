@@ -4940,6 +4940,24 @@ pub(crate) mod tests {
             Some("fast-v2")
         );
         assert_eq!(alias_model.max_reasoning_effort, Some(ReasoningEffort::Low));
+        let selected = store
+            .list_models_by_keys(&["fast".into(), "not-present".into()])
+            .await
+            .expect("batch models");
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].id, alias_model.id);
+        assert_eq!(
+            selected[0].alias_target_model_key.as_deref(),
+            Some("fast-v2")
+        );
+        assert_eq!(selected[0].max_reasoning_effort, Some(ReasoningEffort::Low));
+        assert!(
+            store
+                .list_models_by_keys(&[])
+                .await
+                .expect("empty model batch")
+                .is_empty()
+        );
 
         let api_key = store
             .get_api_key_by_public_id("dev123")
@@ -9423,6 +9441,24 @@ pub(crate) mod tests {
             Some("fast-v2")
         );
         assert_eq!(alias_model.max_reasoning_effort, Some(ReasoningEffort::Low));
+        let selected = store
+            .list_models_by_keys(&["fast".into(), "not-present".into()])
+            .await
+            .expect("batch models");
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].id, alias_model.id);
+        assert_eq!(
+            selected[0].alias_target_model_key.as_deref(),
+            Some("fast-v2")
+        );
+        assert_eq!(selected[0].max_reasoning_effort, Some(ReasoningEffort::Low));
+        assert!(
+            store
+                .list_models_by_keys(&[])
+                .await
+                .expect("empty model batch")
+                .is_empty()
+        );
 
         let api_key = store
             .get_api_key_by_public_id("dev123")

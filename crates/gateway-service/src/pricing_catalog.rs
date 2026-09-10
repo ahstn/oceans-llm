@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.json";
 pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v3";
+const PREVIOUS_PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
 pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
 pub const DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const REMOTE_SOURCE: &str = "models_dev_api";
@@ -286,14 +287,26 @@ where
     pub(crate) async fn load_snapshot_from_store_or_fallback(
         &self,
     ) -> Result<PricingCatalogSnapshot, GatewayError> {
-        Ok(self
-            .load_stored_snapshot()
-            .await?
-            .unwrap_or_else(|| self.fallback_snapshot.clone()))
+        if let Some(snapshot) = self.load_stored_snapshot(&self.catalog_key).await? {
+            return Ok(snapshot);
+        }
+        // Read the old projection during an offline upgrade, but never reuse its
+        // ETag for v3 refreshes or write a v2 document under the v3 key.
+        if self.catalog_key == PRICING_CATALOG_CACHE_KEY
+            && let Some(snapshot) = self
+                .load_stored_snapshot(PREVIOUS_PRICING_CATALOG_CACHE_KEY)
+                .await?
+        {
+            return Ok(snapshot);
+        }
+        Ok(self.fallback_snapshot.clone())
     }
 
-    async fn load_stored_snapshot(&self) -> Result<Option<PricingCatalogSnapshot>, GatewayError> {
-        let Some(cache) = self.load_stored_cache().await? else {
+    async fn load_stored_snapshot(
+        &self,
+        catalog_key: &str,
+    ) -> Result<Option<PricingCatalogSnapshot>, GatewayError> {
+        let Some(cache) = self.repo.get_pricing_catalog_cache(catalog_key).await? else {
             return Ok(None);
         };
 
@@ -308,9 +321,9 @@ where
             })),
             Err(error) => {
                 warn!(
-                    catalog_key = %self.catalog_key,
+                    catalog_key = %catalog_key,
                     error = %error,
-                    "stored pricing catalog cache is invalid; falling back to vendored snapshot"
+                    "stored pricing catalog cache is invalid; trying fallback snapshot"
                 );
                 Ok(None)
             }

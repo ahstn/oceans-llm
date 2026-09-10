@@ -471,3 +471,69 @@ async fn remote_failure_falls_back_to_store_then_vendored_snapshot() {
         other => panic!("unexpected vendored resolution: {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn offline_v3_upgrade_keeps_v2_pricing_and_recovers_without_legacy_etag() {
+    let repo = Arc::new(InMemoryRepo::default());
+    let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".into());
+    let mut legacy = fallback_snapshot();
+    legacy.metadata.fetched_at += time::Duration::days(1);
+    legacy.metadata.etag = Some("legacy-etag".into());
+    seed_catalog_snapshot(&repo, &legacy).await;
+    catalog.sync_latest_snapshot_with_retry().await.unwrap();
+    let before = serde_json::to_value(repo.list_active_model_pricing().await.unwrap()).unwrap();
+    let mut cache = repo.cache.lock().unwrap().take().unwrap();
+    cache.catalog_key = super::super::PREVIOUS_PRICING_CATALOG_CACHE_KEY.into();
+    // Use the actual old projection shape, without the added descriptive fields.
+    let mut document: Value = serde_json::from_str(&cache.snapshot_json).unwrap();
+    for provider in document["providers"].as_object_mut().unwrap().values_mut() {
+        for model in provider["models"].as_object_mut().unwrap().values_mut() {
+            model.as_object_mut().unwrap().remove("metadata");
+            model["cost"].as_object_mut().unwrap().remove("conditions");
+        }
+    }
+    cache.snapshot_json = document.to_string();
+    *repo.legacy_cache.lock().unwrap() = Some(cache);
+
+    catalog
+        .refresh_if_stale_and_sync()
+        .await
+        .expect("offline upgrade remains available");
+    assert!(repo.cache.lock().unwrap().is_none());
+    assert_eq!(
+        serde_json::to_value(repo.list_active_model_pricing().await.unwrap()).unwrap(),
+        before
+    );
+    assert_eq!(
+        catalog
+            .load_snapshot_from_store_or_fallback()
+            .await
+            .unwrap()
+            .metadata
+            .fetched_at,
+        legacy.metadata.fetched_at
+    );
+
+    let app = Router::new().route("/api.json", get(|headers: HeaderMap| async move {
+        assert!(!headers.contains_key(IF_NONE_MATCH), "v2 ETag must not suppress v3 projection");
+        json!({"openai":{"name":"OpenAI","models":{"gpt-5":{"name":"GPT-5","reasoning":true,"cost":{"input":1}}}}}).to_string()
+    }));
+    let host = start_server(app).await;
+    let recovered = empty_catalog(repo.clone(), format!("{host}/api.json"));
+    recovered.refresh_if_stale_and_sync().await.unwrap();
+    assert_eq!(
+        repo.cache.lock().unwrap().as_ref().unwrap().catalog_key,
+        PRICING_CATALOG_CACHE_KEY
+    );
+    let latest = recovered
+        .load_snapshot_from_store_or_fallback()
+        .await
+        .unwrap();
+    assert_eq!(
+        latest.document.providers["openai"].models["gpt-5"]
+            .metadata
+            .reasoning,
+        Some(true)
+    );
+    assert!(latest.metadata.fetched_at > legacy.metadata.fetched_at);
+}

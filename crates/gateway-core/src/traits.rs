@@ -227,6 +227,18 @@ pub trait ReviewAgentRepository: Send + Sync {
 pub trait ModelRepository: Send + Sync {
     async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError>;
     async fn get_model_by_key(&self, model_key: &str) -> Result<Option<GatewayModel>, StoreError>;
+    async fn list_models_by_keys(
+        &self,
+        model_keys: &[String],
+    ) -> Result<Vec<GatewayModel>, StoreError> {
+        let mut models = Vec::with_capacity(model_keys.len());
+        for key in model_keys {
+            if let Some(model) = self.get_model_by_key(key).await? {
+                models.push(model);
+            }
+        }
+        Ok(models)
+    }
     async fn list_models_for_api_key(
         &self,
         api_key_id: Uuid,

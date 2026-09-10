@@ -94,11 +94,21 @@ pub(super) fn resolve(
     CatalogModel {
         metadata: Some(metadata),
         limits,
-        pricing: Some(pricing),
+        pricing: has_rates(&pricing).then_some(pricing),
         modalities: primary.map(|model| model.modalities.clone()),
         deprecated_date: secondary.and_then(|model| model.deprecated_date.clone()),
         merge_report,
     }
+}
+
+fn has_rates(pricing: &PricingCatalogCostDocument) -> bool {
+    pricing.input.is_some()
+        || pricing.output.is_some()
+        || pricing.cache_read.is_some()
+        || pricing.cache_write.is_some()
+        || pricing.input_audio.is_some()
+        || pricing.output_audio.is_some()
+        || !pricing.conditions.is_empty()
 }
 
 fn merge(

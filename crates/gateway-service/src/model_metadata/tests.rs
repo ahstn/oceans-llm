@@ -85,6 +85,7 @@ fn supplement_requires_explicit_provider_identity_and_never_mutates_billing_snap
 }
 
 struct BatchRepo {
+    alias_reads: std::sync::atomic::AtomicUsize,
     models: Vec<GatewayModel>,
     routes: Vec<ModelRoute>,
 }
@@ -92,7 +93,20 @@ struct BatchRepo {
 #[async_trait::async_trait]
 impl ModelRepository for BatchRepo {
     async fn list_models(&self) -> Result<Vec<GatewayModel>, gateway_core::StoreError> {
-        Ok(self.models.clone())
+        panic!("must not reload the model table")
+    }
+    async fn list_models_by_keys(
+        &self,
+        keys: &[String],
+    ) -> Result<Vec<GatewayModel>, gateway_core::StoreError> {
+        self.alias_reads
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(self
+            .models
+            .iter()
+            .filter(|model| keys.contains(&model.model_key))
+            .cloned()
+            .collect())
     }
     async fn get_model_by_key(
         &self,
@@ -167,6 +181,7 @@ async fn aliases_use_batched_target_routes_without_exposing_ungranted_model_ids(
     disabled.enabled = false;
     disabled.provider_key = "disabled-provider".into();
     let repo = BatchRepo {
+        alias_reads: Default::default(),
         models: vec![target, alias.clone()],
         routes: vec![enabled, disabled],
     };
@@ -177,6 +192,20 @@ async fn aliases_use_batched_target_routes_without_exposing_ungranted_model_ids(
     )
     .await
     .unwrap();
+    assert_eq!(
+        repo.alias_reads.load(std::sync::atomic::Ordering::Relaxed),
+        1
+    );
+    let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
+    // All-model grants already contain the target; direct-model grants need no alias lookup.
+    for visible in [repo.models.clone(), vec![repo.models[0].clone()]] {
+        let listed = list_metadata(&repo, visible, &snapshot).await.unwrap();
+        assert!(!listed.data.is_empty());
+    }
+    assert_eq!(
+        repo.alias_reads.load(std::sync::atomic::Ordering::Relaxed),
+        1
+    );
     assert_eq!(response.data.len(), 1);
     assert_eq!(response.data[0].id, "public-alias");
     assert_eq!(response.data[0].enabled_route_count, 1);
@@ -204,4 +233,44 @@ fn broken_and_cyclic_aliases_have_no_execution_metadata() {
         ..model
     };
     assert!(execution_model_from_snapshot(&HashMap::from([("alias", &cycle)]), &cycle).is_none());
+}
+
+#[test]
+fn primary_only_empty_cost_is_unknown_but_zero_audio_and_conditions_are_prices() {
+    let mut snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
+    let mut model = snapshot.document.providers["openai"].models["gpt-5"].clone();
+    model.id = "primary-only".into();
+    model.cost = PricingCatalogCostDocument::default();
+    snapshot
+        .document
+        .providers
+        .get_mut("openai")
+        .unwrap()
+        .models
+        .insert(model.id.clone(), model);
+    let mut route = route();
+    route.upstream_model = "primary-only".into();
+    let empty = route_metadata(&route, Some(&provider()), &snapshot);
+    let serialized = serde_json::to_value(&empty).unwrap();
+    assert!(empty.catalog_metadata.is_some());
+    assert_eq!(serialized["pricing"], json!(null));
+    assert_eq!(serialized["pricing_source"], json!(null));
+    for cost in [
+        json!({"input":"0.0000"}),
+        json!({"output_audio":"2.50"}),
+        json!({"conditions":{"context_over_200k":{"input":3}}}),
+    ] {
+        snapshot
+            .document
+            .providers
+            .get_mut("openai")
+            .unwrap()
+            .models
+            .get_mut("primary-only")
+            .unwrap()
+            .cost = serde_json::from_value(cost.clone()).unwrap();
+        let priced = route_metadata(&route, Some(&provider()), &snapshot);
+        assert_eq!(priced.pricing_source, Some("catalog"), "{cost}");
+        assert!(priced.pricing.is_some(), "{cost}");
+    }
 }

@@ -574,6 +574,13 @@ impl ModelRepository for AnyStore {
         dispatch_store!(self, list_models())
     }
 
+    async fn list_models_by_keys(
+        &self,
+        model_keys: &[String],
+    ) -> Result<Vec<gateway_core::GatewayModel>, StoreError> {
+        dispatch_store!(self, list_models_by_keys(model_keys))
+    }
+
     async fn get_model_by_key(
         &self,
         model_key: &str,

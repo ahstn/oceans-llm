@@ -3,7 +3,7 @@ mod catalog;
 pub use catalog::{FieldConflict, MergeReport, SupplementProvenance};
 use std::collections::{BTreeSet, HashMap};
 
-use crate::model_resolution::execution_model_from_snapshot;
+use crate::model_resolution::{execution_model_from_snapshot, load_missing_alias_targets};
 use gateway_core::{
     GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderConnection, ProviderRepository,
 };
@@ -62,9 +62,10 @@ pub(crate) async fn list_metadata<R>(
 where
     R: ModelRepository + ProviderRepository,
 {
-    let all_models = repo.list_models().await?;
-    let by_key = all_models
+    let alias_targets = load_missing_alias_targets(repo, &models).await?;
+    let by_key = models
         .iter()
+        .chain(&alias_targets)
         .map(|model| (model.model_key.as_str(), model))
         .collect::<HashMap<_, _>>();
     let executions = models
