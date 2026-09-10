@@ -1,8 +1,11 @@
+mod auth;
 mod inference;
 #[cfg(test)]
 mod inference_tests;
 #[cfg(test)]
 mod model_metadata_tests;
+
+use auth::InferenceAuth;
 
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
@@ -135,9 +138,10 @@ pub async fn v1_messages(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    InferenceAuth(auth): InferenceAuth,
     Json(request): Json<AnthropicMessagesRequest>,
 ) -> Response {
-    match v1_messages_inner(state, request_id, headers, request).await {
+    match v1_messages_inner(state, request_id, headers, auth, request).await {
         Ok(response) => response,
         Err(error) => anthropic_error_response(error.0),
     }
@@ -147,12 +151,11 @@ async fn v1_messages_inner(
     state: AppState,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    auth: AuthenticatedApiKey,
     request: AnthropicMessagesRequest,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
-    let authorization = extract_anthropic_authorization_header(&headers);
-    let auth = state.service.authenticate(authorization.as_deref()).await?;
     let mut core_request = anthropic_messages_request_to_core(&request);
     let log_request = core_chat_request_to_openai(&core_request);
     let requirements = core_request.requirements();
@@ -423,14 +426,11 @@ pub async fn v1_chat_completions(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    InferenceAuth(auth): InferenceAuth,
     Json(request): Json<ChatCompletionsRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
-    let auth = state
-        .service
-        .authenticate(extract_authorization_header(&headers))
-        .await?;
     let mut core_request = openai_chat_request_to_core(&request);
     let requirements = core_request.requirements();
     let resolved = state
@@ -587,14 +587,11 @@ pub async fn v1_responses(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    InferenceAuth(auth): InferenceAuth,
     Json(request): Json<ResponsesRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
-    let auth = state
-        .service
-        .authenticate(extract_authorization_header(&headers))
-        .await?;
     let mut core_request = openai_responses_request_to_core(&request);
     let requirements = core_request.requirements();
     let resolved = state
@@ -751,15 +748,12 @@ pub async fn v1_embeddings(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    InferenceAuth(auth): InferenceAuth,
     Json(mut request): Json<EmbeddingsRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_span = Span::current();
     let request_id = canonical_request_id(request_id)?;
-    let auth = state
-        .service
-        .authenticate(extract_authorization_header(&headers))
-        .await?;
     let core_request = openai_embeddings_request_to_core(&request);
     let requirements = core_request.requirements();
     let resolved = state

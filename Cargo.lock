@@ -1689,6 +1689,7 @@ dependencies = [
  "gateway-service",
  "gateway-store",
  "http 1.5.0",
+ "http-body 1.1.0",
  "lettre",
  "openidconnect",
  "opentelemetry",
@@ -1704,6 +1705,7 @@ dependencies = [
  "tempfile",
  "time",
  "tokio",
+ "tower 0.5.3",
  "tower-http 0.6.11",
  "tracing",
  "tracing-opentelemetry",
@@ -1800,6 +1802,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]

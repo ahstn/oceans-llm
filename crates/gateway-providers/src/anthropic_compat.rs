@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use gateway_core::{
@@ -50,7 +49,7 @@ impl AnthropicCompatConfig {
             base_url,
             auth: None,
             default_headers: BTreeMap::new(),
-            request_timeout_ms: 120_000,
+            request_timeout_ms: crate::DEFAULT_REQUEST_TIMEOUT_MS,
         }
     }
 }
@@ -62,10 +61,7 @@ pub struct AnthropicCompatProvider {
 
 impl AnthropicCompatProvider {
     pub fn new(config: AnthropicCompatConfig) -> Result<Self, ProviderError> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(config.request_timeout_ms))
-            .build()
-            .map_err(map_reqwest_error)?;
+        let client = crate::http::provider_http_client(config.request_timeout_ms)?;
 
         Ok(Self { config, client })
     }

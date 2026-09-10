@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn provider_deadline_defaults_to_five_minutes_and_preserves_overrides() {
+    let tmp = tempdir().unwrap();
+    let path = tmp.path().join("gateway.yaml");
+    write_config(
+        &path,
+        r#"
+providers:
+  - id: omitted
+    type: openai_compat
+    base_url: https://example.com/v1
+    pricing_provider_id: openai
+  - id: empty
+    type: openai_compat
+    base_url: https://example.com/v1
+    pricing_provider_id: openai
+    timeouts: {}
+  - id: explicit
+    type: openai_compat
+    base_url: https://example.com/v1
+    pricing_provider_id: openai
+    timeouts:
+      total_ms: 600000
+"#,
+    );
+    let config = GatewayConfig::from_path(&path).unwrap();
+    let providers = config.openai_compatible_provider_configs().unwrap();
+    let deadlines: Vec<_> = providers
+        .iter()
+        .map(|provider| provider.request_timeout_ms)
+        .collect();
+    assert_eq!(deadlines, [300_000, 300_000, 600_000]);
+}
+
+#[test]
 fn accepts_valid_vertex_auth_modes() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");

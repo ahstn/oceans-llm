@@ -394,7 +394,7 @@ where
                 Err(error) => {
                     yield Ok(openai_sse_error_chunk(
                         "upstream_bedrock_eventstream_error",
-                        &error.to_string(),
+                        &crate::http::stream_read_error_message(&error),
                     ));
                     stream_failed = true;
                     break;

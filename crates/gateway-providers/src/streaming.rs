@@ -61,7 +61,7 @@ where
                 Err(error) => {
                     yield Ok(openai_sse_error_chunk(
                         "upstream_openai_compat_stream_error",
-                        &error.to_string(),
+                        &crate::http::stream_read_error_message(&error),
                     ));
                     stream_failed = true;
                     break;
@@ -218,7 +218,7 @@ where
                 Err(error) => {
                     yield Ok(openai_sse_error_chunk(
                         "upstream_openai_compat_responses_stream_error",
-                        &error.to_string(),
+                        &crate::http::stream_read_error_message(&error),
                     ));
                     stream_failed = true;
                     break;

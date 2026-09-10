@@ -178,7 +178,7 @@ where
                 Err(error) => {
                     yield Ok(openai_sse_error_chunk(
                         "upstream_anthropic_messages_stream_error",
-                        &error.to_string(),
+                        &crate::http::stream_read_error_message(&error),
                     ));
                     stream_failed = true;
                     break;
