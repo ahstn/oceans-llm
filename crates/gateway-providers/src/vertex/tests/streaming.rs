@@ -1,5 +1,20 @@
 use super::*;
 
+#[tokio::test]
+async fn google_stream_classifies_body_timeout() {
+    let error = crate::http::tests::timed_out_body_error().await;
+    let upstream = futures_util::stream::once(async move { Err(error) });
+    let chunks = normalize_google_stream(upstream, "test".into(), 1, "test".into())
+        .collect::<Vec<_>>()
+        .await;
+    let output = chunks
+        .into_iter()
+        .map(|chunk| String::from_utf8(chunk.unwrap().to_vec()).unwrap())
+        .collect::<String>();
+    assert!(output.contains("Upstream response timed out"), "{output}");
+    assert!(!output.contains("[DONE]"));
+}
+
 /// Runs the Google stream normalizer over raw upstream byte chunks and renders the output.
 async fn render_google_stream(chunks: Vec<Bytes>) -> String {
     let upstream = stream::iter(chunks.into_iter().map(Ok::<Bytes, reqwest::Error>));

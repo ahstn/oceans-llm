@@ -26,6 +26,28 @@ pub struct TracedResponse {
     started_at: Instant,
 }
 
+struct ResponseTiming {
+    span: Span,
+    started_at: Option<Instant>,
+}
+
+impl ResponseTiming {
+    fn finish(&mut self) {
+        if let Some(started_at) = self.started_at.take() {
+            self.span.record(
+                "gateway.upstream.elapsed_ms",
+                started_at.elapsed().as_millis() as u64,
+            );
+        }
+    }
+}
+
+impl Drop for ResponseTiming {
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
+
 impl TracedResponse {
     pub fn status(&self) -> reqwest::StatusCode {
         self.response.status()
@@ -58,18 +80,22 @@ impl TracedResponse {
             span,
             started_at,
         } = self;
+        let mut timing = ResponseTiming {
+            span: span.clone(),
+            started_at: Some(started_at),
+        };
         Box::pin(async_stream::stream! {
             let mut stream = response.bytes_stream();
             while let Some(chunk) = stream.next().await {
                 if let Err(error) = &chunk {
-                    span.record("gateway.upstream.elapsed_ms", started_at.elapsed().as_millis() as u64);
+                    timing.finish();
                     record_reqwest_error(&span, error);
                     yield chunk;
                     return;
                 }
                 yield chunk;
             }
-            span.record("gateway.upstream.elapsed_ms", started_at.elapsed().as_millis() as u64);
+            timing.finish();
         })
     }
 }
@@ -229,11 +255,10 @@ fn reqwest_error_type(error: &reqwest::Error) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn stream_deadline_preserves_timeout_cause_and_emits_failure_without_done() {
+    pub(crate) async fn timed_out_body_error() -> reqwest::Error {
         use axum::{Router, body::Body, routing::get};
         use std::time::Duration;
 
@@ -267,6 +292,13 @@ mod tests {
         assert!(error.is_timeout());
         assert_eq!(reqwest_error_type(&error), "timeout");
         assert!(reqwest_error_chain(&error).contains("timed out"));
+        server.abort();
+        error
+    }
+
+    #[tokio::test]
+    async fn stream_deadline_preserves_timeout_cause_and_emits_failure_without_done() {
+        let error = timed_out_body_error().await;
         let upstream = futures_util::stream::once(async move { Err(error) });
         let chunks = crate::streaming::normalize_openai_compat_responses_stream(upstream)
             .collect::<Vec<_>>()
@@ -278,6 +310,74 @@ mod tests {
         assert!(output.contains("upstream_openai_compat_responses_stream_error"));
         assert!(output.contains("timed out"));
         assert!(!output.contains("[DONE]"));
+    }
+
+    #[tokio::test]
+    async fn stream_timing_records_once_on_eof_error_or_drop() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use tracing::instrument::WithSubscriber;
+        use tracing_subscriber::{Layer, layer::SubscriberExt};
+
+        #[derive(Clone)]
+        struct Records(Arc<AtomicUsize>);
+        impl<S: tracing::Subscriber> Layer<S> for Records {
+            fn on_record(
+                &self,
+                _: &tracing::span::Id,
+                values: &tracing::span::Record<'_>,
+                _: tracing_subscriber::layer::Context<'_, S>,
+            ) {
+                struct Visitor<'a>(&'a AtomicUsize);
+                impl tracing::field::Visit for Visitor<'_> {
+                    fn record_debug(
+                        &mut self,
+                        field: &tracing::field::Field,
+                        _: &dyn std::fmt::Debug,
+                    ) {
+                        if field.name() == "gateway.upstream.elapsed_ms" {
+                            self.0.fetch_add(1, Ordering::SeqCst);
+                        }
+                    }
+                }
+                values.record(&mut Visitor(&self.0));
+            }
+        }
+        let app = axum::Router::new().route("/", axum::routing::get(|| async { "chunk" }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        for poll_count in [0, 1, 2] {
+            let records = Records(Arc::new(AtomicUsize::new(0)));
+            let subscriber = tracing_subscriber::registry().with(records.clone());
+            async {
+                let client = provider_http_client(1000).unwrap();
+                let request = client.get(format!("http://{address}/")).build().unwrap();
+                let mut stream = execute_request(&client, request, "test", "test")
+                    .await
+                    .unwrap()
+                    .bytes_stream();
+                for _ in 0..poll_count {
+                    let _ = stream.next().await;
+                }
+                drop(stream);
+            }
+            .with_subscriber(subscriber)
+            .await;
+            assert_eq!(records.0.load(Ordering::SeqCst), 1, "polls: {poll_count}");
+        }
+        let records = Records(Arc::new(AtomicUsize::new(0)));
+        let subscriber = tracing_subscriber::registry().with(records.clone());
+        async {
+            let _ = timed_out_body_error().await;
+        }
+        .with_subscriber(subscriber)
+        .await;
+        assert_eq!(records.0.load(Ordering::SeqCst), 1, "timeout then drop");
         server.abort();
     }
 

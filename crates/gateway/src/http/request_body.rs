@@ -23,6 +23,8 @@ pub(super) const DEFAULT_MAX_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Serialize)]
 struct BodyLimitResponse {
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    response_type: Option<&'static str>,
     error: BodyLimitDetails,
 }
 
@@ -69,6 +71,8 @@ impl HttpBody for ObservedBody {
 }
 
 pub(super) async fn observe_request_body(request: Request, next: Next) -> Response {
+    let response_type =
+        matches!(request.uri().path(), "/v1/messages" | "/messages").then_some("error");
     let request_id = request
         .headers()
         .get("x-request-id")
@@ -117,6 +121,7 @@ pub(super) async fn observe_request_body(request: Request, next: Next) -> Respon
     (
         StatusCode::PAYLOAD_TOO_LARGE,
         Json(BodyLimitResponse {
+            response_type,
             error: BodyLimitDetails {
                 error: error_body,
                 limit_bytes: DEFAULT_MAX_BYTES,

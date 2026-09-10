@@ -2,7 +2,7 @@
 
 ## Decision
 
-Use a 64 MiB (67,108,864 byte) default Axum extractor limit across the gateway API. This includes inference and retains the existing batch limit. Use a five-minute (300,000 ms) default total provider deadline. Explicit `providers[].timeouts.total_ms` settings continue to override it, including when a longer deadline is needed.
+Use a 64 MiB (67,108,864 byte) Axum extractor limit on authenticated inference routes. Authenticate from request headers before reading or parsing JSON. Retain the existing 64 MiB batch limit and the existing limits on other API routes. Use a five-minute (300,000 ms) default total provider deadline. Explicit `providers[].timeouts.total_ms` settings continue to override it, including when a longer deadline is needed.
 
 Provider HTTP connections have a separate 10-second connection timeout. Do not add a shorter idle-read timeout: a reasoning model can remain silent while it works. The total deadline bounds that wait and includes response streaming. Keep-alive events do not extend it. These defaults do not change MCP guardrail buffering or admin UI proxy timeouts.
 
@@ -16,10 +16,10 @@ Five minutes is the default for this change. The OpenAI Python SDK documents ten
 
 ## Implementation and diagnostics
 
-- The router sets `DefaultBodyLimit` explicitly. A body wrapper counts received data bytes without retaining another payload copy or removing trailers.
+- The inference router sets `DefaultBodyLimit` explicitly. A request-parts extractor authenticates once before JSON extraction and passes the authenticated key to the handler. A body wrapper counts received data bytes without retaining another payload copy or removing trailers.
 - The HTTP server span records received body bytes, the configured limit, and the declared content length when available. Received bytes are a lower bound if the body was rejected before consumption finished; content length is client-declared, not verified.
-- A local body-limit rejection uses the canonical `PayloadTooLarge` OpenAI error contract with `request_body_too_large`, the limit, received byte count, and request ID. It emits a warning and marks the trace as failed before inference logging is available. Provider 413 responses retain their existing handling.
-- Provider HTTP traces retain bounded error source chains with attached Reqwest URLs removed. They record elapsed time and upstream `x-request-id` and `cf-ray` headers when present. Stream error messages identify timeout or transport classification without exposing the source chain to callers.
+- A local body-limit rejection uses the canonical `PayloadTooLarge` error contract (with the Anthropic `type: error` envelope on both Messages aliases) with `request_body_too_large`, the limit, received byte count, and request ID. It emits a warning and marks the trace as failed before inference logging is available. Provider 413 responses retain their existing handling.
+- Provider HTTP traces retain bounded error source chains with attached Reqwest URLs removed. They record elapsed time on stream completion, failure, or drop, and upstream `x-request-id` and `cf-ray` headers when present. Stream error messages identify timeout or transport classification without exposing the source chain to callers.
 - Stored request payload limits remain separate from incoming request limits. Use byte-count fields to measure requests; do not infer their size from truncated request-log payloads.
 
 ## Trade-offs and follow-up

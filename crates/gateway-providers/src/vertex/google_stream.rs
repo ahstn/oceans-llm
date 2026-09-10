@@ -157,7 +157,7 @@ where
             let chunk = match chunk {
                 Ok(chunk) => chunk,
                 Err(error) => {
-                    yield Ok(openai_sse_error_chunk("upstream_google_stream_error", &error.to_string()));
+                    yield Ok(openai_sse_error_chunk("upstream_google_stream_error", &crate::http::stream_read_error_message(&error)));
                     return;
                 }
             };
