@@ -83,7 +83,7 @@ where
     let keys = routes
         .values()
         .flatten()
-        .filter(|route| route.enabled)
+        .filter(|route| route.enabled && route.weight > 0.0)
         .map(|route| route.provider_key.clone())
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -97,7 +97,7 @@ where
                 .and_then(|execution| routes.get(&execution.id))
                 .into_iter()
                 .flatten()
-                .filter(|route| route.enabled)
+                .filter(|route| route.enabled && route.weight > 0.0)
                 .map(|route| route_metadata(route, providers.get(&route.provider_key), snapshot))
                 .collect::<Vec<_>>();
             summarize(model.model_key.clone(), details)

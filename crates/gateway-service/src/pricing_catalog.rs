@@ -54,6 +54,7 @@ pub struct PricingCatalog<R> {
     catalog_key: String,
     refresh_interval: Duration,
     fallback_snapshot: PricingCatalogSnapshot,
+    metadata_snapshot: Arc<tokio::sync::Mutex<Option<Arc<PricingCatalogSnapshot>>>>,
 }
 
 impl<R> PricingCatalog<R>
@@ -84,6 +85,7 @@ where
             catalog_key,
             refresh_interval,
             fallback_snapshot: load_vendored_fallback_snapshot(),
+            metadata_snapshot: Default::default(),
         }
     }
 
@@ -102,6 +104,7 @@ where
             catalog_key,
             refresh_interval,
             fallback_snapshot,
+            metadata_snapshot: Default::default(),
         }
     }
 
@@ -154,7 +157,7 @@ where
         let response = request.send().await.map_err(|error| {
             GatewayError::Internal(format!("pricing catalog refresh request failed: {error}"))
         })?;
-        match response.status() {
+        let result = match response.status() {
             StatusCode::NOT_MODIFIED => Ok(()),
             StatusCode::OK => {
                 let expected_fetched_at = current.as_ref().map(|cache| cache.fetched_at);
@@ -200,7 +203,11 @@ where
                 "pricing catalog refresh failed with HTTP {}",
                 status.as_u16()
             ))),
+        };
+        if result.is_ok() {
+            *self.metadata_snapshot.lock().await = None;
         }
+        result
     }
 
     async fn confirm_superseding_cache_write(
@@ -266,7 +273,13 @@ where
 
     async fn sync_latest_snapshot_with_retry(&self) -> Result<(), GatewayError> {
         for attempt in 1..=MAX_PRICING_SYNC_ATTEMPTS {
-            let snapshot = self.load_snapshot_from_store_or_fallback().await?;
+            // Re-read on each reconciliation attempt, including changes from other replicas.
+            let snapshot = {
+                let mut cached = self.metadata_snapshot.lock().await;
+                let snapshot = Arc::new(self.load_snapshot_from_store_or_fallback().await?);
+                *cached = Some(Arc::clone(&snapshot));
+                snapshot
+            };
             match self.sync_model_pricing_snapshot(&snapshot).await {
                 Err(GatewayError::Store(StoreError::PricingSyncConflict))
                     if attempt < MAX_PRICING_SYNC_ATTEMPTS =>
@@ -282,6 +295,19 @@ where
         }
 
         unreachable!("pricing sync attempts always return on their final iteration")
+    }
+
+    /// Share the parsed discovery catalog until the next refresh cycle.
+    pub(crate) async fn metadata_snapshot(
+        &self,
+    ) -> Result<Arc<PricingCatalogSnapshot>, GatewayError> {
+        let mut cached = self.metadata_snapshot.lock().await;
+        if let Some(snapshot) = cached.as_ref() {
+            return Ok(Arc::clone(snapshot));
+        }
+        let snapshot = Arc::new(self.load_snapshot_from_store_or_fallback().await?);
+        *cached = Some(Arc::clone(&snapshot));
+        Ok(snapshot)
     }
 
     pub(crate) async fn load_snapshot_from_store_or_fallback(

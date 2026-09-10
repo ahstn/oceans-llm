@@ -249,10 +249,7 @@ where
         auth: &AuthenticatedApiKey,
     ) -> Result<crate::model_metadata::ModelMetadataResponse, GatewayError> {
         let models = self.model_access.list_models_for_api_key(auth).await?;
-        let snapshot = self
-            .pricing_catalog
-            .load_snapshot_from_store_or_fallback()
-            .await?;
+        let snapshot = self.pricing_catalog.metadata_snapshot().await?;
         crate::model_metadata::list_metadata(self.store.as_ref(), models, &snapshot).await
     }
 

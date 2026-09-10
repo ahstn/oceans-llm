@@ -537,3 +537,26 @@ async fn offline_v3_upgrade_keeps_v2_pricing_and_recovers_without_legacy_etag() 
     );
     assert!(latest.metadata.fetched_at > legacy.metadata.fetched_at);
 }
+
+#[tokio::test]
+async fn metadata_reuses_parsed_snapshot_and_observes_refresh() {
+    let app = Router::new().route(
+        "/api.json",
+        get(|| async { (StatusCode::OK, minimal_catalog_body().to_string()) }),
+    );
+    let host = start_server(app).await;
+    let repo = Arc::new(InMemoryRepo::default());
+    let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
+    let first = catalog.metadata_snapshot().await.unwrap();
+    let reads = repo.cache_reads.load(Ordering::Relaxed);
+    let second = catalog.metadata_snapshot().await.unwrap();
+    assert!(Arc::ptr_eq(&first, &second));
+    assert_eq!(repo.cache_reads.load(Ordering::Relaxed), reads);
+    catalog.refresh_now_and_sync().await.unwrap();
+    let refreshed = catalog.metadata_snapshot().await.unwrap();
+    assert!(!Arc::ptr_eq(&first, &refreshed));
+    assert_eq!(refreshed.metadata.source, REMOTE_SOURCE);
+    let reads = repo.cache_reads.load(Ordering::Relaxed);
+    catalog.metadata_snapshot().await.unwrap();
+    assert_eq!(repo.cache_reads.load(Ordering::Relaxed), reads);
+}

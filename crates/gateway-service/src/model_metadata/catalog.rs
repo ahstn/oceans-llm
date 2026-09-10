@@ -133,6 +133,11 @@ fn merge(
         &mut metadata.structured_output,
         supplement.metadata.structured_output,
     );
+    report.field(
+        "limit.context",
+        &mut limits.context,
+        supplement.limits.context,
+    );
     report.field("limit.input", &mut limits.input, supplement.limits.input);
     report.field("limit.output", &mut limits.output, supplement.limits.output);
     for (name, primary, secondary) in [
@@ -204,7 +209,7 @@ mod tests {
     fn missing_only_merge_retains_false_zero_and_reports_conflicts() {
         let secondary: SupplementModel = serde_json::from_value(json!({
             "metadata":{"reasoning":true,"tool_call":false},
-            "limits":{"input":200,"output":100},
+            "limits":{"context":400,"input":200,"output":100},
             "pricing":{"input":"1","output":"0.00"}, "deprecated_date":null
         }))
         .unwrap();
@@ -218,7 +223,7 @@ mod tests {
         };
         let mut cost = PricingCatalogCostDocument {
             input: Some("0.0000".into()),
-            output: Some("0.0000".into()),
+            output: Some("0".into()),
             ..Default::default()
         };
         let report = merge(&mut primary, &mut limits, &mut cost, &secondary);
@@ -233,8 +238,12 @@ mod tests {
                 .iter()
                 .map(|conflict| conflict.field)
                 .collect::<Vec<_>>(),
-            vec!["reasoning", "cost.input"]
+            vec!["reasoning", "limit.context", "cost.input"]
         );
         assert!(report.supplemented_fields.contains(&"tool_call"));
+        limits.context = None;
+        let report = merge(&mut primary, &mut limits, &mut cost, &secondary);
+        assert_eq!(limits.context, Some(400));
+        assert!(report.supplemented_fields.contains(&"limit.context"));
     }
 }

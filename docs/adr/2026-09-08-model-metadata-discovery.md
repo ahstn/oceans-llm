@@ -8,7 +8,7 @@ Expose authenticated discovery through `GET /v1/model-metadata`, with an explici
 
 Store descriptive capabilities, reasoning options, and conditional prices in the existing catalog snapshot JSON. These fields do not participate in the pricing history or ledger. No database migration is required. The projection cache key advances to `models_dev_supported_v3` so an old ETag cannot keep the previous projection indefinitely. Older vendored snapshots still deserialize with unknown metadata until a successful refresh.
 
-Resolve alias targets and fetch routes and providers in batches. Aggregate limits and capabilities conservatively across enabled routes. Keep prices at route level. Reads never refresh either source or probe a provider.
+Resolve alias targets and fetch routes and providers in batches. Aggregate limits and capabilities conservatively across enabled routes with positive weights. Keep prices at route level. Reads never refresh either source or probe a provider.
 
 ## Source merge
 
@@ -31,3 +31,5 @@ Validation: service catalog and aggregation tests, an authenticated handler test
 The v2 cache remains a read-only fallback when the v3 cache is absent or invalid. Refreshes never send the legacy ETag or store the old projection under the v3 key. This preserves active pricing during an offline upgrade and permits a full v3 fetch when the source recovers.
 
 Discovery reuses visible models and loads only missing alias targets in batches, bounded by the existing alias depth limit. It does not reload the full model table. A merged cost document with no rates is unknown; explicit zero rates, audio rates, and condition-only prices remain present.
+
+Discovery reads share an in-memory parsed catalog. Refresh success invalidates that snapshot, and pricing reconciliation replaces it from the persisted cache. Reconciliation still reads the store on each retry, so changes from other replicas become visible during the next refresh cycle.

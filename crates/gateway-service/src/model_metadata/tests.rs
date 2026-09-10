@@ -180,10 +180,13 @@ async fn aliases_use_batched_target_routes_without_exposing_ungranted_model_ids(
     let mut disabled = enabled.clone();
     disabled.enabled = false;
     disabled.provider_key = "disabled-provider".into();
+    let mut dormant = enabled.clone();
+    dormant.weight = 0.0;
+    dormant.provider_key = "dormant-provider".into();
     let repo = BatchRepo {
         alias_reads: Default::default(),
         models: vec![target, alias.clone()],
-        routes: vec![enabled, disabled],
+        routes: vec![enabled, disabled, dormant],
     };
     let response = list_metadata(
         &repo,
@@ -273,4 +276,12 @@ fn primary_only_empty_cost_is_unknown_but_zero_audio_and_conditions_are_prices()
         assert_eq!(priced.pricing_source, Some("catalog"), "{cost}");
         assert!(priced.pricing.is_some(), "{cost}");
     }
+}
+
+#[test]
+fn missing_provider_cannot_advertise_reasoning() {
+    let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
+    let metadata = route_metadata(&route(), None, &snapshot);
+    assert_eq!(metadata.capabilities.reasoning, None);
+    assert!(metadata.catalog_metadata.is_none());
 }
