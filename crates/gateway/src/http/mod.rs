@@ -18,6 +18,7 @@ pub mod mcp_registry;
 pub mod models;
 pub mod observability;
 pub mod provider_credentials;
+mod request_body;
 pub mod request_tags;
 mod request_tracing;
 pub mod response_cache;
@@ -50,6 +51,15 @@ use self::{
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
     let request_id_header = HeaderName::from_static("x-request-id");
     let identity_guard_state = state.clone();
+
+    let inference_router = Router::new()
+        .route("/v1/messages", post(v1_messages))
+        .route("/messages", post(v1_messages))
+        .route("/v1/chat/completions", post(v1_chat_completions))
+        .route("/v1/responses", post(v1_responses))
+        .route("/v1/embeddings", post(v1_embeddings))
+        .layer(DefaultBodyLimit::max(request_body::DEFAULT_MAX_BYTES))
+        .layer(middleware::from_fn(request_body::observe_request_body));
 
     let api_router = Router::new()
         .route("/healthz", get(healthz))
@@ -357,11 +367,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             get(oauth_callback_github),
         )
         .route("/v1/models", get(v1_models))
-        .route("/v1/messages", post(v1_messages))
-        .route("/messages", post(v1_messages))
-        .route("/v1/chat/completions", post(v1_chat_completions))
-        .route("/v1/responses", post(v1_responses))
-        .route("/v1/embeddings", post(v1_embeddings))
+        .merge(inference_router)
         .route(
             "/mcp",
             post(mcp_aggregate_streamable_http)

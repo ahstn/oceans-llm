@@ -28,6 +28,13 @@ impl Endpoint {
             "Bearer gwk_streamtest.cancel-secret".parse().unwrap(),
         );
         let request_id = Some(Extension(RequestId::new("inference-test".parse().unwrap())));
+        let auth = super::InferenceAuth(
+            state
+                .service
+                .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
+                .await
+                .unwrap(),
+        );
         match self {
             Self::Chat => {
                 let request = serde_json::from_value(json!({
@@ -35,14 +42,14 @@ impl Endpoint {
                     "stream": stream,
                 }))
                 .unwrap();
-                v1_chat_completions(State(state), request_id, headers, Json(request)).await
+                v1_chat_completions(State(state), request_id, headers, auth, Json(request)).await
             }
             Self::Responses => {
                 let request = serde_json::from_value(json!({
                     "model": "fast", "input": "hello", "stream": stream,
                 }))
                 .unwrap();
-                v1_responses(State(state), request_id, headers, Json(request)).await
+                v1_responses(State(state), request_id, headers, auth, Json(request)).await
             }
         }
     }

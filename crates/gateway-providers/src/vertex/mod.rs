@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use gateway_core::{
@@ -90,10 +90,7 @@ pub struct VertexProvider {
 
 impl VertexProvider {
     pub fn new(config: VertexProviderConfig) -> Result<Self, ProviderError> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(config.request_timeout_ms))
-            .build()
-            .map_err(map_reqwest_error)?;
+        let client = crate::http::provider_http_client(config.request_timeout_ms)?;
 
         let source: Arc<dyn AccessTokenSource> = match &config.auth {
             VertexAuthConfig::Adc => {

@@ -10,6 +10,9 @@ mod streaming;
 mod token;
 mod vertex;
 
+/// Total provider request deadline, including consumption of a streaming body.
+pub const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 300_000;
+
 pub use anthropic_compat::{
     AnthropicCompatAuth, AnthropicCompatAuthKind, AnthropicCompatConfig, AnthropicCompatProvider,
 };

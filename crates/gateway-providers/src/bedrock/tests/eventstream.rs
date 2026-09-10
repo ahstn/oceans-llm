@@ -1,5 +1,20 @@
 use super::*;
 
+#[tokio::test]
+async fn converse_stream_classifies_body_timeout() {
+    let error = crate::http::tests::timed_out_body_error().await;
+    let upstream = futures_util::stream::once(async move { Err(error) });
+    let chunks = normalize_bedrock_converse_stream(upstream, context("test"))
+        .collect::<Vec<_>>()
+        .await;
+    let output = chunks
+        .into_iter()
+        .map(|chunk| String::from_utf8(chunk.unwrap().to_vec()).unwrap())
+        .collect::<String>();
+    assert!(output.contains("Upstream response timed out"), "{output}");
+    assert!(!output.contains("[DONE]"));
+}
+
 #[test]
 fn decodes_fragmented_eventstream_frames() {
     let frame = eventstream_frame(

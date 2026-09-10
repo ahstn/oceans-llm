@@ -1,6 +1,21 @@
 use super::*;
 
 #[tokio::test]
+async fn mantle_anthropic_stream_classifies_body_timeout() {
+    let error = crate::http::tests::timed_out_body_error().await;
+    let upstream = futures_util::stream::once(async move { Err(error) });
+    let chunks = normalize_anthropic_messages_stream(upstream, context("test"), "aws_bedrock")
+        .collect::<Vec<_>>()
+        .await;
+    let output = chunks
+        .into_iter()
+        .map(|chunk| String::from_utf8(chunk.unwrap().to_vec()).unwrap())
+        .collect::<String>();
+    assert!(output.contains("Upstream response timed out"), "{output}");
+    assert!(!output.contains("[DONE]"));
+}
+
+#[tokio::test]
 async fn normalizes_mantle_anthropic_messages_sse() {
     let chunks: Vec<Result<Bytes, reqwest::Error>> = vec![
         Ok(Bytes::from_static(
