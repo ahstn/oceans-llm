@@ -292,7 +292,7 @@ pub struct ProviderTimeouts {
 }
 
 const fn default_provider_timeout_ms() -> u64 {
-    120_000
+    gateway_providers::DEFAULT_REQUEST_TIMEOUT_MS
 }
 
 fn default_vertex_location() -> String {

@@ -17,7 +17,7 @@ use super::{
     },
 };
 
-const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 120_000;
+use gateway_providers::DEFAULT_REQUEST_TIMEOUT_MS;
 
 impl GatewayConfig {
     pub fn openai_compatible_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {

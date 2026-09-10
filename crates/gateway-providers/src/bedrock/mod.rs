@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
 
 use async_stream::stream;
 use async_trait::async_trait;
@@ -126,10 +122,7 @@ impl BedrockProvider {
                 config.provider_key
             ))
         })?;
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(config.request_timeout_ms))
-            .build()
-            .map_err(map_reqwest_error)?;
+        let client = crate::http::provider_http_client(config.request_timeout_ms)?;
 
         Ok(Self {
             config,

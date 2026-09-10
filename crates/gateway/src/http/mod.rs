@@ -18,6 +18,7 @@ pub mod mcp_registry;
 pub mod models;
 pub mod observability;
 pub mod provider_credentials;
+mod request_body;
 pub mod request_tags;
 mod request_tracing;
 pub mod response_cache;
@@ -56,12 +57,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/readyz", get(readyz))
         .route("/api/v1/health", get(api_health))
         .route("/api/v1/guardrails/evaluate", post(evaluate_guardrail))
-        .route(
-            "/api/v1/batches",
-            get(list_batches)
-                .post(create_batch)
-                .layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
-        )
+        .route("/api/v1/batches", get(list_batches).post(create_batch))
         .route("/api/v1/batches/{batch_id}", get(get_batch))
         .route("/api/v1/batches/{batch_id}/results", get(get_batch_results))
         .route("/api/v1/batches/{batch_id}/cancel", post(cancel_batch))
@@ -375,6 +371,8 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
                 .delete(mcp_streamable_http_proxy),
         )
         .with_state(state)
+        .layer(DefaultBodyLimit::max(request_body::DEFAULT_MAX_BYTES))
+        .layer(middleware::from_fn(request_body::observe_request_body))
         .layer(middleware::from_fn_with_state(
             identity_guard_state,
             enforce_identity_mutation_admin,

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use gateway_core::{
@@ -86,7 +86,7 @@ impl OpenAiCompatConfig {
             bearer_auth_header: BearerAuthHeader::Authorization,
             identity_token_source: None,
             default_headers: BTreeMap::new(),
-            request_timeout_ms: 120_000,
+            request_timeout_ms: crate::DEFAULT_REQUEST_TIMEOUT_MS,
             batch: OpenAiBatchConfig::default(),
         }
     }
@@ -137,10 +137,7 @@ pub struct OpenAiCompatProvider {
 
 impl OpenAiCompatProvider {
     pub fn new(config: OpenAiCompatConfig) -> Result<Self, ProviderError> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(config.request_timeout_ms))
-            .build()
-            .map_err(map_reqwest_error)?;
+        let client = crate::http::provider_http_client(config.request_timeout_ms)?;
 
         Ok(Self { config, client })
     }

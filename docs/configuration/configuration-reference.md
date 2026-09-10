@@ -747,6 +747,10 @@ SMTP transport fields:
 
 ## Provider Types
 
+Provider HTTP requests default to a five-minute total deadline (`timeouts.total_ms: 300000`), including streaming response consumption. Explicit values override the default. A separate 10-second connection timeout applies; there is no additional idle-read timeout. For a provider that needs longer reasoning runs, set `timeouts.total_ms: 600000` explicitly. Upstream and proxy deadlines still apply.
+
+The gateway's default Axum request-body limit is 64 MiB (67,108,864 bytes), including inference and batch requests. This is separate from the smaller retained request-log payload limits and each provider's own limits. Local oversized-body errors include `request_body_too_large`, `limit_bytes`, `received_bytes`, and `request_id`. See [the decision and diagnostic fields](../adr/2026-09-10-inference-body-limits-and-timeout-diagnostics.md).
+
 Supported provider types in the checked-in configs:
 
 - `openai_compat`

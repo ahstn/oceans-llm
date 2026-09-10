@@ -19,6 +19,10 @@ pub(super) fn make_http_request_span<B>(request: &Request<B>) -> Span {
         .and_then(|value| value.to_str().ok())
         .unwrap_or("missing");
     let method = request.method().as_str();
+    let cf_ray = request
+        .headers()
+        .get("cf-ray")
+        .and_then(|value| value.to_str().ok());
 
     let span = tracing::info_span!(
         "http.server.request",
@@ -33,6 +37,10 @@ pub(super) fn make_http_request_span<B>(request: &Request<B>) -> Span {
         method = %method,
         uri = %request.uri().path(),
         request_id = %request_id,
+        gateway.request.cf_ray = cf_ray,
+        gateway.request.body.declared_bytes = tracing::field::Empty,
+        gateway.request.body.received_bytes = tracing::field::Empty,
+        gateway.request.body.limit_bytes = tracing::field::Empty,
         http.route = tracing::field::Empty,
         requested_model = tracing::field::Empty,
         resolved_model = tracing::field::Empty,

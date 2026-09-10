@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use gateway_core::{
@@ -158,7 +157,7 @@ impl CopilotProviderConfig {
             editor_version: DEFAULT_COPILOT_EDITOR_VERSION.to_string(),
             integration_id: DEFAULT_COPILOT_INTEGRATION_ID.to_string(),
             default_headers: BTreeMap::new(),
-            request_timeout_ms: 120_000,
+            request_timeout_ms: crate::DEFAULT_REQUEST_TIMEOUT_MS,
         }
     }
 }
@@ -205,10 +204,7 @@ impl CopilotProvider {
         config: CopilotProviderConfig,
         token_source: CopilotTokenSource,
     ) -> Result<Self, ProviderError> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(config.request_timeout_ms))
-            .build()
-            .map_err(map_reqwest_error)?;
+        let client = crate::http::provider_http_client(config.request_timeout_ms)?;
         Ok(Self {
             config,
             client,
