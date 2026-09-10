@@ -9,6 +9,7 @@ This page describes the live compatibility contract between the gateway's public
 The gateway currently exposes:
 
 - `GET /v1/models`
+- `GET /v1/model-metadata` (Oceans discovery extension; schema version 1)
 - `POST /v1/chat/completions`
 - `POST /v1/messages`
 - `POST /messages`

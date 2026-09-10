@@ -137,6 +137,20 @@ A model can be visible and still fail at runtime.
 
 This is why a model can appear in `/v1/models` and still fail with `invalid_request` or `no_routes_available`.
 
+### Model metadata discovery
+
+`GET /v1/model-metadata` accepts the same API-key authentication and applies the same grants, owner restrictions, and model allowlists as `/v1/models`. The standard model-list response is unchanged. The extension returns `schema_version: 1`, catalog provenance, supplement provenance, and a `data` array of visible gateway model IDs.
+
+Each model includes its enabled route count, conservative limits and capabilities, and one metadata entry per enabled route. Alias metadata uses the target model's routes. Invalid or cyclic aliases have no route entries. Internal provider keys, URLs, headers, secrets, and alias target names are not returned. Route entries are descriptions, not stable route identifiers or live health results.
+
+Model limits are the smallest known limits across all enabled routes. A missing limit on any route makes that aggregate limit `null`. A capability is `true` only when every route supports it, `false` when at least one route explicitly rejects it, and otherwise `null`. Zero routes also produce unknown values. Configured context limits cap catalog limits. Tool, schema, and image support also respect the provider adapter and route capability settings. `catalog_metadata` contains source claims, including reasoning options; those claims do not override request validation or configured reasoning policy.
+
+Prices are decimal strings in USD per million tokens, reported per route. There is no single aggregate model price. `conditions` retains source-shaped conditional rates for interpretation by clients. Configured route prices take precedence. Unsupported billing modifiers suppress catalog prices. Missing prices remain unknown; zero is a known free rate. These discovery prices do not change billing records or spend accounting.
+
+The response reads the cached models.dev catalog without making network requests. The existing background refresh controls its age, and a vendored fallback remains available. The separate LiteLLM supplement fills missing fields only for reviewed, exact OpenAI model matches. It does not infer provider identity from URLs or model names, map legacy `max_tokens` to a context window, or match cloud regions and service tiers. `merge_report` lists supplemented fields and disagreements; models.dev values win disagreements, including explicit `false` and zero values. Configured limit and price overrides apply after this source merge. Supplement generation time and source hashes are included in the response.
+
+Clients must explicitly consume this extension. Existing OpenAI clients and Codex do not gain automatic metadata discovery from this endpoint. The existing Codex TOML export remains the supported configuration path.
+
 ## Failure Classes
 
 These failures look similar from far away, but they mean different things.

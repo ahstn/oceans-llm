@@ -1,0 +1,731 @@
+{
+  "generated_at": "2026-09-08T05:36:21.024445+00:00",
+  "litellm_sha256": "b111448bf7b710e6df9bbb291852305d5548ced52312cd9c8ab1210b9ec5ac58",
+  "models": {
+    "chatgpt-image-latest": {
+      "deprecated_date": "2026-12-01",
+      "limits": {},
+      "metadata": {},
+      "pricing": {
+        "cache_read": "1.25000000",
+        "input": "5.000000"
+      }
+    },
+    "gpt-3.5-turbo": {
+      "deprecated_date": "2026-10-23",
+      "limits": {
+        "input": 16385,
+        "output": 4096
+      },
+      "metadata": {
+        "tool_call": true
+      },
+      "pricing": {
+        "input": "0.5000000",
+        "output": "1.5000000"
+      }
+    },
+    "gpt-4": {
+      "deprecated_date": "2026-10-23",
+      "limits": {
+        "input": 8192,
+        "output": 4096
+      },
+      "metadata": {
+        "tool_call": true
+      },
+      "pricing": {
+        "input": "30.00000",
+        "output": "60.00000"
+      }
+    },
+    "gpt-4-turbo": {
+      "deprecated_date": "2026-10-23",
+      "limits": {
+        "input": 128000,
+        "output": 4096
+      },
+      "metadata": {
+        "tool_call": true
+      },
+      "pricing": {
+        "input": "10.00000",
+        "output": "30.00000"
+      }
+    },
+    "gpt-4.1": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 1047576,
+        "output": 32768
+      },
+      "metadata": {
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.5000000",
+        "input": "2.000000",
+        "output": "8.000000"
+      }
+    },
+    "gpt-4.1-mini": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 1047576,
+        "output": 32768
+      },
+      "metadata": {
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.1000000",
+        "input": "0.4000000",
+        "output": "1.6000000"
+      }
+    },
+    "gpt-4.1-nano": {
+      "deprecated_date": "2026-10-23",
+      "limits": {
+        "input": 1047576,
+        "output": 32768
+      },
+      "metadata": {
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.025000000",
+        "input": "0.1000000",
+        "output": "0.4000000"
+      }
+    },
+    "gpt-4o": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 128000,
+        "output": 16384
+      },
+      "metadata": {
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "1.25000000",
+        "input": "2.5000000",
+        "output": "10.00000"
+      }
+    },
+    "gpt-4o-2024-05-13": {
+      "deprecated_date": "2026-10-23",
+      "limits": {
+        "input": 128000,
+        "output": 4096
+      },
+      "metadata": {
+        "tool_call": true
+      },
+      "pricing": {
+        "input": "5.000000",
+        "output": "15.000000"
+      }
+    },
+    "gpt-4o-2024-08-06": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 128000,
+        "output": 16384
+      },
+      "metadata": {
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "1.25000000",
+        "input": "2.5000000",
+        "output": "10.00000"
+      }
+    },
+    "gpt-4o-2024-11-20": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 128000,
+        "output": 16384
+      },
+      "metadata": {
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "1.25000000",
+        "input": "2.5000000",
+        "output": "10.00000"
+      }
+    },
+    "gpt-4o-mini": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 128000,
+        "output": 16384
+      },
+      "metadata": {
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.075000000",
+        "input": "0.15000000",
+        "output": "0.6000000"
+      }
+    },
+    "gpt-5": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 272000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.125000000",
+        "input": "1.25000000",
+        "output": "10.00000"
+      }
+    },
+    "gpt-5-mini": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 272000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.025000000",
+        "input": "0.25000000",
+        "output": "2.000000"
+      }
+    },
+    "gpt-5-nano": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 272000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.005000000",
+        "input": "0.05000000",
+        "output": "0.4000000"
+      }
+    },
+    "gpt-5-pro": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 400000,
+        "output": 272000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "input": "15.000000",
+        "output": "120.00000"
+      }
+    },
+    "gpt-5.1": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 272000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.125000000",
+        "input": "1.25000000",
+        "output": "10.00000"
+      }
+    },
+    "gpt-5.2": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 272000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.175000000",
+        "input": "1.75000000",
+        "output": "14.000000"
+      }
+    },
+    "gpt-5.2-chat-latest": {
+      "deprecated_date": "2026-08-10",
+      "limits": {
+        "input": 128000,
+        "output": 16384
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.175000000",
+        "input": "1.75000000",
+        "output": "14.000000"
+      }
+    },
+    "gpt-5.2-pro": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 272000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "input": "21.000000",
+        "output": "168.000000"
+      }
+    },
+    "gpt-5.3-chat-latest": {
+      "deprecated_date": "2026-08-10",
+      "limits": {
+        "input": 128000,
+        "output": 16384
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.175000000",
+        "input": "1.75000000",
+        "output": "14.000000"
+      }
+    },
+    "gpt-5.3-codex": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 272000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.175000000",
+        "input": "1.75000000",
+        "output": "14.000000"
+      }
+    },
+    "gpt-5.4": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 1050000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.25000000",
+        "input": "2.5000000",
+        "output": "15.000000"
+      }
+    },
+    "gpt-5.4-mini": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 272000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.075000000",
+        "input": "0.75000000",
+        "output": "4.5000000"
+      }
+    },
+    "gpt-5.4-nano": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 272000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.02000000",
+        "input": "0.2000000",
+        "output": "1.25000000"
+      }
+    },
+    "gpt-5.4-pro": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 1050000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": false,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "3.000000",
+        "input": "30.00000",
+        "output": "180.00000"
+      }
+    },
+    "gpt-5.5": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 1050000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.5000000",
+        "input": "5.000000",
+        "output": "30.00000"
+      }
+    },
+    "gpt-5.5-pro": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 1050000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": false,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "3.000000",
+        "input": "30.00000",
+        "output": "180.00000"
+      }
+    },
+    "gpt-5.6": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 922000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.4000000",
+        "cache_write": "5.000000",
+        "input": "4.000000",
+        "output": "20.00000"
+      }
+    },
+    "gpt-5.6-luna": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 922000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.02000000",
+        "cache_write": "0.25000000",
+        "input": "0.2000000",
+        "output": "1.2000000"
+      }
+    },
+    "gpt-5.6-sol": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 922000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.4000000",
+        "cache_write": "5.000000",
+        "input": "4.000000",
+        "output": "20.00000"
+      }
+    },
+    "gpt-5.6-terra": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 922000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.2000000",
+        "cache_write": "2.5000000",
+        "input": "2.000000",
+        "output": "12.000000"
+      }
+    },
+    "gpt-6-astra": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 922000,
+        "output": 128000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "1.000000",
+        "cache_write": "12.5000000",
+        "input": "10.00000",
+        "output": "50.00000"
+      }
+    },
+    "gpt-image-1": {
+      "deprecated_date": "2026-10-23",
+      "limits": {},
+      "metadata": {},
+      "pricing": {
+        "cache_read": "1.25000000",
+        "input": "5.000000"
+      }
+    },
+    "gpt-image-1-mini": {
+      "deprecated_date": "2026-12-01",
+      "limits": {},
+      "metadata": {},
+      "pricing": {
+        "cache_read": "0.2000000",
+        "input": "2.000000"
+      }
+    },
+    "gpt-image-1.5": {
+      "deprecated_date": "2026-12-01",
+      "limits": {},
+      "metadata": {},
+      "pricing": {
+        "cache_read": "1.25000000",
+        "input": "5.000000",
+        "output": "10.00000"
+      }
+    },
+    "gpt-image-2": {
+      "deprecated_date": null,
+      "limits": {},
+      "metadata": {},
+      "pricing": {
+        "cache_read": "1.25000000",
+        "input": "5.000000"
+      }
+    },
+    "gpt-realtime-2.1": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 128000,
+        "output": 32000
+      },
+      "metadata": {
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.4000000",
+        "input": "4.000000",
+        "output": "24.000000"
+      }
+    },
+    "o1": {
+      "deprecated_date": "2026-10-23",
+      "limits": {
+        "input": 200000,
+        "output": 100000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "7.5000000",
+        "input": "15.000000",
+        "output": "60.00000"
+      }
+    },
+    "o1-pro": {
+      "deprecated_date": "2026-10-23",
+      "limits": {
+        "input": 200000,
+        "output": 100000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "input": "150.00000",
+        "output": "600.0000"
+      }
+    },
+    "o3": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 200000,
+        "output": 100000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.5000000",
+        "input": "2.000000",
+        "output": "8.000000"
+      }
+    },
+    "o3-mini": {
+      "deprecated_date": "2026-10-23",
+      "limits": {
+        "input": 200000,
+        "output": 100000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.55000000",
+        "input": "1.1000000",
+        "output": "4.4000000"
+      }
+    },
+    "o3-pro": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 200000,
+        "output": 100000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "input": "20.00000",
+        "output": "80.00000"
+      }
+    },
+    "o4-mini": {
+      "deprecated_date": "2026-10-23",
+      "limits": {
+        "input": 200000,
+        "output": 100000
+      },
+      "metadata": {
+        "reasoning": true,
+        "structured_output": true,
+        "tool_call": true
+      },
+      "pricing": {
+        "cache_read": "0.275000000",
+        "input": "1.1000000",
+        "output": "4.4000000"
+      }
+    },
+    "text-embedding-3-large": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 8191
+      },
+      "metadata": {},
+      "pricing": {
+        "input": "0.13000000",
+        "output": "0.0"
+      }
+    },
+    "text-embedding-3-small": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 8191
+      },
+      "metadata": {},
+      "pricing": {
+        "input": "0.02000000",
+        "output": "0.0"
+      }
+    },
+    "text-embedding-ada-002": {
+      "deprecated_date": null,
+      "limits": {
+        "input": 8191
+      },
+      "metadata": {},
+      "pricing": {
+        "input": "0.1000000",
+        "output": "0.0"
+      }
+    }
+  },
+  "models_dev_sha256": "ad54d63ca6c98276d726b828524c0b11fdc17f25438c94c29fd43940a3c660ad",
+  "provider_id": "openai",
+  "source": "litellm"
+}

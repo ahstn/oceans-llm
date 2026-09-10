@@ -1,6 +1,7 @@
 use gateway_core::{
     GatewayError, ModelRoute, Money4, PricingCatalogRepository, PricingLimits, PricingModalities,
-    PricingProvenance, ProviderConnection,
+    PricingProvenance, ProviderCapabilities, ProviderConnection, github_copilot_route_capabilities,
+    vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
 
@@ -180,6 +181,55 @@ fn effective_limits(
         },
         context_source,
     )
+}
+
+pub(crate) fn effective_provider_route_capabilities(
+    route_capabilities: Option<ProviderCapabilities>,
+    provider: Option<&ProviderConnection>,
+    route: Option<&ModelRoute>,
+) -> ProviderCapabilities {
+    provider
+        .map(|provider| provider_capabilities(provider, route))
+        .unwrap_or_default()
+        .intersect(route_capabilities.unwrap_or_default())
+}
+
+pub(crate) fn provider_capabilities(
+    provider: &ProviderConnection,
+    route: Option<&ModelRoute>,
+) -> ProviderCapabilities {
+    match provider.provider_type.as_str() {
+        "openai_compat" | "gcp_cloud_run_openai_compat" => {
+            ProviderCapabilities::openai_compat_baseline()
+        }
+        "anthropic_compat" => ProviderCapabilities {
+            chat_completions: true,
+            responses: false,
+            stream: true,
+            embeddings: false,
+            tools: true,
+            vision: true,
+            json_schema: false,
+            developer_role: false,
+        },
+        "gcp_vertex" => vertex_route_capabilities_for_upstream_model(
+            route.map(|route| route.upstream_model.as_str()),
+        ),
+        "github_copilot" => github_copilot_route_capabilities(
+            route.and_then(|route| route.compatibility.github_copilot.as_ref()),
+        ),
+        "aws_bedrock" => ProviderCapabilities {
+            chat_completions: true,
+            responses: true,
+            stream: true,
+            embeddings: false,
+            tools: true,
+            vision: true,
+            json_schema: true,
+            developer_role: true,
+        },
+        _ => ProviderCapabilities::all_enabled(),
+    }
 }
 
 #[cfg(test)]

@@ -32,6 +32,36 @@ impl ModelRepository for LibsqlStore {
         Ok(models)
     }
 
+    async fn list_models_by_keys(
+        &self,
+        model_keys: &[String],
+    ) -> Result<Vec<GatewayModel>, StoreError> {
+        let mut models = Vec::new();
+        // Bound SQL parameters even for large alias sets.
+        for keys in model_keys.chunks(500) {
+            let placeholders = vec!["?"; keys.len()].join(", ");
+            let query = format!(
+                "SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
+                 FROM gateway_models gm
+                 LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
+                 WHERE gm.model_key IN ({placeholders}) ORDER BY gm.rank ASC, gm.model_key ASC"
+            );
+            let params = keys
+                .iter()
+                .map(|key| libsql::Value::Text(key.clone()))
+                .collect::<Vec<_>>();
+            let mut rows = self
+                .connection
+                .query(&query, params)
+                .await
+                .map_err(to_query_error)?;
+            while let Some(row) = rows.next().await.map_err(to_query_error)? {
+                models.push(decode_gateway_model(&row)?);
+            }
+        }
+        Ok(models)
+    }
+
     async fn get_model_by_key(&self, model_key: &str) -> Result<Option<GatewayModel>, StoreError> {
         let mut rows = self
             .connection

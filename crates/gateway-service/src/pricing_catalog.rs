@@ -22,7 +22,8 @@ use tracing::warn;
 use uuid::Uuid;
 
 pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.json";
-pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
+pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v3";
+const PREVIOUS_PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
 pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
 pub const DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const REMOTE_SOURCE: &str = "models_dev_api";
@@ -30,6 +31,7 @@ const VENDORED_SOURCE: &str = "vendored_models_dev";
 const VENDORED_FALLBACK_JSON: &str = include_str!("../data/pricing_catalog_fallback.json");
 const MAX_PRICING_SYNC_ATTEMPTS: usize = 3;
 
+pub mod metadata;
 mod target;
 
 use target::{PricingTarget, pricing_target_for_route};
@@ -52,6 +54,7 @@ pub struct PricingCatalog<R> {
     catalog_key: String,
     refresh_interval: Duration,
     fallback_snapshot: PricingCatalogSnapshot,
+    metadata_snapshot: Arc<tokio::sync::Mutex<Option<Arc<PricingCatalogSnapshot>>>>,
 }
 
 impl<R> PricingCatalog<R>
@@ -82,6 +85,7 @@ where
             catalog_key,
             refresh_interval,
             fallback_snapshot: load_vendored_fallback_snapshot(),
+            metadata_snapshot: Default::default(),
         }
     }
 
@@ -100,6 +104,7 @@ where
             catalog_key,
             refresh_interval,
             fallback_snapshot,
+            metadata_snapshot: Default::default(),
         }
     }
 
@@ -152,7 +157,7 @@ where
         let response = request.send().await.map_err(|error| {
             GatewayError::Internal(format!("pricing catalog refresh request failed: {error}"))
         })?;
-        match response.status() {
+        let result = match response.status() {
             StatusCode::NOT_MODIFIED => Ok(()),
             StatusCode::OK => {
                 let expected_fetched_at = current.as_ref().map(|cache| cache.fetched_at);
@@ -198,7 +203,11 @@ where
                 "pricing catalog refresh failed with HTTP {}",
                 status.as_u16()
             ))),
+        };
+        if result.is_ok() {
+            *self.metadata_snapshot.lock().await = None;
         }
+        result
     }
 
     async fn confirm_superseding_cache_write(
@@ -264,7 +273,13 @@ where
 
     async fn sync_latest_snapshot_with_retry(&self) -> Result<(), GatewayError> {
         for attempt in 1..=MAX_PRICING_SYNC_ATTEMPTS {
-            let snapshot = self.load_snapshot_from_store_or_fallback().await?;
+            // Re-read on each reconciliation attempt, including changes from other replicas.
+            let snapshot = {
+                let mut cached = self.metadata_snapshot.lock().await;
+                let snapshot = Arc::new(self.load_snapshot_from_store_or_fallback().await?);
+                *cached = Some(Arc::clone(&snapshot));
+                snapshot
+            };
             match self.sync_model_pricing_snapshot(&snapshot).await {
                 Err(GatewayError::Store(StoreError::PricingSyncConflict))
                     if attempt < MAX_PRICING_SYNC_ATTEMPTS =>
@@ -282,17 +297,42 @@ where
         unreachable!("pricing sync attempts always return on their final iteration")
     }
 
-    async fn load_snapshot_from_store_or_fallback(
+    /// Share the parsed discovery catalog until the next refresh cycle.
+    pub(crate) async fn metadata_snapshot(
         &self,
-    ) -> Result<PricingCatalogSnapshot, GatewayError> {
-        Ok(self
-            .load_stored_snapshot()
-            .await?
-            .unwrap_or_else(|| self.fallback_snapshot.clone()))
+    ) -> Result<Arc<PricingCatalogSnapshot>, GatewayError> {
+        let mut cached = self.metadata_snapshot.lock().await;
+        if let Some(snapshot) = cached.as_ref() {
+            return Ok(Arc::clone(snapshot));
+        }
+        let snapshot = Arc::new(self.load_snapshot_from_store_or_fallback().await?);
+        *cached = Some(Arc::clone(&snapshot));
+        Ok(snapshot)
     }
 
-    async fn load_stored_snapshot(&self) -> Result<Option<PricingCatalogSnapshot>, GatewayError> {
-        let Some(cache) = self.load_stored_cache().await? else {
+    pub(crate) async fn load_snapshot_from_store_or_fallback(
+        &self,
+    ) -> Result<PricingCatalogSnapshot, GatewayError> {
+        if let Some(snapshot) = self.load_stored_snapshot(&self.catalog_key).await? {
+            return Ok(snapshot);
+        }
+        // Read the old projection during an offline upgrade, but never reuse its
+        // ETag for v3 refreshes or write a v2 document under the v3 key.
+        if self.catalog_key == PRICING_CATALOG_CACHE_KEY
+            && let Some(snapshot) = self
+                .load_stored_snapshot(PREVIOUS_PRICING_CATALOG_CACHE_KEY)
+                .await?
+        {
+            return Ok(snapshot);
+        }
+        Ok(self.fallback_snapshot.clone())
+    }
+
+    async fn load_stored_snapshot(
+        &self,
+        catalog_key: &str,
+    ) -> Result<Option<PricingCatalogSnapshot>, GatewayError> {
+        let Some(cache) = self.repo.get_pricing_catalog_cache(catalog_key).await? else {
             return Ok(None);
         };
 
@@ -307,9 +347,9 @@ where
             })),
             Err(error) => {
                 warn!(
-                    catalog_key = %self.catalog_key,
+                    catalog_key = %catalog_key,
                     error = %error,
-                    "stored pricing catalog cache is invalid; falling back to vendored snapshot"
+                    "stored pricing catalog cache is invalid; trying fallback snapshot"
                 );
                 Ok(None)
             }
@@ -637,6 +677,7 @@ fn project_models_dev_snapshot(
                     display_name: model.name.clone(),
                     release_date: model.release_date.clone(),
                     last_updated: model.last_updated.clone(),
+                    metadata: model.metadata.clone(),
                     cost: PricingCatalogCostDocument {
                         input: project_models_dev_cost(model.cost.input.as_ref())?,
                         output: project_models_dev_cost(model.cost.output.as_ref())?,
@@ -644,6 +685,7 @@ fn project_models_dev_snapshot(
                         cache_write: project_models_dev_cost(model.cost.cache_write.as_ref())?,
                         input_audio: project_models_dev_cost(model.cost.input_audio.as_ref())?,
                         output_audio: project_models_dev_cost(model.cost.output_audio.as_ref())?,
+                        conditions: model.cost.conditions.clone(),
                     },
                     limit: PricingCatalogLimitDocument {
                         context: model.limit.context,
@@ -752,6 +794,8 @@ pub struct PricingCatalogModelDocument {
     pub display_name: String,
     pub release_date: String,
     pub last_updated: String,
+    #[serde(default)]
+    pub metadata: metadata::CatalogModelMetadata,
     pub cost: PricingCatalogCostDocument,
     pub limit: PricingCatalogLimitDocument,
     pub modalities: PricingCatalogModalitiesDocument,
@@ -759,6 +803,9 @@ pub struct PricingCatalogModelDocument {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PricingCatalogCostDocument {
+    /// Source-shaped conditional rates, in USD per million tokens; informational only.
+    #[serde(default)]
+    pub conditions: BTreeMap<String, serde_json::Value>,
     pub input: Option<String>,
     pub output: Option<String>,
     pub cache_read: Option<String>,
@@ -789,6 +836,8 @@ struct ModelsDevProviderDocument {
 
 #[derive(Debug, Clone, Deserialize)]
 struct ModelsDevModelDocument {
+    #[serde(flatten)]
+    metadata: metadata::CatalogModelMetadata,
     #[serde(default)]
     id: String,
     name: String,
@@ -806,6 +855,8 @@ struct ModelsDevModelDocument {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 struct ModelsDevCostDocument {
+    #[serde(flatten)]
+    conditions: BTreeMap<String, serde_json::Value>,
     input: Option<Number>,
     output: Option<Number>,
     cache_read: Option<Number>,
