@@ -1,0 +1,9 @@
+*.md linguist-documentation
+
+# Changelogs are append-mostly; auto-merge by unioning both sides.
+CHANGELOG.md merge=union
+
+# Generated artifacts
+crates/gateway/openapi/admin-api.json linguist-generated=true
+crates/gateway-service/data/model_metadata_supplement.json linguist-generated=true
+crates/gateway-service/data/pricing_catalog_fallback.json linguist-generated=true
