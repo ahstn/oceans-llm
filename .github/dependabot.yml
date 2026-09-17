@@ -11,6 +11,9 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: bun
     open-pull-requests-limit: 10
@@ -25,6 +28,9 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
     groups:
       security-dev-tools:
         applies-to: security-updates
@@ -48,3 +54,8 @@ updates:
     schedule:
       interval: cron
       cronjob: '0 8 * * 1,3'
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
