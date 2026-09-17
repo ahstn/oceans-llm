@@ -1,7 +1,44 @@
+# $schema=https://www.schemastore.org/dependabot-2.0.json
 version: 2
 updates:
   - package-ecosystem: cargo
+    open-pull-requests-limit: 10
     directory: /
     schedule:
       interval: daily
-    auto-merge: true
+
+  - package-ecosystem: bun
+    directories:
+      - docs/
+      - crates/admin-ui/web/
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 5
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      security-dev-tools:
+        applies-to: security-updates
+        patterns:
+          - 'oxlint*'
+          - 'oxfmt*'
+          - 'vitest*'
+          - '@playwright/*'
+          - '@testing-library/*'
+          - 'knip*'
+          - 'husky*'
+          - '@types/*'
+          - 'typescript'
+          - '@typescript/typescript-*'
+          - 'eslint*'
+
+  - package-ecosystem: docker
+    open-pull-requests-limit: 1
+    directories:
+      - /
+    schedule:
+      interval: weekly
