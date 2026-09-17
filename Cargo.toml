@@ -41,7 +41,7 @@ futures-core = "0.3"
 futures-util = "0.3"
 http = "1"
 http-body = "1"
-itertools = "0.14"
+itertools = "0.15"
 lettre = { version = "0.11", default-features = false, features = [
   "builder",
   "hostname",
