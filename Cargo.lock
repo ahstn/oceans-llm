@@ -1822,7 +1822,7 @@ dependencies = [
  "gateway-mcp",
  "itertools 0.14.0",
  "percent-encoding",
- "rand 0.8.8",
+ "rand 0.10.2",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
