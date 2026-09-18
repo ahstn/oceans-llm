@@ -36,7 +36,7 @@ base64 = "0.23"
 bytes = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
-cron = "0.15"
+cron = "0.17"
 futures-core = "0.3"
 futures-util = "0.3"
 http = "1"
