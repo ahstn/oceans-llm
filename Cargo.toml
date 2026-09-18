@@ -24,7 +24,7 @@ gateway-providers = { path = "crates/gateway-providers" }
 gateway-service = { path = "crates/gateway-service" }
 gateway-store = { path = "crates/gateway-store" }
 anyhow = "1"
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 argon2 = "0.5"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
