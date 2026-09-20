@@ -41,7 +41,7 @@ impl VertexProvider {
                 &request.context,
             )
             .await
-            .and_then(|value| parse_vertex_state(&value));
+            .and_then(|value| self.parse_vertex_state(&value));
         match result {
             Ok(state) => ProviderBatchSubmission::Submitted(state),
             Err(error) if submission_is_unknown(&error) => {
@@ -193,7 +193,7 @@ impl VertexProvider {
                 .find(|job| {
                     job.get("displayName").and_then(Value::as_str) == Some(display_name.as_str())
                 })
-                .and_then(|job| parse_vertex_state(job).ok())
+                .and_then(|job| self.parse_vertex_state(job).ok())
             {
                 return Some(state);
             }
@@ -210,7 +210,7 @@ impl VertexProvider {
         provider_batch_id: &str,
         context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
-        parse_vertex_state(&self.load_vertex_batch(provider_batch_id, context).await?)
+        self.parse_vertex_state(&self.load_vertex_batch(provider_batch_id, context).await?)
     }
 
     pub(super) async fn cancel_batch_impl(
@@ -218,7 +218,7 @@ impl VertexProvider {
         provider_batch_id: &str,
         context: &ProviderRequestContext,
     ) -> Result<ProviderBatchState, ProviderError> {
-        let url = format!("{}:cancel", self.vertex_resource_url(provider_batch_id));
+        let url = format!("{}:cancel", self.vertex_resource_url(provider_batch_id)?);
         self.vertex_batch_json(reqwest::Method::POST, &url, Some(json!({})), context)
             .await?;
         self.inspect_batch_impl(provider_batch_id, context).await
@@ -318,7 +318,7 @@ impl VertexProvider {
                 }
             }
             page = self
-                .authenticated_json(reqwest::Method::GET, url.as_str(), None, context)
+                .authenticated_json(reqwest::Method::GET, url, None, context)
                 .await?;
         }
         Ok(json!({"rows": rows}))
@@ -478,13 +478,9 @@ impl VertexProvider {
         provider_batch_id: &str,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        self.vertex_batch_json(
-            reqwest::Method::GET,
-            &self.vertex_resource_url(provider_batch_id),
-            None,
-            context,
-        )
-        .await
+        let url = self.vertex_resource_url(provider_batch_id)?;
+        self.vertex_batch_json(reqwest::Method::GET, url.as_str(), None, context)
+            .await
     }
 
     async fn vertex_batch_json(
@@ -494,6 +490,7 @@ impl VertexProvider {
         body: Option<Value>,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
+        let url = self.trusted_vertex_url(url)?;
         self.authenticated_json(method, url, body, context).await
     }
 
@@ -504,19 +501,17 @@ impl VertexProvider {
         body: Option<Value>,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        self.authenticated_json(
-            method,
-            &format!("https://bigquery.googleapis.com/bigquery/v2/{path}"),
-            body,
-            context,
-        )
-        .await
+        let url = url::Url::parse(&format!(
+            "https://bigquery.googleapis.com/bigquery/v2/{path}"
+        ))
+        .map_err(|error| ProviderError::Transport(error.to_string()))?;
+        self.authenticated_json(method, url, body, context).await
     }
 
     async fn authenticated_json(
         &self,
         method: reqwest::Method,
-        url: &str,
+        url: url::Url,
         body: Option<Value>,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
@@ -552,13 +547,62 @@ impl VertexProvider {
         )
     }
 
-    fn vertex_resource_url(&self, provider_batch_id: &str) -> String {
-        if provider_batch_id.starts_with("http://") || provider_batch_id.starts_with("https://") {
+    fn parse_vertex_state(&self, value: &Value) -> Result<ProviderBatchState, ProviderError> {
+        let mut state = parse_vertex_state(value)?;
+        let resource_url = self.vertex_resource_url(&state.provider_batch_id)?;
+        let job_id = resource_url
+            .path_segments()
+            .and_then(|mut segments| segments.next_back())
+            .ok_or_else(invalid_vertex_resource_name)?;
+        state.provider_batch_id = format!(
+            "projects/{}/locations/{}/batchPredictionJobs/{job_id}",
+            self.config.project_id, self.config.location
+        );
+        Ok(state)
+    }
+
+    fn trusted_vertex_url(&self, raw_url: &str) -> Result<url::Url, ProviderError> {
+        let url = url::Url::parse(raw_url)
+            .map_err(|error| ProviderError::Transport(error.to_string()))?;
+        let configured_url = url::Url::parse(&self.batch_jobs_url())
+            .map_err(|error| ProviderError::Transport(error.to_string()))?;
+        if url.origin() != configured_url.origin()
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            return Err(ProviderError::Transport(
+                "refusing authenticated Vertex request outside the configured API origin"
+                    .to_string(),
+            ));
+        }
+        Ok(url)
+    }
+
+    fn vertex_resource_url(&self, provider_batch_id: &str) -> Result<url::Url, ProviderError> {
+        let candidate = if url::Url::parse(provider_batch_id).is_ok() {
             provider_batch_id.to_string()
         } else {
             format!("{}/v1/{provider_batch_id}", api_base(&self.config.api_host))
+        };
+        let url = self.trusted_vertex_url(&candidate)?;
+        let collection = url::Url::parse(&self.batch_jobs_url())
+            .map_err(|error| ProviderError::Transport(error.to_string()))?;
+        let resource_prefix = format!("{}/", collection.path().trim_end_matches('/'));
+        let job_id = url
+            .path()
+            .strip_prefix(&resource_prefix)
+            .filter(|job_id| !job_id.is_empty() && !job_id.contains('/') && !job_id.contains('%'));
+        if job_id.is_none() || url.query().is_some() || url.fragment().is_some() {
+            return Err(invalid_vertex_resource_name());
         }
+        Ok(url)
     }
+}
+
+fn invalid_vertex_resource_name() -> ProviderError {
+    ProviderError::Transport(
+        "Vertex batch response contained an invalid job resource name".to_string(),
+    )
 }
 
 struct VertexBatchPlan {
@@ -776,9 +820,27 @@ mod tests {
     use serde_json::{Map, json};
 
     use super::{
-        parse_bigquery_results, parse_bigquery_table, parse_vertex_state, submission_is_unknown,
-        table_already_exists, validate_bigquery_identifier, validate_bigquery_project,
+        VertexProvider, parse_bigquery_results, parse_bigquery_table, parse_vertex_state,
+        submission_is_unknown, table_already_exists, validate_bigquery_identifier,
+        validate_bigquery_project,
     };
+    use crate::vertex::{VertexAuthConfig, VertexProviderConfig};
+
+    fn vertex_provider(api_host: &str) -> VertexProvider {
+        VertexProvider::new(VertexProviderConfig {
+            provider_key: "vertex".to_string(),
+            project_id: "project".to_string(),
+            location: "us-central1".to_string(),
+            api_host: api_host.to_string(),
+            auth: VertexAuthConfig::Bearer {
+                token: "test-token".to_string(),
+            },
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 5_000,
+            batch: None,
+        })
+        .expect("provider")
+    }
 
     #[test]
     fn vertex_submission_certainty_changes_at_the_job_create_boundary() {
@@ -812,6 +874,79 @@ mod tests {
         assert_eq!(state.request_count, 10);
         assert_eq!(state.completed_count, 9);
         assert!(state.completed_at.is_some());
+    }
+
+    #[test]
+    fn vertex_batch_resource_url_accepts_configured_origin_only() {
+        let provider = vertex_provider("http://vertex.test:8080");
+        let resource = "projects/project/locations/us-central1/batchPredictionJobs/123";
+        let absolute = format!("http://vertex.test:8080/v1/{resource}");
+
+        assert_eq!(
+            provider
+                .vertex_resource_url(resource)
+                .expect("relative URL")
+                .as_str(),
+            absolute
+        );
+        assert_eq!(
+            provider
+                .vertex_resource_url(&absolute)
+                .expect("same-origin absolute URL")
+                .as_str(),
+            absolute
+        );
+    }
+
+    #[test]
+    fn vertex_batch_resource_url_rejects_untrusted_and_malformed_destinations() {
+        let provider = vertex_provider("http://vertex.test:8080");
+
+        for resource in [
+            "http://attacker.example/collect",
+            "https://attacker.example/collect",
+            "HTTPS://attacker.example/collect",
+            "http://vertex.test:8080@attacker.example/collect",
+            "http://vertex.test.attacker.example:8080/collect",
+            "http://vertex.test:9090/collect",
+            "http://user@vertex.test:8080/v1/projects/project/locations/us-central1/batchPredictionJobs/123",
+            "http://vertex.test:8080/v1/projects/other/locations/us-central1/batchPredictionJobs/123",
+            "http://vertex.test:8080/v1/projects/project/locations/europe-west1/batchPredictionJobs/123",
+            "//attacker.example/collect",
+            "projects/project/locations/us-central1/batchPredictionJobs/123?target=attacker",
+            "projects/project/locations/us-central1/batchPredictionJobs/123#attacker",
+            "projects/project/locations/us-central1/batchPredictionJobs/../other",
+            "projects/project/locations/us-central1/batchPredictionJobs/%2Fcollect",
+        ] {
+            assert!(
+                provider.vertex_resource_url(resource).is_err(),
+                "accepted {resource}"
+            );
+        }
+    }
+
+    #[test]
+    fn vertex_state_canonicalizes_trusted_and_rejects_off_origin_resource_names() {
+        let provider = vertex_provider("http://vertex.test:8080");
+        let state = provider
+            .parse_vertex_state(&json!({
+                "name": "http://vertex.test:8080/v1/projects/project/locations/us-central1/batchPredictionJobs/123",
+                "state": "JOB_STATE_RUNNING"
+            }))
+            .expect("same-origin resource name");
+        assert_eq!(
+            state.provider_batch_id,
+            "projects/project/locations/us-central1/batchPredictionJobs/123"
+        );
+
+        let error = provider
+            .parse_vertex_state(&json!({
+                "name": "https://attacker.example/collect",
+                "state": "JOB_STATE_RUNNING"
+            }))
+            .expect_err("off-origin resource name");
+
+        assert!(matches!(error, ProviderError::Transport(_)));
     }
 
     #[test]
