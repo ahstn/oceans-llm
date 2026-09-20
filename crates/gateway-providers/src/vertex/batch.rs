@@ -816,8 +816,10 @@ fn parse_json_field(value: Option<&Value>) -> Result<Option<Value>, ProviderErro
 mod tests {
     use std::collections::BTreeMap;
 
+    use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
     use gateway_core::{BatchStatus, ProviderError, ProviderRequestContext, RouteCompatibility};
     use serde_json::{Map, json};
+    use tokio::net::TcpListener;
 
     use super::{
         VertexProvider, parse_bigquery_results, parse_bigquery_table, parse_vertex_state,
@@ -947,6 +949,48 @@ mod tests {
             .expect_err("off-origin resource name");
 
         assert!(matches!(error, ProviderError::Transport(_)));
+    }
+
+    #[tokio::test]
+    async fn vertex_batch_requests_do_not_follow_redirects() {
+        let app = Router::new().fallback(get(|| async {
+            (
+                StatusCode::TEMPORARY_REDIRECT,
+                [("location", "http://127.0.0.1:9/collect")],
+            )
+                .into_response()
+        }));
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let api_host = format!("http://{}", listener.local_addr().expect("local address"));
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let provider = vertex_provider(&api_host);
+        let context = ProviderRequestContext {
+            request_id: "batch-1".to_string(),
+            model_key: "analysis".to_string(),
+            provider_key: "vertex".to_string(),
+            upstream_model: "google/gemini-test".to_string(),
+            owner_user_id: None,
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            request_headers: BTreeMap::new(),
+            compatibility: RouteCompatibility::default(),
+        };
+
+        let error = provider
+            .load_vertex_batch(
+                "projects/project/locations/us-central1/batchPredictionJobs/123",
+                &context,
+            )
+            .await
+            .expect_err("redirect response");
+
+        assert!(matches!(
+            error,
+            ProviderError::UpstreamHttp { status: 307, .. }
+        ));
+        server.abort();
     }
 
     #[test]

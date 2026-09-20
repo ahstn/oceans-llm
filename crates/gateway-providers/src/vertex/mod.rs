@@ -90,7 +90,8 @@ pub struct VertexProvider {
 
 impl VertexProvider {
     pub fn new(config: VertexProviderConfig) -> Result<Self, ProviderError> {
-        let client = crate::http::provider_http_client(config.request_timeout_ms)?;
+        let client =
+            crate::http::provider_http_client_without_redirects(config.request_timeout_ms)?;
 
         let source: Arc<dyn AccessTokenSource> = match &config.auth {
             VertexAuthConfig::Adc => {
