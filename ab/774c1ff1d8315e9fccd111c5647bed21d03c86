@@ -1,0 +1,100 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  h_2f452a9c375069 56
+.agents/skills/verify-oceans-admin/features/models.md
+  h_2f452a9c375069 3,9-10,23,27-32,39
+.agents/skills/verify-oceans-admin/scripts/drive-models.mjs
+  h_2f452a9c375069 15,71,94-95,97,101,103,106-121,123,133-134,136,140,143,147,149,157,162,180,184,188
+crates/admin-ui/web/src/generated/admin-api.ts
+  h_2f452a9c375069 583-598,1586-1597,1630,3021-3026,3584-3586,5269-5287
+crates/admin-ui/web/src/routes/-model-benchmarks.tsx
+  h_2f452a9c375069 1-91
+crates/admin-ui/web/src/routes/models.tsx
+  h_2f452a9c375069 60,85,113,125-129,327-345,433,466-470,576-580,590-603,843,894,1024-1025
+crates/admin-ui/web/src/server/admin-preview-data.server.ts
+  h_2f452a9c375069 36-48,75,105
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  h_2f452a9c375069 5,136-148,175,270,524-585
+crates/gateway-core/src/domain.rs
+  h_2f452a9c375069 2197-2225
+crates/gateway-core/src/lib.rs
+  h_2f452a9c375069 50-56,70-75,139-145
+crates/gateway-core/src/traits.rs
+  h_2f452a9c375069 24-36,1184-1210
+crates/gateway-service/src/admin_models.rs
+  h_2f452a9c375069 12-14,73,85-91,217-228,387-389,641-643,738,915-953,1200-1211,1280-1289
+crates/gateway-service/src/benchmark_catalog.rs
+  h_2f452a9c375069 1-309
+crates/gateway-service/src/benchmark_catalog/tests.rs
+  h_2f452a9c375069 1-319
+crates/gateway-service/src/lib.rs
+  h_2f452a9c375069 6,51-53
+crates/gateway-service/src/route_planner.rs
+  h_2f452a9c375069 6,17,19
+crates/gateway-service/src/service.rs
+  h_2f452a9c375069 7-9,23-26,103,181,203-211,729-744
+crates/gateway-store/migrations/V52__model_benchmark_catalog.sql
+  h_2f452a9c375069 1-37
+crates/gateway-store/migrations/postgres/V52__model_benchmark_catalog.sql
+  h_2f452a9c375069 1-37
+crates/gateway-store/src/benchmark_catalog.rs
+  h_2f452a9c375069 1-59
+crates/gateway-store/src/benchmark_catalog_tests.rs
+  h_2f452a9c375069 1-119
+crates/gateway-store/src/lib.rs
+  h_2f452a9c375069 16,45-47
+crates/gateway-store/src/libsql_store/benchmark_catalog.rs
+  h_2f452a9c375069 1-277
+crates/gateway-store/src/libsql_store/mod.rs
+  h_2f452a9c375069 4,35-42,55-79
+crates/gateway-store/src/migration_registry.rs
+  h_2f452a9c375069 285-291
+crates/gateway-store/src/postgres_store/benchmark_catalog.rs
+  h_2f452a9c375069 1-251
+crates/gateway-store/src/postgres_store/mod.rs
+  h_2f452a9c375069 4,33-40,53-77
+crates/gateway-store/src/store.rs
+  h_2f452a9c375069 6-7,49,1189-1227
+crates/gateway/openapi/admin-api.json
+  h_2f452a9c375069 2099-2123,5846-5889,6021,6041-6046,11748-11770,14083-14093
+crates/gateway/src/config/benchmarks.rs
+  h_2f452a9c375069 1-44
+crates/gateway/src/config/mod.rs
+  h_2f452a9c375069 11,40,100-101,142,191-194
+crates/gateway/src/config/models.rs
+  h_2f452a9c375069 70-71,92-107
+crates/gateway/src/config/seeding.rs
+  h_2f452a9c375069 357-372
+crates/gateway/src/config/tests/benchmarks.rs
+  h_2f452a9c375069 1-90
+crates/gateway/src/config/tests/mod.rs
+  h_2f452a9c375069 30
+crates/gateway/src/http/admin_contract.rs
+  h_2f452a9c375069 369,373-385,454-458,1805,1987
+crates/gateway/src/http/handlers.rs
+  h_2f452a9c375069 1495-1496
+crates/gateway/src/http/inference_guardrails.rs
+  h_2f452a9c375069 137,148,151,157,162,169-173
+crates/gateway/src/http/mcp_gateway/aggregate.rs
+  h_2f452a9c375069 150,156,165,240,249,251,255,259,263,271,275-276,286,294,298,300,308,312,316,320,323,327
+crates/gateway/src/http/mod.rs
+  h_2f452a9c375069 100-103
+crates/gateway/src/http/models.rs
+  h_2f452a9c375069 14-15,17-18,114-132,184-198
+crates/gateway/src/main.rs
+  h_2f452a9c375069 19-20,151,167-170,228-230,253,567-582,662-675
+docs/adr/2026-09-21-artificial-analysis-benchmark-catalogue.md
+  h_2f452a9c375069 1-74
+docs/configuration/configuration-reference.md
+  h_2f452a9c375069 30,83-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab774c1ff1d8315e9fccd111c5647bed21d03c86",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
