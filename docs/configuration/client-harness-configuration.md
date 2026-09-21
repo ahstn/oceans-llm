@@ -34,7 +34,9 @@ For a gateway hosted at `https://api.oceans-llm.com`, generated client configs u
 | Pi | `anthropic-messages` | `https://api.oceans-llm.com` |
 | Pi | `openai-completions` | `https://api.oceans-llm.com/v1` |
 
-OpenCode and Pi can include many selected models in one generated file. When the selection mixes Anthropic Messages and OpenAI-compatible models, Oceans emits a provider entry for each client adapter. Claude Code includes only selected models that use Anthropic Messages. The Claude Code tab skips other selections instead of creating invalid overrides. Codex snippets require one Responses-capable model.
+Codex snippets require one Responses-capable model.
+
+Decisions-only models do not receive generated OpenCode, Pi, Claude Code, or Codex snippets. These clients use chat-shaped APIs and cannot call `/v1/decisions`.
 
 ## OpenCode
 
