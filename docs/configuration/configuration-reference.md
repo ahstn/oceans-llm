@@ -831,7 +831,7 @@ Important fields:
 - optional `display.label`
 - optional `display.icon_key`
 
-The base URL must be an HTTP or HTTPS URL with a host and no query or fragment. Production should use HTTPS. See [TypeSafe](../providers/typesafe.md) for a full provider and route example.
+The base URL must be a bare origin or end in `/v1`, with no query or fragment. It must use HTTPS, except that HTTP is allowed for loopback addresses during local development. See [TypeSafe](../providers/typesafe.md) for a full provider and route example.
 
 ### `anthropic_compat`
 

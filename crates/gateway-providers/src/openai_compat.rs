@@ -822,7 +822,7 @@ impl ProviderClient for OpenAiCompatProvider {
         request: &CoreDecisionsRequest,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        if !route_selects_decisions_api(context) && !self.config.decisions_url.is_some() {
+        if !route_selects_decisions_api(context) && self.config.decisions_url.is_none() {
             return Err(ProviderError::NotImplemented(format!(
                 "{} does not support decisions for this route",
                 self.provider_type()

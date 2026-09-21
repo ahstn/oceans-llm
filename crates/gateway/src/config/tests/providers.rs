@@ -755,6 +755,53 @@ models:
 }
 
 #[test]
+fn validates_typesafe_provider_base_url() {
+    for base_url in [
+        "https://api.typesafe.ai",
+        "https://api.typesafe.ai/v1/",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080/v1",
+        "http://[::1]:8080",
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n  - id: typesafe\n    type: typesafe\n    base_url: '{base_url}'\n    pricing_provider_id: openrouter\n"
+            ),
+        );
+        GatewayConfig::from_path(&config_path)
+            .unwrap_or_else(|error| panic!("rejected valid TypeSafe URL {base_url}: {error:#}"));
+    }
+
+    for (base_url, expected) in [
+        (
+            "http://api.typesafe.ai",
+            "base_url must use https unless the host is loopback",
+        ),
+        (
+            "https://api.typesafe.ai/custom",
+            "base_url path must be empty, `/`, or `/v1`",
+        ),
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n  - id: typesafe\n    type: typesafe\n    base_url: '{base_url}'\n    pricing_provider_id: openrouter\n"
+            ),
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "unexpected error for {base_url}: {error:#}"
+        );
+    }
+}
+
+#[test]
 fn rejects_typesafe_provider_without_pricing_provider_id() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");

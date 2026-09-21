@@ -78,6 +78,13 @@ impl TypeSafeProvider {
 /// `https://api.typesafe.ai/v1` configure correctly.
 fn systemone_url_for_base(base_url: &str) -> Result<String, ProviderError> {
     let (trimmed, _) = base_root_and_host(base_url)?;
+    let parsed = url::Url::parse(&trimmed)
+        .map_err(|error| ProviderError::Transport(format!("invalid base_url: {error}")))?;
+    if !matches!(parsed.path(), "" | "/" | "/v1" | "/v1/") {
+        return Err(ProviderError::InvalidRequest(
+            "typesafe base_url path must be empty, `/`, or `/v1`".to_string(),
+        ));
+    }
     let suffix = if trimmed.ends_with("/v1") {
         "systemone"
     } else {
@@ -199,6 +206,7 @@ mod tests {
             systemone_url_for_base("https://api.typesafe.ai/v1/").expect("versioned root"),
             "https://api.typesafe.ai/v1/systemone"
         );
+        assert!(systemone_url_for_base("https://api.typesafe.ai/custom").is_err());
     }
 
     #[test]

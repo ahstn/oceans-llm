@@ -8,7 +8,7 @@ Jev does not generate chat text. Do not send it to Chat Completions or Responses
 
 ## Native TypeSafe Provider
 
-Use `type: typesafe` to call TypeSafe directly. The adapter sends requests to `{base_url}/v1/systemone`. When `base_url` already ends in `/v1`, it appends only `/systemone`.
+Use `type: typesafe` to call TypeSafe directly. The adapter sends requests to `{base_url}/v1/systemone`. When `base_url` already ends in `/v1`, it appends only `/systemone`. The base URL must be a bare origin or end in `/v1`. It must use HTTPS, except that HTTP is allowed for loopback addresses during local development.
 
 ```yaml
 providers:

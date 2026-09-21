@@ -7,7 +7,11 @@
 
 use std::collections::BTreeMap;
 
-use gateway_core::{CoreDecisionsRequest, ProviderError, ProviderRequestContext};
+use gateway_core::{
+    CoreDecisionQuestion, CoreDecisionsRequest, DecisionAnswer, DecisionsResponse, ProviderError,
+    ProviderRequestContext,
+};
+use serde::Deserialize;
 use serde_json::Value;
 
 /// Serialize a Decisions request, pin the upstream model, and merge route
@@ -70,29 +74,71 @@ pub(crate) fn base_root_and_host(
     Ok((trimmed.to_string(), parsed.host_str().map(str::to_string)))
 }
 
-/// Reject alpha shape drift loudly: every requested question needs an answer
-/// whose `type` matches the question discriminant.
+/// Reject alpha shape drift loudly: the response must satisfy the public
+/// contract, and every requested question needs a matching valid answer.
 pub(crate) fn validate_decisions_response(
     value: &Value,
     request: &CoreDecisionsRequest,
 ) -> Result<(), ProviderError> {
-    let Some(answers) = value.get("answers").and_then(Value::as_object) else {
-        return Err(ProviderError::Transport(
-            "decisions response is missing the `answers` object".to_string(),
-        ));
-    };
+    let response = DecisionsResponse::deserialize(value).map_err(|error| {
+        ProviderError::Transport(format!("invalid decisions response: {error}"))
+    })?;
+
     for (id, question) in &request.questions {
-        let Some(answer) = answers.get(id) else {
+        let Some(answer) = response.answers.get(id) else {
             return Err(ProviderError::Transport(format!(
                 "decisions response is missing answer `{id}`"
             )));
         };
         let expected = question.answer_type();
-        let actual = answer.get("type").and_then(Value::as_str).unwrap_or("");
-        if actual != expected {
+        let actual = match answer {
+            DecisionAnswer::Noul { .. } => "noul",
+            DecisionAnswer::Choice { .. } => "choice",
+            DecisionAnswer::Score { .. } => "score",
+        };
+        if !matches!(
+            (question, answer),
+            (
+                CoreDecisionQuestion::Noul { .. },
+                DecisionAnswer::Noul { .. }
+            ) | (
+                CoreDecisionQuestion::Choice { .. },
+                DecisionAnswer::Choice { .. }
+            ) | (
+                CoreDecisionQuestion::Score { .. },
+                DecisionAnswer::Score { .. }
+            )
+        ) {
             return Err(ProviderError::Transport(format!(
                 "decisions answer `{id}` has type `{actual}`, expected `{expected}`"
             )));
+        }
+
+        match (question, answer) {
+            (CoreDecisionQuestion::Noul { .. }, DecisionAnswer::Noul { noul, .. })
+                if !(0.0..=1.0).contains(noul) =>
+            {
+                return Err(ProviderError::Transport(format!(
+                    "decisions answer `{id}` has noul probability {noul}, expected 0..=1"
+                )));
+            }
+            (
+                CoreDecisionQuestion::Choice { criteria, .. },
+                DecisionAnswer::Choice { choice, .. },
+            ) if !criteria.contains_key(choice) => {
+                return Err(ProviderError::Transport(format!(
+                    "decisions answer `{id}` selected unknown choice `{choice}`"
+                )));
+            }
+            (CoreDecisionQuestion::Score { criteria, .. }, DecisionAnswer::Score { score, .. })
+                if !(0.0..=criteria.len().saturating_sub(1) as f64).contains(score) =>
+            {
+                return Err(ProviderError::Transport(format!(
+                    "decisions answer `{id}` has score {score}, expected 0..={}",
+                    criteria.len().saturating_sub(1)
+                )));
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -127,23 +173,49 @@ mod tests {
                         criteria: BTreeMap::from([("billing".to_string(), None)]),
                     },
                 ),
+                (
+                    "frustration".to_string(),
+                    CoreDecisionQuestion::Score {
+                        instructions: json!("How frustrated?"),
+                        criteria: vec![json!("Calm"), json!("Angry")],
+                    },
+                ),
             ]),
             extra: BTreeMap::new(),
         };
         let valid = json!({
+            "model": "jev",
             "answers": {
                 "is_urgent": {"type": "noul", "noul": 0.9},
-                "department": {"type": "choice", "choice": "billing"}
+                "department": {"type": "choice", "choice": "billing"},
+                "frustration": {"type": "score", "score": 0.8}
             }
         });
         validate_decisions_response(&valid, &request).expect("valid");
         assert!(validate_decisions_response(&json!({}), &request).is_err());
-        assert!(
-            validate_decisions_response(
-                &json!({"answers": {"is_urgent": {"type": "choice", "choice": "a"}}}),
-                &request
-            )
-            .is_err()
-        );
+
+        let mut wrong_type = valid.clone();
+        wrong_type["answers"]["is_urgent"] = json!({"type": "choice", "choice": "billing"});
+        let mut missing_payload = valid.clone();
+        missing_payload["answers"]["department"]
+            .as_object_mut()
+            .expect("choice answer")
+            .remove("choice");
+        let mut invalid_probability = valid.clone();
+        invalid_probability["answers"]["is_urgent"]["noul"] = json!(1.1);
+        let mut invalid_choice = valid.clone();
+        invalid_choice["answers"]["department"]["choice"] = json!("technical");
+        let mut invalid_score = valid.clone();
+        invalid_score["answers"]["frustration"]["score"] = json!(2.0);
+
+        for invalid in [
+            wrong_type,
+            missing_payload,
+            invalid_probability,
+            invalid_choice,
+            invalid_score,
+        ] {
+            assert!(validate_decisions_response(&invalid, &request).is_err());
+        }
     }
 }

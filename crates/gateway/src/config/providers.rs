@@ -469,15 +469,27 @@ impl TypeSafeProviderConfig {
         }
         let parsed = url::Url::parse(&self.base_url)
             .with_context(|| format!("typesafe provider `{}` base_url is invalid", self.id))?;
-        if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        if parsed.host_str().is_none() {
             bail!(
-                "typesafe provider `{}` base_url must be an HTTP URL with a host",
+                "typesafe provider `{}` base_url must include a host",
+                self.id
+            );
+        }
+        if parsed.scheme() != "https" && !is_loopback_http_url(&parsed) {
+            bail!(
+                "typesafe provider `{}` base_url must use https unless the host is loopback",
                 self.id
             );
         }
         if parsed.query().is_some() || parsed.fragment().is_some() {
             bail!(
                 "typesafe provider `{}` base_url cannot include query parameters or fragments",
+                self.id
+            );
+        }
+        if !matches!(parsed.path(), "" | "/" | "/v1" | "/v1/") {
+            bail!(
+                "typesafe provider `{}` base_url path must be empty, `/`, or `/v1`",
                 self.id
             );
         }
@@ -893,4 +905,16 @@ fn validate_http_url(value: &str, field: &str) -> anyhow::Result<()> {
         bail!("{field} must be an HTTP URL with a host");
     }
     Ok(())
+}
+
+fn is_loopback_http_url(url: &url::Url) -> bool {
+    if url.scheme() != "http" {
+        return false;
+    }
+    match url.host() {
+        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(address)) => address.is_loopback(),
+        Some(url::Host::Ipv6(address)) => address.is_loopback(),
+        None => false,
+    }
 }

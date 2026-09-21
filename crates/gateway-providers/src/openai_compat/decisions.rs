@@ -232,7 +232,7 @@ mod tests {
                     "answers": {
                         "is_urgent": {"type": "noul", "noul": 0.95},
                         "department": {"type": "choice", "choice": "billing"},
-                        "frustration": {"type": "score", "score": 1.2}
+                        "frustration": {"type": "score", "score": 0.8}
                     },
                     "usage": {"input_tokens": 100, "output_tokens": 60}
                 }))
