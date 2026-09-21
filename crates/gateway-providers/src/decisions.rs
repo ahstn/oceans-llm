@@ -130,16 +130,66 @@ pub(crate) fn validate_decisions_response(
                     "decisions answer `{id}` selected unknown choice `{choice}`"
                 )));
             }
-            (CoreDecisionQuestion::Score { criteria, .. }, DecisionAnswer::Score { score, .. })
-                if !(0.0..=criteria.len().saturating_sub(1) as f64).contains(score) =>
-            {
-                return Err(ProviderError::Transport(format!(
-                    "decisions answer `{id}` has score {score}, expected 0..={}",
-                    criteria.len().saturating_sub(1)
-                )));
+            (
+                CoreDecisionQuestion::Choice { criteria, .. },
+                DecisionAnswer::Choice {
+                    probabilities,
+                    confidence,
+                    ..
+                },
+            ) => {
+                validate_probability_metadata(id, probabilities, *confidence)?;
+                if let Some(choice) = probabilities
+                    .keys()
+                    .find(|choice| !criteria.contains_key(*choice))
+                {
+                    return Err(ProviderError::Transport(format!(
+                        "decisions answer `{id}` reports probability for unknown choice `{choice}`"
+                    )));
+                }
+            }
+            (
+                CoreDecisionQuestion::Score { criteria, .. },
+                DecisionAnswer::Score {
+                    score,
+                    probabilities,
+                    confidence,
+                    ..
+                },
+            ) => {
+                if !(0.0..=criteria.len().saturating_sub(1) as f64).contains(score) {
+                    return Err(ProviderError::Transport(format!(
+                        "decisions answer `{id}` has score {score}, expected 0..={}",
+                        criteria.len().saturating_sub(1)
+                    )));
+                }
+                validate_probability_metadata(id, probabilities, *confidence)?;
             }
             _ => {}
         }
+    }
+    Ok(())
+}
+
+fn validate_probability_metadata(
+    id: &str,
+    probabilities: &BTreeMap<String, f64>,
+    confidence: Option<f64>,
+) -> Result<(), ProviderError> {
+    if let Some((label, probability)) = probabilities
+        .iter()
+        .find(|(_, probability)| !(0.0..=1.0).contains(*probability))
+    {
+        return Err(ProviderError::Transport(format!(
+            "decisions answer `{id}` has probability {probability} for `{label}`, expected 0..=1"
+        )));
+    }
+    if let Some(confidence) = confidence
+        && !(0.0..=1.0).contains(&confidence)
+    {
+        return Err(ProviderError::Transport(format!(
+            "decisions answer `{id}` has confidence {confidence}, expected 0..=1"
+        )));
     }
     Ok(())
 }
@@ -187,8 +237,18 @@ mod tests {
             "model": "jev",
             "answers": {
                 "is_urgent": {"type": "noul", "noul": 0.9},
-                "department": {"type": "choice", "choice": "billing"},
-                "frustration": {"type": "score", "score": 0.8}
+                "department": {
+                    "type": "choice",
+                    "choice": "billing",
+                    "probabilities": {"billing": 1.0},
+                    "confidence": 0.9
+                },
+                "frustration": {
+                    "type": "score",
+                    "score": 0.8,
+                    "probabilities": {"0": 0.2, "1": 0.8},
+                    "confidence": 0.7
+                }
             }
         });
         validate_decisions_response(&valid, &request).expect("valid");
@@ -207,6 +267,18 @@ mod tests {
         invalid_choice["answers"]["department"]["choice"] = json!("technical");
         let mut invalid_score = valid.clone();
         invalid_score["answers"]["frustration"]["score"] = json!(2.0);
+        let mut invalid_choice_probability = valid.clone();
+        invalid_choice_probability["answers"]["department"]["probabilities"]["billing"] =
+            json!(-0.1);
+        let mut unknown_choice_probability = valid.clone();
+        unknown_choice_probability["answers"]["department"]["probabilities"]["technical"] =
+            json!(0.1);
+        let mut invalid_score_probability = valid.clone();
+        invalid_score_probability["answers"]["frustration"]["probabilities"]["1"] = json!(1.1);
+        let mut invalid_choice_confidence = valid.clone();
+        invalid_choice_confidence["answers"]["department"]["confidence"] = json!(2.0);
+        let mut invalid_score_confidence = valid.clone();
+        invalid_score_confidence["answers"]["frustration"]["confidence"] = json!(-0.1);
 
         for invalid in [
             wrong_type,
@@ -214,6 +286,11 @@ mod tests {
             invalid_probability,
             invalid_choice,
             invalid_score,
+            invalid_choice_probability,
+            unknown_choice_probability,
+            invalid_score_probability,
+            invalid_choice_confidence,
+            invalid_score_confidence,
         ] {
             assert!(validate_decisions_response(&invalid, &request).is_err());
         }

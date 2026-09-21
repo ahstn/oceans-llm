@@ -802,6 +802,52 @@ fn validates_typesafe_provider_base_url() {
 }
 
 #[test]
+fn rejects_typesafe_provider_with_unsupported_auth_kind() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: typesafe
+    type: typesafe
+    pricing_provider_id: openrouter
+    auth:
+      kind: x_api_key
+      token: literal.test_typesafe_key
+"#,
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}").contains("auth.kind must be `bearer`"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn rejects_openrouter_provider_with_unsupported_base_path() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v2
+    pricing_provider_id: openrouter
+"#,
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}").contains("OpenRouter base_url path must be `/api/v1`"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
 fn rejects_typesafe_provider_without_pricing_provider_id() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");

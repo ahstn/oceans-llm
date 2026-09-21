@@ -366,6 +366,15 @@ impl OpenAiCompatProviderConfig {
             &self.base_url,
             &format!("openai_compat provider `{}` base_url", self.id),
         )?;
+        let parsed = url::Url::parse(&self.base_url)?;
+        if parsed.host_str() == Some("openrouter.ai")
+            && !matches!(parsed.path(), "/api/v1" | "/api/v1/")
+        {
+            bail!(
+                "openai_compat provider `{}` OpenRouter base_url path must be `/api/v1`",
+                self.id
+            );
+        }
         if self.pricing_provider_id.trim().is_empty() {
             bail!(
                 "openai_compat provider `{}` pricing_provider_id cannot be empty",
@@ -492,6 +501,11 @@ impl TypeSafeProviderConfig {
                 "typesafe provider `{}` base_url path must be empty, `/`, or `/v1`",
                 self.id
             );
+        }
+        if let Some(auth) = &self.auth
+            && auth.kind != "bearer"
+        {
+            bail!("typesafe provider `{}` auth.kind must be `bearer`", self.id);
         }
         if self.pricing_provider_id.trim().is_empty() {
             bail!(
