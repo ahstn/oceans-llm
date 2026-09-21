@@ -13,6 +13,7 @@ mod any_store_mcp_registry;
 mod any_store_mcp_token_overhead;
 mod any_store_provider_user_credentials;
 mod any_store_review_agent;
+mod benchmark_catalog;
 mod budget_batch;
 mod libsql_store;
 mod migrate;
@@ -40,6 +41,9 @@ mod agent_analysis_tests;
 
 #[cfg(test)]
 mod budget_reconciliation_tests;
+
+#[cfg(test)]
+mod benchmark_catalog_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {

@@ -67,6 +67,8 @@ pub struct ModelAllowlistConfig {
 pub struct ModelConfig {
     pub id: String,
     #[serde(default)]
+    pub artificial_analysis_model_id: Option<String>,
+    #[serde(default)]
     pub alias_of: Option<String>,
     #[serde(default)]
     pub max_reasoning_effort: Option<ReasoningEffort>,
@@ -87,6 +89,22 @@ pub(super) fn validate_models(
     provider_by_id: &BTreeMap<String, &ProviderConfig>,
 ) -> anyhow::Result<()> {
     for model in models {
+        if let Some(source_model_id) = model.artificial_analysis_model_id.as_deref() {
+            let trimmed = source_model_id.trim();
+            if trimmed.is_empty() || trimmed.len() != source_model_id.len() {
+                bail!(
+                    "model `{}` artificial_analysis_model_id must be a trimmed UUID",
+                    model.id
+                );
+            }
+            Uuid::parse_str(source_model_id).with_context(|| {
+                format!(
+                    "model `{}` artificial_analysis_model_id must be a UUID",
+                    model.id
+                )
+            })?;
+        }
+
         let has_alias = model.alias_of.is_some();
         let has_routes = !model.routes.is_empty();
 

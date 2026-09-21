@@ -147,13 +147,13 @@ async fn handle_post(
                 Ok(_) => {
                     session_http_error(StatusCode::NOT_FOUND, None, "MCP session was not found")
                 }
-                Err(response) => response,
+                Err(response) => *response,
             }
         }
         McpServerMessage::ToolsList { id } => {
             match validate_request_session(&state, &auth, &headers, &id).await {
                 Ok(_) => list_builtin_tools(id),
-                Err(response) => response,
+                Err(response) => *response,
             }
         }
         McpServerMessage::ToolsCall {
@@ -162,7 +162,7 @@ async fn handle_post(
             arguments,
         } => match validate_request_session(&state, &auth, &headers, &id).await {
             Ok(_) => call_builtin_tool(&state, &auth, id, name, arguments).await,
-            Err(response) => response,
+            Err(response) => *response,
         },
         McpServerMessage::OtherRequest { id, method } => json_rpc_response(
             StatusCode::OK,
@@ -237,7 +237,7 @@ async fn handle_delete(
             }
         }
         Ok(_) => session_http_error(StatusCode::NOT_FOUND, None, "MCP session was not found"),
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 
@@ -246,21 +246,21 @@ async fn validate_request_session(
     auth: &AuthenticatedApiKey,
     headers: &HeaderMap,
     id: &JsonRpcId,
-) -> Result<gateway_core::McpAggregateSessionRecord, Response<Body>> {
+) -> Result<gateway_core::McpAggregateSessionRecord, Box<Response<Body>>> {
     let Some((session_id, token_hash)) = session_identity(headers) else {
-        return Err(session_http_error(
+        return Err(Box::new(session_http_error(
             StatusCode::BAD_REQUEST,
             Some(id.clone()),
             "MCP session id is required",
-        ));
+        )));
     };
     let session = validate_session(state, auth, &token_hash, true, Some(id)).await?;
     if session.session_id != session_id {
-        return Err(session_http_error(
+        return Err(Box::new(session_http_error(
             StatusCode::NOT_FOUND,
             Some(id.clone()),
             "MCP session was not found",
-        ));
+        )));
     }
     match state
         .store
@@ -268,12 +268,12 @@ async fn validate_request_session(
         .await
     {
         Ok(Some(session)) => Ok(session),
-        Ok(None) => Err(session_http_error(
+        Ok(None) => Err(Box::new(session_http_error(
             StatusCode::NOT_FOUND,
             Some(id.clone()),
             "MCP session was not found",
-        )),
-        Err(error) => Err(mcp_error_response(error.into())),
+        ))),
+        Err(error) => Err(Box::new(mcp_error_response(error.into()))),
     }
 }
 
@@ -283,7 +283,7 @@ async fn validate_session(
     token_hash: &str,
     require_initialized: bool,
     request_id: Option<&JsonRpcId>,
-) -> Result<gateway_core::McpAggregateSessionRecord, Response<Body>> {
+) -> Result<gateway_core::McpAggregateSessionRecord, Box<Response<Body>>> {
     let session = match state
         .store
         .get_mcp_aggregate_session_by_token_hash(token_hash)
@@ -291,13 +291,13 @@ async fn validate_session(
     {
         Ok(Some(session)) => session,
         Ok(None) => {
-            return Err(session_http_error(
+            return Err(Box::new(session_http_error(
                 StatusCode::NOT_FOUND,
                 request_id.cloned(),
                 "MCP session was not found",
-            ));
+            )));
         }
-        Err(error) => return Err(mcp_error_response(error.into())),
+        Err(error) => return Err(Box::new(mcp_error_response(error.into()))),
     };
     if session.api_key_id != auth.id
         || session.owner_kind != auth.owner_kind
@@ -305,26 +305,26 @@ async fn validate_session(
         || session.owner_team_id != auth.owner_team_id
         || session.owner_service_account_id != auth.owner_service_account_id
     {
-        return Err(session_http_error(
+        return Err(Box::new(session_http_error(
             StatusCode::NOT_FOUND,
             request_id.cloned(),
             "MCP session was not found",
-        ));
+        )));
     }
     let now = OffsetDateTime::now_utc();
     if session.revoked_at.is_some() || session.expires_at <= now {
-        return Err(session_http_error(
+        return Err(Box::new(session_http_error(
             StatusCode::NOT_FOUND,
             request_id.cloned(),
             "MCP session was not found",
-        ));
+        )));
     }
     if require_initialized && !session.initialized {
-        return Err(session_http_error(
+        return Err(Box::new(session_http_error(
             StatusCode::BAD_REQUEST,
             request_id.cloned(),
             "MCP session has not completed initialization",
-        ));
+        )));
     }
     Ok(session)
 }

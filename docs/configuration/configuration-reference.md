@@ -27,6 +27,7 @@ Unknown top-level, model, user, and user-membership fields are rejected. Correct
 - `permissions`
 - `mcp`
 - `budgets`
+- `benchmark_catalog`
 - `budget_alerts`
 - `request_logging`
 - `agent_analysis`
@@ -78,6 +79,33 @@ models:
       - provider: openai
         upstream_model: gpt-4o-mini
 ```
+
+## Benchmark catalogue
+
+The optional benchmark catalogue adds Artificial Analysis Intelligence Index scores to the internal admin Models page. This integration uses only the official Free V2 endpoint.
+
+```yaml
+benchmark_catalog:
+  artificial_analysis:
+    api_key: env.ARTIFICIAL_ANALYSIS_API_KEY
+
+models:
+  - id: scored-model
+    artificial_analysis_model_id: 36f73aaf-d38a-4b56-a2b3-d04d17186910
+    routes:
+      - provider: openai
+        upstream_model: exact-evaluated-variant
+```
+
+`api_key` is a server-only secret reference. Do not put the resolved key in browser config or model metadata. If `benchmark_catalog.artificial_analysis` is absent, remote refresh is disabled and the Models page shows no score for models without stored data.
+
+`artificial_analysis_model_id` must be the stable UUID from the Artificial Analysis API. The gateway does not match names, slugs, aliases, routes, or OpenRouter IDs. Adding the field is an operator confirmation that the gateway model represents the evaluated variant. Add separate bindings to aliases only when each public gateway model should show the same score.
+
+The gateway fetches all pages at startup when stored data is stale and every 24 hours after that. A platform admin can also call `POST /api/v1/admin/models/benchmark-catalog/refresh`. A complete response replaces the current score set in one transaction. An absent or `null` score removes the prior value. A request, parse, pagination, or validation failure keeps the last successful set.
+
+Only the current Intelligence Index value is stored. Each row keeps its numeric value, `index_points` unit, reported major.minor benchmark version, source model ID, source URL, and fetch time. The gateway does not store the full Artificial Analysis catalogue or score history.
+
+This rollout is for internal admin use under the Free tier. Artificial Analysis attribution stays visible with every displayed score. Customer-facing display and individual evaluations such as Terminal-Bench remain disabled until written commercial rights cover that use. If access ends or the applicable terms require deletion, remove stored Artificial Analysis rows within 30 days.
 
 ### Route metadata overrides
 

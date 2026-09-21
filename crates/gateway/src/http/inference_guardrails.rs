@@ -134,7 +134,7 @@ pub async fn guard_stream(
     state: &AppState,
     context: &InferenceGuardContext,
     mut upstream: ProviderStream,
-) -> Result<ProviderStream, GuardStreamError> {
+) -> Result<ProviderStream, Box<GuardStreamError>> {
     if !context.enabled {
         return Ok(upstream);
     }
@@ -145,30 +145,32 @@ pub async fn guard_stream(
             Ok(chunk) => chunk,
             Err(error) => {
                 collector.finish();
-                return Err(GuardStreamError {
+                return Err(Box::new(GuardStreamError {
                     error: GatewayError::Provider(error),
                     collector: Some(collector),
-                });
+                }));
             }
         };
         collector.observe_chunk(&chunk);
         if buffered.len().saturating_add(chunk.len()) > context.stream_buffer_bytes {
             collector.finish();
-            return Err(GuardStreamError {
+            return Err(Box::new(GuardStreamError {
                 error: GatewayError::PayloadTooLarge {
                     limit_bytes: context.stream_buffer_bytes,
                 },
                 collector: Some(collector),
-            });
+            }));
         }
         buffered.extend_from_slice(&chunk);
     }
     collector.finish();
     let guarded = guard_sse_payload(state, context, &buffered)
         .await
-        .map_err(|error| GuardStreamError {
-            error,
-            collector: Some(collector),
+        .map_err(|error| {
+            Box::new(GuardStreamError {
+                error,
+                collector: Some(collector),
+            })
         })?;
     Ok(Box::pin(stream::once(
         async move { Ok(Bytes::from(guarded)) },

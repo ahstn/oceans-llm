@@ -16,7 +16,8 @@ use gateway_providers::{
     OpenAiCompatProvider, VertexProvider,
 };
 use gateway_service::{
-    AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
+    AnalysisPolicy, BenchmarkCatalog, DEFAULT_BENCHMARK_CATALOG_REFRESH_INTERVAL,
+    DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
     ProviderCredentialService, WeightedRoutePlanner, hash_gateway_key_secret,
 };
 use gateway_store::{
@@ -147,6 +148,7 @@ where
     let teams_seed = config.seed_teams()?;
     let users_seed = config.seed_users()?;
     let human_budget_defaults = config.seed_human_budget_defaults()?;
+    let benchmark_bindings = config.model_benchmark_bindings();
 
     store
         .seed_from_inputs_with_user_budget_default(
@@ -162,6 +164,10 @@ where
         )
         .await
         .context("failed to seed foundational config data")?;
+    store
+        .replace_model_benchmark_bindings("artificial_analysis", &benchmark_bindings)
+        .await
+        .context("failed to seed model benchmark bindings")?;
     store
         .reconcile_human_budget_defaults(&human_budget_defaults, time::OffsetDateTime::now_utc())
         .await
@@ -219,6 +225,9 @@ async fn run_serve_with_store(
         .refresh_pricing_catalog_if_stale()
         .await
         .context("failed to initialize pricing catalog")?;
+    if let Err(error) = service.refresh_benchmark_catalog_if_stale().await {
+        tracing::warn!(error = %error, "initial benchmark catalog refresh failed");
+    }
     service
         .validate_route_context_overrides()
         .await
@@ -241,6 +250,7 @@ async fn run_serve_with_store(
     );
     let guardrail_config = Arc::new(config.guardrails.clone());
     spawn_pricing_catalog_refresh_loop(service.clone());
+    spawn_benchmark_catalog_refresh_loop(service.clone());
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     if agent_analysis.capabilities.passive_analysis_enabled {
         spawn_agent_analysis_loop(service.clone());
@@ -554,6 +564,22 @@ fn spawn_pricing_catalog_refresh_loop(
     });
 }
 
+fn spawn_benchmark_catalog_refresh_loop(
+    service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
+) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(DEFAULT_BENCHMARK_CATALOG_REFRESH_INTERVAL);
+        interval.tick().await;
+
+        loop {
+            interval.tick().await;
+            if let Err(error) = service.refresh_benchmark_catalog_if_stale().await {
+                tracing::warn!(error = %error, "background benchmark catalog refresh failed");
+            }
+        }
+    });
+}
+
 fn spawn_agent_analysis_loop(service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>) {
     let lease_owner = format!("gateway-{}-{}", std::process::id(), uuid::Uuid::new_v4());
     tokio::spawn(async move {
@@ -633,17 +659,20 @@ fn build_gateway_service(
     let payload_policy = config
         .request_log_payload_policy()
         .context("failed to build request log payload policy")?;
-    Ok(Arc::new(
-        GatewayService::new_with_budget_alert_sender_and_payload_policy(
-            store,
-            planner,
-            budget_alert_sender,
-            payload_policy,
-        )
-        .with_agent_analysis_enabled(agent_analysis_enabled)
-        .with_agent_analysis_retention(analysis_report_retention, analysis_queue_retention)
-        .with_agent_analysis_policy(analysis_policy),
-    ))
+    let mut service = GatewayService::new_with_budget_alert_sender_and_payload_policy(
+        store,
+        planner,
+        budget_alert_sender,
+        payload_policy,
+    )
+    .with_agent_analysis_enabled(agent_analysis_enabled)
+    .with_agent_analysis_retention(analysis_report_retention, analysis_queue_retention)
+    .with_agent_analysis_policy(analysis_policy);
+    if let Some(api_key) = config.artificial_analysis_api_key()? {
+        let benchmark_store = service.store().clone();
+        service = service.with_benchmark_catalog(BenchmarkCatalog::new(benchmark_store, api_key));
+    }
+    Ok(Arc::new(service))
 }
 
 fn pricing_catalog_refresh_interval() -> Duration {

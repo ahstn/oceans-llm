@@ -57,6 +57,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
+import { ModelBenchmarks, ModelIntelligenceScore } from '@/routes/-model-benchmarks'
 import {
   getModelClientConfigs,
   getModels,
@@ -81,7 +82,7 @@ const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en-US', {
 const CLIENT_HARNESS_CONFIGURATION_URL =
   'https://oceans-llm.com/configuration/client-harness-configuration.html'
 
-type ModelInfoSectionKey = 'overview' | 'routing' | 'economics' | 'access'
+type ModelInfoSectionKey = 'overview' | 'routing' | 'economics' | 'benchmarks' | 'access'
 
 export const Route = createFileRoute('/models')({
   validateSearch: (search: Record<string, unknown>) => normalizeModelsSearch(search),
@@ -109,6 +110,7 @@ export function ModelsPage() {
   const [visibleColumns, setVisibleColumns] = useState({
     contextWindow: false,
     capabilities: false,
+    intelligence: false,
   })
   const [isGeneratingConfig, setIsGeneratingConfig] = useState(false)
   const [isRefreshingPricing, setIsRefreshingPricing] = useState(false)
@@ -120,22 +122,11 @@ export function ModelsPage() {
   const allSelectableSelected =
     selectableModels.length > 0 &&
     selectableModels.every((model) => selectedModelIdSet.has(model.id))
-  const desktopTableMinWidth =
-    visibleColumns.contextWindow && visibleColumns.capabilities
-      ? isPlatformAdmin
-        ? 'min-w-[103rem]'
-        : 'min-w-[91rem]'
-      : visibleColumns.capabilities
-        ? isPlatformAdmin
-          ? 'min-w-[91rem]'
-          : 'min-w-[79rem]'
-        : visibleColumns.contextWindow
-          ? isPlatformAdmin
-            ? 'min-w-[85rem]'
-            : 'min-w-[73rem]'
-          : isPlatformAdmin
-            ? 'min-w-[73rem]'
-            : 'min-w-[61rem]'
+  const desktopTableMinWidthRem =
+    (isPlatformAdmin ? 73 : 61) +
+    (visibleColumns.contextWindow ? 12 : 0) +
+    (visibleColumns.capabilities ? 18 : 0) +
+    (visibleColumns.intelligence ? 10 : 0)
 
   function navigateToPage(page: number) {
     void router.navigate({
@@ -336,6 +327,25 @@ export function ModelsPage() {
                       <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
                         <ModelCheckbox
                           className="mt-0.5"
+                          checked={visibleColumns.intelligence}
+                          onChange={(event) => {
+                            const checked = event.currentTarget.checked
+                            setVisibleColumns((current) => ({
+                              ...current,
+                              intelligence: checked,
+                            }))
+                          }}
+                        />
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="font-medium text-[var(--color-text)]">Intelligence</span>
+                          <span className="text-xs text-[var(--color-text-muted)]">
+                            Artificial Analysis Intelligence Index.
+                          </span>
+                        </span>
+                      </label>
+                      <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
+                        <ModelCheckbox
+                          className="mt-0.5"
                           checked={visibleColumns.capabilities}
                           onChange={(event) => {
                             const checked = event.currentTarget.checked
@@ -420,7 +430,7 @@ export function ModelsPage() {
                 className="hidden min-w-0 overflow-hidden rounded-md border border-[color:var(--color-border)] md:block"
                 data-testid="models-desktop-table"
               >
-                <Table className={`${desktopTableMinWidth} table-fixed`}>
+                <Table className="table-fixed" style={{ minWidth: `${desktopTableMinWidthRem}rem` }}>
                   <TableHeader className="bg-[color:var(--color-surface-muted)]">
                     <TableRow>
                       <TableHead className="sticky left-0 z-30 w-[3rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
@@ -451,6 +461,11 @@ export function ModelsPage() {
                       {visibleColumns.capabilities ? (
                         <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                           Capabilities
+                        </TableHead>
+                      ) : null}
+                      {visibleColumns.intelligence ? (
+                        <TableHead className="w-[10rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                          Intelligence
                         </TableHead>
                       ) : null}
                       {isPlatformAdmin ? (
@@ -558,6 +573,11 @@ export function ModelsPage() {
                             <CapabilityBadges model={model} />
                           </TableCell>
                         ) : null}
+                        {visibleColumns.intelligence ? (
+                          <TableCell className="px-3 py-1 whitespace-normal">
+                            <ModelIntelligenceScore model={model} />
+                          </TableCell>
+                        ) : null}
                         {isPlatformAdmin ? (
                           <TableCell className="px-3 py-1 whitespace-normal">
                             <ModelAllowlistDetail model={model} compact />
@@ -567,6 +587,20 @@ export function ModelsPage() {
                     ))}
                   </TableBody>
                 </Table>
+                {visibleColumns.intelligence ? (
+                  <p className="border-t border-[color:var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-soft)]">
+                    Intelligence data by{' '}
+                    <a
+                      className="underline underline-offset-4"
+                      href="https://artificialanalysis.ai/"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Artificial Analysis
+                    </a>
+                    .
+                  </p>
+                ) : null}
               </div>
             </>
           )}
@@ -806,6 +840,7 @@ function ModelInfoDialog({
     { key: 'overview', label: 'Overview' },
     { key: 'routing', label: 'Routing' },
     { key: 'economics', label: 'Economics' },
+    { key: 'benchmarks', label: 'Benchmarks' },
     ...(showAccessDetails ? ([{ key: 'access', label: 'Access' }] as const) : []),
   ]
 
@@ -856,6 +891,7 @@ function ModelInfoDialog({
                   {activeSection === 'overview' ? <ModelInfoOverview model={model} /> : null}
                   {activeSection === 'routing' ? <ModelInfoRouting model={model} /> : null}
                   {activeSection === 'economics' ? <ModelInfoEconomics model={model} /> : null}
+                  {activeSection === 'benchmarks' ? <ModelBenchmarks model={model} /> : null}
                   {activeSection === 'access' ? <ModelInfoAccess model={model} /> : null}
                 </div>
               </div>
@@ -985,6 +1021,8 @@ function modelInfoSectionDescription(section: ModelInfoSectionKey) {
       return 'Gateway and upstream identifiers used to route requests.'
     case 'economics':
       return 'Token pricing and context limits exposed by the current route.'
+    case 'benchmarks':
+      return 'Current sourced capability scores for this exact configured model.'
     case 'access':
       return 'Allowlist and runtime capability metadata for this model.'
   }

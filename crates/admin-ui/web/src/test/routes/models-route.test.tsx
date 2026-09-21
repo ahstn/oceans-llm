@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { formatBenchmarkScore } from '@/routes/-model-benchmarks'
 import { ModelsPage } from '@/routes/models'
 import type { ModelPageView } from '@/types/api'
 
@@ -132,6 +133,19 @@ const modelPage: ModelPageView = {
       supports_tool_calling: true,
       supports_structured_output: true,
       supports_attachments: true,
+      benchmark_scores: [
+        {
+          metric_key: 'artificial_analysis_intelligence_index',
+          label: 'Artificial Analysis Intelligence Index',
+          value: 39,
+          unit: 'index_points',
+          benchmark_version: '4.3',
+          source: 'artificial_analysis',
+          source_model_id: '36f73aaf-d38a-4b56-a2b3-d04d17186910',
+          source_url: 'https://artificialanalysis.ai/models/gemini-2-0-flash',
+          fetched_at: '2026-09-21T10:00:00Z',
+        },
+      ],
       tags: ['fast', 'cheap'],
       allowlist: null,
       status: 'healthy',
@@ -158,6 +172,7 @@ const modelPage: ModelPageView = {
       supports_tool_calling: true,
       supports_structured_output: true,
       supports_attachments: false,
+      benchmark_scores: [],
       tags: ['anthropic', 'reasoning'],
       allowlist: {
         users: ['alice@example.com', 'bob@example.com'],
@@ -252,6 +267,7 @@ const modelPage: ModelPageView = {
       supports_tool_calling: false,
       supports_structured_output: true,
       supports_attachments: true,
+      benchmark_scores: [],
       tags: ['fast', 'fallback'],
       allowlist: null,
       status: 'degraded',
@@ -504,6 +520,68 @@ describe('ModelsPage table content', () => {
 
     expect(within(table).queryByText('Notes')).not.toBeInTheDocument()
     expect(within(table).queryByText('Gemini fallback on Vertex')).not.toBeInTheDocument()
+  })
+
+  it('shows the optional intelligence score without treating missing data as zero', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Columns' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Intelligence/ }))
+
+    const table = screen.getAllByTestId('models-desktop-table')[0]
+    expect(within(table).getByRole('columnheader', { name: 'Intelligence' })).toBeInTheDocument()
+    const fastRow = within(table).getByText('fast').closest('tr')
+    expect(fastRow).not.toBeNull()
+    expect(within(fastRow as HTMLElement).getByText('39')).toBeInTheDocument()
+    expect(within(table).getByRole('link', { name: 'Artificial Analysis' })).toHaveAttribute(
+      'href',
+      'https://artificialanalysis.ai/',
+    )
+    const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
+    expect(claudeRow).not.toBeNull()
+    expect(within(claudeRow as HTMLElement).getByText('—')).toBeInTheDocument()
+  })
+
+  it('shows benchmark provenance and visible Artificial Analysis attribution', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const table = screen.getAllByTestId('models-desktop-table')[0]
+    const fastRow = within(table).getByText('fast').closest('tr')
+    expect(fastRow).not.toBeNull()
+    fireEvent.click(within(fastRow as HTMLElement).getByRole('button', { name: 'Info' }))
+    const dialog = screen.getByRole('dialog', { name: 'Model info' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Benchmarks' }))
+
+    expect(within(dialog).getByRole('heading', { name: 'Benchmarks' })).toBeInTheDocument()
+    expect(within(dialog).getByText('Artificial Analysis Intelligence Index')).toBeInTheDocument()
+    expect(within(dialog).getByText('39')).toBeInTheDocument()
+    expect(within(dialog).getByText(/Version 4\.3 · Updated/)).toBeInTheDocument()
+    expect(within(dialog).getByRole('link', { name: 'View source model' })).toHaveAttribute(
+      'href',
+      'https://artificialanalysis.ai/models/gemini-2-0-flash',
+    )
+    expect(within(dialog).getByRole('link', { name: 'Artificial Analysis' })).toHaveAttribute(
+      'href',
+      'https://artificialanalysis.ai/',
+    )
+  })
+
+  it('formats ratio benchmark values as percentages', () => {
+    const score = modelPage.items[0]?.benchmark_scores[0]
+    if (!score) throw new Error('benchmark fixture is missing')
+    expect(formatBenchmarkScore({ ...score, value: 0.268, unit: 'ratio' })).toBe('26.8%')
   })
 })
 

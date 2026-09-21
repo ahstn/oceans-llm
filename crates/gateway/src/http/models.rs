@@ -11,11 +11,11 @@ use gateway_service::{
 use crate::http::{
     admin_auth::{require_active_session, require_platform_admin},
     admin_contract::{
-        AdminModelAllowlistView, AdminModelClientConfigView, AdminModelListQuery,
-        AdminModelPageView, AdminModelView, EffectiveMetadataSourceKindView,
+        AdminModelAllowlistView, AdminModelBenchmarkScoreView, AdminModelClientConfigView,
+        AdminModelListQuery, AdminModelPageView, AdminModelView, EffectiveMetadataSourceKindView,
         EffectiveMetadataSourceView, Envelope, GenerateModelClientConfigsRequest,
-        GenerateModelClientConfigsResponse, RefreshModelPricingCatalogResponse, envelope,
-        format_timestamp,
+        GenerateModelClientConfigsResponse, RefreshModelBenchmarkCatalogResponse,
+        RefreshModelPricingCatalogResponse, envelope, format_timestamp,
     },
     error::AppError,
     state::AppState,
@@ -111,6 +111,25 @@ pub async fn refresh_model_pricing_catalog(
     })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/models/benchmark-catalog/refresh",
+    responses((status = 200, body = Envelope<RefreshModelBenchmarkCatalogResponse>)),
+    security(("session_cookie" = []))
+)]
+pub async fn refresh_model_benchmark_catalog(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<RefreshModelBenchmarkCatalogResponse>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    state.service.refresh_benchmark_catalog_now().await?;
+
+    Ok(Json(envelope(RefreshModelBenchmarkCatalogResponse {
+        refreshed: true,
+    })))
+}
+
 fn admin_models_service(state: &AppState) -> AdminModelsService<gateway_store::AnyStore> {
     let service = AdminModelsService::new(state.store.clone());
     match state.client_config_gateway_base_url.as_ref().as_deref() {
@@ -162,6 +181,21 @@ fn map_model_summary(model: AdminModelSummary, include_allowlist: bool) -> Admin
         supports_tool_calling: model.supports_tool_calling,
         supports_structured_output: model.supports_structured_output,
         supports_attachments: model.supports_attachments,
+        benchmark_scores: model
+            .benchmark_scores
+            .into_iter()
+            .map(|score| AdminModelBenchmarkScoreView {
+                metric_key: score.metric_key,
+                label: score.label,
+                value: score.value,
+                unit: score.unit,
+                benchmark_version: score.benchmark_version,
+                source: score.source,
+                source_model_id: score.source_model_id,
+                source_url: score.source_url,
+                fetched_at: format_timestamp(score.fetched_at),
+            })
+            .collect(),
         client_configurations: model
             .client_configurations
             .into_iter()

@@ -282,6 +282,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V51__budget_service_account_source.sql"),
         postgres_sql: include_str!("../migrations/postgres/V51__budget_service_account_source.sql"),
     },
+    MigrationManifest {
+        version: 52,
+        name: "model_benchmark_catalog",
+        checksum: "V52__model_benchmark_catalog.sql",
+        libsql_sql: include_str!("../migrations/V52__model_benchmark_catalog.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V52__model_benchmark_catalog.sql"),
+    },
 ];
 
 #[cfg(test)]

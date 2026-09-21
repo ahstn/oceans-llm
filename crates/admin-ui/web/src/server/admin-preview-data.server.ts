@@ -33,6 +33,19 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
         supports_tool_calling: true,
         supports_structured_output: true,
         supports_attachments: true,
+        benchmark_scores: [
+          {
+            metric_key: 'artificial_analysis_intelligence_index',
+            label: 'Artificial Analysis Intelligence Index',
+            value: 39,
+            unit: 'index_points',
+            benchmark_version: '4.3',
+            source: 'artificial_analysis',
+            source_model_id: '36f73aaf-d38a-4b56-a2b3-d04d17186910',
+            source_url: 'https://artificialanalysis.ai/models/gemini-2-0-flash',
+            fetched_at: '2026-09-21T10:00:00Z',
+          },
+        ],
         tags: ['fast', 'cheap'],
         allowlist: null,
         status: 'healthy',
@@ -59,6 +72,7 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
         supports_tool_calling: true,
         supports_structured_output: true,
         supports_attachments: true,
+        benchmark_scores: [],
         tags: ['reasoning'],
         allowlist: {
           users: ['alice@example.com', 'bob@example.com'],
@@ -88,6 +102,7 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
         supports_tool_calling: false,
         supports_structured_output: true,
         supports_attachments: true,
+        benchmark_scores: [],
         tags: ['fast', 'fallback'],
         allowlist: {
           users: [],

@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 mod agent_analysis;
 mod auth;
+mod benchmarks;
 mod budget_alerts;
 mod budgets;
 mod database;
@@ -36,6 +37,7 @@ pub use auth::{
     OauthJitMembershipConfig, OauthProviderConfig, OidcJitConfig, OidcJitMembershipConfig,
     OidcProviderConfig,
 };
+pub use benchmarks::{ArtificialAnalysisBenchmarkConfig, BenchmarkCatalogConfig};
 pub use budget_alerts::{
     BudgetAlertConfig, BudgetAlertEmailConfig, BudgetAlertEmailTransportConfig,
     SmtpBudgetAlertEmailTransportConfig,
@@ -95,6 +97,8 @@ pub struct GatewayConfig {
     #[serde(default)]
     pub budgets: BudgetsConfig,
     #[serde(default)]
+    pub benchmark_catalog: BenchmarkCatalogConfig,
+    #[serde(default)]
     pub request_logging: RequestLoggingConfig,
     #[serde(default)]
     pub agent_analysis: AgentAnalysisConfig,
@@ -135,6 +139,7 @@ impl GatewayConfig {
     fn validate(&self) -> anyhow::Result<()> {
         self.server.validate()?;
         self.database.connection_options()?;
+        self.benchmark_catalog.validate()?;
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
         self.agent_analysis.validate()?;
@@ -182,6 +187,10 @@ impl GatewayConfig {
 
     pub fn request_log_payload_policy(&self) -> anyhow::Result<RequestLogPayloadPolicy> {
         self.request_logging.payloads.to_policy()
+    }
+
+    pub fn artificial_analysis_api_key(&self) -> anyhow::Result<Option<String>> {
+        self.benchmark_catalog.artificial_analysis_api_key()
     }
 }
 

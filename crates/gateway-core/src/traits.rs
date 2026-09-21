@@ -21,18 +21,19 @@ use crate::{
     },
     budgets::{BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource},
     domain::{
-        ApiKeyModelGrantMode, ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
-        BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord,
-        CacheUsageAggregateRecord, ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord,
-        ExternalMcpToolRecord, FocusExportAggregateRecord, FocusExportDiagnosticsRecord,
-        GatewayModel, GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
-        HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
-        McpAggregateSessionRecord, McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord,
-        McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
-        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-        McpToolInvocationRecord, McpToolTokenEstimateRecord, McpToolsetRecord,
-        McpToolsetToolRecord, McpUpstreamCredentialBindingRecord,
-        McpUpstreamCredentialOwnerScopeKind, ModelAllowlistPolicy, ModelPricingRecord,
+        ApiKeyModelGrantMode, ApiKeyRecord, BenchmarkSyncState, BudgetAlertDeliveryRecord,
+        BudgetAlertDispatchTask, BudgetAlertHistoryPage, BudgetAlertHistoryQuery,
+        BudgetAlertRecord, CacheUsageAggregateRecord, ExternalMcpDiscoveryRunRecord,
+        ExternalMcpServerRecord, ExternalMcpToolRecord, FocusExportAggregateRecord,
+        FocusExportDiagnosticsRecord, GatewayModel, GuardrailDecisionEventRecord,
+        GuardrailDecisionPage, GuardrailDecisionQuery, HarnessUsageBucketRecord,
+        HarnessUsageLeaderRecord, McpAccessResolution, McpAggregateSessionRecord,
+        McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind,
+        McpToolGrantTargetKind, McpToolInvocationDetail, McpToolInvocationPage,
+        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+        McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
+        McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
+        ModelAllowlistPolicy, ModelBenchmarkBinding, ModelBenchmarkScore, ModelPricingRecord,
         ModelPricingSyncChanges, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
         NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
         NewReviewAgentRunRecord, PricingCatalogCacheRecord, ProviderCapabilities,
@@ -1178,6 +1179,33 @@ pub trait PricingCatalogRepository: Send + Sync {
         pricing_model_id: &str,
         occurred_at: OffsetDateTime,
     ) -> Result<Option<ModelPricingRecord>, StoreError>;
+}
+
+#[async_trait]
+pub trait BenchmarkCatalogRepository: Send + Sync {
+    async fn replace_model_benchmark_bindings(
+        &self,
+        source: &str,
+        bindings: &[ModelBenchmarkBinding],
+    ) -> Result<(), StoreError>;
+
+    async fn list_model_benchmark_bindings(
+        &self,
+        source: &str,
+    ) -> Result<Vec<ModelBenchmarkBinding>, StoreError>;
+
+    async fn list_model_benchmark_scores(&self) -> Result<Vec<ModelBenchmarkScore>, StoreError>;
+
+    async fn get_benchmark_sync_state(
+        &self,
+        source: &str,
+    ) -> Result<Option<BenchmarkSyncState>, StoreError>;
+
+    async fn replace_model_benchmark_scores(
+        &self,
+        scores: &[ModelBenchmarkScore],
+        state: &BenchmarkSyncState,
+    ) -> Result<bool, StoreError>;
 }
 
 #[async_trait]

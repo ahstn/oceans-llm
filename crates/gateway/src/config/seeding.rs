@@ -354,6 +354,22 @@ impl GatewayConfig {
         Ok(models)
     }
 
+    pub fn model_benchmark_bindings(&self) -> Vec<gateway_core::ModelBenchmarkBinding> {
+        self.models
+            .iter()
+            .filter_map(|model| {
+                model
+                    .artificial_analysis_model_id
+                    .as_ref()
+                    .map(|source_model_id| gateway_core::ModelBenchmarkBinding {
+                        model_id: config_model_uuid(&model.id),
+                        source: "artificial_analysis".to_string(),
+                        source_model_id: source_model_id.clone(),
+                    })
+            })
+            .collect()
+    }
+
     pub fn seed_service_accounts(&self) -> anyhow::Result<Vec<SeedServiceAccount>> {
         self.service_accounts
             .iter()

@@ -2194,6 +2194,35 @@ pub struct PricingCatalogCacheRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelBenchmarkBinding {
+    pub model_id: Uuid,
+    pub source: String,
+    pub source_model_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModelBenchmarkScore {
+    pub model_id: Uuid,
+    pub metric_key: String,
+    pub label: String,
+    pub value: f64,
+    pub unit: String,
+    pub benchmark_version: String,
+    pub source: String,
+    pub source_model_id: String,
+    pub source_url: String,
+    pub fetched_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BenchmarkSyncState {
+    pub source: String,
+    pub benchmark_version: String,
+    pub last_successful_refresh_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RoutePricingOverride {
     pub input_cost_per_million_tokens: Money4,
     pub output_cost_per_million_tokens: Money4,

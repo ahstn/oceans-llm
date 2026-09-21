@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::Mutex};
 use gateway_core::{ModelRoute, RouteError, RoutePlanner};
 use rand::{
     SeedableRng,
-    distributions::{Distribution, WeightedIndex},
+    distr::{Distribution, weighted::WeightedIndex},
     rngs::StdRng,
 };
 
@@ -14,8 +14,9 @@ pub struct WeightedRoutePlanner {
 impl WeightedRoutePlanner {
     #[must_use]
     pub fn new() -> Self {
+        let mut rng = rand::rng();
         Self {
-            rng: Mutex::new(StdRng::from_entropy()),
+            rng: Mutex::new(StdRng::from_rng(&mut rng)),
         }
     }
 
