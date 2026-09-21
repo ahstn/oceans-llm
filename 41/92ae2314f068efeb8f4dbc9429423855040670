@@ -1,0 +1,34 @@
+docs/.vitepress/config.mts
+  h_2f452a9c375069 50
+docs/adr/2026-09-21-system-one-decisions-api.md
+  h_2f452a9c375069 1-64
+docs/configuration/client-harness-configuration.md
+  h_2f452a9c375069 37-39
+docs/configuration/configuration-reference.md
+  h_2f452a9c375069 762-763,769,802,811-835,1101-1103,1165-1187,1248,1256
+docs/configuration/model-routing-and-api-behavior.md
+  h_2f452a9c375069 17,209,218-219,286-293
+docs/configuration/pricing-catalog-and-accounting.md
+  h_2f452a9c375069 80,108-113
+docs/operations/gateway-guardrails.md
+  h_2f452a9c375069 20-21
+docs/operations/observability-and-request-logs.md
+  h_2f452a9c375069 98,104-105
+docs/providers/openrouter.md
+  h_2f452a9c375069 5,9,63-99
+docs/providers/typesafe.md
+  h_2f452a9c375069 1-104
+docs/reference/provider-api-compatibility.md
+  h_2f452a9c375069 18,21,30,40-47,105-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4192ae2314f068efeb8f4dbc9429423855040670",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
