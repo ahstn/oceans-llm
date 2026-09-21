@@ -69,6 +69,99 @@ pub struct EmbeddingsRequest {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// Public Decisions request wire DTO. The gateway owns this contract: it
+/// mirrors the TypeSafe System One shape rather than any OpenAI endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DecisionsRequest {
+    pub model: String,
+    pub state: Value,
+    #[serde(default)]
+    pub questions: BTreeMap<String, DecisionQuestion>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+/// Typed Decisions question on the wire; identical to the core contract.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum DecisionQuestion {
+    Noul {
+        instructions: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        criteria: Option<NoulCriteria>,
+    },
+    Choice {
+        instructions: Value,
+        criteria: BTreeMap<String, Option<Value>>,
+    },
+    Score {
+        instructions: Value,
+        criteria: Vec<Value>,
+    },
+}
+
+/// Optional yes/no rubric descriptions for a `noul` question.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct NoulCriteria {
+    #[serde(rename = "true", default, skip_serializing_if = "Option::is_none")]
+    pub yes: Option<Value>,
+    #[serde(rename = "false", default, skip_serializing_if = "Option::is_none")]
+    pub no: Option<Value>,
+}
+
+/// Typed Decisions answer used for validation and tests.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum DecisionAnswer {
+    Noul {
+        noul: f64,
+        #[serde(flatten)]
+        extra: BTreeMap<String, Value>,
+    },
+    Choice {
+        choice: String,
+        #[serde(default)]
+        probabilities: BTreeMap<String, f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        confidence: Option<f64>,
+        #[serde(flatten)]
+        extra: BTreeMap<String, Value>,
+    },
+    Score {
+        score: f64,
+        #[serde(default)]
+        probabilities: BTreeMap<String, f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        confidence: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        legend: Option<BTreeMap<String, String>>,
+        #[serde(flatten)]
+        extra: BTreeMap<String, Value>,
+    },
+}
+
+/// Typed Decisions response envelope used for validation and tests.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DecisionsResponse {
+    pub model: String,
+    pub answers: BTreeMap<String, DecisionAnswer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<DecisionsUsage>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+/// Decisions token usage. Output tokens are unpriced but still reported.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct DecisionsUsage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<i64>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ResponsesRequest {
     pub model: String,

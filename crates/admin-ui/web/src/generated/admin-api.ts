@@ -1627,6 +1627,7 @@ export interface components {
             resolved_model_key: string;
             status: components["schemas"]["AdminModelStatusView"];
             supports_attachments?: boolean | null;
+            supports_decisions?: boolean | null;
             supports_streaming?: boolean | null;
             supports_structured_output?: boolean | null;
             supports_tool_calling?: boolean | null;
@@ -3493,7 +3494,7 @@ export interface components {
             items: components["schemas"]["McpToolsetView"][];
         };
         /** @enum {string} */
-        ModelIconKeyView: "anthropic" | "claude" | "deepseek" | "gemini" | "openai" | "openrouter" | "qwen" | "vertexai";
+        ModelIconKeyView: "anthropic" | "claude" | "deepseek" | "gemini" | "openai" | "openrouter" | "qwen" | "typesafe" | "vertexai";
         /** @enum {string} */
         ObservabilityRangeQueryValue: "7d" | "31d";
         OpenAiErrorBodyView: {
@@ -3515,7 +3516,7 @@ export interface components {
             password: string;
         };
         /** @enum {string} */
-        ProviderIconKeyView: "anthropic" | "aws" | "openai" | "openrouter" | "vertexai";
+        ProviderIconKeyView: "anthropic" | "aws" | "openai" | "openrouter" | "typesafe" | "vertexai";
         PublicOauthProviderView: {
             key: string;
             label: string;

@@ -22,12 +22,13 @@ use axum::{
 use futures_util::{StreamExt, stream as futures_stream};
 use gateway_core::{
     AnthropicMessagesRequest, AuthenticatedApiKey, ChatCompletionsRequest, CoreChatRequest,
-    CoreRequestRequirements, EmbeddingsRequest, GatewayError, ModelsListResponse,
+    CoreRequestRequirements, DecisionsRequest, EmbeddingsRequest, GatewayError, ModelsListResponse,
     ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
     RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
     anthropic_messages_request_to_core, core_chat_request_to_openai, enforce_chat_reasoning_effort,
     enforce_responses_reasoning_effort, openai_chat_request_to_core,
-    openai_embeddings_request_to_core, openai_responses_request_to_core,
+    openai_decisions_request_to_core, openai_embeddings_request_to_core,
+    openai_responses_request_to_core,
     protocol::{anthropic::anthropic_message_from_openai_chat, openai::ModelCard},
     vertex_route_capabilities_for_upstream_model,
 };
@@ -951,6 +952,192 @@ pub async fn v1_embeddings(
     Ok(response)
 }
 
+pub async fn v1_decisions(
+    State(state): State<AppState>,
+    request_id: Option<Extension<RequestId>>,
+    headers: HeaderMap,
+    InferenceAuth(auth): InferenceAuth,
+    Json(request): Json<DecisionsRequest>,
+) -> Result<Response, AppError> {
+    let request_started_at = Instant::now();
+    let request_span = Span::current();
+    let request_id = canonical_request_id(request_id)?;
+    let core_request = openai_decisions_request_to_core(&request);
+    if let Some(message) = core_request.validation_error() {
+        return Err(AppError(GatewayError::InvalidRequest(message)));
+    }
+    let requirements = core_request.requirements();
+    let resolved = state
+        .service
+        .resolve_request(&auth, &core_request.model)
+        .await?;
+    record_request_span_fields(&request_span, &auth, &resolved, false, "/v1/decisions");
+    let request_headers = extract_request_headers(&headers);
+    let request_tags = extract_request_tags(&headers)?;
+    let mut request_log_context = state.service.begin_decisions_request_log(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &resolved.selection.execution_model.model_key,
+        &request,
+        &request_headers,
+        request_tags,
+    );
+    let (eligible_route_count, selected) =
+        select_first_eligible_route(&state.providers, &resolved.routes, requirements);
+
+    tracing::info!(
+        request_model = %core_request.model,
+        resolved_model = %resolved.selection.execution_model.model_key,
+        route_count = resolved.routes.len(),
+        eligible_route_count,
+        required_capabilities = ?requirements.required_capability_names(),
+        "decisions request resolved"
+    );
+
+    let (route, provider) = match selected {
+        Some(selection) => selection,
+        None => {
+            return Err(AppError(no_compatible_route_error(requirements)));
+        }
+    };
+    record_provider_execution_span_fields(
+        &request_span,
+        &route.provider_key,
+        provider.provider_type(),
+    );
+    let icon_metadata = request_log_icon_metadata(
+        &route,
+        resolved.provider_connections.get(&route.provider_key),
+        &resolved.selection.execution_model.model_key,
+        &resolved.selection.requested_model.model_key,
+    );
+    best_effort_record_mcp_request_telemetry(
+        &state,
+        &auth,
+        &mut request_log_context,
+        &route,
+        resolved.provider_connections.get(&route.provider_key),
+    )
+    .await;
+    let labels = ChatMetricLabels {
+        requested_model: &resolved.selection.requested_model.model_key,
+        resolved_model: &resolved.selection.execution_model.model_key,
+        provider_key: &route.provider_key,
+        stream: false,
+    };
+
+    // Decisions routes skip guardrails: `state` and `questions` carry no
+    // chat-shaped prompt/response text for the evaluators to inspect.
+
+    state
+        .service
+        .enforce_pre_provider_budget(
+            &auth,
+            &request_id,
+            Some(resolved.selection.execution_model.id),
+            Some(route.upstream_model.as_str()),
+            OffsetDateTime::now_utc(),
+        )
+        .await?;
+
+    let context = build_provider_context(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &route,
+        &auth,
+        request_headers,
+    );
+
+    let attempt_started_at = gateway_service::offset_now();
+    let provider_execution_span = provider_operation_span(
+        &request_id,
+        "decisions",
+        &auth,
+        &resolved,
+        &route,
+        provider.as_ref(),
+        false,
+    );
+    let value = match trace_provider_operation(
+        provider_execution_span,
+        provider.decisions(&core_request, &context),
+    )
+    .await
+    {
+        Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
+        Err(error) => {
+            let (provider_error, partial_provider_usage) = split_partial_provider_error(error);
+            if let Some(provider_usage) = partial_provider_usage {
+                finalize_successful_usage_accounting(
+                    &state,
+                    UsageAccountingContext {
+                        auth: &auth,
+                        model: &resolved.selection.execution_model,
+                        route: &route,
+                        request_id: &request_id,
+                        labels: labels.clone(),
+                        operation: "decisions",
+                    },
+                    provider_usage,
+                )
+                .await;
+            }
+
+            let (error, attempt) = provider_error_attempt(
+                &request_log_context,
+                &route,
+                RequestAttemptStatus::ProviderError,
+                false,
+                attempt_started_at,
+                provider_error,
+                requirements,
+            );
+            best_effort_log_non_stream_failure(
+                &state.service,
+                &auth,
+                &request_log_context,
+                &route.provider_key,
+                icon_metadata.clone(),
+                latency_ms_since(request_started_at),
+                &error,
+                vec![attempt],
+            )
+            .await;
+            return Err(AppError(error));
+        }
+    };
+    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
+
+    finalize_successful_usage_accounting(
+        &state,
+        UsageAccountingContext {
+            auth: &auth,
+            model: &resolved.selection.execution_model,
+            route: &route,
+            request_id: &request_id,
+            labels: labels.clone(),
+            operation: "decisions",
+        },
+        usage_value_from_response(&value),
+    )
+    .await;
+    best_effort_log_non_stream_success(
+        &state.service,
+        &auth,
+        &request_log_context,
+        &route.provider_key,
+        icon_metadata,
+        latency_ms_since(request_started_at),
+        0,
+        &value,
+        vec![attempt],
+    )
+    .await;
+
+    let response = Json(value).into_response();
+    Ok(response)
+}
+
 #[tracing::instrument(
     name = "gateway.route.select",
     skip_all,
@@ -1015,6 +1202,17 @@ fn route_effective_provider_capabilities(
         return gateway_core::github_copilot_route_capabilities(
             route.compatibility.github_copilot.as_ref(),
         );
+    }
+    if provider.provider_type() == "openai_compat"
+        && route
+            .compatibility
+            .openrouter
+            .as_ref()
+            .is_some_and(|openrouter| openrouter.api.is_decisions())
+    {
+        let mut capabilities = provider.capabilities();
+        capabilities.decisions = true;
+        return capabilities;
     }
 
     provider.capabilities()
@@ -1178,6 +1376,7 @@ fn supports_requirements(
         && (!requirements.responses || capabilities.responses)
         && (!requirements.stream || capabilities.stream)
         && (!requirements.embeddings || capabilities.embeddings)
+        && (!requirements.decisions || capabilities.decisions)
         && (!requirements.tools || capabilities.tools)
         && (!requirements.vision || capabilities.vision)
         && (!requirements.json_schema || capabilities.json_schema)

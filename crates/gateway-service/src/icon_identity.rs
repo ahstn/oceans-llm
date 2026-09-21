@@ -12,6 +12,7 @@ pub enum ProviderIconKey {
     AWS,
     OpenAI,
     OpenRouter,
+    TypeSafe,
     VertexAI,
 }
 
@@ -23,6 +24,7 @@ impl ProviderIconKey {
             Self::AWS => "aws",
             Self::OpenAI => "openai",
             Self::OpenRouter => "openrouter",
+            Self::TypeSafe => "typesafe",
             Self::VertexAI => "vertexai",
         }
     }
@@ -34,6 +36,7 @@ impl ProviderIconKey {
             "aws" => Some(Self::AWS),
             "openai" => Some(Self::OpenAI),
             "openrouter" => Some(Self::OpenRouter),
+            "typesafe" => Some(Self::TypeSafe),
             "vertexai" => Some(Self::VertexAI),
             _ => None,
         }
@@ -46,6 +49,7 @@ impl ProviderIconKey {
             Self::AWS => "AWS",
             Self::OpenAI => "OpenAI",
             Self::OpenRouter => "OpenRouter",
+            Self::TypeSafe => "TypeSafe",
             Self::VertexAI => "Google Vertex AI",
         }
     }
@@ -61,6 +65,7 @@ pub enum ModelIconKey {
     OpenAI,
     OpenRouter,
     Qwen,
+    TypeSafe,
     VertexAI,
 }
 
@@ -75,6 +80,7 @@ impl ModelIconKey {
             Self::OpenAI => "openai",
             Self::OpenRouter => "openrouter",
             Self::Qwen => "qwen",
+            Self::TypeSafe => "typesafe",
             Self::VertexAI => "vertexai",
         }
     }
@@ -89,6 +95,7 @@ impl ModelIconKey {
             "openai" => Some(Self::OpenAI),
             "openrouter" => Some(Self::OpenRouter),
             "qwen" => Some(Self::Qwen),
+            "typesafe" | "jev" => Some(Self::TypeSafe),
             "vertexai" => Some(Self::VertexAI),
             _ => None,
         }
@@ -172,6 +179,9 @@ fn infer_model_icon_key(value: &str) -> Option<ModelIconKey> {
     if value.contains("anthropic") {
         return Some(ModelIconKey::Anthropic);
     }
+    if value.contains("typesafe") || value.contains("jev") {
+        return Some(ModelIconKey::TypeSafe);
+    }
     if value.contains("gemini") {
         return Some(ModelIconKey::Gemini);
     }
@@ -205,6 +215,9 @@ fn infer_provider_icon_key(
     ) {
         return ProviderIconKey::VertexAI;
     }
+    if provider_type == Some("typesafe") {
+        return ProviderIconKey::TypeSafe;
+    }
 
     if let Some(base_url) = provider_config
         .and_then(|config| config.get("base_url"))
@@ -213,6 +226,9 @@ fn infer_provider_icon_key(
     {
         if base_url.contains("openrouter") {
             return ProviderIconKey::OpenRouter;
+        }
+        if base_url.contains("typesafe") {
+            return ProviderIconKey::TypeSafe;
         }
         if base_url.contains("anthropic") {
             return ProviderIconKey::Anthropic;
@@ -234,6 +250,8 @@ fn infer_provider_icon_key(
         ProviderIconKey::VertexAI
     } else if is_aws_provider_candidate(&provider_key) {
         ProviderIconKey::AWS
+    } else if provider_key.contains("typesafe") {
+        ProviderIconKey::TypeSafe
     } else {
         ProviderIconKey::OpenAI
     }
@@ -322,6 +340,13 @@ mod tests {
     }
 
     #[test]
+    fn jev_model_ids_use_typesafe_icon() {
+        let icon =
+            resolve_model_icon_key(["typesafe/jev-1.13", "openrouter"]).expect("typesafe icon");
+        assert_eq!(icon, ModelIconKey::TypeSafe);
+    }
+
+    #[test]
     fn provider_display_uses_configured_icon_key_when_present() {
         let provider = ProviderConnection {
             provider_key: "router".to_string(),
@@ -339,6 +364,20 @@ mod tests {
         let display = resolve_provider_display(&provider.provider_key, Some(&provider));
         assert_eq!(display.label, "OpenRouter");
         assert_eq!(display.icon_key, ProviderIconKey::OpenRouter);
+    }
+
+    #[test]
+    fn native_typesafe_provider_defaults_to_typesafe_icon() {
+        let provider = ProviderConnection {
+            provider_key: "typesafe".to_string(),
+            provider_type: "typesafe".to_string(),
+            config: json!({"base_url": "https://api.typesafe.ai"}),
+            secrets: None,
+        };
+
+        let display = resolve_provider_display(&provider.provider_key, Some(&provider));
+        assert_eq!(display.label, "TypeSafe");
+        assert_eq!(display.icon_key, ProviderIconKey::TypeSafe);
     }
 
     #[test]

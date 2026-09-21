@@ -10,6 +10,7 @@ import {
   HomeIcon,
   LiveStreaming03Icon,
   RefreshIcon,
+  Target02Icon,
   ToolsIcon,
   Tick02Icon,
   VisionIcon,
@@ -348,7 +349,7 @@ export function ModelsPage() {
                         <span className="flex min-w-0 flex-col gap-0.5">
                           <span className="font-medium text-[var(--color-text)]">Capabilities</span>
                           <span className="text-xs text-[var(--color-text-muted)]">
-                            Streaming, vision, tools, and attachment support.
+                            Streaming, vision, tools, attachment, and Decisions support.
                           </span>
                         </span>
                       </label>
@@ -1338,6 +1339,7 @@ function CapabilityBadges({ model }: { model: ModelView }) {
     model.supports_tool_calling ? { label: 'Tool Calling', icon: ToolsIcon } : null,
     model.supports_structured_output ? { label: 'Structured Output', icon: CodeIcon } : null,
     model.supports_attachments ? { label: 'Attachments', icon: AttachmentIcon } : null,
+    model.supports_decisions ? { label: 'Decisions', icon: Target02Icon } : null,
   ].filter(
     (
       value,

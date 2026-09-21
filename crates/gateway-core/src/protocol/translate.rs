@@ -138,6 +138,96 @@ pub fn core_responses_request_to_openai(
     }
 }
 
+#[must_use]
+pub fn openai_decisions_request_to_core(
+    request: &openai::DecisionsRequest,
+) -> core::DecisionsRequest {
+    core::DecisionsRequest {
+        model: request.model.clone(),
+        state: request.state.clone(),
+        questions: request
+            .questions
+            .iter()
+            .map(|(id, question)| (id.clone(), openai_decision_question_to_core(question)))
+            .collect(),
+        extra: request.extra.clone(),
+    }
+}
+
+#[must_use]
+pub fn core_decisions_request_to_openai(
+    request: &core::DecisionsRequest,
+) -> openai::DecisionsRequest {
+    openai::DecisionsRequest {
+        model: request.model.clone(),
+        state: request.state.clone(),
+        questions: request
+            .questions
+            .iter()
+            .map(|(id, question)| (id.clone(), core_decision_question_to_openai(question)))
+            .collect(),
+        extra: request.extra.clone(),
+    }
+}
+
+fn openai_decision_question_to_core(question: &openai::DecisionQuestion) -> core::DecisionQuestion {
+    match question {
+        openai::DecisionQuestion::Noul {
+            instructions,
+            criteria,
+        } => core::DecisionQuestion::Noul {
+            instructions: instructions.clone(),
+            criteria: criteria.clone().map(|criteria| core::NoulCriteria {
+                yes: criteria.yes,
+                no: criteria.no,
+            }),
+        },
+        openai::DecisionQuestion::Choice {
+            instructions,
+            criteria,
+        } => core::DecisionQuestion::Choice {
+            instructions: instructions.clone(),
+            criteria: criteria.clone(),
+        },
+        openai::DecisionQuestion::Score {
+            instructions,
+            criteria,
+        } => core::DecisionQuestion::Score {
+            instructions: instructions.clone(),
+            criteria: criteria.clone(),
+        },
+    }
+}
+
+fn core_decision_question_to_openai(question: &core::DecisionQuestion) -> openai::DecisionQuestion {
+    match question {
+        core::DecisionQuestion::Noul {
+            instructions,
+            criteria,
+        } => openai::DecisionQuestion::Noul {
+            instructions: instructions.clone(),
+            criteria: criteria.clone().map(|criteria| openai::NoulCriteria {
+                yes: criteria.yes,
+                no: criteria.no,
+            }),
+        },
+        core::DecisionQuestion::Choice {
+            instructions,
+            criteria,
+        } => openai::DecisionQuestion::Choice {
+            instructions: instructions.clone(),
+            criteria: criteria.clone(),
+        },
+        core::DecisionQuestion::Score {
+            instructions,
+            criteria,
+        } => openai::DecisionQuestion::Score {
+            instructions: instructions.clone(),
+            criteria: criteria.clone(),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -146,11 +236,15 @@ mod tests {
 
     use crate::protocol::{
         anthropic::{AnthropicMessage, AnthropicMessagesRequest},
-        openai::{ChatCompletionsRequest, ChatMessage, EmbeddingsRequest, ResponsesRequest},
+        openai::{
+            ChatCompletionsRequest, ChatMessage, DecisionsRequest, EmbeddingsRequest,
+            ResponsesRequest,
+        },
         translate::{
             anthropic_messages_request_to_core, core_chat_request_to_openai,
-            core_embeddings_request_to_openai, core_responses_request_to_openai,
-            openai_chat_request_to_core, openai_embeddings_request_to_core,
+            core_decisions_request_to_openai, core_embeddings_request_to_openai,
+            core_responses_request_to_openai, openai_chat_request_to_core,
+            openai_decisions_request_to_core, openai_embeddings_request_to_core,
             openai_responses_request_to_core,
         },
     };
@@ -276,6 +370,36 @@ mod tests {
         assert_eq!(core_request.reasoning, openai_request.reasoning);
 
         let translated_back = core_responses_request_to_openai(&core_request);
+        assert_eq!(translated_back, openai_request);
+    }
+
+    #[test]
+    fn decisions_request_round_trips_between_openai_and_core() {
+        let openai_request: DecisionsRequest = serde_json::from_value(json!({
+            "model": "jev",
+            "state": "Help! My payouts have been failing for 3 days.",
+            "questions": {
+                "is_urgent": {"type": "noul", "instructions": "Does this convey urgency?"},
+                "department": {
+                    "type": "choice",
+                    "instructions": "Which team?",
+                    "criteria": {"billing": "Payments", "technical": null}
+                },
+                "frustration": {
+                    "type": "score",
+                    "instructions": "How frustrated?",
+                    "criteria": ["Calm", "Frustrated"]
+                }
+            }
+        }))
+        .expect("valid decisions request");
+
+        let core_request = openai_decisions_request_to_core(&openai_request);
+        assert_eq!(core_request.model, "jev");
+        assert_eq!(core_request.questions.len(), 3);
+        assert_eq!(core_request.validation_error(), None);
+
+        let translated_back = core_decisions_request_to_openai(&core_request);
         assert_eq!(translated_back, openai_request);
     }
 }

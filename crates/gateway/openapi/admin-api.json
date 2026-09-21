@@ -6102,6 +6102,12 @@
               "null"
             ]
           },
+          "supports_decisions": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "supports_streaming": {
             "type": [
               "boolean",
@@ -13766,6 +13772,7 @@
           "openai",
           "openrouter",
           "qwen",
+          "typesafe",
           "vertexai"
         ]
       },
@@ -13855,6 +13862,7 @@
           "aws",
           "openai",
           "openrouter",
+          "typesafe",
           "vertexai"
         ]
       },

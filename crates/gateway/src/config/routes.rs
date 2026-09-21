@@ -99,6 +99,7 @@ impl ModelRouteConfig {
         if let Some(ProviderConfig::AwsBedrock(provider)) = provider {
             validate_aws_bedrock_route_compatibility(model_id, self, provider)?;
         }
+        validate_decisions_route_capability(model_id, self, provider)?;
         Ok(())
     }
 }
@@ -191,6 +192,8 @@ pub struct RouteCapabilitiesConfig {
     pub stream: bool,
     #[serde(default = "default_enabled")]
     pub embeddings: bool,
+    #[serde(default)]
+    pub decisions: bool,
     #[serde(default = "default_enabled")]
     pub tools: bool,
     #[serde(default = "default_enabled")]
@@ -208,6 +211,7 @@ impl RouteCapabilitiesConfig {
             responses: self.responses,
             stream: self.stream,
             embeddings: self.embeddings,
+            decisions: self.decisions,
             tools: self.tools,
             vision: self.vision,
             json_schema: self.json_schema,
@@ -223,6 +227,7 @@ impl Default for RouteCapabilitiesConfig {
             responses: true,
             stream: true,
             embeddings: true,
+            decisions: false,
             tools: true,
             vision: true,
             json_schema: true,
@@ -351,7 +356,57 @@ fn validate_openrouter_route_compatibility(
             "model `{model_id}` route for OpenRouter provider `{}` compatibility.openrouter.provider",
             provider.id
         ),
+        compatibility.api.is_decisions(),
     )
+}
+
+fn validate_decisions_route_capability(
+    model_id: &str,
+    route: &ModelRouteConfig,
+    provider: Option<&ProviderConfig>,
+) -> anyhow::Result<()> {
+    let openrouter_decisions = route
+        .compatibility
+        .openrouter
+        .as_ref()
+        .is_some_and(|openrouter| openrouter.api.is_decisions());
+    let is_typesafe = matches!(provider, Some(ProviderConfig::TypeSafe(_)));
+
+    if openrouter_decisions && !route.capabilities.decisions {
+        bail!(
+            "model `{model_id}` route for provider `{}` uses compatibility.openrouter.api `decisions` but capabilities.decisions is not enabled",
+            route.provider
+        );
+    }
+    if is_typesafe && !route.capabilities.decisions {
+        bail!(
+            "model `{model_id}` route for typesafe provider `{}` must enable capabilities.decisions",
+            route.provider
+        );
+    }
+    if !route.capabilities.decisions {
+        return Ok(());
+    }
+    if !is_typesafe && !openrouter_decisions {
+        bail!(
+            "model `{model_id}` route for provider `{}` enables capabilities.decisions but decisions requires a typesafe provider or compatibility.openrouter.api `decisions`",
+            route.provider
+        );
+    }
+    for (family, enabled) in [
+        ("chat_completions", route.capabilities.chat_completions),
+        ("responses", route.capabilities.responses),
+        ("embeddings", route.capabilities.embeddings),
+        ("stream", route.capabilities.stream),
+    ] {
+        if enabled {
+            bail!(
+                "model `{model_id}` route for provider `{}` enables capabilities.decisions and `{family}`; decisions routes must disable other API families",
+                route.provider
+            );
+        }
+    }
+    Ok(())
 }
 
 fn is_openrouter_endpoint(base_url: &str) -> bool {
@@ -364,6 +419,7 @@ fn is_openrouter_endpoint(base_url: &str) -> bool {
 fn validate_openrouter_provider_routing(
     routing: &OpenRouterProviderRouting,
     label: &str,
+    allow_empty: bool,
 ) -> anyhow::Result<()> {
     validate_non_empty_strings(&routing.only, &format!("{label}.only"))?;
     validate_non_empty_strings(&routing.ignore, &format!("{label}.ignore"))?;
@@ -384,13 +440,7 @@ fn validate_openrouter_provider_routing(
         validate_openrouter_max_price(max_price, &format!("{label}.max_price"))?;
     }
 
-    if routing.zdr.is_none()
-        && routing.only.is_empty()
-        && routing.ignore.is_empty()
-        && routing.order.is_empty()
-        && routing.preferred_max_latency.is_none()
-        && routing.max_price.is_none()
-    {
+    if !allow_empty && routing.is_empty() {
         bail!("{label} must set at least one routing policy field");
     }
 

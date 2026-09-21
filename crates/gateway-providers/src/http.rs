@@ -6,6 +6,7 @@ use std::{
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use gateway_core::ProviderError;
+use serde_json::Value;
 use tracing::{Instrument, Span};
 
 pub type TracedResponseStream = Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>;
@@ -115,6 +116,28 @@ pub fn map_reqwest_error(error: reqwest::Error) -> ProviderError {
     } else {
         ProviderError::Transport(error.to_string())
     }
+}
+
+/// Non-streaming JSON round trip shared by provider adapters. Upstream HTTP
+/// errors keep their status and body; only successful bodies are parsed.
+pub async fn execute_json_request(
+    client: &reqwest::Client,
+    request: reqwest::Request,
+    provider_type: &str,
+    provider_key: &str,
+) -> Result<Value, ProviderError> {
+    let response = execute_request(client, request, provider_type, provider_key)
+        .await
+        .map_err(map_reqwest_error)?;
+    let status = response.status();
+    let text = response.text().await.map_err(map_reqwest_error)?;
+    if !status.is_success() {
+        return Err(ProviderError::UpstreamHttp {
+            status: status.as_u16(),
+            body: text,
+        });
+    }
+    serde_json::from_str(&text).map_err(|error| ProviderError::Transport(error.to_string()))
 }
 
 pub async fn execute_request(

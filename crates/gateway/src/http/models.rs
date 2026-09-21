@@ -162,6 +162,7 @@ fn map_model_summary(model: AdminModelSummary, include_allowlist: bool) -> Admin
         supports_tool_calling: model.supports_tool_calling,
         supports_structured_output: model.supports_structured_output,
         supports_attachments: model.supports_attachments,
+        supports_decisions: model.supports_decisions,
         client_configurations: model
             .client_configurations
             .into_iter()

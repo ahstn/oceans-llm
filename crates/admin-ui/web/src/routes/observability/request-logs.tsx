@@ -943,6 +943,8 @@ function formatOperation(operation: string) {
       return 'Responses'
     case 'embeddings':
       return 'Embeddings'
+    case 'decisions':
+      return 'Decisions'
     default: {
       const formatted = operation
         .split(/[_\s-]+/)

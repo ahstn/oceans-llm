@@ -2,12 +2,14 @@ pub mod anthropic;
 mod anthropic_compat;
 mod bedrock;
 mod copilot;
+mod decisions;
 mod http;
 mod media;
 mod openai_compat;
 mod replay_id;
 mod streaming;
 mod token;
+mod typesafe;
 mod vertex;
 
 /// Total provider request deadline, including consumption of a streaming body.
@@ -25,6 +27,7 @@ pub use openai_compat::{
     BearerAuthHeader, CloudRunOpenAiCompatAuth, OpenAiBatchConfig, OpenAiBatchDialect,
     OpenAiCompatConfig, OpenAiCompatProvider,
 };
+pub use typesafe::{DEFAULT_TYPESAFE_BASE_URL, TypeSafeConfig, TypeSafeProvider};
 pub use vertex::{
     VertexAuthConfig, VertexBatchConfig, VertexProvider, VertexProviderConfig,
     vertex_api_host_for_location,

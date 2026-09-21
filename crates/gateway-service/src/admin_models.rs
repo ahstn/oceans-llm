@@ -70,6 +70,7 @@ pub struct AdminModelSummary {
     pub supports_tool_calling: Option<bool>,
     pub supports_structured_output: Option<bool>,
     pub supports_attachments: Option<bool>,
+    pub supports_decisions: Option<bool>,
     pub client_configurations: Vec<ClientConfig>,
 }
 
@@ -365,6 +366,7 @@ where
                     supports_attachments: primary_metadata
                         .and_then(|metadata| metadata.modalities.as_ref())
                         .map(supports_attachments),
+                    supports_decisions: route_capabilities.map(|caps| caps.decisions),
                     client_configurations,
                 },
                 client_config_input,
@@ -427,6 +429,12 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
         context.primary_provider,
         Some(primary_route),
     );
+    if !capabilities.chat_completions && !capabilities.responses {
+        // OpenCode/Pi/Claude/Codex snippets target chat-shaped clients; a
+        // decisions-only model cannot use them, so emit no configs instead
+        // of misleading instructions.
+        return None;
+    }
     let pricing = context
         .metadata
         .and_then(|metadata| metadata.pricing.as_ref());
@@ -1000,6 +1008,58 @@ mod tests {
         assert!(!anthropic_capabilities.embeddings);
         assert!(anthropic_capabilities.tools);
     }
+
+    #[test]
+    fn decisions_only_routes_suppress_chat_shaped_client_configs() {
+        let model = GatewayModel {
+            id: Uuid::new_v4(),
+            model_key: "jev".to_string(),
+            alias_target_model_key: None,
+            max_reasoning_effort: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 1,
+        };
+        let route = model_route(
+            "typesafe/jev-1.13",
+            ProviderCapabilities {
+                chat_completions: false,
+                responses: false,
+                stream: false,
+                embeddings: false,
+                decisions: true,
+                tools: false,
+                vision: false,
+                json_schema: false,
+                developer_role: false,
+            },
+        );
+        let provider = ProviderConnection {
+            provider_key: "openrouter".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({"pricing_provider_id": "openrouter"}),
+            secrets: None,
+        };
+        let limits = PricingLimits {
+            context: Some(32_000),
+            input: None,
+            output: None,
+        };
+
+        let input = super::build_client_config_input(super::ClientConfigContext {
+            model: &model,
+            execution_model: &model,
+            primary_route: Some(&route),
+            primary_provider: Some(&provider),
+            provider_display: None,
+            metadata: None,
+            limits: &limits,
+            route_capabilities: Some(route.capabilities),
+            gateway_base_url: "http://127.0.0.1:3000",
+        });
+
+        assert!(input.is_none());
+    }
     #[test]
     fn copilot_provider_uses_upstream_evidence_and_operator_policy() {
         let provider = provider_connection("github_copilot");
@@ -1202,6 +1262,7 @@ mod tests {
         assert_eq!(alias.supports_tool_calling, Some(true));
         assert_eq!(alias.supports_structured_output, Some(true));
         assert_eq!(alias.supports_attachments, Some(true));
+        assert_eq!(alias.supports_decisions, Some(true));
         assert_eq!(
             alias
                 .allowlist
@@ -1746,6 +1807,7 @@ mod tests {
                 responses: true,
                 stream: false,
                 embeddings: true,
+                decisions: false,
                 tools: true,
                 vision: true,
                 json_schema: true,
@@ -1769,6 +1831,7 @@ mod tests {
                 responses: true,
                 stream: false,
                 embeddings: true,
+                decisions: false,
                 tools: true,
                 vision: true,
                 json_schema: true,

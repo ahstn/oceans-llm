@@ -5,7 +5,7 @@ use tokio::sync::Semaphore;
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AuthenticatedApiKey,
     BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetRecord, BudgetRepository,
-    ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
+    ChatCompletionsRequest, DecisionsRequest, GatewayError, GatewayModel, IdentityRepository,
     McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
@@ -370,6 +370,26 @@ where
         request_tags: RequestTags,
     ) -> RequestLogContext {
         self.request_logging.begin_embeddings_request(
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+            request_tags,
+        )
+    }
+
+    #[must_use]
+    pub fn begin_decisions_request_log(
+        &self,
+        request_id: &str,
+        requested_model_key: &str,
+        resolved_model_key: &str,
+        request: &DecisionsRequest,
+        request_headers: &std::collections::BTreeMap<String, String>,
+        request_tags: RequestTags,
+    ) -> RequestLogContext {
+        self.request_logging.begin_decisions_request(
             request_id,
             requested_model_key,
             resolved_model_key,

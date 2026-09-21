@@ -20,6 +20,8 @@ pub enum ProviderConfig {
     AwsBedrock(AwsBedrockProviderConfig),
     #[serde(rename = "github_copilot")]
     GitHubCopilot(GitHubCopilotProviderConfig),
+    #[serde(rename = "typesafe")]
+    TypeSafe(TypeSafeProviderConfig),
 }
 impl ProviderConfig {
     #[must_use]
@@ -31,6 +33,7 @@ impl ProviderConfig {
             Self::GcpVertex(provider) => &provider.id,
             Self::AwsBedrock(provider) => &provider.id,
             Self::GitHubCopilot(provider) => &provider.id,
+            Self::TypeSafe(provider) => &provider.id,
         }
     }
 }
@@ -73,6 +76,28 @@ pub struct OpenAiCompatAuthConfig {
     #[serde(default)]
     pub token: Option<String>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TypeSafeProviderConfig {
+    pub id: String,
+    #[serde(default = "default_typesafe_base_url")]
+    pub base_url: String,
+    #[serde(default)]
+    pub pricing_provider_id: String,
+    #[serde(default)]
+    pub auth: Option<OpenAiCompatAuthConfig>,
+    #[serde(default)]
+    pub default_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub timeouts: Option<ProviderTimeouts>,
+    #[serde(default)]
+    pub display: Option<ProviderDisplayConfig>,
+}
+
+fn default_typesafe_base_url() -> String {
+    gateway_providers::DEFAULT_TYPESAFE_BASE_URL.to_string()
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AnthropicCompatProviderConfig {
     pub id: String,
@@ -320,6 +345,7 @@ pub(super) fn validate_providers(providers: &[ProviderConfig]) -> anyhow::Result
             ProviderConfig::GcpVertex(provider) => provider.validate()?,
             ProviderConfig::AwsBedrock(provider) => provider.validate()?,
             ProviderConfig::GitHubCopilot(provider) => provider.validate()?,
+            ProviderConfig::TypeSafe(provider) => provider.validate()?,
         }
     }
     Ok(())
@@ -424,6 +450,46 @@ impl AnthropicCompatProviderConfig {
         if !is_supported_pricing_provider_id(&self.pricing_provider_id) {
             bail!(
                 "anthropic_compat provider `{}` pricing_provider_id `{}` is not supported",
+                self.id,
+                self.pricing_provider_id
+            );
+        }
+        validate_provider_display_config(self.id.as_str(), self.display.as_ref())?;
+        Ok(())
+    }
+}
+
+impl TypeSafeProviderConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.id.trim().is_empty() {
+            bail!("typesafe provider id cannot be empty");
+        }
+        if self.base_url.trim().is_empty() {
+            bail!("typesafe provider `{}` base_url cannot be empty", self.id);
+        }
+        let parsed = url::Url::parse(&self.base_url)
+            .with_context(|| format!("typesafe provider `{}` base_url is invalid", self.id))?;
+        if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+            bail!(
+                "typesafe provider `{}` base_url must be an HTTP URL with a host",
+                self.id
+            );
+        }
+        if parsed.query().is_some() || parsed.fragment().is_some() {
+            bail!(
+                "typesafe provider `{}` base_url cannot include query parameters or fragments",
+                self.id
+            );
+        }
+        if self.pricing_provider_id.trim().is_empty() {
+            bail!(
+                "typesafe provider `{}` pricing_provider_id cannot be empty",
+                self.id
+            );
+        }
+        if !is_supported_pricing_provider_id(&self.pricing_provider_id) {
+            bail!(
+                "typesafe provider `{}` pricing_provider_id `{}` is not supported",
                 self.id,
                 self.pricing_provider_id
             );
