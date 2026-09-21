@@ -76,7 +76,7 @@ pub use providers::{
     GcpVertexAuthConfig, GcpVertexBatchConfig, GcpVertexProviderConfig, GitHubCopilotAuthConfig,
     GitHubCopilotProviderConfig, OpenAiBatchDialectConfig, OpenAiBatchProviderConfig,
     OpenAiCompatAuthConfig, OpenAiCompatProviderConfig, ProviderConfig, ProviderDisplayConfig,
-    ProviderTimeouts,
+    ProviderTimeouts, TypeSafeProviderConfig,
 };
 
 #[derive(Debug, Clone, Deserialize, Default)]

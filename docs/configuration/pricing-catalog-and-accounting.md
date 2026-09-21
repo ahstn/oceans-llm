@@ -77,6 +77,7 @@ Current exact catalog coverage, used only when a route has no pricing override, 
 
 - `openai_compat` and `anthropic_compat` routes need a supported `pricing_provider_id`
 - OpenRouter `openai_compat` routes should use `pricing_provider_id: openrouter`
+- native `typesafe` routes need a supported `pricing_provider_id` and should use a route pricing override when their upstream alias has no exact catalog identity
 - OpenCode Zen `anthropic_compat` routes should use `pricing_provider_id: opencode`
 - Vertex routes are priced from the upstream publisher prefix
 - `google/...` maps to Google Vertex pricing
@@ -103,6 +104,12 @@ Common causes are:
 `usage_missing` is different. It means Oceans could not normalize usable provider usage at all. For example, a provider may return a successful response without final token counts.
 
 Both states remain visible in reports and request logs, but neither state counts toward spend totals or hard-limit windows.
+
+## Decisions Usage
+
+TypeSafe and OpenRouter Decisions responses report `input_tokens` and `output_tokens`. Oceans normalizes them to prompt/input and completion/output ledger fields and derives a total when both values are present.
+
+The vendored OpenRouter fallback includes `typesafe/jev-1.13` at $0.042 input and $0 output per million tokens with a 32,000-token context. A native TypeSafe route commonly uses `jev-latest`, which is not the same catalog key. Configure the known rates on that route instead of relying on alias inference.
 
 ## Vertex Text Embeddings
 

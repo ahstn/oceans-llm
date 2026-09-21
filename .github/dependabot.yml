@@ -88,6 +88,9 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
     groups:
       security-dev-tools:
         applies-to: security-updates

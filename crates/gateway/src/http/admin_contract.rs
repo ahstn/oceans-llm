@@ -271,6 +271,7 @@ pub enum ProviderIconKeyView {
     AWS,
     OpenAI,
     OpenRouter,
+    TypeSafe,
     VertexAI,
 }
 
@@ -281,6 +282,7 @@ impl From<ServiceProviderIconKey> for ProviderIconKeyView {
             ServiceProviderIconKey::AWS => Self::AWS,
             ServiceProviderIconKey::OpenAI => Self::OpenAI,
             ServiceProviderIconKey::OpenRouter => Self::OpenRouter,
+            ServiceProviderIconKey::TypeSafe => Self::TypeSafe,
             ServiceProviderIconKey::VertexAI => Self::VertexAI,
         }
     }
@@ -296,6 +298,7 @@ pub enum ModelIconKeyView {
     OpenAI,
     OpenRouter,
     Qwen,
+    TypeSafe,
     VertexAI,
 }
 
@@ -309,6 +312,7 @@ impl From<ServiceModelIconKey> for ModelIconKeyView {
             ServiceModelIconKey::OpenAI => Self::OpenAI,
             ServiceModelIconKey::OpenRouter => Self::OpenRouter,
             ServiceModelIconKey::Qwen => Self::Qwen,
+            ServiceModelIconKey::TypeSafe => Self::TypeSafe,
             ServiceModelIconKey::VertexAI => Self::VertexAI,
         }
     }
@@ -366,6 +370,7 @@ pub struct AdminModelView {
     pub supports_tool_calling: Option<bool>,
     pub supports_structured_output: Option<bool>,
     pub supports_attachments: Option<bool>,
+    pub supports_decisions: Option<bool>,
     pub client_configurations: Vec<AdminModelClientConfigView>,
 }
 

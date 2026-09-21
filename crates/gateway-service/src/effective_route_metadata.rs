@@ -200,13 +200,24 @@ pub(crate) fn provider_capabilities(
 ) -> ProviderCapabilities {
     match provider.provider_type.as_str() {
         "openai_compat" | "gcp_cloud_run_openai_compat" => {
-            ProviderCapabilities::openai_compat_baseline()
+            let mut capabilities = ProviderCapabilities::openai_compat_baseline();
+            if route.is_some_and(|route| {
+                route
+                    .compatibility
+                    .openrouter
+                    .as_ref()
+                    .is_some_and(|openrouter| openrouter.api.is_decisions())
+            }) {
+                capabilities.decisions = true;
+            }
+            capabilities
         }
         "anthropic_compat" => ProviderCapabilities {
             chat_completions: true,
             responses: false,
             stream: true,
             embeddings: false,
+            decisions: false,
             tools: true,
             vision: true,
             json_schema: false,
@@ -223,10 +234,22 @@ pub(crate) fn provider_capabilities(
             responses: true,
             stream: true,
             embeddings: false,
+            decisions: false,
             tools: true,
             vision: true,
             json_schema: true,
             developer_role: true,
+        },
+        "typesafe" => ProviderCapabilities {
+            chat_completions: false,
+            responses: false,
+            stream: false,
+            embeddings: false,
+            decisions: true,
+            tools: false,
+            vision: false,
+            json_schema: false,
+            developer_role: false,
         },
         _ => ProviderCapabilities::all_enabled(),
     }

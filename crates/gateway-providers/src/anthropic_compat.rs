@@ -141,6 +141,7 @@ impl ProviderClient for AnthropicCompatProvider {
             responses: false,
             stream: true,
             embeddings: false,
+            decisions: false,
             tools: true,
             vision: true,
             json_schema: false,

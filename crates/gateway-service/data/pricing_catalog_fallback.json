@@ -31368,6 +31368,43 @@
             ]
           }
         },
+        "typesafe/jev-1.13": {
+          "id": "typesafe/jev-1.13",
+          "display_name": "Jev 1.13",
+          "release_date": "2026-09-15",
+          "last_updated": "2026-09-15",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": false,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0420",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 32000,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "undi95/remm-slerp-l2-13b": {
           "id": "undi95/remm-slerp-l2-13b",
           "display_name": "ReMM SLERP 13B",

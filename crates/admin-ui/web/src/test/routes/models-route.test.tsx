@@ -132,6 +132,7 @@ const modelPage: ModelPageView = {
       supports_tool_calling: true,
       supports_structured_output: true,
       supports_attachments: true,
+      supports_decisions: true,
       tags: ['fast', 'cheap'],
       allowlist: null,
       status: 'healthy',
@@ -158,6 +159,7 @@ const modelPage: ModelPageView = {
       supports_tool_calling: true,
       supports_structured_output: true,
       supports_attachments: false,
+      supports_decisions: false,
       tags: ['anthropic', 'reasoning'],
       allowlist: {
         users: ['alice@example.com', 'bob@example.com'],
@@ -252,6 +254,7 @@ const modelPage: ModelPageView = {
       supports_tool_calling: false,
       supports_structured_output: true,
       supports_attachments: true,
+      supports_decisions: false,
       tags: ['fast', 'fallback'],
       allowlist: null,
       status: 'degraded',
@@ -504,6 +507,29 @@ describe('ModelsPage table content', () => {
 
     expect(within(table).queryByText('Notes')).not.toBeInTheDocument()
     expect(within(table).queryByText('Gemini fallback on Vertex')).not.toBeInTheDocument()
+  })
+
+  it('renders a Decisions badge only for decisions-capable models', () => {
+    const claude = modelPage.items[1]
+    expect(claude).toBeDefined()
+    const page: ModelPageView = {
+      ...modelPage,
+      items: [
+        { ...(modelPage.items[0] as ModelPageView['items'][number]) },
+        { ...(claude as ModelPageView['items'][number]), supports_decisions: true },
+      ],
+    }
+    routeMock.useLoaderData.mockReturnValue({ data: page })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const mobileList = screen.getByTestId('models-mobile-list')
+    const decisionsBadges = within(mobileList).getAllByText('Decisions')
+    expect(decisionsBadges.length).toBeGreaterThan(0)
   })
 })
 

@@ -95,11 +95,13 @@ The summary row stores:
 - truncation flags
 - metadata such as `operation`, `stream`, and `payload_policy`
 
-`operation` is the public API family. Current values include `chat_completions`, `responses`, and `embeddings`.
+`operation` is the public API family. Current values include `chat_completions`, `responses`, `embeddings`, and `decisions`.
 
 Request-attempt rows describe upstream provider execution only. Pre-provider failures such as authentication rejection, capability mismatch, route unavailability, or budget hard-limit rejection have zero attempts. In the current runtime, successful provider-backed requests record one terminal attempt. Retry and fallback execution remain disabled until the configurable policy tracked in issue #118 is implemented.
 
 Native Vertex embeddings use the same request-log surfaces. Successful or failed provider-backed embedding requests record `operation: embeddings`; provider execution details appear as request-attempt rows when a request-log summary is written; sanitized request and response payloads follow the configured payload policy. Embedding inputs are text-only for native Vertex routes, but the redaction and byte-limit policy still applies before storage.
+
+Decisions requests record `operation: decisions`. Their `state`, questions, answers, provider attempt, and normalized usage follow the same payload, redaction, and byte-limit policy as other non-streaming inference requests.
 
 Tool-cardinality fields are explicit nullable columns on `request_logs`.
 

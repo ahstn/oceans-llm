@@ -102,8 +102,41 @@ impl GatewayConfig {
                 ProviderConfig::AnthropicCompat(_)
                 | ProviderConfig::GcpVertex(_)
                 | ProviderConfig::AwsBedrock(_)
-                | ProviderConfig::GitHubCopilot(_) => {}
+                | ProviderConfig::GitHubCopilot(_)
+                | ProviderConfig::TypeSafe(_) => {}
             }
+        }
+
+        Ok(configs)
+    }
+
+    pub fn typesafe_provider_configs(
+        &self,
+    ) -> anyhow::Result<Vec<gateway_providers::TypeSafeConfig>> {
+        let mut configs = Vec::new();
+
+        for provider in &self.providers {
+            let ProviderConfig::TypeSafe(provider) = provider else {
+                continue;
+            };
+
+            let mut config = gateway_providers::TypeSafeConfig::new(
+                provider.id.clone(),
+                provider.base_url.clone(),
+            );
+            config.default_headers = provider.default_headers.clone();
+            config.request_timeout_ms = provider
+                .timeouts
+                .as_ref()
+                .map(|timeouts| timeouts.total_ms)
+                .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS);
+            if let Some(auth) = &provider.auth
+                && let Some(token) = &auth.token
+            {
+                config.bearer_token = Some(resolve_secret_reference(token)?);
+            }
+
+            configs.push(config);
         }
 
         Ok(configs)

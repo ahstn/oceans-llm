@@ -759,11 +759,14 @@ Supported provider types in the checked-in configs:
 - `gcp_vertex`
 - `aws_bedrock`
 - `github_copilot`
+- `typesafe`
+
 ### Provider Auth Modes
 
 | Provider type | Auth field | Expected secret material |
 | --- | --- | --- |
 | `openai_compat` | `auth.token` | bearer-style token |
+| `typesafe` | `auth.token` | TypeSafe API key sent as an `Authorization: Bearer` token |
 | `anthropic_compat` | `auth.kind: x_api_key` | API key sent as `x-api-key` header (default) |
 | `anthropic_compat` | `auth.kind: bearer` | Bearer token sent as `Authorization: Bearer` header |
 | `gcp_cloud_run_openai_compat` | `auth.mode: adc` | Google ADC or metadata-server identity credentials that can mint Cloud Run ID tokens |
@@ -796,6 +799,7 @@ Important fields:
 - `openrouter`
 - `anthropic`
 - `aws`
+- `typesafe`
 - `vertexai`
 
 Validation rules that matter:
@@ -804,6 +808,31 @@ Validation rules that matter:
 - `pricing_provider_id` must map to a supported internal pricing family
 
 OpenRouter uses this generic provider type with `base_url: https://openrouter.ai/api/v1`. Keep arbitrary OpenAI-compatible endpoints on plain `openai_compat`; add route-level `compatibility.openrouter` only when the route needs OpenRouter provider-selection policy such as ZDR, provider allow/deny lists, provider order, latency preference, or price ceilings. See [OpenRouter](../providers/openrouter.md).
+
+### `typesafe`
+
+Use `typesafe` for native System One requests. The adapter calls `/v1/systemone` and supports Decisions only.
+
+Important fields:
+
+- `id`
+- `base_url`
+  - defaults to `https://api.typesafe.ai`
+  - use either a bare origin or a base ending in `/v1`
+- `pricing_provider_id`
+  - must be a supported pricing family
+  - use a route `pricing_override` when the native upstream model has no exact catalog identity
+- `auth.kind`
+  - `bearer`
+- `auth.token`
+  - secret reference such as `env.TYPESAFE_API_KEY`
+- `default_headers`
+- optional `timeouts.total_ms`
+- optional `display.label`
+- optional `display.icon_key`
+
+The base URL must be a bare origin or end in `/v1`, with no query or fragment. It must use HTTPS, except that HTTP is allowed for loopback addresses during local development. See [TypeSafe](../providers/typesafe.md) for a full provider and route example.
+
 ### `anthropic_compat`
 
 Use `anthropic_compat` for upstream providers that expose native Anthropic Messages endpoints at `{base_url}/v1/messages`. This adapter translates gateway chat completion requests to Anthropic Messages payloads, handles native JSON and SSE streaming, normalizes usage (including cache read and cache creation tokens), and forwards thinking blocks across turns.
@@ -1069,7 +1098,9 @@ Capability flags default permissively. A route can constrain provider capability
 
 Compatibility metadata is separate from capabilities. Capabilities decide whether a route may execute; compatibility describes explicit request and stream-shape transforms for the selected provider route.
 
-Capability flags include API-family gates such as `chat_completions`, `responses`, and `embeddings`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
+Capability flags include API-family gates such as `chat_completions`, `responses`, `embeddings`, and `decisions`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
+
+`decisions` defaults to `false`. A Decisions route must set it to `true` and set `chat_completions`, `responses`, `embeddings`, and `stream` to `false`. Current valid transports are `type: typesafe` and an OpenRouter route with `compatibility.openrouter.api: decisions`.
 
 Vertex embedding-only route:
 
@@ -1129,6 +1160,29 @@ models:
               max_price:
                 prompt: 1.0
                 completion: 2.0
+```
+
+OpenRouter Decisions route:
+
+```yaml
+models:
+  - id: jev
+    routes:
+      - provider: openrouter
+        upstream_model: typesafe/jev-1.13
+        capabilities:
+          chat_completions: false
+          responses: false
+          stream: false
+          embeddings: false
+          decisions: true
+          tools: false
+          vision: false
+          json_schema: false
+          developer_role: false
+        compatibility:
+          openrouter:
+            api: decisions
 ```
 
 AWS Bedrock route profile:
@@ -1191,6 +1245,7 @@ OpenRouter policy fields:
 
 | Field | Default | Supported values |
 | --- | --- | --- |
+| `api` | `open_ai_compat` | `open_ai_compat`, `decisions` |
 | `zdr` | unset | `true`, `false` |
 | `only` | `[]` | non-empty OpenRouter provider slugs |
 | `ignore` | `[]` | non-empty OpenRouter provider slugs |
@@ -1198,7 +1253,7 @@ OpenRouter policy fields:
 | `preferred_max_latency` | unset | positive number, or object with positive `p50`, `p75`, `p90`, `p99` values in seconds |
 | `max_price` | unset | object with one or more non-negative `prompt`, `completion`, `request`, or `image` ceilings |
 
-`compatibility.openrouter` is valid only on OpenRouter `openai_compat` providers. Do not set both `compatibility.openrouter.provider` and `extra_body.provider` on the same route.
+`compatibility.openrouter` is valid only on OpenRouter `openai_compat` providers. `api: decisions` can omit all provider policy fields. Other OpenRouter profiles must set at least one provider policy field. Do not set both `compatibility.openrouter.provider` and `extra_body.provider` on the same route.
 
 The current `openai_compat` profile fields are Chat Completions transforms. `/v1/responses` is a separate supported API family and is not adapted by reusing Chat Completions compatibility shims.
 

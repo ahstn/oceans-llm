@@ -236,3 +236,185 @@ models:
         "unexpected error: {error_text}"
     );
 }
+
+#[test]
+fn accepts_decisions_api_with_empty_provider_policy() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+models:
+  - id: jev
+    routes:
+      - provider: openrouter
+        upstream_model: typesafe/jev-1.13
+        capabilities:
+          chat_completions: false
+          responses: false
+          stream: false
+          embeddings: false
+          decisions: true
+          tools: false
+          vision: false
+          json_schema: false
+          developer_role: false
+        compatibility:
+          openrouter:
+            api: decisions
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let models = config.seed_models().expect("seed models");
+    let compatibility = models[0].routes[0]
+        .compatibility
+        .openrouter
+        .as_ref()
+        .expect("openrouter compatibility");
+
+    assert_eq!(
+        compatibility.api,
+        gateway_core::OpenRouterRouteApi::Decisions
+    );
+    assert!(compatibility.provider.is_empty());
+    assert!(models[0].routes[0].capabilities.decisions);
+}
+
+#[test]
+fn rejects_auxiliary_capabilities_on_decisions_routes() {
+    for enabled_capability in ["tools", "vision", "json_schema", "developer_role"] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        let capability = |name| name == enabled_capability;
+        write_config(
+            &config_path,
+            &format!(
+                r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+models:
+  - id: jev
+    routes:
+      - provider: openrouter
+        upstream_model: typesafe/jev-1.13
+        capabilities:
+          chat_completions: false
+          responses: false
+          stream: false
+          embeddings: false
+          decisions: true
+          tools: {}
+          vision: {}
+          json_schema: {}
+          developer_role: {}
+        compatibility:
+          openrouter:
+            api: decisions
+"#,
+                capability("tools"),
+                capability("vision"),
+                capability("json_schema"),
+                capability("developer_role"),
+            ),
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains(&format!(
+                "enables capabilities.decisions and `{enabled_capability}`"
+            )),
+            "unexpected error: {error_text}"
+        );
+    }
+}
+
+#[test]
+fn rejects_decisions_api_without_decisions_capability() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+models:
+  - id: jev
+    routes:
+      - provider: openrouter
+        upstream_model: typesafe/jev-1.13
+        capabilities:
+          chat_completions: false
+          responses: false
+          stream: false
+          embeddings: false
+          tools: false
+          vision: false
+          json_schema: false
+          developer_role: false
+        compatibility:
+          openrouter:
+            api: decisions
+"#,
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    let error_text = format!("{error:#}");
+    assert!(
+        error_text.contains("compatibility.openrouter.api `decisions`"),
+        "unexpected error: {error_text}"
+    );
+}
+
+#[test]
+fn rejects_decisions_capability_on_non_decisions_routes() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+models:
+  - id: jev
+    routes:
+      - provider: openrouter
+        upstream_model: typesafe/jev-1.13
+        capabilities:
+          chat_completions: false
+          responses: false
+          stream: false
+          embeddings: false
+          decisions: true
+          tools: false
+          vision: false
+          json_schema: false
+          developer_role: false
+"#,
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    let error_text = format!("{error:#}");
+    assert!(
+        error_text.contains("decisions requires a typesafe provider"),
+        "unexpected error: {error_text}"
+    );
+}
