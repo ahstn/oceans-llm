@@ -349,7 +349,7 @@ export function ModelsPage() {
                         <span className="flex min-w-0 flex-col gap-0.5">
                           <span className="font-medium text-[var(--color-text)]">Capabilities</span>
                           <span className="text-xs text-[var(--color-text-muted)]">
-                            Streaming, vision, tools, attachment, and Decisions support.
+                            Streaming, vision, tools, and attachment support.
                           </span>
                         </span>
                       </label>
