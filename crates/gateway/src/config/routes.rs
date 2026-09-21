@@ -393,15 +393,19 @@ fn validate_decisions_route_capability(
             route.provider
         );
     }
-    for (family, enabled) in [
+    for (capability, enabled) in [
         ("chat_completions", route.capabilities.chat_completions),
         ("responses", route.capabilities.responses),
         ("embeddings", route.capabilities.embeddings),
         ("stream", route.capabilities.stream),
+        ("tools", route.capabilities.tools),
+        ("vision", route.capabilities.vision),
+        ("json_schema", route.capabilities.json_schema),
+        ("developer_role", route.capabilities.developer_role),
     ] {
         if enabled {
             bail!(
-                "model `{model_id}` route for provider `{}` enables capabilities.decisions and `{family}`; decisions routes must disable other API families",
+                "model `{model_id}` route for provider `{}` enables capabilities.decisions and `{capability}`; decisions routes must disable all other capabilities",
                 route.provider
             );
         }
