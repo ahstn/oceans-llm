@@ -32,7 +32,7 @@ aws-config = "1.8"
 aws-credential-types = "1.2"
 aws-sigv4 = { version = "1.4", features = ["sign-http", "http1"] }
 aws-smithy-runtime-api = "1.12"
-base64 = "0.22"
+base64 = "0.23"
 bytes = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
@@ -65,7 +65,7 @@ opentelemetry_sdk = { version = "0.32", features = [
   "trace",
 ] }
 percent-encoding = "2"
-rand = "0.8"
+rand = "0.10"
 reqwest = { version = "0.13", default-features = false, features = [
   "form",
   "json",
@@ -94,7 +94,7 @@ tokio = { version = "1", features = [
 ] }
 toml = "0.8"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["request-id", "trace", "util"] }
+tower-http = { version = "0.7", features = ["request-id", "trace", "util"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3", features = [

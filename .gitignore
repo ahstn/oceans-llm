@@ -24,6 +24,7 @@ gateway.db*
 
 .omp/mcp.json
 .codex/config.toml
+.codex/security/
 .claude/*
 .agents/skills/*
 !.agents/skills/verify-oceans-admin/

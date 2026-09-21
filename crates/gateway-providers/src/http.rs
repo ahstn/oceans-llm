@@ -14,11 +14,24 @@ pub type TracedResponseStream = Pin<Box<dyn Stream<Item = Result<Bytes, reqwest:
 pub(crate) fn provider_http_client(
     total_timeout_ms: u64,
 ) -> Result<reqwest::Client, ProviderError> {
+    provider_http_client_builder(total_timeout_ms)
+        .build()
+        .map_err(map_reqwest_error)
+}
+
+pub(crate) fn provider_http_client_without_redirects(
+    total_timeout_ms: u64,
+) -> Result<reqwest::Client, ProviderError> {
+    provider_http_client_builder(total_timeout_ms)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(map_reqwest_error)
+}
+
+fn provider_http_client_builder(total_timeout_ms: u64) -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_millis(total_timeout_ms))
-        .build()
-        .map_err(map_reqwest_error)
 }
 
 pub struct TracedResponse {

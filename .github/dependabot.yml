@@ -13,10 +13,70 @@ updates:
       include: scope
     ignore:
       - dependency-name: '*'
-        update-types: [version-update:semver-major]
+        update-types: ['version-update:semver-major']
+    groups:
+      async-runtime:
+        patterns:
+          - 'async-stream'
+          - 'async-trait'
+          - 'bytes'
+          - 'futures-*'
+          - 'tokio'
+      aws-sdk:
+        patterns:
+          - 'aws-*'
+      auth-and-crypto:
+        patterns:
+          - 'aes-gcm'
+          - 'argon2'
+          - 'jsonwebtoken'
+          - 'openidconnect'
+          - 'sha2'
+      observability:
+        patterns:
+          - 'opentelemetry*'
+          - 'tracing*'
+      serialization-and-config:
+        patterns:
+          - 'serde*'
+          - 'toml'
+      storage:
+        patterns:
+          - 'libsql'
+          - 'sqlx'
+      testing:
+        patterns:
+          - 'serial_test'
+          - 'tempfile'
+      web-api:
+        patterns:
+          - 'axum'
+          - 'http'
+          - 'http-body'
+          - 'reqwest'
+          - 'tower'
+          - 'tower-http'
+          - 'utoipa'
+      utilities:
+        patterns:
+          - 'anyhow'
+          - 'base64'
+          - 'chrono'
+          - 'clap'
+          - 'cron'
+          - 'itertools'
+          - 'lettre'
+          - 'percent-encoding'
+          - 'rand'
+          - 'thiserror'
+          - 'time'
+          - 'url'
+          - 'uuid'
 
   - package-ecosystem: bun
-    open-pull-requests-limit: 10
+    # A zero version-update limit leaves security updates enabled.
+    open-pull-requests-limit: 0
+    # tests/harness-integration/ is intentionally omitted.
     directories:
       - docs/
       - crates/admin-ui/web/
@@ -60,3 +120,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      docker-actions:
+        patterns:
+          - "docker/*"
+      github-maintained-actions:
+        patterns:
+          - "actions/*"
