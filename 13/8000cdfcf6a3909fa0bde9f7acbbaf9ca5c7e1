@@ -1,0 +1,28 @@
+crates/gateway-providers/src/decisions.rs
+  h_2f452a9c375069 10-14,77-78,83-86,88,94-111,116-142,176-182,187,190-191,196-219
+crates/gateway-providers/src/openai_compat.rs
+  h_2f452a9c375069 825
+crates/gateway-providers/src/openai_compat/decisions.rs
+  h_2f452a9c375069 235
+crates/gateway-providers/src/typesafe.rs
+  h_2f452a9c375069 81-87,209
+crates/gateway/src/config/providers.rs
+  h_2f452a9c375069 472,474-480,490-495,909-920
+crates/gateway/src/config/tests/providers.rs
+  h_2f452a9c375069 757-803
+docs/configuration/configuration-reference.md
+  h_2f452a9c375069 834
+docs/providers/typesafe.md
+  h_2f452a9c375069 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "138000cdfcf6a3909fa0bde9f7acbbaf9ca5c7e1",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
