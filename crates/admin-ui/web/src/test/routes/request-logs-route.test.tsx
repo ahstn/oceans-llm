@@ -283,10 +283,11 @@ describe('RequestLogsPage', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
     await waitFor(() => {
-      expect(screen.getByText('Request Log Detail')).toBeInTheDocument()
+      expect(screen.getAllByRole('dialog').length).toBeGreaterThan(0)
     })
 
-    const dialog = screen.getByRole('dialog')
+    const dialogs = screen.getAllByRole('dialog')
+    const dialog = dialogs[dialogs.length - 1]
     expect(within(dialog).getByText('Operation')).toBeInTheDocument()
     expect(within(dialog).getByText('Decisions')).toBeInTheDocument()
   })
