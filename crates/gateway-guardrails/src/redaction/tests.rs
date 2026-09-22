@@ -172,9 +172,11 @@ fn tiers_and_disabled_rules_select_rules() {
 fn overlapping_findings_report_every_matching_rule() {
     let token = format!("ghp_{}", random(ALNUM, 36, 21));
     let text = format!("github_token = \"{token}\"");
-    let (redacted, rule_ids) =
-        scanner::redact_text(&text, &config(&[SecretTier::ProviderTokens, SecretTier::Generic]))
-            .unwrap();
+    let (redacted, rule_ids) = scanner::redact_text(
+        &text,
+        &config(&[SecretTier::ProviderTokens, SecretTier::Generic]),
+    )
+    .unwrap();
     assert_eq!(redacted, "github_token = \"[REDACTED:github-token]\"");
     assert_eq!(rule_ids, ["github-token", "generic-api-key"]);
 }
