@@ -1,0 +1,73 @@
+Cargo.lock
+  s_729846f802251e::t_a28fb834e21871 1749,1756
+Cargo.toml
+  s_729846f802251e::t_57dcccd206a73a 28,70
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_729846f802251e::t_82ff9fa1391c1f 2563,3809-3813
+crates/admin-ui/web/src/routes/observability/guardrails.tsx
+  s_729846f802251e::t_8c192e46236ab5 340-343
+crates/admin-ui/web/src/test/routes/guardrails-route.test.tsx
+  s_729846f802251e::t_5fa53932dfe3a3 34-38,90
+crates/gateway-guardrails/Cargo.toml
+  s_729846f802251e::t_5f89de12396258 10,17
+crates/gateway-guardrails/src/evaluation.rs
+  s_729846f802251e::t_883ade6786da3a 448
+crates/gateway-guardrails/src/lib.rs
+  s_729846f802251e::t_fdf4a77077684c 12,34-36
+crates/gateway-guardrails/src/packs/tests.rs
+  s_729846f802251e::t_f7fe11d79568de 22,807
+crates/gateway-guardrails/src/policy.rs
+  s_729846f802251e::t_36d0636adc3f7e 8,102-103,115,135-136,203-224,235,287-289,302,319-321,352-368,550-551,557,573,601-680
+crates/gateway-guardrails/src/redaction/mod.rs
+  s_729846f802251e::t_f79c73e2a2b032 1-205
+crates/gateway-guardrails/src/redaction/rules.rs
+  s_729846f802251e::t_e948b48d27177c 1-353
+crates/gateway-guardrails/src/redaction/scanner.rs
+  s_729846f802251e::t_37e65adb29b606 1-234
+crates/gateway-guardrails/src/redaction/tests.rs
+  s_729846f802251e::t_863a400a84a6b5 1-295
+crates/gateway-service/src/lib.rs
+  s_729846f802251e::t_83112e6c04175f 104-105
+crates/gateway-service/src/redaction.rs
+  s_729846f802251e::t_afbf8acacac0c4 1,178-194,202,213,233,237-242,450-454
+crates/gateway-service/src/redaction/tests.rs
+  s_729846f802251e::t_52e599c7ad8110 6-9,170-192
+crates/gateway/openapi/admin-api.json
+  s_729846f802251e::t_fdfb8addfdf569 9821,9846-9848,15022-15046
+crates/gateway/src/config/mod.rs
+  s_729846f802251e::t_bce9625e0d2efd 4-5,184-192
+crates/gateway/src/config/tests/guardrails.rs
+  s_729846f802251e::t_ac6da083db68ef 273-298
+crates/gateway/src/http/guardrail_events.rs
+  s_729846f802251e::t_023e04ed5cd7b8 6-7,20-39
+crates/gateway/src/http/guardrails.rs
+  s_729846f802251e::t_44e2e91c89379e 168,172-178,388-404
+crates/gateway/src/http/inference_guardrails.rs
+  s_729846f802251e::t_ec80861227ac85 8,12-15,64-66,1199-1201,1204-1252
+docs/adr/2026-09-22-guardrail-secret-redaction.md
+  s_729846f802251e::t_2625bb6843ef0f 1-31
+docs/operations/gateway-guardrails.md
+  s_729846f802251e::t_2eaa4402b2ebde 88-118
+docs/operations/observability-and-request-logs.md
+  s_729846f802251e::t_9e781a37a9893e 201-202
+docs/plans/2026-09-22-guardrail-secret-redaction.md
+  s_729846f802251e::t_79ef201172d603 1-247
+gateway.yaml
+  s_729846f802251e::t_95afe24c8330b9 68-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63e95d22120baf01fed7fe9581aae0717641029b",
+  "prompts": {},
+  "sessions": {
+    "s_729846f802251e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "80e79430-8e4b-4cb7-9452-cc764000ff75",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
