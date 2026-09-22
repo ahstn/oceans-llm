@@ -1691,7 +1691,8 @@ async fn enforce_guarded_stream_after_provider(
 ) -> Result<ProviderStream, AppError> {
     match guard_stream(state, guard_context, stream).await {
         Ok(stream) => Ok(stream),
-        Err(GuardStreamError { error, collector }) => {
+        Err(failure) => {
+            let GuardStreamError { error, collector } = *failure;
             if let Some(collector) = collector {
                 record_guarded_stream_failure(
                     state,

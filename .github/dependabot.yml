@@ -110,7 +110,8 @@ updates:
   - package-ecosystem: docker
     open-pull-requests-limit: 1
     directories:
-      - /
+      - /crates/gateway
+      - /crates/admin-ui/web
     schedule:
       interval: cron
       cronjob: '0 8 * * 1,3'
