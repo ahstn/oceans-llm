@@ -32,7 +32,8 @@ pub use policy::{
     ModelArmorManagedConfig, PolicyConfig, PolicyOverride, PolicyResolver, PolicyTarget,
 };
 pub use redaction::{
-    RedactedField, SecretRedactionConfig, SecretTier, redact_json_secrets, redact_prompt_secrets,
+    RedactedField, SecretRedactionConfig, SecretRedactionOverride, SecretTier, redact_json_secrets,
+    redact_prompt_secrets,
 };
 pub use selectors::{
     JsonPath, JsonPathError, JsonPredicate, JsonPredicateOp, McpCall, McpSelector,

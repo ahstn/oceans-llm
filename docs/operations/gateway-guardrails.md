@@ -100,7 +100,7 @@ guardrails:
       disabled_rules: []
 ```
 
-Redaction needs both `enabled: true` on the policy and `secret_redaction.enabled: true`. A model-route override that sets `secret_redaction` replaces the whole block. Redaction applies to model-route prompts only. It covers every string in the request body: messages, system prompts, tool definitions, tool-call arguments, and tool results. It skips inline media (`data` and `b64_json` fields, and `data:` URIs).
+Redaction needs both `enabled: true` on the policy and `secret_redaction.enabled: true`. A model-route or MCP-server override can set any of `enabled`, `tiers`, and `disabled_rules`; unset fields inherit the default block. Redaction applies to model-route prompts only. It covers every string in the request body: messages, system prompts, tool definitions, tool-call arguments, and tool results. It skips inline base64 media: `b64_json` strings, base64 `data:` URIs, and `data` strings beside `type: base64`, `format`, `media_type`, `mime_type`, or `mimeType`. Any other `data` field is scanned.
 
 | Tier | Default | Detects |
 | --- | --- | --- |
@@ -112,7 +112,7 @@ Candidates must pass a per-rule Shannon-entropy threshold. Documentation placeho
 
 Each redacted request records one `transformed` decision per matched rule, with evaluator `secret_redaction`, reason code `secret_redaction.redacted`, and the JSON pointer of the first matching field. The content hash covers the redacted text only.
 
-When any enabled policy redacts secrets, the gateway applies the same detection to captured request-log payloads: requests, responses, stream events, provider attempts, and MCP invocations. It uses the union of the enabled tiers, and disables a rule only if every redacting policy disables it. Response secrets are therefore redacted in logs even though the caller still receives the response unchanged.
+When any enabled policy redacts secrets, the gateway applies the same detection to captured request-log payloads: requests, responses, stream events, provider attempts, and MCP invocations. It uses the union of the enabled tiers across the default, model-route, and MCP-server policies, and disables a rule only if every redacting policy disables it. Response secrets are therefore redacted in logs even though the caller still receives the response unchanged. Streamed responses are scanned one event at a time, so a secret the provider splits across stream deltas is not redacted in the logged events.
 
 Detection patterns are adapted from [gitleaks](https://github.com/gitleaks/gitleaks) and [Betterleaks](https://github.com/betterleaks/betterleaks) (both MIT).
 

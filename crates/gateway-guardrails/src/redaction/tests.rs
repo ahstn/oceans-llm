@@ -5,6 +5,7 @@ use crate::{EffectiveScope, PolicyMode};
 
 // Fixtures are assembled at runtime so no literal credential lands in the repository.
 const ALNUM: &[u8] = b"aZ3kQ9mB7xR2tW5nL8pJ4vC6yH1dF0gS";
+const DIGITS: &[u8] = b"0123456789";
 const HEX: &[u8] = b"0123456789abcdef";
 const UPPER_BASE32: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -75,7 +76,13 @@ fn redacts_provider_tokens_with_rule_placeholders() {
         ),
         (
             "slack-bot-token",
-            format!("xoxb-1234567890-1234567890-{}", random(ALNUM, 24, 10)),
+            format!(
+                "xox{}-{}-{}-{}",
+                'b',
+                random(DIGITS, 10, 19),
+                random(DIGITS, 10, 20),
+                random(ALNUM, 24, 10)
+            ),
         ),
         (
             "jwt",
@@ -162,6 +169,17 @@ fn tiers_and_disabled_rules_select_rules() {
 }
 
 #[test]
+fn overlapping_findings_report_every_matching_rule() {
+    let token = format!("ghp_{}", random(ALNUM, 36, 21));
+    let text = format!("github_token = \"{token}\"");
+    let (redacted, rule_ids) =
+        scanner::redact_text(&text, &config(&[SecretTier::ProviderTokens, SecretTier::Generic]))
+            .unwrap();
+    assert_eq!(redacted, "github_token = \"[REDACTED:github-token]\"");
+    assert_eq!(rule_ids, ["github-token", "generic-api-key"]);
+}
+
+#[test]
 fn generic_rule_ignores_identifier_values() {
     let text = "api_key_name = \"primary_service_account\"";
     assert_eq!(redact(text, &config(&[SecretTier::Generic])), text);
@@ -195,8 +213,11 @@ fn redacts_json_strings_and_skips_inline_media() {
             {"role": "user", "content": [
                 {"type": "image", "source": {"type": "base64", "data": key.clone()}},
                 {"type": "image_url", "image_url": {"url": format!("data:text/plain,{key}")}},
+                {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{key}")}},
+                {"type": "input_audio", "input_audio": {"data": key.clone(), "format": "wav"}},
             ]},
         ],
+        "metadata": {"data": {"token": key.clone()}, "note": {"data": format!("key {key}")}},
         "a/b": key.clone(),
     });
 
@@ -211,7 +232,10 @@ fn redacts_json_strings_and_skips_inline_media() {
         [
             "/a~1b",
             "/messages/0/content",
-            "/messages/1/tool_calls/0/function/arguments"
+            "/messages/1/tool_calls/0/function/arguments",
+            "/messages/2/content/1/image_url/url",
+            "/metadata/data/token",
+            "/metadata/note/data",
         ]
     );
     assert_eq!(

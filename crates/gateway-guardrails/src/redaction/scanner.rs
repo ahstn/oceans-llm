@@ -92,6 +92,9 @@ pub(super) fn redact_text(
     let mut rule_ids = Vec::new();
     let mut cursor = 0;
     for finding in findings {
+        if !rule_ids.contains(&finding.rule_id) {
+            rule_ids.push(finding.rule_id);
+        }
         if finding.span.start < cursor {
             // Overlaps an earlier finding: widen the redaction instead of
             // leaving a partial secret behind.
@@ -103,9 +106,6 @@ pub(super) fn redact_text(
         redacted.push_str(finding.rule_id);
         redacted.push(']');
         cursor = finding.span.end;
-        if !rule_ids.contains(&finding.rule_id) {
-            rule_ids.push(finding.rule_id);
-        }
     }
     redacted.push_str(&text[cursor..]);
     Some((redacted, rule_ids))

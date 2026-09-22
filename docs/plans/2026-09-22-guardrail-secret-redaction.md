@@ -18,6 +18,8 @@ The implementation differs from the draft below in these ways:
 - The rule table is compiled once into a static scanner and filtered by configuration at match time. There is no per-policy redactor.
 - CRC32 checksum validation was dropped. Prefix anchoring and entropy were precise enough, and it avoided a dependency.
 - Module layout is `redaction/{mod,rules,scanner,tests}.rs`.
+- Overrides merge `secret_redaction` field by field, like every other policy field. The request-log aggregate includes MCP-server overrides.
+- Only inline base64 media is skipped, not every `data` field. See the skip rules in `docs/operations/gateway-guardrails.md`.
 
 ## Summary
 

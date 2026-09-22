@@ -6,7 +6,7 @@
 use std::{collections::BTreeSet, time::Instant};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::{
     DecisionAction, DecisionId, DecisionRecord, EffectivePolicy, EvaluationPayload, GuardPhase,
@@ -18,8 +18,9 @@ mod scanner;
 
 const EVALUATOR_ID: &str = "secret_redaction";
 const REASON_CODE: &str = "secret_redaction.redacted";
-/// Object keys holding inline media (base64 images, audio, and files).
-const SKIPPED_KEYS: &[&str] = &["b64_json", "data"];
+/// Sibling keys that mark an object's `data` string as inline media: OpenAI
+/// `input_audio`, Gemini `inline_data`, and Anthropic sources.
+const MEDIA_TYPE_KEYS: &[&str] = &["format", "media_type", "mime_type", "mimeType"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -60,6 +61,32 @@ impl SecretRedactionConfig {
     }
 }
 
+/// Model-route or MCP-server changes to the default `secret_redaction` block.
+/// Unset fields inherit the default.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecretRedactionOverride {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub tiers: Option<BTreeSet<SecretTier>>,
+    #[serde(default)]
+    pub disabled_rules: Option<BTreeSet<String>>,
+}
+
+impl SecretRedactionOverride {
+    pub fn apply_to(&self, default: &SecretRedactionConfig) -> SecretRedactionConfig {
+        SecretRedactionConfig {
+            enabled: self.enabled.unwrap_or(default.enabled),
+            tiers: self.tiers.clone().unwrap_or_else(|| default.tiers.clone()),
+            disabled_rules: self
+                .disabled_rules
+                .clone()
+                .unwrap_or_else(|| default.disabled_rules.clone()),
+        }
+    }
+}
+
 pub(crate) fn is_known_rule(rule_id: &str) -> bool {
     rules::RULES.iter().any(|rule| rule.id == rule_id)
 }
@@ -76,7 +103,8 @@ pub struct RedactedField {
     pub rule_ids: Vec<&'static str>,
 }
 
-/// Redacts secrets in every string of `value`, skipping inline media.
+/// Redacts secrets in every string of `value`, skipping inline base64 media:
+/// matches there are coincidental, and redacting them corrupts the media.
 pub fn redact_json_secrets(
     value: &mut Value,
     config: &SecretRedactionConfig,
@@ -97,7 +125,7 @@ fn redact_json_at(
     let parent_len = pointer.len();
     match value {
         Value::String(text) => {
-            if text.starts_with("data:") {
+            if is_base64_data_uri(text) {
                 return;
             }
             if let Some((replacement, rule_ids)) = scanner::redact_text(text, config) {
@@ -117,8 +145,10 @@ fn redact_json_at(
             }
         }
         Value::Object(object) => {
+            let data_is_media = has_inline_media_data(object);
             for (key, child) in object.iter_mut() {
-                if SKIPPED_KEYS.contains(&key.as_str()) {
+                let is_media = key == "b64_json" || (key == "data" && data_is_media);
+                if is_media && child.is_string() {
                     continue;
                 }
                 pointer.push('/');
@@ -129,6 +159,17 @@ fn redact_json_at(
         }
         Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
+}
+
+fn is_base64_data_uri(text: &str) -> bool {
+    text.strip_prefix("data:")
+        .and_then(|uri| uri.split_once(','))
+        .is_some_and(|(header, _)| header.ends_with(";base64"))
+}
+
+fn has_inline_media_data(object: &Map<String, Value>) -> bool {
+    object.get("type").and_then(Value::as_str) == Some("base64")
+        || MEDIA_TYPE_KEYS.iter().any(|key| object.contains_key(*key))
 }
 
 /// Redacts secrets from a prompt-phase request and returns one decision per
