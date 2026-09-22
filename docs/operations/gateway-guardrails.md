@@ -85,6 +85,37 @@ guardrails:
 
 Startup rejects unknown packs, managed checks, model routes, MCP servers, invalid phase combinations, and invalid managed resource names.
 
+## Secret redaction
+
+Secret redaction replaces API keys, tokens, and other credentials in prompts before the request leaves the gateway. Each secret becomes `[REDACTED:<rule_id>]`, for example `[REDACTED:anthropic-api-key]`. Redaction never denies a request, in either `audit` or `deny` mode. It runs before the packs and managed checks, so managed services never receive the secret either.
+
+```yaml
+guardrails:
+  default:
+    enabled: true
+    mode: audit
+    secret_redaction:
+      enabled: true
+      tiers: [provider_tokens, credentials]
+      disabled_rules: []
+```
+
+Redaction needs both `enabled: true` on the policy and `secret_redaction.enabled: true`. A model-route override that sets `secret_redaction` replaces the whole block. Redaction applies to model-route prompts only. It covers every string in the request body: messages, system prompts, tool definitions, tool-call arguments, and tool results. It skips inline media (`data` and `b64_json` fields, and `data:` URIs).
+
+| Tier | Default | Detects |
+| --- | --- | --- |
+| `provider_tokens` | On | Tokens with a distinctive prefix: AI providers (OpenAI, Anthropic, Google, Groq, xAI, OpenRouter, Hugging Face, and others), GitHub, GitLab, AWS access key IDs, Slack, Stripe, package registries, JWTs, and PEM private keys |
+| `credentials` | On | Values that need context: the password in a connection URI, and keyword-bound assignments such as `AWS_SECRET_ACCESS_KEY=...` or `MISTRAL_API_KEY=...` |
+| `generic` | Off | The gitleaks `generic-api-key` rule: any high-entropy value assigned to a name containing `key`, `token`, `secret`, `password`, and similar. Expect more false positives. |
+
+Candidates must pass a per-rule Shannon-entropy threshold. Documentation placeholders are left alone: values containing `example`, `your_`, `<...>`, `${...}`, `{{...}}`, or `%VAR%`, and values made mostly of one repeated character. List a rule ID under `disabled_rules` to turn off a rule that produces false positives. Startup rejects unknown rule IDs.
+
+Each redacted request records one `transformed` decision per matched rule, with evaluator `secret_redaction`, reason code `secret_redaction.redacted`, and the JSON pointer of the first matching field. The content hash covers the redacted text only.
+
+When any enabled policy redacts secrets, the gateway applies the same detection to captured request-log payloads: requests, responses, stream events, provider attempts, and MCP invocations. It uses the union of the enabled tiers, and disables a rule only if every redacting policy disables it. Response secrets are therefore redacted in logs even though the caller still receives the response unchanged.
+
+Detection patterns are adapted from [gitleaks](https://github.com/gitleaks/gitleaks) and [Betterleaks](https://github.com/betterleaks/betterleaks) (both MIT).
+
 ## Amazon Bedrock Guardrails
 
 The adapter uses the standalone Bedrock Runtime `ApplyGuardrail` API. It is independent of the route's model provider. It only references a guardrail that already exists.

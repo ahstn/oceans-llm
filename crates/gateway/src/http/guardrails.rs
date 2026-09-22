@@ -165,7 +165,15 @@ pub struct EffectiveGuardrailPolicyView {
     pub packs: Vec<String>,
     pub managed_checks: Vec<String>,
     pub stream_buffer_bytes: usize,
+    pub secret_redaction: SecretRedactionView,
     pub scope: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SecretRedactionView {
+    pub enabled: bool,
+    pub tiers: Vec<String>,
+    pub disabled_rules: Vec<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -377,6 +385,23 @@ fn policy_view(policy: EffectivePolicy) -> EffectiveGuardrailPolicyView {
             .collect(),
         managed_checks: policy.managed_checks,
         stream_buffer_bytes: policy.stream_buffer_bytes,
+        secret_redaction: SecretRedactionView {
+            enabled: policy.secret_redaction.enabled,
+            tiers: policy
+                .secret_redaction
+                .tiers
+                .into_iter()
+                .map(|tier| {
+                    match tier {
+                        gateway_guardrails::SecretTier::ProviderTokens => "provider_tokens",
+                        gateway_guardrails::SecretTier::Credentials => "credentials",
+                        gateway_guardrails::SecretTier::Generic => "generic",
+                    }
+                    .to_string()
+                })
+                .collect(),
+            disabled_rules: policy.secret_redaction.disabled_rules.into_iter().collect(),
+        },
         scope: match policy.scope {
             gateway_guardrails::EffectiveScope::Global => "global".to_string(),
             gateway_guardrails::EffectiveScope::ModelRoute(route) => {

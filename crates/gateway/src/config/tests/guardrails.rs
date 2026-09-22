@@ -270,3 +270,29 @@ guardrails:
             .contains("unknown guardrail model-route override `public/upstream/unknown`")
     );
 }
+
+#[test]
+fn request_log_payloads_redact_secrets_when_a_policy_redacts() {
+    // Assembled at runtime so no literal credential lands in the repository.
+    let key = format!(
+        "sk-ant-api03-{}AA",
+        &"aZ3kQ9mB7xR2tW5nL8pJ4vC6yH1dF0gS".repeat(3)[..93]
+    );
+    let payload = serde_json::json!({"messages": [{"role": "user", "content": key}]});
+    let redact = |yaml: &str| {
+        let config: GatewayConfig = serde_yaml::from_str(yaml).expect("config");
+        let policy = config.request_log_payload_policy().expect("payload policy");
+        gateway_service::redaction::redact_json_value_with_policy(&payload, &policy)
+    };
+
+    let redacted = redact(
+        "guardrails:\n  default:\n    enabled: true\n    secret_redaction:\n      enabled: true\n",
+    );
+    assert_eq!(
+        redacted["messages"][0]["content"],
+        "[REDACTED:anthropic-api-key]"
+    );
+
+    let untouched = redact("guardrails:\n  default:\n    enabled: true\n");
+    assert_eq!(untouched["messages"][0]["content"], key);
+}

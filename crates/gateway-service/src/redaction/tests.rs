@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 use serde_json::json;
 
 use super::{
-    MAX_INLINE_REQUEST_BYTES, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
-    is_sensitive_json_key, mask_secret_leaf_values, parse_payload_path, redact_header_value,
-    redact_json_value, redact_json_value_with_policy, sanitize_diagnostic_headers,
-    truncate_large_payload_fields,
+    MAX_INLINE_REQUEST_BYTES, PayloadSecretRedactor, RequestLogPayloadCaptureMode,
+    RequestLogPayloadPolicy, is_sensitive_json_key, mask_secret_leaf_values, parse_payload_path,
+    redact_header_value, redact_json_value, redact_json_value_with_policy,
+    sanitize_diagnostic_headers, truncate_large_payload_fields,
 };
 
 #[test]
@@ -164,6 +164,29 @@ fn redacts_operator_configured_paths() {
     assert_eq!(
         redacted["body"]["messages"][0]["metadata"]["public"],
         "kept"
+    );
+}
+
+#[test]
+fn applies_the_secret_redactor_after_path_redaction() {
+    let policy = RequestLogPayloadPolicy::default().with_secret_redactor(
+        PayloadSecretRedactor::new(|value| {
+            if let Some(content) = value.pointer_mut("/body/messages/0/content") {
+                *content = json!("[REDACTED:test-rule]");
+            }
+        }),
+    );
+    let input = json!({
+        "headers": {"authorization": "Bearer abc"},
+        "body": {"messages": [{"content": "leaked"}]}
+    });
+
+    let redacted = redact_json_value_with_policy(&input, &policy);
+
+    assert_eq!(redacted["headers"]["authorization"], "[REDACTED]");
+    assert_eq!(
+        redacted["body"]["messages"][0]["content"],
+        "[REDACTED:test-rule]"
     );
 }
 

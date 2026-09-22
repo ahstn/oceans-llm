@@ -25,6 +25,7 @@ gateway-service = { path = "crates/gateway-service" }
 gateway-store = { path = "crates/gateway-store" }
 anyhow = "1"
 aes-gcm = "0.10"
+aho-corasick = "1"
 argon2 = "0.5"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
@@ -66,6 +67,7 @@ opentelemetry_sdk = { version = "0.32", features = [
 ] }
 percent-encoding = "2"
 rand = "0.10"
+regex = "1"
 reqwest = { version = "0.13", default-features = false, features = [
   "form",
   "json",
