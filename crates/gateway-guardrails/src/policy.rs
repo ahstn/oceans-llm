@@ -683,6 +683,28 @@ mod tests {
         let disabled = GuardrailConfig::default();
         assert_eq!(disabled.request_log_secret_redaction(), None);
 
+        let mcp_only = GuardrailConfig {
+            mcp_servers: BTreeMap::from([(
+                "notion".into(),
+                PolicyOverride {
+                    enabled: Some(true),
+                    secret_redaction: SecretRedactionOverride {
+                        enabled: Some(true),
+                        ..SecretRedactionOverride::default()
+                    },
+                    ..PolicyOverride::default()
+                },
+            )]),
+            ..GuardrailConfig::default()
+        };
+        assert_eq!(
+            mcp_only.request_log_secret_redaction(),
+            Some(SecretRedactionConfig {
+                enabled: true,
+                ..SecretRedactionConfig::default()
+            })
+        );
+
         let config = GuardrailConfig {
             default: PolicyConfig {
                 enabled: true,
