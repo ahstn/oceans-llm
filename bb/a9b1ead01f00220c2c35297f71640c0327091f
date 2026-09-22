@@ -1,0 +1,26 @@
+crates/gateway/src/http/handlers.rs
+  s_785130635f8a22::t_51bf01e5d4f448 1694-1695
+crates/gateway/src/http/inference_guardrails.rs
+  s_785130635f8a22::t_26636b234b726c 169-173
+  s_785130635f8a22::t_51bf01e5d4f448 137,148,151,157,162
+.github/dependabot.yml
+  s_785130635f8a22::t_51bf01e5d4f448 113-114
+crates/gateway/src/http/mcp_gateway/aggregate.rs
+  s_785130635f8a22::t_a8087840b0a645 150,156,165,240,249,251,255,259,263,271,275-276,286,294,298,300,308,312,316,320,323,327
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bba9b1ead01f00220c2c35297f71640c0327091f",
+  "prompts": {},
+  "sessions": {
+    "s_785130635f8a22": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c959-48d2-76c2-a9c1-665a94c64288",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
