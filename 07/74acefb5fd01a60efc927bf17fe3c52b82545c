@@ -1,0 +1,77 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_4c673704690f13::t_ed381cfd5e3186 3072-3073,3076-3077,3879-3883,3897-3902,3905-3906,3909-3910,3918-3936
+crates/admin-ui/web/src/routes/observability/-usage-costs/bar-list.tsx
+  s_d9c6dc2d946db9::t_40bd78e397fca9 1-58
+crates/admin-ui/web/src/routes/observability/-usage-costs/token-cards.tsx
+  s_d9c6dc2d946db9::t_261569c87515b2 1-43
+crates/admin-ui/web/src/routes/observability/-usage-costs/token-charts.tsx
+  s_d9c6dc2d946db9::t_1f8ac646906557 1-71
+crates/admin-ui/web/src/routes/observability/-usage-costs/token-series.ts
+  s_d9c6dc2d946db9::t_5c9515a4257698 1-98
+crates/admin-ui/web/src/routes/observability/usage-costs.tsx
+  s_d9c6dc2d946db9::t_f3bc7dca5ffea9 34-37,141-142,234-235,253-291,391,398,400,404-416
+crates/admin-ui/web/src/test/routes/usage-costs-route.test.tsx
+  s_d9c6dc2d946db9::t_d5f99c38b4caab 1,4-10,34-45,70-71,151-161,169,177-192,203-204,282-283,298-332
+crates/admin-ui/web/src/types/live-api.ts
+  s_d9c6dc2d946db9::t_57c0ee4c07661a 30-32
+crates/gateway-core/src/domain.rs
+  s_d9c6dc2d946db9::t_86e2a0772262c1 911-939
+crates/gateway-core/src/lib.rs
+  s_d9c6dc2d946db9::t_d58bef17e747a3 95-96
+crates/gateway-core/src/traits.rs
+  s_d9c6dc2d946db9::t_aea4ee71e45998 45-51,515-540
+crates/gateway-store/src/lib.rs
+  s_d9c6dc2d946db9::t_d10216615638f7 80,1015-1090,1162,8101-8123,8227,8250,8276,8328-8335,9192-9214,9318,9341,9367,9419-9426
+crates/gateway-store/src/libsql_store/budgets.rs
+  s_d9c6dc2d946db9::t_01546fa8525e04 481-484,486-489,491-494,517-520,522-525,527-530,553-556,558-561,563-566,859-998,1013-1016,1018-1021,1023-1026,1652-1666
+crates/gateway-store/src/libsql_store/mod.rs
+  s_d9c6dc2d946db9::t_760cde1cc34476 69-71
+crates/gateway-store/src/postgres_store/budgets.rs
+  s_d9c6dc2d946db9::t_38989709ba3041 434-437,439-442,444-447,470-473,475-478,480-483,506-509,511-514,516-519,791-924,937-940,942-945,947-950,1540-1554
+crates/gateway-store/src/postgres_store/mod.rs
+  s_d9c6dc2d946db9::t_b45211821918d9 67-69
+crates/gateway-store/src/store.rs
+  s_d9c6dc2d946db9::t_1caeb668703f9b 939-974
+crates/gateway/openapi/admin-api.json
+  s_4c673704690f13::t_851877bbbe945d 12018-12020,12029-12035,12045-12051,15304-15325,15365-15390,15401-15403,15412-15418,15428-15434,15457-15498
+crates/gateway/src/http/admin_contract.rs
+  s_587dd5964bc839::t_8b307848867449 783-814
+crates/gateway/src/http/spend.rs
+  s_d9c6dc2d946db9::t_5e99240313ae0e 11-12,27-28,70-92,177-178,182-320,978-1061
+crates/gateway/src/local_demo_seed/mod.rs
+  s_4c673704690f13::t_911f2505331392 406,421-423,431-434
+crates/gateway/src/local_demo_seed/usage.rs
+  s_4c673704690f13::t_80489430ca9a8f 1240-1267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0774acefb5fd01a60efc927bf17fe3c52b82545c",
+  "prompts": {},
+  "sessions": {
+    "s_4c673704690f13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3e5fc341021f7e3e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_587dd5964bc839": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a99b68eb6ab36c48a",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_d9c6dc2d946db9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6d7b04b1-8d92-4f8a-8229-415093963209",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
