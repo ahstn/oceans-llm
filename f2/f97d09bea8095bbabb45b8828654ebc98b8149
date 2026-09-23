@@ -1,0 +1,27 @@
+crates/admin-ui/web/src/routes/observability/-usage-costs/bar-list.tsx
+  s_d9c6dc2d946db9::t_10895afeb659c6 1,15,26-27,43-48
+crates/admin-ui/web/src/routes/observability/-usage-costs/token-cards.tsx
+  s_d9c6dc2d946db9::t_9ae7b14be84862 6,26
+crates/admin-ui/web/src/routes/observability/-usage-costs/token-series.ts
+  s_d9c6dc2d946db9::t_69f64ce4c4bf63 17-36
+crates/admin-ui/web/src/routes/observability/usage-costs.tsx
+  s_d9c6dc2d946db9::t_0fdcc9c38e07a2 47-49,237-242,262-263,276-312,397,416-418
+crates/admin-ui/web/src/test/routes/usage-costs-route.test.tsx
+  s_d9c6dc2d946db9::t_74076aed302052 6,148,187-192,194,197-200,301,334-346
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f2f97d09bea8095bbabb45b8828654ebc98b8149",
+  "prompts": {},
+  "sessions": {
+    "s_d9c6dc2d946db9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6d7b04b1-8d92-4f8a-8229-415093963209",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
