@@ -295,8 +295,26 @@ pub(crate) mod tests {
     use super::*;
 
     pub(crate) async fn timed_out_body_error() -> reqwest::Error {
+        let (client, request, server) = stalled_body_request().await;
+        let response = execute_request(&client, request, "test", "test")
+            .await
+            .unwrap();
+        let error = next_body_error(response.bytes_stream()).await;
+        assert!(error.is_timeout());
+        assert_eq!(reqwest_error_type(&error), "timeout");
+        assert!(reqwest_error_chain(&error).contains("timed out"));
+        server.abort();
+        error
+    }
+
+    /// A request whose body sends one chunk, then stalls past the client's
+    /// 500 ms timeout.
+    async fn stalled_body_request() -> (
+        reqwest::Client,
+        reqwest::Request,
+        tokio::task::JoinHandle<()>,
+    ) {
         use axum::{Router, body::Body, routing::get};
-        use std::time::Duration;
 
         let app = Router::new().route(
             "/",
@@ -315,21 +333,16 @@ pub(crate) mod tests {
         });
         let client = provider_http_client(500).unwrap();
         let request = client.get(format!("http://{address}/")).build().unwrap();
-        let response = execute_request(&client, request, "test", "test")
-            .await
-            .unwrap();
-        let mut stream = response.bytes_stream();
+        (client, request, server)
+    }
+
+    async fn next_body_error(mut stream: TracedResponseStream) -> reqwest::Error {
         assert!(stream.next().await.unwrap().is_ok());
-        let error = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        tokio::time::timeout(Duration::from_secs(2), stream.next())
             .await
             .unwrap()
             .unwrap()
-            .unwrap_err();
-        assert!(error.is_timeout());
-        assert_eq!(reqwest_error_type(&error), "timeout");
-        assert!(reqwest_error_chain(&error).contains("timed out"));
-        server.abort();
-        error
+            .unwrap_err()
     }
 
     #[tokio::test]
@@ -381,6 +394,20 @@ pub(crate) mod tests {
                 values.record(&mut Visitor(&self.0));
             }
         }
+        // Spans come from a callsite only this test hits. Tracing caches callsite
+        // interest process-wide, and with one scoped subscriber alive, a parallel
+        // test that first hits `execute_request`'s span without a subscriber
+        // caches it as disabled, which would hide the records asserted here.
+        fn traced(response: reqwest::Response) -> TracedResponse {
+            TracedResponse {
+                response,
+                span: tracing::info_span!(
+                    "test.response",
+                    gateway.upstream.elapsed_ms = tracing::field::Empty
+                ),
+                started_at: Instant::now(),
+            }
+        }
         let app = axum::Router::new().route("/", axum::routing::get(|| async { "chunk" }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -392,11 +419,8 @@ pub(crate) mod tests {
             let subscriber = tracing_subscriber::registry().with(records.clone());
             async {
                 let client = provider_http_client(1000).unwrap();
-                let request = client.get(format!("http://{address}/")).build().unwrap();
-                let mut stream = execute_request(&client, request, "test", "test")
-                    .await
-                    .unwrap()
-                    .bytes_stream();
+                let response = client.get(format!("http://{address}/")).send().await;
+                let mut stream = traced(response.unwrap()).bytes_stream();
                 for _ in 0..poll_count {
                     let _ = stream.next().await;
                 }
@@ -409,7 +433,14 @@ pub(crate) mod tests {
         let records = Records(Arc::new(AtomicUsize::new(0)));
         let subscriber = tracing_subscriber::registry().with(records.clone());
         async {
-            let _ = timed_out_body_error().await;
+            let (client, request, server) = stalled_body_request().await;
+            let response = client.execute(request).await.unwrap();
+            assert!(
+                next_body_error(traced(response).bytes_stream())
+                    .await
+                    .is_timeout()
+            );
+            server.abort();
         }
         .with_subscriber(subscriber)
         .await;
