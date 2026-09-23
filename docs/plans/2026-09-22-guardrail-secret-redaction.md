@@ -128,7 +128,7 @@ Applied to the captured span after the regex matches:
 
 - Per-rule `min_entropy`.
 - Checksum validation for GitHub and npm.
-- Placeholder rejection: contains `EXAMPLE` (case-sensitive, matching AWS docs keys), `your_`, `<`/`>`, `${`, `{{`, `%VAR%`, or is dominated by one repeated character (`xxxx`, `****`, `....`, `0000`).
+- Placeholder rejection: contains `EXAMPLE` (case-sensitive, matching AWS docs keys), `your_`, `<`/`>`, `${`, <code v-pre>{{</code>, `%VAR%`, or is dominated by one repeated character (`xxxx`, `****`, `....`, `0000`).
 - For `generic` only: reject values with no digit, UUIDs, and gitleaks stopwords.
 
 ### Redaction algorithm
@@ -237,7 +237,7 @@ The provider boundary is the primary target, but request logs currently persist 
 - Build all test fixtures at runtime, for example `format!("ghp_{body}{checksum}")` or `concat!` over split literals. Committing realistic tokens will trip GitHub push protection and external secret scanners on this repo.
 - Per rule: one positive, one placeholder negative, one near-miss negative (wrong length, bad checksum, low entropy). A table-driven test fails if a rule has no fixture.
 - Redactor: overlapping rules, adjacent secrets, secret at start and end of text, JSON-escaped `\n` boundaries, multibyte text around secrets, PEM blocks, credential URI keeps user and host, idempotence (`redact(redact(x)) == redact(x)`).
-- False-positive corpus: UUIDs, git SHAs, SHA-256 digests, base64 images, AWS `AKIAIOSFODNN7EXAMPLE`, `sk-...` in docs prose, `api_key = os.environ["X"]`, code samples with `${{ secrets.X }}`.
+- False-positive corpus: UUIDs, git SHAs, SHA-256 digests, base64 images, AWS `AKIAIOSFODNN7EXAMPLE`, `sk-...` in docs prose, `api_key = os.environ["X"]`, code samples with <code v-pre>${{ secrets.X }}</code>.
 - Engine: redaction runs before packs and managed checks, managed fakes receive redacted text, audit and deny modes both redact and never deny, decision records carry rule IDs and no secret material.
 - Gateway end to end with a fake provider: OpenAI chat, Responses, Anthropic `/v1/messages`, embeddings, and batch. Assert the upstream body contains `[REDACTED]` and no fixture token, including in tool-call arguments and tool results. Assert the request log payload is redacted.
 - Performance: a test or bench that redacts a 1 MB agent transcript with no secrets and one with many secrets, with a budget of low single-digit milliseconds on CI hardware.

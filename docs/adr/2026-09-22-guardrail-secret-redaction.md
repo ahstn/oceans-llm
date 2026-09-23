@@ -12,7 +12,7 @@ Accepted
 
 Redaction is configured per policy with `secret_redaction: {enabled, tiers, disabled_rules}`. It is off by default. The `provider_tokens` and `credentials` tiers are on by default once redaction is enabled. The `generic` tier is opt-in. Model-route and MCP-server overrides set individual fields and inherit the rest.
 
-Detection uses a static rule table adapted from gitleaks and Betterleaks, both MIT-licensed. A case-insensitive Aho-Corasick keyword prefilter selects candidate rules. Each candidate runs an anchored regex, and a per-rule Shannon-entropy minimum and placeholder filters reject the capture. Overlapping findings are merged. The scanner walks every string in the JSON request and skips inline base64 media, identified by `b64_json`, base64 `data:` URIs, or a `data` string beside a media type or format field.
+Detection uses a static rule table adapted from gitleaks and Betterleaks, both MIT-licensed. A case-insensitive Aho-Corasick keyword prefilter selects candidate rules. Each candidate runs an anchored regex, and a per-rule Shannon-entropy minimum and placeholder filters reject the capture. Overlapping findings are merged. The scanner walks every string in the JSON request and skips inline base64 media, identified by a base64-only value in `b64_json`, a base64 `data:` URI, or a `data` field beside a media type or audio format field.
 
 Each redacted request records one `transformed` decision per matched rule, with evaluator `secret_redaction`. Decision content hashes cover only the redacted text.
 

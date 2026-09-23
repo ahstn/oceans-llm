@@ -143,8 +143,13 @@ fn is_secret(rule: &Rule, value: &str) -> bool {
 /// Rejects documentation values and template references that match a rule's
 /// shape but cannot be live credentials.
 fn is_placeholder(value: &str) -> bool {
+    // Uppercase only, as in AWS documentation keys: a mixed-case password such
+    // as `Example7pK9...` is still a secret.
+    if value.contains("EXAMPLE") {
+        return true;
+    }
     let lowered = value.to_ascii_lowercase();
-    const MARKERS: &[&str] = &["example", "your_", "your-", "<", ">", "${", "{{", "}}"];
+    const MARKERS: &[&str] = &["your_", "your-", "<", ">", "${", "{{", "}}"];
     if MARKERS.iter().any(|marker| lowered.contains(marker)) {
         return true;
     }
@@ -230,5 +235,6 @@ mod tests {
             assert!(is_placeholder(value), "{value} should be a placeholder");
         }
         assert!(!is_placeholder("aB3dE6gH9jK2mN5pQ8sT"));
+        assert!(!is_placeholder("Example7pK9mT4zQ2"));
     }
 }

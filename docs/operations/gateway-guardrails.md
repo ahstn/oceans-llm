@@ -100,7 +100,7 @@ guardrails:
       disabled_rules: []
 ```
 
-Redaction needs both `enabled: true` on the policy and `secret_redaction.enabled: true`. A model-route or MCP-server override can set any of `enabled`, `tiers`, and `disabled_rules`; unset fields inherit the default block. Redaction applies to model-route prompts only. It covers every string in the request body: messages, system prompts, tool definitions, tool-call arguments, and tool results. It skips inline base64 media: `b64_json` strings, base64 `data:` URIs, and `data` strings beside `type: base64`, `format`, `media_type`, `mime_type`, or `mimeType`. Any other `data` field is scanned.
+Redaction needs both `enabled: true` on the policy and `secret_redaction.enabled: true`. A model-route or MCP-server override can set any of `enabled`, `tiers`, and `disabled_rules`; unset fields inherit the default block. Redaction applies to model-route prompts only. It covers every string in the request body: messages, system prompts, tool definitions, tool-call arguments, and tool results. It skips inline base64 media when the value contains only base64 characters: `b64_json` strings, base64 `data:` URIs, and `data` strings beside `type: base64`, `media_type`, `mime_type`, `mimeType`, or an audio `format` such as `wav` or `mp3`. Free text in these fields, and any other `data` field, is scanned.
 
 | Tier | Default | Detects |
 | --- | --- | --- |
@@ -108,7 +108,7 @@ Redaction needs both `enabled: true` on the policy and `secret_redaction.enabled
 | `credentials` | On | Values that need context: the password in a connection URI, and keyword-bound assignments such as `AWS_SECRET_ACCESS_KEY=...` or `MISTRAL_API_KEY=...` |
 | `generic` | Off | The gitleaks `generic-api-key` rule: any high-entropy value assigned to a name containing `key`, `token`, `secret`, `password`, and similar. Expect more false positives. |
 
-Candidates must pass a per-rule Shannon-entropy threshold. Documentation placeholders are left alone: values containing `example`, `your_`, `<...>`, `${...}`, `{{...}}`, or `%VAR%`, and values made mostly of one repeated character. List a rule ID under `disabled_rules` to turn off a rule that produces false positives. Startup rejects unknown rule IDs.
+Candidates must pass a per-rule Shannon-entropy threshold. Documentation placeholders are left alone: values containing uppercase `EXAMPLE`, `your_`, `<...>`, `${...}`, <code v-pre>{{...}}</code>, or `%VAR%`, and values made mostly of one repeated character. List a rule ID under `disabled_rules` to turn off a rule that produces false positives. Startup rejects unknown rule IDs.
 
 Each redacted request records one `transformed` decision per matched rule, with evaluator `secret_redaction`, reason code `secret_redaction.redacted`, and the JSON pointer of the first matching field. The content hash covers the redacted text only.
 

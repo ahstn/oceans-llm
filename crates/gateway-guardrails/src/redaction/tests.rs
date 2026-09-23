@@ -118,12 +118,17 @@ fn redacts_private_key_blocks() {
 
 #[test]
 fn redacts_only_the_password_in_credential_uris() {
-    let password = random(ALNUM, 18, 15);
-    let text = format!("postgres://app:{password}@db.internal:5432/app");
-    assert_eq!(
-        redact(&text, &default_config()),
-        "postgres://app:[REDACTED:credential-uri]@db.internal:5432/app"
-    );
+    // A mixed-case `Example` prefix is part of a real password, not a placeholder.
+    for password in [
+        random(ALNUM, 18, 15),
+        format!("Example{}", random(ALNUM, 12, 16)),
+    ] {
+        let text = format!("postgres://app:{password}@db.internal:5432/app");
+        assert_eq!(
+            redact(&text, &default_config()),
+            "postgres://app:[REDACTED:credential-uri]@db.internal:5432/app"
+        );
+    }
 }
 
 #[test]
@@ -205,6 +210,13 @@ fn redaction_is_idempotent() {
 #[test]
 fn redacts_json_strings_and_skips_inline_media() {
     let key = anthropic_key();
+    // Base64 whose bytes happen to contain an AWS access key ID.
+    let media = format!(
+        "{}+AKIA{}/{}==",
+        random(ALNUM, 40, 20),
+        random(UPPER_BASE32, 16, 21),
+        random(ALNUM, 40, 22)
+    );
     let mut request = json!({
         "messages": [
             {"role": "user", "content": format!("my key is {key}")},
@@ -213,13 +225,20 @@ fn redacts_json_strings_and_skips_inline_media() {
                 "arguments": format!("{{\"token\":\"{key}\"}}"),
             }}]},
             {"role": "user", "content": [
-                {"type": "image", "source": {"type": "base64", "data": key.clone()}},
+                {"type": "image", "source": {"type": "base64", "data": media.clone()}},
                 {"type": "image_url", "image_url": {"url": format!("data:text/plain,{key}")}},
+                {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{media}")}},
                 {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{key}")}},
-                {"type": "input_audio", "input_audio": {"data": key.clone(), "format": "wav"}},
+                {"type": "input_audio", "input_audio": {"data": media.clone(), "format": "wav"}},
+                {"inline_data": {"mime_type": "image/png", "data": format!("see {key}")}},
             ]},
         ],
-        "metadata": {"data": {"token": key.clone()}, "note": {"data": format!("key {key}")}},
+        "metadata": {
+            "data": {"token": key.clone()},
+            "note": {"data": format!("key {key}")},
+            "json": {"format": "json", "data": format!("deploy with {key}")},
+        },
+        "b64_json": format!("text with {key}"),
         "a/b": key.clone(),
     });
 
@@ -233,10 +252,14 @@ fn redacts_json_strings_and_skips_inline_media() {
         pointers,
         [
             "/a~1b",
+            "/b64_json",
             "/messages/0/content",
             "/messages/1/tool_calls/0/function/arguments",
             "/messages/2/content/1/image_url/url",
+            "/messages/2/content/3/image_url/url",
+            "/messages/2/content/5/inline_data/data",
             "/metadata/data/token",
+            "/metadata/json/data",
             "/metadata/note/data",
         ]
     );
@@ -251,7 +274,13 @@ fn redacts_json_strings_and_skips_inline_media() {
     )
     .unwrap();
     assert_eq!(arguments["token"], "[REDACTED:anthropic-api-key]");
-    assert_eq!(request["messages"][2]["content"][0]["source"]["data"], key);
+    let content = &request["messages"][2]["content"];
+    assert_eq!(content[0]["source"]["data"], media);
+    assert_eq!(
+        content[2]["image_url"]["url"],
+        format!("data:image/png;base64,{media}")
+    );
+    assert_eq!(content[4]["input_audio"]["data"], media);
 }
 
 #[test]

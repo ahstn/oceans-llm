@@ -18,9 +18,13 @@ mod scanner;
 
 const EVALUATOR_ID: &str = "secret_redaction";
 const REASON_CODE: &str = "secret_redaction.redacted";
-/// Sibling keys that mark an object's `data` string as inline media: OpenAI
-/// `input_audio`, Gemini `inline_data`, and Anthropic sources.
-const MEDIA_TYPE_KEYS: &[&str] = &["format", "media_type", "mime_type", "mimeType"];
+/// Sibling keys that mark an object's `data` string as inline media: Anthropic
+/// sources and Gemini `inline_data`.
+const MEDIA_TYPE_KEYS: &[&str] = &["media_type", "mime_type", "mimeType"];
+/// `format` values of OpenAI `input_audio`.
+const AUDIO_FORMATS: &[&str] = &[
+    "aac", "flac", "m4a", "mp3", "ogg", "opus", "pcm16", "wav", "webm",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -105,6 +109,8 @@ pub struct RedactedField {
 
 /// Redacts secrets in every string of `value`, skipping inline base64 media:
 /// matches there are coincidental, and redacting them corrupts the media.
+/// Media is recognized by its protocol shape and a base64-only payload, so
+/// free text in a media-shaped field is still scanned.
 pub fn redact_json_secrets(
     value: &mut Value,
     config: &SecretRedactionConfig,
@@ -147,8 +153,8 @@ fn redact_json_at(
         Value::Object(object) => {
             let data_is_media = has_inline_media_data(object);
             for (key, child) in object.iter_mut() {
-                let is_media = key == "b64_json" || (key == "data" && data_is_media);
-                if is_media && child.is_string() {
+                let is_media_key = key == "b64_json" || (key == "data" && data_is_media);
+                if is_media_key && child.as_str().is_some_and(is_base64) {
                     continue;
                 }
                 pointer.push('/');
@@ -164,12 +170,23 @@ fn redact_json_at(
 fn is_base64_data_uri(text: &str) -> bool {
     text.strip_prefix("data:")
         .and_then(|uri| uri.split_once(','))
-        .is_some_and(|(header, _)| header.ends_with(";base64"))
+        .is_some_and(|(header, payload)| header.ends_with(";base64") && is_base64(payload))
 }
 
 fn has_inline_media_data(object: &Map<String, Value>) -> bool {
     object.get("type").and_then(Value::as_str) == Some("base64")
         || MEDIA_TYPE_KEYS.iter().any(|key| object.contains_key(*key))
+        || object
+            .get("format")
+            .and_then(Value::as_str)
+            .is_some_and(|format| AUDIO_FORMATS.contains(&format))
+}
+
+fn is_base64(text: &str) -> bool {
+    !text.is_empty()
+        && text.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'\r' | b'\n')
+        })
 }
 
 /// Redacts secrets from a prompt-phase request and returns one decision per
