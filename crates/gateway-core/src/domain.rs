@@ -908,6 +908,35 @@ pub struct CacheUsageAggregateRecord {
     pub cache_write_tokens: Option<i64>,
 }
 
+/// Token volumes for one grouping key over one UTC day. Cache buckets only sum events whose
+/// provider reported a cache split, so `input_tokens` can exceed their total; the difference is
+/// input with no cache breakdown.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct TokenUsageBuckets {
+    pub request_count: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub uncached_input_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpendOwnerTokenDailyRecord {
+    pub day_start: OffsetDateTime,
+    pub owner_kind: ApiKeyOwnerKind,
+    pub owner_id: Uuid,
+    pub owner_name: String,
+    pub tokens: TokenUsageBuckets,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpendModelTokenDailyRecord {
+    pub day_start: OffsetDateTime,
+    pub model_key: String,
+    pub tokens: TokenUsageBuckets,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FocusExportAggregateRecord {
     pub day_start: OffsetDateTime,

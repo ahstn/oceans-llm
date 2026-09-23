@@ -780,6 +780,38 @@ pub struct SpendReportView {
     pub daily: Vec<SpendDailyPointView>,
     pub owners: Vec<SpendOwnerBreakdownView>,
     pub models: Vec<SpendModelBreakdownView>,
+    /// Daily token volumes for the heaviest owners by total tokens, zero-filled across the window.
+    pub owner_token_series: Vec<SpendOwnerTokenSeriesView>,
+    /// Daily token volumes for the heaviest models; the remainder is folded into one `is_other` series.
+    pub model_token_series: Vec<SpendModelTokenSeriesView>,
+}
+
+/// One day of token volume. Cache buckets only cover events whose provider reported a cache split,
+/// so `input_tokens` can exceed `uncached_input_tokens + cache_read_tokens + cache_write_tokens`.
+#[derive(Debug, Clone, Default, Serialize, ToSchema)]
+pub struct SpendTokenPointView {
+    pub day_start: String,
+    pub request_count: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub uncached_input_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SpendOwnerTokenSeriesView {
+    pub owner_kind: String,
+    pub owner_id: String,
+    pub owner_name: String,
+    pub points: Vec<SpendTokenPointView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SpendModelTokenSeriesView {
+    pub model_key: String,
+    pub is_other: bool,
+    pub points: Vec<SpendTokenPointView>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]

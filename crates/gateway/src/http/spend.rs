@@ -8,7 +8,8 @@ use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
     BudgetAlertRepository, BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetRepository,
     BudgetScope, BudgetSettings, BudgetSource, GatewayError, GlobalRole, IdentityRepository,
-    ModelRepository, Money4, UserStatus, budget_window_utc,
+    ModelRepository, Money4, SpendModelTokenDailyRecord, SpendOwnerTokenDailyRecord,
+    TokenUsageBuckets, UserStatus, budget_window_utc,
 };
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
@@ -23,7 +24,8 @@ use crate::http::{
         BudgetUserModelScopeKind, BudgetUserScopeKind, BudgetUserScopeView,
         DeactivateBudgetRequest, DeactivateBudgetResultView, Envelope, FocusExportQuery,
         FocusSelfExportQuery, SpendBudgetsView, SpendDailyPointView, SpendModelBreakdownView,
-        SpendOwnerBreakdownView, SpendReportQuery, SpendReportView, SpendTotalsView,
+        SpendModelTokenSeriesView, SpendOwnerBreakdownView, SpendOwnerTokenSeriesView,
+        SpendReportQuery, SpendReportView, SpendTokenPointView, SpendTotalsView,
         UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
     },
     error::AppError,
@@ -65,6 +67,29 @@ pub async fn get_spend_report(
         .store
         .list_usage_model_aggregates(window_start, window_end, owner_kind, owner_user_id)
         .await?;
+    let owner_token_rows = state
+        .store
+        .list_usage_owner_token_daily_aggregates(
+            window_start,
+            window_end,
+            owner_kind,
+            owner_user_id,
+        )
+        .await?;
+    let model_token_rows = state
+        .store
+        .list_usage_model_token_daily_aggregates(
+            window_start,
+            window_end,
+            owner_kind,
+            owner_user_id,
+        )
+        .await?;
+    let window_day_starts: Vec<OffsetDateTime> = (0..window_days)
+        .map(|day_offset| window_start + Duration::days(i64::from(day_offset)))
+        .collect();
+    let owner_token_series = build_owner_token_series(owner_token_rows, &window_day_starts);
+    let model_token_series = build_model_token_series(model_token_rows, &window_day_starts);
     let mut daily_map = std::collections::BTreeMap::new();
     for row in daily_rows {
         daily_map.insert(row.day_start.unix_timestamp(), row);
@@ -149,7 +174,148 @@ pub async fn get_spend_report(
         daily,
         owners,
         models,
+        owner_token_series,
+        model_token_series,
     })))
+}
+
+/// Token buckets keyed by UTC day start (unix seconds).
+type TokensByDay = std::collections::HashMap<i64, TokenUsageBuckets>;
+
+/// Matches the owner breakdown, which lists the top ten spenders.
+const TOKEN_SERIES_OWNER_LIMIT: usize = 10;
+/// Matches the five `--chart-*` palette colours; "Other" renders in a neutral tone.
+const TOKEN_SERIES_MODEL_LIMIT: usize = 5;
+
+/// Keeps the heaviest owners by total tokens and zero-fills each across the window.
+fn build_owner_token_series(
+    rows: Vec<SpendOwnerTokenDailyRecord>,
+    window_day_starts: &[OffsetDateTime],
+) -> Vec<SpendOwnerTokenSeriesView> {
+    let mut grouped: std::collections::HashMap<(&'static str, Uuid), (String, TokensByDay)> =
+        std::collections::HashMap::new();
+    for row in rows {
+        let entry = grouped
+            .entry((row.owner_kind.as_str(), row.owner_id))
+            .or_insert_with(|| (row.owner_name.clone(), std::collections::HashMap::new()));
+        entry.1.insert(row.day_start.unix_timestamp(), row.tokens);
+    }
+
+    let mut owners: Vec<_> = grouped.into_iter().collect();
+    owners.sort_by(
+        |((kind_a, id_a), (_, days_a)), ((kind_b, id_b), (_, days_b))| {
+            total_tokens(days_b.values())
+                .cmp(&total_tokens(days_a.values()))
+                .then_with(|| kind_a.cmp(kind_b))
+                .then_with(|| id_a.cmp(id_b))
+        },
+    );
+    owners
+        .into_iter()
+        .take(TOKEN_SERIES_OWNER_LIMIT)
+        .map(
+            |((owner_kind, owner_id), (owner_name, days))| SpendOwnerTokenSeriesView {
+                owner_kind: owner_kind.to_string(),
+                owner_id: owner_id.to_string(),
+                owner_name,
+                points: token_points(&days, window_day_starts),
+            },
+        )
+        .collect()
+}
+
+/// Keeps the heaviest models by total tokens and folds the rest into one `is_other` series.
+fn build_model_token_series(
+    rows: Vec<SpendModelTokenDailyRecord>,
+    window_day_starts: &[OffsetDateTime],
+) -> Vec<SpendModelTokenSeriesView> {
+    let mut grouped: std::collections::HashMap<String, TokensByDay> =
+        std::collections::HashMap::new();
+    for row in rows {
+        grouped
+            .entry(row.model_key)
+            .or_default()
+            .insert(row.day_start.unix_timestamp(), row.tokens);
+    }
+
+    let mut models: Vec<_> = grouped.into_iter().collect();
+    models.sort_by(|(key_a, days_a), (key_b, days_b)| {
+        total_tokens(days_b.values())
+            .cmp(&total_tokens(days_a.values()))
+            .then_with(|| key_a.cmp(key_b))
+    });
+    let rest = if models.len() > TOKEN_SERIES_MODEL_LIMIT {
+        models.split_off(TOKEN_SERIES_MODEL_LIMIT)
+    } else {
+        Vec::new()
+    };
+
+    let mut series: Vec<_> = models
+        .into_iter()
+        .map(|(model_key, days)| SpendModelTokenSeriesView {
+            model_key,
+            is_other: false,
+            points: token_points(&days, window_day_starts),
+        })
+        .collect();
+    if !rest.is_empty() {
+        let mut other = TokensByDay::new();
+        for (_, days) in rest {
+            for (day, tokens) in days {
+                add_token_buckets(other.entry(day).or_default(), tokens);
+            }
+        }
+        series.push(SpendModelTokenSeriesView {
+            model_key: "Other".to_string(),
+            is_other: true,
+            points: token_points(&other, window_day_starts),
+        });
+    }
+    series
+}
+
+fn token_points(
+    days: &TokensByDay,
+    window_day_starts: &[OffsetDateTime],
+) -> Vec<SpendTokenPointView> {
+    window_day_starts
+        .iter()
+        .map(|day_start| {
+            let tokens = days
+                .get(&day_start.unix_timestamp())
+                .copied()
+                .unwrap_or_default();
+            SpendTokenPointView {
+                day_start: format_timestamp(*day_start),
+                request_count: tokens.request_count,
+                input_tokens: tokens.input_tokens,
+                output_tokens: tokens.output_tokens,
+                uncached_input_tokens: tokens.uncached_input_tokens,
+                cache_read_tokens: tokens.cache_read_tokens,
+                cache_write_tokens: tokens.cache_write_tokens,
+            }
+        })
+        .collect()
+}
+
+fn total_tokens<'a>(days: impl Iterator<Item = &'a TokenUsageBuckets>) -> i64 {
+    days.map(|tokens| tokens.input_tokens.saturating_add(tokens.output_tokens))
+        .fold(0, i64::saturating_add)
+}
+
+fn add_token_buckets(total: &mut TokenUsageBuckets, value: TokenUsageBuckets) {
+    total.request_count = total.request_count.saturating_add(value.request_count);
+    total.input_tokens = total.input_tokens.saturating_add(value.input_tokens);
+    total.output_tokens = total.output_tokens.saturating_add(value.output_tokens);
+    total.uncached_input_tokens = total
+        .uncached_input_tokens
+        .saturating_add(value.uncached_input_tokens);
+    total.cache_read_tokens = total
+        .cache_read_tokens
+        .saturating_add(value.cache_read_tokens);
+    total.cache_write_tokens = total
+        .cache_write_tokens
+        .saturating_add(value.cache_write_tokens);
 }
 
 fn add_optional_total(total: Option<i64>, value: Option<i64>) -> Option<i64> {
@@ -808,6 +974,90 @@ fn parse_uuid(raw: &str) -> Result<Uuid, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tokens(input_tokens: i64, cache_read_tokens: i64) -> TokenUsageBuckets {
+        TokenUsageBuckets {
+            request_count: 1,
+            input_tokens,
+            output_tokens: 10,
+            uncached_input_tokens: input_tokens - cache_read_tokens,
+            cache_read_tokens,
+            cache_write_tokens: 0,
+        }
+    }
+
+    fn window(days: i64) -> Vec<OffsetDateTime> {
+        let start = OffsetDateTime::from_unix_timestamp(1_773_446_400).expect("day");
+        (0..days).map(|day| start + Duration::days(day)).collect()
+    }
+
+    #[test]
+    fn model_token_series_keeps_heaviest_models_and_folds_the_rest_into_other() {
+        let days = window(3);
+        let mut rows: Vec<_> = (0..8)
+            .map(|index| SpendModelTokenDailyRecord {
+                day_start: days[1],
+                model_key: format!("model-{index}"),
+                tokens: tokens(100 * (index + 1), 0),
+            })
+            .collect();
+        rows.push(SpendModelTokenDailyRecord {
+            day_start: days[2],
+            model_key: "model-0".to_string(),
+            tokens: tokens(50, 0),
+        });
+
+        let series = build_model_token_series(rows, &days);
+
+        let keys: Vec<_> = series.iter().map(|row| row.model_key.as_str()).collect();
+        assert_eq!(
+            keys,
+            [
+                "model-7", "model-6", "model-5", "model-4", "model-3", "Other"
+            ]
+        );
+        let other = series.last().expect("other series");
+        assert!(other.is_other);
+        assert_eq!(other.points.len(), 3);
+        assert_eq!(other.points[0].input_tokens, 0);
+        // model-0..=2 (100 + 200 + 300) on day two, model-0 (50) on day three.
+        assert_eq!(other.points[1].input_tokens, 600);
+        assert_eq!(other.points[1].request_count, 3);
+        assert_eq!(other.points[2].input_tokens, 50);
+    }
+
+    #[test]
+    fn owner_token_series_ranks_by_total_tokens_and_zero_fills_days() {
+        let days = window(2);
+        let light = Uuid::new_v4();
+        let heavy = Uuid::new_v4();
+        let rows = vec![
+            SpendOwnerTokenDailyRecord {
+                day_start: days[0],
+                owner_kind: ApiKeyOwnerKind::User,
+                owner_id: light,
+                owner_name: "Light".to_string(),
+                tokens: tokens(100, 50),
+            },
+            SpendOwnerTokenDailyRecord {
+                day_start: days[1],
+                owner_kind: ApiKeyOwnerKind::ServiceAccount,
+                owner_id: heavy,
+                owner_name: "Heavy".to_string(),
+                tokens: tokens(1_000, 900),
+            },
+        ];
+
+        let series = build_owner_token_series(rows, &days);
+
+        assert_eq!(series.len(), 2);
+        assert_eq!(series[0].owner_name, "Heavy");
+        assert_eq!(series[0].owner_kind, "service_account");
+        assert_eq!(series[0].points[0].input_tokens, 0);
+        assert_eq!(series[0].points[1].cache_read_tokens, 900);
+        assert_eq!(series[1].owner_id, light.to_string());
+        assert_eq!(series[1].points[1].input_tokens, 0);
+    }
 
     #[test]
     fn regular_user_spend_scope_is_forced_to_current_user() {
