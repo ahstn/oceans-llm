@@ -31,6 +31,11 @@ const loaderData = {
       packs: ['core.shell'],
       managed_checks: ['bedrock-primary'],
       stream_buffer_bytes: 4_194_304,
+      secret_redaction: {
+        enabled: true,
+        tiers: ['credentials', 'provider_tokens'],
+        disabled_rules: [],
+      },
       scope: 'global',
     },
     model_routes: {},
@@ -82,6 +87,7 @@ describe('GuardrailsPage', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Guardrails' })).toBeInTheDocument()
     expect(screen.getByText('Global default')).toBeInTheDocument()
     expect(screen.getByText('core.shell')).toBeInTheDocument()
+    expect(screen.getByText('credentials, provider_tokens')).toBeInTheDocument()
     expect(screen.getByText(/shell\.recursive-delete/)).toBeInTheDocument()
     expect(screen.getByText('destructive_operation')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /save|edit|update/i })).not.toBeInTheDocument()

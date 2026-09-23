@@ -1746,12 +1746,14 @@ dependencies = [
 name = "gateway-guardrails"
 version = "0.32.0"
 dependencies = [
+ "aho-corasick",
  "async-trait",
  "aws-config",
  "aws-credential-types",
  "aws-sigv4",
  "aws-smithy-runtime-api",
  "percent-encoding",
+ "regex",
  "reqwest 0.13.5",
  "serde",
  "serde_json",

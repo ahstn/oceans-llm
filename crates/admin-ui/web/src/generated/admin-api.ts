@@ -2560,6 +2560,7 @@ export interface components {
             mode: string;
             packs: string[];
             scope: string;
+            secret_redaction: components["schemas"]["SecretRedactionView"];
             stream_buffer_bytes: number;
         };
         /** @enum {string} */
@@ -3804,6 +3805,11 @@ export interface components {
         };
         RevokeApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
+        };
+        SecretRedactionView: {
+            disabled_rules: string[];
+            enabled: boolean;
+            tiers: string[];
         };
         SpendBudgetServiceAccountView: {
             alert_email_ready: boolean;

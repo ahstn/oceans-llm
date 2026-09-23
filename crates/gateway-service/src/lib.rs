@@ -101,8 +101,8 @@ pub use provider_credentials::{
     ProviderCredentialStatus,
 };
 pub use redaction::{
-    MAX_INLINE_REQUEST_BYTES, PayloadPath, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
-    parse_payload_path,
+    MAX_INLINE_REQUEST_BYTES, PayloadPath, PayloadSecretRedactor, RequestLogPayloadCaptureMode,
+    RequestLogPayloadPolicy, parse_payload_path,
 };
 pub use request_logging::{
     LoggedRequest, RequestAttemptOutcome, RequestLogContext, RequestLogging,

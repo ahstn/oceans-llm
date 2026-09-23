@@ -9818,6 +9818,7 @@
           "packs",
           "managed_checks",
           "stream_buffer_bytes",
+          "secret_redaction",
           "scope"
         ],
         "properties": {
@@ -9841,6 +9842,9 @@
           },
           "scope": {
             "type": "string"
+          },
+          "secret_redaction": {
+            "$ref": "#/components/schemas/SecretRedactionView"
           },
           "stream_buffer_bytes": {
             "type": "integer",
@@ -15012,6 +15016,31 @@
         "properties": {
           "api_key": {
             "$ref": "#/components/schemas/AdminApiKeyView"
+          }
+        }
+      },
+      "SecretRedactionView": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "tiers",
+          "disabled_rules"
+        ],
+        "properties": {
+          "disabled_rules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "tiers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

@@ -3,8 +3,8 @@ use std::time::Duration;
 use futures_util::future::join_all;
 use gateway_core::{GuardrailDecisionEventRecord, GuardrailDecisionRepository};
 use gateway_guardrails::{
-    DecisionAction, EffectiveScope, FailureDisposition, GuardPhase, GuardrailEvaluation,
-    ManagedService,
+    DecisionAction, DecisionRecord, EffectiveScope, FailureDisposition, GuardPhase,
+    GuardrailEvaluation, ManagedService,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -17,8 +17,26 @@ pub async fn record_guardrail_evaluation(
     mcp_tool_invocation_id: Option<Uuid>,
     evaluation: &GuardrailEvaluation,
 ) {
-    let mut records = Vec::with_capacity(evaluation.decisions.len());
-    for decision in &evaluation.decisions {
+    record_guardrail_decisions(
+        state,
+        request_id,
+        mcp_tool_invocation_id,
+        &evaluation.decisions,
+    )
+    .await;
+}
+
+pub async fn record_guardrail_decisions(
+    state: &AppState,
+    request_id: Option<&str>,
+    mcp_tool_invocation_id: Option<Uuid>,
+    decisions: &[DecisionRecord],
+) {
+    if decisions.is_empty() {
+        return;
+    }
+    let mut records = Vec::with_capacity(decisions.len());
+    for decision in decisions {
         let phase = phase_name(decision.phase);
         let action = action_name(decision.action);
         let failure_disposition = decision.failure_disposition.map(failure_disposition_name);

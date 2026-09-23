@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, fs, path::Path};
 
 use anyhow::Context;
-use gateway_guardrails::GuardrailConfig;
-use gateway_service::RequestLogPayloadPolicy;
+use gateway_guardrails::{GuardrailConfig, redact_json_secrets};
+use gateway_service::{PayloadSecretRedactor, RequestLogPayloadPolicy};
 use gateway_store::StoreConnectionOptions;
 use serde::Deserialize;
 
@@ -181,7 +181,15 @@ impl GatewayConfig {
     }
 
     pub fn request_log_payload_policy(&self) -> anyhow::Result<RequestLogPayloadPolicy> {
-        self.request_logging.payloads.to_policy()
+        let policy = self.request_logging.payloads.to_policy()?;
+        let Some(secret_redaction) = self.guardrails.request_log_secret_redaction() else {
+            return Ok(policy);
+        };
+        Ok(
+            policy.with_secret_redactor(PayloadSecretRedactor::new(move |value| {
+                redact_json_secrets(value, &secret_redaction);
+            })),
+        )
     }
 }
 

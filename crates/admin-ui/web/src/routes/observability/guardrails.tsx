@@ -337,6 +337,10 @@ function PolicyCard({ name, policy }: { name: string; policy: GuardrailPoliciesV
           <span className="font-medium">Stream buffer:</span>{' '}
           {policy.stream_buffer_bytes.toLocaleString()} bytes
         </p>
+        <p>
+          <span className="font-medium">Secret redaction:</span>{' '}
+          {policy.secret_redaction.enabled ? policy.secret_redaction.tiers.join(', ') : 'Off'}
+        </p>
       </CardContent>
     </Card>
   )
