@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -12,6 +12,7 @@ export function BarListRow({
   value,
   progress,
   progressLabel,
+  tone,
 }: {
   label: string
   mono?: boolean
@@ -22,6 +23,8 @@ export function BarListRow({
   progress: number
   /** Announces the bar when it carries data not repeated in the text. */
   progressLabel?: string
+  /** CSS colour for the bar; the track takes a faint wash of it. Defaults to primary. */
+  tone?: string
 }) {
   return (
     <li className="flex flex-col gap-1.5 py-2">
@@ -37,6 +40,12 @@ export function BarListRow({
       </div>
       <Progress
         value={progress}
+        className={
+          tone
+            ? 'bg-[color-mix(in_oklch,var(--bar-tone)_18%,transparent)] [&>[data-slot=progress-indicator]]:bg-[var(--bar-tone)]'
+            : undefined
+        }
+        style={tone ? ({ '--bar-tone': tone } as CSSProperties) : undefined}
         {...(progressLabel ? { 'aria-label': progressLabel } : { 'aria-hidden': true })}
       />
     </li>

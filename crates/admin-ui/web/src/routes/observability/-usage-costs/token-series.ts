@@ -14,6 +14,26 @@ export const COMPACT_FORMATTER = new Intl.NumberFormat('en-US', {
 /** Neutral tone for the folded "Other" model series, kept apart from the ranked palette. */
 const OTHER_SERIES_COLOR = 'var(--color-text-soft)'
 
+const percent = (fraction: number) => `${Math.round(fraction * 100)}%`
+
+/** Hit rates at or above this read as healthy and switch from the warm scale to primary blue. */
+const HEALTHY_HIT_RATE = 0.5
+
+/**
+ * Bar colour for a cache hit rate. Below 50% it warms from danger red to warning amber; from 50%
+ * it is primary blue, deepening from a softer tint to full strength. Blending amber straight into
+ * blue passes through green, so the scale switches families at the threshold instead.
+ */
+export function hitRateColor(rate: number): string {
+  const clamped = Math.min(1, Math.max(0, rate))
+  if (clamped < HEALTHY_HIT_RATE) {
+    const warmth = clamped / HEALTHY_HIT_RATE
+    return `color-mix(in oklch, var(--color-warning) ${percent(warmth)}, var(--color-danger))`
+  }
+  const strength = (clamped - HEALTHY_HIT_RATE) / (1 - HEALTHY_HIT_RATE)
+  return `color-mix(in oklab, var(--color-primary) ${percent(0.55 + 0.45 * strength)}, transparent)`
+}
+
 /** Input tokens whose provider reported a cache split; the hit-rate denominator. */
 function cacheableInputTokens(buckets: CacheBuckets) {
   return buckets.uncached_input_tokens + buckets.cache_read_tokens + buckets.cache_write_tokens

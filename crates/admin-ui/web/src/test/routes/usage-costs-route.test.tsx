@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   cacheHitRate,
+  hitRateColor,
   modelTokenChart,
   ownerCacheRows,
 } from '@/routes/observability/-usage-costs/token-series'
@@ -144,7 +145,7 @@ describe('UsageCostsPage reports', () => {
             model_key: `long-tail-${index}`,
             priced_cost_usd_10000: 1_000 - index,
             priced_request_count: 1,
-            unpriced_request_count: 0,
+            unpriced_request_count: index === 0 ? 1 : 0,
             usage_missing_request_count: 0,
           })),
         ],
@@ -183,13 +184,20 @@ describe('UsageCostsPage reports', () => {
     expect(within(cacheList).getByText('75%')).toBeInTheDocument()
     expect(within(cacheList).getByLabelText('CI Indexer cache hit rate')).toBeInTheDocument()
 
-    // Owner breakdown sits beside cache efficiency (35/65); model mix beside model breakdown (60/40).
-    const ownerRow = screen.getByText('Owner breakdown').closest('.grid:not([data-slot])')
-    expect(ownerRow).toHaveClass('xl:grid-cols-[minmax(0,7fr)_minmax(0,13fr)]')
+    const cacheBar = within(cacheList).getByLabelText('CI Indexer cache hit rate')
+    expect(cacheBar.style.getPropertyValue('--bar-tone')).toBe(hitRateColor(0.75))
+
+    // Model row (60/40) comes before the owner row (40/60).
+    const ownerRow = screen.getByText('Spend by owner').closest('.grid:not([data-slot])')
+    expect(ownerRow).toHaveClass('xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]')
     expect(ownerRow).toContainElement(cacheList)
-    const modelRow = screen.getByText('Model breakdown').closest('.grid:not([data-slot])')
+    const modelRow = screen.getByText('Spend by model').closest('.grid:not([data-slot])')
     expect(modelRow).toHaveClass('xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]')
     expect(within(modelRow as HTMLElement).getByText('Model mix')).toBeInTheDocument()
+    expect(modelRow?.nextElementSibling).toBe(ownerRow)
+
+    expect(screen.getAllByText('1 gap')).toHaveLength(1)
+    expect(screen.getAllByText('3 gaps')).toHaveLength(2)
   })
 
   it('treats a zero-filled window as no spend', async () => {
@@ -290,7 +298,7 @@ describe('UsageCostsPage filters', () => {
     expect(
       screen.getByText('Review your costs over time and see how each model affects the total.'),
     ).toBeVisible()
-    expect(screen.getByText('Spend attributed to your user account.')).toBeVisible()
+    expect(screen.getByText('Share of priced spend for your account.')).toBeVisible()
     expect(screen.queryByText('All owners')).not.toBeInTheDocument()
     expect(screen.queryByText('Service accounts')).not.toBeInTheDocument()
   })
@@ -321,6 +329,19 @@ describe('usage costs token series helpers', () => {
     const [ada] = ownerCacheRows(series)
     expect(ada.inputTokens).toBe(1_000)
     expect(ada.hitRate).toBeCloseTo(50 / 600)
+  })
+
+  it('warms from danger to warning below 50% and switches to primary blue above', () => {
+    expect(hitRateColor(0)).toBe(
+      'color-mix(in oklch, var(--color-warning) 0%, var(--color-danger))',
+    )
+    expect(hitRateColor(0.25)).toBe(
+      'color-mix(in oklch, var(--color-warning) 50%, var(--color-danger))',
+    )
+    // No amber-to-blue blend: that passes through green.
+    expect(hitRateColor(0.5)).toBe('color-mix(in oklab, var(--color-primary) 55%, transparent)')
+    expect(hitRateColor(0.75)).toBe('color-mix(in oklab, var(--color-primary) 78%, transparent)')
+    expect(hitRateColor(1.2)).toBe('color-mix(in oklab, var(--color-primary) 100%, transparent)')
   })
 
   it('stacks model tokens and gives the Other series a neutral colour', () => {

@@ -3,7 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 import { BarListRow } from './bar-list'
 import { formatCount, PERCENT_FORMATTER } from './shared'
-import type { OwnerCacheRow } from './token-series'
+import { hitRateColor, type OwnerCacheRow } from './token-series'
 
 export const CHART_SKELETON = <Skeleton className="h-72 w-full rounded-xl" />
 
@@ -23,6 +23,7 @@ export function OwnerCacheList({ rows }: { rows: OwnerCacheRow[] }) {
           value={row.hitRate == null ? '—' : PERCENT_FORMATTER.format(row.hitRate)}
           progress={(row.hitRate ?? 0) * 100}
           progressLabel={`${row.name} cache hit rate`}
+          tone={row.hitRate == null ? undefined : hitRateColor(row.hitRate)}
         />
       ))}
     </ol>
