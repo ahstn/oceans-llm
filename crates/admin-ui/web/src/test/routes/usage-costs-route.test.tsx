@@ -235,6 +235,18 @@ describe('UsageCostsPage filters', () => {
     })
   })
 
+  it('labels the refresh control like the other toolbar buttons', async () => {
+    routeMock.useLoaderData.mockReturnValue({ exportOrigin: '', data: emptyReport(7, 'all') })
+    getSpendUsageReportMock.mockResolvedValue({ data: emptyReport(7, 'all') })
+
+    const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
+    render(<UsageCostsPage />)
+
+    const refresh = screen.getByRole('button', { name: 'Refresh' })
+    expect(refresh).toHaveAttribute('data-variant', 'outline')
+    expect(refresh).toHaveAttribute('data-size', 'sm')
+  })
+
   it('keeps the previous filters when the report request fails', async () => {
     routeMock.useLoaderData.mockReturnValue({ exportOrigin: '', data: emptyReport(7, 'all') })
     getSpendUsageReportMock.mockRejectedValue(new Error('gateway unavailable'))
