@@ -1,0 +1,29 @@
+crates/gateway-guardrails/src/redaction/mod.rs
+  s_729846f802251e::t_7a3c261bf62a1f 21-27,112-113,156-157,173,179-189
+crates/gateway-guardrails/src/redaction/scanner.rs
+  s_729846f802251e::t_09c1c676265c76 146-150,152,238
+crates/gateway-guardrails/src/redaction/tests.rs
+  s_729846f802251e::t_63a8c41f4a185f 121-131,213-219,228,230,232-233,236-241,255,259-260,262,277-283
+docs/adr/2026-09-22-guardrail-secret-redaction.md
+  s_729846f802251e::t_853f7fbc05bdff 15
+docs/operations/gateway-guardrails.md
+  s_729846f802251e::t_bb90804d96b271 103,111
+docs/plans/2026-09-22-guardrail-secret-redaction.md
+  s_729846f802251e::t_c7ea68c01e154d 131,240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c2ec8b98d0d53303a50ee38d4bffa0b874049ba9",
+  "prompts": {},
+  "sessions": {
+    "s_729846f802251e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "80e79430-8e4b-4cb7-9452-cc764000ff75",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
