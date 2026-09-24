@@ -1,0 +1,20 @@
+crates/admin-ui/web/src/routes/observability/-usage-costs/token-cards.tsx
+  h_2f452a9c375069 21
+crates/admin-ui/web/src/routes/observability/-usage-costs/token-series.ts
+  h_2f452a9c375069 103-104,116
+crates/admin-ui/web/src/test/routes/usage-costs-route.test.tsx
+  h_2f452a9c375069 343
+crates/gateway/src/http/spend.rs
+  h_2f452a9c375069 58-77,82-83,88-89,192-193,207-210,234,248-251,1072-1104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6264eade04c2c896ebe858dd896453a4ea25157b",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
