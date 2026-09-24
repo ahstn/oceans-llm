@@ -49,6 +49,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Setup mise
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: false
+          cache: false
+
+      - name: Resolve tool versions
+        id: versions
+        run: echo "bun=$(mise tool bun --requested)" >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU
         if: contains(matrix.platforms, 'linux/arm64')
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -87,6 +97,8 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
+          build-args: |
+            BUN_VERSION=${{ steps.versions.outputs.bun }}
           platforms: ${{ matrix.platforms }}
           push: true
           provenance: false
