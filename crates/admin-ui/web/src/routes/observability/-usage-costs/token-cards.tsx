@@ -18,7 +18,7 @@ export function OwnerCacheList({ rows }: { rows: OwnerCacheRow[] }) {
           detail={
             row.hitRate == null
               ? `${formatCount(row.inputTokens)} input · no cache split`
-              : `${formatCount(row.cacheReadTokens)} of ${formatCount(row.inputTokens)} cached`
+              : `${formatCount(row.cacheReadTokens)} of ${formatCount(row.cacheableInputTokens)} cached`
           }
           value={row.hitRate == null ? '—' : PERCENT_FORMATTER.format(row.hitRate)}
           progress={(row.hitRate ?? 0) * 100}

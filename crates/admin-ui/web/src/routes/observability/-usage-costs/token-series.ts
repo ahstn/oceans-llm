@@ -100,6 +100,8 @@ export type OwnerCacheRow = {
   key: string
   name: string
   inputTokens: number
+  /** Input with a provider cache split; the hit-rate denominator, so the detail matches the rate. */
+  cacheableInputTokens: number
   cacheReadTokens: number
   hitRate: number | null
 }
@@ -111,6 +113,7 @@ export function ownerCacheRows(report: SpendReportView): OwnerCacheRow[] {
       key: `${owner.owner_kind}:${owner.owner_id}`,
       name: owner.owner_name,
       inputTokens: total.input_tokens,
+      cacheableInputTokens: cacheableInputTokens(total),
       cacheReadTokens: total.cache_read_tokens,
       hitRate: cacheHitRate(total),
     }

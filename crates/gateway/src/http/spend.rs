@@ -55,36 +55,38 @@ pub async fn get_spend_report(
     )?;
     let (window_start, window_end) = report_window_bounds_utc(window_days)?;
 
-    let daily_rows = state
-        .store
-        .list_usage_daily_aggregates(window_start, window_end, owner_kind, owner_user_id)
-        .await?;
-    let owner_rows = state
-        .store
-        .list_usage_owner_aggregates(window_start, window_end, owner_kind, owner_user_id)
-        .await?;
-    let model_rows = state
-        .store
-        .list_usage_model_aggregates(window_start, window_end, owner_kind, owner_user_id)
-        .await?;
-    let owner_token_rows = state
-        .store
-        .list_usage_owner_token_daily_aggregates(
+    let (daily_rows, owner_rows, model_rows, owner_token_rows, model_token_rows) = tokio::try_join!(
+        state.store.list_usage_daily_aggregates(
+            window_start,
+            window_end,
+            owner_kind,
+            owner_user_id
+        ),
+        state.store.list_usage_owner_aggregates(
+            window_start,
+            window_end,
+            owner_kind,
+            owner_user_id
+        ),
+        state.store.list_usage_model_aggregates(
+            window_start,
+            window_end,
+            owner_kind,
+            owner_user_id
+        ),
+        state.store.list_usage_owner_token_daily_aggregates(
             window_start,
             window_end,
             owner_kind,
             owner_user_id,
-        )
-        .await?;
-    let model_token_rows = state
-        .store
-        .list_usage_model_token_daily_aggregates(
+        ),
+        state.store.list_usage_model_token_daily_aggregates(
             window_start,
             window_end,
             owner_kind,
             owner_user_id,
-        )
-        .await?;
+        ),
+    )?;
     let window_day_starts: Vec<OffsetDateTime> = (0..window_days)
         .map(|day_offset| window_start + Duration::days(i64::from(day_offset)))
         .collect();
@@ -187,7 +189,8 @@ const TOKEN_SERIES_OWNER_LIMIT: usize = 10;
 /// Matches the five `--chart-*` palette colours; "Other" renders in a neutral tone.
 const TOKEN_SERIES_MODEL_LIMIT: usize = 5;
 
-/// Keeps the heaviest owners by total tokens and zero-fills each across the window.
+/// Keeps the heaviest owners by total tokens and zero-fills each across the window. Owners
+/// with no tokens (only usage-missing events) are dropped so the charts read as empty.
 fn build_owner_token_series(
     rows: Vec<SpendOwnerTokenDailyRecord>,
     window_day_starts: &[OffsetDateTime],
@@ -201,7 +204,10 @@ fn build_owner_token_series(
         entry.1.insert(row.day_start.unix_timestamp(), row.tokens);
     }
 
-    let mut owners: Vec<_> = grouped.into_iter().collect();
+    let mut owners: Vec<_> = grouped
+        .into_iter()
+        .filter(|(_, (_, days))| total_tokens(days.values()) > 0)
+        .collect();
     owners.sort_by(
         |((kind_a, id_a), (_, days_a)), ((kind_b, id_b), (_, days_b))| {
             total_tokens(days_b.values())
@@ -225,6 +231,7 @@ fn build_owner_token_series(
 }
 
 /// Keeps the heaviest models by total tokens and folds the rest into one `is_other` series.
+/// Models with no tokens are dropped so they cannot take a ranked slot.
 fn build_model_token_series(
     rows: Vec<SpendModelTokenDailyRecord>,
     window_day_starts: &[OffsetDateTime],
@@ -238,7 +245,10 @@ fn build_model_token_series(
             .insert(row.day_start.unix_timestamp(), row.tokens);
     }
 
-    let mut models: Vec<_> = grouped.into_iter().collect();
+    let mut models: Vec<_> = grouped
+        .into_iter()
+        .filter(|(_, days)| total_tokens(days.values()) > 0)
+        .collect();
     models.sort_by(|(key_a, days_a), (key_b, days_b)| {
         total_tokens(days_b.values())
             .cmp(&total_tokens(days_a.values()))
@@ -1057,6 +1067,39 @@ mod tests {
         assert_eq!(series[0].points[1].cache_read_tokens, 900);
         assert_eq!(series[1].owner_id, light.to_string());
         assert_eq!(series[1].points[1].input_tokens, 0);
+    }
+
+    #[test]
+    fn token_series_drop_owners_and_models_without_tokens() {
+        let days = window(2);
+        let empty = TokenUsageBuckets {
+            request_count: 3,
+            ..TokenUsageBuckets::default()
+        };
+        let owner_rows = vec![SpendOwnerTokenDailyRecord {
+            day_start: days[0],
+            owner_kind: ApiKeyOwnerKind::User,
+            owner_id: Uuid::new_v4(),
+            owner_name: "Usage missing".to_string(),
+            tokens: empty,
+        }];
+        let model_rows = vec![
+            SpendModelTokenDailyRecord {
+                day_start: days[0],
+                model_key: "usage-missing".to_string(),
+                tokens: empty,
+            },
+            SpendModelTokenDailyRecord {
+                day_start: days[1],
+                model_key: "fast".to_string(),
+                tokens: tokens(100, 0),
+            },
+        ];
+
+        assert!(build_owner_token_series(owner_rows, &days).is_empty());
+        let models = build_model_token_series(model_rows, &days);
+        let keys: Vec<_> = models.iter().map(|row| row.model_key.as_str()).collect();
+        assert_eq!(keys, ["fast"]);
     }
 
     #[test]

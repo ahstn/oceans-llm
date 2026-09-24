@@ -340,6 +340,7 @@ describe('usage costs token series helpers', () => {
     ).toBeNull()
     const [ada] = ownerCacheRows(series)
     expect(ada.inputTokens).toBe(1_000)
+    expect(ada.cacheableInputTokens).toBe(600)
     expect(ada.hitRate).toBeCloseTo(50 / 600)
   })
 
