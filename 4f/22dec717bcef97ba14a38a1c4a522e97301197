@@ -1,0 +1,21 @@
+crates/gateway-service/src/benchmark_catalog.rs
+  s_e88e6cbbab1de0::t_8626f4c9d70138 324-328,330-335,339
+crates/gateway-service/src/benchmark_catalog/tests.rs
+  s_e88e6cbbab1de0::t_c472c3ac7632e9 194-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4f22dec717bcef97ba14a38a1c4a522e97301197",
+  "prompts": {},
+  "sessions": {
+    "s_e88e6cbbab1de0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44088f38-237f-4fc3-bd0d-c2f82321db92",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
