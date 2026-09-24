@@ -27,7 +27,6 @@ Unknown top-level, model, user, and user-membership fields are rejected. Correct
 - `permissions`
 - `mcp`
 - `budgets`
-- `benchmark_catalog`
 - `budget_alerts`
 - `request_logging`
 - `agent_analysis`

@@ -21,18 +21,23 @@ async fn main() -> anyhow::Result<()> {
         .expect("zero nanoseconds is valid");
 
     let mut snapshot = match std::fs::read_to_string(&output_path) {
-        Ok(existing) => serde_json::from_str::<BenchmarkSnapshot>(&existing).with_context(|| {
-            format!(
-                "existing benchmark snapshot `{}` is invalid",
-                output_path.display()
-            )
-        })?,
+        Ok(existing) => {
+            serde_json::from_str::<BenchmarkSnapshot>(&existing).with_context(|| {
+                format!(
+                    "existing benchmark snapshot `{}` is invalid",
+                    output_path.display()
+                )
+            })?
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             empty_benchmark_snapshot(DEFAULT_BENCHMARK_SOURCE_URL, now)
         }
         Err(error) => {
             return Err(error).with_context(|| {
-                format!("failed reading benchmark snapshot `{}`", output_path.display())
+                format!(
+                    "failed reading benchmark snapshot `{}`",
+                    output_path.display()
+                )
             });
         }
     };
@@ -47,7 +52,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     std::fs::write(&output_path, benchmark_snapshot_to_pretty_json(&snapshot)?).with_context(
-        || format!("failed writing benchmark snapshot to `{}`", output_path.display()),
+        || {
+            format!(
+                "failed writing benchmark snapshot to `{}`",
+                output_path.display()
+            )
+        },
     )?;
     println!(
         "wrote {} models ({fetched_count} fetched) to {}",

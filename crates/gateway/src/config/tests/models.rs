@@ -432,7 +432,13 @@ fn collects_explicit_benchmark_model_ids() {
 
 #[test]
 fn rejects_invalid_benchmark_model_ids() {
-    for invalid in ["gpt-5", "openai/gpt-5:batch", " openai/gpt-5", "/gpt-5", "openai/"] {
+    for invalid in [
+        "gpt-5",
+        "openai/gpt-5:batch",
+        " openai/gpt-5",
+        "/gpt-5",
+        "openai/",
+    ] {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
         write_config(&config_path, &benchmark_model_config(invalid));

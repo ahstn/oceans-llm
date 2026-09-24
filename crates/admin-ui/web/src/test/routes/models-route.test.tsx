@@ -138,8 +138,8 @@ const modelPage: ModelPageView = {
           label: 'Artificial Analysis Intelligence Index',
           value: 39,
           source: 'artificial_analysis',
-          source_model_id: 'google/gemini-2.0-flash-001',
-          source_url: 'https://openrouter.ai/google/gemini-2.0-flash-001',
+          source_model_id: 'google/gemini-2.0-flash',
+          source_url: 'https://openrouter.ai/google/gemini-2.0-flash',
           match_kind: 'derived',
           updated_at: '2026-09-24T00:00:00Z',
         },
@@ -566,12 +566,27 @@ describe('ModelsPage table content', () => {
     expect(within(dialog).getByText('39')).toBeInTheDocument()
     expect(within(dialog).getByText(/Matched from upstream model · Updated/)).toBeInTheDocument()
     expect(
-      within(dialog).getByRole('link', { name: 'google/gemini-2.0-flash-001 on OpenRouter' }),
-    ).toHaveAttribute('href', 'https://openrouter.ai/google/gemini-2.0-flash-001')
+      within(dialog).getByRole('link', { name: 'google/gemini-2.0-flash on OpenRouter' }),
+    ).toHaveAttribute('href', 'https://openrouter.ai/google/gemini-2.0-flash')
     expect(within(dialog).getByRole('link', { name: 'Artificial Analysis' })).toHaveAttribute(
       'href',
       'https://artificialanalysis.ai/',
     )
+  })
+
+  it('opens model info from the mobile model card', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const mobileList = screen.getByTestId('models-mobile-list')
+    fireEvent.click(within(mobileList).getByRole('button', { name: 'Model info for fast' }))
+
+    expect(screen.getByRole('dialog', { name: 'Model info' })).toBeInTheDocument()
   })
 
   it('shows Artificial Analysis attribution below the model list', () => {

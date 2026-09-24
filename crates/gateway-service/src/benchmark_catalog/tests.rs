@@ -201,6 +201,7 @@ fn candidates_normalize_provider_model_ids() {
         ("anthropic/claude-fable-5-1", "anthropic/claude-fable-5.1"),
         ("qwen/qwen3.6-27b", "qwen/qwen3.6-27b"),
         ("gpt-5.6-luna", "openai/gpt-5.6-luna"),
+        ("amazon/nova-2-lite-v1", "amazon/nova-2-lite-v1"),
     ];
 
     for (upstream, expected) in cases {
@@ -271,5 +272,7 @@ fn scores_include_only_present_indices_with_openrouter_source() {
         "https://openrouter.ai/anthropic/claude-opus-4.7"
     );
     assert_eq!(scores[0].match_kind, BenchmarkMatchKind::Explicit);
-    assert!(scores_from_snapshot(&snapshot, "acme/missing", BenchmarkMatchKind::Derived).is_empty());
+    assert!(
+        scores_from_snapshot(&snapshot, "acme/missing", BenchmarkMatchKind::Derived).is_empty()
+    );
 }

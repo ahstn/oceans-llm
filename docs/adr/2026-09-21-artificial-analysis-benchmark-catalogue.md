@@ -1,57 +1,73 @@
 # ADR: Artificial Analysis benchmark catalogue
 
 - Date: 2026-09-21
-- Revised: 2026-09-24
-- Status: Accepted
+- Status: Superseded by [OpenRouter benchmark snapshot](2026-09-24-openrouter-benchmark-snapshot.md)
 
 ## Context
 
-The Models page shows price, limits, routes, and runtime capability metadata. It does not show an independent capability score.
+The Models page shows price, limits, routes, and runtime capability metadata. It does not show an independent capability score. Artificial Analysis offers this data through an authenticated V2 API, but its metrics have different units and licence terms.
 
-The first draft of this feature bound gateway models to Artificial Analysis UUIDs from the authenticated Free V2 API. It stored scores in the database and refreshed them on a schedule. Operators had to look up an opaque UUID for every model, and matching gateway models to Artificial Analysis names was unreliable.
-
-OpenRouter's public `GET /api/v1/models` response includes Artificial Analysis Intelligence, Coding, and Agentic indices for each model under `benchmarks.artificial_analysis`. It keys them by readable, routable IDs such as `anthropic/claude-sonnet-4.6`, which are close to the upstream model IDs the gateway already configures.
+Gateway models can also be aliases or use several upstream routes. A name or route match can attach a score to the wrong evaluated variant.
 
 ## Decision
 
-### 1. Scores are a vendored JSON snapshot
+### 1. The first rollout is internal and Free-tier only
 
-`crates/gateway-service/data/model_benchmarks.json` is committed to the repository and embedded at build time, following the vendored pricing catalogue pattern. The gateway makes no network calls for benchmarks, needs no API key, and has no benchmark tables, migrations, scheduler, or refresh endpoint.
+The gateway calls `/api/v2/language/models/free` and stores only the Artificial Analysis Intelligence Index. It does not request or display Pro-only individual evaluations such as Terminal-Bench.
 
-`mise run sync-model-benchmarks` fetches `https://openrouter.ai/api/v1/models?sort=intelligence-high-to-low&limit=200`. It does not paginate further. It skips `:variant` IDs such as `:batch` and `:free`, which config bindings cannot reference, and models with no Artificial Analysis index, and validates that every value is finite and between 0 and 100.
+Customer-facing use is disabled. Enabling it needs written commercial rights and a separate decision. Artificial Analysis attribution is visible wherever a score appears.
 
-### 2. The snapshot is append and update only
+If API access ends or the applicable terms require deletion, operators must remove stored Artificial Analysis data within 30 days.
 
-The sync upserts fetched models and never deletes entries. A model that falls out of the top 200 keeps its last known scores. A `null` index in a new fetch keeps the previously stored value. An entry's `updated_at` changes only when its data changes, so unchanged syncs produce no diff. The trade-off is that the snapshot can hold stale scores for models that are no longer ranked.
+### 2. Model identity is explicit
 
-The `_metadata` block repeats the Artificial Analysis attribution, the benchmark source, and the OpenRouter source URL.
+Each scored gateway model sets `artificial_analysis_model_id` to the stable UUID returned by Artificial Analysis. The gateway does not infer a binding from a name, slug, alias, provider route, or OpenRouter ID.
 
-### 3. Model identity is an explicit binding or an exact derived match
+The explicit binding confirms that the operator reviewed the exact evaluated variant. Scores do not pass through aliases unless that alias has its own binding.
 
-A gateway model can set `benchmark_model_id` to an OpenRouter model ID. That binding wins, and an alias inherits its target's binding.
+### 3. Scores are typed current state
 
-Without a binding, the gateway normalizes the primary route's `upstream_model` into candidate OpenRouter IDs. Normalization strips Bedrock ARNs, region prefixes, and version suffixes, Vertex `@version` suffixes, and OpenRouter `:variant` suffixes. It also maps Bedrock publishers, infers publishers for bare IDs, and tries the dotted version form (`claude-sonnet-4-6` becomes `claude-sonnet-4.6`). A candidate must match a snapshot key exactly. There is no prefix or fuzzy matching, because related variants such as `deepseek-v4-pro` and `deepseek-v4-pro-0813` have different scores.
+The store keeps:
 
-Each score reports whether it was `explicit` or `derived`, so operators can see where a binding came from.
+- model-to-source bindings
+- current approved score rows
+- the last successful source version and refresh time
 
-### 4. The admin API owns display metadata
+Each score has a numeric value, unit, metric key, label, benchmark version, source, source model ID, source URL, and fetch time. The store does not keep the full source catalogue or unbounded history.
 
-`GET /api/v1/admin/models` returns benchmark scores to the admin UI. The OpenAI-compatible `/v1/models` response does not change. Attribution to Artificial Analysis, retrieved via OpenRouter, is shown below the Models list and with every detailed score.
+### 4. Refresh is separate from pricing
+
+Benchmark refresh uses its own `benchmark_catalog` service module and repository trait. It does not share pricing policy or the 15-minute pricing schedule.
+
+The gateway fetches all API pages, validates the complete response, projects only explicitly bound models, and replaces current scores in one transaction. A successful refresh removes missing or `null` scores. Any fetch or validation failure leaves the last successful set unchanged.
+
+The normal interval is 24 hours. A platform-admin endpoint provides a manual refresh. Model list reads use stored data and never call Artificial Analysis.
+
+### 5. The admin API owns display metadata
+
+`GET /api/v1/admin/models` returns benchmark scores to the admin UI. The OpenAI-compatible `/v1/models` response does not change. The server API key never enters an admin response.
 
 ## Consequences
 
 Benefits:
 
-- most configured models get scores without any config change
-- three indices instead of one
-- model list reads cannot fail or slow down because of a benchmark source
-- no secrets, storage, or background jobs
+- score identity is auditable and cannot drift through fuzzy matching
+- model list availability does not depend on Artificial Analysis
+- numeric values keep their scale and can be sorted or formatted safely
+- failed refreshes do not erase valid data
+- pricing and benchmark rules remain separate
 
 Trade-offs:
 
-- scores only change when someone runs the sync and commits the result
-- models outside OpenRouter's top 200 by intelligence are not added
-- a derived match can still attach a score to a differently configured deployment of the same model; use `benchmark_model_id` to override it
+- every scored model needs an operator-managed UUID
+- the Free tier provides no Terminal-Bench value
+- stored scores can become stale until the next successful refresh
+- customer-facing display needs a later commercial-rights review
+
+## Follow-up work
+
+- Add another metric only after its API tier and display rights are approved.
+- Revisit a separate `gateway-benchmarks` crate only after a second source or consumer creates a stable shared boundary.
 
 ## Attribution
 

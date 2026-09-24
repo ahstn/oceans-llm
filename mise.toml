@@ -109,9 +109,11 @@ diff -u crates/admin-ui/web/src/generated/admin-api.ts "$tmpdir/admin-api.ts"
 """
 
 [tasks.lint]
-description = "Run repository linting and static checks"
+description = "Run repository formatting checks, linting, and static checks"
 depends = [
+  "rust-fmt-check",
   "rust-lint",
+  "ui-fmt-check",
   "ui-lint",
   "review-agent-action-typecheck",
   "review-agent-action-lint",

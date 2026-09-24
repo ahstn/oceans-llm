@@ -15,8 +15,7 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-pub const BENCHMARK_ATTRIBUTION: &str =
-    "Benchmark scores by Artificial Analysis (artificialanalysis.ai), retrieved via OpenRouter (openrouter.ai).";
+pub const BENCHMARK_ATTRIBUTION: &str = "Benchmark scores by Artificial Analysis (artificialanalysis.ai), retrieved via OpenRouter (openrouter.ai).";
 pub const DEFAULT_BENCHMARK_SOURCE_URL: &str =
     "https://openrouter.ai/api/v1/models?sort=intelligence-high-to-low&limit=200";
 pub const ARTIFICIAL_ANALYSIS_SOURCE: &str = "artificial_analysis";
@@ -93,7 +92,9 @@ impl ArtificialAnalysisIndices {
         .flatten()
         {
             if !value.is_finite() || !(0.0..=100.0).contains(&value) {
-                anyhow::bail!("OpenRouter returned an out-of-range index `{value}` for `{model_id}`");
+                anyhow::bail!(
+                    "OpenRouter returned an out-of-range index `{value}` for `{model_id}`"
+                );
             }
         }
         Ok(())
@@ -193,23 +194,37 @@ fn derive_from_snapshot(snapshot: &BenchmarkSnapshot, upstream_model: &str) -> O
 
 /// Normalize an upstream model ID into exact OpenRouter ID candidates.
 ///
-/// This strips provider decorations (Bedrock ARNs, region prefixes and `-vN:N` suffixes,
-/// Vertex `@version`, OpenRouter `:variant`), adds a publisher prefix for bare IDs, and
-/// tries a dotted version form (`claude-sonnet-4-6` -> `claude-sonnet-4.6`). Candidates are
-/// only ever compared for equality, never by prefix.
+/// This strips provider decorations (Bedrock ARNs and region prefixes, Vertex `@version`,
+/// OpenRouter `:variant`), adds a publisher prefix for bare IDs, and tries a dotted version
+/// form (`claude-sonnet-4-6` -> `claude-sonnet-4.6`). The unmodified name is tried before one
+/// with a Bedrock `-vN` suffix removed, so IDs that genuinely end in `-v1` still match.
+/// Candidates are only ever compared for equality, never by prefix.
 pub(crate) fn benchmark_model_id_candidates(upstream_model: &str) -> Vec<String> {
     let mut model = upstream_model.trim();
     if model.starts_with("arn:") {
         model = model.rsplit('/').next().unwrap_or(model);
     }
     let model = model.split(['@', ':']).next().unwrap_or(model);
-    let model = strip_bedrock_version_suffix(model);
     let model = ["global.", "us.", "eu.", "apac.", "jp.", "au."]
         .iter()
         .find_map(|prefix| model.strip_prefix(prefix))
         .unwrap_or(model);
 
-    let qualified = if model.contains('/') {
+    let mut candidates = Vec::new();
+    for model in [model, strip_bedrock_version_suffix(model)] {
+        let qualified = qualify_model_id(model);
+        let dotted = dot_version_separators(&qualified);
+        for candidate in [qualified, dotted] {
+            if !candidates.contains(&candidate) {
+                candidates.push(candidate);
+            }
+        }
+    }
+    candidates
+}
+
+fn qualify_model_id(model: &str) -> String {
+    if model.contains('/') {
         model.to_string()
     } else if let Some((publisher, rest)) = model.split_once('.')
         && BEDROCK_PUBLISHERS.contains(&publisher)
@@ -219,18 +234,18 @@ pub(crate) fn benchmark_model_id_candidates(upstream_model: &str) -> Vec<String>
         format!("{publisher}/{model}")
     } else {
         model.to_string()
-    };
-
-    let mut candidates = vec![qualified.clone()];
-    let dotted = dot_version_separators(&qualified);
-    if dotted != qualified {
-        candidates.push(dotted);
     }
-    candidates
 }
 
 const BEDROCK_PUBLISHERS: [&str; 8] = [
-    "anthropic", "openai", "meta", "mistral", "deepseek", "qwen", "moonshotai", "google",
+    "anthropic",
+    "openai",
+    "meta",
+    "mistral",
+    "deepseek",
+    "qwen",
+    "moonshotai",
+    "google",
 ];
 
 fn openrouter_publisher(bedrock_publisher: &str) -> &str {
@@ -289,7 +304,10 @@ fn dot_version_separators(model: &str) -> String {
 }
 
 fn numeric_run_len(bytes: &[u8]) -> Option<usize> {
-    let len = bytes.iter().take_while(|byte| byte.is_ascii_digit()).count();
+    let len = bytes
+        .iter()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
     (len > 0).then_some(len)
 }
 
@@ -380,6 +398,9 @@ pub struct OpenRouterBenchmarkModel {
     pub indices: ArtificialAnalysisIndices,
 }
 
+/// The 200-model listing is around 1 MiB; anything far larger is not the expected payload.
+const MAX_BENCHMARK_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+
 pub async fn fetch_openrouter_benchmark_models(
     source_url: &str,
 ) -> anyhow::Result<Vec<OpenRouterBenchmarkModel>> {
@@ -396,10 +417,25 @@ pub async fn fetch_openrouter_benchmark_models(
     if status != StatusCode::OK {
         anyhow::bail!("benchmark fetch returned HTTP {}", status.as_u16());
     }
-    let body = response
-        .text()
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_BENCHMARK_RESPONSE_BYTES as u64)
+    {
+        anyhow::bail!("benchmark response exceeds {MAX_BENCHMARK_RESPONSE_BYTES} bytes");
+    }
+    let mut response = response;
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .context("failed reading benchmark response")?;
+        .context("failed reading benchmark response")?
+    {
+        if body.len() + chunk.len() > MAX_BENCHMARK_RESPONSE_BYTES {
+            anyhow::bail!("benchmark response exceeds {MAX_BENCHMARK_RESPONSE_BYTES} bytes");
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let body = String::from_utf8(body).context("benchmark response is not UTF-8")?;
     parse_openrouter_models(&body)
 }
 

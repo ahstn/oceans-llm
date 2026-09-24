@@ -7,17 +7,17 @@ const SCORE_FORMAT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }
 
 type BenchmarkScore = ModelView['benchmark_scores'][number]
 
-export function intelligenceIndexScore(model: ModelView) {
+function intelligenceIndexScore(model: ModelView) {
   return model.benchmark_scores.find((score) => score.metric_key === INTELLIGENCE_INDEX_METRIC_KEY)
 }
 
-export function formatBenchmarkScore(score: BenchmarkScore) {
+function formatBenchmarkScore(score: BenchmarkScore) {
   return SCORE_FORMAT.format(score.value)
 }
 
 export function ModelIntelligenceScore({ model }: { model: ModelView }) {
   const score = intelligenceIndexScore(model)
-  return score ? formatBenchmarkScore(score) : '—'
+  return <>{score ? formatBenchmarkScore(score) : '—'}</>
 }
 
 export function BenchmarkAttribution() {

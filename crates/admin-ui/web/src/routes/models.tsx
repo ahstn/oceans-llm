@@ -427,6 +427,7 @@ export function ModelsPage() {
                     showAccessDetails={isPlatformAdmin}
                     onCopy={(modelId) => handleCopyValue(modelId, 'Model ID copied')}
                     onOpenClientConfig={openSingleClientConfig}
+                    onOpenInfo={openModelInfo}
                   />
                 ))}
               </div>
@@ -656,11 +657,13 @@ function ModelCard({
   model,
   onCopy,
   onOpenClientConfig,
+  onOpenInfo,
   showAccessDetails,
 }: {
   model: ModelView
   onCopy: (modelId: string) => void
   onOpenClientConfig: (model: ModelView) => void
+  onOpenInfo: (model: ModelView) => void
   showAccessDetails: boolean
 }) {
   return (
@@ -725,7 +728,20 @@ function ModelCard({
           ) : null}
         </dl>
         <ModelNotes model={model} />
-        <ClientConfigButton model={model} onOpen={onOpenClientConfig} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            aria-label={`Model info for ${model.id}`}
+            onClick={() => onOpenInfo(model)}
+          >
+            <AppIcon icon={BadgeInfoIcon} size={14} stroke={1.5} data-icon="inline-start" />
+            Info
+          </Button>
+          <ClientConfigButton model={model} onOpen={onOpenClientConfig} />
+        </div>
       </CardContent>
     </Card>
   )
