@@ -1,8 +1,8 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"4eb4e508f60c92851d5b30b27b213cbb\"",
-    "fetched_at": "2026-09-24T01:01:35.287018Z"
+    "etag": "\"3a56243e17036178006ea1c313ddf65e\"",
+    "fetched_at": "2026-09-24T20:51:11.380808Z"
   },
   "providers": {
     "amazon-bedrock": {
@@ -5792,6 +5792,146 @@
             ]
           }
         },
+        "openai.gpt-6-luna": {
+          "id": "openai.gpt-6-luna",
+          "display_name": "GPT-6 Luna",
+          "release_date": "2026-09-22",
+          "last_updated": "2026-09-22",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-05-18",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {
+              "context_over_200k": {
+                "cache_read": 0.022,
+                "cache_write": 0.275,
+                "input": 0.22,
+                "output": 0.825
+              },
+              "tiers": [
+                {
+                  "cache_read": 0.022,
+                  "cache_write": 0.275,
+                  "input": 0.22,
+                  "output": 0.825,
+                  "tier": {
+                    "size": 272000,
+                    "type": "context"
+                  }
+                }
+              ]
+            },
+            "input": "0.1100",
+            "output": "0.5500",
+            "cache_read": "0.0110",
+            "cache_write": "0.1375",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "openai.gpt-6-sol": {
+          "id": "openai.gpt-6-sol",
+          "display_name": "GPT-6 Sol",
+          "release_date": "2026-09-22",
+          "last_updated": "2026-09-22",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-04-20",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {
+              "context_over_200k": {
+                "cache_read": 0.44,
+                "cache_write": 5.5,
+                "input": 4.4,
+                "output": 16.5
+              },
+              "tiers": [
+                {
+                  "cache_read": 0.44,
+                  "cache_write": 5.5,
+                  "input": 4.4,
+                  "output": 16.5,
+                  "tier": {
+                    "size": 272000,
+                    "type": "context"
+                  }
+                }
+              ]
+            },
+            "input": "2.2000",
+            "output": "11.0000",
+            "cache_read": "0.2200",
+            "cache_write": "2.7500",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "openai.gpt-oss-120b": {
           "id": "openai.gpt-oss-120b",
           "display_name": "gpt-oss-120b",
@@ -9490,7 +9630,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 65536
+            "output": 65535
           },
           "modalities": {
             "input": [
@@ -21971,9 +22111,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0671",
-            "output": "0.1341",
-            "cache_read": "0.0134",
+            "input": "0.0686",
+            "output": "0.1372",
+            "cache_read": "0.0137",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -22020,8 +22160,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0400",
-            "output": "0.6400",
+            "input": "0.0300",
+            "output": "0.3200",
             "cache_read": "0.0160",
             "cache_write": null,
             "input_audio": null,
@@ -22118,9 +22258,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.9429",
-            "output": "1.8858",
-            "cache_read": "0.0786",
+            "input": "0.8719",
+            "output": "1.7438",
+            "cache_read": "0.0727",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -22269,6 +22409,56 @@
             "context": 512000,
             "input": null,
             "output": 460800
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "fireworks/ember-1": {
+          "id": "fireworks/ember-1",
+          "display_name": "Ember-1",
+          "release_date": "2026-09-24",
+          "last_updated": "2026-09-24",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "toggle"
+              },
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "high",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "3.0000",
+            "output": "15.0000",
+            "cache_read": "0.3000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -25101,7 +25291,7 @@
           "limit": {
             "context": 1000192,
             "input": null,
-            "output": 900172
+            "output": 40000
           },
           "modalities": {
             "input": [
@@ -25170,8 +25360,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2550",
-            "output": "1.0200",
+            "input": "0.3000",
+            "output": "1.2000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -25180,7 +25370,7 @@
           "limit": {
             "context": 204800,
             "input": null,
-            "output": 131072
+            "output": 176947
           },
           "modalities": {
             "input": [
@@ -26257,7 +26447,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.7062",
+            "input": "0.6562",
             "output": "3.3000",
             "cache_read": "0.1800",
             "cache_write": null,
@@ -26404,53 +26594,6 @@
             ]
           }
         },
-        "nex-agi/nex-n2.5-mini": {
-          "id": "nex-agi/nex-n2.5-mini",
-          "display_name": "Nex-N2.5-Mini",
-          "release_date": "2026-09-08",
-          "last_updated": "2026-09-08",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": false,
-            "structured_output": true,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "medium",
-                  "high"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0250",
-            "output": "0.1000",
-            "cache_read": "0.0025",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 235929
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "nex-agi/nex-n2.5-mini:free": {
           "id": "nex-agi/nex-n2.5-mini:free",
           "display_name": "Nex-N2.5-Mini (free)",
@@ -26479,53 +26622,6 @@
             "input": "0.0000",
             "output": "0.0000",
             "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 235929
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "nex-agi/nex-n2.5-pro": {
-          "id": "nex-agi/nex-n2.5-pro",
-          "display_name": "Nex-N2.5-Pro",
-          "release_date": "2026-09-08",
-          "last_updated": "2026-09-08",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "medium",
-                  "high"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0750",
-            "output": "0.2500",
-            "cache_read": "0.0150",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -31409,8 +31505,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0482",
-            "output": "0.1931",
+            "input": "0.1000",
+            "output": "0.3000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -31419,7 +31515,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 32000
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -31916,9 +32012,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0900",
+            "input": "0.1000",
             "output": "1.1000",
-            "cache_read": null,
+            "cache_read": "0.0700",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -31926,7 +32022,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 16384
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -33292,7 +33388,7 @@
         },
         "qwen/qwen3.8-max-prime": {
           "id": "qwen/qwen3.8-max-prime",
-          "display_name": "Qwen3.8 Max Prime",
+          "display_name": "Qwen 3.8 Max Prime",
           "release_date": "2026-09-23",
           "last_updated": "2026-09-23",
           "metadata": {
@@ -36068,9 +36164,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.8400",
-            "output": "2.6400",
-            "cache_read": "0.1560",
+            "input": "1.4000",
+            "output": "4.4000",
+            "cache_read": "0.2600",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -36078,7 +36174,7 @@
           "limit": {
             "context": 1310720,
             "input": null,
-            "output": 131072
+            "output": 943717
           },
           "modalities": {
             "input": [
@@ -36114,9 +36210,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1500",
-            "output": "0.5000",
-            "cache_read": "0.0500",
+            "input": "0.0450",
+            "output": "0.6000",
+            "cache_read": "0.0285",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -36124,7 +36220,7 @@
           "limit": {
             "context": 1310720,
             "input": null,
-            "output": 943718
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -36498,9 +36594,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0990",
-            "output": "0.6000",
-            "cache_read": "0.0600",
+            "input": "0.0400",
+            "output": "1.0000",
+            "cache_read": "0.0100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -36548,9 +36644,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3854",
-            "output": "1.1563",
-            "cache_read": "0.0123",
+            "input": "0.3894",
+            "output": "1.1682",
+            "cache_read": "0.0124",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -36597,9 +36693,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0380",
-            "output": "0.5500",
-            "cache_read": "0.0228",
+            "input": "0.0300",
+            "output": "0.3200",
+            "cache_read": "0.0160",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -36766,8 +36862,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.4989",
-            "output": "10.7580",
+            "input": "1.3500",
+            "output": "11.5000",
             "cache_read": "0.3000",
             "cache_write": null,
             "input_audio": null,
@@ -37209,9 +37305,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0750",
-            "output": "0.2500",
-            "cache_read": "0.0150",
+            "input": "0.0450",
+            "output": "0.1400",
+            "cache_read": "0.0100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -37219,7 +37315,7 @@
           "limit": {
             "context": 1310720,
             "input": null,
-            "output": 131072
+            "output": 128000
           },
           "modalities": {
             "input": [
