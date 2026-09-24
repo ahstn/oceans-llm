@@ -3,6 +3,7 @@ pub mod admin_models;
 mod agent_analysis;
 pub mod authenticator;
 pub mod batches;
+pub mod benchmark_catalog;
 pub mod budget_alerts;
 pub mod budget_guard;
 pub mod budget_scopes;
@@ -46,6 +47,11 @@ pub use agent_session_analysis::{
 pub use authenticator::{Authenticator, verify_gateway_key_secret};
 pub use batches::{
     BatchPricer, BatchPricingPolicy, CreateBatchInput, CreateBatchItemInput, create_batch,
+};
+pub use benchmark_catalog::{
+    BENCHMARK_ATTRIBUTION, BenchmarkMatchKind, BenchmarkMetric, BenchmarkSnapshot,
+    DEFAULT_BENCHMARK_SOURCE_URL, ModelBenchmarkScore, benchmark_snapshot_to_pretty_json,
+    empty_benchmark_snapshot, fetch_openrouter_benchmark_models, merge_benchmark_models,
 };
 pub use budget_alerts::{
     BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,

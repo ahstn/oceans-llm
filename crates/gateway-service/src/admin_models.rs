@@ -19,6 +19,9 @@ use crate::effective_route_metadata::effective_provider_route_capabilities;
 #[cfg(test)]
 use crate::effective_route_metadata::provider_capabilities;
 
+use crate::benchmark_catalog::{
+    BenchmarkMatchKind, ModelBenchmarkScore, benchmark_scores_for, derive_benchmark_model_id,
+};
 use crate::{
     EffectiveMetadataSource, EffectiveRouteMetadata, ModelIconKey, ProviderIconKey,
     resolve_effective_route_metadata, resolve_model_icon_key, resolve_provider_display,
@@ -70,6 +73,7 @@ pub struct AdminModelSummary {
     pub supports_tool_calling: Option<bool>,
     pub supports_structured_output: Option<bool>,
     pub supports_attachments: Option<bool>,
+    pub benchmark_scores: Vec<ModelBenchmarkScore>,
     pub supports_decisions: Option<bool>,
     pub client_configurations: Vec<ClientConfig>,
 }
@@ -78,6 +82,7 @@ pub struct AdminModelSummary {
 pub struct AdminModelsService<R> {
     repo: Arc<R>,
     client_config_gateway_base_url: String,
+    benchmark_model_ids: Arc<HashMap<String, String>>,
 }
 
 impl<R> AdminModelsService<R>
@@ -89,7 +94,18 @@ where
         Self {
             repo,
             client_config_gateway_base_url: DEFAULT_GATEWAY_BASE_URL.to_string(),
+            benchmark_model_ids: Arc::default(),
         }
+    }
+
+    /// Explicit gateway model key to OpenRouter model ID bindings from config.
+    #[must_use]
+    pub fn with_benchmark_model_ids(
+        mut self,
+        benchmark_model_ids: Arc<HashMap<String, String>>,
+    ) -> Self {
+        self.benchmark_model_ids = benchmark_model_ids;
+        self
     }
 
     #[must_use]
@@ -198,6 +214,44 @@ where
         Ok(render_default_configs_for_models(
             ClientConfigInputSet::new(inputs),
         ))
+    }
+
+    /// The nearest explicit binding along the alias chain wins, even when it has no scores.
+    /// Otherwise the primary route's upstream model is normalized and matched exactly.
+    fn benchmark_scores(
+        &self,
+        by_key: &HashMap<String, GatewayModel>,
+        model: &GatewayModel,
+        primary_route: Option<&ModelRoute>,
+    ) -> Vec<ModelBenchmarkScore> {
+        if let Some(source_model_id) = self.explicit_benchmark_model_id(by_key, model) {
+            return benchmark_scores_for(source_model_id, BenchmarkMatchKind::Explicit);
+        }
+        primary_route
+            .and_then(|route| derive_benchmark_model_id(&route.upstream_model))
+            .map(|source_model_id| {
+                benchmark_scores_for(&source_model_id, BenchmarkMatchKind::Derived)
+            })
+            .unwrap_or_default()
+    }
+
+    fn explicit_benchmark_model_id(
+        &self,
+        by_key: &HashMap<String, GatewayModel>,
+        model: &GatewayModel,
+    ) -> Option<&String> {
+        let mut current = model;
+        let mut seen = std::collections::BTreeSet::from([current.model_key.as_str()]);
+        loop {
+            if let Some(source_model_id) = self.benchmark_model_ids.get(&current.model_key) {
+                return Some(source_model_id);
+            }
+            let next = by_key.get(current.alias_target_model_key.as_deref()?)?;
+            if !seen.insert(next.model_key.as_str()) {
+                return None;
+            }
+            current = next;
+        }
     }
 
     async fn list_model_items(&self) -> Result<Vec<AdminModelItem>, GatewayError> {
@@ -366,6 +420,7 @@ where
                     supports_attachments: primary_metadata
                         .and_then(|metadata| metadata.modalities.as_ref())
                         .map(supports_attachments),
+                    benchmark_scores: self.benchmark_scores(&by_key, &model, primary_route),
                     supports_decisions: route_capabilities.map(|caps| caps.decisions),
                     client_configurations,
                 },
@@ -1124,6 +1179,46 @@ mod tests {
         assert!(!capabilities.embeddings);
         assert!(!capabilities.chat_completions);
         assert!(!capabilities.tools);
+    }
+
+    fn plain_model(model_key: &str, alias_target_model_key: Option<&str>) -> GatewayModel {
+        GatewayModel {
+            id: Uuid::new_v4(),
+            model_key: model_key.to_string(),
+            alias_target_model_key: alias_target_model_key.map(str::to_string),
+            max_reasoning_effort: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 0,
+        }
+    }
+
+    #[test]
+    fn explicit_benchmark_binding_follows_the_alias_chain() {
+        let service = AdminModelsService::new(Arc::new(CountingRepo::default()))
+            .with_benchmark_model_ids(Arc::new(HashMap::from([(
+                "middle".to_string(),
+                "acme/middle".to_string(),
+            )])));
+        let by_key: HashMap<String, GatewayModel> = [
+            plain_model("outer", Some("middle")),
+            plain_model("middle", Some("base")),
+            plain_model("base", None),
+            plain_model("loop-a", Some("loop-b")),
+            plain_model("loop-b", Some("loop-a")),
+        ]
+        .into_iter()
+        .map(|model| (model.model_key.clone(), model))
+        .collect();
+
+        let binding = |key: &str| {
+            service
+                .explicit_benchmark_model_id(&by_key, &by_key[key])
+                .cloned()
+        };
+        assert_eq!(binding("outer").as_deref(), Some("acme/middle"));
+        assert_eq!(binding("base"), None);
+        assert_eq!(binding("loop-a"), None);
     }
 
     #[tokio::test]

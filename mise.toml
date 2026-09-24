@@ -109,9 +109,11 @@ diff -u crates/admin-ui/web/src/generated/admin-api.ts "$tmpdir/admin-api.ts"
 """
 
 [tasks.lint]
-description = "Run repository linting and static checks"
+description = "Run repository formatting checks, linting, and static checks"
 depends = [
+  "rust-fmt-check",
   "rust-lint",
+  "ui-fmt-check",
   "ui-lint",
   "review-agent-action-typecheck",
   "review-agent-action-lint",
@@ -241,6 +243,10 @@ PORT="$GATEWAY_PORT" ADMIN_UI_UPSTREAM="http://localhost:$UI_PORT" cargo run -p 
 [tasks.sync-pricing-catalog]
 description = "Refresh the vendored pricing catalog fallback snapshot"
 run = "cargo run -p gateway --bin sync_pricing_catalog"
+
+[tasks.sync-model-benchmarks]
+description = "Upsert vendored Artificial Analysis scores from OpenRouter's top 200 models, excluding :variant IDs"
+run = "cargo run -p gateway --bin sync_model_benchmarks"
 
 [tasks.ui-install]
 description = "Install admin UI dependencies"

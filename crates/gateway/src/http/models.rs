@@ -11,8 +11,8 @@ use gateway_service::{
 use crate::http::{
     admin_auth::{require_active_session, require_platform_admin},
     admin_contract::{
-        AdminModelAllowlistView, AdminModelClientConfigView, AdminModelListQuery,
-        AdminModelPageView, AdminModelView, EffectiveMetadataSourceKindView,
+        AdminModelAllowlistView, AdminModelBenchmarkScoreView, AdminModelClientConfigView,
+        AdminModelListQuery, AdminModelPageView, AdminModelView, EffectiveMetadataSourceKindView,
         EffectiveMetadataSourceView, Envelope, GenerateModelClientConfigsRequest,
         GenerateModelClientConfigsResponse, RefreshModelPricingCatalogResponse, envelope,
         format_timestamp,
@@ -112,7 +112,8 @@ pub async fn refresh_model_pricing_catalog(
 }
 
 fn admin_models_service(state: &AppState) -> AdminModelsService<gateway_store::AnyStore> {
-    let service = AdminModelsService::new(state.store.clone());
+    let service = AdminModelsService::new(state.store.clone())
+        .with_benchmark_model_ids(state.benchmark_model_ids.clone());
     match state.client_config_gateway_base_url.as_ref().as_deref() {
         Some(gateway_base_url) => {
             service.with_client_config_gateway_base_url(gateway_base_url.to_string())
@@ -162,6 +163,20 @@ fn map_model_summary(model: AdminModelSummary, include_allowlist: bool) -> Admin
         supports_tool_calling: model.supports_tool_calling,
         supports_structured_output: model.supports_structured_output,
         supports_attachments: model.supports_attachments,
+        benchmark_scores: model
+            .benchmark_scores
+            .into_iter()
+            .map(|score| AdminModelBenchmarkScoreView {
+                metric_key: score.metric.into(),
+                label: score.label.to_string(),
+                value: score.value,
+                source: score.source.to_string(),
+                source_model_id: score.source_model_id,
+                source_url: score.source_url,
+                match_kind: score.match_kind.into(),
+                updated_at: format_timestamp(score.updated_at),
+            })
+            .collect(),
         supports_decisions: model.supports_decisions,
         client_configurations: model
             .client_configurations

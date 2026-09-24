@@ -59,6 +59,11 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import {
+  BenchmarkAttribution,
+  ModelBenchmarks,
+  ModelIntelligenceScore,
+} from '@/routes/-model-benchmarks'
+import {
   getModelClientConfigs,
   getModels,
   refreshModelPricing,
@@ -82,7 +87,7 @@ const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en-US', {
 const CLIENT_HARNESS_CONFIGURATION_URL =
   'https://oceans-llm.com/configuration/client-harness-configuration.html'
 
-type ModelInfoSectionKey = 'overview' | 'routing' | 'economics' | 'access'
+type ModelInfoSectionKey = 'overview' | 'routing' | 'economics' | 'benchmarks' | 'access'
 
 export const Route = createFileRoute('/models')({
   validateSearch: (search: Record<string, unknown>) => normalizeModelsSearch(search),
@@ -110,6 +115,7 @@ export function ModelsPage() {
   const [visibleColumns, setVisibleColumns] = useState({
     contextWindow: false,
     capabilities: false,
+    intelligence: false,
   })
   const [isGeneratingConfig, setIsGeneratingConfig] = useState(false)
   const [isRefreshingPricing, setIsRefreshingPricing] = useState(false)
@@ -121,22 +127,7 @@ export function ModelsPage() {
   const allSelectableSelected =
     selectableModels.length > 0 &&
     selectableModels.every((model) => selectedModelIdSet.has(model.id))
-  const desktopTableMinWidth =
-    visibleColumns.contextWindow && visibleColumns.capabilities
-      ? isPlatformAdmin
-        ? 'min-w-[103rem]'
-        : 'min-w-[91rem]'
-      : visibleColumns.capabilities
-        ? isPlatformAdmin
-          ? 'min-w-[91rem]'
-          : 'min-w-[79rem]'
-        : visibleColumns.contextWindow
-          ? isPlatformAdmin
-            ? 'min-w-[85rem]'
-            : 'min-w-[73rem]'
-          : isPlatformAdmin
-            ? 'min-w-[73rem]'
-            : 'min-w-[61rem]'
+  const desktopTableMinWidthRem = desktopTableMinWidth(isPlatformAdmin, visibleColumns)
 
   function navigateToPage(page: number) {
     void router.navigate({
@@ -337,6 +328,25 @@ export function ModelsPage() {
                       <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
                         <ModelCheckbox
                           className="mt-0.5"
+                          checked={visibleColumns.intelligence}
+                          onChange={(event) => {
+                            const checked = event.currentTarget.checked
+                            setVisibleColumns((current) => ({
+                              ...current,
+                              intelligence: checked,
+                            }))
+                          }}
+                        />
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="font-medium text-[var(--color-text)]">Intelligence</span>
+                          <span className="text-xs text-[var(--color-text-muted)]">
+                            Artificial Analysis Intelligence Index.
+                          </span>
+                        </span>
+                      </label>
+                      <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
+                        <ModelCheckbox
+                          className="mt-0.5"
                           checked={visibleColumns.capabilities}
                           onChange={(event) => {
                             const checked = event.currentTarget.checked
@@ -413,6 +423,7 @@ export function ModelsPage() {
                     showAccessDetails={isPlatformAdmin}
                     onCopy={(modelId) => handleCopyValue(modelId, 'Model ID copied')}
                     onOpenClientConfig={openSingleClientConfig}
+                    onOpenInfo={openModelInfo}
                   />
                 ))}
               </div>
@@ -421,46 +432,17 @@ export function ModelsPage() {
                 className="hidden min-w-0 overflow-hidden rounded-md border border-[color:var(--color-border)] md:block"
                 data-testid="models-desktop-table"
               >
-                <Table className={`${desktopTableMinWidth} table-fixed`}>
-                  <TableHeader className="bg-[color:var(--color-surface-muted)]">
-                    <TableRow>
-                      <TableHead className="sticky left-0 z-30 w-[3rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        <ModelCheckbox
-                          aria-label="Select all configurable models"
-                          checked={allSelectableSelected}
-                          disabled={selectableModels.length === 0}
-                          onChange={toggleAllSelectableModels}
-                        />
-                      </TableHead>
-                      <TableHead className="sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)] shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]">
-                        Model ID
-                      </TableHead>
-                      <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Actions
-                      </TableHead>
-                      <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Provider &amp; Model
-                      </TableHead>
-                      <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Cost / 1M tokens
-                      </TableHead>
-                      {visibleColumns.contextWindow ? (
-                        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                          Context window
-                        </TableHead>
-                      ) : null}
-                      {visibleColumns.capabilities ? (
-                        <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                          Capabilities
-                        </TableHead>
-                      ) : null}
-                      {isPlatformAdmin ? (
-                        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                          Allow List
-                        </TableHead>
-                      ) : null}
-                    </TableRow>
-                  </TableHeader>
+                <Table
+                  className="table-fixed"
+                  style={{ minWidth: `${desktopTableMinWidthRem}rem` }}
+                >
+                  <ModelTableHeader
+                    allSelected={allSelectableSelected}
+                    hasSelectableModels={selectableModels.length > 0}
+                    visibleColumns={visibleColumns}
+                    showAccessDetails={isPlatformAdmin}
+                    onToggleAll={toggleAllSelectableModels}
+                  />
                   <TableBody>
                     {modelPage.items.map((model) => (
                       <TableRow key={model.id} className="group align-middle">
@@ -559,6 +541,11 @@ export function ModelsPage() {
                             <CapabilityBadges model={model} />
                           </TableCell>
                         ) : null}
+                        {visibleColumns.intelligence ? (
+                          <TableCell className="px-3 py-1 whitespace-normal">
+                            <ModelIntelligenceScore model={model} />
+                          </TableCell>
+                        ) : null}
                         {isPlatformAdmin ? (
                           <TableCell className="px-3 py-1 whitespace-normal">
                             <ModelAllowlistDetail model={model} compact />
@@ -592,6 +579,9 @@ export function ModelsPage() {
           </div>
         </CardContent>
       </Card>
+      <p className="text-muted-foreground text-right text-xs">
+        <BenchmarkAttribution />
+      </p>
 
       <ClientConfigDialog
         models={configDialog?.models ?? []}
@@ -622,15 +612,93 @@ export function ModelsPage() {
   )
 }
 
+type VisibleModelColumns = {
+  contextWindow: boolean
+  capabilities: boolean
+  intelligence: boolean
+}
+
+function desktopTableMinWidth(isPlatformAdmin: boolean, visibleColumns: VisibleModelColumns) {
+  return (
+    (isPlatformAdmin ? 73 : 61) +
+    (visibleColumns.contextWindow ? 12 : 0) +
+    (visibleColumns.capabilities ? 18 : 0) +
+    (visibleColumns.intelligence ? 10 : 0)
+  )
+}
+
+function ModelTableHeader({
+  allSelected,
+  hasSelectableModels,
+  visibleColumns,
+  showAccessDetails,
+  onToggleAll,
+}: {
+  allSelected: boolean
+  hasSelectableModels: boolean
+  visibleColumns: VisibleModelColumns
+  showAccessDetails: boolean
+  onToggleAll: () => void
+}) {
+  return (
+    <TableHeader className="bg-[color:var(--color-surface-muted)]">
+      <TableRow>
+        <TableHead className="sticky left-0 z-30 w-[3rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+          <ModelCheckbox
+            aria-label="Select all configurable models"
+            checked={allSelected}
+            disabled={!hasSelectableModels}
+            onChange={onToggleAll}
+          />
+        </TableHead>
+        <TableHead className="sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)] shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]">
+          Model ID
+        </TableHead>
+        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+          Actions
+        </TableHead>
+        <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+          Provider &amp; Model
+        </TableHead>
+        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+          Cost / 1M tokens
+        </TableHead>
+        {visibleColumns.contextWindow ? (
+          <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+            Context window
+          </TableHead>
+        ) : null}
+        {visibleColumns.capabilities ? (
+          <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+            Capabilities
+          </TableHead>
+        ) : null}
+        {visibleColumns.intelligence ? (
+          <TableHead className="w-[10rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+            Intelligence
+          </TableHead>
+        ) : null}
+        {showAccessDetails ? (
+          <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+            Allow List
+          </TableHead>
+        ) : null}
+      </TableRow>
+    </TableHeader>
+  )
+}
+
 function ModelCard({
   model,
   onCopy,
   onOpenClientConfig,
+  onOpenInfo,
   showAccessDetails,
 }: {
   model: ModelView
   onCopy: (modelId: string) => void
   onOpenClientConfig: (model: ModelView) => void
+  onOpenInfo: (model: ModelView) => void
   showAccessDetails: boolean
 }) {
   return (
@@ -695,7 +763,20 @@ function ModelCard({
           ) : null}
         </dl>
         <ModelNotes model={model} />
-        <ClientConfigButton model={model} onOpen={onOpenClientConfig} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            aria-label={`Model info for ${model.id}`}
+            onClick={() => onOpenInfo(model)}
+          >
+            <AppIcon icon={BadgeInfoIcon} size={14} stroke={1.5} data-icon="inline-start" />
+            Info
+          </Button>
+          <ClientConfigButton model={model} onOpen={onOpenClientConfig} />
+        </div>
       </CardContent>
     </Card>
   )
@@ -807,6 +888,7 @@ function ModelInfoDialog({
     { key: 'overview', label: 'Overview' },
     { key: 'routing', label: 'Routing' },
     { key: 'economics', label: 'Economics' },
+    { key: 'benchmarks', label: 'Benchmarks' },
     ...(showAccessDetails ? ([{ key: 'access', label: 'Access' }] as const) : []),
   ]
 
@@ -857,6 +939,7 @@ function ModelInfoDialog({
                   {activeSection === 'overview' ? <ModelInfoOverview model={model} /> : null}
                   {activeSection === 'routing' ? <ModelInfoRouting model={model} /> : null}
                   {activeSection === 'economics' ? <ModelInfoEconomics model={model} /> : null}
+                  {activeSection === 'benchmarks' ? <ModelBenchmarks model={model} /> : null}
                   {activeSection === 'access' ? <ModelInfoAccess model={model} /> : null}
                 </div>
               </div>
@@ -986,6 +1069,8 @@ function modelInfoSectionDescription(section: ModelInfoSectionKey) {
       return 'Gateway and upstream identifiers used to route requests.'
     case 'economics':
       return 'Token pricing and context limits exposed by the current route.'
+    case 'benchmarks':
+      return 'Current sourced capability scores for this exact configured model.'
     case 'access':
       return 'Allowlist and runtime capability metadata for this model.'
   }

@@ -5818,6 +5818,61 @@
           }
         }
       },
+      "AdminModelBenchmarkMatchKindView": {
+        "type": "string",
+        "enum": [
+          "explicit",
+          "derived"
+        ]
+      },
+      "AdminModelBenchmarkMetricKeyView": {
+        "type": "string",
+        "enum": [
+          "artificial_analysis_intelligence_index",
+          "artificial_analysis_coding_index",
+          "artificial_analysis_agentic_index"
+        ]
+      },
+      "AdminModelBenchmarkScoreView": {
+        "type": "object",
+        "required": [
+          "metric_key",
+          "label",
+          "value",
+          "source",
+          "source_model_id",
+          "source_url",
+          "match_kind",
+          "updated_at"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "match_kind": {
+            "$ref": "#/components/schemas/AdminModelBenchmarkMatchKindView"
+          },
+          "metric_key": {
+            "$ref": "#/components/schemas/AdminModelBenchmarkMetricKeyView"
+          },
+          "source": {
+            "type": "string"
+          },
+          "source_model_id": {
+            "type": "string"
+          },
+          "source_url": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "AdminModelClientConfigBlockView": {
         "type": "object",
         "required": [
@@ -5949,6 +6004,7 @@
           "tags",
           "status",
           "pricing_varies_by_route",
+          "benchmark_scores",
           "client_configurations"
         ],
         "properties": {
@@ -5967,6 +6023,12 @@
                 "$ref": "#/components/schemas/AdminModelAllowlistView"
               }
             ]
+          },
+          "benchmark_scores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelBenchmarkScoreView"
+            }
           },
           "cache_read_cost_per_million_tokens_usd_10000": {
             "type": [

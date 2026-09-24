@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs,
+    path::Path,
+};
 
 use anyhow::Context;
 use gateway_guardrails::GuardrailConfig;
@@ -182,6 +186,19 @@ impl GatewayConfig {
 
     pub fn request_log_payload_policy(&self) -> anyhow::Result<RequestLogPayloadPolicy> {
         self.request_logging.payloads.to_policy()
+    }
+
+    /// Gateway model key to explicitly bound OpenRouter benchmark model ID.
+    pub fn benchmark_model_ids(&self) -> HashMap<String, String> {
+        self.models
+            .iter()
+            .filter_map(|model| {
+                model
+                    .benchmark_model_id
+                    .as_ref()
+                    .map(|benchmark_model_id| (model.id.clone(), benchmark_model_id.clone()))
+            })
+            .collect()
     }
 }
 

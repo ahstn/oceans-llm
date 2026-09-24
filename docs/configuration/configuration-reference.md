@@ -79,6 +79,25 @@ models:
         upstream_model: gpt-4o-mini
 ```
 
+## Benchmark catalogue
+
+The admin Models page shows Artificial Analysis Intelligence, Coding, and Agentic indices from a vendored snapshot at `crates/gateway-service/data/model_benchmarks.json`. The gateway makes no benchmark network calls at runtime and needs no API key.
+
+By default, scores are matched from the primary route's `upstream_model`. The gateway normalizes provider-specific forms such as `us.anthropic.claude-sonnet-4-6-v1:0` or `claude-sonnet-4-6@20260101` to OpenRouter IDs such as `anthropic/claude-sonnet-4.6`, and uses only exact matches. Set `benchmark_model_id` to choose the OpenRouter model explicitly:
+
+```yaml
+models:
+  - id: scored-model
+    benchmark_model_id: anthropic/claude-sonnet-4.6
+    routes:
+      - provider: bedrock
+        upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
+```
+
+`benchmark_model_id` must look like `publisher/model`, with no whitespace and no `:variant` suffix. An explicit binding takes priority over the derived match, and an alias uses the nearest binding along its alias chain. If the ID is not in the snapshot, the model shows no scores.
+
+Scores change only when a release ships a refreshed snapshot; maintainers follow [Model Benchmark Snapshot](../contributing/reference/model-benchmark-snapshot.md). Attribution to Artificial Analysis, retrieved via OpenRouter, stays visible wherever scores are shown.
+
 ### Route metadata overrides
 
 Route metadata is deployment policy, so it lives on each `models[*].routes[*]` entry:
