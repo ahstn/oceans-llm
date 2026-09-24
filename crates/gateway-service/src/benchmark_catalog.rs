@@ -107,9 +107,16 @@ pub enum BenchmarkMatchKind {
     Derived,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BenchmarkMetric {
+    IntelligenceIndex,
+    CodingIndex,
+    AgenticIndex,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelBenchmarkScore {
-    pub metric_key: &'static str,
+    pub metric: BenchmarkMetric,
     pub label: &'static str,
     pub value: f64,
     pub source: &'static str,
@@ -145,25 +152,25 @@ fn scores_from_snapshot(
     let indices = entry.artificial_analysis;
     [
         (
-            "artificial_analysis_intelligence_index",
+            BenchmarkMetric::IntelligenceIndex,
             "Artificial Analysis Intelligence Index",
             indices.intelligence_index,
         ),
         (
-            "artificial_analysis_coding_index",
+            BenchmarkMetric::CodingIndex,
             "Artificial Analysis Coding Index",
             indices.coding_index,
         ),
         (
-            "artificial_analysis_agentic_index",
+            BenchmarkMetric::AgenticIndex,
             "Artificial Analysis Agentic Index",
             indices.agentic_index,
         ),
     ]
     .into_iter()
-    .filter_map(|(metric_key, label, value)| {
+    .filter_map(|(metric, label, value)| {
         value.map(|value| ModelBenchmarkScore {
-            metric_key,
+            metric,
             label,
             value,
             source: ARTIFICIAL_ANALYSIS_SOURCE,

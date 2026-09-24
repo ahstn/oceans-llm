@@ -167,7 +167,7 @@ fn map_model_summary(model: AdminModelSummary, include_allowlist: bool) -> Admin
             .benchmark_scores
             .into_iter()
             .map(|score| AdminModelBenchmarkScoreView {
-                metric_key: score.metric_key.to_string(),
+                metric_key: score.metric.into(),
                 label: score.label.to_string(),
                 value: score.value,
                 source: score.source.to_string(),

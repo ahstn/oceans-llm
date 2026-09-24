@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use anyhow::Context;
 use gateway_service::{
-    AdminModelStatus as ServiceAdminModelStatus, BenchmarkMatchKind,
+    AdminModelStatus as ServiceAdminModelStatus, BenchmarkMatchKind, BenchmarkMetric,
     ModelIconKey as ServiceModelIconKey, ProviderIconKey as ServiceProviderIconKey,
 };
 use serde::{Deserialize, Deserializer, Serialize};
@@ -377,7 +377,7 @@ pub struct AdminModelView {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AdminModelBenchmarkScoreView {
-    pub metric_key: String,
+    pub metric_key: AdminModelBenchmarkMetricKeyView,
     pub label: String,
     pub value: f64,
     pub source: String,
@@ -385,6 +385,24 @@ pub struct AdminModelBenchmarkScoreView {
     pub source_url: String,
     pub match_kind: AdminModelBenchmarkMatchKindView,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AdminModelBenchmarkMetricKeyView {
+    ArtificialAnalysisIntelligenceIndex,
+    ArtificialAnalysisCodingIndex,
+    ArtificialAnalysisAgenticIndex,
+}
+
+impl From<BenchmarkMetric> for AdminModelBenchmarkMetricKeyView {
+    fn from(value: BenchmarkMetric) -> Self {
+        match value {
+            BenchmarkMetric::IntelligenceIndex => Self::ArtificialAnalysisIntelligenceIndex,
+            BenchmarkMetric::CodingIndex => Self::ArtificialAnalysisCodingIndex,
+            BenchmarkMetric::AgenticIndex => Self::ArtificialAnalysisAgenticIndex,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]

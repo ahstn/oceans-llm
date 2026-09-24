@@ -2,10 +2,12 @@ import { formatDistanceToNowStrict } from 'date-fns'
 
 import type { ModelView } from '@/types/api'
 
-const INTELLIGENCE_INDEX_METRIC_KEY = 'artificial_analysis_intelligence_index'
 const SCORE_FORMAT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
 
 type BenchmarkScore = ModelView['benchmark_scores'][number]
+
+const INTELLIGENCE_INDEX_METRIC_KEY: BenchmarkScore['metric_key'] =
+  'artificial_analysis_intelligence_index'
 
 function intelligenceIndexScore(model: ModelView) {
   return model.benchmark_scores.find((score) => score.metric_key === INTELLIGENCE_INDEX_METRIC_KEY)

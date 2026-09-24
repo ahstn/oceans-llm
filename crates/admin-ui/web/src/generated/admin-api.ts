@@ -1569,10 +1569,12 @@ export interface components {
         };
         /** @enum {string} */
         AdminModelBenchmarkMatchKindView: "explicit" | "derived";
+        /** @enum {string} */
+        AdminModelBenchmarkMetricKeyView: "artificial_analysis_intelligence_index" | "artificial_analysis_coding_index" | "artificial_analysis_agentic_index";
         AdminModelBenchmarkScoreView: {
             label: string;
             match_kind: components["schemas"]["AdminModelBenchmarkMatchKindView"];
-            metric_key: string;
+            metric_key: components["schemas"]["AdminModelBenchmarkMetricKeyView"];
             source: string;
             source_model_id: string;
             source_url: string;

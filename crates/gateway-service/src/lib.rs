@@ -49,9 +49,9 @@ pub use batches::{
     BatchPricer, BatchPricingPolicy, CreateBatchInput, CreateBatchItemInput, create_batch,
 };
 pub use benchmark_catalog::{
-    BENCHMARK_ATTRIBUTION, BenchmarkMatchKind, BenchmarkSnapshot, DEFAULT_BENCHMARK_SOURCE_URL,
-    ModelBenchmarkScore, benchmark_snapshot_to_pretty_json, empty_benchmark_snapshot,
-    fetch_openrouter_benchmark_models, merge_benchmark_models,
+    BENCHMARK_ATTRIBUTION, BenchmarkMatchKind, BenchmarkMetric, BenchmarkSnapshot,
+    DEFAULT_BENCHMARK_SOURCE_URL, ModelBenchmarkScore, benchmark_snapshot_to_pretty_json,
+    empty_benchmark_snapshot, fetch_openrouter_benchmark_models, merge_benchmark_models,
 };
 pub use budget_alerts::{
     BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,

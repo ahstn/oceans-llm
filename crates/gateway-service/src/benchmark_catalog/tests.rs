@@ -292,14 +292,8 @@ fn scores_include_only_present_indices_with_openrouter_source() {
     );
 
     assert_eq!(
-        scores
-            .iter()
-            .map(|score| score.metric_key)
-            .collect::<Vec<_>>(),
-        [
-            "artificial_analysis_coding_index",
-            "artificial_analysis_agentic_index"
-        ]
+        scores.iter().map(|score| score.metric).collect::<Vec<_>>(),
+        [BenchmarkMetric::CodingIndex, BenchmarkMetric::AgenticIndex]
     );
     assert_eq!(
         scores[0].source_url,

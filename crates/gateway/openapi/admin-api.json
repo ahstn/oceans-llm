@@ -5825,6 +5825,14 @@
           "derived"
         ]
       },
+      "AdminModelBenchmarkMetricKeyView": {
+        "type": "string",
+        "enum": [
+          "artificial_analysis_intelligence_index",
+          "artificial_analysis_coding_index",
+          "artificial_analysis_agentic_index"
+        ]
+      },
       "AdminModelBenchmarkScoreView": {
         "type": "object",
         "required": [
@@ -5845,7 +5853,7 @@
             "$ref": "#/components/schemas/AdminModelBenchmarkMatchKindView"
           },
           "metric_key": {
-            "type": "string"
+            "$ref": "#/components/schemas/AdminModelBenchmarkMetricKeyView"
           },
           "source": {
             "type": "string"
