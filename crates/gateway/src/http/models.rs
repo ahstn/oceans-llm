@@ -173,7 +173,7 @@ fn map_model_summary(model: AdminModelSummary, include_allowlist: bool) -> Admin
                 source: score.source.to_string(),
                 source_model_id: score.source_model_id,
                 source_url: score.source_url,
-                match_kind: score.match_kind.as_str().to_string(),
+                match_kind: score.match_kind.into(),
                 updated_at: format_timestamp(score.updated_at),
             })
             .collect(),

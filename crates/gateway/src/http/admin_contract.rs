@@ -2,8 +2,8 @@ use std::{fs, path::Path};
 
 use anyhow::Context;
 use gateway_service::{
-    AdminModelStatus as ServiceAdminModelStatus, ModelIconKey as ServiceModelIconKey,
-    ProviderIconKey as ServiceProviderIconKey,
+    AdminModelStatus as ServiceAdminModelStatus, BenchmarkMatchKind,
+    ModelIconKey as ServiceModelIconKey, ProviderIconKey as ServiceProviderIconKey,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
@@ -383,8 +383,24 @@ pub struct AdminModelBenchmarkScoreView {
     pub source: String,
     pub source_model_id: String,
     pub source_url: String,
-    pub match_kind: String,
+    pub match_kind: AdminModelBenchmarkMatchKindView,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AdminModelBenchmarkMatchKindView {
+    Explicit,
+    Derived,
+}
+
+impl From<BenchmarkMatchKind> for AdminModelBenchmarkMatchKindView {
+    fn from(value: BenchmarkMatchKind) -> Self {
+        match value {
+            BenchmarkMatchKind::Explicit => Self::Explicit,
+            BenchmarkMatchKind::Derived => Self::Derived,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]

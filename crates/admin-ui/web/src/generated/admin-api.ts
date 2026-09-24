@@ -1567,9 +1567,11 @@ export interface components {
             teams: string[];
             users: string[];
         };
+        /** @enum {string} */
+        AdminModelBenchmarkMatchKindView: "explicit" | "derived";
         AdminModelBenchmarkScoreView: {
             label: string;
-            match_kind: string;
+            match_kind: components["schemas"]["AdminModelBenchmarkMatchKindView"];
             metric_key: string;
             source: string;
             source_model_id: string;

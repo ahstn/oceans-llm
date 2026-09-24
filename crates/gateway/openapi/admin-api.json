@@ -5818,6 +5818,13 @@
           }
         }
       },
+      "AdminModelBenchmarkMatchKindView": {
+        "type": "string",
+        "enum": [
+          "explicit",
+          "derived"
+        ]
+      },
       "AdminModelBenchmarkScoreView": {
         "type": "object",
         "required": [
@@ -5835,7 +5842,7 @@
             "type": "string"
           },
           "match_kind": {
-            "type": "string"
+            "$ref": "#/components/schemas/AdminModelBenchmarkMatchKindView"
           },
           "metric_key": {
             "type": "string"

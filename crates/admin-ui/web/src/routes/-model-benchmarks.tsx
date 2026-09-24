@@ -90,7 +90,7 @@ export function ModelBenchmarks({ model }: { model: ModelView }) {
   )
 }
 
-function matchKindLabel(matchKind: string) {
+function matchKindLabel(matchKind: BenchmarkScore['match_kind']) {
   return matchKind === 'explicit' ? 'Bound in config' : 'Matched from upstream model'
 }
 

@@ -107,16 +107,6 @@ pub enum BenchmarkMatchKind {
     Derived,
 }
 
-impl BenchmarkMatchKind {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Explicit => "explicit",
-            Self::Derived => "derived",
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelBenchmarkScore {
     pub metric_key: &'static str,
