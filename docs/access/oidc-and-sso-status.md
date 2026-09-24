@@ -84,7 +84,7 @@ The repo ships an opt-in Authentik fixture for local/manual SSO testing:
 Run it with:
 
 ```shell
-docker compose --profile sso -f compose.local.yaml up --build
+BUN_VERSION="$(mise tool bun --requested)" docker compose --profile sso -f compose.local.yaml up --build
 ```
 
 The fixture defaults are:
@@ -142,7 +142,7 @@ The matching local Authentik application must use:
 
 ## Manual Validation
 
-1. Start the stack: `docker compose --profile sso -f compose.local.yaml up --build`.
+1. Start the stack: `BUN_VERSION="$(mise tool bun --requested)" docker compose --profile sso -f compose.local.yaml up --build`.
 2. Open `http://localhost:8080/admin/login`.
 3. Choose `Sign in with Authentik`.
 4. Log in as `sso-user@example.com` / `sso-user-password`.

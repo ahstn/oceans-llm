@@ -1,6 +1,6 @@
 # Review agent action
 
-This composite GitHub Action runs TypeScript source with Node.js 24 and `tsx`. It installs the exact dependencies in `bun.lock` with Bun 1.3.14. There is no build step or committed JavaScript bundle.
+This composite GitHub Action runs TypeScript source with Node.js 24 and `tsx`. It installs the exact dependencies in `bun.lock` with Bun 1.4.2 (pinned in `action.yml`; Bun 1.3.x cannot read the v2 `bun.lock`). There is no build step or committed JavaScript bundle.
 
 The action starts a Pi SDK session after resolving the repository configuration from Oceans. Standalone direct mode (`report-to-oceans: 'false'` with `model-mode: 'direct'`) uses the supplied model configuration without contacting Oceans. Run recording and metrics reporting require `report-to-oceans: 'true'`. GitHub publication follows the resolved comment settings and is skipped when `dry-run: 'true'`.
 
