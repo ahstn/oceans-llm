@@ -94,9 +94,9 @@ models:
         upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
 ```
 
-`benchmark_model_id` must look like `publisher/model`, with no whitespace and no `:variant` suffix. An explicit binding takes priority over the derived match, and aliases inherit their target's binding. If the ID is not in the snapshot, the model shows no scores.
+`benchmark_model_id` must look like `publisher/model`, with no whitespace and no `:variant` suffix. An explicit binding takes priority over the derived match, and an alias uses the nearest binding along its alias chain. If the ID is not in the snapshot, the model shows no scores.
 
-Refresh the snapshot with `mise run sync-model-benchmarks`. It reads OpenRouter's top 200 models by intelligence, skips `:variant` IDs such as `:batch` and `:free`, and upserts entries. It never removes them. Commit the resulting JSON diff. Attribution to Artificial Analysis, retrieved via OpenRouter, stays visible wherever scores are shown.
+Scores change only when a release ships a refreshed snapshot; maintainers follow [Model Benchmark Snapshot](../contributing/reference/model-benchmark-snapshot.md). Attribution to Artificial Analysis, retrieved via OpenRouter, stays visible wherever scores are shown.
 
 ### Route metadata overrides
 

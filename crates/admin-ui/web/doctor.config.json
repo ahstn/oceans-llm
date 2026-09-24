@@ -1,3 +1,6 @@
 {
-  "$schema": "https://react.doctor/schema/config.json"
+  "$schema": "https://react.doctor/schema/config.json",
+  "ignore": {
+    "files": ["src/generated/**"]
+  }
 }

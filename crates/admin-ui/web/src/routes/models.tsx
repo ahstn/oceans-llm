@@ -127,11 +127,7 @@ export function ModelsPage() {
   const allSelectableSelected =
     selectableModels.length > 0 &&
     selectableModels.every((model) => selectedModelIdSet.has(model.id))
-  const desktopTableMinWidthRem =
-    (isPlatformAdmin ? 73 : 61) +
-    (visibleColumns.contextWindow ? 12 : 0) +
-    (visibleColumns.capabilities ? 18 : 0) +
-    (visibleColumns.intelligence ? 10 : 0)
+  const desktopTableMinWidthRem = desktopTableMinWidth(isPlatformAdmin, visibleColumns)
 
   function navigateToPage(page: number) {
     void router.navigate({
@@ -440,50 +436,13 @@ export function ModelsPage() {
                   className="table-fixed"
                   style={{ minWidth: `${desktopTableMinWidthRem}rem` }}
                 >
-                  <TableHeader className="bg-[color:var(--color-surface-muted)]">
-                    <TableRow>
-                      <TableHead className="sticky left-0 z-30 w-[3rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        <ModelCheckbox
-                          aria-label="Select all configurable models"
-                          checked={allSelectableSelected}
-                          disabled={selectableModels.length === 0}
-                          onChange={toggleAllSelectableModels}
-                        />
-                      </TableHead>
-                      <TableHead className="sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)] shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]">
-                        Model ID
-                      </TableHead>
-                      <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Actions
-                      </TableHead>
-                      <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Provider &amp; Model
-                      </TableHead>
-                      <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Cost / 1M tokens
-                      </TableHead>
-                      {visibleColumns.contextWindow ? (
-                        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                          Context window
-                        </TableHead>
-                      ) : null}
-                      {visibleColumns.capabilities ? (
-                        <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                          Capabilities
-                        </TableHead>
-                      ) : null}
-                      {visibleColumns.intelligence ? (
-                        <TableHead className="w-[10rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                          Intelligence
-                        </TableHead>
-                      ) : null}
-                      {isPlatformAdmin ? (
-                        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                          Allow List
-                        </TableHead>
-                      ) : null}
-                    </TableRow>
-                  </TableHeader>
+                  <ModelTableHeader
+                    allSelected={allSelectableSelected}
+                    hasSelectableModels={selectableModels.length > 0}
+                    visibleColumns={visibleColumns}
+                    showAccessDetails={isPlatformAdmin}
+                    onToggleAll={toggleAllSelectableModels}
+                  />
                   <TableBody>
                     {modelPage.items.map((model) => (
                       <TableRow key={model.id} className="group align-middle">
@@ -650,6 +609,82 @@ export function ModelsPage() {
         }}
       />
     </div>
+  )
+}
+
+type VisibleModelColumns = {
+  contextWindow: boolean
+  capabilities: boolean
+  intelligence: boolean
+}
+
+function desktopTableMinWidth(isPlatformAdmin: boolean, visibleColumns: VisibleModelColumns) {
+  return (
+    (isPlatformAdmin ? 73 : 61) +
+    (visibleColumns.contextWindow ? 12 : 0) +
+    (visibleColumns.capabilities ? 18 : 0) +
+    (visibleColumns.intelligence ? 10 : 0)
+  )
+}
+
+function ModelTableHeader({
+  allSelected,
+  hasSelectableModels,
+  visibleColumns,
+  showAccessDetails,
+  onToggleAll,
+}: {
+  allSelected: boolean
+  hasSelectableModels: boolean
+  visibleColumns: VisibleModelColumns
+  showAccessDetails: boolean
+  onToggleAll: () => void
+}) {
+  return (
+    <TableHeader className="bg-[color:var(--color-surface-muted)]">
+      <TableRow>
+        <TableHead className="sticky left-0 z-30 w-[3rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+          <ModelCheckbox
+            aria-label="Select all configurable models"
+            checked={allSelected}
+            disabled={!hasSelectableModels}
+            onChange={onToggleAll}
+          />
+        </TableHead>
+        <TableHead className="sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)] shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]">
+          Model ID
+        </TableHead>
+        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+          Actions
+        </TableHead>
+        <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+          Provider &amp; Model
+        </TableHead>
+        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+          Cost / 1M tokens
+        </TableHead>
+        {visibleColumns.contextWindow ? (
+          <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+            Context window
+          </TableHead>
+        ) : null}
+        {visibleColumns.capabilities ? (
+          <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+            Capabilities
+          </TableHead>
+        ) : null}
+        {visibleColumns.intelligence ? (
+          <TableHead className="w-[10rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+            Intelligence
+          </TableHead>
+        ) : null}
+        {showAccessDetails ? (
+          <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+            Allow List
+          </TableHead>
+        ) : null}
+      </TableRow>
+    </TableHeader>
   )
 }
 

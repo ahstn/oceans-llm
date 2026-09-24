@@ -8,7 +8,7 @@
 
 The Models page shows price, limits, routes, and runtime capability metadata. It does not show an independent capability score.
 
-The [previous decision](2026-09-21-artificial-analysis-benchmark-catalogue.md) bound gateway models to Artificial Analysis UUIDs from the authenticated Free V2 API. It stored scores in the database and refreshed them on a schedule. Operators had to look up an opaque UUID for every model, and matching gateway models to Artificial Analysis names was unreliable.
+The [previous decision](2026-09-21-artificial-analysis-benchmark-catalogue.md) bound gateway models to Artificial Analysis UUIDs from the authenticated Free V2 API. It stored scores in the database and refreshed them on a schedule. Admins had to look up an opaque UUID for every model, and matching gateway models to Artificial Analysis names was unreliable.
 
 OpenRouter's public `GET /api/v1/models` response includes Artificial Analysis Intelligence, Coding, and Agentic indices for each model under `benchmarks.artificial_analysis`. It keys them by readable, routable IDs such as `anthropic/claude-sonnet-4.6`, which are close to the upstream model IDs the gateway already configures.
 
@@ -32,7 +32,7 @@ A gateway model can set `benchmark_model_id` to an OpenRouter model ID. That bin
 
 Without a binding, the gateway normalizes the primary route's `upstream_model` into candidate OpenRouter IDs. Normalization strips Bedrock ARNs, region prefixes, and version suffixes, Vertex `@version` suffixes, and OpenRouter `:variant` suffixes. It also maps Bedrock publishers, infers publishers for bare IDs, and tries the dotted version form (`claude-sonnet-4-6` becomes `claude-sonnet-4.6`). A candidate must match a snapshot key exactly. There is no prefix or fuzzy matching, because related variants such as `deepseek-v4-pro` and `deepseek-v4-pro-0813` have different scores.
 
-Each score reports whether it was `explicit` or `derived`, so operators can see where a binding came from.
+Each score reports whether it was `explicit` or `derived`, so admins can see where a binding came from.
 
 ### 4. The admin API owns display metadata
 

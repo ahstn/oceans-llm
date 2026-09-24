@@ -118,6 +118,13 @@ fn parse_rejects_out_of_range_scores_and_empty_lists() {
 
     assert!(parse_openrouter_models(out_of_range).is_err());
     assert!(parse_openrouter_models(r#"{"data": []}"#).is_err());
+
+    let no_benchmarks = r#"{"data": [
+        {"id": "acme/model", "name": "Acme", "canonical_slug": "acme/model"},
+        {"id": "acme/renamed", "name": "Acme", "canonical_slug": "acme/renamed",
+         "benchmarks": {"aa": {"intelligence_index": 50.0}}}
+    ]}"#;
+    assert!(parse_openrouter_models(no_benchmarks).is_err());
 }
 
 #[test]

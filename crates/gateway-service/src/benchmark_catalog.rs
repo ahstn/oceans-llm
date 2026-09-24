@@ -463,6 +463,9 @@ fn parse_openrouter_models(body: &str) -> anyhow::Result<Vec<OpenRouterBenchmark
             anyhow::bail!("OpenRouter returned duplicate model id `{id}`");
         }
     }
+    if models.is_empty() {
+        anyhow::bail!("OpenRouter model list contained no Artificial Analysis benchmarks");
+    }
     let mut models = models.into_values().collect::<Vec<_>>();
     models.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(models)

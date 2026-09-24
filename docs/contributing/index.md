@@ -16,6 +16,8 @@ Use the primary docs for admin, user, caller, and client workflows. Use this sur
   - [Testing Authentication Locally](development/authentication-testing.md)
 - Screenshot review assets:
   - [Screenshots](reference/screenshots.md)
+- Vendored model benchmark scores:
+  - [Model Benchmark Snapshot](reference/model-benchmark-snapshot.md)
 
 ## Contracts and Tests
 
