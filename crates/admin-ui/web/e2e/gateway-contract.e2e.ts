@@ -225,8 +225,14 @@ test('admin spend report endpoint and usage costs page reflect live usage ledger
 
   await page.goto('/admin/observability/usage-costs')
   await expect(page.getByRole('heading', { name: 'Usage Costs' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Owner Breakdown' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Model Breakdown' })).toBeVisible()
+  for (const title of [
+    'Model mix',
+    'Spend by model',
+    'Spend by owner',
+    'Cache efficiency by owner',
+  ]) {
+    await expect(page.getByRole('heading', { name: title })).toBeVisible()
+  }
   await expect(page.getByText(pricedSpendLabel).first()).toBeVisible()
   await expect(page.getByText('fast').first()).toBeVisible()
 })
