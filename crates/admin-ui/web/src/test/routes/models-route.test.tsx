@@ -2,7 +2,6 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { formatBenchmarkScore } from '@/routes/-model-benchmarks'
 import { ModelsPage } from '@/routes/models'
 import type { ModelPageView } from '@/types/api'
 
@@ -138,12 +137,11 @@ const modelPage: ModelPageView = {
           metric_key: 'artificial_analysis_intelligence_index',
           label: 'Artificial Analysis Intelligence Index',
           value: 39,
-          unit: 'index_points',
-          benchmark_version: '4.3',
           source: 'artificial_analysis',
-          source_model_id: '36f73aaf-d38a-4b56-a2b3-d04d17186910',
-          source_url: 'https://artificialanalysis.ai/models/gemini-2-0-flash',
-          fetched_at: '2026-09-21T10:00:00Z',
+          source_model_id: 'google/gemini-2.0-flash-001',
+          source_url: 'https://openrouter.ai/google/gemini-2.0-flash-001',
+          match_kind: 'derived',
+          updated_at: '2026-09-24T00:00:00Z',
         },
       ],
       tags: ['fast', 'cheap'],
@@ -539,10 +537,6 @@ describe('ModelsPage table content', () => {
     const fastRow = within(table).getByText('fast').closest('tr')
     expect(fastRow).not.toBeNull()
     expect(within(fastRow as HTMLElement).getByText('39')).toBeInTheDocument()
-    expect(within(table).getByRole('link', { name: 'Artificial Analysis' })).toHaveAttribute(
-      'href',
-      'https://artificialanalysis.ai/',
-    )
     const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
     expect(claudeRow).not.toBeNull()
     expect(within(claudeRow as HTMLElement).getByText('—')).toBeInTheDocument()
@@ -567,21 +561,35 @@ describe('ModelsPage table content', () => {
     expect(within(dialog).getByRole('heading', { name: 'Benchmarks' })).toBeInTheDocument()
     expect(within(dialog).getByText('Artificial Analysis Intelligence Index')).toBeInTheDocument()
     expect(within(dialog).getByText('39')).toBeInTheDocument()
-    expect(within(dialog).getByText(/Version 4\.3 · Updated/)).toBeInTheDocument()
-    expect(within(dialog).getByRole('link', { name: 'View source model' })).toHaveAttribute(
-      'href',
-      'https://artificialanalysis.ai/models/gemini-2-0-flash',
-    )
+    expect(within(dialog).getByText(/Matched from upstream model · Updated/)).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole('link', { name: 'google/gemini-2.0-flash-001 on OpenRouter' }),
+    ).toHaveAttribute('href', 'https://openrouter.ai/google/gemini-2.0-flash-001')
     expect(within(dialog).getByRole('link', { name: 'Artificial Analysis' })).toHaveAttribute(
       'href',
       'https://artificialanalysis.ai/',
     )
   })
 
-  it('formats ratio benchmark values as percentages', () => {
-    const score = modelPage.items[0]?.benchmark_scores[0]
-    if (!score) throw new Error('benchmark fixture is missing')
-    expect(formatBenchmarkScore({ ...score, value: 0.268, unit: 'ratio' })).toBe('26.8%')
+  it('shows Artificial Analysis attribution below the model list', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const attribution = screen.getByText(/Benchmark scores by/)
+    expect(attribution).toHaveClass('text-muted-foreground', 'text-right')
+    expect(within(attribution).getByRole('link', { name: 'Artificial Analysis' })).toHaveAttribute(
+      'href',
+      'https://artificialanalysis.ai/',
+    )
+    expect(within(attribution).getByRole('link', { name: 'OpenRouter' })).toHaveAttribute(
+      'href',
+      'https://openrouter.ai/',
+    )
   })
 })
 

@@ -98,10 +98,6 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             post(refresh_model_pricing_catalog),
         )
         .route(
-            "/api/v1/admin/models/benchmark-catalog/refresh",
-            post(refresh_model_benchmark_catalog),
-        )
-        .route(
             "/api/v1/admin/identity/users",
             get(list_identity_users).post(create_identity_user),
         )

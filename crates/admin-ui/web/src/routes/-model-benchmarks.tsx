@@ -3,30 +3,47 @@ import { formatDistanceToNowStrict } from 'date-fns'
 import type { ModelView } from '@/types/api'
 
 const INTELLIGENCE_INDEX_METRIC_KEY = 'artificial_analysis_intelligence_index'
+const SCORE_FORMAT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
 
 type BenchmarkScore = ModelView['benchmark_scores'][number]
 
 export function intelligenceIndexScore(model: ModelView) {
-  return model.benchmark_scores.find(
-    (score) => score.metric_key === INTELLIGENCE_INDEX_METRIC_KEY,
-  )
+  return model.benchmark_scores.find((score) => score.metric_key === INTELLIGENCE_INDEX_METRIC_KEY)
 }
 
 export function formatBenchmarkScore(score: BenchmarkScore) {
-  if (score.unit === 'ratio') {
-    return new Intl.NumberFormat('en-US', {
-      style: 'percent',
-      maximumFractionDigits: 1,
-    }).format(score.value)
-  }
-  return new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: 1,
-  }).format(score.value)
+  return SCORE_FORMAT.format(score.value)
 }
 
 export function ModelIntelligenceScore({ model }: { model: ModelView }) {
   const score = intelligenceIndexScore(model)
   return score ? formatBenchmarkScore(score) : '—'
+}
+
+export function BenchmarkAttribution() {
+  return (
+    <>
+      Benchmark scores by{' '}
+      <a
+        className="underline underline-offset-4"
+        href="https://artificialanalysis.ai/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Artificial Analysis
+      </a>
+      , retrieved via{' '}
+      <a
+        className="underline underline-offset-4"
+        href="https://openrouter.ai/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        OpenRouter
+      </a>
+      .
+    </>
+  )
 }
 
 export function ModelBenchmarks({ model }: { model: ModelView }) {
@@ -52,7 +69,7 @@ export function ModelBenchmarks({ model }: { model: ModelView }) {
                 {formatBenchmarkScore(score)}
               </span>
               <span className="text-xs">
-                Version {score.benchmark_version} · Updated {formatDataAge(score.fetched_at)}
+                {matchKindLabel(score.match_kind)} · Updated {formatDataAge(score.updated_at)}
               </span>
               <a
                 className="w-fit text-xs underline underline-offset-4"
@@ -60,26 +77,21 @@ export function ModelBenchmarks({ model }: { model: ModelView }) {
                 target="_blank"
                 rel="noreferrer"
               >
-                View source model
+                {score.source_model_id} on OpenRouter
               </a>
             </dd>
           </div>
         ))}
       </dl>
       <p className="text-xs text-[var(--color-text-soft)]">
-        Data by{' '}
-        <a
-          className="underline underline-offset-4"
-          href="https://artificialanalysis.ai/"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Artificial Analysis
-        </a>
-        .
+        <BenchmarkAttribution />
       </p>
     </div>
   )
+}
+
+function matchKindLabel(matchKind: string) {
+  return matchKind === 'explicit' ? 'Bound in config' : 'Matched from upstream model'
 }
 
 function formatDataAge(timestamp: string) {

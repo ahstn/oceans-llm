@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, AgentSessionAnalysisRepository,
-    ApiKeyRepository, AuthMode, BatchRepository, BenchmarkCatalogRepository, BudgetAlertRepository,
-    BudgetRecord, BudgetRepository, GlobalRole, GuardrailDecisionRepository, IdentityRepository,
+    ApiKeyRepository, AuthMode, BatchRepository, BudgetAlertRepository, BudgetRecord,
+    BudgetRepository, GlobalRole, GuardrailDecisionRepository, IdentityRepository,
     IdentityUserRecord, McpAccessRepository, McpAggregateSessionRepository, McpOauthStateRecord,
     McpRegistryRepository, McpTokenOverheadRepository, McpToolInvocationRepository,
     McpUpstreamCredentialRepository, MembershipRole, ModelRepository, Money4,
@@ -46,7 +46,6 @@ pub trait GatewayStore:
     ApiKeyRepository
     + AdminApiKeyRepository
     + BatchRepository
-    + BenchmarkCatalogRepository
     + ModelRepository
     + ProviderRepository
     + ProviderUserCredentialRepository
@@ -1183,45 +1182,6 @@ impl gateway_core::McpToolInvocationRepository for AnyStore {
         mcp_tool_invocation_id: Uuid,
     ) -> Result<gateway_core::McpToolInvocationDetail, StoreError> {
         dispatch_store!(self, get_mcp_tool_invocation_detail(mcp_tool_invocation_id))
-    }
-}
-
-#[async_trait]
-impl BenchmarkCatalogRepository for AnyStore {
-    async fn replace_model_benchmark_bindings(
-        &self,
-        source: &str,
-        bindings: &[gateway_core::ModelBenchmarkBinding],
-    ) -> Result<(), StoreError> {
-        dispatch_store!(self, replace_model_benchmark_bindings(source, bindings))
-    }
-
-    async fn list_model_benchmark_bindings(
-        &self,
-        source: &str,
-    ) -> Result<Vec<gateway_core::ModelBenchmarkBinding>, StoreError> {
-        dispatch_store!(self, list_model_benchmark_bindings(source))
-    }
-
-    async fn list_model_benchmark_scores(
-        &self,
-    ) -> Result<Vec<gateway_core::ModelBenchmarkScore>, StoreError> {
-        dispatch_store!(self, list_model_benchmark_scores())
-    }
-
-    async fn get_benchmark_sync_state(
-        &self,
-        source: &str,
-    ) -> Result<Option<gateway_core::BenchmarkSyncState>, StoreError> {
-        dispatch_store!(self, get_benchmark_sync_state(source))
-    }
-
-    async fn replace_model_benchmark_scores(
-        &self,
-        scores: &[gateway_core::ModelBenchmarkScore],
-        state: &gateway_core::BenchmarkSyncState,
-    ) -> Result<bool, StoreError> {
-        dispatch_store!(self, replace_model_benchmark_scores(scores, state))
     }
 }
 

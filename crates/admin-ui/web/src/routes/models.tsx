@@ -57,7 +57,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
-import { ModelBenchmarks, ModelIntelligenceScore } from '@/routes/-model-benchmarks'
+import {
+  BenchmarkAttribution,
+  ModelBenchmarks,
+  ModelIntelligenceScore,
+} from '@/routes/-model-benchmarks'
 import {
   getModelClientConfigs,
   getModels,
@@ -430,7 +434,10 @@ export function ModelsPage() {
                 className="hidden min-w-0 overflow-hidden rounded-md border border-[color:var(--color-border)] md:block"
                 data-testid="models-desktop-table"
               >
-                <Table className="table-fixed" style={{ minWidth: `${desktopTableMinWidthRem}rem` }}>
+                <Table
+                  className="table-fixed"
+                  style={{ minWidth: `${desktopTableMinWidthRem}rem` }}
+                >
                   <TableHeader className="bg-[color:var(--color-surface-muted)]">
                     <TableRow>
                       <TableHead className="sticky left-0 z-30 w-[3rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
@@ -587,20 +594,6 @@ export function ModelsPage() {
                     ))}
                   </TableBody>
                 </Table>
-                {visibleColumns.intelligence ? (
-                  <p className="border-t border-[color:var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-soft)]">
-                    Intelligence data by{' '}
-                    <a
-                      className="underline underline-offset-4"
-                      href="https://artificialanalysis.ai/"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Artificial Analysis
-                    </a>
-                    .
-                  </p>
-                ) : null}
               </div>
             </>
           )}
@@ -625,6 +618,9 @@ export function ModelsPage() {
           </div>
         </CardContent>
       </Card>
+      <p className="text-muted-foreground text-right text-xs">
+        <BenchmarkAttribution />
+      </p>
 
       <ClientConfigDialog
         models={configDialog?.models ?? []}

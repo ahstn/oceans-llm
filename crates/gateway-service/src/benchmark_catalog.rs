@@ -1,308 +1,465 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+//! Vendored Artificial Analysis benchmark scores, sourced through OpenRouter's model list.
+//!
+//! The snapshot lives in the repository and is only changed by `sync_model_benchmarks`.
+//! Syncs add or update entries and never delete them, so models that leave the fetched
+//! window keep their last known scores.
 
-use async_trait::async_trait;
-use gateway_core::{
-    BenchmarkCatalogRepository, BenchmarkSyncState, GatewayError, ModelBenchmarkBinding,
-    ModelBenchmarkScore,
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::LazyLock,
+    time::Duration,
 };
+
+use anyhow::Context;
 use reqwest::{Client, StatusCode};
-use serde::Deserialize;
-use serde_json::Number;
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-const ARTIFICIAL_ANALYSIS_SOURCE: &str = "artificial_analysis";
-const ARTIFICIAL_ANALYSIS_FREE_MODELS_URL: &str =
-    "https://artificialanalysis.ai/api/v2/language/models/free";
-pub const DEFAULT_BENCHMARK_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
-const INTELLIGENCE_INDEX_METRIC_KEY: &str = "artificial_analysis_intelligence_index";
-const INTELLIGENCE_INDEX_LABEL: &str = "Artificial Analysis Intelligence Index";
-const INTELLIGENCE_INDEX_UNIT: &str = "index_points";
-const MAX_PAGES: u32 = 100;
+pub const BENCHMARK_ATTRIBUTION: &str =
+    "Benchmark scores by Artificial Analysis (artificialanalysis.ai), retrieved via OpenRouter (openrouter.ai).";
+pub const DEFAULT_BENCHMARK_SOURCE_URL: &str =
+    "https://openrouter.ai/api/v1/models?sort=intelligence-high-to-low&limit=200";
+pub const ARTIFICIAL_ANALYSIS_SOURCE: &str = "artificial_analysis";
+const ARTIFICIAL_ANALYSIS_URL: &str = "https://artificialanalysis.ai";
+const OPENROUTER_SOURCE: &str = "openrouter";
+const OPENROUTER_MODEL_URL_PREFIX: &str = "https://openrouter.ai/";
+/// OpenRouter marks routing variants such as `:batch`, `:free`, or `:thinking` with this separator.
+/// Config bindings cannot reference variants, so they are never stored.
+const VARIANT_SEPARATOR: char = ':';
+const VENDORED_BENCHMARKS_JSON: &str = include_str!("../data/model_benchmarks.json");
 
-#[async_trait]
-pub trait BenchmarkCatalogRefresh: Send + Sync {
-    async fn refresh_if_stale(&self) -> Result<(), GatewayError>;
-    async fn refresh_now(&self) -> Result<(), GatewayError>;
+static VENDORED_SNAPSHOT: LazyLock<BenchmarkSnapshot> = LazyLock::new(|| {
+    serde_json::from_str(VENDORED_BENCHMARKS_JSON)
+        .expect("vendored model benchmark snapshot should deserialize")
+});
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BenchmarkSnapshot {
+    #[serde(rename = "_metadata")]
+    pub metadata: BenchmarkSnapshotMetadata,
+    pub models: BTreeMap<String, BenchmarkModelEntry>,
 }
 
-#[derive(Clone)]
-pub struct BenchmarkCatalog<R> {
-    repo: Arc<R>,
-    client: Client,
-    api_key: String,
-    source_url: String,
-    refresh_interval: Duration,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BenchmarkSnapshotMetadata {
+    pub attribution: String,
+    pub benchmark_source: String,
+    pub benchmark_source_url: String,
+    pub retrieved_via: String,
+    pub source_url: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub updated_at: OffsetDateTime,
 }
 
-impl<R> BenchmarkCatalog<R>
-where
-    R: BenchmarkCatalogRepository + Send + Sync + 'static,
-{
-    #[must_use]
-    pub fn new(repo: Arc<R>, api_key: String) -> Self {
-        Self::with_options(
-            repo,
-            api_key,
-            ARTIFICIAL_ANALYSIS_FREE_MODELS_URL.to_string(),
-            DEFAULT_BENCHMARK_CATALOG_REFRESH_INTERVAL,
-        )
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BenchmarkModelEntry {
+    pub name: String,
+    pub canonical_slug: String,
+    pub artificial_analysis: ArtificialAnalysisIndices,
+    #[serde(with = "time::serde::rfc3339")]
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+pub struct ArtificialAnalysisIndices {
+    pub intelligence_index: Option<f64>,
+    pub coding_index: Option<f64>,
+    pub agentic_index: Option<f64>,
+}
+
+impl ArtificialAnalysisIndices {
+    fn is_empty(&self) -> bool {
+        self.intelligence_index.is_none()
+            && self.coding_index.is_none()
+            && self.agentic_index.is_none()
     }
 
-    #[must_use]
-    fn with_options(
-        repo: Arc<R>,
-        api_key: String,
-        source_url: String,
-        refresh_interval: Duration,
-    ) -> Self {
+    /// Keep a previously stored value when the new fetch omits it.
+    fn merged_over(self, existing: Self) -> Self {
         Self {
-            repo,
-            client: benchmark_http_client(),
-            api_key,
-            source_url,
-            refresh_interval,
+            intelligence_index: self.intelligence_index.or(existing.intelligence_index),
+            coding_index: self.coding_index.or(existing.coding_index),
+            agentic_index: self.agentic_index.or(existing.agentic_index),
         }
     }
 
-    pub async fn refresh_if_stale(&self) -> Result<(), GatewayError> {
-        let now = OffsetDateTime::now_utc();
-        if self
-            .repo
-            .get_benchmark_sync_state(ARTIFICIAL_ANALYSIS_SOURCE)
-            .await?
-            .is_some_and(|state| {
-                now.unix_timestamp()
-                    .saturating_sub(state.last_successful_refresh_at.unix_timestamp())
-                    < self.refresh_interval.as_secs() as i64
-            })
+    fn validate(&self, model_id: &str) -> anyhow::Result<()> {
+        for value in [
+            self.intelligence_index,
+            self.coding_index,
+            self.agentic_index,
+        ]
+        .into_iter()
+        .flatten()
         {
-            return Ok(());
+            if !value.is_finite() || !(0.0..=100.0).contains(&value) {
+                anyhow::bail!("OpenRouter returned an out-of-range index `{value}` for `{model_id}`");
+            }
         }
-        self.refresh_at(now).await
-    }
-
-    pub async fn refresh_now(&self) -> Result<(), GatewayError> {
-        self.refresh_at(OffsetDateTime::now_utc()).await
-    }
-
-    async fn refresh_at(&self, fetched_at: OffsetDateTime) -> Result<(), GatewayError> {
-        let bindings = self
-            .repo
-            .list_model_benchmark_bindings(ARTIFICIAL_ANALYSIS_SOURCE)
-            .await?;
-        if bindings.is_empty() {
-            return Ok(());
-        }
-        let snapshot = self.fetch_all_pages().await?;
-        let benchmark_version = snapshot.intelligence_index_version.to_string();
-        let scores = project_intelligence_scores(
-            &bindings,
-            snapshot.models,
-            &benchmark_version,
-            fetched_at,
-        )?;
-        let state = BenchmarkSyncState {
-            source: ARTIFICIAL_ANALYSIS_SOURCE.to_string(),
-            benchmark_version,
-            last_successful_refresh_at: fetched_at,
-            updated_at: fetched_at,
-        };
-        self.repo
-            .replace_model_benchmark_scores(&scores, &state)
-            .await?;
         Ok(())
     }
+}
 
-    async fn fetch_all_pages(&self) -> Result<ArtificialAnalysisSnapshot, GatewayError> {
-        let mut page = 1;
-        let mut version = None;
-        let mut expected_total_pages = None;
-        let mut models = HashMap::new();
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BenchmarkMatchKind {
+    Explicit,
+    Derived,
+}
 
-        loop {
-            if page > MAX_PAGES {
-                return Err(GatewayError::Internal(format!(
-                    "Artificial Analysis response exceeded {MAX_PAGES} pages"
-                )));
-            }
-            let response = self
-                .client
-                .get(&self.source_url)
-                .header("x-api-key", &self.api_key)
-                .query(&[("page", page)])
-                .send()
-                .await
-                .map_err(|error| {
-                    GatewayError::Internal(format!(
-                        "Artificial Analysis benchmark refresh request failed: {error}"
-                    ))
-                })?;
-            if response.status() != StatusCode::OK {
-                return Err(GatewayError::Internal(format!(
-                    "Artificial Analysis benchmark refresh failed with HTTP {}",
-                    response.status().as_u16()
-                )));
-            }
-            let response: FreeModelsResponse = response.json().await.map_err(|error| {
-                GatewayError::Internal(format!(
-                    "Artificial Analysis benchmark response was invalid: {error}"
-                ))
-            })?;
-            validate_page(&response, page, expected_total_pages)?;
-
-            match &version {
-                Some(current) if current != &response.intelligence_index_version => {
-                    return Err(GatewayError::Internal(
-                        "Artificial Analysis benchmark version changed between pages".to_string(),
-                    ));
-                }
-                None => version = Some(response.intelligence_index_version.clone()),
-                _ => {}
-            }
-            expected_total_pages = Some(response.pagination.total_pages);
-            for model in response.data {
-                let model_id = model.id.clone();
-                if models.insert(model_id.clone(), model).is_some() {
-                    return Err(GatewayError::Internal(format!(
-                        "Artificial Analysis returned duplicate model id `{model_id}`"
-                    )));
-                }
-            }
-
-            if !response.pagination.has_more {
-                break;
-            }
-            page += 1;
+impl BenchmarkMatchKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Explicit => "explicit",
+            Self::Derived => "derived",
         }
-
-        Ok(ArtificialAnalysisSnapshot {
-            intelligence_index_version: version.ok_or_else(|| {
-                GatewayError::Internal(
-                    "Artificial Analysis response omitted the index version".to_string(),
-                )
-            })?,
-            models,
-        })
     }
 }
 
-#[async_trait]
-impl<R> BenchmarkCatalogRefresh for BenchmarkCatalog<R>
-where
-    R: BenchmarkCatalogRepository + Send + Sync + 'static,
-{
-    async fn refresh_if_stale(&self) -> Result<(), GatewayError> {
-        Self::refresh_if_stale(self).await
-    }
-
-    async fn refresh_now(&self) -> Result<(), GatewayError> {
-        Self::refresh_now(self).await
-    }
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelBenchmarkScore {
+    pub metric_key: &'static str,
+    pub label: &'static str,
+    pub value: f64,
+    pub source: &'static str,
+    pub source_model_id: String,
+    pub source_url: String,
+    pub match_kind: BenchmarkMatchKind,
+    pub updated_at: OffsetDateTime,
 }
 
-fn validate_page(
-    response: &FreeModelsResponse,
-    requested_page: u32,
-    expected_total_pages: Option<u32>,
-) -> Result<(), GatewayError> {
-    let pagination = &response.pagination;
-    let total_pages_is_valid = pagination.total_pages > 0 || response.data.is_empty();
-    let final_page_is_valid = pagination.has_more || pagination.total_pages <= requested_page;
-    if pagination.page != requested_page
-        || pagination.page_size == 0
-        || !total_pages_is_valid
-        || !final_page_is_valid
-        || pagination.has_more && requested_page >= pagination.total_pages
-        || expected_total_pages.is_some_and(|expected| expected != pagination.total_pages)
-    {
-        return Err(GatewayError::Internal(format!(
-            "Artificial Analysis returned invalid pagination for page {requested_page}"
-        )));
-    }
-    Ok(())
+/// Look up scores for an OpenRouter model ID in the vendored snapshot.
+#[must_use]
+pub fn benchmark_scores_for(
+    source_model_id: &str,
+    match_kind: BenchmarkMatchKind,
+) -> Vec<ModelBenchmarkScore> {
+    scores_from_snapshot(&VENDORED_SNAPSHOT, source_model_id, match_kind)
 }
 
-fn project_intelligence_scores(
-    bindings: &[ModelBenchmarkBinding],
-    models: HashMap<String, FreeModel>,
-    benchmark_version: &str,
-    fetched_at: OffsetDateTime,
-) -> Result<Vec<ModelBenchmarkScore>, GatewayError> {
-    let mut scores = Vec::with_capacity(bindings.len());
-    for binding in bindings {
-        let Some(model) = models.get(&binding.source_model_id) else {
-            continue;
-        };
-        let Some(value) = model.evaluations.artificial_analysis_intelligence_index else {
-            continue;
-        };
-        if !value.is_finite() {
-            return Err(GatewayError::Internal(format!(
-                "Artificial Analysis returned a non-finite score for model `{}`",
-                model.id
-            )));
-        }
-        let source_url = format!("https://artificialanalysis.ai/models/{}", model.slug);
-        url::Url::parse(&source_url).map_err(|error| {
-            GatewayError::Internal(format!(
-                "Artificial Analysis returned an invalid model slug `{}`: {error}",
-                model.slug
-            ))
-        })?;
-        scores.push(ModelBenchmarkScore {
-            model_id: binding.model_id,
-            metric_key: INTELLIGENCE_INDEX_METRIC_KEY.to_string(),
-            label: INTELLIGENCE_INDEX_LABEL.to_string(),
+/// Return the first derived candidate present in the vendored snapshot.
+#[must_use]
+pub fn derive_benchmark_model_id(upstream_model: &str) -> Option<String> {
+    derive_from_snapshot(&VENDORED_SNAPSHOT, upstream_model)
+}
+
+fn scores_from_snapshot(
+    snapshot: &BenchmarkSnapshot,
+    source_model_id: &str,
+    match_kind: BenchmarkMatchKind,
+) -> Vec<ModelBenchmarkScore> {
+    let Some(entry) = snapshot.models.get(source_model_id) else {
+        return Vec::new();
+    };
+    let indices = entry.artificial_analysis;
+    [
+        (
+            "artificial_analysis_intelligence_index",
+            "Artificial Analysis Intelligence Index",
+            indices.intelligence_index,
+        ),
+        (
+            "artificial_analysis_coding_index",
+            "Artificial Analysis Coding Index",
+            indices.coding_index,
+        ),
+        (
+            "artificial_analysis_agentic_index",
+            "Artificial Analysis Agentic Index",
+            indices.agentic_index,
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(metric_key, label, value)| {
+        value.map(|value| ModelBenchmarkScore {
+            metric_key,
+            label,
             value,
-            unit: INTELLIGENCE_INDEX_UNIT.to_string(),
-            benchmark_version: benchmark_version.to_string(),
-            source: ARTIFICIAL_ANALYSIS_SOURCE.to_string(),
-            source_model_id: binding.source_model_id.clone(),
-            source_url,
-            fetched_at,
-        });
-    }
-    Ok(scores)
+            source: ARTIFICIAL_ANALYSIS_SOURCE,
+            source_model_id: source_model_id.to_string(),
+            source_url: format!("{OPENROUTER_MODEL_URL_PREFIX}{source_model_id}"),
+            match_kind,
+            updated_at: entry.updated_at,
+        })
+    })
+    .collect()
 }
 
-fn benchmark_http_client() -> Client {
-    Client::builder()
+fn derive_from_snapshot(snapshot: &BenchmarkSnapshot, upstream_model: &str) -> Option<String> {
+    benchmark_model_id_candidates(upstream_model)
+        .into_iter()
+        .find(|candidate| snapshot.models.contains_key(candidate))
+}
+
+/// Normalize an upstream model ID into exact OpenRouter ID candidates.
+///
+/// This strips provider decorations (Bedrock ARNs, region prefixes and `-vN:N` suffixes,
+/// Vertex `@version`, OpenRouter `:variant`), adds a publisher prefix for bare IDs, and
+/// tries a dotted version form (`claude-sonnet-4-6` -> `claude-sonnet-4.6`). Candidates are
+/// only ever compared for equality, never by prefix.
+pub(crate) fn benchmark_model_id_candidates(upstream_model: &str) -> Vec<String> {
+    let mut model = upstream_model.trim();
+    if model.starts_with("arn:") {
+        model = model.rsplit('/').next().unwrap_or(model);
+    }
+    let model = model.split(['@', ':']).next().unwrap_or(model);
+    let model = strip_bedrock_version_suffix(model);
+    let model = ["global.", "us.", "eu.", "apac.", "jp.", "au."]
+        .iter()
+        .find_map(|prefix| model.strip_prefix(prefix))
+        .unwrap_or(model);
+
+    let qualified = if model.contains('/') {
+        model.to_string()
+    } else if let Some((publisher, rest)) = model.split_once('.')
+        && BEDROCK_PUBLISHERS.contains(&publisher)
+    {
+        format!("{}/{rest}", openrouter_publisher(publisher))
+    } else if let Some(publisher) = inferred_publisher(model) {
+        format!("{publisher}/{model}")
+    } else {
+        model.to_string()
+    };
+
+    let mut candidates = vec![qualified.clone()];
+    let dotted = dot_version_separators(&qualified);
+    if dotted != qualified {
+        candidates.push(dotted);
+    }
+    candidates
+}
+
+const BEDROCK_PUBLISHERS: [&str; 8] = [
+    "anthropic", "openai", "meta", "mistral", "deepseek", "qwen", "moonshotai", "google",
+];
+
+fn openrouter_publisher(bedrock_publisher: &str) -> &str {
+    match bedrock_publisher {
+        "meta" => "meta-llama",
+        "mistral" => "mistralai",
+        other => other,
+    }
+}
+
+fn inferred_publisher(model: &str) -> Option<&'static str> {
+    const PREFIXES: [(&str, &str); 7] = [
+        ("gpt-", "openai"),
+        ("o1", "openai"),
+        ("o3", "openai"),
+        ("o4", "openai"),
+        ("claude-", "anthropic"),
+        ("gemini-", "google"),
+        ("gemma-", "google"),
+    ];
+    PREFIXES
+        .iter()
+        .find(|(prefix, _)| model.starts_with(prefix))
+        .map(|(_, publisher)| *publisher)
+}
+
+fn strip_bedrock_version_suffix(model: &str) -> &str {
+    let Some((base, version)) = model.rsplit_once("-v") else {
+        return model;
+    };
+    let digits = version.split(':').next().unwrap_or(version);
+    if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        base
+    } else {
+        model
+    }
+}
+
+/// Replace `N-M` with `N.M` when both sides are short numeric version parts.
+fn dot_version_separators(model: &str) -> String {
+    let bytes = model.as_bytes();
+    let mut output = String::with_capacity(model.len());
+    for (index, character) in model.char_indices() {
+        let is_version_dash = character == '-'
+            && index > 0
+            && bytes[index - 1].is_ascii_digit()
+            && numeric_run_len(&bytes[index + 1..]).is_some_and(|len| {
+                (1..=2).contains(&len)
+                    && bytes
+                        .get(index + 1 + len)
+                        .is_none_or(|next| matches!(next, b'-' | b'/'))
+            });
+        output.push(if is_version_dash { '.' } else { character });
+    }
+    output
+}
+
+fn numeric_run_len(bytes: &[u8]) -> Option<usize> {
+    let len = bytes.iter().take_while(|byte| byte.is_ascii_digit()).count();
+    (len > 0).then_some(len)
+}
+
+/// Upsert fetched models into an existing snapshot. Entries are never removed.
+///
+/// Returns whether any entry changed. `_metadata.updated_at` only moves when data changes,
+/// so a no-op sync leaves the file byte-for-byte identical.
+pub fn merge_benchmark_models(
+    snapshot: &mut BenchmarkSnapshot,
+    fetched: Vec<OpenRouterBenchmarkModel>,
+    source_url: &str,
+    now: OffsetDateTime,
+) -> bool {
+    let mut changed = false;
+    for model in fetched {
+        let next = BenchmarkModelEntry {
+            name: model.name,
+            canonical_slug: model.canonical_slug,
+            artificial_analysis: model.indices,
+            updated_at: now,
+        };
+        match snapshot.models.get_mut(&model.id) {
+            Some(existing) => {
+                let merged = BenchmarkModelEntry {
+                    artificial_analysis: next
+                        .artificial_analysis
+                        .merged_over(existing.artificial_analysis),
+                    updated_at: existing.updated_at,
+                    ..next
+                };
+                if &merged != existing {
+                    *existing = BenchmarkModelEntry {
+                        updated_at: now,
+                        ..merged
+                    };
+                    changed = true;
+                }
+            }
+            None => {
+                snapshot.models.insert(model.id, next);
+                changed = true;
+            }
+        }
+    }
+    let metadata = default_metadata(source_url, snapshot.metadata.updated_at);
+    if changed || snapshot.metadata != metadata {
+        snapshot.metadata = BenchmarkSnapshotMetadata {
+            updated_at: now,
+            ..metadata
+        };
+        changed = true;
+    }
+    changed
+}
+
+#[must_use]
+pub fn empty_benchmark_snapshot(source_url: &str, now: OffsetDateTime) -> BenchmarkSnapshot {
+    BenchmarkSnapshot {
+        metadata: default_metadata(source_url, now),
+        models: BTreeMap::new(),
+    }
+}
+
+fn default_metadata(source_url: &str, updated_at: OffsetDateTime) -> BenchmarkSnapshotMetadata {
+    BenchmarkSnapshotMetadata {
+        attribution: BENCHMARK_ATTRIBUTION.to_string(),
+        benchmark_source: ARTIFICIAL_ANALYSIS_SOURCE.to_string(),
+        benchmark_source_url: ARTIFICIAL_ANALYSIS_URL.to_string(),
+        retrieved_via: OPENROUTER_SOURCE.to_string(),
+        source_url: source_url.to_string(),
+        updated_at,
+    }
+}
+
+pub fn benchmark_snapshot_to_pretty_json(snapshot: &BenchmarkSnapshot) -> anyhow::Result<String> {
+    let mut json = serde_json::to_string_pretty(snapshot)
+        .context("failed serializing model benchmark snapshot")?;
+    json.push('\n');
+    Ok(json)
+}
+
+/// One OpenRouter model with at least one Artificial Analysis index.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpenRouterBenchmarkModel {
+    pub id: String,
+    pub name: String,
+    pub canonical_slug: String,
+    pub indices: ArtificialAnalysisIndices,
+}
+
+pub async fn fetch_openrouter_benchmark_models(
+    source_url: &str,
+) -> anyhow::Result<Vec<OpenRouterBenchmarkModel>> {
+    let response = Client::builder()
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(30))
         .build()
-        .expect("benchmark catalog HTTP client configuration must be valid")
+        .context("failed building benchmark HTTP client")?
+        .get(source_url)
+        .send()
+        .await
+        .with_context(|| format!("failed fetching benchmarks from `{source_url}`"))?;
+    let status = response.status();
+    if status != StatusCode::OK {
+        anyhow::bail!("benchmark fetch returned HTTP {}", status.as_u16());
+    }
+    let body = response
+        .text()
+        .await
+        .context("failed reading benchmark response")?;
+    parse_openrouter_models(&body)
 }
 
-struct ArtificialAnalysisSnapshot {
-    intelligence_index_version: Number,
-    models: HashMap<String, FreeModel>,
+fn parse_openrouter_models(body: &str) -> anyhow::Result<Vec<OpenRouterBenchmarkModel>> {
+    let response: OpenRouterModelsResponse =
+        serde_json::from_str(body).context("OpenRouter model list was invalid")?;
+    if response.data.is_empty() {
+        anyhow::bail!("OpenRouter model list was empty");
+    }
+
+    let mut models = HashMap::new();
+    for model in response.data {
+        if model.id.contains(VARIANT_SEPARATOR) {
+            continue;
+        }
+        if model.id.trim().is_empty() || model.id.trim() != model.id {
+            anyhow::bail!("OpenRouter returned an invalid model id `{}`", model.id);
+        }
+        let indices = model
+            .benchmarks
+            .and_then(|benchmarks| benchmarks.artificial_analysis)
+            .unwrap_or_default();
+        if indices.is_empty() {
+            continue;
+        }
+        indices.validate(&model.id)?;
+        let id = model.id.clone();
+        let parsed = OpenRouterBenchmarkModel {
+            id: model.id,
+            name: model.name,
+            canonical_slug: model.canonical_slug,
+            indices,
+        };
+        if models.insert(id.clone(), parsed).is_some() {
+            anyhow::bail!("OpenRouter returned duplicate model id `{id}`");
+        }
+    }
+    let mut models = models.into_values().collect::<Vec<_>>();
+    models.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(models)
 }
 
 #[derive(Debug, Deserialize)]
-struct FreeModelsResponse {
-    intelligence_index_version: Number,
-    pagination: Pagination,
-    data: Vec<FreeModel>,
+struct OpenRouterModelsResponse {
+    data: Vec<OpenRouterModel>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Pagination {
-    page: u32,
-    page_size: u32,
-    total_pages: u32,
-    has_more: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct FreeModel {
+struct OpenRouterModel {
     id: String,
-    slug: String,
-    evaluations: FreeEvaluations,
+    name: String,
+    canonical_slug: String,
+    #[serde(default)]
+    benchmarks: Option<OpenRouterBenchmarks>,
 }
 
 #[derive(Debug, Deserialize)]
-struct FreeEvaluations {
-    artificial_analysis_intelligence_index: Option<f64>,
+struct OpenRouterBenchmarks {
+    #[serde(default)]
+    artificial_analysis: Option<ArtificialAnalysisIndices>,
 }
 
 #[cfg(test)]

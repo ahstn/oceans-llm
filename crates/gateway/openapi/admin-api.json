@@ -2096,31 +2096,6 @@
         ]
       }
     },
-    "/api/v1/admin/models/benchmark-catalog/refresh": {
-      "post": {
-        "tags": [
-          "crate::http::models"
-        ],
-        "operationId": "refresh_model_benchmark_catalog",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_RefreshModelBenchmarkCatalogResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          }
-        ]
-      }
-    },
     "/api/v1/admin/models/client-configs": {
       "post": {
         "tags": [
@@ -5849,21 +5824,17 @@
           "metric_key",
           "label",
           "value",
-          "unit",
-          "benchmark_version",
           "source",
           "source_model_id",
           "source_url",
-          "fetched_at"
+          "match_kind",
+          "updated_at"
         ],
         "properties": {
-          "benchmark_version": {
-            "type": "string"
-          },
-          "fetched_at": {
-            "type": "string"
-          },
           "label": {
+            "type": "string"
+          },
+          "match_kind": {
             "type": "string"
           },
           "metric_key": {
@@ -5878,7 +5849,7 @@
           "source_url": {
             "type": "string"
           },
-          "unit": {
+          "updated_at": {
             "type": "string"
           },
           "value": {
@@ -11745,29 +11716,6 @@
           }
         }
       },
-      "Envelope_RefreshModelBenchmarkCatalogResponse": {
-        "type": "object",
-        "required": [
-          "data",
-          "meta"
-        ],
-        "properties": {
-          "data": {
-            "type": "object",
-            "required": [
-              "refreshed"
-            ],
-            "properties": {
-              "refreshed": {
-                "type": "boolean"
-              }
-            }
-          },
-          "meta": {
-            "$ref": "#/components/schemas/ResponseMeta"
-          }
-        }
-      },
       "Envelope_RefreshModelPricingCatalogResponse": {
         "type": "object",
         "required": [
@@ -14077,17 +14025,6 @@
             "items": {
               "$ref": "#/components/schemas/RecommendedMcpServerView"
             }
-          }
-        }
-      },
-      "RefreshModelBenchmarkCatalogResponse": {
-        "type": "object",
-        "required": [
-          "refreshed"
-        ],
-        "properties": {
-          "refreshed": {
-            "type": "boolean"
           }
         }
       },

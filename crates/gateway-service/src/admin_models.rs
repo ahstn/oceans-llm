@@ -9,9 +9,9 @@ use gateway_client_config::{
     render_default_configs, render_default_configs_for_models,
 };
 use gateway_core::{
-    BenchmarkCatalogRepository, GatewayError, GatewayModel, ModelAllowlistPolicy,
-    ModelBenchmarkScore, ModelRepository, ModelRoute, PricingCatalogRepository, PricingLimits,
-    PricingModalities, ProviderCapabilities, ProviderConnection, ProviderRepository,
+    GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
+    PricingCatalogRepository, PricingLimits, PricingModalities, ProviderCapabilities,
+    ProviderConnection, ProviderRepository,
 };
 use time::OffsetDateTime;
 
@@ -19,6 +19,9 @@ use crate::effective_route_metadata::effective_provider_route_capabilities;
 #[cfg(test)]
 use crate::effective_route_metadata::provider_capabilities;
 
+use crate::benchmark_catalog::{
+    BenchmarkMatchKind, ModelBenchmarkScore, benchmark_scores_for, derive_benchmark_model_id,
+};
 use crate::{
     EffectiveMetadataSource, EffectiveRouteMetadata, ModelIconKey, ProviderIconKey,
     resolve_effective_route_metadata, resolve_model_icon_key, resolve_provider_display,
@@ -78,24 +81,30 @@ pub struct AdminModelSummary {
 pub struct AdminModelsService<R> {
     repo: Arc<R>,
     client_config_gateway_base_url: String,
+    benchmark_model_ids: Arc<HashMap<String, String>>,
 }
 
 impl<R> AdminModelsService<R>
 where
-    R: ModelRepository
-        + ProviderRepository
-        + PricingCatalogRepository
-        + BenchmarkCatalogRepository
-        + Send
-        + Sync
-        + 'static,
+    R: ModelRepository + ProviderRepository + PricingCatalogRepository + Send + Sync + 'static,
 {
     #[must_use]
     pub fn new(repo: Arc<R>) -> Self {
         Self {
             repo,
             client_config_gateway_base_url: DEFAULT_GATEWAY_BASE_URL.to_string(),
+            benchmark_model_ids: Arc::default(),
         }
+    }
+
+    /// Explicit gateway model key to OpenRouter model ID bindings from config.
+    #[must_use]
+    pub fn with_benchmark_model_ids(
+        mut self,
+        benchmark_model_ids: Arc<HashMap<String, String>>,
+    ) -> Self {
+        self.benchmark_model_ids = benchmark_model_ids;
+        self
     }
 
     #[must_use]
@@ -206,6 +215,29 @@ where
         ))
     }
 
+    /// An explicit binding on the model or its alias target wins, even when it has no scores.
+    /// Otherwise the primary route's upstream model is normalized and matched exactly.
+    fn benchmark_scores(
+        &self,
+        model: &GatewayModel,
+        execution_model: &GatewayModel,
+        primary_route: Option<&ModelRoute>,
+    ) -> Vec<ModelBenchmarkScore> {
+        if let Some(source_model_id) = self
+            .benchmark_model_ids
+            .get(&model.model_key)
+            .or_else(|| self.benchmark_model_ids.get(&execution_model.model_key))
+        {
+            return benchmark_scores_for(source_model_id, BenchmarkMatchKind::Explicit);
+        }
+        primary_route
+            .and_then(|route| derive_benchmark_model_id(&route.upstream_model))
+            .map(|source_model_id| {
+                benchmark_scores_for(&source_model_id, BenchmarkMatchKind::Derived)
+            })
+            .unwrap_or_default()
+    }
+
     async fn list_model_items(&self) -> Result<Vec<AdminModelItem>, GatewayError> {
         let pricing_time = OffsetDateTime::now_utc();
         let models = self.repo.list_models().await?;
@@ -214,18 +246,6 @@ where
             .repo
             .list_model_allowlists_for_models(&model_ids)
             .await?;
-        let mut benchmark_scores_by_model = self
-            .repo
-            .list_model_benchmark_scores()
-            .await?
-            .into_iter()
-            .fold(HashMap::<_, Vec<_>>::new(), |mut scores_by_model, score| {
-                scores_by_model
-                    .entry(score.model_id)
-                    .or_default()
-                    .push(score);
-                scores_by_model
-            });
         let by_key = models
             .iter()
             .cloned()
@@ -384,9 +404,11 @@ where
                     supports_attachments: primary_metadata
                         .and_then(|metadata| metadata.modalities.as_ref())
                         .map(supports_attachments),
-                    benchmark_scores: benchmark_scores_by_model
-                        .remove(&model.id)
-                        .unwrap_or_default(),
+                    benchmark_scores: self.benchmark_scores(
+                        &model,
+                        &execution_model,
+                        primary_route,
+                    ),
                     client_configurations,
                 },
                 client_config_input,
@@ -638,9 +660,8 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        BenchmarkCatalogRepository, BenchmarkSyncState, GatewayError, GatewayModel,
-        GitHubCopilotChatApi, GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports,
-        ModelAllowlistPolicy, ModelBenchmarkBinding, ModelBenchmarkScore, ModelPricingRecord,
+        GatewayError, GatewayModel, GitHubCopilotChatApi, GitHubCopilotRouteCompatibility,
+        GitHubCopilotUpstreamSupports, ModelAllowlistPolicy, ModelPricingRecord,
         ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, PricingCatalogCacheRecord,
         PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
         ProviderCapabilities, ProviderConnection, ProviderRepository, ReasoningEffort, StoreError,
@@ -735,7 +756,6 @@ mod tests {
         routes_by_model: HashMap<Uuid, Vec<ModelRoute>>,
         providers_by_key: HashMap<String, ProviderConnection>,
         pricing_by_key: HashMap<(String, String), ModelPricingRecord>,
-        benchmark_scores: Vec<ModelBenchmarkScore>,
         allowlists_by_model: HashMap<Uuid, ModelAllowlistPolicy>,
         list_models_calls: AtomicUsize,
         list_routes_for_model_calls: AtomicUsize,
@@ -909,45 +929,6 @@ mod tests {
                     pricing_model_id.to_string(),
                 ))
                 .cloned())
-        }
-    }
-
-    #[async_trait]
-    impl BenchmarkCatalogRepository for CountingRepo {
-        async fn replace_model_benchmark_bindings(
-            &self,
-            _source: &str,
-            _bindings: &[ModelBenchmarkBinding],
-        ) -> Result<(), StoreError> {
-            Ok(())
-        }
-
-        async fn list_model_benchmark_bindings(
-            &self,
-            _source: &str,
-        ) -> Result<Vec<ModelBenchmarkBinding>, StoreError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_model_benchmark_scores(
-            &self,
-        ) -> Result<Vec<ModelBenchmarkScore>, StoreError> {
-            Ok(self.benchmark_scores.clone())
-        }
-
-        async fn get_benchmark_sync_state(
-            &self,
-            _source: &str,
-        ) -> Result<Option<BenchmarkSyncState>, StoreError> {
-            Ok(None)
-        }
-
-        async fn replace_model_benchmark_scores(
-            &self,
-            _scores: &[ModelBenchmarkScore],
-            _state: &BenchmarkSyncState,
-        ) -> Result<bool, StoreError> {
-            Ok(true)
         }
     }
 
@@ -1197,18 +1178,6 @@ mod tests {
                     &["text", "image"],
                 ),
             )]),
-            benchmark_scores: vec![ModelBenchmarkScore {
-                model_id: alias_model_id,
-                metric_key: "artificial_analysis_intelligence_index".to_string(),
-                label: "Artificial Analysis Intelligence Index".to_string(),
-                value: 39.0,
-                unit: "index_points".to_string(),
-                benchmark_version: "4.3".to_string(),
-                source: "artificial_analysis".to_string(),
-                source_model_id: "36f73aaf-d38a-4b56-a2b3-d04d17186910".to_string(),
-                source_url: "https://artificialanalysis.ai/models/test-model".to_string(),
-                fetched_at: OffsetDateTime::UNIX_EPOCH,
-            }],
             allowlists_by_model: HashMap::from([
                 (
                     alias_model_id,
@@ -1277,16 +1246,6 @@ mod tests {
         assert_eq!(alias.supports_tool_calling, Some(true));
         assert_eq!(alias.supports_structured_output, Some(true));
         assert_eq!(alias.supports_attachments, Some(true));
-        assert_eq!(alias.benchmark_scores.len(), 1);
-        assert_eq!(alias.benchmark_scores[0].value, 39.0);
-        let base = items
-            .iter()
-            .find(|item| item.id == "gpt-4.1")
-            .expect("base item");
-        assert!(
-            base.benchmark_scores.is_empty(),
-            "scores are not inferred across aliases"
-        );
         assert_eq!(
             alias
                 .allowlist

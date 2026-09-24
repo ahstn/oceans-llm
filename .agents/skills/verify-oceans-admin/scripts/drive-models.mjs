@@ -69,6 +69,7 @@ try {
   await page.getByRole('heading', { name: 'Model list' }).waitFor()
   await page.getByTestId('models-desktop-table').waitFor()
   await page.getByTestId(`models-desktop-cell-${targetModelId}`).waitFor()
+  await page.getByText(/^Benchmark scores by Artificial Analysis, retrieved via OpenRouter\.$/).waitFor()
   const showingText = (await page.getByText(/^Showing \d+ of \d+ models$/).textContent())?.trim()
   if (!showingText) throw new Error('The Models page did not report a visible model count.')
   const match = /^Showing (\d+) of (\d+) models$/.exec(showingText)
@@ -111,7 +112,7 @@ try {
           await infoDialog.getByText(score.label, { exact: true }).waitFor()
           const sourceLink = infoDialog.locator(
             `a[href="${score.source_url}"]`,
-            { hasText: 'View source model' },
+            { hasText: `${score.source_model_id} on OpenRouter` },
           )
           await sourceLink.waitFor()
         }

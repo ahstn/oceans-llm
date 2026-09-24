@@ -393,3 +393,55 @@ models:
         "unexpected error: {error_text}"
     );
 }
+
+fn benchmark_model_config(benchmark_model_id: &str) -> String {
+    format!(
+        r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    benchmark_model_id: "{benchmark_model_id}"
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+  - id: plain
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+"#
+    )
+}
+
+#[test]
+fn collects_explicit_benchmark_model_ids() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(&config_path, &benchmark_model_config("openai/gpt-5"));
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+
+    assert_eq!(
+        config.benchmark_model_ids(),
+        [("fast".to_string(), "openai/gpt-5".to_string())].into()
+    );
+}
+
+#[test]
+fn rejects_invalid_benchmark_model_ids() {
+    for invalid in ["gpt-5", "openai/gpt-5:batch", " openai/gpt-5", "/gpt-5", "openai/"] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(&config_path, &benchmark_model_config(invalid));
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("benchmark_model_id must be an OpenRouter model ID"),
+            "unexpected error for `{invalid}`: {error_text}"
+        );
+    }
+}

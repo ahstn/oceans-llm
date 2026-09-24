@@ -27,7 +27,6 @@ mod agent_analysis;
 mod auth;
 mod batch;
 mod bedrock;
-mod benchmarks;
 mod budgets;
 mod environment;
 mod github_copilot;

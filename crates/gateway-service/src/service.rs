@@ -4,9 +4,9 @@ use tokio::sync::Semaphore;
 
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AuthenticatedApiKey,
-    BatchJobRecord, BatchPricingStatus, BenchmarkCatalogRepository, BudgetAlertRepository,
-    BudgetRecord, BudgetRepository, ChatCompletionsRequest, GatewayError, GatewayModel,
-    IdentityRepository, McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
+    BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetRecord, BudgetRepository,
+    ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
+    McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
     RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
@@ -20,10 +20,10 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
-    Authenticator, BenchmarkCatalog, BenchmarkCatalogRefresh, LoggedRequest, ModelAccess,
-    ModelResolver, PricingCatalog, RequestLogContext, RequestLogIconMetadata,
-    RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest, ResolvedProviderConnection,
-    StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
+    Authenticator, LoggedRequest, ModelAccess, ModelResolver, PricingCatalog, RequestLogContext,
+    RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
+    ResolvedProviderConnection, StreamFailureSummary, StreamLogResultInput,
+    StreamResponseCollector,
     agent_analysis::{
         PassiveRequestRecord, REPORT_RETENTION, desired_versions_for_policy,
         finalize_idle_sessions, process_next_analysis, record_prepared_passive_request,
@@ -100,7 +100,6 @@ pub struct GatewayService<S, P> {
     budget_guard: BudgetGuard<S>,
     model_access: ModelAccess<S>,
     model_resolver: ModelResolver<S>,
-    benchmark_catalog: Option<Arc<dyn BenchmarkCatalogRefresh>>,
     pricing_catalog: PricingCatalog<S>,
     request_logging: RequestLogging<S>,
     mcp_invocation_logging: McpInvocationLogging<S>,
@@ -178,7 +177,6 @@ where
             budget_guard,
             model_access,
             model_resolver,
-            benchmark_catalog: None,
             pricing_catalog,
             request_logging,
             mcp_invocation_logging,
@@ -197,15 +195,6 @@ where
     #[must_use]
     pub fn with_agent_analysis_enabled(mut self, enabled: bool) -> Self {
         self.agent_analysis_enabled = enabled;
-        self
-    }
-
-    #[must_use]
-    pub fn with_benchmark_catalog(mut self, catalog: BenchmarkCatalog<S>) -> Self
-    where
-        S: BenchmarkCatalogRepository,
-    {
-        self.benchmark_catalog = Some(Arc::new(catalog));
         self
     }
 
@@ -724,22 +713,6 @@ where
     pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {
         self.pricing_catalog.refresh_if_stale_and_sync().await?;
         self.warn_on_route_context_override_conflicts().await
-    }
-
-    pub async fn refresh_benchmark_catalog_if_stale(&self) -> Result<(), GatewayError> {
-        if let Some(catalog) = &self.benchmark_catalog {
-            catalog.refresh_if_stale().await?;
-        }
-        Ok(())
-    }
-
-    pub async fn refresh_benchmark_catalog_now(&self) -> Result<(), GatewayError> {
-        let catalog = self.benchmark_catalog.as_ref().ok_or_else(|| {
-            GatewayError::InvalidRequest(
-                "Artificial Analysis benchmark catalog is not configured".to_string(),
-            )
-        })?;
-        catalog.refresh_now().await
     }
 
     pub async fn refresh_pricing_catalog_now(&self) -> Result<(), GatewayError> {

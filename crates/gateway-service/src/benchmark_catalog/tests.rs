@@ -1,319 +1,275 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use super::*;
 
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::Query,
-    http::{HeaderMap, StatusCode},
-    routing::get,
-};
-use gateway_core::{
-    BenchmarkCatalogRepository, BenchmarkSyncState, ModelBenchmarkBinding, ModelBenchmarkScore,
-    StoreError,
-};
-use serde::Deserialize;
-use serde_json::json;
-use time::OffsetDateTime;
-use uuid::Uuid;
-
-use super::{ARTIFICIAL_ANALYSIS_SOURCE, BenchmarkCatalog, INTELLIGENCE_INDEX_METRIC_KEY};
-
-#[derive(Default)]
-struct InMemoryRepo {
-    bindings: Vec<ModelBenchmarkBinding>,
-    snapshot: Mutex<StoredSnapshot>,
+fn at(rfc3339: &str) -> OffsetDateTime {
+    OffsetDateTime::parse(rfc3339, &time::format_description::well_known::Rfc3339)
+        .expect("valid timestamp")
 }
 
-#[derive(Clone, Default)]
-struct StoredSnapshot {
-    scores: Vec<ModelBenchmarkScore>,
-    state: Option<BenchmarkSyncState>,
-}
-
-#[async_trait]
-impl BenchmarkCatalogRepository for InMemoryRepo {
-    async fn replace_model_benchmark_bindings(
-        &self,
-        _source: &str,
-        _bindings: &[ModelBenchmarkBinding],
-    ) -> Result<(), StoreError> {
-        Ok(())
-    }
-
-    async fn list_model_benchmark_bindings(
-        &self,
-        source: &str,
-    ) -> Result<Vec<ModelBenchmarkBinding>, StoreError> {
-        Ok(self
-            .bindings
-            .iter()
-            .filter(|binding| binding.source == source)
-            .cloned()
-            .collect())
-    }
-
-    async fn list_model_benchmark_scores(&self) -> Result<Vec<ModelBenchmarkScore>, StoreError> {
-        Ok(self.snapshot.lock().expect("snapshot lock").scores.clone())
-    }
-
-    async fn get_benchmark_sync_state(
-        &self,
-        source: &str,
-    ) -> Result<Option<BenchmarkSyncState>, StoreError> {
-        Ok(self
-            .snapshot
-            .lock()
-            .expect("snapshot lock")
-            .state
-            .clone()
-            .filter(|state| state.source == source))
-    }
-
-    async fn replace_model_benchmark_scores(
-        &self,
-        scores: &[ModelBenchmarkScore],
-        state: &BenchmarkSyncState,
-    ) -> Result<bool, StoreError> {
-        let mut snapshot = self.snapshot.lock().expect("snapshot lock");
-        if snapshot.state.as_ref().is_some_and(|current| {
-            current.last_successful_refresh_at >= state.last_successful_refresh_at
-        }) {
-            return Ok(false);
-        }
-        snapshot.scores = scores.to_vec();
-        snapshot.state = Some(state.clone());
-        Ok(true)
+fn indices(
+    intelligence: Option<f64>,
+    coding: Option<f64>,
+    agentic: Option<f64>,
+) -> ArtificialAnalysisIndices {
+    ArtificialAnalysisIndices {
+        intelligence_index: intelligence,
+        coding_index: coding,
+        agentic_index: agentic,
     }
 }
 
-#[derive(Deserialize)]
-struct PageQuery {
-    page: u32,
+fn fetched(id: &str, indices: ArtificialAnalysisIndices) -> OpenRouterBenchmarkModel {
+    OpenRouterBenchmarkModel {
+        id: id.to_string(),
+        name: format!("Name {id}"),
+        canonical_slug: format!("{id}-20260101"),
+        indices,
+    }
 }
 
-#[tokio::test]
-async fn skips_remote_fetch_without_model_bindings() {
-    let repo = Arc::new(InMemoryRepo::default());
+#[test]
+fn vendored_snapshot_parses_with_attribution() {
+    let snapshot: BenchmarkSnapshot =
+        serde_json::from_str(VENDORED_BENCHMARKS_JSON).expect("vendored benchmarks parse");
 
-    BenchmarkCatalog::with_options(
-        repo,
-        "test-key".to_string(),
-        "http://127.0.0.1:1/models".to_string(),
-        Duration::ZERO,
-    )
-    .refresh_now()
-    .await
-    .expect("empty catalogue needs no remote request");
+    assert_eq!(snapshot.metadata.attribution, BENCHMARK_ATTRIBUTION);
+    assert_eq!(snapshot.metadata.source_url, DEFAULT_BENCHMARK_SOURCE_URL);
+    assert!(!snapshot.models.is_empty());
+    for (id, entry) in &snapshot.models {
+        assert!(!id.contains(VARIANT_SEPARATOR), "{id} is a variant");
+        assert!(!entry.artificial_analysis.is_empty(), "{id} has no indices");
+        entry
+            .artificial_analysis
+            .validate(id)
+            .expect("vendored indices are valid");
+    }
 }
 
-#[tokio::test]
-async fn fetches_all_pages_and_maps_only_explicit_stable_ids() {
-    let bound_model_id = Uuid::new_v4();
-    let repo = Arc::new(InMemoryRepo {
-        bindings: vec![binding(bound_model_id, "aa-bound")],
-        ..Default::default()
-    });
-    let app = Router::new().route(
-        "/models",
-        get(
-            |headers: HeaderMap, Query(query): Query<PageQuery>| async move {
-                assert_eq!(
-                    headers
-                        .get("x-api-key")
-                        .and_then(|value| value.to_str().ok()),
-                    Some("test-key")
-                );
-                let (has_more, data) = if query.page == 1 {
-                    (
-                        true,
-                        vec![json!({
-                            "id": "aa-unbound",
-                            "slug": "unbound",
-                            "evaluations": {"artificial_analysis_intelligence_index": 99.0}
-                        })],
-                    )
-                } else {
-                    (
-                        false,
-                        vec![json!({
-                            "id": "aa-bound",
-                            "slug": "bound-model",
-                            "evaluations": {"artificial_analysis_intelligence_index": 39.0}
-                        })],
-                    )
-                };
-                Json(json!({
-                    "tier": "free",
-                    "intelligence_index_version": 4.3,
-                    "pagination": {
-                        "page": query.page,
-                        "page_size": 1,
-                        "total_pages": 2,
-                        "has_more": has_more
-                    },
-                    "data": data
-                }))
+#[test]
+fn parse_skips_variants_and_models_without_indices() {
+    let body = r#"{
+        "data": [
+            {
+                "id": "openai/gpt-6",
+                "name": "OpenAI: GPT-6",
+                "canonical_slug": "openai/gpt-6-20260801",
+                "benchmarks": {
+                    "artificial_analysis": {
+                        "intelligence_index": 61.2,
+                        "coding_index": 70.1,
+                        "agentic_index": null
+                    }
+                }
             },
+            {
+                "id": "openai/gpt-6:batch",
+                "name": "OpenAI: GPT-6 (batch)",
+                "canonical_slug": "openai/gpt-6-20260801",
+                "benchmarks": {
+                    "artificial_analysis": {
+                        "intelligence_index": 61.2,
+                        "coding_index": 70.1,
+                        "agentic_index": null
+                    }
+                }
+            },
+            {
+                "id": "openai/gpt-6:free",
+                "name": "OpenAI: GPT-6 (free)",
+                "canonical_slug": "openai/gpt-6-20260801",
+                "benchmarks": {
+                    "artificial_analysis": {"intelligence_index": 61.2}
+                }
+            },
+            {
+                "id": "acme/no-benchmarks",
+                "name": "Acme",
+                "canonical_slug": "acme/no-benchmarks"
+            },
+            {
+                "id": "acme/null-benchmarks",
+                "name": "Acme",
+                "canonical_slug": "acme/null-benchmarks",
+                "benchmarks": {
+                    "artificial_analysis": {
+                        "intelligence_index": null,
+                        "coding_index": null,
+                        "agentic_index": null
+                    }
+                }
+            }
+        ]
+    }"#;
+
+    let models = parse_openrouter_models(body).expect("parse");
+
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0].id, "openai/gpt-6");
+    assert_eq!(models[0].indices.intelligence_index, Some(61.2));
+}
+
+#[test]
+fn parse_rejects_out_of_range_scores_and_empty_lists() {
+    let out_of_range = r#"{"data": [{
+        "id": "acme/model",
+        "name": "Acme",
+        "canonical_slug": "acme/model",
+        "benchmarks": {"artificial_analysis": {"intelligence_index": 101.0}}
+    }]}"#;
+
+    assert!(parse_openrouter_models(out_of_range).is_err());
+    assert!(parse_openrouter_models(r#"{"data": []}"#).is_err());
+}
+
+#[test]
+fn merge_upserts_without_deleting_or_dropping_known_values() {
+    let first = at("2026-09-01T00:00:00Z");
+    let second = at("2026-09-24T00:00:00Z");
+    let mut snapshot = empty_benchmark_snapshot(DEFAULT_BENCHMARK_SOURCE_URL, first);
+
+    assert!(merge_benchmark_models(
+        &mut snapshot,
+        vec![
+            fetched("acme/kept", indices(Some(40.0), Some(50.0), Some(30.0))),
+            fetched("acme/updated", indices(Some(20.0), None, None)),
+        ],
+        DEFAULT_BENCHMARK_SOURCE_URL,
+        first,
+    ));
+
+    assert!(merge_benchmark_models(
+        &mut snapshot,
+        vec![
+            fetched("acme/updated", indices(None, Some(25.0), None)),
+            fetched("acme/new", indices(Some(10.0), None, None)),
+        ],
+        DEFAULT_BENCHMARK_SOURCE_URL,
+        second,
+    ));
+
+    assert_eq!(snapshot.models.len(), 3);
+    let kept = &snapshot.models["acme/kept"];
+    assert_eq!(kept.artificial_analysis.intelligence_index, Some(40.0));
+    assert_eq!(kept.updated_at, first);
+
+    let updated = &snapshot.models["acme/updated"];
+    assert_eq!(updated.artificial_analysis.intelligence_index, Some(20.0));
+    assert_eq!(updated.artificial_analysis.coding_index, Some(25.0));
+    assert_eq!(updated.updated_at, second);
+
+    assert_eq!(snapshot.models["acme/new"].updated_at, second);
+    assert_eq!(snapshot.metadata.updated_at, second);
+    assert_eq!(snapshot.metadata.attribution, BENCHMARK_ATTRIBUTION);
+}
+
+#[test]
+fn merge_is_a_no_op_when_nothing_changed() {
+    let first = at("2026-09-01T00:00:00Z");
+    let later = at("2026-09-24T00:00:00Z");
+    let mut snapshot = empty_benchmark_snapshot(DEFAULT_BENCHMARK_SOURCE_URL, first);
+    let model = || fetched("acme/model", indices(Some(40.0), None, None));
+    merge_benchmark_models(
+        &mut snapshot,
+        vec![model()],
+        DEFAULT_BENCHMARK_SOURCE_URL,
+        first,
+    );
+
+    assert!(!merge_benchmark_models(
+        &mut snapshot,
+        vec![model()],
+        DEFAULT_BENCHMARK_SOURCE_URL,
+        later,
+    ));
+    assert_eq!(snapshot.models["acme/model"].updated_at, first);
+    assert_eq!(snapshot.metadata.updated_at, first);
+}
+
+#[test]
+fn candidates_normalize_provider_model_ids() {
+    let cases = [
+        (
+            "us.anthropic.claude-sonnet-4-6-v1:0",
+            "anthropic/claude-sonnet-4.6",
         ),
+        (
+            "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6-v1:0",
+            "anthropic/claude-sonnet-4.6",
+        ),
+        ("openai.gpt-oss-120b", "openai/gpt-oss-120b"),
+        ("gpt-6-astra", "openai/gpt-6-astra"),
+        ("claude-sonnet-4-6@20260101", "anthropic/claude-sonnet-4.6"),
+        ("anthropic/claude-fable-5-1", "anthropic/claude-fable-5.1"),
+        ("qwen/qwen3.6-27b", "qwen/qwen3.6-27b"),
+        ("gpt-5.6-luna", "openai/gpt-5.6-luna"),
+    ];
+
+    for (upstream, expected) in cases {
+        let candidates = benchmark_model_id_candidates(upstream);
+        assert!(
+            candidates.iter().any(|candidate| candidate == expected),
+            "{upstream} produced {candidates:?}, expected {expected}"
+        );
+    }
+}
+
+#[test]
+fn derived_lookup_only_matches_exact_ids() {
+    let now = at("2026-09-24T00:00:00Z");
+    let mut snapshot = empty_benchmark_snapshot(DEFAULT_BENCHMARK_SOURCE_URL, now);
+    merge_benchmark_models(
+        &mut snapshot,
+        vec![fetched(
+            "deepseek/deepseek-v4-pro",
+            indices(Some(30.4), None, None),
+        )],
+        DEFAULT_BENCHMARK_SOURCE_URL,
+        now,
     );
-    let (source_url, server) = serve(app).await;
 
-    BenchmarkCatalog::with_options(
-        repo.clone(),
-        "test-key".to_string(),
-        source_url,
-        Duration::ZERO,
-    )
-    .refresh_now()
-    .await
-    .expect("refresh benchmark scores");
-
-    let snapshot = repo.snapshot.lock().expect("snapshot lock").clone();
-    assert_eq!(snapshot.scores.len(), 1);
-    let score = &snapshot.scores[0];
-    assert_eq!(score.model_id, bound_model_id);
-    assert_eq!(score.metric_key, INTELLIGENCE_INDEX_METRIC_KEY);
-    assert_eq!(score.value, 39.0);
-    assert_eq!(score.unit, "index_points");
-    assert_eq!(score.benchmark_version, "4.3");
-    assert_eq!(score.source_model_id, "aa-bound");
     assert_eq!(
-        score.source_url,
-        "https://artificialanalysis.ai/models/bound-model"
+        derive_from_snapshot(&snapshot, "deepseek/deepseek-v4-pro"),
+        Some("deepseek/deepseek-v4-pro".to_string())
     );
-    server.abort();
-}
-
-#[tokio::test]
-async fn failed_refresh_keeps_the_last_successful_snapshot() {
-    let model_id = Uuid::new_v4();
-    let previous = score(model_id, 38.0, "4.2", OffsetDateTime::UNIX_EPOCH);
-    let repo = Arc::new(InMemoryRepo {
-        bindings: vec![binding(model_id, "aa-bound")],
-        snapshot: Mutex::new(StoredSnapshot {
-            scores: vec![previous.clone()],
-            state: Some(sync_state("4.2", OffsetDateTime::UNIX_EPOCH)),
-        }),
-    });
-    let app = Router::new().route(
-        "/models",
-        get(|| async { (StatusCode::BAD_GATEWAY, "upstream unavailable") }),
-    );
-    let (source_url, server) = serve(app).await;
-
-    let error = BenchmarkCatalog::with_options(
-        repo.clone(),
-        "test-key".to_string(),
-        source_url,
-        Duration::ZERO,
-    )
-    .refresh_now()
-    .await
-    .expect_err("refresh should fail");
-
-    assert!(error.to_string().contains("HTTP 502"));
     assert_eq!(
-        repo.snapshot.lock().expect("snapshot lock").scores,
-        vec![previous]
+        derive_from_snapshot(&snapshot, "deepseek/deepseek-v4-pro-0813"),
+        None
     );
-    server.abort();
 }
 
-#[tokio::test]
-async fn successful_refresh_removes_a_score_that_is_now_null() {
-    let model_id = Uuid::new_v4();
-    let previous = score(model_id, 38.0, "4.2", OffsetDateTime::UNIX_EPOCH);
-    let repo = Arc::new(InMemoryRepo {
-        bindings: vec![binding(model_id, "aa-bound")],
-        snapshot: Mutex::new(StoredSnapshot {
-            scores: vec![previous],
-            state: Some(sync_state("4.2", OffsetDateTime::UNIX_EPOCH)),
-        }),
-    });
-    let app = Router::new().route(
-        "/models",
-        get(|| async {
-            Json(json!({
-                "tier": "free",
-                "intelligence_index_version": 4.3,
-                "pagination": {"page": 1, "page_size": 200, "total_pages": 1, "has_more": false},
-                "data": [{
-                    "id": "aa-bound",
-                    "slug": "bound-model",
-                    "evaluations": {"artificial_analysis_intelligence_index": null}
-                }]
-            }))
-        }),
+#[test]
+fn scores_include_only_present_indices_with_openrouter_source() {
+    let now = at("2026-09-24T00:00:00Z");
+    let mut snapshot = empty_benchmark_snapshot(DEFAULT_BENCHMARK_SOURCE_URL, now);
+    merge_benchmark_models(
+        &mut snapshot,
+        vec![fetched(
+            "anthropic/claude-opus-4.7",
+            indices(None, Some(60.0), Some(55.0)),
+        )],
+        DEFAULT_BENCHMARK_SOURCE_URL,
+        now,
     );
-    let (source_url, server) = serve(app).await;
 
-    BenchmarkCatalog::with_options(
-        repo.clone(),
-        "test-key".to_string(),
-        source_url,
-        Duration::ZERO,
-    )
-    .refresh_now()
-    .await
-    .expect("refresh benchmark scores");
-
-    assert!(
-        repo.snapshot
-            .lock()
-            .expect("snapshot lock")
-            .scores
-            .is_empty()
+    let scores = scores_from_snapshot(
+        &snapshot,
+        "anthropic/claude-opus-4.7",
+        BenchmarkMatchKind::Explicit,
     );
-    server.abort();
-}
 
-fn binding(model_id: Uuid, source_model_id: &str) -> ModelBenchmarkBinding {
-    ModelBenchmarkBinding {
-        model_id,
-        source: ARTIFICIAL_ANALYSIS_SOURCE.to_string(),
-        source_model_id: source_model_id.to_string(),
-    }
-}
-
-fn score(
-    model_id: Uuid,
-    value: f64,
-    benchmark_version: &str,
-    fetched_at: OffsetDateTime,
-) -> ModelBenchmarkScore {
-    ModelBenchmarkScore {
-        model_id,
-        metric_key: INTELLIGENCE_INDEX_METRIC_KEY.to_string(),
-        label: "Artificial Analysis Intelligence Index".to_string(),
-        value,
-        unit: "index_points".to_string(),
-        benchmark_version: benchmark_version.to_string(),
-        source: ARTIFICIAL_ANALYSIS_SOURCE.to_string(),
-        source_model_id: "aa-bound".to_string(),
-        source_url: "https://artificialanalysis.ai/models/bound-model".to_string(),
-        fetched_at,
-    }
-}
-
-fn sync_state(benchmark_version: &str, fetched_at: OffsetDateTime) -> BenchmarkSyncState {
-    BenchmarkSyncState {
-        source: ARTIFICIAL_ANALYSIS_SOURCE.to_string(),
-        benchmark_version: benchmark_version.to_string(),
-        last_successful_refresh_at: fetched_at,
-        updated_at: fetched_at,
-    }
-}
-
-async fn serve(app: Router) -> (String, tokio::task::JoinHandle<()>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind mock server");
-    let address = listener.local_addr().expect("mock server address");
-    let server = tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("serve mock API");
-    });
-    (format!("http://{address}/models"), server)
+    assert_eq!(
+        scores
+            .iter()
+            .map(|score| score.metric_key)
+            .collect::<Vec<_>>(),
+        [
+            "artificial_analysis_coding_index",
+            "artificial_analysis_agentic_index"
+        ]
+    );
+    assert_eq!(
+        scores[0].source_url,
+        "https://openrouter.ai/anthropic/claude-opus-4.7"
+    );
+    assert_eq!(scores[0].match_kind, BenchmarkMatchKind::Explicit);
+    assert!(scores_from_snapshot(&snapshot, "acme/missing", BenchmarkMatchKind::Derived).is_empty());
 }

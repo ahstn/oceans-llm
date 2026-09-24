@@ -375,12 +375,11 @@ pub struct AdminModelBenchmarkScoreView {
     pub metric_key: String,
     pub label: String,
     pub value: f64,
-    pub unit: String,
-    pub benchmark_version: String,
     pub source: String,
     pub source_model_id: String,
     pub source_url: String,
-    pub fetched_at: String,
+    pub match_kind: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -448,11 +447,6 @@ pub struct GenerateModelClientConfigsResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RefreshModelPricingCatalogResponse {
-    pub refreshed: bool,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct RefreshModelBenchmarkCatalogResponse {
     pub refreshed: bool,
 }
 
@@ -1802,7 +1796,6 @@ pub struct AgentSessionDetailView {
         crate::http::identity::list_identity_directory_teams,
         crate::http::models::list_models,
         crate::http::models::generate_model_client_configs,
-        crate::http::models::refresh_model_benchmark_catalog,
         crate::http::models::refresh_model_pricing_catalog,
         crate::http::identity::create_identity_team,
         crate::http::identity::update_identity_team,
@@ -1984,7 +1977,6 @@ mod tests {
 
         assert!(paths.contains_key("/api/v1/admin/identity/users"));
         assert!(paths.contains_key("/api/v1/admin/models"));
-        assert!(paths.contains_key("/api/v1/admin/models/benchmark-catalog/refresh"));
         assert!(paths.contains_key("/api/v1/admin/models/pricing-catalog/refresh"));
         assert!(paths.contains_key("/api/v1/admin/spend/report"));
         assert!(paths.contains_key("/api/v1/admin/observability/leaderboard"));

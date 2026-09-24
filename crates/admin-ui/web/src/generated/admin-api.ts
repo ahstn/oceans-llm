@@ -580,22 +580,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/models/benchmark-catalog/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["refresh_model_benchmark_catalog"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/admin/models/client-configs": {
         parameters: {
             query?: never;
@@ -1584,14 +1568,13 @@ export interface components {
             users: string[];
         };
         AdminModelBenchmarkScoreView: {
-            benchmark_version: string;
-            fetched_at: string;
             label: string;
+            match_kind: string;
             metric_key: string;
             source: string;
             source_model_id: string;
             source_url: string;
-            unit: string;
+            updated_at: string;
             /** Format: double */
             value: number;
         };
@@ -3018,12 +3001,6 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
-        Envelope_RefreshModelBenchmarkCatalogResponse: {
-            data: {
-                refreshed: boolean;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
         Envelope_RefreshModelPricingCatalogResponse: {
             data: {
                 refreshed: boolean;
@@ -3580,9 +3557,6 @@ export interface components {
         };
         RecommendedMcpServersPayload: {
             items: components["schemas"]["RecommendedMcpServerView"][];
-        };
-        RefreshModelBenchmarkCatalogResponse: {
-            refreshed: boolean;
         };
         RefreshModelPricingCatalogResponse: {
             refreshed: boolean;
@@ -5262,25 +5236,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_AdminModelPageView"];
-                };
-            };
-        };
-    };
-    refresh_model_benchmark_catalog: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_RefreshModelBenchmarkCatalogResponse"];
                 };
             };
         };
