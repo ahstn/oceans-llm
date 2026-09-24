@@ -205,13 +205,6 @@ a {
   text-decoration: none;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
 ::selection {
   background: color-mix(in oklch, var(--color-primary) 38%, transparent);
   color: var(--color-text);
@@ -270,6 +263,14 @@ textarea {
 }
 
 @layer base {
+  /* Layered so component text-size and weight utilities still win. */
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
   * {
     @apply border-border outline-ring/50;
 

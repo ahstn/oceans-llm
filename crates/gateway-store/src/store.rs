@@ -936,6 +936,42 @@ impl BudgetRepository for AnyStore {
         )
     }
 
+    async fn list_usage_owner_token_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<gateway_core::SpendOwnerTokenDailyRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_usage_owner_token_daily_aggregates(
+                window_start,
+                window_end,
+                owner_kind,
+                owner_user_id
+            )
+        )
+    }
+
+    async fn list_usage_model_token_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<gateway_core::SpendModelTokenDailyRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_usage_model_token_daily_aggregates(
+                window_start,
+                window_end,
+                owner_kind,
+                owner_user_id
+            )
+        )
+    }
+
     async fn get_cache_usage_aggregate(
         &self,
         window_start: OffsetDateTime,

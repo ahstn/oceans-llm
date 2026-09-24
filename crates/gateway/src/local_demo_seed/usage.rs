@@ -1237,3 +1237,31 @@ pub(super) fn demo_tool_cardinality(
         },
     }
 }
+
+/// Splits a demo prompt into (uncached, cache read, cache write) tokens. Each API key gets a stable
+/// baseline hit rate so per-owner cache charts differ, and each request jitters around it.
+pub(super) fn demo_cache_split(fixture: &LocalDemoRequestFixture) -> Option<(i64, i64, i64)> {
+    let prompt_tokens = fixture.prompt_tokens?;
+    let key_seed = demo_seed_hash(fixture.api_key_public_id);
+    let request_seed = demo_seed_hash(fixture.request_id);
+    let base_read_percent = 15 + (key_seed % 66) as i64;
+    let jitter_percent = (request_seed % 21) as i64 - 10;
+    let read_percent = (base_read_percent + jitter_percent).clamp(0, 95);
+    let write_percent = 3 + ((request_seed / 21) % 10) as i64;
+
+    let cache_read_tokens = prompt_tokens * read_percent / 100;
+    let cache_write_tokens =
+        (prompt_tokens * write_percent / 100).min(prompt_tokens - cache_read_tokens);
+    Some((
+        prompt_tokens - cache_read_tokens - cache_write_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
+    ))
+}
+
+/// FNV-1a, so demo splits stay identical across runs and platforms.
+fn demo_seed_hash(value: &str) -> u64 {
+    value.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}

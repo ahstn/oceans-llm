@@ -3069,8 +3069,12 @@ export interface components {
         Envelope_SpendReportView: {
             data: {
                 daily: components["schemas"]["SpendDailyPointView"][];
+                /** @description Daily token volumes for the heaviest models; the remainder is folded into one `is_other` series. */
+                model_token_series: components["schemas"]["SpendModelTokenSeriesView"][];
                 models: components["schemas"]["SpendModelBreakdownView"][];
                 owner_kind: string;
+                /** @description Daily token volumes for the heaviest owners by total tokens, zero-filled across the window. */
+                owner_token_series: components["schemas"]["SpendOwnerTokenSeriesView"][];
                 owners: components["schemas"]["SpendOwnerBreakdownView"][];
                 totals: components["schemas"]["SpendTotalsView"];
                 /** Format: int32 */
@@ -3872,6 +3876,11 @@ export interface components {
             /** Format: int64 */
             usage_missing_request_count: number;
         };
+        SpendModelTokenSeriesView: {
+            is_other: boolean;
+            model_key: string;
+            points: components["schemas"]["SpendTokenPointView"][];
+        };
         SpendOwnerBreakdownView: {
             owner_id: string;
             owner_kind: string;
@@ -3885,16 +3894,45 @@ export interface components {
             /** Format: int64 */
             usage_missing_request_count: number;
         };
+        SpendOwnerTokenSeriesView: {
+            owner_id: string;
+            owner_kind: string;
+            owner_name: string;
+            points: components["schemas"]["SpendTokenPointView"][];
+        };
         SpendReportView: {
             daily: components["schemas"]["SpendDailyPointView"][];
+            /** @description Daily token volumes for the heaviest models; the remainder is folded into one `is_other` series. */
+            model_token_series: components["schemas"]["SpendModelTokenSeriesView"][];
             models: components["schemas"]["SpendModelBreakdownView"][];
             owner_kind: string;
+            /** @description Daily token volumes for the heaviest owners by total tokens, zero-filled across the window. */
+            owner_token_series: components["schemas"]["SpendOwnerTokenSeriesView"][];
             owners: components["schemas"]["SpendOwnerBreakdownView"][];
             totals: components["schemas"]["SpendTotalsView"];
             /** Format: int32 */
             window_days: number;
             window_end: string;
             window_start: string;
+        };
+        /**
+         * @description One day of token volume. Cache buckets only cover events whose provider reported a cache split,
+         *     so `input_tokens` can exceed `uncached_input_tokens + cache_read_tokens + cache_write_tokens`.
+         */
+        SpendTokenPointView: {
+            /** Format: int64 */
+            cache_read_tokens: number;
+            /** Format: int64 */
+            cache_write_tokens: number;
+            day_start: string;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            request_count: number;
+            /** Format: int64 */
+            uncached_input_tokens: number;
         };
         SpendTotalsView: {
             /** Format: int64 */

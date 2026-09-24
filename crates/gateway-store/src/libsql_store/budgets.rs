@@ -478,17 +478,20 @@ impl BudgetRepository for LibsqlStore {
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)
                         AS usage_missing_request_count,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(uncached_input_tokens), 0) END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_read_tokens), 0) END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_write_tokens), 0) END
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
@@ -511,17 +514,20 @@ impl BudgetRepository for LibsqlStore {
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)
                         AS usage_missing_request_count,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(uncached_input_tokens), 0) END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_read_tokens), 0) END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_write_tokens), 0) END
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
@@ -544,17 +550,20 @@ impl BudgetRepository for LibsqlStore {
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)
                         AS usage_missing_request_count,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(uncached_input_tokens), 0) END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_read_tokens), 0) END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_write_tokens), 0) END
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
@@ -847,6 +856,146 @@ impl BudgetRepository for LibsqlStore {
         Ok(output)
     }
 
+    async fn list_usage_owner_token_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<SpendOwnerTokenDailyRecord>, StoreError> {
+        let owner_kind_filter = owner_kind.map(|kind| kind.as_str().to_string());
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT * FROM (
+                    SELECT
+                        (u.occurred_at / 86400) * 86400 AS day_start,
+                        'user' AS owner_kind,
+                        u.user_id AS owner_id,
+                        users.name AS owner_name,
+                        COUNT(*),
+                        COALESCE(SUM(u.prompt_tokens), 0),
+                        COALESCE(SUM(u.completion_tokens), 0),
+                        COALESCE(SUM(u.uncached_input_tokens), 0),
+                        COALESCE(SUM(u.cache_read_tokens), 0),
+                        COALESCE(SUM(u.cache_write_tokens), 0)
+                    FROM usage_cost_events u
+                    INNER JOIN users ON users.user_id = u.user_id
+                    WHERE u.occurred_at >= ?1
+                      AND u.occurred_at < ?2
+                      AND (?3 IS NULL OR ?3 = 'user')
+                      AND (?4 IS NULL OR u.user_id = ?4)
+                    GROUP BY day_start, u.user_id, users.name
+                    UNION ALL
+                    SELECT
+                        (u.occurred_at / 86400) * 86400 AS day_start,
+                        'service_account' AS owner_kind,
+                        u.service_account_id AS owner_id,
+                        service_accounts.service_account_name AS owner_name,
+                        COUNT(*),
+                        COALESCE(SUM(u.prompt_tokens), 0),
+                        COALESCE(SUM(u.completion_tokens), 0),
+                        COALESCE(SUM(u.uncached_input_tokens), 0),
+                        COALESCE(SUM(u.cache_read_tokens), 0),
+                        COALESCE(SUM(u.cache_write_tokens), 0)
+                    FROM usage_cost_events u
+                    INNER JOIN service_accounts
+                        ON service_accounts.service_account_id = u.service_account_id
+                    WHERE u.occurred_at >= ?1
+                      AND u.occurred_at < ?2
+                      AND (?3 IS NULL OR ?3 = 'service_account')
+                      AND (?4 IS NULL OR u.user_id = ?4)
+                    GROUP BY day_start, u.service_account_id, service_accounts.service_account_name
+                )
+                ORDER BY day_start ASC, owner_kind ASC, owner_id ASC
+                "#,
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    owner_kind_filter,
+                    owner_user_filter,
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut output = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let day_start: i64 = row.get(0).map_err(to_query_error)?;
+            let owner_kind: String = row.get(1).map_err(to_query_error)?;
+            let owner_id: String = row.get(2).map_err(to_query_error)?;
+            output.push(SpendOwnerTokenDailyRecord {
+                day_start: unix_to_datetime(day_start)?,
+                owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
+                    StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
+                })?,
+                owner_id: parse_uuid(&owner_id)?,
+                owner_name: row.get(3).map_err(to_query_error)?,
+                tokens: token_usage_buckets_from_row(&row, 4)?,
+            });
+        }
+        Ok(output)
+    }
+
+    async fn list_usage_model_token_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<SpendModelTokenDailyRecord>, StoreError> {
+        let owner_kind_filter = owner_kind.map(|kind| kind.as_str().to_string());
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT
+                    (u.occurred_at / 86400) * 86400 AS day_start,
+                    COALESCE(g.model_key, u.upstream_model) AS model_key,
+                    COUNT(*),
+                    COALESCE(SUM(u.prompt_tokens), 0),
+                    COALESCE(SUM(u.completion_tokens), 0),
+                    COALESCE(SUM(u.uncached_input_tokens), 0),
+                    COALESCE(SUM(u.cache_read_tokens), 0),
+                    COALESCE(SUM(u.cache_write_tokens), 0)
+                FROM usage_cost_events u
+                LEFT JOIN gateway_models g ON g.id = u.model_id
+                WHERE u.occurred_at >= ?1
+                  AND u.occurred_at < ?2
+                  AND (
+                    ?3 IS NULL
+                    OR (?3 = 'user' AND u.user_id IS NOT NULL)
+                    OR (?3 = 'service_account' AND u.service_account_id IS NOT NULL)
+                  )
+                  AND (?4 IS NULL OR u.user_id = ?4)
+                GROUP BY day_start, COALESCE(g.model_key, u.upstream_model)
+                ORDER BY day_start ASC, model_key ASC
+                "#,
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    owner_kind_filter,
+                    owner_user_filter,
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut output = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let day_start: i64 = row.get(0).map_err(to_query_error)?;
+            output.push(SpendModelTokenDailyRecord {
+                day_start: unix_to_datetime(day_start)?,
+                model_key: row.get(1).map_err(to_query_error)?,
+                tokens: token_usage_buckets_from_row(&row, 2)?,
+            });
+        }
+        Ok(output)
+    }
+
     async fn get_cache_usage_aggregate(
         &self,
         window_start: OffsetDateTime,
@@ -861,17 +1010,20 @@ impl BudgetRepository for LibsqlStore {
             .query(
                 r#"
                 SELECT
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(uncached_input_tokens), 0) END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_read_tokens), 0) END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_write_tokens), 0) END
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
@@ -1496,4 +1648,19 @@ async fn sum_usage_cost_for_budget_scope(
 
     let sum_10000: i64 = row.get(0).map_err(to_query_error)?;
     Ok(Money4::from_scaled(sum_10000))
+}
+
+/// Reads the six token columns emitted by the spend token-series queries, starting at `offset`.
+fn token_usage_buckets_from_row(
+    row: &libsql::Row,
+    offset: i32,
+) -> Result<TokenUsageBuckets, StoreError> {
+    Ok(TokenUsageBuckets {
+        request_count: row.get(offset).map_err(to_query_error)?,
+        input_tokens: row.get(offset + 1).map_err(to_query_error)?,
+        output_tokens: row.get(offset + 2).map_err(to_query_error)?,
+        uncached_input_tokens: row.get(offset + 3).map_err(to_query_error)?,
+        cache_read_tokens: row.get(offset + 4).map_err(to_query_error)?,
+        cache_write_tokens: row.get(offset + 5).map_err(to_query_error)?,
+    })
 }
