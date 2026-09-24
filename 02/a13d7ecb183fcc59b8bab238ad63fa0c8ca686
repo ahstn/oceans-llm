@@ -1,0 +1,14 @@
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  h_2f452a9c375069 228-235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02a13d7ecb183fcc59b8bab238ad63fa0c8ca686",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
