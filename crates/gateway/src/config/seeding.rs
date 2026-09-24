@@ -90,6 +90,35 @@ impl GatewayConfig {
                         secrets,
                     });
                 }
+                ProviderConfig::TypeSafe(provider) => {
+                    if let Some(auth) = &provider.auth
+                        && let Some(token) = &auth.token
+                    {
+                        validate_env_reference_if_needed(token)?;
+                    }
+
+                    let config = json!({
+                        "base_url": provider.base_url,
+                        "pricing_provider_id": provider.pricing_provider_id,
+                        "default_headers": provider.default_headers,
+                        "timeouts": provider.timeouts,
+                        "display": provider.display,
+                    });
+
+                    let secrets = provider.auth.as_ref().map(|auth| {
+                        json!({
+                            "kind": auth.kind,
+                            "token": auth.token,
+                        })
+                    });
+
+                    providers.push(SeedProvider {
+                        provider_key: provider.id.clone(),
+                        provider_type: "typesafe".to_string(),
+                        config,
+                        secrets,
+                    });
+                }
                 ProviderConfig::GcpCloudRunOpenAiCompat(provider) => {
                     match &provider.auth {
                         GcpCloudRunOpenAiCompatAuthConfig::Adc => {}

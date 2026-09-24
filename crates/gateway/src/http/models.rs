@@ -176,6 +176,7 @@ fn map_model_summary(model: AdminModelSummary, include_allowlist: bool) -> Admin
                 updated_at: format_timestamp(score.updated_at),
             })
             .collect(),
+        supports_decisions: model.supports_decisions,
         client_configurations: model
             .client_configurations
             .into_iter()

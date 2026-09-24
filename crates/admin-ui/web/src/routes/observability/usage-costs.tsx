@@ -31,6 +31,10 @@ import {
   totalRequests,
   useSpendReport,
 } from './-usage-costs/shared'
+import { BarListEmpty, BarListRow, BarListSkeleton } from './-usage-costs/bar-list'
+import { CHART_SKELETON, NoTokens, OwnerCacheList } from './-usage-costs/token-cards'
+import { ModelShareBarChart } from './-usage-costs/token-charts'
+import { modelTokenChart, ownerCacheRows } from './-usage-costs/token-series'
 
 export const Route = createFileRoute('/observability/usage-costs')({
   loader: () => getUsageCosts(),
@@ -39,6 +43,9 @@ export const Route = createFileRoute('/observability/usage-costs')({
 
 /** Breakdown cards show the top spenders only; the FOCUS export carries the full list. */
 const BREAKDOWN_LIMIT = 10
+
+/** Breakdown-row cards span the row's header and content tracks so their content aligns. */
+const ROW_CARD_CLASS = 'min-w-0 xl:row-span-2 xl:grid xl:grid-rows-subgrid'
 
 const CHART_CONFIG: ChartConfig = {
   cost: { label: 'Priced spend', color: 'var(--chart-3)' },
@@ -134,6 +141,8 @@ export function UsageCostsPage() {
       point.priced_cost_usd_10000 > (peak?.priced_cost_usd_10000 ?? 0) ? point : peak,
     null,
   )
+  const cacheRows = ownerCacheRows(report)
+  const modelChart = modelTokenChart(report)
   const avgDaily =
     report.window_days > 0 ? report.totals.priced_cost_usd_10000 / report.window_days : 0
 
@@ -225,27 +234,33 @@ export function UsageCostsPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      {/*
+        Column widths are fr shares of the space left after gaps: 60/40 then 40/60. Cards in a row
+        share header and content tracks via subgrid, so content lines up however the copy wraps.
+      */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:grid-rows-[auto_1fr]">
+        <Card className={ROW_CARD_CLASS}>
+          <CardHeader>
+            <CardTitle>Model mix</CardTitle>
+            <CardDescription>
+              Each day&apos;s token share by model, to spot migrations regardless of volume.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isPending ? (
+              CHART_SKELETON
+            ) : modelChart.keys.length === 0 ? (
+              <NoTokens />
+            ) : (
+              <Suspense fallback={CHART_SKELETON}>
+                <ModelShareBarChart chart={modelChart} />
+              </Suspense>
+            )}
+          </CardContent>
+        </Card>
         <ShareTable
-          title="Owner breakdown"
-          description={
-            isPlatformAdmin
-              ? 'Spend by user and service account ownership scopes.'
-              : 'Spend attributed to your user account.'
-          }
-          emptyMessage="No owner spend in this window."
-          total={report.totals.priced_cost_usd_10000}
-          pending={isPending}
-          rows={report.owners.map((owner) => ({
-            key: `${owner.owner_kind}:${owner.owner_id}`,
-            label: owner.owner_name,
-            cost: owner.priced_cost_usd_10000,
-            gaps: owner.unpriced_request_count + owner.usage_missing_request_count,
-          }))}
-        />
-        <ShareTable
-          title="Model breakdown"
-          description="Priced spend and pricing gaps by canonical model key."
+          title="Spend by model"
+          description="Share of priced spend for the top models."
           emptyMessage="No model spend in this window."
           total={report.totals.priced_cost_usd_10000}
           pending={isPending}
@@ -257,6 +272,43 @@ export function UsageCostsPage() {
             gaps: model.unpriced_request_count + model.usage_missing_request_count,
           }))}
         />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:grid-rows-[auto_1fr]">
+        <ShareTable
+          title="Spend by owner"
+          description={
+            isPlatformAdmin
+              ? 'Share of priced spend for the top users and service accounts.'
+              : 'Share of priced spend for your account.'
+          }
+          emptyMessage="No owner spend in this window."
+          total={report.totals.priced_cost_usd_10000}
+          pending={isPending}
+          rows={report.owners.map((owner) => ({
+            key: `${owner.owner_kind}:${owner.owner_id}`,
+            label: owner.owner_name,
+            cost: owner.priced_cost_usd_10000,
+            gaps: owner.unpriced_request_count + owner.usage_missing_request_count,
+          }))}
+        />
+        <Card className={ROW_CARD_CLASS}>
+          <CardHeader>
+            <CardTitle>Cache efficiency by owner</CardTitle>
+            <CardDescription>
+              Share of input served from cache for the top owners by tokens.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isPending ? (
+              <BarListSkeleton />
+            ) : cacheRows.length === 0 ? (
+              <BarListEmpty>No token usage in this window.</BarListEmpty>
+            ) : (
+              <OwnerCacheList rows={cacheRows} />
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
@@ -342,42 +394,34 @@ function ShareTable({
   const sorted = [...rows].sort((a, b) => b.cost - a.cost).slice(0, BREAKDOWN_LIMIT)
   const max = sorted[0]?.cost ?? 0
   return (
-    <Card>
+    <Card className={ROW_CARD_CLASS}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
         {pending ? (
-          <div className="flex flex-col gap-2">
-            {['a', 'b', 'c', 'd'].map((row) => (
-              <Skeleton key={row} className="h-9 w-full rounded-md" />
-            ))}
-          </div>
+          <BarListSkeleton />
         ) : sorted.length === 0 ? (
-          <p className="text-muted-foreground py-6 text-center text-sm">{emptyMessage}</p>
+          <BarListEmpty>{emptyMessage}</BarListEmpty>
         ) : (
           <ol className="flex flex-col gap-1">
             {sorted.map((row) => (
-              <li key={row.key} className="flex flex-col gap-1.5 py-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className={row.mono ? 'truncate font-mono text-sm' : 'truncate text-sm'}>
-                      {row.label}
-                    </span>
-                    {row.gaps > 0 ? (
-                      <Badge variant="warning">{formatCount(row.gaps)} gaps</Badge>
-                    ) : null}
-                  </div>
-                  <div className="flex shrink-0 items-baseline gap-2">
-                    <span className="text-muted-foreground text-xs tabular-nums">
-                      {formatShare(row.cost, total)}
-                    </span>
-                    <span className="text-sm font-medium tabular-nums">{formatUsd(row.cost)}</span>
-                  </div>
-                </div>
-                <Progress value={max > 0 ? (row.cost / max) * 100 : 0} aria-hidden="true" />
-              </li>
+              <BarListRow
+                key={row.key}
+                label={row.label}
+                mono={row.mono}
+                badge={
+                  row.gaps > 0 ? (
+                    <Badge variant="warning">
+                      {formatCount(row.gaps)} {row.gaps === 1 ? 'gap' : 'gaps'}
+                    </Badge>
+                  ) : undefined
+                }
+                detail={formatShare(row.cost, total)}
+                value={formatUsd(row.cost)}
+                progress={max > 0 ? (row.cost / max) * 100 : 0}
+              />
             ))}
           </ol>
         )}

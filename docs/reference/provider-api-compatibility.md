@@ -15,9 +15,10 @@ The gateway currently exposes:
 - `POST /messages`
 - `POST /v1/responses`
 - `POST /v1/embeddings`
+- `POST /v1/decisions`
 - `POST /api/v1/batches`
 
-The Responses API is a first-class API family. It is not translated through Chat Completions.
+The Responses and Decisions APIs are first-class API families. Neither is translated through Chat Completions.
 
 ## API-Family Matrix
 
@@ -26,6 +27,7 @@ The Responses API is a first-class API family. It is not translated through Chat
 | OpenAI Chat Completions | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Route-level `openai_compat` profile can declare request-shape quirks and streaming usage support. |
 | OpenAI Responses API | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Uses a distinct typed request/core/provider boundary and preserves Responses event-stream semantics. |
 | OpenAI Embeddings | Supported for `openai_compat` providers and native Vertex text-embedding routes | `crates/gateway-providers/src/openai_compat.rs`, `crates/gateway-providers/src/vertex/embeddings.rs` | OpenAI-compatible providers receive the OpenAI-shaped request. Vertex text embeddings use a provider-specific `:predict` mapper with explicit local validation. |
+| System One Decisions | Supported for native TypeSafe and OpenRouter | `crates/gateway-providers/src/typesafe.rs`, `crates/gateway-providers/src/openai_compat/decisions.rs` | Uses one typed contract with provider-specific paths: `/v1/systemone` for TypeSafe and `/api/alpha/decisions` for OpenRouter. |
 | Anthropic Messages | Supported for `/v1/messages` and `/messages` through the chat execution boundary | `crates/gateway/src/http/handlers.rs`, `crates/gateway-providers/src/anthropic_compat.rs`, `crates/gateway-providers/src/vertex/anthropic_request.rs` | Accepts Anthropic Messages request shape and returns Anthropic Messages response/SSE for chat-capable routes such as Anthropic-on-Vertex and `anthropic_compat` providers. |
 | Durable batches | Supported for providers with a configured batch adapter | `crates/gateway/src/http/batches.rs` and provider-specific batch adapters | The outer `endpoint` selects Chat Completions, Responses, or Embeddings. Chat and Responses item bodies use the same model effort policy as synchronous requests and are validated before persistence. |
 | Google Generative AI | Not implemented as a direct API-key provider path | Follow-up issue | Vertex Google transport exists; direct Google native API needs separate auth, request, and stream mapping. |
@@ -35,14 +37,14 @@ The Responses API is a first-class API family. It is not translated through Chat
 
 This matrix is about current execution support, not provider marketing claims.
 
-| Provider type | `/v1/chat/completions` | `/v1/responses` | `/v1/embeddings` |
-| --- | --- | --- | --- |
-| `openai_compat` | Supported. Chat Completions route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses request/provider path. Chat Completions profile transforms do not apply. | Supported. No route compatibility transforms apply in this slice. |
-| `gcp_cloud_run_openai_compat` | Supported through the OpenAI-compatible adapter with Cloud Run ID-token auth. | Supported when the deployed service exposes an OpenAI-compatible Responses endpoint. Chat Completions profile transforms do not apply. | Supported when the deployed service exposes an OpenAI-compatible embeddings endpoint. |
-| `anthropic_compat` | Supported. Translates Chat Completions to native Anthropic `/v1/messages`, handling JSON and SSE streaming, tool calls, and thinking. | Not implemented; keep route `responses: false`. | Not implemented; keep route `embeddings: false`. |
-| `gcp_vertex` with `google/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. Tested Gemini models support function tools. The gateway maps remote `gs://` and public HTTPS image, video, and generic-file inputs to Vertex `fileData`; signed URL queries pass to Vertex unchanged and are sanitized in retained request logs. This PR's deterministic tests cover gateway serialization and response normalization, not a live Vertex remote-media request. | Not implemented; keep route `responses: false`. | Supported only for explicit text-embedding routes using `google/gemini-embedding-001`, `google/gemini-embedding-2`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002` with `embeddings: true`. Google chat and multimodal routes should keep `embeddings: false`. |
-| `gcp_vertex` with `anthropic/*` upstream models | Supported for Chat Completions and Anthropic Messages when route capabilities allow it. Tool use is supported for text/tool workflows. | Not implemented; keep route `responses: false`. | Not applicable. |
-| `aws_bedrock` | Supported through explicit `compatibility.aws_bedrock.api_style`: Runtime Converse, Runtime Anthropic InvokeModel, Runtime OpenAI Chat, Mantle OpenAI Chat, or Mantle Anthropic Messages. Streaming uses the configured style's stream contract. | Supported for `api_style: mantle_openai_responses` with an OpenAI base path such as `/openai/v1`. This is the Bedrock-supported Responses subset, not full direct-OpenAI hosted-tool parity. | Not implemented; keep route `embeddings: false`. |
+| Provider type | Chat Completions | Responses | Embeddings | Decisions |
+| --- | --- | --- | --- | --- |
+| `openai_compat` | Supported. Route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses path. | Supported. | Supported only for OpenRouter routes with `compatibility.openrouter.api: decisions`. |
+| `gcp_cloud_run_openai_compat` | Supported with Cloud Run ID-token auth. | Supported when the service exposes Responses. | Supported when the service exposes embeddings. | Not enabled by route validation. |
+| `anthropic_compat` | Supported through native Anthropic Messages translation. | Not implemented. | Not implemented. | Not implemented. |
+| `gcp_vertex` | Supported for configured Google and Anthropic publisher routes. | Not implemented. | Supported for explicit supported Google text-embedding routes. | Not implemented. |
+| `aws_bedrock` | Supported through the configured Bedrock API style. | Supported for `mantle_openai_responses`. | Not implemented. | Not implemented. |
+| `typesafe` | Not implemented. | Not implemented. | Not implemented. | Supported through native `/v1/systemone`. |
 
 Route capability flags are still useful when a provider implementation does not support a public API family. They make failures happen at the gateway edge instead of later inside the provider adapter.
 
@@ -99,6 +101,21 @@ models:
 `api_style` values are `runtime_converse`, `runtime_anthropic_invoke`, `runtime_openai_chat`, `mantle_openai_responses`, `mantle_openai_chat`, and `mantle_anthropic_messages`. OpenAI-shaped styles require `openai_base_path`. Only `mantle_openai_responses` routes can enable `responses` and `json_schema`; those routes must disable `chat_completions`.
 
 Runtime Converse compatibility also accepts optional `supports_strict_tools`. When absent, transparent model IDs use model-family detection; set it explicitly for opaque application-inference-profile IDs or ARNs so Claude Opus 4.7/4.8 routes omit the unsupported `strict` field while supported models retain it.
+
+## Decisions API
+
+The public `POST /v1/decisions` request mirrors the TypeSafe System One shape. It carries `model`, `state`, and a map of typed `questions`. The gateway preserves the typed body, replaces the public model with the selected upstream model, applies route `extra_body`, and validates that every requested question receives an answer with the same type.
+
+Provider routing is explicit:
+
+| Route | Upstream path | Upstream model example |
+| --- | --- | --- |
+| Native `typesafe` | `/v1/systemone` | `jev-latest` |
+| OpenRouter `openai_compat` with `compatibility.openrouter.api: decisions` | `/api/alpha/decisions` | `typesafe/jev-1.13` |
+
+The shared adapter default is `/v1/decisions` for future compatible providers. Current config validation enables Decisions only for the two routes above.
+
+OpenRouter provider policy remains optional for Decisions. When configured, Oceans sends it as the upstream `provider` object. Native TypeSafe does not receive OpenRouter policy.
 
 ## Effective Capabilities
 

@@ -14,6 +14,7 @@ The gateway exposes these authenticated endpoints:
 | `POST /v1/chat/completions` | OpenAI Chat Completions | `chat_completions: true` |
 | `POST /v1/responses` | OpenAI Responses | `responses: true` |
 | `POST /v1/embeddings` | OpenAI Embeddings | `embeddings: true` |
+| `POST /v1/decisions` | System One Decisions | `decisions: true` |
 | `POST /v1/messages` | Anthropic Messages | Chat-capable route with provider support |
 | `POST /messages` | Anthropic Messages compatibility alias | Chat-capable route with provider support |
 | `POST /api/v1/batches` | Durable batch admission for Chat Completions, Responses, or Embeddings items | Capability matching the batch `endpoint` |
@@ -205,6 +206,7 @@ Capabilities remove incompatible routes before provider execution:
 | `chat_completions` | `/v1/chat/completions` or a compatible chat path |
 | `responses` | `/v1/responses` |
 | `embeddings` | `/v1/embeddings` |
+| `decisions` | `/v1/decisions` |
 | `stream` | Streaming output |
 | `tools` | Function, custom, MCP, or other supported tools |
 | `vision` | Image or supported multimodal input |
@@ -212,6 +214,8 @@ Capabilities remove incompatible routes before provider execution:
 | `developer_role` | A developer-role message |
 
 Effective support is the intersection of configured capability metadata and provider runtime support. Capability defaults are permissive, so partial provider routes should explicitly disable unsupported families and features.
+
+`decisions` defaults to `false`. A decisions route must explicitly enable it and disable `chat_completions`, `responses`, `embeddings`, and `stream`. Current Decisions transports are native TypeSafe and OpenRouter routes with `compatibility.openrouter.api: decisions`.
 
 For example, an embedding-only route should normally disable unrelated capabilities:
 
@@ -278,6 +282,14 @@ Messages support still depends on the selected provider and route. Disable unsup
 ### Responses
 
 `POST /v1/responses` requires the `responses` capability and invokes the provider's Responses implementation. Streaming preserves `response.*` event names rather than converting them into Chat Completions chunks. Usage is normalized from Responses token fields.
+
+### Decisions
+
+`POST /v1/decisions` accepts a `state` value and named `noul`, `choice`, or `score` questions. It is a first-class API family and is not translated through Chat Completions or Responses.
+
+Oceans sends OpenRouter routes to `/api/alpha/decisions`, native TypeSafe routes to `/v1/systemone`, and reserves `/v1/decisions` as the default upstream path for future compatible adapters. Decisions routes are non-streaming and skip prompt and model-response guardrails. They still use gateway authentication, model grants, budgets, request logs, provider attempts, and usage accounting.
+
+See [TypeSafe](../providers/typesafe.md) for the request shape and route examples.
 
 ### Batch admission
 

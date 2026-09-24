@@ -259,6 +259,39 @@ describe('RequestLogsPage', () => {
     expect(screen.getByText(/"output": "pong"/)).toBeInTheDocument()
   })
 
+  it('labels decisions request-log operations explicitly', async () => {
+    const decisionsItem: RequestLogView = {
+      ...items[0],
+      model_key: 'jev',
+      resolved_model_key: 'jev',
+      provider_key: 'openrouter',
+      metadata: { operation: 'decisions', stream: false },
+    }
+    routeMock.useLoaderData.mockReturnValue({ data: { items: [decisionsItem], total: 1 } })
+    getObservabilityRequestLogDetailMock.mockResolvedValue({
+      data: {
+        log: decisionsItem,
+        user_agent_raw: null,
+        payload: null,
+        attempts: [],
+      },
+    })
+
+    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
+
+    render(<RequestLogsPage />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('dialog').length).toBeGreaterThan(0)
+    })
+
+    const dialogs = screen.getAllByRole('dialog')
+    const dialog = dialogs[dialogs.length - 1]
+    expect(within(dialog).getByText('Operation')).toBeInTheDocument()
+    expect(within(dialog).getByText('Decisions')).toBeInTheDocument()
+  })
+
   it('renders the summary-only no-payload state in detail', async () => {
     const summaryOnlyItem = {
       ...items[0],

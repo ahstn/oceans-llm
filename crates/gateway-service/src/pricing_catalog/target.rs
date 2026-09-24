@@ -73,9 +73,11 @@ pub(crate) fn catalog_pricing_supported_for_route(
 
 fn catalog_identity_for_route(provider: &ProviderConnection, route: &ModelRoute) -> PricingTarget {
     match provider.provider_type.as_str() {
-        "openai_compat" | "gcp_cloud_run_openai_compat" | "github_copilot" | "anthropic_compat" => {
-            openai_compatible_pricing_target(provider, route)
-        }
+        "openai_compat"
+        | "gcp_cloud_run_openai_compat"
+        | "github_copilot"
+        | "anthropic_compat"
+        | "typesafe" => openai_compatible_pricing_target(provider, route),
         "gcp_vertex" => vertex_catalog_target(route),
         "aws_bedrock" => PricingTarget::Exact {
             pricing_provider_id: AMAZON_BEDROCK_PRICING_PROVIDER_ID.to_string(),

@@ -9,6 +9,7 @@ pub struct RequestRequirements {
     pub responses: bool,
     pub stream: bool,
     pub embeddings: bool,
+    pub decisions: bool,
     pub tools: bool,
     pub vision: bool,
     pub json_schema: bool,
@@ -30,6 +31,9 @@ impl RequestRequirements {
         }
         if self.embeddings {
             names.push("embeddings");
+        }
+        if self.decisions {
+            names.push("decisions");
         }
         if self.tools {
             names.push("tools");
@@ -93,6 +97,7 @@ impl ChatRequest {
             responses: false,
             stream: self.stream,
             embeddings: false,
+            decisions: false,
             tools: self
                 .extra
                 .get("tools")
@@ -195,6 +200,7 @@ impl EmbeddingsRequest {
             responses: false,
             stream: false,
             embeddings: true,
+            decisions: false,
             tools: false,
             vision: false,
             json_schema: false,
@@ -231,6 +237,7 @@ impl ResponsesRequest {
             responses: true,
             stream: self.stream,
             embeddings: false,
+            decisions: false,
             tools: self
                 .tools
                 .as_ref()
@@ -252,6 +259,128 @@ fn value_is_present_for_capability(value: &Value) -> bool {
         Value::Object(items) => !items.is_empty(),
         _ => true,
     }
+}
+
+/// Maximum number of options in a Decisions `choice` question.
+pub const DECISIONS_CHOICE_MAX_OPTIONS: usize = 255;
+/// Minimum number of levels in a Decisions `score` question.
+pub const DECISIONS_SCORE_MIN_LEVELS: usize = 2;
+/// Maximum number of levels in a Decisions `score` question.
+pub const DECISIONS_SCORE_MAX_LEVELS: usize = 10;
+
+/// Canonical Decisions request: one `state` evaluated against named typed questions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DecisionsRequest {
+    pub model: String,
+    pub state: Value,
+    #[serde(default)]
+    pub questions: BTreeMap<String, DecisionQuestion>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+impl DecisionsRequest {
+    #[must_use]
+    pub const fn requirements(&self) -> RequestRequirements {
+        let _ = self;
+        RequestRequirements {
+            chat_completions: false,
+            responses: false,
+            stream: false,
+            embeddings: false,
+            decisions: true,
+            tools: false,
+            vision: false,
+            json_schema: false,
+            developer_role: false,
+        }
+    }
+
+    /// Gateway-edge validation for the Decisions family contract.
+    #[must_use]
+    pub fn validation_error(&self) -> Option<String> {
+        if self.model.trim().is_empty() {
+            return Some("decisions request `model` cannot be empty".to_string());
+        }
+        if self.questions.is_empty() {
+            return Some("decisions request `questions` cannot be empty".to_string());
+        }
+        self.questions
+            .iter()
+            .find_map(|(id, question)| question.validation_error(id))
+    }
+}
+
+/// One typed Decisions question. `instructions` stays a free-form value so
+/// string, object, and array shapes all pass through unchanged.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum DecisionQuestion {
+    Noul {
+        instructions: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        criteria: Option<NoulCriteria>,
+    },
+    Choice {
+        instructions: Value,
+        criteria: BTreeMap<String, Option<Value>>,
+    },
+    Score {
+        instructions: Value,
+        criteria: Vec<Value>,
+    },
+}
+
+impl DecisionQuestion {
+    /// Wire discriminant used by provider alpha shape checks.
+    #[must_use]
+    pub const fn answer_type(&self) -> &'static str {
+        match self {
+            Self::Noul { .. } => "noul",
+            Self::Choice { .. } => "choice",
+            Self::Score { .. } => "score",
+        }
+    }
+
+    fn validation_error(&self, id: &str) -> Option<String> {
+        match self {
+            Self::Noul { .. } => None,
+            Self::Choice { criteria, .. } => {
+                if criteria.is_empty() {
+                    return Some(format!(
+                        "decisions question `{id}` choice criteria cannot be empty"
+                    ));
+                }
+                if criteria.len() > DECISIONS_CHOICE_MAX_OPTIONS {
+                    return Some(format!(
+                        "decisions question `{id}` has {} choice options, maximum is {DECISIONS_CHOICE_MAX_OPTIONS}",
+                        criteria.len()
+                    ));
+                }
+                None
+            }
+            Self::Score { criteria, .. } => {
+                if criteria.len() < DECISIONS_SCORE_MIN_LEVELS
+                    || criteria.len() > DECISIONS_SCORE_MAX_LEVELS
+                {
+                    return Some(format!(
+                        "decisions question `{id}` has {} score levels, expected {DECISIONS_SCORE_MIN_LEVELS}..={DECISIONS_SCORE_MAX_LEVELS}",
+                        criteria.len()
+                    ));
+                }
+                None
+            }
+        }
+    }
+}
+
+/// Optional yes/no rubric descriptions for a `noul` question.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct NoulCriteria {
+    #[serde(rename = "true", default, skip_serializing_if = "Option::is_none")]
+    pub yes: Option<Value>,
+    #[serde(rename = "false", default, skip_serializing_if = "Option::is_none")]
+    pub no: Option<Value>,
 }
 
 fn responses_text_requires_json_schema(value: &Value) -> bool {
@@ -355,7 +484,7 @@ mod tests {
 
     use serde_json::{Value, json};
 
-    use super::{ChatMessage, ChatRequest, EmbeddingsRequest};
+    use super::{ChatMessage, ChatRequest, DecisionQuestion, DecisionsRequest, EmbeddingsRequest};
 
     #[test]
     fn chat_request_requirements_reflect_request_shape() {
@@ -511,5 +640,85 @@ mod tests {
         assert!(requirements.developer_role);
         assert!(!requirements.chat_completions);
         assert!(!requirements.embeddings);
+    }
+
+    #[test]
+    fn decisions_request_requires_decisions_capability() {
+        let request = DecisionsRequest {
+            model: "jev".to_string(),
+            state: json!("Help! My payouts have been failing for 3 days."),
+            questions: BTreeMap::from([(
+                "is_urgent".to_string(),
+                DecisionQuestion::Noul {
+                    instructions: json!("Does this convey urgency?"),
+                    criteria: None,
+                },
+            )]),
+            extra: BTreeMap::new(),
+        };
+
+        let requirements = request.requirements();
+        assert!(requirements.decisions);
+        assert!(!requirements.chat_completions);
+        assert!(!requirements.responses);
+        assert!(!requirements.stream);
+        assert!(!requirements.embeddings);
+        assert_eq!(requirements.required_capability_names(), vec!["decisions"]);
+        assert_eq!(request.validation_error(), None);
+    }
+
+    #[test]
+    fn decisions_request_rejects_empty_questions_and_bad_shapes() {
+        let empty = DecisionsRequest {
+            model: "jev".to_string(),
+            state: json!("state"),
+            questions: BTreeMap::new(),
+            extra: BTreeMap::new(),
+        };
+        assert!(empty.validation_error().is_some());
+
+        let empty_choice = DecisionsRequest {
+            model: "jev".to_string(),
+            state: json!("state"),
+            questions: BTreeMap::from([(
+                "department".to_string(),
+                DecisionQuestion::Choice {
+                    instructions: json!("Which team?"),
+                    criteria: BTreeMap::new(),
+                },
+            )]),
+            extra: BTreeMap::new(),
+        };
+        assert!(empty_choice.validation_error().is_some());
+
+        let short_score = DecisionsRequest {
+            model: "jev".to_string(),
+            state: json!("state"),
+            questions: BTreeMap::from([(
+                "frustration".to_string(),
+                DecisionQuestion::Score {
+                    instructions: json!("How frustrated?"),
+                    criteria: vec![json!("Calm")],
+                },
+            )]),
+            extra: BTreeMap::new(),
+        };
+        assert!(short_score.validation_error().is_some());
+
+        let oversized_choice = DecisionsRequest {
+            model: "jev".to_string(),
+            state: json!("state"),
+            questions: BTreeMap::from([(
+                "department".to_string(),
+                DecisionQuestion::Choice {
+                    instructions: json!("Which team?"),
+                    criteria: (0..=super::DECISIONS_CHOICE_MAX_OPTIONS)
+                        .map(|index| (format!("option-{index}"), None))
+                        .collect(),
+                },
+            )]),
+            extra: BTreeMap::new(),
+        };
+        assert!(oversized_choice.validation_error().is_some());
     }
 }

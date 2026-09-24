@@ -33,4 +33,12 @@ describe('BrandIcon', () => {
     expect(container.querySelector('img')).not.toBeInTheDocument()
     expect(container.firstElementChild).toHaveAttribute('title', 'OpenRouter')
   })
+
+  it('renders inline svg icons like typesafe', () => {
+    const { container } = render(<BrandIcon iconKey="typesafe" title="TypeSafe" />)
+
+    expect(container.querySelector('svg')).toBeInTheDocument()
+    expect(container.querySelector('img')).not.toBeInTheDocument()
+    expect(container.firstElementChild).toHaveAttribute('title', 'TypeSafe')
+  })
 })

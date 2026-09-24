@@ -908,6 +908,35 @@ pub struct CacheUsageAggregateRecord {
     pub cache_write_tokens: Option<i64>,
 }
 
+/// Token volumes for one grouping key over one UTC day. Cache buckets only sum events whose
+/// provider reported a cache split, so `input_tokens` can exceed their total; the difference is
+/// input with no cache breakdown.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct TokenUsageBuckets {
+    pub request_count: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub uncached_input_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpendOwnerTokenDailyRecord {
+    pub day_start: OffsetDateTime,
+    pub owner_kind: ApiKeyOwnerKind,
+    pub owner_id: Uuid,
+    pub owner_name: String,
+    pub tokens: TokenUsageBuckets,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpendModelTokenDailyRecord {
+    pub day_start: OffsetDateTime,
+    pub model_key: String,
+    pub tokens: TokenUsageBuckets,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FocusExportAggregateRecord {
     pub day_start: OffsetDateTime,
@@ -2446,6 +2475,8 @@ pub struct ProviderCapabilities {
     pub stream: bool,
     #[serde(default = "default_true")]
     pub embeddings: bool,
+    #[serde(default)]
+    pub decisions: bool,
     #[serde(default = "default_true")]
     pub tools: bool,
     #[serde(default = "default_true")]
@@ -2464,6 +2495,7 @@ impl ProviderCapabilities {
             responses: false,
             stream: false,
             embeddings: false,
+            decisions: false,
             tools: false,
             vision: false,
             json_schema: false,
@@ -2499,6 +2531,7 @@ impl ProviderCapabilities {
             responses: false,
             stream,
             embeddings,
+            decisions: false,
             tools,
             vision,
             json_schema,
@@ -2518,6 +2551,7 @@ impl ProviderCapabilities {
             responses: true,
             stream: true,
             embeddings: true,
+            decisions: false,
             tools: true,
             vision: true,
             json_schema: true,
@@ -2532,6 +2566,7 @@ impl ProviderCapabilities {
             responses: true,
             stream: true,
             embeddings: true,
+            decisions: true,
             tools: true,
             vision: true,
             json_schema: true,
@@ -2546,6 +2581,7 @@ impl ProviderCapabilities {
             responses: self.responses && other.responses,
             stream: self.stream && other.stream,
             embeddings: self.embeddings && other.embeddings,
+            decisions: self.decisions && other.decisions,
             tools: self.tools && other.tools,
             vision: self.vision && other.vision,
             json_schema: self.json_schema && other.json_schema,
@@ -2592,6 +2628,7 @@ pub const fn vertex_text_embedding_capabilities() -> ProviderCapabilities {
         responses: false,
         stream: false,
         embeddings: true,
+        decisions: false,
         tools: false,
         vision: false,
         json_schema: false,
@@ -2636,6 +2673,7 @@ pub fn github_copilot_route_capabilities(
         responses: compatibility.supports_responses,
         stream: supports_inference && upstream_supports.streaming,
         embeddings: compatibility.supports_embeddings,
+        decisions: false,
         tools: supports_inference && upstream_supports.tool_calls,
         vision: supports_inference && upstream_supports.vision,
         json_schema: upstream_supports.structured_outputs
@@ -2698,7 +2736,27 @@ pub enum GitHubCopilotChatApi {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct OpenRouterRouteCompatibility {
+    #[serde(default)]
     pub provider: OpenRouterProviderRouting,
+    #[serde(default)]
+    pub api: OpenRouterRouteApi,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenRouterRouteApi {
+    /// Default OpenAI-compatible Chat/Responses/Embeddings transport.
+    #[default]
+    OpenAiCompat,
+    /// OpenRouter alpha Decisions transport (`POST /api/alpha/decisions`).
+    Decisions,
+}
+
+impl OpenRouterRouteApi {
+    #[must_use]
+    pub const fn is_decisions(self) -> bool {
+        matches!(self, Self::Decisions)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -2716,6 +2774,18 @@ pub struct OpenRouterProviderRouting {
     pub preferred_max_latency: Option<OpenRouterPercentilePreference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_price: Option<OpenRouterMaxPrice>,
+}
+
+impl OpenRouterProviderRouting {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.zdr.is_none()
+            && self.only.is_empty()
+            && self.ignore.is_empty()
+            && self.order.is_empty()
+            && self.preferred_max_latency.is_none()
+            && self.max_price.is_none()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

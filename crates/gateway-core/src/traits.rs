@@ -42,15 +42,16 @@ use crate::{
         RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord,
         ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord,
         ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ServiceAccountRecord,
-        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
-        TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
-        UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
-        UpsertMcpToolGrantRecord, UpsertMcpUpstreamCredentialBindingRecord,
-        UpsertProviderUserCredentialRecord, UpsertReviewAgentPullRequestRecord,
-        UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
+        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendModelTokenDailyRecord,
+        SpendOwnerAggregateRecord, SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord,
+        UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
+        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
+        UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord,
+        UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
-    protocol::core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
+    protocol::core::{ChatRequest, DecisionsRequest, EmbeddingsRequest, ResponsesRequest},
 };
 
 #[async_trait]
@@ -509,6 +510,32 @@ pub trait BudgetRepository: Send + Sync {
         let _ = (window_start, window_end, owner_kind, owner_user_id);
         Err(StoreError::Unexpected(
             "list_usage_model_aggregates is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn list_usage_owner_token_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<crate::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<SpendOwnerTokenDailyRecord>, StoreError> {
+        let _ = (window_start, window_end, owner_kind, owner_user_id);
+        Err(StoreError::Unexpected(
+            "list_usage_owner_token_daily_aggregates is not implemented for this repository"
+                .to_string(),
+        ))
+    }
+    async fn list_usage_model_token_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<crate::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<SpendModelTokenDailyRecord>, StoreError> {
+        let _ = (window_start, window_end, owner_kind, owner_user_id);
+        Err(StoreError::Unexpected(
+            "list_usage_model_token_daily_aggregates is not implemented for this repository"
+                .to_string(),
         ))
     }
     async fn get_cache_usage_aggregate(
@@ -1269,6 +1296,18 @@ pub trait ProviderClient: Send + Sync {
         request: &ResponsesRequest,
         context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError>;
+
+    async fn decisions(
+        &self,
+        request: &DecisionsRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        let _ = (request, context);
+        Err(ProviderError::NotImplemented(format!(
+            "{} does not support decisions",
+            self.provider_type()
+        )))
+    }
 }
 
 #[derive(Default, Clone)]

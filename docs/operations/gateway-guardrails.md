@@ -17,6 +17,8 @@ Supported phases are:
 - `mcp_result`: before an MCP result reaches the caller.
 - `harness_pre_tool`: before Pi or OpenCode starts a local shell process.
 
+`POST /v1/decisions` does not run prompt or model-response guardrails. Decisions bodies use typed `state`, `questions`, and `answers` rather than the chat and generated-tool shapes owned by the current inference guardrail adapters. Authentication, access, budgets, request logs, and provider attempts still apply.
+
 A guarded stream is buffered up to `stream_buffer_bytes`. The gateway releases no guarded bytes before the final decision. Streams for disabled policies keep their normal streaming behavior.
 
 A guarded MCP result is buffered for at most `stream_buffer_timeout_ms` (default `120000`, maximum `600000`). An upstream MCP tool that holds its event stream open past that bound is answered with `504` and a JSON-RPC guardrail error instead of holding the caller connection open.

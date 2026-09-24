@@ -403,6 +403,28 @@ models:
       - provider: openrouter
         upstream_model: qwen/qwen3.6-27b
 
+  - id: jev
+    description: TypeSafe Jev decisions through OpenRouter alpha transport
+    routes:
+      - provider: openrouter
+        upstream_model: typesafe/jev-1.13
+        pricing_override:
+          input_usd_per_million_tokens: "0.0420"
+          output_usd_per_million_tokens: "0.0000"
+        capabilities:
+          chat_completions: false
+          responses: false
+          stream: false
+          embeddings: false
+          decisions: true
+          tools: false
+          vision: false
+          json_schema: false
+          developer_role: false
+        compatibility:
+          openrouter:
+            api: decisions
+
   - id: claude-sonnet
     description: Claude on Vertex
     routes:

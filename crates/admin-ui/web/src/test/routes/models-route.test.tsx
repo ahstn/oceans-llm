@@ -144,6 +144,7 @@ const modelPage: ModelPageView = {
           updated_at: '2026-09-24T00:00:00Z',
         },
       ],
+      supports_decisions: true,
       tags: ['fast', 'cheap'],
       allowlist: null,
       status: 'healthy',
@@ -171,6 +172,7 @@ const modelPage: ModelPageView = {
       supports_structured_output: true,
       supports_attachments: false,
       benchmark_scores: [],
+      supports_decisions: false,
       tags: ['anthropic', 'reasoning'],
       allowlist: {
         users: ['alice@example.com', 'bob@example.com'],
@@ -266,6 +268,7 @@ const modelPage: ModelPageView = {
       supports_structured_output: true,
       supports_attachments: true,
       benchmark_scores: [],
+      supports_decisions: false,
       tags: ['fast', 'fallback'],
       allowlist: null,
       status: 'degraded',
@@ -590,6 +593,29 @@ describe('ModelsPage table content', () => {
       'href',
       'https://openrouter.ai/',
     )
+  })
+
+  it('renders a Decisions badge only for decisions-capable models', () => {
+    const claude = modelPage.items[1]
+    expect(claude).toBeDefined()
+    const page: ModelPageView = {
+      ...modelPage,
+      items: [
+        { ...(modelPage.items[0] as ModelPageView['items'][number]) },
+        { ...(claude as ModelPageView['items'][number]), supports_decisions: true },
+      ],
+    }
+    routeMock.useLoaderData.mockReturnValue({ data: page })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const mobileList = screen.getByTestId('models-mobile-list')
+    const decisionsBadges = within(mobileList).getAllByText('Decisions')
+    expect(decisionsBadges.length).toBeGreaterThan(0)
   })
 })
 

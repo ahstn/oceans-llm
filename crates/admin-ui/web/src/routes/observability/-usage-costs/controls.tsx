@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { Download01Icon, RefreshIcon } from '@hugeicons/core-free-icons'
 
+import { AppIcon } from '@/components/icons/app-icon'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -79,7 +79,7 @@ export function ReportFilters({
           onValueChange={(value) => onOwnerKindChange(value as SpendOwnerKind)}
           disabled={isPending}
         >
-          <SelectTrigger size="sm" className="w-[150px]" aria-label="Owner filter">
+          <SelectTrigger size="sm" className="w-[150px] text-[0.8rem]" aria-label="Owner filter">
             <SelectValue placeholder="Owner" />
           </SelectTrigger>
           <SelectContent>
@@ -93,13 +93,14 @@ export function ReportFilters({
       ) : null}
       <Button
         type="button"
-        variant="ghost"
-        size="icon-sm"
+        variant="outline"
+        size="sm"
+        className="gap-2"
         onClick={onRefresh}
         disabled={isPending}
-        aria-label={isPending ? 'Refreshing' : 'Refresh'}
       >
-        <HugeiconsIcon icon={RefreshIcon} className={isPending ? 'animate-spin' : undefined} />
+        <AppIcon icon={RefreshIcon} size={14} stroke={1.5} data-icon="inline-start" />
+        {isPending ? 'Refreshing...' : 'Refresh'}
       </Button>
     </div>
   )
@@ -121,8 +122,8 @@ export function ExportMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant={variant} size="sm">
-          <HugeiconsIcon icon={Download01Icon} data-icon="inline-start" />
+        <Button type="button" variant={variant} size="sm" className="gap-2">
+          <AppIcon icon={Download01Icon} size={14} stroke={1.5} data-icon="inline-start" />
           Export FOCUS CSV
         </Button>
       </DropdownMenuTrigger>

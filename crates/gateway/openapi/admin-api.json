@@ -6149,6 +6149,12 @@
               "null"
             ]
           },
+          "supports_decisions": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "supports_streaming": {
             "type": [
               "boolean",
@@ -12056,7 +12062,9 @@
               "totals",
               "daily",
               "owners",
-              "models"
+              "models",
+              "owner_token_series",
+              "model_token_series"
             ],
             "properties": {
               "daily": {
@@ -12064,6 +12072,13 @@
                 "items": {
                   "$ref": "#/components/schemas/SpendDailyPointView"
                 }
+              },
+              "model_token_series": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SpendModelTokenSeriesView"
+                },
+                "description": "Daily token volumes for the heaviest models; the remainder is folded into one `is_other` series."
               },
               "models": {
                 "type": "array",
@@ -12073,6 +12088,13 @@
               },
               "owner_kind": {
                 "type": "string"
+              },
+              "owner_token_series": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SpendOwnerTokenSeriesView"
+                },
+                "description": "Daily token volumes for the heaviest owners by total tokens, zero-filled across the window."
               },
               "owners": {
                 "type": "array",
@@ -13813,6 +13835,7 @@
           "openai",
           "openrouter",
           "qwen",
+          "typesafe",
           "vertexai"
         ]
       },
@@ -13902,6 +13925,7 @@
           "aws",
           "openai",
           "openrouter",
+          "typesafe",
           "vertexai"
         ]
       },
@@ -15324,6 +15348,28 @@
           }
         }
       },
+      "SpendModelTokenSeriesView": {
+        "type": "object",
+        "required": [
+          "model_key",
+          "is_other",
+          "points"
+        ],
+        "properties": {
+          "is_other": {
+            "type": "boolean"
+          },
+          "model_key": {
+            "type": "string"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpendTokenPointView"
+            }
+          }
+        }
+      },
       "SpendOwnerBreakdownView": {
         "type": "object",
         "required": [
@@ -15363,6 +15409,32 @@
           }
         }
       },
+      "SpendOwnerTokenSeriesView": {
+        "type": "object",
+        "required": [
+          "owner_kind",
+          "owner_id",
+          "owner_name",
+          "points"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string"
+          },
+          "owner_kind": {
+            "type": "string"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpendTokenPointView"
+            }
+          }
+        }
+      },
       "SpendReportView": {
         "type": "object",
         "required": [
@@ -15373,7 +15445,9 @@
           "totals",
           "daily",
           "owners",
-          "models"
+          "models",
+          "owner_token_series",
+          "model_token_series"
         ],
         "properties": {
           "daily": {
@@ -15381,6 +15455,13 @@
             "items": {
               "$ref": "#/components/schemas/SpendDailyPointView"
             }
+          },
+          "model_token_series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpendModelTokenSeriesView"
+            },
+            "description": "Daily token volumes for the heaviest models; the remainder is folded into one `is_other` series."
           },
           "models": {
             "type": "array",
@@ -15390,6 +15471,13 @@
           },
           "owner_kind": {
             "type": "string"
+          },
+          "owner_token_series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpendOwnerTokenSeriesView"
+            },
+            "description": "Daily token volumes for the heaviest owners by total tokens, zero-filled across the window."
           },
           "owners": {
             "type": "array",
@@ -15410,6 +15498,48 @@
           },
           "window_start": {
             "type": "string"
+          }
+        }
+      },
+      "SpendTokenPointView": {
+        "type": "object",
+        "description": "One day of token volume. Cache buckets only cover events whose provider reported a cache split,\nso `input_tokens` can exceed `uncached_input_tokens + cache_read_tokens + cache_write_tokens`.",
+        "required": [
+          "day_start",
+          "request_count",
+          "input_tokens",
+          "output_tokens",
+          "uncached_input_tokens",
+          "cache_read_tokens",
+          "cache_write_tokens"
+        ],
+        "properties": {
+          "cache_read_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cache_write_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "day_start": {
+            "type": "string"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "uncached_input_tokens": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

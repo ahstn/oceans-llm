@@ -10,6 +10,7 @@ import {
   HomeIcon,
   LiveStreaming03Icon,
   RefreshIcon,
+  Target02Icon,
   ToolsIcon,
   Tick02Icon,
   VisionIcon,
@@ -1372,6 +1373,7 @@ function CapabilityBadges({ model }: { model: ModelView }) {
     model.supports_tool_calling ? { label: 'Tool Calling', icon: ToolsIcon } : null,
     model.supports_structured_output ? { label: 'Structured Output', icon: CodeIcon } : null,
     model.supports_attachments ? { label: 'Attachments', icon: AttachmentIcon } : null,
+    model.supports_decisions ? { label: 'Decisions', icon: Target02Icon } : null,
   ].filter(
     (
       value,

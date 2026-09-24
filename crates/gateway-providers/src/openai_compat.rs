@@ -2,20 +2,24 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use gateway_core::{
-    BatchCapabilities, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
-    OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField,
-    OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, ProviderBatchRequest,
-    ProviderBatchResult, ProviderBatchState, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, ProviderStream, core_chat_request_to_openai,
-    core_embeddings_request_to_openai, core_responses_request_to_openai,
+    BatchCapabilities, CoreChatRequest, CoreDecisionsRequest, CoreEmbeddingsRequest,
+    CoreResponsesRequest, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
+    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+    ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderCapabilities,
+    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    core_chat_request_to_openai, core_embeddings_request_to_openai,
+    core_responses_request_to_openai,
 };
 use serde_json::{Map, Value, json};
 
-use crate::http::{TracedResponse, execute_request, join_base_url, map_reqwest_error};
+use crate::http::{
+    TracedResponse, execute_json_request, execute_request, join_base_url, map_reqwest_error,
+};
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTokenSource};
 
 mod batch;
+mod decisions;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OpenAiBatchDialect {
@@ -73,6 +77,9 @@ pub struct OpenAiCompatConfig {
     pub default_headers: BTreeMap<String, String>,
     pub request_timeout_ms: u64,
     pub batch: OpenAiBatchConfig,
+    /// Full upstream Decisions URL override. Tests and future GA paths use
+    /// this; otherwise the adapter derives the OpenRouter alpha URL.
+    pub decisions_url: Option<String>,
 }
 
 impl OpenAiCompatConfig {
@@ -88,6 +95,7 @@ impl OpenAiCompatConfig {
             default_headers: BTreeMap::new(),
             request_timeout_ms: crate::DEFAULT_REQUEST_TIMEOUT_MS,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         }
     }
 
@@ -436,29 +444,17 @@ impl OpenAiCompatProvider {
         Ok(body)
     }
 
-    async fn execute_json_request(
+    pub(crate) async fn execute_json_request(
         &self,
         request: reqwest::Request,
     ) -> Result<Value, ProviderError> {
-        let response = execute_request(
+        execute_json_request(
             &self.client,
             request,
             &self.config.provider_type,
             &self.config.provider_key,
         )
         .await
-        .map_err(map_reqwest_error)?;
-        let status = response.status();
-        let text = response.text().await.map_err(map_reqwest_error)?;
-
-        if !status.is_success() {
-            return Err(ProviderError::UpstreamHttp {
-                status: status.as_u16(),
-                body: text,
-            });
-        }
-
-        serde_json::from_str(&text).map_err(|error| ProviderError::Transport(error.to_string()))
     }
 
     async fn execute_stream_request(
@@ -635,13 +631,16 @@ fn has_tool_history(body: &Map<String, Value>) -> bool {
             })
 }
 
-fn apply_openrouter_routing_policy(
+pub(super) fn apply_openrouter_routing_policy(
     body: &mut Value,
     context: &ProviderRequestContext,
 ) -> Result<(), ProviderError> {
     let Some(openrouter) = context.compatibility.openrouter.as_ref() else {
         return Ok(());
     };
+    if openrouter.provider.is_empty() {
+        return Ok(());
+    }
     let Some(object) = body.as_object_mut() else {
         return Ok(());
     };
@@ -817,6 +816,28 @@ impl ProviderClient for OpenAiCompatProvider {
             response.bytes_stream(),
         ))
     }
+
+    async fn decisions(
+        &self,
+        request: &CoreDecisionsRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        if !route_selects_decisions_api(context) && self.config.decisions_url.is_none() {
+            return Err(ProviderError::NotImplemented(format!(
+                "{} does not support decisions for this route",
+                self.provider_type()
+            )));
+        }
+        self.decisions_impl(request, context).await
+    }
+}
+
+fn route_selects_decisions_api(context: &ProviderRequestContext) -> bool {
+    context
+        .compatibility
+        .openrouter
+        .as_ref()
+        .is_some_and(|openrouter| openrouter.api.is_decisions())
 }
 
 fn is_event_stream_content_type(value: &str) -> bool {
@@ -864,6 +885,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider")
     }
@@ -890,7 +912,10 @@ mod tests {
     ) -> ProviderRequestContext {
         ProviderRequestContext {
             compatibility: RouteCompatibility {
-                openrouter: Some(OpenRouterRouteCompatibility { provider: routing }),
+                openrouter: Some(OpenRouterRouteCompatibility {
+                    provider: routing,
+                    api: Default::default(),
+                }),
                 ..Default::default()
             },
             ..default_context()
@@ -916,6 +941,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider")
     }
@@ -1153,6 +1179,7 @@ mod tests {
             default_headers,
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -1223,6 +1250,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -1381,6 +1409,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -1824,6 +1853,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -1890,6 +1920,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -1969,6 +2000,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -2036,6 +2068,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -2107,6 +2140,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -2177,6 +2211,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -2247,6 +2282,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -2312,6 +2348,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -2382,6 +2419,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -2448,6 +2486,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -2514,6 +2553,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 
@@ -2580,6 +2620,7 @@ mod tests {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
             batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
         })
         .expect("provider");
 

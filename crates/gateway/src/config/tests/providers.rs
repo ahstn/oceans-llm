@@ -695,3 +695,207 @@ fn validates_http_provider_urls_at_config_load() {
         }
     }
 }
+
+#[test]
+fn parses_typesafe_provider_config_into_seed_and_runtime() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: typesafe
+    type: typesafe
+    pricing_provider_id: openrouter
+    auth:
+      kind: bearer
+      token: literal.test_typesafe_key
+    display:
+      label: TypeSafe
+      icon_key: typesafe
+models:
+  - id: jev-native
+    routes:
+      - provider: typesafe
+        upstream_model: jev-latest
+        capabilities:
+          chat_completions: false
+          responses: false
+          stream: false
+          embeddings: false
+          decisions: true
+          tools: false
+          vision: false
+          json_schema: false
+          developer_role: false
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let runtime_configs = config
+        .typesafe_provider_configs()
+        .expect("typesafe runtime configs");
+    assert_eq!(runtime_configs.len(), 1);
+    assert_eq!(runtime_configs[0].provider_key, "typesafe");
+    assert_eq!(
+        runtime_configs[0].base_url,
+        gateway_providers::DEFAULT_TYPESAFE_BASE_URL
+    );
+    assert_eq!(
+        runtime_configs[0].bearer_token.as_deref(),
+        Some("test_typesafe_key")
+    );
+
+    let seed_providers = config.seed_providers().expect("seed providers");
+    assert_eq!(seed_providers[0].provider_key, "typesafe");
+    assert_eq!(seed_providers[0].provider_type, "typesafe");
+    let seed_models = config.seed_models().expect("seed models");
+    assert!(seed_models[0].routes[0].capabilities.decisions);
+}
+
+#[test]
+fn validates_typesafe_provider_base_url() {
+    for base_url in [
+        "https://api.typesafe.ai",
+        "https://api.typesafe.ai/v1/",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080/v1",
+        "http://[::1]:8080",
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n  - id: typesafe\n    type: typesafe\n    base_url: '{base_url}'\n    pricing_provider_id: openrouter\n"
+            ),
+        );
+        GatewayConfig::from_path(&config_path)
+            .unwrap_or_else(|error| panic!("rejected valid TypeSafe URL {base_url}: {error:#}"));
+    }
+
+    for (base_url, expected) in [
+        (
+            "http://api.typesafe.ai",
+            "base_url must use https unless the host is loopback",
+        ),
+        (
+            "https://api.typesafe.ai/custom",
+            "base_url path must be empty, `/`, or `/v1`",
+        ),
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n  - id: typesafe\n    type: typesafe\n    base_url: '{base_url}'\n    pricing_provider_id: openrouter\n"
+            ),
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "unexpected error for {base_url}: {error:#}"
+        );
+    }
+}
+
+#[test]
+fn rejects_typesafe_provider_with_unsupported_auth_kind() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: typesafe
+    type: typesafe
+    pricing_provider_id: openrouter
+    auth:
+      kind: x_api_key
+      token: literal.test_typesafe_key
+"#,
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}").contains("auth.kind must be `bearer`"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn rejects_openrouter_provider_with_unsupported_base_path() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v2
+    pricing_provider_id: openrouter
+"#,
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}").contains("OpenRouter base_url path must be `/api/v1`"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn rejects_typesafe_provider_without_pricing_provider_id() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: typesafe
+    type: typesafe
+models:
+  - id: jev-native
+    routes:
+      - provider: typesafe
+        upstream_model: jev-latest
+"#,
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}").contains("pricing_provider_id cannot be empty"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn rejects_typesafe_route_without_decisions_capability() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: typesafe
+    type: typesafe
+    pricing_provider_id: openrouter
+models:
+  - id: jev-native
+    routes:
+      - provider: typesafe
+        upstream_model: jev-latest
+"#,
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}").contains("must enable capabilities.decisions"),
+        "unexpected error: {error:#}"
+    );
+}

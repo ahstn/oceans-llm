@@ -4,7 +4,7 @@ use gateway_core::{ModelRoute, RouteError, RoutePlanner};
 use rand::{
     SeedableRng,
     distr::{Distribution, weighted::WeightedIndex},
-    rngs::StdRng,
+    rngs::{StdRng, SysRng},
 };
 
 pub struct WeightedRoutePlanner {
@@ -14,9 +14,11 @@ pub struct WeightedRoutePlanner {
 impl WeightedRoutePlanner {
     #[must_use]
     pub fn new() -> Self {
-        let mut rng = rand::rng();
         Self {
-            rng: Mutex::new(StdRng::from_rng(&mut rng)),
+            rng: Mutex::new(
+                StdRng::try_from_rng(&mut SysRng)
+                    .expect("operating system random number generator failed"),
+            ),
         }
     }
 

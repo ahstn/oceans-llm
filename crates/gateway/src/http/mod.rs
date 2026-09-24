@@ -58,6 +58,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/v1/chat/completions", post(v1_chat_completions))
         .route("/v1/responses", post(v1_responses))
         .route("/v1/embeddings", post(v1_embeddings))
+        .route("/v1/decisions", post(v1_decisions))
         .layer(DefaultBodyLimit::max(request_body::DEFAULT_MAX_BYTES))
         .layer(middleware::from_fn(request_body::observe_request_body));
 
