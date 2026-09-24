@@ -192,6 +192,33 @@ fn merge_is_a_no_op_when_nothing_changed() {
 }
 
 #[test]
+fn merge_refreshes_metadata_without_advancing_score_timestamp() {
+    let first = at("2026-09-01T00:00:00Z");
+    let later = at("2026-09-24T00:00:00Z");
+    let mut snapshot = empty_benchmark_snapshot(DEFAULT_BENCHMARK_SOURCE_URL, first);
+    merge_benchmark_models(
+        &mut snapshot,
+        vec![fetched("acme/model", indices(Some(40.0), None, None))],
+        DEFAULT_BENCHMARK_SOURCE_URL,
+        first,
+    );
+
+    let mut renamed = fetched("acme/model", indices(Some(40.0), None, None));
+    renamed.name = "Acme Renamed".to_string();
+    assert!(merge_benchmark_models(
+        &mut snapshot,
+        vec![renamed],
+        DEFAULT_BENCHMARK_SOURCE_URL,
+        later,
+    ));
+
+    let entry = &snapshot.models["acme/model"];
+    assert_eq!(entry.name, "Acme Renamed");
+    assert_eq!(entry.updated_at, first);
+    assert_eq!(snapshot.metadata.updated_at, later);
+}
+
+#[test]
 fn candidates_normalize_provider_model_ids() {
     let cases = [
         (

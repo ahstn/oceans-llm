@@ -321,18 +321,22 @@ pub fn merge_benchmark_models(
         };
         match snapshot.models.get_mut(&model.id) {
             Some(existing) => {
+                let indices = next
+                    .artificial_analysis
+                    .merged_over(existing.artificial_analysis);
+                // `updated_at` is shown as when the scores changed, so name or slug edits
+                // are refreshed without advancing it.
                 let merged = BenchmarkModelEntry {
-                    artificial_analysis: next
-                        .artificial_analysis
-                        .merged_over(existing.artificial_analysis),
-                    updated_at: existing.updated_at,
+                    artificial_analysis: indices,
+                    updated_at: if indices == existing.artificial_analysis {
+                        existing.updated_at
+                    } else {
+                        now
+                    },
                     ..next
                 };
                 if &merged != existing {
-                    *existing = BenchmarkModelEntry {
-                        updated_at: now,
-                        ..merged
-                    };
+                    *existing = merged;
                     changed = true;
                 }
             }
