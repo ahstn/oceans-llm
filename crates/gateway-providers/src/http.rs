@@ -350,15 +350,16 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn stream_timing_records_once_on_eof_error_or_drop() {
-        use std::sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        };
-        use tracing::instrument::WithSubscriber;
+        use std::cell::Cell;
         use tracing_subscriber::{Layer, layer::SubscriberExt};
 
-        #[derive(Clone)]
-        struct Records(Arc<AtomicUsize>);
+        // A scoped subscriber races with other tests registering callsites on their threads,
+        // which can leave the span disabled. Install one global subscriber instead and count
+        // per thread: this current-thread runtime records only this test's spans here.
+        thread_local! {
+            static ELAPSED_RECORDS: Cell<usize> = const { Cell::new(0) };
+        }
+        struct Records;
         impl<S: tracing::Subscriber> Layer<S> for Records {
             fn on_record(
                 &self,
@@ -366,21 +367,30 @@ pub(crate) mod tests {
                 values: &tracing::span::Record<'_>,
                 _: tracing_subscriber::layer::Context<'_, S>,
             ) {
-                struct Visitor<'a>(&'a AtomicUsize);
-                impl tracing::field::Visit for Visitor<'_> {
+                struct Visitor;
+                impl tracing::field::Visit for Visitor {
                     fn record_debug(
                         &mut self,
                         field: &tracing::field::Field,
                         _: &dyn std::fmt::Debug,
                     ) {
                         if field.name() == "gateway.upstream.elapsed_ms" {
-                            self.0.fetch_add(1, Ordering::SeqCst);
+                            ELAPSED_RECORDS.with(|count| count.set(count.get() + 1));
                         }
                     }
                 }
-                values.record(&mut Visitor(&self.0));
+                values.record(&mut Visitor);
             }
         }
+        static INSTALL: std::sync::Once = std::sync::Once::new();
+        INSTALL.call_once(|| {
+            tracing::subscriber::set_global_default(tracing_subscriber::registry().with(Records))
+                .unwrap();
+        });
+        fn take_records() -> usize {
+            ELAPSED_RECORDS.with(|count| count.replace(0))
+        }
+
         let app = axum::Router::new().route("/", axum::routing::get(|| async { "chunk" }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -388,32 +398,22 @@ pub(crate) mod tests {
             axum::serve(listener, app).await.unwrap();
         });
         for poll_count in [0, 1, 2] {
-            let records = Records(Arc::new(AtomicUsize::new(0)));
-            let subscriber = tracing_subscriber::registry().with(records.clone());
-            async {
-                let client = provider_http_client(1000).unwrap();
-                let request = client.get(format!("http://{address}/")).build().unwrap();
-                let mut stream = execute_request(&client, request, "test", "test")
-                    .await
-                    .unwrap()
-                    .bytes_stream();
-                for _ in 0..poll_count {
-                    let _ = stream.next().await;
-                }
-                drop(stream);
+            take_records();
+            let client = provider_http_client(1000).unwrap();
+            let request = client.get(format!("http://{address}/")).build().unwrap();
+            let mut stream = execute_request(&client, request, "test", "test")
+                .await
+                .unwrap()
+                .bytes_stream();
+            for _ in 0..poll_count {
+                let _ = stream.next().await;
             }
-            .with_subscriber(subscriber)
-            .await;
-            assert_eq!(records.0.load(Ordering::SeqCst), 1, "polls: {poll_count}");
+            drop(stream);
+            assert_eq!(take_records(), 1, "polls: {poll_count}");
         }
-        let records = Records(Arc::new(AtomicUsize::new(0)));
-        let subscriber = tracing_subscriber::registry().with(records.clone());
-        async {
-            let _ = timed_out_body_error().await;
-        }
-        .with_subscriber(subscriber)
-        .await;
-        assert_eq!(records.0.load(Ordering::SeqCst), 1, "timeout then drop");
+        take_records();
+        let _ = timed_out_body_error().await;
+        assert_eq!(take_records(), 1, "timeout then drop");
         server.abort();
     }
 
