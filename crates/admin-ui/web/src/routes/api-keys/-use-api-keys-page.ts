@@ -40,9 +40,12 @@ export function useApiKeysPageState({
   service_accounts,
   defaultOwnerUserId,
   focusedApiKeyId,
+  openCreateOnLoad = false,
 }: Pick<ApiKeysPayload, 'items' | 'users' | 'service_accounts'> & {
   defaultOwnerUserId?: string
   focusedApiKeyId?: string
+  /** Open the create dialog once on mount, e.g. when linked from the profile page. */
+  openCreateOnLoad?: boolean
 }) {
   const router = useRouter()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -53,6 +56,7 @@ export function useApiKeysPageState({
   const [revealedManageKey, setRevealedManageKey] = useState<string | null>(null)
   const [isMutating, setIsMutating] = useState(false)
   const handledFocusedApiKeyId = useRef<string | null>(null)
+  const handledOpenCreateOnLoad = useRef(false)
 
   const selectedOwnerLabel =
     form.owner_kind === 'user'
@@ -83,7 +87,7 @@ export function useApiKeysPageState({
     await router.invalidate()
   }
 
-  function openCreateDialog() {
+  const openCreateDialog = useCallback(() => {
     setForm({
       ...initialForm,
       owner_user_id: users.some((user) => user.id === defaultOwnerUserId)
@@ -91,7 +95,15 @@ export function useApiKeysPageState({
         : null,
     })
     setIsCreateOpen(true)
-  }
+  }, [defaultOwnerUserId, users])
+
+  useEffect(() => {
+    if (!openCreateOnLoad || handledOpenCreateOnLoad.current) {
+      return
+    }
+    handledOpenCreateOnLoad.current = true
+    openCreateDialog()
+  }, [openCreateDialog, openCreateOnLoad])
 
   function closeCreateDialog() {
     setForm(initialForm)

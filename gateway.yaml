@@ -146,6 +146,11 @@ users:
     membership:
       team: platform
       role: admin
+    budget:
+      cadence: weekly
+      amount_usd: "12.0000"
+      hard_limit: false
+      timezone: UTC
 
   - name: Ben Platform Analyst
     email: ben@platform.local

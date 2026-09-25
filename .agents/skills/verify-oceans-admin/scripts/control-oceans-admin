@@ -257,8 +257,9 @@ drive() {
     observability) driver="drive-observability.mjs" ;;
     backend-gateway) driver="drive-backend-gateway.mjs" ;;
     mcp) driver="drive-mcp.mjs" ;;
+    profile) driver="drive-profile.mjs" ;;
     *)
-      echo "Supported drive targets: models, observability, backend-gateway, mcp" >&2
+      echo "Supported drive targets: models, observability, backend-gateway, mcp, profile" >&2
       exit 2
       ;;
   esac

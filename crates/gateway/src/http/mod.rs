@@ -17,6 +17,7 @@ pub mod mcp_oauth;
 pub mod mcp_registry;
 pub mod models;
 pub mod observability;
+pub mod profile;
 pub mod provider_credentials;
 mod request_body;
 pub mod request_tags;
@@ -44,8 +45,8 @@ use tower_http::{
 
 use self::{
     api_keys::*, batches::*, guardrails::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*,
-    mcp_registry::*, models::*, observability::*, provider_credentials::*, review_agent::*,
-    spend::*, state::AppState,
+    mcp_registry::*, models::*, observability::*, profile::*, provider_credentials::*,
+    review_agent::*, spend::*, state::AppState,
 };
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
@@ -210,6 +211,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         )
         .route("/api/v1/admin/spend/focus.csv", get(get_admin_focus_export))
         .route("/api/v1/me/spend/focus.csv", get(get_my_focus_export))
+        .route("/api/v1/me/profile", get(get_my_profile))
         .route(
             "/api/v1/admin/spend/budgets",
             get(list_spend_budgets).put(upsert_budget),

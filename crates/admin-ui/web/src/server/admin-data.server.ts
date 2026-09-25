@@ -25,6 +25,7 @@ import type {
   DeactivateBudgetResultView,
   DeactivateBudgetInput,
   IdentityActionResult,
+  MyProfileView,
   IdentityDirectoryTeamsPayload,
   IdentityDirectoryUsersPayload,
   IdentityTeamsPayload,
@@ -227,6 +228,11 @@ export async function getSpendReport(params?: {
       },
     }),
   )
+}
+
+export async function getMyProfile(): Promise<ApiEnvelope<MyProfileView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/me/profile'))
 }
 
 export async function getUsageLeaderboard(params?: {

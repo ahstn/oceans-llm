@@ -831,7 +831,7 @@ function formatOwner(item: ApiKeyView) {
   return item.owner_name
 }
 
-function formatModelGrantSummary(item: ApiKeyView) {
+export function formatModelGrantSummary(item: ApiKeyView) {
   if (item.model_grant_mode === 'all') {
     return 'All models'
   }
@@ -839,7 +839,7 @@ function formatModelGrantSummary(item: ApiKeyView) {
   return item.model_keys.length > 0 ? item.model_keys.join(', ') : 'No models'
 }
 
-function maskApiKeyPrefix(prefix: string) {
+export function maskApiKeyPrefix(prefix: string) {
   return `${prefix.slice(0, 12)}****`
 }
 
@@ -847,7 +847,7 @@ function formatCreatedAt(value: string) {
   return formatUtcDate(value)
 }
 
-function formatLastUsedAt(value: string | null) {
+export function formatLastUsedAt(value: string | null) {
   return value ? formatUtcDateTime(value) : 'Never'
 }
 
