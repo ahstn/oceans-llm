@@ -14,8 +14,10 @@ import type { ApiKeysPayload } from '@/types/api'
 import { useApiKeysPageState } from './api-keys/-use-api-keys-page'
 
 export const Route = createFileRoute('/api-keys')({
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { api_key_id?: string; create?: true } => ({
     api_key_id: typeof search.api_key_id === 'string' ? search.api_key_id : undefined,
+    create:
+      search.create === true || search.create === 1 || search.create === '1' ? true : undefined,
   }),
   loader: () => getApiKeys(),
   component: ApiKeysPage,
@@ -36,9 +38,13 @@ export function ApiKeysPage() {
     items,
     users,
     service_accounts,
+    // Links from the profile page create a personal key, so default the owner to the viewer.
     defaultOwnerUserId:
-      session.permissions.group === 'platform_admins' ? undefined : session.user.id,
+      search.create || session.permissions.group !== 'platform_admins'
+        ? session.user.id
+        : undefined,
     focusedApiKeyId: canManage ? search.api_key_id : undefined,
+    openCreateOnLoad: canCreate && search.create === true,
   })
 
   return (

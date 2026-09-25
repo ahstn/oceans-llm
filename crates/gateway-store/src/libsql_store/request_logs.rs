@@ -3,8 +3,9 @@ use std::collections::BTreeMap;
 use super::*;
 use crate::shared::{datetime_to_unix_millis, parse_uuid, serialize_json, unix_to_datetime};
 use gateway_core::{
-    HarnessUsageBucketRecord, HarnessUsageLeaderRecord, MAX_REQUEST_LOG_PAGE_SIZE,
-    RequestLogPurgeResult, RequestTag, RequestTags, RequestToolCardinality,
+    HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
+    MAX_REQUEST_LOG_PAGE_SIZE, RequestLogPurgeResult, RequestTag, RequestTags,
+    RequestToolCardinality,
 };
 
 const REQUEST_LOG_PURGE_BATCH_SIZE: i64 = 1_000;
@@ -582,6 +583,55 @@ impl RequestLogRepository for LibsqlStore {
             });
         }
         Ok(buckets)
+    }
+
+    async fn list_user_harness_daily_usage(
+        &self,
+        window_start: time::OffsetDateTime,
+        window_end: time::OffsetDateTime,
+        user_id: Uuid,
+    ) -> Result<Vec<HarnessUsageDailyRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT (occurred_at / 86400) * 86400 AS day_start,
+                       agent_harness_key,
+                       MIN(agent_harness_label) AS agent_harness_label,
+                       COUNT(*) AS request_count,
+                       COALESCE(SUM(total_tokens), 0) AS total_tokens
+                FROM request_logs
+                WHERE occurred_at >= ?1
+                  AND occurred_at < ?2
+                  AND user_id = ?3
+                GROUP BY day_start, agent_harness_key
+                ORDER BY day_start ASC, agent_harness_key ASC
+                "#,
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    user_id.to_string()
+                ],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let mut days = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        {
+            let day_start: i64 = row.get(0).map_err(to_query_error)?;
+            days.push(HarnessUsageDailyRecord {
+                day_start: unix_to_datetime(day_start)?,
+                agent_harness_key: row.get(1).map_err(to_query_error)?,
+                agent_harness_label: row.get(2).map_err(to_query_error)?,
+                request_count: row.get(3).map_err(to_query_error)?,
+                total_tokens: row.get(4).map_err(to_query_error)?,
+            });
+        }
+        Ok(days)
     }
 
     async fn get_request_log_detail(

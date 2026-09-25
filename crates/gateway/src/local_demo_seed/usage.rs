@@ -1260,7 +1260,7 @@ pub(super) fn demo_cache_split(fixture: &LocalDemoRequestFixture) -> Option<(i64
 }
 
 /// FNV-1a, so demo splits stay identical across runs and platforms.
-fn demo_seed_hash(value: &str) -> u64 {
+pub(super) fn demo_seed_hash(value: &str) -> u64 {
     value.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
         (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
     })

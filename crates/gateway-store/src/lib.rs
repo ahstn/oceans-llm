@@ -4265,6 +4265,52 @@ pub(crate) mod tests {
         assert_eq!(harness_buckets.len(), 1);
         assert_eq!(harness_buckets[0].agent_harness_key, "opencode");
         assert_eq!(harness_buckets[0].request_count, 3);
+
+        let profile_user_id = store
+            .create_identity_user(
+                "Profile",
+                "profile@example.com",
+                "profile@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("create profile user")
+            .user_id;
+        store
+            .insert_request_log(
+                &RequestLogRecord {
+                    request_log_id: Uuid::new_v4(),
+                    request_id: "req-user-harness-day".to_string(),
+                    user_id: Some(profile_user_id),
+                    agent_harness_key: "codex".to_string(),
+                    agent_harness_label: "Codex".to_string(),
+                    total_tokens: Some(40),
+                    ..zero_counts_log.clone()
+                },
+                None,
+            )
+            .await
+            .expect("insert user-scoped request log");
+        let user_harness_days = store
+            .list_user_harness_daily_usage(
+                occurred_at - Duration::days(1),
+                occurred_at + Duration::days(1),
+                profile_user_id,
+            )
+            .await
+            .expect("user harness daily usage");
+        assert_eq!(user_harness_days.len(), 1);
+        assert_eq!(user_harness_days[0].agent_harness_key, "codex");
+        assert_eq!(user_harness_days[0].agent_harness_label, "Codex");
+        assert_eq!(user_harness_days[0].request_count, 1);
+        assert_eq!(user_harness_days[0].total_tokens, 40);
+        assert_eq!(
+            user_harness_days[0].day_start.unix_timestamp() % 86_400,
+            0,
+            "harness usage is bucketed by UTC day"
+        );
     }
 
     #[tokio::test]

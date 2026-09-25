@@ -26,12 +26,12 @@ use crate::{
         CacheUsageAggregateRecord, ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord,
         ExternalMcpToolRecord, FocusExportAggregateRecord, FocusExportDiagnosticsRecord,
         GatewayModel, GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
-        HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
-        McpAggregateSessionRecord, McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord,
-        McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
-        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-        McpToolInvocationRecord, McpToolTokenEstimateRecord, McpToolsetRecord,
-        McpToolsetToolRecord, McpUpstreamCredentialBindingRecord,
+        HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
+        McpAccessResolution, McpAggregateSessionRecord, McpCatalogAccessResolution,
+        McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
+        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
+        McpToolInvocationQuery, McpToolInvocationRecord, McpToolTokenEstimateRecord,
+        McpToolsetRecord, McpToolsetToolRecord, McpUpstreamCredentialBindingRecord,
         McpUpstreamCredentialOwnerScopeKind, ModelAllowlistPolicy, ModelPricingRecord,
         ModelPricingSyncChanges, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
         NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
@@ -724,6 +724,18 @@ pub trait RequestLogRepository: Send + Sync {
         Err(StoreError::Unexpected(
             "list_harness_usage_bucket_aggregates is not implemented for this repository"
                 .to_string(),
+        ))
+    }
+
+    async fn list_user_harness_daily_usage(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        user_id: Uuid,
+    ) -> Result<Vec<HarnessUsageDailyRecord>, StoreError> {
+        let _ = (window_start, window_end, user_id);
+        Err(StoreError::Unexpected(
+            "list_user_harness_daily_usage is not implemented for this repository".to_string(),
         ))
     }
 

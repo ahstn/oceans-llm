@@ -1007,6 +1007,16 @@ pub struct HarnessUsageBucketRecord {
     pub request_count: i64,
 }
 
+/// Per-day request volume for one user and one agent harness.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HarnessUsageDailyRecord {
+    pub day_start: OffsetDateTime,
+    pub agent_harness_key: String,
+    pub agent_harness_label: String,
+    pub request_count: i64,
+    pub total_tokens: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageLedgerRecord {
     pub usage_event_id: Uuid,

@@ -1284,6 +1284,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_my_profile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/spend/focus.csv": {
         parameters: {
             query?: never;
@@ -2953,6 +2969,17 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_MyProfileView: {
+            data: {
+                budget?: null | components["schemas"]["MyProfileBudgetView"];
+                days: components["schemas"]["MyProfileDayView"][];
+                harness_days: components["schemas"]["MyProfileHarnessDayView"][];
+                model_days: components["schemas"]["MyProfileModelDayView"][];
+                window_end: string;
+                window_start: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_Option_AuthSessionView: {
             data: null | {
                 capabilities: components["schemas"]["AuthSessionCapabilitiesView"];
@@ -3499,6 +3526,64 @@ export interface components {
         };
         /** @enum {string} */
         ModelIconKeyView: "anthropic" | "claude" | "deepseek" | "gemini" | "openai" | "openrouter" | "qwen" | "typesafe" | "vertexai";
+        MyProfileBudgetView: {
+            period_end: string;
+            /** @description Current budget period; spend resets at `period_end`. */
+            period_start: string;
+            settings: components["schemas"]["BudgetSettingsView"];
+            source: components["schemas"]["BudgetSourceView"];
+            /** Format: int64 */
+            spent_usd_10000: number;
+        };
+        /** @description Usage for one UTC day. `day` is an ISO date (`YYYY-MM-DD`). */
+        MyProfileDayView: {
+            /** Format: int64 */
+            cache_read_tokens: number;
+            /** Format: int64 */
+            cache_write_tokens: number;
+            /** Format: int64 */
+            cost_usd_10000: number;
+            day: string;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            request_count: number;
+            /** Format: int64 */
+            total_tokens: number;
+            /**
+             * Format: int64
+             * @description Input with a provider cache split that missed the cache; with the two cache buckets this
+             *     forms the cache hit-rate denominator.
+             */
+            uncached_input_tokens: number;
+        };
+        MyProfileHarnessDayView: {
+            day: string;
+            harness_key: string;
+            harness_label: string;
+            /** Format: int64 */
+            request_count: number;
+            /** Format: int64 */
+            total_tokens: number;
+        };
+        MyProfileModelDayView: {
+            day: string;
+            model_key: string;
+            /** Format: int64 */
+            request_count: number;
+            /** Format: int64 */
+            total_tokens: number;
+        };
+        MyProfileView: {
+            budget?: null | components["schemas"]["MyProfileBudgetView"];
+            days: components["schemas"]["MyProfileDayView"][];
+            harness_days: components["schemas"]["MyProfileHarnessDayView"][];
+            model_days: components["schemas"]["MyProfileModelDayView"][];
+            window_end: string;
+            window_start: string;
+        };
         /** @enum {string} */
         ObservabilityRangeQueryValue: "7d" | "31d";
         OpenAiErrorBodyView: {
@@ -6541,6 +6626,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    get_my_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_MyProfileView"];
                 };
             };
         };

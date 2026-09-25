@@ -1170,6 +1170,18 @@ impl RequestLogRepository for AnyStore {
         )
     }
 
+    async fn list_user_harness_daily_usage(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        user_id: Uuid,
+    ) -> Result<Vec<gateway_core::HarnessUsageDailyRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_user_harness_daily_usage(window_start, window_end, user_id)
+        )
+    }
+
     async fn purge_request_logs_older_than(
         &self,
         cutoff: time::OffsetDateTime,
