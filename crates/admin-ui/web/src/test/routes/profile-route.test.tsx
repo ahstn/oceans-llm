@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AuthSessionView } from '@/types/api'
 import { apiKey, profileView } from '@/test/profile-fixtures'
@@ -70,8 +70,13 @@ const FIVE_KEYS = ['a', 'b', 'c', 'd', 'e'].map((id) => apiKey(id))
 const load = async () => (await import('@/routes/profile/index')).ProfileOverviewPage
 
 describe('profile page', () => {
-  beforeEach(() => {
+  // Unmount after each test so no React work is still scheduled when the environment tears down.
+  afterEach(() => {
     cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  beforeEach(() => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
     routeMock.useLoaderData.mockReturnValue({ profile: profileView({ api_keys: FIVE_KEYS }) })
     routeMock.useRouteContext.mockReturnValue({ session: session() })
