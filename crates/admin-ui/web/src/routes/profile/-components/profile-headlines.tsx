@@ -76,37 +76,51 @@ function headlineItems({ totals, model, harness }: ProfileHeadlines) {
   ]
 }
 
-/** Four headline cards with an icon tile, as on Spend Controls. */
+/**
+ * Four headline cards with an icon tile, as on Spend Controls. `period` names the window they
+ * cover, since it differs from the budget period and the year-long activity beside them.
+ */
 export function HeadlineTiles({
   headlines,
+  period,
   className,
 }: {
   headlines: ProfileHeadlines
+  period: string
   className?: string
 }) {
   return (
-    <div data-testid="profile-headlines" className={cn('grid gap-3 sm:grid-cols-2', className)}>
-      {headlineItems(headlines).map((item) => (
-        <Card key={item.key} size="sm">
-          <CardContent className="flex items-start gap-3">
-            <IconTile variant="soft" size="sm">
-              {item.icon}
-            </IconTile>
-            <div className="flex min-w-0 flex-col">
-              <span className="text-muted-foreground text-xs">{item.label}</span>
-              <span
-                className={cn(
-                  'truncate text-lg font-semibold tabular-nums',
-                  item.mono && 'font-mono text-base leading-7',
-                )}
-              >
-                {item.value}
-              </span>
-              <span className="text-muted-foreground truncate text-xs">{item.detail}</span>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+    <section
+      data-testid="profile-headlines"
+      aria-label={`Usage, ${period.toLowerCase()}`}
+      className={cn('flex flex-col gap-2', className)}
+    >
+      <p data-testid="profile-headlines-period" className="text-muted-foreground text-xs">
+        {period}
+      </p>
+      <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:auto-rows-fr">
+        {headlineItems(headlines).map((item) => (
+          <Card key={item.key} size="sm">
+            <CardContent className="flex items-start gap-3">
+              <IconTile variant="soft" size="sm">
+                {item.icon}
+              </IconTile>
+              <div className="flex min-w-0 flex-col">
+                <span className="text-muted-foreground text-xs">{item.label}</span>
+                <span
+                  className={cn(
+                    'truncate text-lg font-semibold tabular-nums',
+                    item.mono && 'font-mono text-base leading-7',
+                  )}
+                >
+                  {item.value}
+                </span>
+                <span className="text-muted-foreground truncate text-xs">{item.detail}</span>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </section>
   )
 }

@@ -97,6 +97,7 @@ describe('profile page', () => {
     expect(headlines).toHaveTextContent('reasoning')
     expect(headlines).toHaveTextContent('Claude Code')
     expect(headlines).toHaveTextContent('Cache hit rate')
+    expect(screen.getByTestId('profile-headlines-period')).toHaveTextContent('Last 30 days')
   })
 
   it('pads the heatmap before the history window so days keep their weekday rows', async () => {

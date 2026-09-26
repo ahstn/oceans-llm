@@ -43,6 +43,9 @@ export const PROFILE_RANGES: { value: ProfileRange; label: string }[] = [
   { value: 365, label: '1 year' },
 ]
 
+/** Window the headline tiles summarise, shown beside them so it never has to be guessed. */
+export const HEADLINE_RANGE_DAYS = 30
+
 export function toProfileRange(value: string): ProfileRange {
   return value === '30' ? 30 : value === '90' ? 90 : 365
 }

@@ -20,6 +20,7 @@ import {
   harnessRequestsChart,
   modelRequestsChart,
   profileHeadlines,
+  HEADLINE_RANGE_DAYS,
   profileInRange,
   tokenVolumeChart,
   type ProfileRange,
@@ -50,7 +51,10 @@ export function ProfileOverviewPage() {
 
 export function ProfileOverview({ model, name }: { model: ProfilePageModel; name: string }) {
   const { profile, keys, links } = model
-  const headlines = useMemo(() => profileHeadlines(profileInRange(profile, 30)), [profile])
+  const headlines = useMemo(
+    () => profileHeadlines(profileInRange(profile, HEADLINE_RANGE_DAYS)),
+    [profile],
+  )
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
@@ -79,7 +83,11 @@ export function ProfileOverview({ model, name }: { model: ProfilePageModel; name
             {profile.budget ? <BudgetMeter budget={profile.budget} size="lg" /> : <NoBudget />}
           </CardContent>
         </Card>
-        <HeadlineTiles headlines={headlines} className="lg:col-span-2 lg:auto-rows-fr" />
+        <HeadlineTiles
+          headlines={headlines}
+          period={`Last ${HEADLINE_RANGE_DAYS} days`}
+          className="lg:col-span-2"
+        />
       </div>
 
       <Card>
