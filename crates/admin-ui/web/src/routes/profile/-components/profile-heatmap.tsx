@@ -65,6 +65,12 @@ export function UsageHeatmap({
     () => heatmap.weeks.flat().filter((cell): cell is HeatmapCell => cell !== null),
     [heatmap],
   )
+  // Days before the history window still take a slot so column flow keeps weekdays in their rows.
+  const leadingPads = useMemo(() => {
+    const flat = heatmap.weeks.flat()
+    const first = flat.findIndex((cell) => cell !== null)
+    return first > 0 ? flat.slice(0, first).map((_, slot) => `pad-${slot}`) : []
+  }, [heatmap])
   const cellsByDay = useMemo(() => new Map(cells.map((cell) => [cell.day, cell])), [cells])
 
   function handlePointerOver(event: PointerEvent<HTMLDivElement>) {
@@ -119,7 +125,10 @@ export function UsageHeatmap({
               onPointerOver={handlePointerOver}
               onPointerLeave={() => setHover(null)}
             >
-              {/* Only days after today are null, so trailing cells can be skipped in column flow. */}
+              {leadingPads.map((key) => (
+                <div key={key} aria-hidden data-pad="" className="aspect-square" />
+              ))}
+              {/* Trailing nulls are days after today, so column flow can simply stop early. */}
               {cells.map((cell) => (
                 <div
                   key={cell.day}

@@ -69,18 +69,21 @@ const FIVE_KEYS = ['a', 'b', 'c', 'd', 'e'].map((id) => apiKey(id))
 
 const load = async () => (await import('@/routes/profile/index')).ProfileOverviewPage
 
-describe('profile page', () => {
-  // Unmount after each test so no React work is still scheduled when the environment tears down.
-  afterEach(() => {
-    cleanup()
-    vi.unstubAllGlobals()
-  })
+// Unmount after each test so no React work is still scheduled when the environment tears down.
+function resetPage() {
+  cleanup()
+  vi.unstubAllGlobals()
+}
 
-  beforeEach(() => {
-    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
-    routeMock.useLoaderData.mockReturnValue({ profile: profileView({ api_keys: FIVE_KEYS }) })
-    routeMock.useRouteContext.mockReturnValue({ session: session() })
-  })
+function setUpPage() {
+  vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  routeMock.useLoaderData.mockReturnValue({ profile: profileView({ api_keys: FIVE_KEYS }) })
+  routeMock.useRouteContext.mockReturnValue({ session: session() })
+}
+
+describe('profile page', () => {
+  afterEach(resetPage)
+  beforeEach(setUpPage)
 
   it('shows budget used against the limit and the headline figures', async () => {
     const Page = await load()
@@ -95,6 +98,51 @@ describe('profile page', () => {
     expect(headlines).toHaveTextContent('Claude Code')
     expect(headlines).toHaveTextContent('Cache hit rate')
   })
+
+  it('pads the heatmap before the history window so days keep their weekday rows', async () => {
+    const Page = await load()
+    render(<Page />)
+
+    // History starts on Friday 2025-09-26, so Sunday to Thursday of the first column are padding.
+    const slots = [...screen.getByTestId('usage-heatmap').children]
+    expect(slots.slice(0, 5).every((slot) => slot.hasAttribute('data-pad'))).toBe(true)
+    expect(slots[5]).toHaveAttribute('data-day', '2025-09-26')
+  })
+
+  it('shows requests, tokens and cost for a hovered heatmap day', async () => {
+    const Page = await load()
+    render(<Page />)
+
+    const heatmap = screen.getByTestId('usage-heatmap')
+    const day = within(heatmap).getByRole('img', { name: /Fri, Sep 25, 2026/ })
+    expect(day).toHaveAttribute('data-level', '4')
+    fireEvent.pointerOver(day)
+
+    const tooltip = screen.getByTestId('heatmap-tooltip')
+    expect(tooltip).toHaveTextContent('Fri, Sep 25, 2026')
+    expect(tooltip).toHaveTextContent('Requests10')
+    expect(tooltip).toHaveTextContent('Total tokens9,000')
+    expect(tooltip).toHaveTextContent('Cost$2.50')
+
+    fireEvent.pointerLeave(heatmap)
+    expect(screen.queryByTestId('heatmap-tooltip')).toBeNull()
+  })
+
+  it('explains a missing budget instead of showing an empty meter', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      profile: profileView({ budget: null, api_keys: FIVE_KEYS }),
+    })
+    const Page = await load()
+    render(<Page />)
+
+    expect(screen.queryByTestId('budget-meter')).toBeNull()
+    expect(screen.getByTestId('no-budget')).toBeInTheDocument()
+  })
+})
+
+describe('profile page API keys', () => {
+  afterEach(resetPage)
+  beforeEach(setUpPage)
 
   it('links to the API keys page from the page header', async () => {
     const Page = await load()
@@ -182,35 +230,5 @@ describe('profile page', () => {
 
     expect(screen.queryByRole('link', { name: 'Create your first key' })).toBeNull()
     expect(screen.getByText(/Ask a platform admin/)).toBeInTheDocument()
-  })
-
-  it('shows requests, tokens and cost for a hovered heatmap day', async () => {
-    const Page = await load()
-    render(<Page />)
-
-    const heatmap = screen.getByTestId('usage-heatmap')
-    const day = within(heatmap).getByRole('img', { name: /Fri, Sep 25, 2026/ })
-    expect(day).toHaveAttribute('data-level', '4')
-    fireEvent.pointerOver(day)
-
-    const tooltip = screen.getByTestId('heatmap-tooltip')
-    expect(tooltip).toHaveTextContent('Fri, Sep 25, 2026')
-    expect(tooltip).toHaveTextContent('Requests10')
-    expect(tooltip).toHaveTextContent('Total tokens9,000')
-    expect(tooltip).toHaveTextContent('Cost$2.50')
-
-    fireEvent.pointerLeave(heatmap)
-    expect(screen.queryByTestId('heatmap-tooltip')).toBeNull()
-  })
-
-  it('explains a missing budget instead of showing an empty meter', async () => {
-    routeMock.useLoaderData.mockReturnValue({
-      profile: profileView({ budget: null, api_keys: FIVE_KEYS }),
-    })
-    const Page = await load()
-    render(<Page />)
-
-    expect(screen.queryByTestId('budget-meter')).toBeNull()
-    expect(screen.getByTestId('no-budget')).toBeInTheDocument()
   })
 })
