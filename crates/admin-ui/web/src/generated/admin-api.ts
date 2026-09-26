@@ -3600,6 +3600,9 @@ export interface components {
         };
         MyProfileModelDayView: {
             day: string;
+            /** @description Sums the day's models that no profile chart range ranks highly enough to show. */
+            is_other: boolean;
+            /** @description Empty on `is_other` rows. */
             model_key: string;
             /** Format: int64 */
             request_count: number;

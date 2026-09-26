@@ -1,6 +1,6 @@
 //! Self-scoped profile summary: the signed-in user's budget, personal API keys, and a year of
 //! usage.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use axum::{Json, extract::State, http::HeaderMap};
 use gateway_core::{
@@ -87,7 +87,10 @@ pub struct MyProfileApiKeyView {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MyProfileModelDayView {
     pub day: String,
+    /// Empty on `is_other` rows.
     pub model_key: String,
+    /// Sums the day's models that no profile chart range ranks highly enough to show.
+    pub is_other: bool,
     pub request_count: i64,
     pub total_tokens: i64,
 }
@@ -147,7 +150,7 @@ pub async fn get_my_profile(
         budget,
         api_keys: keys.iter().map(profile_api_key_view).collect(),
         days: build_day_views(&daily, &model_daily),
-        model_days: model_daily.iter().map(model_day_view).collect(),
+        model_days: model_day_views(&model_daily, window_end),
         harness_days: harness_daily.iter().map(harness_day_view).collect(),
     })))
 }
@@ -234,13 +237,65 @@ fn profile_api_key_view(key: &PersonalApiKey) -> MyProfileApiKeyView {
     }
 }
 
-fn model_day_view(row: &SpendModelTokenDailyRecord) -> MyProfileModelDayView {
-    MyProfileModelDayView {
-        day: row.day_start.date().to_string(),
-        model_key: row.model_key.clone(),
-        request_count: row.tokens.request_count,
-        total_tokens: row.tokens.input_tokens + row.tokens.output_tokens,
+/// Ranges, in days back from the window end, that the profile page ranks models over.
+const RANKED_RANGES_DAYS: [i64; 3] = [30, 90, PROFILE_HISTORY_DAYS];
+/// The page charts the top five models of a range; the rest of this margin absorbs differences
+/// in tie ordering.
+const KEPT_MODELS_PER_RANGE: usize = 10;
+
+/// Per-day model usage, bounded to the models the page can chart. The most used models of each
+/// ranked range are kept, and every other model is folded into one `is_other` row per day, so
+/// the response grows with days rather than days times models.
+fn model_day_views(
+    rows: &[SpendModelTokenDailyRecord],
+    window_end: OffsetDateTime,
+) -> Vec<MyProfileModelDayView> {
+    let mut kept = HashSet::new();
+    for range in RANKED_RANGES_DAYS {
+        let since = window_end - Duration::days(range);
+        let mut totals: HashMap<&str, i64> = HashMap::new();
+        for row in rows.iter().filter(|row| row.day_start >= since) {
+            *totals.entry(row.model_key.as_str()).or_default() += row.tokens.request_count;
+        }
+        let mut ranked: Vec<_> = totals.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+        kept.extend(
+            ranked
+                .into_iter()
+                .take(KEPT_MODELS_PER_RANGE)
+                .map(|(key, _)| key),
+        );
     }
+
+    let mut views = Vec::new();
+    let mut other: BTreeMap<String, MyProfileModelDayView> = BTreeMap::new();
+    for row in rows {
+        let day = row.day_start.date().to_string();
+        let total_tokens = row.tokens.input_tokens + row.tokens.output_tokens;
+        if kept.contains(row.model_key.as_str()) {
+            views.push(MyProfileModelDayView {
+                day,
+                model_key: row.model_key.clone(),
+                is_other: false,
+                request_count: row.tokens.request_count,
+                total_tokens,
+            });
+            continue;
+        }
+        let entry = other
+            .entry(day.clone())
+            .or_insert_with(|| MyProfileModelDayView {
+                day,
+                model_key: String::new(),
+                is_other: true,
+                request_count: 0,
+                total_tokens: 0,
+            });
+        entry.request_count += row.tokens.request_count;
+        entry.total_tokens += total_tokens;
+    }
+    views.extend(other.into_values());
+    views
 }
 
 fn harness_day_view(row: &HarnessUsageDailyRecord) -> MyProfileHarnessDayView {
@@ -321,6 +376,44 @@ mod tests {
         assert_eq!(views[0].usage_missing_request_count, 1);
         assert_eq!(views[1].day, "2026-09-25");
         assert_eq!(views[1].cost_usd_10000, 0);
+    }
+
+    #[test]
+    fn model_days_fold_models_no_range_ranks_highly() {
+        let window_end = datetime!(2026-09-26 00:00 UTC);
+        let recent = datetime!(2026-09-25 00:00 UTC);
+        let old = datetime!(2026-01-10 00:00 UTC);
+        let row = |day_start, model_key: String, requests| SpendModelTokenDailyRecord {
+            day_start,
+            model_key,
+            tokens: tokens(requests, requests * 10, requests, 0),
+        };
+        // Twelve heavy models last January, and one light model used only recently: the year
+        // ranks the heavy ones, and the 30-day range ranks the recent one.
+        let mut rows: Vec<_> = (0..12)
+            .map(|index| row(old, format!("old-{index:02}"), 100 - index))
+            .collect();
+        rows.push(row(recent, "recent".to_string(), 1));
+
+        let views = model_day_views(&rows, window_end);
+
+        let kept: Vec<_> = views
+            .iter()
+            .filter(|view| !view.is_other)
+            .map(|view| view.model_key.as_str())
+            .collect();
+        assert_eq!(kept.len(), KEPT_MODELS_PER_RANGE + 1);
+        assert!(kept.contains(&"recent"));
+        assert!(!kept.contains(&"old-10") && !kept.contains(&"old-11"));
+        let other: Vec<_> = views.iter().filter(|view| view.is_other).collect();
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].day, "2026-01-10");
+        assert_eq!(other[0].request_count, 90 + 89);
+        assert_eq!(other[0].total_tokens, (90 + 89) * 11);
+        assert_eq!(
+            views.iter().map(|view| view.request_count).sum::<i64>(),
+            rows.iter().map(|row| row.tokens.request_count).sum::<i64>()
+        );
     }
 
     #[tokio::test]

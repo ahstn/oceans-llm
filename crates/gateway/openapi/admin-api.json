@@ -14058,6 +14058,7 @@
         "required": [
           "day",
           "model_key",
+          "is_other",
           "request_count",
           "total_tokens"
         ],
@@ -14065,8 +14066,13 @@
           "day": {
             "type": "string"
           },
+          "is_other": {
+            "type": "boolean",
+            "description": "Sums the day's models that no profile chart range ranks highly enough to show."
+          },
           "model_key": {
-            "type": "string"
+            "type": "string",
+            "description": "Empty on `is_other` rows."
           },
           "request_count": {
             "type": "integer",

@@ -55,10 +55,34 @@ export function profileView(overrides: Partial<MyProfileView> = {}): MyProfileVi
       }),
     ],
     model_days: [
-      { day: '2026-09-23', model_key: 'fast', request_count: 2, total_tokens: 500 },
-      { day: '2026-09-24', model_key: 'fast', request_count: 1, total_tokens: 300 },
-      { day: '2026-09-24', model_key: 'reasoning', request_count: 3, total_tokens: 900 },
-      { day: '2026-09-25', model_key: 'reasoning', request_count: 10, total_tokens: 9_000 },
+      {
+        day: '2026-09-23',
+        model_key: 'fast',
+        is_other: false,
+        request_count: 2,
+        total_tokens: 500,
+      },
+      {
+        day: '2026-09-24',
+        model_key: 'fast',
+        is_other: false,
+        request_count: 1,
+        total_tokens: 300,
+      },
+      {
+        day: '2026-09-24',
+        model_key: 'reasoning',
+        is_other: false,
+        request_count: 3,
+        total_tokens: 900,
+      },
+      {
+        day: '2026-09-25',
+        model_key: 'reasoning',
+        is_other: false,
+        request_count: 10,
+        total_tokens: 9_000,
+      },
     ],
     harness_days: [
       {

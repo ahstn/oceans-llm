@@ -49,6 +49,23 @@ describe('profile data', () => {
     expect(rankModels(scoped.model_days).map((entry) => entry.key)).toEqual(['reasoning', 'fast'])
   })
 
+  it('charts server-folded models as Other without ranking them', () => {
+    const profile = profileView()
+    profile.model_days.push({
+      day: '2026-09-25',
+      model_key: '',
+      is_other: true,
+      request_count: 50,
+      total_tokens: 5_000,
+    })
+
+    expect(rankModels(profile.model_days).map((entry) => entry.key)).toEqual(['reasoning', 'fast'])
+    expect(profileHeadlines(profile).model?.share).toBeCloseTo(13 / 66)
+    const chart = modelRequestsChart(profile, 30)
+    expect(chart.keys.map((key) => key.label)).toEqual(['reasoning', 'fast', 'Other'])
+    expect(chart.rows.at(-1)).toMatchObject({ series_1: 10, series_other: 50 })
+  })
+
   it('zero-fills daily buckets and switches to weekly buckets for a year', () => {
     const daily = tokenVolumeChart(profileView(), 30)
     expect(daily.rows).toHaveLength(30)

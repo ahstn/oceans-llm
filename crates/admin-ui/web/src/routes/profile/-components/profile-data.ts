@@ -154,10 +154,16 @@ export type Preference = {
   share: number
 }
 
-type KeyedDay = { day: string; key: string; label: string; request_count: number }
+/** `other` rows carry usage the server folded out of the ranked keys; they always chart as "Other". */
+type KeyedDay = { day: string; key: string; label: string; request_count: number; other?: boolean }
 
 function modelRows(rows: MyProfileModelDayView[]): KeyedDay[] {
-  return rows.map((row) => ({ ...row, key: row.model_key, label: row.model_key }))
+  return rows.map((row) => ({
+    ...row,
+    key: row.model_key,
+    label: row.model_key,
+    other: row.is_other,
+  }))
 }
 
 function harnessRows(rows: MyProfileHarnessDayView[]): KeyedDay[] {
@@ -170,6 +176,7 @@ function rankKeys(rows: KeyedDay[]): Preference[] {
   let all = 0
   for (const row of rows) {
     all += row.request_count
+    if (row.other) continue
     const current = totals.get(row.key) ?? { key: row.key, label: row.label, requests: 0, share: 0 }
     current.requests += row.request_count
     totals.set(row.key, current)
@@ -302,7 +309,8 @@ const TOP_SERIES = 5
 function requestSeriesChart(rows: KeyedDay[], end: Date, range: ProfileRange): SeriesChart {
   const ranked = rankKeys(rows)
   const top = ranked.slice(0, TOP_SERIES)
-  const hasOther = ranked.length > TOP_SERIES
+  const hasOther =
+    ranked.length > TOP_SERIES || rows.some((row) => row.other && row.request_count > 0)
   const keys = top.map((entry, index) => ({
     key: `series_${index + 1}`,
     label: entry.label,
@@ -322,7 +330,8 @@ function requestSeriesChart(rows: KeyedDay[], end: Date, range: ProfileRange): S
   for (const row of rows) {
     const target = chartRows.get(bucketOf.get(row.day) ?? '')
     if (!target) continue
-    const series = seriesFor.get(row.key) ?? (hasOther ? 'series_other' : null)
+    const series =
+      (row.other ? undefined : seriesFor.get(row.key)) ?? (hasOther ? 'series_other' : null)
     if (series) target[series] = Number(target[series]) + row.request_count
   }
   return { config: toConfig(keys), keys, rows: [...chartRows.values()] }
