@@ -169,6 +169,47 @@ where
         })
     }
 
+    /// Summaries of the keys the user owns personally, without the owner and model options the
+    /// admin API keys page needs for its dialogs.
+    pub async fn list_personal_api_key_summaries(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<AdminApiKeySummary>, GatewayError> {
+        let api_keys: Vec<_> = self
+            .repo
+            .list_api_keys_for_user_scope(user_id, None)
+            .await?
+            .into_iter()
+            .filter(|api_key| {
+                api_key.owner_kind == ApiKeyOwnerKind::User
+                    && api_key.owner_user_id == Some(user_id)
+            })
+            .collect();
+        if api_keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        let user = self
+            .repo
+            .get_identity_user(user_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound(format!("user `{user_id}`")))?;
+        let key_ids: Vec<Uuid> = api_keys.iter().map(|api_key| api_key.id).collect();
+        let mut grants = self.repo.list_models_for_api_keys(&key_ids).await?;
+        api_keys
+            .iter()
+            .map(|api_key| {
+                let granted_models = grants.remove(&api_key.id).unwrap_or_default();
+                build_api_key_summary(
+                    api_key,
+                    std::slice::from_ref(&user),
+                    &[],
+                    &[],
+                    &granted_models,
+                )
+            })
+            .collect()
+    }
+
     pub async fn list_api_keys_for_user_scope(
         &self,
         user_id: Uuid,

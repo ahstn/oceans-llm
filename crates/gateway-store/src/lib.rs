@@ -4090,8 +4090,11 @@ pub(crate) mod tests {
         assert_eq!(accessible_models.len(), 1);
         assert_eq!(accessible_models[0].model_key, "fast");
 
+        // Unknown ids first put the real key in the second parameter chunk.
+        let mut key_ids: Vec<Uuid> = (0..600).map(|_| Uuid::new_v4()).collect();
+        key_ids.push(api_key.id);
         let mut batched = store
-            .list_models_for_api_keys(&[api_key.id, Uuid::new_v4()])
+            .list_models_for_api_keys(&key_ids)
             .await
             .expect("models by keys");
         let batched_ids = batched
@@ -8544,8 +8547,11 @@ pub(crate) mod tests {
             .list_models_for_api_key(key.id)
             .await
             .expect("list models");
+        // Unknown ids first put the real key in the second parameter chunk.
+        let mut key_ids: Vec<Uuid> = (0..600).map(|_| Uuid::new_v4()).collect();
+        key_ids.push(key.id);
         let mut batched = store
-            .list_models_for_api_keys(&[key.id, Uuid::new_v4()])
+            .list_models_for_api_keys(&key_ids)
             .await
             .expect("list models for keys");
         let batched_ids = batched

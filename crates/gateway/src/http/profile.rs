@@ -119,13 +119,13 @@ pub async fn get_my_profile(
     };
     let api_keys = AdminApiKeyService::new(state.store.clone());
     let ((daily, model_daily, harness_daily, budget), keys) =
-        tokio::try_join!(usage, api_keys.list_api_keys_for_user_scope(user_id, None))?;
+        tokio::try_join!(usage, api_keys.list_personal_api_key_summaries(user_id))?;
 
     Ok(Json(envelope(MyProfileView {
         window_start: format_timestamp(window_start),
         window_end: format_timestamp(window_end),
         budget,
-        api_keys: keys.items.into_iter().map(map_api_key_summary).collect(),
+        api_keys: keys.into_iter().map(map_api_key_summary).collect(),
         days: build_day_views(&daily, &model_daily),
         model_days: model_daily.iter().map(model_day_view).collect(),
         harness_days: harness_daily.iter().map(harness_day_view).collect(),
@@ -283,5 +283,67 @@ mod tests {
         assert_eq!(views[0].cost_usd_10000, 12_500);
         assert_eq!(views[1].day, "2026-09-25");
         assert_eq!(views[1].cost_usd_10000, 0);
+    }
+
+    #[tokio::test]
+    async fn personal_key_summaries_only_include_the_viewers_keys() -> anyhow::Result<()> {
+        use gateway_core::{
+            AdminApiKeyRepository, ApiKeyModelGrantMode, AuthMode, GlobalRole, NewApiKeyRecord,
+        };
+        use gateway_store::{LibsqlStore, run_migrations};
+
+        let tmp = tempfile::tempdir()?;
+        let path = tmp.path().join("profile.db");
+        run_migrations(&path).await?;
+        let store = LibsqlStore::new_local(path.to_str().expect("path")).await?;
+        let mut users = Vec::new();
+        for email in [
+            "viewer@example.com",
+            "other@example.com",
+            "keyless@example.com",
+        ] {
+            users.push(
+                store
+                    .create_identity_user(
+                        email,
+                        email,
+                        email,
+                        GlobalRole::User,
+                        AuthMode::Password,
+                        UserStatus::Active,
+                    )
+                    .await?,
+            );
+        }
+        for (name, owner) in [("viewer key", &users[0]), ("other key", &users[1])] {
+            store
+                .create_api_key(&NewApiKeyRecord {
+                    name: name.to_string(),
+                    public_id: name.replace(' ', "-"),
+                    secret_hash: "hash".to_string(),
+                    model_grant_mode: ApiKeyModelGrantMode::All,
+                    owner_kind: ApiKeyOwnerKind::User,
+                    owner_user_id: Some(owner.user_id),
+                    owner_team_id: None,
+                    owner_service_account_id: None,
+                    created_at: OffsetDateTime::now_utc(),
+                })
+                .await?;
+        }
+
+        let service = AdminApiKeyService::new(std::sync::Arc::new(store));
+        let keys = service
+            .list_personal_api_key_summaries(users[0].user_id)
+            .await?;
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].name, "viewer key");
+        assert_eq!(keys[0].owner_id, users[0].user_id);
+        assert!(
+            service
+                .list_personal_api_key_summaries(users[2].user_id)
+                .await?
+                .is_empty()
+        );
+        Ok(())
     }
 }

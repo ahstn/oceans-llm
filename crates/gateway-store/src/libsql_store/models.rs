@@ -125,45 +125,41 @@ impl ModelRepository for LibsqlStore {
         &self,
         api_key_ids: &[Uuid],
     ) -> Result<HashMap<Uuid, Vec<GatewayModel>>, StoreError> {
-        if api_key_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-
-        let placeholders = (0..api_key_ids.len())
-            .map(|index| format!("?{}", index + 1))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let params = api_key_ids
-            .iter()
-            .map(|api_key_id| libsql::Value::Text(api_key_id.to_string()))
-            .collect::<Vec<_>>();
-        // The key id is the last column so `decode_gateway_model` reads the leading columns.
-        let query = format!(
-            "SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, \
-             gm.description, gm.tags_json, gm.rank, grants.api_key_id \
-             FROM gateway_models gm \
-             LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id \
-             INNER JOIN api_key_model_grants grants ON grants.model_id = gm.id \
-             WHERE grants.api_key_id IN ({placeholders}) \
-             ORDER BY gm.rank ASC, gm.model_key ASC"
-        );
-        let mut rows = self
-            .connection
-            .query(&query, params)
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
-
         let mut grants: HashMap<Uuid, Vec<GatewayModel>> = HashMap::new();
-        while let Some(row) = rows
-            .next()
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?
-        {
-            let api_key_id = parse_uuid(&row.get::<String>(7).map_err(to_query_error)?)?;
-            grants
-                .entry(api_key_id)
-                .or_default()
-                .push(decode_gateway_model(&row)?);
+        // Bound SQL parameters for large key sets. Each chunk is ordered by rank, and a key's
+        // grants all come from the same chunk, so per-key order matches the single-key query.
+        for ids in api_key_ids.chunks(500) {
+            let placeholders = vec!["?"; ids.len()].join(", ");
+            let params = ids
+                .iter()
+                .map(|api_key_id| libsql::Value::Text(api_key_id.to_string()))
+                .collect::<Vec<_>>();
+            // The key id is the last column so `decode_gateway_model` reads the leading columns.
+            let query = format!(
+                "SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, \
+                 gm.description, gm.tags_json, gm.rank, grants.api_key_id \
+                 FROM gateway_models gm \
+                 LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id \
+                 INNER JOIN api_key_model_grants grants ON grants.model_id = gm.id \
+                 WHERE grants.api_key_id IN ({placeholders}) \
+                 ORDER BY gm.rank ASC, gm.model_key ASC"
+            );
+            let mut rows = self
+                .connection
+                .query(&query, params)
+                .await
+                .map_err(|error| StoreError::Query(error.to_string()))?;
+            while let Some(row) = rows
+                .next()
+                .await
+                .map_err(|error| StoreError::Query(error.to_string()))?
+            {
+                let api_key_id = parse_uuid(&row.get::<String>(7).map_err(to_query_error)?)?;
+                grants
+                    .entry(api_key_id)
+                    .or_default()
+                    .push(decode_gateway_model(&row)?);
+            }
         }
 
         Ok(grants)

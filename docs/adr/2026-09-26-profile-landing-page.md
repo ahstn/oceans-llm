@@ -33,7 +33,7 @@ Paths in this ADR are admin router paths. The router is mounted under `/admin`, 
 - a year of daily usage, with model and harness breakdowns
 - the API keys the user owns personally
 
-The handler reads the user from the session and takes no user identifier, so it has no cross-user access path. Personal keys come from the existing user-scoped API-key service query. The page does not call the admin API-key list, which returns global data for platform admins.
+The handler reads the user from the session and takes no user identifier, so it has no cross-user access path. Personal keys come from a summary-only service method that loads the user's keys and batches their model grants, without the owner and model options the admin API keys page needs. The page does not call the admin API-key list, which returns global data for platform admins.
 
 ## Consequences
 
