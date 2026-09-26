@@ -35,9 +35,10 @@ export function buildRedirectTarget(pathname: string, search: Record<string, unk
   const currentPath = normalizeAdminPath(pathname)
   const query = new URLSearchParams()
 
+  // The router JSON-parses search values (`?create=true` becomes `true`), so scalars are kept too.
   for (const [key, value] of Object.entries(search)) {
-    if (typeof value === 'string') {
-      query.set(key, value)
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      query.set(key, String(value))
     }
   }
 

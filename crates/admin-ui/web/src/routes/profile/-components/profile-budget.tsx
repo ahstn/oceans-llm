@@ -99,7 +99,7 @@ export function BudgetMeter({
 export function NoBudget() {
   return (
     <p data-testid="no-budget" className="text-muted-foreground text-sm">
-      No personal budget is set. Spend is still tracked and counts toward any team budget.
+      No personal budget is set. Your spend is still tracked.
     </p>
   )
 }

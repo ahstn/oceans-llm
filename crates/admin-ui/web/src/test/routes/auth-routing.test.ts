@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildRedirectTarget,
   canAccessSignedInPath,
   defaultSignedInPath,
   postLoginAdminHref,
@@ -9,6 +10,16 @@ import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 
 const adminSession = platformAdminSession()
 const userSession = regularUserSession()
+
+describe('login redirect target', () => {
+  it('keeps parsed scalar search values so deep links survive sign-in', () => {
+    expect(buildRedirectTarget('/api-keys', { create: true })).toBe('/api-keys?create=true')
+    expect(buildRedirectTarget('/api-keys', { api_key_id: 'key_1', page: 2 })).toBe(
+      '/api-keys?api_key_id=key_1&page=2',
+    )
+    expect(buildRedirectTarget('/api-keys', { filter: { owner: 'me' } })).toBe('/api-keys')
+  })
+})
 
 describe('signed-in route selection', () => {
   it('lands every user with page access on their profile', () => {
