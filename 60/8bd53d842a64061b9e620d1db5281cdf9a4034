@@ -1,0 +1,25 @@
+crates/gateway-store/src/lib.rs
+  s_a1d1a900c88650::t_1975e5775c2b0a 4093-4095,4097,8550-8552,8554
+crates/gateway-store/src/libsql_store/models.rs
+  s_a1d1a900c88650::t_3c6f7675aa8a45 129-162
+crates/gateway/src/http/profile.rs
+  s_a1d1a900c88650::t_96e418e7c65907 122,128,287-348
+docs/adr/2026-09-26-profile-landing-page.md
+  s_a1d1a900c88650::t_30425f32f6335e 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "608bd53d842a64061b9e620d1db5281cdf9a4034",
+  "prompts": {},
+  "sessions": {
+    "s_a1d1a900c88650": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8dcd7694-4d09-4ee2-9f4c-af8095b9a53e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
