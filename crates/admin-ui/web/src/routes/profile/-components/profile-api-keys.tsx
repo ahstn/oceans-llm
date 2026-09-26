@@ -22,7 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { formatLastUsedAt, formatModelGrantSummary, maskApiKeyPrefix } from '@/lib/api-key-format'
-import type { ApiKeyView } from '@/types/api'
+import type { MyProfileApiKeyView } from '@/types/api'
 
 export const COLLAPSED_KEY_COUNT = 3
 
@@ -40,7 +40,7 @@ export function ProfileApiKeysTable({
   links,
   dense = false,
 }: {
-  keys: ApiKeyView[]
+  keys: MyProfileApiKeyView[]
   links: ApiKeyLinks
   /** Drops the models column and inlines status for narrow layouts. */
   dense?: boolean
@@ -173,6 +173,6 @@ export function ManageKeysLink({ links }: { links: ApiKeyLinks }) {
   )
 }
 
-function KeyStatusBadge({ status }: { status: ApiKeyView['status'] }) {
+function KeyStatusBadge({ status }: { status: MyProfileApiKeyView['status'] }) {
   return <Badge variant={status === 'active' ? 'success' : 'warning'}>{status}</Badge>
 }

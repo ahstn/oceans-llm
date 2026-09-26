@@ -1,7 +1,7 @@
 import type { ChartConfig } from '@/components/ui/chart'
 import { formatUsd10000 } from '@/lib/format'
 import type {
-  ApiKeyView,
+  MyProfileApiKeyView,
   MyProfileBudgetView,
   MyProfileDayView,
   MyProfileHarnessDayView,
@@ -413,13 +413,11 @@ function levelFor(tokens: number, [q1, q2, q3]: number[]): HeatmapCell['level'] 
 // ── API keys ──────────────────────────────────────────────────────────────────
 
 /** Keys the viewer owns personally, active first, then most recently used. */
-export function personalApiKeys(items: ApiKeyView[], userId: string) {
-  return items
-    .filter((item) => item.owner_kind === 'user' && item.owner_id === userId)
-    .sort(
-      (a, b) =>
-        Number(b.status === 'active') - Number(a.status === 'active') ||
-        (b.last_used_at ?? '').localeCompare(a.last_used_at ?? '') ||
-        b.created_at.localeCompare(a.created_at),
-    )
+export function sortProfileApiKeys(items: MyProfileApiKeyView[]) {
+  return [...items].sort(
+    (a, b) =>
+      Number(b.status === 'active') - Number(a.status === 'active') ||
+      (b.last_used_at ?? '').localeCompare(a.last_used_at ?? '') ||
+      b.created_at.localeCompare(a.created_at),
+  )
 }

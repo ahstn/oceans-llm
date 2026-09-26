@@ -8,7 +8,7 @@ use gateway_core::{
     RequestLogRepository, SpendDailyAggregateRecord, SpendModelTokenDailyRecord, UserStatus,
     budget_window_utc,
 };
-use gateway_service::AdminApiKeyService;
+use gateway_service::{AdminApiKeyService, PersonalApiKey, api_key_display_prefix};
 use serde::Serialize;
 use time::{Duration, OffsetDateTime};
 use utoipa::ToSchema;
@@ -17,7 +17,7 @@ use uuid::Uuid;
 use crate::http::{
     admin_auth::require_authenticated_session,
     admin_contract::{BudgetSettingsView, BudgetSourceView, Envelope, envelope, format_timestamp},
-    api_keys::{AdminApiKeyView, map_api_key_summary},
+    api_keys::ApiKeyModelGrantModeView,
     error::AppError,
     spend::{budget_source_to_view, budget_to_settings_view},
     state::AppState,
@@ -32,7 +32,7 @@ pub struct MyProfileView {
     pub window_end: String,
     pub budget: Option<MyProfileBudgetView>,
     /// API keys the user owns personally. Team and service-account keys are excluded.
-    pub api_keys: Vec<AdminApiKeyView>,
+    pub api_keys: Vec<MyProfileApiKeyView>,
     pub days: Vec<MyProfileDayView>,
     pub model_days: Vec<MyProfileModelDayView>,
     pub harness_days: Vec<MyProfileHarnessDayView>,
@@ -67,6 +67,21 @@ pub struct MyProfileDayView {
     pub unpriced_request_count: i64,
     /// Requests whose provider reported no usage, so they could not be priced.
     pub usage_missing_request_count: i64,
+}
+
+/// A personal key as listed on the profile. Owner details are implied, so unlike the API keys
+/// page's view they are left out.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MyProfileApiKeyView {
+    pub id: String,
+    pub name: String,
+    pub prefix: String,
+    pub status: String,
+    pub model_grant_mode: ApiKeyModelGrantModeView,
+    /// Granted model keys; empty when `model_grant_mode` is `all`.
+    pub model_keys: Vec<String>,
+    pub created_at: String,
+    pub last_used_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -124,13 +139,13 @@ pub async fn get_my_profile(
     };
     let api_keys = AdminApiKeyService::new(state.store.clone());
     let ((daily, model_daily, harness_daily, budget), keys) =
-        tokio::try_join!(usage, api_keys.list_personal_api_key_summaries(user_id))?;
+        tokio::try_join!(usage, api_keys.list_personal_api_keys(user_id))?;
 
     Ok(Json(envelope(MyProfileView {
         window_start: format_timestamp(window_start),
         window_end: format_timestamp(window_end),
         budget,
-        api_keys: keys.into_iter().map(map_api_key_summary).collect(),
+        api_keys: keys.iter().map(profile_api_key_view).collect(),
         days: build_day_views(&daily, &model_daily),
         model_days: model_daily.iter().map(model_day_view).collect(),
         harness_days: harness_daily.iter().map(harness_day_view).collect(),
@@ -203,6 +218,20 @@ fn build_day_views(
             ..view
         })
         .collect()
+}
+
+fn profile_api_key_view(key: &PersonalApiKey) -> MyProfileApiKeyView {
+    let api_key = &key.api_key;
+    MyProfileApiKeyView {
+        id: api_key.id.to_string(),
+        name: api_key.name.clone(),
+        prefix: api_key_display_prefix(&api_key.public_id),
+        status: api_key.status.as_str().to_string(),
+        model_grant_mode: api_key.model_grant_mode.into(),
+        model_keys: key.model_keys.clone(),
+        created_at: format_timestamp(api_key.created_at),
+        last_used_at: api_key.last_used_at.map(format_timestamp),
+    }
 }
 
 fn model_day_view(row: &SpendModelTokenDailyRecord) -> MyProfileModelDayView {
@@ -341,15 +370,17 @@ mod tests {
         }
 
         let service = AdminApiKeyService::new(std::sync::Arc::new(store));
-        let keys = service
-            .list_personal_api_key_summaries(users[0].user_id)
-            .await?;
+        let keys = service.list_personal_api_keys(users[0].user_id).await?;
         assert_eq!(keys.len(), 1);
-        assert_eq!(keys[0].name, "viewer key");
-        assert_eq!(keys[0].owner_id, users[0].user_id);
+        assert_eq!(keys[0].api_key.name, "viewer key");
+        assert_eq!(keys[0].api_key.owner_user_id, Some(users[0].user_id));
+        assert!(keys[0].model_keys.is_empty());
+        let view = profile_api_key_view(&keys[0]);
+        assert_eq!(view.prefix, "gwk_viewer-key");
+        assert_eq!(view.status, "active");
         assert!(
             service
-                .list_personal_api_key_summaries(users[2].user_id)
+                .list_personal_api_keys(users[2].user_id)
                 .await?
                 .is_empty()
         );

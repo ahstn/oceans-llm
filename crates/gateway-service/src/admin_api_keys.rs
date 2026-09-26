@@ -169,12 +169,13 @@ where
         })
     }
 
-    /// Summaries of the keys the user owns personally, without the owner and model options the
-    /// admin API keys page needs for its dialogs.
-    pub async fn list_personal_api_key_summaries(
+    /// Keys the user owns personally, for listing on their profile. Owner details are known
+    /// already, so they are not joined, and grants are only loaded for keys limited to explicit
+    /// models, since "all models" keys need none.
+    pub async fn list_personal_api_keys(
         &self,
         user_id: Uuid,
-    ) -> Result<Vec<AdminApiKeySummary>, GatewayError> {
+    ) -> Result<Vec<PersonalApiKey>, GatewayError> {
         let api_keys: Vec<_> = self
             .repo
             .list_api_keys_for_user_scope(user_id, None)
@@ -185,29 +186,31 @@ where
                     && api_key.owner_user_id == Some(user_id)
             })
             .collect();
-        if api_keys.is_empty() {
-            return Ok(Vec::new());
-        }
-        let user = self
-            .repo
-            .get_identity_user(user_id)
-            .await?
-            .ok_or_else(|| StoreError::NotFound(format!("user `{user_id}`")))?;
-        let key_ids: Vec<Uuid> = api_keys.iter().map(|api_key| api_key.id).collect();
-        let mut grants = self.repo.list_models_for_api_keys(&key_ids).await?;
-        api_keys
+        let explicit_ids: Vec<Uuid> = api_keys
             .iter()
+            .filter(|api_key| api_key.model_grant_mode == ApiKeyModelGrantMode::Explicit)
+            .map(|api_key| api_key.id)
+            .collect();
+        let mut grants = if explicit_ids.is_empty() {
+            HashMap::new()
+        } else {
+            self.repo.list_models_for_api_keys(&explicit_ids).await?
+        };
+        Ok(api_keys
+            .into_iter()
             .map(|api_key| {
-                let granted_models = grants.remove(&api_key.id).unwrap_or_default();
-                build_api_key_summary(
+                let model_keys = grants
+                    .remove(&api_key.id)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|model| model.model_key)
+                    .collect();
+                PersonalApiKey {
                     api_key,
-                    std::slice::from_ref(&user),
-                    &[],
-                    &[],
-                    &granted_models,
-                )
+                    model_keys,
+                }
             })
-            .collect()
+            .collect())
     }
 
     pub async fn list_api_keys_for_user_scope(
@@ -520,6 +523,20 @@ where
     }
 }
 
+/// A personal key with the model keys it is granted (empty unless it is limited to explicit
+/// models).
+#[derive(Debug, Clone)]
+pub struct PersonalApiKey {
+    pub api_key: ApiKeyRecord,
+    pub model_keys: Vec<String>,
+}
+
+/// The non-secret part of a key shown in listings.
+#[must_use]
+pub fn api_key_display_prefix(public_id: &str) -> String {
+    format!("gwk_{public_id}")
+}
+
 fn build_api_key_summary(
     api_key: &ApiKeyRecord,
     users: &[IdentityUserRecord],
@@ -603,7 +620,7 @@ fn build_api_key_summary(
     Ok(AdminApiKeySummary {
         id: api_key.id,
         name: api_key.name.clone(),
-        prefix: format!("gwk_{}", api_key.public_id),
+        prefix: api_key_display_prefix(&api_key.public_id),
         status: api_key.status,
         owner_kind: api_key.owner_kind,
         owner_id,

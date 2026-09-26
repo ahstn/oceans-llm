@@ -1,4 +1,4 @@
-import type { ApiKeyView, MyProfileDayView, MyProfileView } from '@/types/api'
+import type { MyProfileApiKeyView, MyProfileDayView, MyProfileView } from '@/types/api'
 
 export function profileDay(
   day: string,
@@ -80,25 +80,19 @@ export function profileView(overrides: Partial<MyProfileView> = {}): MyProfileVi
   }
 }
 
-export function apiKey(id: string, overrides: Partial<ApiKeyView> = {}): ApiKeyView {
+export function apiKey(
+  id: string,
+  overrides: Partial<MyProfileApiKeyView> = {},
+): MyProfileApiKeyView {
   return {
     id,
     name: `Key ${id}`,
     prefix: `gwk_${id}_abcdefghijkl`,
     status: 'active',
-    owner_kind: 'user',
-    owner_id: 'user_1',
-    owner_name: 'Jane User',
-    owner_email: 'jane@example.com',
-    owner_team_key: null,
-    owner_service_account_key: null,
-    owner_service_account_team_id: null,
-    owner_service_account_team_key: null,
     model_grant_mode: 'all',
     model_keys: [],
     created_at: '2026-09-01T00:00:00Z',
     last_used_at: null,
-    revoked_at: null,
     ...overrides,
   }
 }

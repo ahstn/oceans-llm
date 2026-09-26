@@ -6,10 +6,10 @@ import {
   formatProfileCost,
   harnessRequestsChart,
   modelRequestsChart,
-  personalApiKeys,
   profileHeadlines,
   profileInRange,
   rankModels,
+  sortProfileApiKeys,
   summarizeDays,
   tokenVolumeChart,
   type ProfileRange,
@@ -108,17 +108,12 @@ describe('profile data', () => {
     expect(lastWeek[0]?.level).toBe(0)
   })
 
-  it('keeps only personal keys, active and recently used first', () => {
-    const keys = personalApiKeys(
-      [
-        apiKey('old', { last_used_at: '2026-09-01T00:00:00Z' }),
-        apiKey('revoked', { status: 'revoked', last_used_at: '2026-09-25T00:00:00Z' }),
-        apiKey('team', { owner_kind: 'team', owner_id: 'team_1' }),
-        apiKey('other_user', { owner_id: 'user_2' }),
-        apiKey('recent', { last_used_at: '2026-09-24T00:00:00Z' }),
-      ],
-      'user_1',
-    )
+  it('lists active and recently used keys first', () => {
+    const keys = sortProfileApiKeys([
+      apiKey('old', { last_used_at: '2026-09-01T00:00:00Z' }),
+      apiKey('revoked', { status: 'revoked', last_used_at: '2026-09-25T00:00:00Z' }),
+      apiKey('recent', { last_used_at: '2026-09-24T00:00:00Z' }),
+    ])
     expect(keys.map((key) => key.id)).toEqual(['recent', 'old', 'revoked'])
   })
 

@@ -2,7 +2,7 @@ import type { ApiKeyView } from '@/types/api'
 
 // Shared by the API keys page and the profile page's key table.
 
-export function formatModelGrantSummary(item: ApiKeyView) {
+export function formatModelGrantSummary(item: Pick<ApiKeyView, 'model_grant_mode' | 'model_keys'>) {
   if (item.model_grant_mode === 'all') {
     return 'All models'
   }

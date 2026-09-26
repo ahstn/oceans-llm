@@ -2972,7 +2972,7 @@ export interface components {
         Envelope_MyProfileView: {
             data: {
                 /** @description API keys the user owns personally. Team and service-account keys are excluded. */
-                api_keys: components["schemas"]["AdminApiKeyView"][];
+                api_keys: components["schemas"]["MyProfileApiKeyView"][];
                 budget?: null | components["schemas"]["MyProfileBudgetView"];
                 days: components["schemas"]["MyProfileDayView"][];
                 harness_days: components["schemas"]["MyProfileHarnessDayView"][];
@@ -3528,6 +3528,21 @@ export interface components {
         };
         /** @enum {string} */
         ModelIconKeyView: "anthropic" | "claude" | "deepseek" | "gemini" | "openai" | "openrouter" | "qwen" | "typesafe" | "vertexai";
+        /**
+         * @description A personal key as listed on the profile. Owner details are implied, so unlike the API keys
+         *     page's view they are left out.
+         */
+        MyProfileApiKeyView: {
+            created_at: string;
+            id: string;
+            last_used_at?: string | null;
+            model_grant_mode: components["schemas"]["ApiKeyModelGrantModeView"];
+            /** @description Granted model keys; empty when `model_grant_mode` is `all`. */
+            model_keys: string[];
+            name: string;
+            prefix: string;
+            status: string;
+        };
         MyProfileBudgetView: {
             period_end: string;
             /** @description Current budget period; spend resets at `period_end`. */
@@ -3593,7 +3608,7 @@ export interface components {
         };
         MyProfileView: {
             /** @description API keys the user owns personally. Team and service-account keys are excluded. */
-            api_keys: components["schemas"]["AdminApiKeyView"][];
+            api_keys: components["schemas"]["MyProfileApiKeyView"][];
             budget?: null | components["schemas"]["MyProfileBudgetView"];
             days: components["schemas"]["MyProfileDayView"][];
             harness_days: components["schemas"]["MyProfileHarnessDayView"][];

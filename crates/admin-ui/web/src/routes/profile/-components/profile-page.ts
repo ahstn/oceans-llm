@@ -1,9 +1,9 @@
 import { canPerformAdminAction } from '@/routes/-auth-routing'
 import { getMyProfile } from '@/server/admin-data.functions'
-import type { AdminAction, ApiKeyView, AuthSessionView, MyProfileView } from '@/types/api'
+import type { AdminAction, AuthSessionView, MyProfileApiKeyView, MyProfileView } from '@/types/api'
 
 import type { ApiKeyLinks } from './profile-api-keys'
-import { personalApiKeys } from './profile-data'
+import { sortProfileApiKeys } from './profile-data'
 
 export type ProfileLoaderData = {
   profile: MyProfileView
@@ -17,7 +17,7 @@ export async function loadProfilePage(): Promise<ProfileLoaderData> {
 
 export type ProfilePageModel = {
   profile: MyProfileView
-  keys: ApiKeyView[]
+  keys: MyProfileApiKeyView[]
   links: ApiKeyLinks
 }
 
@@ -29,7 +29,7 @@ export function profilePageModel(
   const can = (action: AdminAction) => hasKeysPage && canPerformAdminAction(session, action)
   return {
     profile: data.profile,
-    keys: personalApiKeys(data.profile.api_keys, session.user.id),
+    keys: sortProfileApiKeys(data.profile.api_keys),
     links: {
       canView: hasKeysPage,
       // Matches the API keys route, which only opens a linked key for these actions.
