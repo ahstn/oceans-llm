@@ -51,12 +51,17 @@ function LeadingHeader({ leading, children }: { leading: ReactNode; children: Re
   return (
     <header className="flex items-start gap-4">
       <div
+        data-testid="page-header-leading"
         className="size-20 max-h-24 max-w-24 shrink-0 max-sm:max-h-14 max-sm:max-w-14 [&>*]:size-full"
         style={height ? { width: height, height } : undefined}
       >
         {leading}
       </div>
-      <div ref={textRef} className="flex min-w-0 flex-1 flex-col gap-2">
+      <div
+        ref={textRef}
+        data-testid="page-header-text"
+        className="flex min-w-0 flex-1 flex-col gap-2"
+      >
         {children}
       </div>
     </header>
