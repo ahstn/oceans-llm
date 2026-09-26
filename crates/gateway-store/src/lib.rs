@@ -4090,6 +4090,23 @@ pub(crate) mod tests {
         assert_eq!(accessible_models.len(), 1);
         assert_eq!(accessible_models[0].model_key, "fast");
 
+        let mut batched = store
+            .list_models_for_api_keys(&[api_key.id, Uuid::new_v4()])
+            .await
+            .expect("models by keys");
+        let batched_ids = batched
+            .remove(&api_key.id)
+            .map(|models| models.iter().map(|model| model.id).collect::<Vec<_>>());
+        assert_eq!(batched_ids, Some(vec![accessible_models[0].id]));
+        assert!(batched.is_empty(), "keys without grants are absent");
+        assert!(
+            store
+                .list_models_for_api_keys(&[])
+                .await
+                .expect("models for no keys")
+                .is_empty()
+        );
+
         let routes = store
             .list_routes_for_model(accessible_models[0].id)
             .await
@@ -8523,6 +8540,22 @@ pub(crate) mod tests {
                 .any(|model| model.model_key == "fast")
         );
 
+        let per_key = store
+            .list_models_for_api_key(key.id)
+            .await
+            .expect("list models");
+        let mut batched = store
+            .list_models_for_api_keys(&[key.id, Uuid::new_v4()])
+            .await
+            .expect("list models for keys");
+        let batched_ids = batched
+            .remove(&key.id)
+            .map(|models| models.iter().map(|model| model.id).collect::<Vec<_>>());
+        assert_eq!(
+            batched_ids,
+            Some(per_key.iter().map(|model| model.id).collect())
+        );
+        assert!(batched.is_empty(), "keys without grants are absent");
         let model_id = store
             .list_models_for_api_key(key.id)
             .await

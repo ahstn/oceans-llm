@@ -245,6 +245,22 @@ pub trait ModelRepository: Send + Sync {
         api_key_id: Uuid,
     ) -> Result<Vec<GatewayModel>, StoreError>;
 
+    /// Granted models per key, in the same order as `list_models_for_api_key`. Keys without
+    /// grants are absent from the map.
+    async fn list_models_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, Vec<GatewayModel>>, StoreError> {
+        let mut grants = HashMap::with_capacity(api_key_ids.len());
+        for api_key_id in api_key_ids {
+            let models = self.list_models_for_api_key(*api_key_id).await?;
+            if !models.is_empty() {
+                grants.insert(*api_key_id, models);
+            }
+        }
+        Ok(grants)
+    }
+
     async fn list_model_allowlists_for_models(
         &self,
         model_ids: &[Uuid],

@@ -131,9 +131,11 @@ where
         let service_account_owners =
             build_service_account_owner_options(&active_service_accounts, &teams)?;
 
+        let key_ids: Vec<Uuid> = api_keys.iter().map(|api_key| api_key.id).collect();
+        let mut grants = self.repo.list_models_for_api_keys(&key_ids).await?;
         let mut items = Vec::with_capacity(api_keys.len());
         for api_key in api_keys {
-            let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
+            let granted_models = grants.remove(&api_key.id).unwrap_or_default();
             items.push(build_api_key_summary(
                 &api_key,
                 &users,
@@ -219,9 +221,11 @@ where
             );
         }
 
+        let key_ids: Vec<Uuid> = api_keys.iter().map(|api_key| api_key.id).collect();
+        let mut grants = self.repo.list_models_for_api_keys(&key_ids).await?;
         let mut items = Vec::with_capacity(api_keys.len());
         for api_key in api_keys {
-            let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
+            let granted_models = grants.remove(&api_key.id).unwrap_or_default();
             items.push(build_api_key_summary(
                 &api_key,
                 &users,
