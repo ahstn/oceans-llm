@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AuthSessionView } from '@/types/api'
-import { apiKey, apiKeysPayload, profileView } from '@/test/profile-fixtures'
+import { apiKey, profileView } from '@/test/profile-fixtures'
 
 const routeMock = {
   useLoaderData: vi.fn(),
@@ -40,7 +40,6 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/server/admin-data.functions', () => ({
-  getApiKeys: vi.fn(),
   getMyProfile: vi.fn(),
 }))
 
@@ -74,10 +73,7 @@ describe('profile page', () => {
   beforeEach(() => {
     cleanup()
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
-    routeMock.useLoaderData.mockReturnValue({
-      profile: profileView(),
-      keys: apiKeysPayload(FIVE_KEYS),
-    })
+    routeMock.useLoaderData.mockReturnValue({ profile: profileView({ api_keys: FIVE_KEYS }) })
     routeMock.useRouteContext.mockReturnValue({ session: session() })
   })
 
@@ -126,7 +122,7 @@ describe('profile page', () => {
   })
 
   it('links the empty state to the create key dialog', async () => {
-    routeMock.useLoaderData.mockReturnValue({ profile: profileView(), keys: apiKeysPayload([]) })
+    routeMock.useLoaderData.mockReturnValue({ profile: profileView() })
     const Page = await load()
     render(<Page />)
 
@@ -138,7 +134,7 @@ describe('profile page', () => {
   })
 
   it('hides the create link from users who cannot create keys', async () => {
-    routeMock.useLoaderData.mockReturnValue({ profile: profileView(), keys: apiKeysPayload([]) })
+    routeMock.useLoaderData.mockReturnValue({ profile: profileView() })
     routeMock.useRouteContext.mockReturnValue({ session: session({ actions: [] }) })
     const Page = await load()
     render(<Page />)
@@ -168,8 +164,7 @@ describe('profile page', () => {
 
   it('explains a missing budget instead of showing an empty meter', async () => {
     routeMock.useLoaderData.mockReturnValue({
-      profile: profileView({ budget: null }),
-      keys: apiKeysPayload(FIVE_KEYS),
+      profile: profileView({ budget: null, api_keys: FIVE_KEYS }),
     })
     const Page = await load()
     render(<Page />)

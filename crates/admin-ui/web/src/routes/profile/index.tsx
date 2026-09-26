@@ -19,11 +19,12 @@ import { RequestsBarChart, TokenVolumeChart } from './-components/profile-charts
 import {
   harnessRequestsChart,
   modelRequestsChart,
+  profileHeadlines,
   profileInRange,
   tokenVolumeChart,
   type ProfileRange,
 } from './-components/profile-data'
-import { HeadlineTiles, profileHeadlines } from './-components/profile-headlines'
+import { HeadlineTiles } from './-components/profile-headlines'
 import { UsageHeatmap } from './-components/profile-heatmap'
 import {
   loadProfilePage,

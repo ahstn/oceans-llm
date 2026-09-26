@@ -11,32 +11,15 @@ import { IconTile } from '@/components/reui/icon-tile'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatUsd10000 } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import type { MyProfileView } from '@/types/api'
 
 import {
   COMPACT_FORMATTER,
   NUMBER_FORMATTER,
   PERCENT_FORMATTER,
-  rankHarnesses,
-  rankModels,
-  summarizeDays,
   type Preference,
+  type ProfileHeadlines,
   type UsageTotals,
 } from './profile-data'
-
-export type ProfileHeadlines = {
-  totals: UsageTotals
-  model: Preference | null
-  harness: Preference | null
-}
-
-export function profileHeadlines(profile: MyProfileView): ProfileHeadlines {
-  return {
-    totals: summarizeDays(profile.days),
-    model: rankModels(profile.model_days)[0] ?? null,
-    harness: rankHarnesses(profile.harness_days)[0] ?? null,
-  }
-}
 
 function shareDetail(preference: Preference | null) {
   return preference

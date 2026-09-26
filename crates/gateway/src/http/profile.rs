@@ -1,4 +1,5 @@
-//! Self-scoped profile summary: the signed-in user's budget and a year of usage.
+//! Self-scoped profile summary: the signed-in user's budget, personal API keys, and a year of
+//! usage.
 use std::collections::BTreeMap;
 
 use axum::{Json, extract::State, http::HeaderMap};
@@ -7,6 +8,7 @@ use gateway_core::{
     RequestLogRepository, SpendDailyAggregateRecord, SpendModelTokenDailyRecord, UserStatus,
     budget_window_utc,
 };
+use gateway_service::AdminApiKeyService;
 use serde::Serialize;
 use time::{Duration, OffsetDateTime};
 use utoipa::ToSchema;
@@ -15,6 +17,7 @@ use uuid::Uuid;
 use crate::http::{
     admin_auth::require_authenticated_session,
     admin_contract::{BudgetSettingsView, BudgetSourceView, Envelope, envelope, format_timestamp},
+    api_keys::{AdminApiKeyView, map_api_key_summary},
     error::AppError,
     spend::{budget_source_to_view, budget_to_settings_view},
     state::AppState,
@@ -28,6 +31,8 @@ pub struct MyProfileView {
     pub window_start: String,
     pub window_end: String,
     pub budget: Option<MyProfileBudgetView>,
+    /// API keys the user owns personally. Team and service-account keys are excluded.
+    pub api_keys: Vec<AdminApiKeyView>,
     pub days: Vec<MyProfileDayView>,
     pub model_days: Vec<MyProfileModelDayView>,
     pub harness_days: Vec<MyProfileHarnessDayView>,
@@ -98,22 +103,29 @@ pub async fn get_my_profile(
     let owner = Some(ApiKeyOwnerKind::User);
 
     let store = state.store.as_ref();
-    let (daily, model_daily, harness_daily, budget) = tokio::try_join!(
-        store.list_usage_daily_aggregates(window_start, window_end, owner, Some(user_id)),
-        store.list_usage_model_token_daily_aggregates(
-            window_start,
-            window_end,
-            owner,
-            Some(user_id)
-        ),
-        store.list_user_harness_daily_usage(window_start, window_end, user_id),
-        load_budget(&state, user_id, now),
-    )?;
+    let usage = async {
+        tokio::try_join!(
+            store.list_usage_daily_aggregates(window_start, window_end, owner, Some(user_id)),
+            store.list_usage_model_token_daily_aggregates(
+                window_start,
+                window_end,
+                owner,
+                Some(user_id)
+            ),
+            store.list_user_harness_daily_usage(window_start, window_end, user_id),
+            load_budget(&state, user_id, now),
+        )
+        .map_err(GatewayError::from)
+    };
+    let api_keys = AdminApiKeyService::new(state.store.clone());
+    let ((daily, model_daily, harness_daily, budget), keys) =
+        tokio::try_join!(usage, api_keys.list_api_keys_for_user_scope(user_id, None))?;
 
     Ok(Json(envelope(MyProfileView {
         window_start: format_timestamp(window_start),
         window_end: format_timestamp(window_end),
         budget,
+        api_keys: keys.items.into_iter().map(map_api_key_summary).collect(),
         days: build_day_views(&daily, &model_daily),
         model_days: model_daily.iter().map(model_day_view).collect(),
         harness_days: harness_daily.iter().map(harness_day_view).collect(),

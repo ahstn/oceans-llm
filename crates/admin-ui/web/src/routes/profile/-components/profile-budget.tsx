@@ -6,34 +6,12 @@ import { formatUsd10000 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { MyProfileBudgetView } from '@/types/api'
 
-import { PERCENT_FORMATTER } from './profile-data'
+import { budgetStatus, PERCENT_FORMATTER, type BudgetStatus } from './profile-data'
 
 const CADENCE_LABEL: Record<string, string> = {
   daily: 'Daily',
   weekly: 'Weekly',
   monthly: 'Monthly',
-}
-
-export type BudgetStatus = {
-  spent: number
-  limit: number
-  remaining: number
-  /** Spent over limit, uncapped so overspend reads as > 100%. */
-  ratio: number
-  tone: 'ok' | 'warning' | 'over'
-}
-
-export function budgetStatus(budget: MyProfileBudgetView): BudgetStatus {
-  const spent = budget.spent_usd_10000
-  const limit = budget.settings.amount_usd_10000
-  const ratio = limit > 0 ? spent / limit : 0
-  return {
-    spent,
-    limit,
-    remaining: Math.max(0, limit - spent),
-    ratio,
-    tone: ratio >= 1 ? 'over' : ratio >= 0.8 ? 'warning' : 'ok',
-  }
 }
 
 const TONE_COLOR: Record<BudgetStatus['tone'], string> = {
@@ -46,7 +24,7 @@ const TONE_COLOR: Record<BudgetStatus['tone'], string> = {
  * Date and time are formatted separately: the joined date-time pattern differs between the
  * server's and the browser's ICU data, which breaks hydration.
  */
-export function formatResetsAt(budget: MyProfileBudgetView) {
+function formatResetsAt(budget: MyProfileBudgetView) {
   const resetsAt = new Date(budget.period_end)
   const date = resetsAt.toLocaleDateString('en-US', {
     weekday: 'short',

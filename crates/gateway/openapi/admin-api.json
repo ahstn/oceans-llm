@@ -11549,11 +11549,19 @@
             "required": [
               "window_start",
               "window_end",
+              "api_keys",
               "days",
               "model_days",
               "harness_days"
             ],
             "properties": {
+              "api_keys": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminApiKeyView"
+                },
+                "description": "API keys the user owns personally. Team and service-account keys are excluded."
+              },
               "budget": {
                 "oneOf": [
                   {
@@ -14016,11 +14024,19 @@
         "required": [
           "window_start",
           "window_end",
+          "api_keys",
           "days",
           "model_days",
           "harness_days"
         ],
         "properties": {
+          "api_keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminApiKeyView"
+            },
+            "description": "API keys the user owns personally. Team and service-account keys are excluded."
+          },
           "budget": {
             "oneOf": [
               {

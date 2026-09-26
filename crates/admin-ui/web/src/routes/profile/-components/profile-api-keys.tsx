@@ -21,11 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  formatLastUsedAt,
-  formatModelGrantSummary,
-  maskApiKeyPrefix,
-} from '@/routes/api-keys/-components'
+import { formatLastUsedAt, formatModelGrantSummary, maskApiKeyPrefix } from '@/lib/api-key-format'
 import type { ApiKeyView } from '@/types/api'
 
 export const COLLAPSED_KEY_COUNT = 3
@@ -109,7 +105,7 @@ export function ProfileApiKeysTable({
                   </TableCell>
                 )}
                 <TableCell className="px-3 py-2.5 whitespace-nowrap text-[var(--color-text-soft)] tabular-nums">
-                  {formatLastUsedAt(key.last_used_at ?? null)}
+                  {formatLastUsedAt(key.last_used_at)}
                 </TableCell>
                 {dense ? null : (
                   <TableCell className="px-3 py-2.5">

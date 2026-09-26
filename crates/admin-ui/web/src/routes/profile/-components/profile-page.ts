@@ -1,19 +1,18 @@
 import { canPerformAdminAction } from '@/routes/-auth-routing'
-import { getApiKeys, getMyProfile } from '@/server/admin-data.functions'
-import type { ApiKeysPayload, ApiKeyView, AuthSessionView, MyProfileView } from '@/types/api'
+import { getMyProfile } from '@/server/admin-data.functions'
+import type { ApiKeyView, AuthSessionView, MyProfileView } from '@/types/api'
 
 import type { ApiKeyLinks } from './profile-api-keys'
 import { personalApiKeys } from './profile-data'
 
 export type ProfileLoaderData = {
   profile: MyProfileView
-  keys: ApiKeysPayload
 }
 
-/** Loads the profile and the API keys shown on the page. */
+/** Loads the profile, which carries the viewer's own API keys alongside their usage. */
 export async function loadProfilePage(): Promise<ProfileLoaderData> {
-  const [profile, keys] = await Promise.all([getMyProfile(), getApiKeys()])
-  return { profile: profile.data, keys: keys.data }
+  const profile = await getMyProfile()
+  return { profile: profile.data }
 }
 
 export type ProfilePageModel = {
@@ -29,7 +28,7 @@ export function profilePageModel(
   const hasKeysPage = session.permissions.pages.includes('api_keys')
   return {
     profile: data.profile,
-    keys: personalApiKeys(data.keys.items, session.user.id),
+    keys: personalApiKeys(data.profile.api_keys, session.user.id),
     links: {
       canManage: hasKeysPage,
       canCreate: hasKeysPage && canPerformAdminAction(session, 'create_api_key'),

@@ -4278,37 +4278,59 @@ pub(crate) mod tests {
             .await
             .expect("create profile user")
             .user_id;
-        store
-            .insert_request_log(
-                &RequestLogRecord {
-                    request_log_id: Uuid::new_v4(),
-                    request_id: "req-user-harness-day".to_string(),
-                    user_id: Some(profile_user_id),
-                    agent_harness_key: "codex".to_string(),
-                    agent_harness_label: "Codex".to_string(),
-                    total_tokens: Some(40),
-                    ..zero_counts_log.clone()
-                },
-                None,
-            )
-            .await
-            .expect("insert user-scoped request log");
+        // Same harness on two UTC days: rows must stay split by day, not merged per harness.
+        for (request_id, logged_at, total_tokens) in [
+            ("req-user-harness-day", occurred_at, 40),
+            (
+                "req-user-harness-next-day",
+                occurred_at + Duration::days(1),
+                60,
+            ),
+        ] {
+            store
+                .insert_request_log(
+                    &RequestLogRecord {
+                        request_log_id: Uuid::new_v4(),
+                        request_id: request_id.to_string(),
+                        user_id: Some(profile_user_id),
+                        agent_harness_key: "codex".to_string(),
+                        agent_harness_label: "Codex".to_string(),
+                        total_tokens: Some(total_tokens),
+                        occurred_at: logged_at,
+                        ..zero_counts_log.clone()
+                    },
+                    None,
+                )
+                .await
+                .expect("insert user-scoped request log");
+        }
         let user_harness_days = store
             .list_user_harness_daily_usage(
                 occurred_at - Duration::days(1),
-                occurred_at + Duration::days(1),
+                occurred_at + Duration::days(2),
                 profile_user_id,
             )
             .await
             .expect("user harness daily usage");
-        assert_eq!(user_harness_days.len(), 1);
-        assert_eq!(user_harness_days[0].agent_harness_key, "codex");
-        assert_eq!(user_harness_days[0].agent_harness_label, "Codex");
-        assert_eq!(user_harness_days[0].request_count, 1);
-        assert_eq!(user_harness_days[0].total_tokens, 40);
+        let first_day = occurred_at.replace_time(time::Time::MIDNIGHT);
+        let days: Vec<_> = user_harness_days
+            .iter()
+            .map(|row| {
+                (
+                    row.day_start,
+                    row.agent_harness_key.as_str(),
+                    row.agent_harness_label.as_str(),
+                    row.request_count,
+                    row.total_tokens,
+                )
+            })
+            .collect();
         assert_eq!(
-            user_harness_days[0].day_start.unix_timestamp() % 86_400,
-            0,
+            days,
+            vec![
+                (first_day, "codex", "Codex", 1, 40),
+                (first_day + Duration::days(1), "codex", "Codex", 1, 60),
+            ],
             "harness usage is bucketed by UTC day"
         );
     }

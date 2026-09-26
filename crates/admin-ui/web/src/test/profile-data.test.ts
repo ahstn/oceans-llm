@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  budgetStatus,
   buildHeatmap,
   harnessRequestsChart,
   modelRequestsChart,
   personalApiKeys,
+  profileHeadlines,
   profileInRange,
   rankModels,
   summarizeDays,
   tokenVolumeChart,
   type ProfileRange,
 } from '@/routes/profile/-components/profile-data'
-import { budgetStatus } from '@/routes/profile/-components/profile-budget'
-import { profileHeadlines } from '@/routes/profile/-components/profile-headlines'
 import { apiKey, profileDay, profileView } from '@/test/profile-fixtures'
 
 describe('profile data', () => {

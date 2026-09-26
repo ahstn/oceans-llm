@@ -1,4 +1,4 @@
-import type { ApiKeysPayload, ApiKeyView, MyProfileDayView, MyProfileView } from '@/types/api'
+import type { ApiKeyView, MyProfileDayView, MyProfileView } from '@/types/api'
 
 export function profileDay(
   day: string,
@@ -23,6 +23,7 @@ export function profileView(overrides: Partial<MyProfileView> = {}): MyProfileVi
   return {
     window_start: '2025-09-26T00:00:00Z',
     window_end: '2026-09-26T00:00:00Z',
+    api_keys: [],
     budget: {
       settings: {
         amount_usd: '100.00',
@@ -98,8 +99,4 @@ export function apiKey(id: string, overrides: Partial<ApiKeyView> = {}): ApiKeyV
     revoked_at: null,
     ...overrides,
   }
-}
-
-export function apiKeysPayload(items: ApiKeyView[]): ApiKeysPayload {
-  return { items, users: [], service_accounts: [], models: [] }
 }

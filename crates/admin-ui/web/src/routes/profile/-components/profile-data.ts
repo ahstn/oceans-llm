@@ -1,6 +1,7 @@
 import type { ChartConfig } from '@/components/ui/chart'
 import type {
   ApiKeyView,
+  MyProfileBudgetView,
   MyProfileDayView,
   MyProfileHarnessDayView,
   MyProfileModelDayView,
@@ -167,6 +168,44 @@ export function rankHarnesses(rows: MyProfileHarnessDayView[]) {
   return rankKeys(harnessRows(rows))
 }
 
+export type ProfileHeadlines = {
+  totals: UsageTotals
+  model: Preference | null
+  harness: Preference | null
+}
+
+export function profileHeadlines(profile: MyProfileView): ProfileHeadlines {
+  return {
+    totals: summarizeDays(profile.days),
+    model: rankModels(profile.model_days)[0] ?? null,
+    harness: rankHarnesses(profile.harness_days)[0] ?? null,
+  }
+}
+
+// ── Budget ────────────────────────────────────────────────────────────────────
+
+export type BudgetStatus = {
+  spent: number
+  limit: number
+  remaining: number
+  /** Spent over limit, uncapped so overspend reads as > 100%. */
+  ratio: number
+  tone: 'ok' | 'warning' | 'over'
+}
+
+export function budgetStatus(budget: MyProfileBudgetView): BudgetStatus {
+  const spent = budget.spent_usd_10000
+  const limit = budget.settings.amount_usd_10000
+  const ratio = limit > 0 ? spent / limit : 0
+  return {
+    spent,
+    limit,
+    remaining: Math.max(0, limit - spent),
+    ratio,
+    tone: ratio >= 1 ? 'over' : ratio >= 0.8 ? 'warning' : 'ok',
+  }
+}
+
 // ── Range filtering ───────────────────────────────────────────────────────────
 
 /** The profile narrowed to the last `range` days, so every card agrees on the window. */
@@ -208,7 +247,11 @@ const TOKEN_KEYS = [
   { key: 'cached', label: 'Cached input', color: 'var(--chart-1)' },
 ]
 
-/** Stacked input, cached input, and output tokens per bucket. */
+/**
+ * Stacked input, cached input, and output tokens per bucket. "Input" is everything not read from
+ * cache (cache misses, cache writes, and input with no provider cache split), so the stack sums
+ * to input plus output tokens.
+ */
 export function tokenVolumeChart(profile: MyProfileView, range: ProfileRange): SeriesChart {
   const end = lastProfileDay(profile)
   const { starts, bucketOf } = buckets(end, range)
@@ -292,7 +335,9 @@ export type Heatmap = {
 export function buildHeatmap(profile: MyProfileView, weeks = 53): Heatmap {
   const end = lastProfileDay(profile)
   const usageByDay = new Map(profile.days.map((day) => [day.day, day]))
-  const thresholds = quartiles(profile.days.map((day) => day.total_tokens).filter((v) => v > 0))
+  const thresholds = quartiles(
+    profile.days.flatMap((day) => (day.total_tokens > 0 ? [day.total_tokens] : [])),
+  )
   const firstSunday = addUtcDays(end, -end.getUTCDay() - (weeks - 1) * 7)
 
   const columns: (HeatmapCell | null)[][] = []

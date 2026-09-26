@@ -2971,6 +2971,8 @@ export interface components {
         };
         Envelope_MyProfileView: {
             data: {
+                /** @description API keys the user owns personally. Team and service-account keys are excluded. */
+                api_keys: components["schemas"]["AdminApiKeyView"][];
                 budget?: null | components["schemas"]["MyProfileBudgetView"];
                 days: components["schemas"]["MyProfileDayView"][];
                 harness_days: components["schemas"]["MyProfileHarnessDayView"][];
@@ -3577,6 +3579,8 @@ export interface components {
             total_tokens: number;
         };
         MyProfileView: {
+            /** @description API keys the user owns personally. Team and service-account keys are excluded. */
+            api_keys: components["schemas"]["AdminApiKeyView"][];
             budget?: null | components["schemas"]["MyProfileBudgetView"];
             days: components["schemas"]["MyProfileDayView"][];
             harness_days: components["schemas"]["MyProfileHarnessDayView"][];
