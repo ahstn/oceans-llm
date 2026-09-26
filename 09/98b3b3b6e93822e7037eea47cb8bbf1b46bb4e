@@ -1,0 +1,59 @@
+.agents/skills/verify-oceans-admin/features/README.md
+  s_0b69ca48aa3844::t_593788c1d98ce7 11,15-25,69-76
+.agents/skills/verify-oceans-admin/features/agent-harnesses.md
+  s_0b69ca48aa3844::t_f6e966c0fc507f 3,9-10,12-13,22,25,36
+.agents/skills/verify-oceans-admin/features/backend-gateway.md
+  s_0b69ca48aa3844::t_71ea36d756a095 31,38,42-43
+.agents/skills/verify-oceans-admin/features/batch-requests.md
+  s_0b69ca48aa3844::t_7edb9e1a8df64d 1-45
+.agents/skills/verify-oceans-admin/features/leaderboard.md
+  s_0b69ca48aa3844::t_953367646c8707 3,8-9,11,20,26-28,33
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_0b69ca48aa3844::t_619d4e563eb4eb 30,40-41
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_0b69ca48aa3844::t_d0a39c15fa56c8 19,23,31-32,71
+.agents/skills/verify-oceans-admin/features/models.md
+  s_0b69ca48aa3844::t_749402d90ea523 3,9,11-13,25,29-31,33-35,42-43
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_0b69ca48aa3844::t_12c81d3c687c5a 8-9,27,29,31,36-38
+.agents/skills/verify-oceans-admin/features/review-agent.md
+  s_0b69ca48aa3844::t_741e8c42497887 1-43
+.agents/skills/verify-oceans-admin/features/spend-controls.md
+  s_0b69ca48aa3844::t_e72ff3ecfa0109 1-46
+.agents/skills/verify-oceans-admin/features/usage-costs.md
+  s_0b69ca48aa3844::t_b57ec3ae2b078f 1-41
+.agents/skills/verify-oceans-admin/features/workspace-connections.md
+  s_0b69ca48aa3844::t_928d4d39e6bd33 1-39
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  s_0b69ca48aa3844::t_bd095a343a11b9 9-19,22-38,63-65,357
+.agents/skills/verify-oceans-admin/scripts/drive-backend-gateway.mjs
+  s_0b69ca48aa3844::t_1add89099b9de4 129-130
+.agents/skills/verify-oceans-admin/scripts/drive-models.mjs
+  s_0b69ca48aa3844::t_6485124bfd5660 70,94,98,104,119,122,126,128,136,162
+.agents/skills/verify-oceans-admin/scripts/plan-verification.mjs
+  s_0b69ca48aa3844::t_d482fabe4fb859 1-156
+.agents/skills/verify-oceans-admin/scripts/plan-verification.test.mjs
+  s_0b69ca48aa3844::t_e18820f4cce173 1-60
+.claude/skills/verify-oceans-admin
+  s_0b69ca48aa3844::t_701d655d87afa3 1
+.gitignore
+  s_0b69ca48aa3844::t_f85f1431dd12ab 29-31
+AGENTS.md
+  s_0b69ca48aa3844::t_133c80a6ea8678 11-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0998b3b3b6e93822e7037eea47cb8bbf1b46bb4e",
+  "prompts": {},
+  "sessions": {
+    "s_0b69ca48aa3844": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a58ba52-6ef4-465b-9e35-b9e7eeacb85b",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
