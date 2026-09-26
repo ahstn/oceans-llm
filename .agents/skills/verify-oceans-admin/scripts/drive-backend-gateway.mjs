@@ -126,7 +126,8 @@ try {
         },
       ],
       tool_choice: { type: "function", function: { name: "bash" } },
-      max_tokens: 32,
+      // deepseek-v4-flash reasons before the tool call; 32 tokens truncated the arguments to {}.
+      max_tokens: 128,
     }),
   });
   const requestId = liveResponse.headers.get("x-request-id");

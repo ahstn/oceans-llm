@@ -27,7 +27,7 @@ Preconditions:
 - Create a unique temporary gateway API key through the API Keys recipe. Export it only in the current shell as `OCEANS_VERIFY_API_KEY`. Do not write it to evidence or command history.
 
 - **Select one provider.** Prefer OpenRouter unless the change is Bedrock-specific. Do not call both providers only to increase test count.
-- **OpenRouter request.** Send one non-streaming request with `model: deepseek-v4-flash-0731`, a short synthetic prompt, and `max_tokens` no greater than 32. Expect a successful Chat Completions response.
+- **OpenRouter request.** Send one non-streaming request with `model: deepseek-v4-flash-0731`, a short synthetic prompt, and `max_tokens` no greater than 128. Expect a successful Chat Completions response.
 - **Bedrock request.** Send one non-streaming request with `model: gpt-oss-120b-bedrock`, a short synthetic input, `max_output_tokens` no greater than 64, and `store: false`. Expect a successful Responses response.
 - **Changed behavior.** Add only the smallest option needed to exercise the changed path, such as `stream: true` for streaming work or one deterministic function tool for tool translation. Do not broaden the prompt.
 - **Request-log proof.** In `Request Logs`, locate the canary by time and gateway model. Confirm success, the expected provider and configured upstream model, and non-zero usage when the provider supplies it. Capture the list and detail states with bounded, sanitized payload evidence and credentials redacted. Write a sanitized `openrouter-canary-proof.json` or `bedrock-canary-proof.json` in the run evidence directory. Include the run ID, gateway model, provider, upstream model, status, usage, and request-log ID. Do not include prompts, responses, or credentials.
@@ -37,7 +37,8 @@ Preconditions:
 
 - A configured model, present credential, healthy gateway, or generated client configuration does not prove a live provider call.
 - OpenRouter is the preferred low-cost generic path. Its configured `deepseek/deepseek-v4-flash-0731` rate is $0.03 input and $0.10 output per million tokens, but OpenRouter can route among upstream hosts.
-- Bedrock Mantle uses model ID `openai.gpt-oss-120b` and the `/v1/responses` path. The configured standard rate in `us-east-1` is $0.15 input and $0.60 output per million tokens. The Bedrock Runtime model ID is different: `openai.gpt-oss-120b-1:0`.
+- Bedrock Mantle uses model ID `openai.gpt-oss-120b` and the `/v1/responses` path. The configured standard rate in `us-east-1` is $0.15 input and $0.60 output per million tokens. The Bedrock Runtime route (`gpt-oss-120b`, `runtime_openai_chat`) is a separate path that does not accept `/v1/responses`. Do not use it for Mantle proof.
+- `/v1/decisions` (model `jev`, OpenRouter `typesafe/jev-1.13`) is a separate paid path. Its request logs show operation `Decisions`, and it skips inference guardrails. Chat and Responses canaries do not prove it.
 - Bedrock stored responses default to retention. Keep `store: false` unless storage behavior is the test target.
 - A provider outage, missing model access, expired credential, quota, or network block is an integration failure with a specific cause. It does not invalidate separate local UI proof.
 - Never record raw API keys, authorization headers, full environment dumps, or provider response content that can contain submitted data.
