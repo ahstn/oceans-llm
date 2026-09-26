@@ -16,10 +16,11 @@ MCP verification follows the admin browser path from server registration to tool
 ## How to get to it (user POV)
 
 - Open `/admin/mcp` and sign in as the seeded platform administrator. The registry is also available at `/admin/mcp?tab=servers`.
+- The `MCP sections` nav switches between `Servers`, `Tool Sets` (`/admin/mcp/toolsets`), and `Access` (`/admin/mcp?tab=access`). `/admin/mcp/servers`, `/admin/mcp/access`, and `?tab=toolsets` all redirect.
 - Open `/admin/mcp/toolsets` for the Tool Sets workbench and its `Connection Info` dialog.
 - Open `API Keys` at `/admin/api-keys` to create the temporary caller key, then `/admin/mcp?tab=access` to grant the saved tool set.
 - Connect an MCP client to `/mcp/{server_key}` for one server or `/mcp` for the aggregate catalog.
-- Open `MCP invocations` under `Observability` at `/admin/observability/mcp-invocations` to inspect a call.
+- Open `MCP Invocations` in the `Observability` sidebar group at `/admin/observability/mcp-invocations` (page heading `MCP invocations`) to inspect a call.
 
 ## Driving it with control-oceans-admin
 
@@ -27,7 +28,8 @@ Preconditions:
 
 - Use the owned local stack and require `control-oceans-admin doctor` to pass. The platform administrator needs the `mcp`, `api_keys`, and `mcp_invocations` pages plus `create_api_key` and `revoke_api_key` actions. Root `gateway.yaml` grants these through the configured permission groups.
 - Before launch, export `GATEWAY_CLIENT_CONFIG_BASE_URL=http://127.0.0.1:$OCEANS_VERIFY_GATEWAY_PORT`. This value controls generated client configuration; the driver's `expected_gateway_url` must contain the same origin followed by `/mcp`.
-- Load the required credential aliases into the gateway process before launch. Setting them only in the driver process cannot change an already running gateway. The example uses the GitHub token from `gh auth token --hostname github.com` and Exa's `EXA_API_KEY` from Mise. Keep their values in process memory and out of the candidate file and evidence.
+- Load the required credential aliases into the gateway process before launch. Setting them only in the driver process cannot change an already running gateway. The example uses the GitHub token from `gh auth token --hostname github.com` and Exa's `EXA_API_KEY` from Mise. Keep their values in process memory and out of the candidate file and evidence. Without GitHub or Exa keys, copy the example, set `required: false` on `github` and `exa` (or remove them), and report them as gaps.
+- The example's `expected_gateway_url` hardcodes the default `OCEANS_VERIFY_GATEWAY_PORT=38090`. If you override the port, edit it in your copy.
 - Use only reviewed read-only tools with public or synthetic arguments. The example sends two successful upstream tool calls per positive candidate, plus one failing aggregate call for the invalid-key control. Discovery and protocol setup add requests. MCP calls can consume service quota; no LLM provider request is sent.
 
 The [candidate example](../examples/mcp-candidates.json) uses these endpoint and authentication settings:
@@ -66,6 +68,7 @@ mise exec -- node --test .agents/skills/verify-oceans-admin/scripts/mcp-verifica
 
 - GitHub and Exa use gateway-managed static credentials in this recipe. Passing their calls does not prove OAuth consent, principal-bound credentials, token refresh, or revocation at the upstream service.
 - Exa discovery can succeed without a valid key. A catalog result alone is not authentication proof; keep the successful tool call and invalid-key control together.
+- Not automated: `Browse catalog` import, credential bindings and `OAuth on-behalf-of`, the `Add to toolset` handoff, the `Preview access` effective-access preview, and UI grant `Revoke`. Cleanup uses `DELETE /api/v1/admin/mcp/grants`.
 - Discovery proves schema availability. The generated configuration proves rendered content. This driver does not install or run the listed client applications.
 - The temporary API key has one model grant and selected MCP access. It is not an MCP-only key, and this test makes no model-provider call.
 - Use a fresh run ID and the stack owned by that run. A failed driver must finish its resource cleanup before stack teardown; inspect cleanup failures before closing the local gateway.

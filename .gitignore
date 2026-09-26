@@ -26,6 +26,9 @@ gateway.db*
 .codex/config.toml
 .codex/security/
 .claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/verify-oceans-admin
 .agents/skills/*
 !.agents/skills/verify-oceans-admin/
 !.agents/skills/verify-oceans-admin/**

@@ -67,7 +67,7 @@ try {
   await page.getByRole('heading', { name: 'Models', exact: true }).waitFor()
   await page.getByRole('heading', { name: 'Model list' }).waitFor()
   await page.getByTestId('models-desktop-table').waitFor()
-  await page.getByTestId('models-desktop-cell-gpt-5.6-sol').waitFor()
+  await page.getByTestId('models-desktop-cell-gpt-6-astra').waitFor()
   const showingText = (await page.getByText(/^Showing \d+ of \d+ models$/).textContent())?.trim()
   if (!showingText) throw new Error('The Models page did not report a visible model count.')
   const match = /^Showing (\d+) of (\d+) models$/.exec(showingText)
@@ -91,17 +91,17 @@ try {
     throw new Error(`UI total model count ${totalCount} did not match admin API count ${apiCount}.`)
   }
 
-  const modelCell = page.getByTestId('models-desktop-cell-gpt-5.6-sol')
+  const modelCell = page.getByTestId('models-desktop-cell-gpt-6-astra')
   const modelRow = modelCell.locator('xpath=ancestor::tr')
   await modelRow.getByRole('button', { name: 'Info' }).click()
   const infoDialog = page.getByRole('dialog', { name: 'Model info' })
-  await infoDialog.getByText('gpt-5.6-sol', { exact: true }).first().waitFor()
+  await infoDialog.getByText('gpt-6-astra', { exact: true }).first().waitFor()
   const infoSections = infoDialog.getByRole('navigation', { name: 'Model info sections' })
   for (const name of ['Overview', 'Routing', 'Economics', 'Access']) {
     await infoSections.getByRole('button', { name, exact: true }).click()
     await infoDialog.getByRole('heading', { name, exact: true }).waitFor()
   }
-  actions.push({ action: 'inspect gpt-5.6-sol model info', result: 'All platform-admin sections visible' })
+  actions.push({ action: 'inspect gpt-6-astra model info', result: 'All platform-admin sections visible' })
   await capture(page, '03-model-info')
   await page.keyboard.press('Escape')
   await infoDialog.waitFor({ state: 'hidden' })
@@ -116,16 +116,16 @@ try {
   await capture(page, '04-model-columns')
 
   const configRow = page
-    .getByTestId('models-desktop-cell-gpt-5.6-sol')
+    .getByTestId('models-desktop-cell-gpt-6-astra')
     .locator('xpath=ancestor::tr')
   await configRow
-    .getByRole('button', { name: 'Generate client config for gpt-5.6-sol', exact: true })
+    .getByRole('button', { name: 'Generate client config for gpt-6-astra', exact: true })
     .click()
   const configDialog = page.getByRole('dialog', { name: 'Client config' })
   await configDialog.waitFor()
-  await configDialog.getByText(/^gpt-5\.6-sol via /).waitFor()
+  await configDialog.getByText(/^gpt-6-astra via /).waitFor()
   const clientConfigs = await verifyClientConfigs(page, configDialog)
-  actions.push({ action: 'generate gpt-5.6-sol client config', result: 'Client config dialog visible' })
+  actions.push({ action: 'generate gpt-6-astra client config', result: 'Client config dialog visible' })
   await capture(page, '05-model-client-config')
 
   const proof = {
@@ -133,7 +133,7 @@ try {
     entryUrl: `${baseURL}/admin/api-keys`,
     finalUrl: page.url(),
     gatewayVersion,
-    modelId: 'gpt-5.6-sol',
+    modelId: 'gpt-6-astra',
     displayedCount,
     renderedCount,
     totalCount,
@@ -159,7 +159,7 @@ async function verifyClientConfigs(page, dialog) {
     const result = await fetch('/api/v1/admin/models/client-configs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model_keys: ['gpt-5.6-sol'] }),
+      body: JSON.stringify({ model_keys: ['gpt-6-astra'] }),
     })
     if (!result.ok) throw new Error(`Client configuration API returned ${result.status}`)
     return result.json()

@@ -8,6 +8,12 @@ Use `mise` for all repo tooling and task execution.
   - `mise run lint` for mixed Rust/UI changes.
   - `cargo clippy --workspace --all-targets -- -D warnings` if only Rust changed.
 
+## Verification
+- Before handing off a change that touches runtime behaviour, verify it end to end with the `verify-oceans-admin` skill (`.agents/skills/verify-oceans-admin/SKILL.md`; also linked at `.claude/skills/verify-oceans-admin`).
+  - Run `.agents/skills/verify-oceans-admin/scripts/control-oceans-admin plan` first. It maps the diff to the proofs to run, or prints `SKIP: no runtime surface`.
+  - Report the run ID, the proofs you ran, and any skipped or unreachable proof, along with the reason.
+- When a change adds or renames an admin route, a user-visible label, or seeded demo data, update the matching `features/*.md` recipe and `features/routing.json` in the same change.
+
 ## GitHub
 - Use `gh` CLI for creating pull requests.
   - For new pull requests, use `.github/PULL_REQUEST_TEMPLATE.md` as the content reference.

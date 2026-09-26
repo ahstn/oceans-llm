@@ -1,6 +1,7 @@
 ---
 name: verify-oceans-admin
-description: Verify the Oceans LLM admin control plane and backend gateway against the real local stack, seeded demo data, and bounded live providers when required. Use for user-path checks of sign-in, models, API keys, observability, agent sessions, request logs, MCP registry and tool access, OpenRouter routing, and guardrails.
+description: Verify the Oceans LLM admin control plane and backend gateway against the real local stack, seeded demo data, and bounded live providers when required. Use for user-path checks of sign-in, models, API keys, observability, usage costs, spend controls, batches, agent sessions, request logs, MCP registry and tool access, OpenRouter routing, and guardrails.
+compatibility: Requires mise, git, lsof, and Chromium via `mise run e2e-install`; macOS or Linux.
 ---
 
 # Verify Oceans Admin
@@ -9,12 +10,22 @@ Use this skill to drive the embedded TanStack Start admin UI through the gateway
 
 Read [features/README.md](./features/README.md) before you choose a proof. Use the exact feature recipe for the path under test.
 
-## Launch
+## Plan
 
-Run all commands from the repository root. Activate the configured toolchain and select a unique run ID:
+Start from the diff, not from memory. From the repository root:
 
 ```bash
-eval "$(/Users/ahstn/.local/bin/mise activate zsh)"
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin plan            # against origin/main
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin plan HEAD~1 --json
+```
+
+`plan` maps every changed and untracked path through [features/routing.json](./features/routing.json). It prints `RUN <feature>` with the recipe and `drive` command (or `manual recipe`), flags paid proofs, and lists `SKIPPED` paths with a reason. When nothing reaches a runtime surface, it prints `SKIP: no runtime surface`; report that line instead of launching a stack. `UNMAPPED` paths need a decision. Pick the feature the path affects, run that proof, and add the glob to `routing.json` in the same change. `plan` needs no run ID and starts nothing.
+
+## Launch
+
+Run all commands from the repository root. `control-oceans-admin` finds `mise` on `PATH` or at `~/.local/bin/mise`; set `MISE_BIN` if it lives elsewhere. Select a unique run ID:
+
+```bash
 export OCEANS_VERIFY_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 export OCEANS_VERIFY_GATEWAY_PORT=38090
 export OCEANS_VERIFY_UI_PORT=33010
@@ -53,7 +64,7 @@ Prove the Models path:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive models
 ```
 
-The Models driver runs the idempotent `mise run e2e-install` task to ensure Chromium is available. It then opens the protected `/admin/api-keys` route, captures its redirect to sign-in, signs in as the seeded `admin@local` user, follows the `Models` sidebar link, checks the displayed count against rendered rows and the total count against the read-only admin models response, checks every platform-admin `Model info` section, enables `Context window` and `Capabilities`, and opens `Client config` for `gpt-5.6-sol`.
+The Models driver runs the idempotent `mise run e2e-install` task to ensure Chromium is available. It then opens the protected `/admin/api-keys` route, captures its redirect to sign-in, signs in as the seeded `admin@local` user, follows the `Models` sidebar link, checks the displayed count against rendered rows and the total count against the read-only admin models response, checks every platform-admin `Model info` section, enables `Context window` and `Capabilities`, and opens `Client config` for `gpt-6-astra`.
 
 Prove the Leaderboard and Agent Harnesses paths together:
 
@@ -67,7 +78,7 @@ seeded 7-day window. It selects the 31-day range on both pages and repeats the c
 also requires the new leaderboard columns, harness token columns, a Mastra row with its Lobe icon,
 and an Oh My Pi row with its white `omp.sh` mark.
 
-The current `gateway.yaml` grants the `agent_sessions` page to platform administrators. Verify the list, filtering, pagination, and a matching detail sheet against the seeded demo data.
+Features whose routing entry says `manual` have no driver yet. Follow their recipe with any browser automation your harness offers (Playwright via `mise exec -- node`, a built-in browser, or an MCP browser). Apply the same proof rules as a driver: capture the entry action, capture the resulting state, and check API parity. The admin UI is server-rendered, so wait for network idle after each navigation before you fill fields; values typed before hydration are silently discarded. Read counts only after the list re-renders, not straight after the URL changes.
 
 For other features, follow the exact stable handles in the feature map. Extend the driver with a named command before you report a new path as automated.
 
@@ -161,6 +172,7 @@ Pass the proof name so evidence validation requires its matching proof JSON.
 The executable helper is [scripts/control-oceans-admin](./scripts/control-oceans-admin). Its supported commands are:
 
 ```text
+control-oceans-admin plan [base-ref] [--json]
 control-oceans-admin launch
 control-oceans-admin doctor
 control-oceans-admin drive models
@@ -172,4 +184,10 @@ control-oceans-admin cleanup
 
 ```
 
-The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs), and [scripts/drive-mcp.mjs](./scripts/drive-mcp.mjs). The MCP driver uses [scripts/mcp-browser.mjs](./scripts/mcp-browser.mjs) and [scripts/mcp-canary.mjs](./scripts/mcp-canary.mjs). Call the drivers through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.
+The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs), and [scripts/drive-mcp.mjs](./scripts/drive-mcp.mjs). The MCP driver uses [scripts/mcp-browser.mjs](./scripts/mcp-browser.mjs) and [scripts/mcp-canary.mjs](./scripts/mcp-canary.mjs). `plan` runs [scripts/plan-verification.mjs](./scripts/plan-verification.mjs).
+
+Offline regression tests (no stack, no upstream calls):
+
+```bash
+mise exec -- node --test .agents/skills/verify-oceans-admin/scripts/*.test.mjs
+``` Call the drivers through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.

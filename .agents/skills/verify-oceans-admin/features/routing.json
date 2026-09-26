@@ -1,0 +1,434 @@
+{
+  "baseRefs": [
+    "origin/main",
+    "main"
+  ],
+  "skip": [
+    {
+      "reason": "tests only; CI covers them",
+      "paths": [
+        "**/*.test.{ts,tsx,mjs,js}",
+        "**/*_tests.rs",
+        "**/tests.rs",
+        "**/tests/**",
+        "**/test_support.rs",
+        "crates/admin-ui/web/e2e/**",
+        "crates/admin-ui/web/src/test/**",
+        "crates/gateway-store/src/agent_analysis_tests.rs",
+        "crates/gateway-store/src/budget_reconciliation_tests.rs"
+      ]
+    },
+    {
+      "reason": "documentation only",
+      "paths": [
+        "docs/**",
+        "*.md",
+        "crates/**/*.md",
+        ".github/**/*.md",
+        ".agents/skills/verify-oceans-admin/**/*.md"
+      ]
+    },
+    {
+      "reason": "Postgres store; the local stack runs libSQL",
+      "paths": [
+        "crates/gateway-store/src/postgres_store/**"
+      ]
+    },
+    {
+      "reason": "release, CI, or deployment tooling with no local runtime surface",
+      "paths": [
+        ".github/**",
+        "deploy/**",
+        "actions/**",
+        "gha-research/**",
+        "cliff.toml",
+        "cog.toml",
+        "skills-lock.json",
+        "rust-analyzer.toml",
+        "crates/admin-ui/web/Dockerfile"
+      ]
+    },
+    {
+      "reason": "verification planner; covered by plan-verification.test.mjs",
+      "paths": [
+        ".agents/skills/verify-oceans-admin/features/routing.json",
+        ".agents/skills/verify-oceans-admin/scripts/plan-verification.mjs"
+      ]
+    },
+    {
+      "reason": "agent harness and repository wiring",
+      "paths": [
+        ".claude/skills/**",
+        ".claude/skills/*",
+        ".gitignore",
+        ".gitattributes"
+      ]
+    }
+  ],
+  "shared": [
+    {
+      "reason": "admin shell, nav, auth routing, and shared data loaders reach every page",
+      "features": [
+        "password-sign-in",
+        "models",
+        "leaderboard"
+      ],
+      "paths": [
+        "crates/admin-ui/web/src/components/layout/**",
+        "crates/admin-ui/web/src/components/app-sidebar.tsx",
+        "crates/admin-ui/web/src/components/ui/**",
+        "crates/admin-ui/web/src/components/reui/**",
+        "crates/admin-ui/web/src/routes/__root.tsx",
+        "crates/admin-ui/web/src/routes/-auth-routing.ts",
+        "crates/admin-ui/web/src/router.tsx",
+        "crates/admin-ui/web/src/routeTree.gen.ts",
+        "crates/admin-ui/web/src/server/**",
+        "crates/admin-ui/web/src/lib/**",
+        "crates/admin-ui/web/src/hooks/**",
+        "crates/admin-ui/web/src/styles/**",
+        "crates/admin-ui/web/src/types/**",
+        "crates/admin-ui/web/src/generated/**",
+        "crates/admin-ui/web/*.{json,ts,lock}",
+        "crates/admin-ui/src/**",
+        "crates/admin-ui/Cargo.toml",
+        "crates/gateway/src/http/mod.rs",
+        "crates/gateway/src/http/state.rs",
+        "crates/gateway/src/http/error.rs",
+        "crates/gateway/src/http/admin_contract.rs",
+        "crates/gateway/src/config/**",
+        "crates/gateway/src/main.rs",
+        "crates/gateway/src/lib.rs",
+        "crates/gateway/src/cli.rs",
+        "crates/gateway/openapi/**",
+        "crates/gateway-store/src/{lib,store,migrate,migration_registry,shared}.rs",
+        "crates/gateway-store/src/libsql_store/{mod,support}.rs",
+        "crates/gateway-store/migrations/**",
+        "crates/gateway/src/local_demo_seed/mod.rs",
+        "gateway.yaml",
+        "mise.toml",
+        "Cargo.toml",
+        "Cargo.lock",
+        ".agents/skills/verify-oceans-admin/scripts/control-oceans-admin"
+      ]
+    },
+    {
+      "reason": "core inference path reaches every live request",
+      "features": [
+        "live-llm-requests",
+        "request-logs"
+      ],
+      "paths": [
+        "crates/gateway-core/**",
+        "crates/gateway-service/src/{service,route_planner,model_resolution,model_access,authenticator}.rs",
+        "crates/gateway/src/http/handlers.rs",
+        "crates/gateway/src/http/handlers/inference.rs",
+        "crates/gateway/src/http/request_body.rs",
+        "crates/gateway/src/http/request_tracing.rs",
+        "crates/gateway/src/http/response_cache.rs"
+      ]
+    }
+  ],
+  "features": [
+    {
+      "id": "models",
+      "file": "models.md",
+      "proof": {
+        "drive": "models"
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/models.tsx",
+        "crates/gateway/src/http/models.rs",
+        "crates/gateway-service/src/admin_models.rs",
+        "crates/gateway-service/src/effective_route_metadata.rs",
+        "crates/gateway-service/src/model_metadata.rs",
+        "crates/gateway-service/src/model_metadata/**",
+        "crates/gateway-service/src/pricing_catalog.rs",
+        "crates/gateway-service/src/pricing_catalog/**",
+        "crates/gateway-service/src/icon_identity.rs",
+        "crates/gateway-store/src/libsql_store/{models,providers,pricing_catalog}.rs",
+        "crates/gateway-store/src/pricing_sync.rs",
+        "crates/gateway-client-config/**",
+        "crates/gateway/src/local_demo_seed/models.rs",
+        ".agents/skills/verify-oceans-admin/scripts/drive-models.mjs"
+      ]
+    },
+    {
+      "id": "leaderboard",
+      "file": "leaderboard.md",
+      "proof": {
+        "drive": "observability"
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/observability/leaderboard.tsx",
+        "crates/gateway/src/http/observability.rs",
+        "crates/gateway-store/src/libsql_store/budgets.rs",
+        "crates/gateway/src/local_demo_seed/usage.rs",
+        ".agents/skills/verify-oceans-admin/scripts/drive-observability.mjs"
+      ]
+    },
+    {
+      "id": "agent-harnesses",
+      "file": "agent-harnesses.md",
+      "proof": {
+        "drive": "observability"
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx",
+        "crates/admin-ui/web/src/components/icons/**",
+        "crates/gateway/src/http/observability.rs",
+        "crates/gateway-service/src/request_logging/harness.rs",
+        "crates/gateway/src/local_demo_seed/usage.rs",
+        ".agents/skills/verify-oceans-admin/scripts/drive-observability.mjs"
+      ]
+    },
+    {
+      "id": "password-sign-in",
+      "file": "password-sign-in.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/{index,login,no-access}.tsx",
+        "crates/admin-ui/web/src/routes/-login-messages.ts",
+        "crates/admin-ui/web/src/components/layout/auth-layout.tsx",
+        "crates/gateway/src/http/identity.rs",
+        "crates/gateway/src/http/admin_auth.rs",
+        "crates/gateway/src/http/handlers/auth.rs",
+        "crates/gateway-service/src/authenticator.rs",
+        "crates/gateway-store/src/libsql_store/identity.rs",
+        "crates/gateway/src/local_demo_seed/users.rs"
+      ]
+    },
+    {
+      "id": "api-keys",
+      "file": "api-keys.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/api-keys.tsx",
+        "crates/admin-ui/web/src/routes/api-keys/**",
+        "crates/gateway/src/http/api_keys.rs",
+        "crates/gateway-service/src/admin_api_keys.rs",
+        "crates/gateway-service/src/model_access.rs",
+        "crates/gateway-service/src/secret_storage.rs",
+        "crates/gateway-store/src/libsql_store/api_keys.rs",
+        "crates/gateway/src/local_demo_seed/api_keys.rs"
+      ]
+    },
+    {
+      "id": "agent-sessions",
+      "file": "agent-sessions.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/observability/agent-sessions.tsx",
+        "crates/admin-ui/web/src/components/observability/**",
+        "crates/gateway/src/http/observability/agent_sessions.rs",
+        "crates/gateway/src/http/observability/agent_sessions/**",
+        "crates/gateway/src/agent_analysis_recompute.rs",
+        "crates/agent-session-analysis/**",
+        "crates/gateway-service/src/agent_analysis.rs",
+        "crates/gateway-service/src/agent_analysis/**",
+        "crates/gateway-store/src/libsql_store/agent_analysis.rs",
+        "crates/gateway-store/src/libsql_store/agent_analysis/**",
+        "crates/gateway-store/src/any_store_agent_analysis.rs",
+        "crates/gateway/src/local_demo_seed/agent_*.rs"
+      ]
+    },
+    {
+      "id": "request-logs",
+      "file": "request-logs.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/observability/request-logs.tsx",
+        "crates/gateway/src/http/observability.rs",
+        "crates/gateway/src/http/request_tags.rs",
+        "crates/gateway/src/request_log_purge.rs",
+        "crates/gateway-service/src/request_logging.rs",
+        "crates/gateway-service/src/request_logging/**",
+        "crates/gateway-service/src/payload_bounding.rs",
+        "crates/gateway-service/src/payload_bounding/**",
+        "crates/gateway-service/src/redaction.rs",
+        "crates/gateway-service/src/redaction/**",
+        "crates/gateway-service/src/mcp_token_overhead.rs",
+        "crates/gateway-store/src/libsql_store/request_logs.rs",
+        "crates/gateway-store/src/libsql_store/mcp_token_overhead.rs",
+        "crates/gateway-store/src/any_store_mcp_token_overhead.rs"
+      ]
+    },
+    {
+      "id": "live-llm-requests",
+      "file": "live-llm-requests.md",
+      "proof": {
+        "manual": true
+      },
+      "paid": true,
+      "paths": [
+        "crates/gateway-providers/**",
+        "crates/gateway/src/http/anthropic_stream.rs",
+        "crates/gateway/src/http/request_body/**",
+        "crates/gateway/src/http/provider_credentials.rs",
+        "crates/gateway-service/src/provider_credentials.rs",
+        "crates/gateway-store/src/libsql_store/provider_user_credentials.rs",
+        "crates/gateway-store/src/any_store_provider_user_credentials.rs"
+      ]
+    },
+    {
+      "id": "backend-gateway",
+      "file": "backend-gateway.md",
+      "proof": {
+        "drive": "backend-gateway"
+      },
+      "paid": true,
+      "paths": [
+        "crates/gateway-guardrails/**",
+        "crates/gateway/src/http/inference_guardrails.rs",
+        "crates/gateway/src/http/guardrail_events.rs",
+        "crates/gateway/src/http/guardrails.rs",
+        "crates/gateway/src/http/handlers/inference.rs",
+        ".agents/skills/verify-oceans-admin/scripts/drive-backend-gateway.mjs"
+      ]
+    },
+    {
+      "id": "mcp",
+      "file": "mcp.md",
+      "proof": {
+        "drive": "mcp"
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/mcp/**",
+        "crates/admin-ui/web/src/components/mcp/**",
+        "crates/admin-ui/web/src/routes/observability/mcp-invocations.tsx",
+        "crates/gateway/src/http/mcp_*.rs",
+        "crates/gateway/src/http/mcp_*/**",
+        "crates/gateway-mcp/**",
+        "crates/gateway-service/src/mcp_*.rs",
+        "crates/gateway-store/src/libsql_store/mcp_*.rs",
+        "crates/gateway-store/src/any_store_mcp_*.rs",
+        ".agents/skills/verify-oceans-admin/scripts/{drive-mcp,mcp-browser,mcp-canary}.mjs",
+        ".agents/skills/verify-oceans-admin/examples/**"
+      ]
+    },
+    {
+      "id": "usage-costs",
+      "file": "usage-costs.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/observability/usage-costs.tsx",
+        "crates/admin-ui/web/src/routes/observability/-usage-costs/**",
+        "crates/gateway/src/http/spend.rs",
+        "crates/gateway/src/http/focus_export.rs",
+        "crates/gateway/src/local_demo_seed/usage.rs"
+      ]
+    },
+    {
+      "id": "guardrails",
+      "file": "guardrails.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/observability/guardrails.tsx",
+        "crates/gateway/src/http/guardrails.rs",
+        "crates/gateway/src/http/guardrail_events.rs",
+        "crates/gateway-store/src/libsql_store/guardrail_decisions.rs",
+        "crates/gateway-store/src/any_store_guardrail_decisions.rs"
+      ]
+    },
+    {
+      "id": "batch-requests",
+      "file": "batch-requests.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/batches.tsx",
+        "crates/admin-ui/web/src/routes/batches/**",
+        "crates/gateway/src/http/batches.rs",
+        "crates/gateway/src/batch_worker.rs",
+        "crates/gateway-service/src/batches.rs",
+        "crates/gateway-store/src/libsql_store/batches.rs",
+        "crates/gateway-store/src/any_store_batches.rs",
+        "crates/gateway-store/src/seed.rs",
+        "crates/gateway-store/src/seed/**"
+      ]
+    },
+    {
+      "id": "spend-controls",
+      "file": "spend-controls.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/spend-controls.tsx",
+        "crates/admin-ui/web/src/routes/spend-controls/**",
+        "crates/gateway/src/http/spend.rs",
+        "crates/gateway/src/http/spend_budget_listing.rs",
+        "crates/gateway-service/src/budget_*.rs",
+        "crates/gateway-store/src/libsql_store/budget*.rs",
+        "crates/gateway-store/src/budget_batch.rs"
+      ]
+    },
+    {
+      "id": "identity",
+      "file": "identity.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/identity/**",
+        "crates/gateway/src/http/{identity,identity_lifecycle,identity_views,provider_credentials}.rs",
+        "crates/gateway-store/src/libsql_store/{identity,provider_user_credentials}.rs",
+        "crates/gateway-store/src/any_store_provider_user_credentials.rs",
+        "crates/gateway/src/local_demo_seed/{users,teams}.rs"
+      ]
+    },
+    {
+      "id": "account-onboarding",
+      "file": "account-onboarding.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/{invite.$token,account-ready,change-password}.tsx",
+        "crates/admin-ui/web/src/routes/identity/{users.tsx,-user-form.ts}",
+        "crates/admin-ui/web/src/components/layout/auth-layout.tsx",
+        "crates/gateway/src/http/{identity,identity_lifecycle}.rs",
+        "crates/gateway-store/src/libsql_store/identity.rs"
+      ]
+    },
+    {
+      "id": "review-agent",
+      "file": "review-agent.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/review-agent.tsx",
+        "crates/gateway/src/http/review_agent.rs",
+        "crates/gateway-service/src/review_agent.rs",
+        "crates/gateway-store/src/any_store_review_agent.rs",
+        "crates/gateway-store/src/libsql_store/review_agent.rs"
+      ]
+    },
+    {
+      "id": "workspace-connections",
+      "file": "workspace-connections.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/account/**",
+        "crates/gateway/src/http/mcp_oauth.rs",
+        "crates/gateway/src/http/mcp_oauth/**",
+        "crates/gateway-service/src/mcp_oauth.rs"
+      ]
+    }
+  ]
+}
