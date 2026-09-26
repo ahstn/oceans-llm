@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   budgetStatus,
   buildHeatmap,
+  formatProfileCost,
   harnessRequestsChart,
   modelRequestsChart,
   personalApiKeys,
@@ -54,12 +55,26 @@ describe('profile data', () => {
     expect(daily.rows.at(-1)).toMatchObject({ day: '2026-09-25', output: 1_000, cached: 400 })
 
     const weekly = modelRequestsChart(profileView(), 365)
-    expect(weekly.rows.length).toBeLessThanOrEqual(53)
+    // 365 days is 52 whole weeks plus one day; the newest bucket is whole and the spare day drops.
+    expect(weekly.rows).toHaveLength(52)
+    expect(weekly.rows.at(-1)?.day).toBe('2026-09-19')
     const total = weekly.rows.reduce(
       (sum, row) => sum + Number(row.series_1 ?? 0) + Number(row.series_2 ?? 0),
       0,
     )
     expect(total).toBe(16)
+  })
+
+  it('flags cost that leaves out unpriced requests', () => {
+    const totals = summarizeDays([
+      profileDay('2026-09-24', { unpriced_request_count: 2, usage_missing_request_count: 1 }),
+      profileDay('2026-09-25'),
+    ])
+    expect(totals.unpricedRequests).toBe(3)
+    expect(formatProfileCost(totals.costUsd10000, totals.unpricedRequests)).toBe(
+      '$5.00 + 3 unpriced',
+    )
+    expect(formatProfileCost(0, 0)).toBe('$0.00')
   })
 
   it('folds harnesses beyond the top five into other', () => {
@@ -84,7 +99,11 @@ describe('profile data', () => {
     // 2026-09-25 is a Friday, so Saturday is padding.
     expect(lastWeek[5]).toMatchObject({ day: '2026-09-25', level: 4 })
     expect(lastWeek[6]).toBeNull()
-    expect(heatmap.weeks[0][0]?.day).toBe('2025-09-21')
+    // History starts on Friday 2025-09-26; the days before it are unknown, not zero usage.
+    expect(heatmap.weeks[0].slice(0, 5)).toEqual([null, null, null, null, null])
+    expect(heatmap.weeks[0][5]).toMatchObject({ day: '2025-09-26', level: 0 })
+    // The partial September label would crowd October's, so it is dropped.
+    expect(heatmap.months[0]).toMatchObject({ week: 1, label: 'Oct' })
     expect(lastWeek[4]?.level).toBeGreaterThan(0)
     expect(lastWeek[0]?.level).toBe(0)
   })

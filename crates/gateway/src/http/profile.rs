@@ -61,7 +61,12 @@ pub struct MyProfileDayView {
     pub cache_read_tokens: i64,
     pub cache_write_tokens: i64,
     pub total_tokens: i64,
+    /// Cost of priced requests only; incomplete when either gap count below is non-zero.
     pub cost_usd_10000: i64,
+    /// Requests with no pricing for their model, so they add nothing to the cost.
+    pub unpriced_request_count: i64,
+    /// Requests whose provider reported no usage, so they could not be priced.
+    pub usage_missing_request_count: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -178,6 +183,8 @@ fn build_day_views(
     for row in daily {
         let day = days.entry(row.day_start).or_default();
         day.cost_usd_10000 += row.priced_cost_usd.as_scaled_i64();
+        day.unpriced_request_count += row.unpriced_request_count;
+        day.usage_missing_request_count += row.usage_missing_request_count;
     }
     for row in model_daily {
         let day = days.entry(row.day_start).or_default();
@@ -248,9 +255,9 @@ mod tests {
         let daily = vec![SpendDailyAggregateRecord {
             day_start: day,
             priced_cost_usd: Money4::from_scaled(12_500),
-            priced_request_count: 3,
-            unpriced_request_count: 0,
-            usage_missing_request_count: 0,
+            priced_request_count: 1,
+            unpriced_request_count: 1,
+            usage_missing_request_count: 1,
             uncached_input_tokens: None,
             cache_read_tokens: None,
             cache_write_tokens: None,
@@ -281,6 +288,8 @@ mod tests {
         assert_eq!(views[0].total_tokens, 165);
         assert_eq!(views[0].cache_read_tokens, 40);
         assert_eq!(views[0].cost_usd_10000, 12_500);
+        assert_eq!(views[0].unpriced_request_count, 1);
+        assert_eq!(views[0].usage_missing_request_count, 1);
         assert_eq!(views[1].day, "2026-09-25");
         assert_eq!(views[1].cost_usd_10000, 0);
     }

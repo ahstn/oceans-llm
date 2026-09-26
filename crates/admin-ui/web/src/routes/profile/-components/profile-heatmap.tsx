@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 
-import { formatUsd10000 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { MyProfileView } from '@/types/api'
 
@@ -8,7 +7,9 @@ import {
   buildHeatmap,
   COMPACT_FORMATTER,
   formatLongDay,
+  formatProfileCost,
   NUMBER_FORMATTER,
+  unpricedRequests,
   type HeatmapCell,
 } from './profile-data'
 
@@ -41,7 +42,7 @@ const TOOLTIP_HALF_WIDTH = 96
 function describeCell(cell: HeatmapCell) {
   if (!cell.usage || cell.usage.request_count === 0)
     return `${formatLongDay(cell.day)}: no activity`
-  return `${formatLongDay(cell.day)}: ${NUMBER_FORMATTER.format(cell.usage.request_count)} requests, ${COMPACT_FORMATTER.format(cell.usage.total_tokens)} tokens, ${formatUsd10000(cell.usage.cost_usd_10000)}`
+  return `${formatLongDay(cell.day)}: ${NUMBER_FORMATTER.format(cell.usage.request_count)} requests, ${COMPACT_FORMATTER.format(cell.usage.total_tokens)} tokens, ${formatProfileCost(cell.usage.cost_usd_10000, unpricedRequests(cell.usage))}`
 }
 
 /**
@@ -163,7 +164,9 @@ function HeatmapTooltip({ hover }: { hover: HoverState }) {
           <dt className="text-muted-foreground">Total tokens</dt>
           <dd className="text-right tabular-nums">{NUMBER_FORMATTER.format(usage.total_tokens)}</dd>
           <dt className="text-muted-foreground">Cost</dt>
-          <dd className="text-right tabular-nums">{formatUsd10000(usage.cost_usd_10000)}</dd>
+          <dd className="text-right tabular-nums">
+            {formatProfileCost(usage.cost_usd_10000, unpricedRequests(usage))}
+          </dd>
         </dl>
       ) : (
         <p className="text-muted-foreground">No activity</p>

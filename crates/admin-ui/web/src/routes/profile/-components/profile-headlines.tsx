@@ -9,11 +9,11 @@ import { AgentHarnessIcon } from '@/components/icons/agent-harness-icon'
 import { AppIcon } from '@/components/icons/app-icon'
 import { IconTile } from '@/components/reui/icon-tile'
 import { Card, CardContent } from '@/components/ui/card'
-import { formatUsd10000 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import {
   COMPACT_FORMATTER,
+  formatProfileCost,
   NUMBER_FORMATTER,
   PERCENT_FORMATTER,
   type Preference,
@@ -63,7 +63,7 @@ function headlineItems({ totals, model, harness }: ProfileHeadlines) {
       icon: <AppIcon icon={Layers01Icon} size={16} stroke={1.5} />,
       value: COMPACT_FORMATTER.format(totals.totalTokens),
       mono: false,
-      detail: `${NUMBER_FORMATTER.format(totals.requests)} requests · ${formatUsd10000(totals.costUsd10000)}`,
+      detail: `${NUMBER_FORMATTER.format(totals.requests)} requests · ${formatProfileCost(totals.costUsd10000, totals.unpricedRequests)}`,
     },
     {
       key: 'cache',

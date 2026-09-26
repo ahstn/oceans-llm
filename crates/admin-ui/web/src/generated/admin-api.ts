@@ -3543,7 +3543,10 @@ export interface components {
             cache_read_tokens: number;
             /** Format: int64 */
             cache_write_tokens: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Cost of priced requests only; incomplete when either gap count below is non-zero.
+             */
             cost_usd_10000: number;
             day: string;
             /** Format: int64 */
@@ -3560,6 +3563,16 @@ export interface components {
              *     forms the cache hit-rate denominator.
              */
             uncached_input_tokens: number;
+            /**
+             * Format: int64
+             * @description Requests with no pricing for their model, so they add nothing to the cost.
+             */
+            unpriced_request_count: number;
+            /**
+             * Format: int64
+             * @description Requests whose provider reported no usage, so they could not be priced.
+             */
+            usage_missing_request_count: number;
         };
         MyProfileHarnessDayView: {
             day: string;

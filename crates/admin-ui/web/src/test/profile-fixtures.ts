@@ -14,6 +14,8 @@ export function profileDay(
     cache_write_tokens: 0,
     total_tokens: 1_200,
     cost_usd_10000: 25_000,
+    unpriced_request_count: 0,
+    usage_missing_request_count: 0,
     ...overrides,
   }
 }

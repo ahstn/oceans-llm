@@ -13924,7 +13924,9 @@
           "cache_read_tokens",
           "cache_write_tokens",
           "total_tokens",
-          "cost_usd_10000"
+          "cost_usd_10000",
+          "unpriced_request_count",
+          "usage_missing_request_count"
         ],
         "properties": {
           "cache_read_tokens": {
@@ -13937,7 +13939,8 @@
           },
           "cost_usd_10000": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Cost of priced requests only; incomplete when either gap count below is non-zero."
           },
           "day": {
             "type": "string"
@@ -13962,6 +13965,16 @@
             "type": "integer",
             "format": "int64",
             "description": "Input with a provider cache split that missed the cache; with the two cache buckets this\nforms the cache hit-rate denominator."
+          },
+          "unpriced_request_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Requests with no pricing for their model, so they add nothing to the cost."
+          },
+          "usage_missing_request_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Requests whose provider reported no usage, so they could not be priced."
           }
         }
       },

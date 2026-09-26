@@ -1,4 +1,5 @@
 import type { ChartConfig } from '@/components/ui/chart'
+import { formatUsd10000 } from '@/lib/format'
 import type {
   ApiKeyView,
   MyProfileBudgetView,
@@ -21,6 +22,17 @@ export const PERCENT_FORMATTER = new Intl.NumberFormat('en-US', {
 })
 
 const DAY_MS = 86_400_000
+
+/** Requests that add nothing to the cost: no pricing for the model, or no usage reported. */
+export function unpricedRequests(day: MyProfileDayView) {
+  return day.unpriced_request_count + day.usage_missing_request_count
+}
+
+/** Cost of priced requests, flagged when some requests could not be priced so it never reads as exact. */
+export function formatProfileCost(costUsd10000: number, unpriced: number) {
+  const cost = formatUsd10000(costUsd10000)
+  return unpriced > 0 ? `${cost} + ${NUMBER_FORMATTER.format(unpriced)} unpriced` : cost
+}
 
 /** Chart windows offered on the profile; `365` is the full history the endpoint returns. */
 export type ProfileRange = 30 | 90 | 365
@@ -93,6 +105,8 @@ export type UsageTotals = {
   outputTokens: number
   cacheReadTokens: number
   costUsd10000: number
+  /** Requests excluded from `costUsd10000` because they could not be priced. */
+  unpricedRequests: number
   activeDays: number
   /** Cache reads over input with a provider cache split; null when nothing was cacheable. */
   cacheHitRate: number | null
@@ -111,6 +125,7 @@ export function summarizeDays(days: MyProfileDayView[]): UsageTotals {
         outputTokens: sum.outputTokens + day.output_tokens,
         cacheReadTokens: sum.cacheReadTokens + day.cache_read_tokens,
         costUsd10000: sum.costUsd10000 + day.cost_usd_10000,
+        unpricedRequests: sum.unpricedRequests + unpricedRequests(day),
         activeDays: sum.activeDays + (day.request_count > 0 ? 1 : 0),
       }
     },
@@ -121,6 +136,7 @@ export function summarizeDays(days: MyProfileDayView[]): UsageTotals {
       outputTokens: 0,
       cacheReadTokens: 0,
       costUsd10000: 0,
+      unpricedRequests: 0,
       activeDays: 0,
     },
   )
@@ -232,10 +248,15 @@ function bucketSizeFor(range: number) {
   return range > 90 ? 7 : 1
 }
 
-/** Bucket start days, oldest first; every bucket appears even when it had no traffic. */
+/**
+ * Bucket start days, oldest first; every bucket appears even when it had no traffic. Buckets are
+ * grouped back from the newest day so the latest one is whole; leftover days at the old end would
+ * form a short bucket that reads as a drop, so they are left out.
+ */
 function buckets(end: Date, range: number) {
   const size = bucketSizeFor(range)
-  const days = rangeDays(end, range)
+  const all = rangeDays(end, range)
+  const days = all.slice(all.length % size)
   const starts = days.filter((_, index) => index % size === 0)
   const bucketOf = new Map(days.map((day, index) => [day, starts[Math.floor(index / size)]]))
   return { starts, bucketOf }
@@ -331,7 +352,10 @@ export type Heatmap = {
   months: { label: string; week: number }[]
 }
 
-/** A GitHub-style calendar of the last `weeks` weeks, coloured by total tokens. */
+/**
+ * A GitHub-style calendar of the last `weeks` weeks, coloured by total tokens. Days before the
+ * returned history window are padding, not zero-usage days, since their usage is unknown.
+ */
 export function buildHeatmap(profile: MyProfileView, weeks = 53): Heatmap {
   const end = lastProfileDay(profile)
   const usageByDay = new Map(profile.days.map((day) => [day.day, day]))
@@ -339,6 +363,7 @@ export function buildHeatmap(profile: MyProfileView, weeks = 53): Heatmap {
     profile.days.flatMap((day) => (day.total_tokens > 0 ? [day.total_tokens] : [])),
   )
   const firstSunday = addUtcDays(end, -end.getUTCDay() - (weeks - 1) * 7)
+  const windowStart = parseUtcDay(profile.window_start.slice(0, 10))
 
   const columns: (HeatmapCell | null)[][] = []
   const months: Heatmap['months'] = []
@@ -346,14 +371,14 @@ export function buildHeatmap(profile: MyProfileView, weeks = 53): Heatmap {
     const column: (HeatmapCell | null)[] = []
     for (let weekday = 0; weekday < 7; weekday += 1) {
       const date = addUtcDays(firstSunday, week * 7 + weekday)
-      if (date.getTime() > end.getTime()) {
+      if (date.getTime() > end.getTime() || date.getTime() < windowStart.getTime()) {
         column.push(null)
         continue
       }
       const day = formatUtcDay(date)
       const usage = usageByDay.get(day) ?? null
       column.push({ day, usage, level: levelFor(usage?.total_tokens ?? 0, thresholds) })
-      if (date.getUTCDate() === 1 || (week === 0 && weekday === 0)) {
+      if (date.getUTCDate() === 1 || months.length === 0) {
         months.push({
           week,
           label: date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }),
