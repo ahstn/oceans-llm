@@ -57,7 +57,7 @@ function session(overrides: Partial<AuthSessionView['permissions']> = {}): AuthS
     permissions: {
       group: 'users',
       pages: ['api_keys'],
-      actions: ['create_api_key'],
+      actions: ['create_api_key', 'update_api_key'],
       default_page: 'api_keys',
       ...overrides,
     },
@@ -101,6 +101,42 @@ describe('profile page', () => {
       'href',
       '/api-keys',
     )
+  })
+
+  it('links each key to its manage dialog when the viewer can manage keys', async () => {
+    const Page = await load()
+    render(<Page />)
+
+    expect(screen.getByRole('link', { name: 'Key a' })).toHaveAttribute(
+      'href',
+      '/api-keys?api_key_id=a',
+    )
+  })
+
+  it('omits per-key links when the viewer can only create keys', async () => {
+    routeMock.useRouteContext.mockReturnValue({
+      session: session({ actions: ['create_api_key'] }),
+    })
+    const Page = await load()
+    render(<Page />)
+
+    expect(screen.queryByRole('link', { name: 'Key a' })).toBeNull()
+    expect(screen.getByText('Key a')).toBeInTheDocument()
+    for (const link of screen.getAllByRole('link', { name: 'Manage keys' })) {
+      expect(link).toHaveAttribute('href', '/api-keys')
+    }
+  })
+
+  it('offers only a view link to viewers without key actions', async () => {
+    routeMock.useRouteContext.mockReturnValue({ session: session({ actions: [] }) })
+    const Page = await load()
+    render(<Page />)
+
+    expect(screen.queryByRole('link', { name: 'Key a' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Manage keys' })).toBeNull()
+    for (const link of screen.getAllByRole('link', { name: 'View keys' })) {
+      expect(link).toHaveAttribute('href', '/api-keys')
+    }
   })
 
   it('limits the key table to three rows until expanded', async () => {

@@ -1,6 +1,6 @@
 import { canPerformAdminAction } from '@/routes/-auth-routing'
 import { getMyProfile } from '@/server/admin-data.functions'
-import type { ApiKeyView, AuthSessionView, MyProfileView } from '@/types/api'
+import type { AdminAction, ApiKeyView, AuthSessionView, MyProfileView } from '@/types/api'
 
 import type { ApiKeyLinks } from './profile-api-keys'
 import { personalApiKeys } from './profile-data'
@@ -26,12 +26,15 @@ export function profilePageModel(
   session: AuthSessionView,
 ): ProfilePageModel {
   const hasKeysPage = session.permissions.pages.includes('api_keys')
+  const can = (action: AdminAction) => hasKeysPage && canPerformAdminAction(session, action)
   return {
     profile: data.profile,
     keys: personalApiKeys(data.profile.api_keys, session.user.id),
     links: {
-      canManage: hasKeysPage,
-      canCreate: hasKeysPage && canPerformAdminAction(session, 'create_api_key'),
+      canView: hasKeysPage,
+      // Matches the API keys route, which only opens a linked key for these actions.
+      canManage: can('update_api_key') || can('revoke_api_key') || can('reveal_api_key'),
+      canCreate: can('create_api_key'),
     },
   }
 }

@@ -28,6 +28,9 @@ export const COLLAPSED_KEY_COUNT = 3
 
 /** Where the viewer can go to manage or create keys; absent when they lack access. */
 export type ApiKeyLinks = {
+  /** Can open the API keys page. */
+  canView: boolean
+  /** Can open a key's manage dialog, so per-key links lead somewhere. */
   canManage: boolean
   canCreate: boolean
 }
@@ -162,10 +165,10 @@ function ProfileApiKeysEmpty({ canCreate }: { canCreate: boolean }) {
 
 /** Header action linking to the full API keys page. */
 export function ManageKeysLink({ links }: { links: ApiKeyLinks }) {
-  if (!links.canManage) return null
+  if (!links.canView) return null
   return (
     <Button asChild variant="outline" size="sm">
-      <Link to="/api-keys">Manage keys</Link>
+      <Link to="/api-keys">{links.canManage || links.canCreate ? 'Manage keys' : 'View keys'}</Link>
     </Button>
   )
 }
