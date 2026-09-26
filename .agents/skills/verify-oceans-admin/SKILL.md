@@ -167,9 +167,10 @@ control-oceans-admin drive models
 control-oceans-admin drive observability
 control-oceans-admin drive backend-gateway
 control-oceans-admin drive mcp
-control-oceans-admin evidence [models|observability|live-llm|backend-gateway|mcp]
+control-oceans-admin drive profile
+control-oceans-admin evidence [models|observability|live-llm|backend-gateway|mcp|profile]
 control-oceans-admin cleanup
 
 ```
 
-The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs), and [scripts/drive-mcp.mjs](./scripts/drive-mcp.mjs). The MCP driver uses [scripts/mcp-browser.mjs](./scripts/mcp-browser.mjs) and [scripts/mcp-canary.mjs](./scripts/mcp-canary.mjs). Call the drivers through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.
+The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs), [scripts/drive-mcp.mjs](./scripts/drive-mcp.mjs), and [scripts/drive-profile.mjs](./scripts/drive-profile.mjs). The MCP driver uses [scripts/mcp-browser.mjs](./scripts/mcp-browser.mjs) and [scripts/mcp-canary.mjs](./scripts/mcp-canary.mjs). Call the drivers through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.

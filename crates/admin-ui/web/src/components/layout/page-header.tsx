@@ -33,7 +33,8 @@ export function PageHeader({
 /**
  * CSS can stretch the leading element to the text height but cannot keep it square, so the
  * text block is measured. Before measurement (and on the server) it falls back to the
- * one-line-description height.
+ * one-line-description height. The size is capped because a wider leading element narrows the
+ * text, which wraps and grows taller; without a cap that loop runs away on narrow screens.
  */
 function LeadingHeader({ leading, children }: { leading: ReactNode; children: ReactNode }) {
   const textRef = useRef<HTMLDivElement>(null)
@@ -50,7 +51,7 @@ function LeadingHeader({ leading, children }: { leading: ReactNode; children: Re
   return (
     <header className="flex items-start gap-4">
       <div
-        className="size-20 shrink-0 [&>*]:size-full"
+        className="size-20 max-h-24 max-w-24 shrink-0 max-sm:max-h-14 max-sm:max-w-14 [&>*]:size-full"
         style={height ? { width: height, height } : undefined}
       >
         {leading}

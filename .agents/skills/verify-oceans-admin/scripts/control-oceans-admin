@@ -312,8 +312,14 @@ evidence() {
         exit 1
       }
       ;;
+    profile)
+      [[ -f "$evidence_dir/profile-proof.json" ]] || {
+        echo "Profile proof is missing from $evidence_dir." >&2
+        exit 1
+      }
+      ;;
     *)
-      echo "Supported evidence targets: models, observability, live-llm, backend-gateway, mcp" >&2
+      echo "Supported evidence targets: models, observability, live-llm, backend-gateway, mcp, profile" >&2
       exit 2
       ;;
   esac
@@ -326,7 +332,7 @@ case "${1:-}" in
   evidence) evidence "${2:-models}" ;;
   cleanup) cleanup ;;
   *)
-    echo "Usage: $0 {launch|doctor|drive {models|observability|backend-gateway|mcp}|evidence [models|observability|live-llm|backend-gateway|mcp]|cleanup}" >&2
+    echo "Usage: $0 {launch|doctor|drive {models|observability|backend-gateway|mcp|profile}|evidence [models|observability|live-llm|backend-gateway|mcp|profile]|cleanup}" >&2
     exit 2
     ;;
 esac

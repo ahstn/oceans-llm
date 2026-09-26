@@ -16,6 +16,21 @@ import type {
   UpdateApiKeyInput,
 } from '@/types/api'
 
+export type ApiKeysSearch = { api_key_id?: string; create?: true }
+
+/**
+ * The router JSON-parses search values, so `?create=true` arrives as `true`. The string forms
+ * are accepted too, for links built by hand or by other search serializers.
+ */
+export function validateApiKeysSearch(search: Record<string, unknown>): ApiKeysSearch {
+  const create = search.create
+  return {
+    api_key_id: typeof search.api_key_id === 'string' ? search.api_key_id : undefined,
+    create:
+      create === true || create === 1 || create === '1' || create === 'true' ? true : undefined,
+  }
+}
+
 const initialForm: CreateApiKeyInput = {
   name: '',
   owner_kind: 'user',

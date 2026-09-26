@@ -11,14 +11,10 @@ import { canPerformAdminAction } from '@/routes/-auth-routing'
 import { getApiKeys } from '@/server/admin-data.functions'
 import type { ApiKeysPayload } from '@/types/api'
 
-import { useApiKeysPageState } from './api-keys/-use-api-keys-page'
+import { useApiKeysPageState, validateApiKeysSearch } from './api-keys/-use-api-keys-page'
 
 export const Route = createFileRoute('/api-keys')({
-  validateSearch: (search: Record<string, unknown>): { api_key_id?: string; create?: true } => ({
-    api_key_id: typeof search.api_key_id === 'string' ? search.api_key_id : undefined,
-    create:
-      search.create === true || search.create === 1 || search.create === '1' ? true : undefined,
-  }),
+  validateSearch: validateApiKeysSearch,
   loader: () => getApiKeys(),
   component: ApiKeysPage,
 })
