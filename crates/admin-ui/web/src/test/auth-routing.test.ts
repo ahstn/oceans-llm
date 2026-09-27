@@ -42,7 +42,7 @@ describe('admin route capabilities', () => {
 
     expect(canAccessSignedInPath(platformAdmin, '/api-keys')).toBe(true)
     expect(canAccessSignedInPath(platformAdmin, '/observability/agent-sessions')).toBe(false)
-    expect(defaultSignedInPath(platformAdmin)).toBe('/api-keys')
+    expect(defaultSignedInPath(platformAdmin)).toBe('/profile')
   })
 
   it('limits calibrated team admins to agent sessions', () => {
@@ -55,7 +55,7 @@ describe('admin route capabilities', () => {
     expect(canAccessSignedInPath(teamAdmin, '/observability/agent-sessions')).toBe(true)
     expect(canAccessSignedInPath(teamAdmin, '/observability/agent-sessions/session-1')).toBe(true)
     expect(canAccessSignedInPath(teamAdmin, '/api-keys')).toBe(true)
-    expect(defaultSignedInPath(teamAdmin)).toBe('/observability/agent-sessions')
+    expect(defaultSignedInPath(teamAdmin)).toBe('/profile')
   })
 
   it('keeps ordinary users out of agent sessions', () => {

@@ -360,6 +360,24 @@ describe('ApiKeysPage', () => {
     expect(within(dialog).getByText('gwk_prod_liv****')).toBeInTheDocument()
   })
 
+  it('opens the create dialog for a personal key from the create search param', async () => {
+    const context = routeMock.useRouteContext()
+    routeMock.useRouteContext.mockReturnValue({
+      session: { ...context.session, user: { ...context.session.user, id: 'user_1' } },
+    })
+    routeMock.useSearch.mockReturnValue({ api_key_id: undefined, create: true })
+
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Create API key' })
+    // Platform admins normally pick an owner; the profile link pre-selects the viewer.
+    expect(within(dialog).getByRole('combobox', { name: 'Owner user' })).toHaveTextContent(
+      'Jane Admin',
+    )
+  })
+
   it('does not reopen an already dismissed api_key_id deeplink after items refresh', async () => {
     routeMock.useSearch.mockReturnValue({ api_key_id: 'api_key_1' })
 

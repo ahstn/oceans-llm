@@ -1866,6 +1866,7 @@ pub struct AgentSessionDetailView {
         crate::http::review_agent::fail_review_agent_action_run,
         crate::http::spend::get_admin_focus_export,
         crate::http::spend::get_my_focus_export,
+        crate::http::profile::get_my_profile,
         crate::http::spend::list_spend_budgets,
         crate::http::spend::list_budget_alert_history,
         crate::http::spend::upsert_budget,

@@ -26,12 +26,12 @@ use crate::{
         CacheUsageAggregateRecord, ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord,
         ExternalMcpToolRecord, FocusExportAggregateRecord, FocusExportDiagnosticsRecord,
         GatewayModel, GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
-        HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
-        McpAggregateSessionRecord, McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord,
-        McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
-        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-        McpToolInvocationRecord, McpToolTokenEstimateRecord, McpToolsetRecord,
-        McpToolsetToolRecord, McpUpstreamCredentialBindingRecord,
+        HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
+        McpAccessResolution, McpAggregateSessionRecord, McpCatalogAccessResolution,
+        McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
+        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
+        McpToolInvocationQuery, McpToolInvocationRecord, McpToolTokenEstimateRecord,
+        McpToolsetRecord, McpToolsetToolRecord, McpUpstreamCredentialBindingRecord,
         McpUpstreamCredentialOwnerScopeKind, ModelAllowlistPolicy, ModelPricingRecord,
         ModelPricingSyncChanges, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
         NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
@@ -244,6 +244,22 @@ pub trait ModelRepository: Send + Sync {
         &self,
         api_key_id: Uuid,
     ) -> Result<Vec<GatewayModel>, StoreError>;
+
+    /// Granted models per key, in the same order as `list_models_for_api_key`. Keys without
+    /// grants are absent from the map.
+    async fn list_models_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, Vec<GatewayModel>>, StoreError> {
+        let mut grants = HashMap::with_capacity(api_key_ids.len());
+        for api_key_id in api_key_ids {
+            let models = self.list_models_for_api_key(*api_key_id).await?;
+            if !models.is_empty() {
+                grants.insert(*api_key_id, models);
+            }
+        }
+        Ok(grants)
+    }
 
     async fn list_model_allowlists_for_models(
         &self,
@@ -724,6 +740,18 @@ pub trait RequestLogRepository: Send + Sync {
         Err(StoreError::Unexpected(
             "list_harness_usage_bucket_aggregates is not implemented for this repository"
                 .to_string(),
+        ))
+    }
+
+    async fn list_user_harness_daily_usage(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        user_id: Uuid,
+    ) -> Result<Vec<HarnessUsageDailyRecord>, StoreError> {
+        let _ = (window_start, window_end, user_id);
+        Err(StoreError::Unexpected(
+            "list_user_harness_daily_usage is not implemented for this repository".to_string(),
         ))
     }
 

@@ -44,7 +44,8 @@ test('permission overrides hide pages, resolve empty sets, and deduplicate grant
 
   await useSession(page, root, teamAdmin.cookie)
   await page.goto('/admin/identity/teams')
-  await expect(page).toHaveURL(/\/admin\/api-keys$/)
+  // Pages the session cannot open fall back to the profile, which every signed-in user can open.
+  await expect(page).toHaveURL(/\/admin\/profile$/)
   await expect(page.getByRole('link', { name: 'Models' }).first()).toBeVisible()
   await expect(page.getByRole('link', { name: 'Teams' })).toHaveCount(0)
 })
