@@ -3,16 +3,23 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
+import { createProofRecorder } from "./proof.mjs";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const requireFromAdminUi = createRequire(path.join(repoRoot, "crates/admin-ui/web/package.json"));
 const { chromium } = requireFromAdminUi("playwright");
 
 const baseURL = requiredEnv("OCEANS_VERIFY_BASE_URL");
 const evidenceDir = requiredEnv("OCEANS_VERIFY_EVIDENCE_DIR");
-const gatewayVersion = requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION");
+requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION"); // recorded in the proof envelope
 const email = requiredEnv("OCEANS_VERIFY_ADMIN_EMAIL");
 const password = requiredEnv("OCEANS_VERIFY_ADMIN_PASSWORD");
 const actions = [];
+const proof = createProofRecorder({
+  evidenceDir,
+  file: "observability-proof.json",
+  featureIds: ["leaderboard", "agent-harnesses"],
+});
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -48,6 +55,7 @@ try {
     page.getByRole("button", { name: "Sign in" }).click(),
   ]);
   actions.push({ action: "sign in with seeded platform admin", result: page.url() });
+  proof.pass("sign-in-returns-to-leaderboard", { observed: page.url() });
 
   await page.getByRole("heading", { name: "Leaderboard", exact: true }).waitFor();
   await page.getByTestId("leaderboard-table").waitFor();
@@ -55,6 +63,7 @@ try {
   assertEqual(leaderboard7d.range, "7d", "leaderboard API range");
   const leaderboard7dTable = await assertLeaderboard(page, leaderboard7d);
   await assertChartSeries(page, leaderboard7d.chart_users.length);
+  proof.pass("leaderboard-7d-matches-api", { observed: leaderboard7d.leaders.length });
   actions.push({
     action: "compare 7d leaderboard with production admin API",
     result: `${leaderboard7d.leaders.length} rendered leaders matched`,
@@ -69,6 +78,7 @@ try {
   }));
   const leaderboard31dTable = await assertLeaderboard(page, leaderboard31d);
   await assertChartSeries(page, leaderboard31d.chart_users.length);
+  proof.pass("leaderboard-31d-matches-api", { observed: leaderboard31d.leaders.length });
   actions.push({
     action: "select leaderboard Last 31 days",
     result: `${leaderboard31d.leaders.length} rendered leaders matched`,
@@ -77,6 +87,7 @@ try {
   await page.setViewportSize({ width: 600, height: 1000 });
   await page.getByTestId("leaderboard-mobile-list").waitFor({ state: "visible" });
   await page.getByTestId("leaderboard-table").waitFor({ state: "hidden" });
+  proof.pass("leaderboard-mobile-list");
   actions.push({
     action: "verify responsive leaderboard presentation",
     result: "mobile list visible and desktop table hidden below md",
@@ -97,6 +108,8 @@ try {
   const harness7dTable = await assertHarnessUsage(page, harness7d);
   await assertChartSeries(page, harness7d.chart_harnesses.length);
   const iconChecks = await assertHarnessIcons(page, harness7d);
+  proof.pass("harnesses-7d-match-api", { observed: harness7d.leaders.length });
+  proof.pass("harness-icons-render", { observed: "Mastra, Oh My Pi" });
   actions.push({
     action: "compare 7d agent harnesses with production admin API",
     result: `${harness7d.leaders.length} rendered harnesses matched with token values`,
@@ -115,17 +128,16 @@ try {
   }));
   const harness31dTable = await assertHarnessUsage(page, harness31d);
   await assertChartSeries(page, harness31d.chart_harnesses.length);
+  proof.pass("harnesses-31d-match-api", { observed: harness31d.leaders.length });
   actions.push({
     action: "select agent harnesses Last 31 days",
     result: `${harness31d.leaders.length} rendered harnesses matched`,
   });
   await capture(page, "05-agent-harnesses-31d");
 
-  const proof = {
-    feature: "observability",
+  await proof.write({ details: {
     entryUrl,
     finalUrl: page.url(),
-    gatewayVersion,
     leaderboard: {
       sevenDays: proofProjection(leaderboard7d, leaderboard7dTable),
       thirtyOneDays: proofProjection(leaderboard31d, leaderboard31dTable),
@@ -136,16 +148,14 @@ try {
     },
     iconChecks,
     actions,
-    generatedAt: new Date().toISOString(),
-  };
-  await fs.writeFile(
-    path.join(evidenceDir, "observability-proof.json"),
-    `${JSON.stringify(proof, null, 2)}\n`,
-  );
+  } });
   console.log(
     `observability proof passed: 7d and 31d leaderboard and harness rows matched the production API`,
   );
   console.log(`evidence: ${evidenceDir}`);
+} catch (error) {
+  await proof.write({ error, details: { actions } });
+  throw error;
 } finally {
   await browser.close();
 }
@@ -410,6 +420,7 @@ async function capture(page, name) {
   await page.screenshot({ path: path.join(evidenceDir, `${name}.png`), fullPage: true });
   const snapshot = await page.locator("body").ariaSnapshot();
   await fs.writeFile(path.join(evidenceDir, `${name}.aria.txt`), `${snapshot}\n`);
+  proof.artifact(`${name}.png`);
 }
 
 function requiredEnv(name) {

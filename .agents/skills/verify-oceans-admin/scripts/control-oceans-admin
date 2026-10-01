@@ -302,59 +302,22 @@ drive() {
     mise exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/$driver"
 }
 
-evidence() {
-  local target="${1:-models}"
-  [[ -d "$evidence_dir" ]] || {
-    echo "No evidence directory exists for run $run_id." >&2
-    exit 1
-  }
-  find "$evidence_dir" -maxdepth 1 -type f -print | sort
-  case "$target" in
-    models)
-      [[ -f "$evidence_dir/models-proof.json" ]] || {
-        echo "Models proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-    observability)
-      [[ -f "$evidence_dir/observability-proof.json" ]] || {
-        echo "Observability proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-    live-llm)
-      find "$evidence_dir" -maxdepth 1 -type f -name '*-canary-proof.json' -print -quit | grep -q . || {
-        echo "Live LLM canary proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-    backend-gateway)
-      [[ -f "$evidence_dir/backend-gateway-canary-proof.json" ]] || {
-        echo "Backend gateway proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-    mcp)
-      [[ -f "$evidence_dir/mcp-proof.json" ]] || {
-        echo "MCP proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-    *)
-      echo "Supported evidence targets: models, observability, live-llm, backend-gateway, mcp" >&2
-      exit 2
-      ;;
-  esac
+proof_cli() {
+  cd "$repo_root"
+  # Cleanup removes gateway-version, so record manual proofs before cleanup.
+  [[ ! -f "$run_dir/gateway-version" ]] || export OCEANS_VERIFY_GATEWAY_VERSION="$(<"$run_dir/gateway-version")"
+  OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" \
+    exec "$(resolve_mise)" exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/proof-cli.mjs" "$@"
 }
 
 case "${1:-}" in
   launch) launch ;;
   doctor) doctor ;;
   drive) drive "${2:-}" ;;
-  evidence) evidence "${2:-models}" ;;
+  evidence | record | report) proof_cli "$@" ;;
   cleanup) cleanup ;;
   *)
-    echo "Usage: $0 {plan [base-ref] [--json]|launch|doctor|drive {models|observability|backend-gateway|mcp}|evidence [models|observability|live-llm|backend-gateway|mcp]|cleanup}" >&2
+    echo "Usage: $0 {plan [base-ref] [--json]|launch|doctor|drive {models|observability|backend-gateway|mcp}|evidence [feature...] [--require-current]|record <feature> --check id=status[:note] --artifact file|report [--plan [base-ref]]|cleanup}" >&2
     exit 2
     ;;
 esac

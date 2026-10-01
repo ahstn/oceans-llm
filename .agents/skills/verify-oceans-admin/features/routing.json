@@ -49,10 +49,10 @@
       ]
     },
     {
-      "reason": "verification planner; covered by plan-verification.test.mjs",
+      "reason": "verification planner and proof tooling; covered by their offline tests",
       "paths": [
         ".agents/skills/verify-oceans-admin/features/routing.json",
-        ".agents/skills/verify-oceans-admin/scripts/plan-verification.mjs"
+        ".agents/skills/verify-oceans-admin/scripts/{plan-verification,proof,proof-cli}.mjs"
       ]
     },
     {

@@ -41,8 +41,8 @@ When you add a recipe or a UI route, add its routing entry in the same change. `
 - UI proof includes an ARIA snapshot and a screenshot with `Oceans Gateway` or the page heading visible.
 - Read-only data proof compares a visible list or detail with the production API used by the UI.
 - Mutation proof must include a second read-only view of the saved value and cleanup of the created record.
-- Record the feature ID, entry point, run ID, gateway version, and artifact directory.
-- Report an unreachable path with the attempted action and unmet precondition.
+- Every verified feature ends with a `*-proof.json` envelope: drivers write their own, and manual recipes use `control-oceans-admin record` with one `--check` per observable result and the captured screenshots as `--artifact`.
+- Report an unreachable path as a `blocked` check whose note names the unmet precondition.
 - Do not report a skipped entry point as verified through a different path.
 - Keep proof artifacts after stack cleanup.
 

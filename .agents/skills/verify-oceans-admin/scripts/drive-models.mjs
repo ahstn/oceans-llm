@@ -3,16 +3,19 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
+import { createProofRecorder } from './proof.mjs'
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
 const requireFromAdminUi = createRequire(path.join(repoRoot, 'crates/admin-ui/web/package.json'))
 const { chromium } = requireFromAdminUi('playwright')
 
 const baseURL = requiredEnv('OCEANS_VERIFY_BASE_URL')
 const evidenceDir = requiredEnv('OCEANS_VERIFY_EVIDENCE_DIR')
-const gatewayVersion = requiredEnv('OCEANS_VERIFY_GATEWAY_VERSION')
+requiredEnv('OCEANS_VERIFY_GATEWAY_VERSION') // recorded in the proof envelope
 const email = requiredEnv('OCEANS_VERIFY_ADMIN_EMAIL')
 const password = requiredEnv('OCEANS_VERIFY_ADMIN_PASSWORD')
 const actions = []
+const proof = createProofRecorder({ evidenceDir, file: 'models-proof.json', featureIds: ['models'] })
 
 await fs.mkdir(evidenceDir, { recursive: true })
 const browser = await chromium.launch({ headless: true })
@@ -50,6 +53,7 @@ try {
     }, null, { timeout: 60_000 })
   }
   actions.push({ action: 'open protected admin UI', result: page.url() })
+  proof.pass('protected-route-redirects-to-sign-in', { observed: page.url() })
   await capture(page, '01-login')
 
   await page.getByLabel('Email').fill(email)
@@ -59,6 +63,7 @@ try {
     signInButton.click(),
   ])
   actions.push({ action: 'sign in with seeded platform admin', result: page.url() })
+  proof.pass('sign-in-returns-to-protected-route', { observed: page.url() })
 
   const modelsLink = page.getByRole('link', { name: 'Models' }).first()
   await modelsLink.waitFor()
@@ -78,6 +83,7 @@ try {
   if (displayedCount !== renderedCount) {
     throw new Error(`UI reported ${displayedCount} displayed models but rendered ${renderedCount} model rows.`)
   }
+  proof.pass('displayed-count-matches-rendered-rows', { observed: renderedCount, expected: displayedCount })
   actions.push({ action: 'follow Models sidebar link', result: showingText })
   await capture(page, '02-models')
 
@@ -90,6 +96,7 @@ try {
   if (apiCount !== totalCount) {
     throw new Error(`UI total model count ${totalCount} did not match admin API count ${apiCount}.`)
   }
+  proof.pass('total-count-matches-admin-api', { observed: totalCount, expected: apiCount })
 
   const modelCell = page.getByTestId('models-desktop-cell-gpt-6-astra')
   const modelRow = modelCell.locator('xpath=ancestor::tr')
@@ -102,6 +109,7 @@ try {
     await infoDialog.getByRole('heading', { name, exact: true }).waitFor()
   }
   actions.push({ action: 'inspect gpt-6-astra model info', result: 'All platform-admin sections visible' })
+  proof.pass('model-info-sections-visible', { observed: 4 })
   await capture(page, '03-model-info')
   await page.keyboard.press('Escape')
   await infoDialog.waitFor({ state: 'hidden' })
@@ -113,6 +121,7 @@ try {
   await page.getByRole('columnheader', { name: 'Capabilities', exact: true }).waitFor()
   await page.keyboard.press('Escape')
   actions.push({ action: 'enable optional model columns', result: 'Context window and Capabilities visible' })
+  proof.pass('optional-columns-render')
   await capture(page, '04-model-columns')
 
   const configRow = page
@@ -126,13 +135,12 @@ try {
   await configDialog.getByText(/^gpt-6-astra via /).waitFor()
   const clientConfigs = await verifyClientConfigs(page, configDialog)
   actions.push({ action: 'generate gpt-6-astra client config', result: 'Client config dialog visible' })
+  proof.pass('client-configs-match-api', { observed: clientConfigs.length })
   await capture(page, '05-model-client-config')
 
-  const proof = {
-    feature: 'models',
+  await proof.write({ details: {
     entryUrl: `${baseURL}/admin/api-keys`,
     finalUrl: page.url(),
-    gatewayVersion,
     modelId: 'gpt-6-astra',
     displayedCount,
     renderedCount,
@@ -140,15 +148,14 @@ try {
     apiCount,
     clientConfigs,
     actions,
-    generatedAt: new Date().toISOString(),
-  }
-  await fs.writeFile(path.join(evidenceDir, 'models-proof.json'), `${JSON.stringify(proof, null, 2)}\n`)
+  } })
   console.log(`models proof passed: ${displayedCount} displayed and ${totalCount} total UI models matched the rendered rows and API total`)
   console.log(`evidence: ${evidenceDir}`)
 } catch (error) {
   if (page && !page.isClosed()) {
     await capture(page, '99-models-failure').catch(() => {})
   }
+  await proof.write({ error, details: { actions } })
   throw error
 } finally {
   await browser.close()
@@ -194,6 +201,7 @@ async function capture(page, name) {
   await page.screenshot({ path: path.join(evidenceDir, `${name}.png`), fullPage: true })
   const snapshot = await page.locator('body').ariaSnapshot()
   await fs.writeFile(path.join(evidenceDir, `${name}.aria.txt`), `${snapshot}\n`)
+  proof.artifact(`${name}.png`)
 }
 
 function requiredEnv(name) {

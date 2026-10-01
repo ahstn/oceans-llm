@@ -92,14 +92,14 @@ function git(args) {
   return execFileSync('git', args, { encoding: 'utf8' }).trim()
 }
 
-function changedPaths(base) {
+export function changedPaths(base) {
   const mergeBase = git(['merge-base', base, 'HEAD'])
   const tracked = git(['diff', '--name-only', mergeBase])
   const untracked = git(['ls-files', '--others', '--exclude-standard'])
   return { mergeBase, paths: `${tracked}\n${untracked}`.split('\n').filter(Boolean) }
 }
 
-function defaultBase(routing) {
+export function defaultBase(routing) {
   for (const ref of routing.baseRefs) {
     try {
       git(['rev-parse', '--verify', '--quiet', ref])

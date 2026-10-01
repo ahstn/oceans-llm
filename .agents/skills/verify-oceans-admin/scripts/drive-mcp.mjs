@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { registerServer, verifyWorkbench, createAccess } from "./mcp-browser.mjs";
 import { runMcpCanaries, verifyNoMcpGrant, testRevokedKey } from "./mcp-canary.mjs";
+import { createProofRecorder } from "./proof.mjs";
 
 const repoRoot = process.env.OCEANS_VERIFY_REPO_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const requireFromAdminUi = createRequire(path.join(repoRoot, "crates/admin-ui/web/package.json"));
@@ -25,11 +26,11 @@ validateConfig(config);
 const actions = [];
 const failures = [];
 const owned = { servers: [], toolsets: [], grants: [], apiKeyId: null, apiKeyName: null, rawKey: null };
+requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION"); // recorded in the proof envelope
+const recorder = createProofRecorder({ evidenceDir, file: "mcp-proof.json", featureIds: ["mcp"] });
 const proof = {
-  feature: "mcp", runId, gatewayVersion: requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION"),
   entryPoint: `${baseURL}/admin/mcp`, candidates: [], actions, failures,
   authenticationScope: "Configured gateway static header or bearer token; OAuth consent is not exercised.",
-  generatedAt: new Date().toISOString(),
 };
 await fs.mkdir(evidenceDir, { recursive: true });
 const browser = await chromium.launch({ headless: true });
@@ -54,39 +55,60 @@ try {
   for (const candidate of config.candidates) {
     const result = { key: candidate.key, label: candidate.label, authMode: candidate.auth_mode, required: candidate.required !== false };
     proof.candidates.push(result);
+    // The gateway inherits this shell's environment, so a missing alias here means discovery cannot authenticate.
+    const credential = candidate.auth_config?.secret_ref?.replace(/^env\//, "");
+    if (credential && !process.env[credential]) {
+      Object.assign(result, { discovery: "blocked", failure: `${credential} is not set; add it to mise.local.toml and relaunch` });
+      recorder.add({ id: `candidate-${candidate.key}`, status: "blocked", required: result.required, note: result.failure });
+      continue;
+    }
     try {
       const registered = await registerServer(ui, candidate);
       ready.push(registered);
       Object.assign(result, { discovery: "passed", serverId: registered.server.id, toolCount: registered.toolCount, selectedTool: registered.tool.upstream_name });
+      recorder.pass(`candidate-${candidate.key}`, { required: result.required, observed: registered.toolCount });
     } catch (error) {
       result.discovery = "failed";
       result.failure = error.name === "TimeoutError" ? "UI or discovery timed out" : "Registration or discovery contract failed";
       failures.push({ candidate: candidate.key, phase: "discovery", required: result.required, reason: result.failure });
+      recorder.add({ id: `candidate-${candidate.key}`, status: "fail", required: result.required, note: result.failure });
       // Error strings and screenshots of failed provider toasts can contain upstream content.
       console.error(`MCP candidate ${candidate.key}: ${result.failure}`);
       result.failureLocation = safeLocation(error);
     }
   }
-  if (ready.length === 0) throw new Error("No MCP candidate completed discovery");
-  const workbench = await verifyWorkbench(ui, ready);
-  proof.workbench = workbench.proof;
-  const key = await createAccess(ui, workbench.primary, ready, verifyNoMcpGrant);
-  proof.access = key.proof;
-  const canaries = await runMcpCanaries({ page, baseURL, rawKey: owned.rawKey, apiKeyId: owned.apiKeyId, candidates: ready, adminJson, actions, capture });
-  proof.canaries = canaries;
-  for (const failed of canaries.failures ?? []) failures.push({ ...failed, required: config.candidates.find((candidate) => candidate.key === failed.candidate)?.required !== false });
+  if (ready.length > 0) {
+    const workbench = await verifyWorkbench(ui, ready);
+    proof.workbench = workbench.proof;
+    recorder.pass("toolset-workbench");
+    const key = await createAccess(ui, workbench.primary, ready, verifyNoMcpGrant);
+    proof.access = key.proof;
+    recorder.pass("grant-enforcement");
+    const canaries = await runMcpCanaries({ page, baseURL, rawKey: owned.rawKey, apiKeyId: owned.apiKeyId, candidates: ready, adminJson, actions, capture });
+    proof.canaries = canaries;
+    for (const failed of canaries.failures ?? []) {
+      const required = config.candidates.find((candidate) => candidate.key === failed.candidate)?.required !== false;
+      failures.push({ ...failed, required });
+      recorder.add({ id: `tool-call-${failed.candidate}`, status: "fail", required, note: failed.reason });
+    }
+    if (!canaries.failures?.length) recorder.pass("tool-calls-and-invocations", { observed: ready.length });
+  } else if (!proof.candidates.some((result) => result.discovery === "blocked")) {
+    throw new Error("No MCP candidate completed discovery");
+  }
 } catch (error) {
-  failures.push({ phase: "workflow", required: true, reason: error.name === "TimeoutError" ? "Browser action timed out" : "MCP verification contract failed", location: safeLocation(error) });
+  const reason = error.name === "TimeoutError" ? "Browser action timed out" : "MCP verification contract failed";
+  failures.push({ phase: "workflow", required: true, reason, location: safeLocation(error) });
+  recorder.add({ id: "workflow", status: "fail", note: `${reason} at ${safeLocation(error).join(", ")}` });
   console.error("MCP workflow failed; sanitized phase evidence will be retained.");
 } finally {
   proof.cleanup = await cleanup();
   owned.rawKey = null;
   await browser.close();
-  proof.passed = failures.every((entry) => entry.required === false) && proof.cleanup.passed;
-  await fs.writeFile(path.join(evidenceDir, "mcp-proof.json"), `${JSON.stringify(proof, null, 2)}\n`);
+  recorder.add({ id: "cleanup", status: proof.cleanup.passed ? "pass" : "fail" });
 }
-console.log(`MCP verification ${proof.passed ? "passed" : "failed"}; evidence: ${evidenceDir}`);
-if (!proof.passed) process.exitCode = 1;
+const envelope = await recorder.write({ details: proof });
+console.log(`MCP verification ${envelope.verdict}; evidence: ${evidenceDir}`);
+if (envelope.verdict !== "pass") process.exitCode = 1;
 
 async function cleanup() {
   const results = [];
@@ -135,6 +157,7 @@ async function capture(currentPage, name) {
   if (await currentPage.getByTestId("new-api-key-raw-key").count()) throw new Error("Refusing to capture a displayed API key");
   await currentPage.screenshot({ path: path.join(evidenceDir, `${name}.png`), fullPage: true });
   await fs.writeFile(path.join(evidenceDir, `${name}.aria.txt`), `${await currentPage.locator("body").ariaSnapshot()}\n`);
+  recorder.artifact(`${name}.png`);
 }
 
 async function poll(operation, label, timeout = 45_000) {
