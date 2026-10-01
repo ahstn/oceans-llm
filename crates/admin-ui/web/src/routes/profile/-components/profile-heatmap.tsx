@@ -97,7 +97,7 @@ export function UsageHeatmap({
     <div ref={wrapperRef} className={cn('relative flex flex-col gap-2', className)}>
       <div className="overflow-x-auto">
         <div className="flex min-w-[36rem] gap-2">
-          <div className="text-muted-foreground mt-5 grid grid-rows-7 gap-[3px] text-[10px] leading-none">
+          <div className="text-muted-foreground text-2xs mt-5 grid grid-rows-7 gap-0.75 leading-none">
             {WEEKDAYS.map(({ day, show }) => (
               <span key={day} className="flex items-center">
                 {show ? day : ''}
@@ -105,7 +105,7 @@ export function UsageHeatmap({
             ))}
           </div>
           <div className="relative flex min-w-0 flex-1 flex-col gap-1.5">
-            <div className="text-muted-foreground grid h-3.5 text-[10px]" style={columns}>
+            <div className="text-muted-foreground text-2xs grid h-3.5" style={columns}>
               {heatmap.months.map((month) => (
                 <span
                   key={`${month.label}-${month.week}`}
@@ -120,7 +120,7 @@ export function UsageHeatmap({
               data-testid="usage-heatmap"
               role="group"
               aria-label="Daily token usage"
-              className="relative grid grid-flow-col grid-rows-7 gap-[3px]"
+              className="relative grid grid-flow-col grid-rows-7 gap-0.75"
               style={columns}
               onPointerOver={handlePointerOver}
               onPointerLeave={() => setHover(null)}
@@ -136,7 +136,7 @@ export function UsageHeatmap({
                   data-day={cell.day}
                   data-level={cell.level}
                   aria-label={describeCell(cell)}
-                  className="aspect-square rounded-[2px] outline-offset-1 hover:outline hover:outline-1 hover:outline-[var(--foreground)]"
+                  className="hover:outline-foreground aspect-square rounded-xs outline-offset-1 hover:outline hover:outline-1"
                   style={{ background: LEVEL_BACKGROUND[cell.level] }}
                 />
               ))}
@@ -186,13 +186,13 @@ function HeatmapTooltip({ hover }: { hover: HoverState }) {
 
 function HeatmapLegend() {
   return (
-    <div className="text-muted-foreground flex items-center justify-end gap-1 text-[10px]">
+    <div className="text-muted-foreground text-2xs flex items-center justify-end gap-1">
       <span className="mr-1">Fewer tokens</span>
       {([0, 1, 2, 3, 4] as const).map((level) => (
         <span
           key={level}
           aria-hidden
-          className="size-2.5 rounded-[2px]"
+          className="size-2.5 rounded-xs"
           style={{ background: LEVEL_BACKGROUND[level] }}
         />
       ))}

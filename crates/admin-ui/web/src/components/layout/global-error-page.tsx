@@ -66,10 +66,10 @@ export function GlobalErrorPage({ error, info, reset }: ErrorComponentProps) {
       <div className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
         <div className="hidden flex-col gap-5 lg:flex">
           <div className="flex flex-col gap-3">
-            <Badge variant="ghost" className="text-primary w-fit px-0 tracking-[0.18em] uppercase">
+            <Badge variant="ghost" className="text-primary tracking-eyebrow w-fit px-0 uppercase">
               Oceans Gateway
             </Badge>
-            <h1 className="font-heading max-w-xl text-[clamp(2.8rem,5vw,4.6rem)] leading-[0.94]">
+            <h1 className="font-heading text-display max-w-xl">
               A clear stop when the control plane cannot continue.
             </h1>
             <p className="text-muted-foreground max-w-lg text-base">
@@ -85,7 +85,7 @@ export function GlobalErrorPage({ error, info, reset }: ErrorComponentProps) {
             ].map(([label, copy]) => (
               <Card key={label} className="bg-card shadow-sm" size="sm">
                 <CardContent className="flex flex-col gap-2">
-                  <p className="text-muted-foreground text-xs font-semibold tracking-[0.08em] uppercase">
+                  <p className="text-muted-foreground tracking-label text-xs font-semibold uppercase">
                     {label}
                   </p>
                   <p className="text-muted-foreground text-sm">{copy}</p>
@@ -98,13 +98,13 @@ export function GlobalErrorPage({ error, info, reset }: ErrorComponentProps) {
         <Card className="border-border/80 bg-card/95 w-full shadow-xl backdrop-blur">
           <CardHeader className="gap-4">
             <div className="flex items-center justify-between gap-4">
-              <Badge variant="ghost" className="text-primary px-0 tracking-[0.18em] uppercase">
+              <Badge variant="ghost" className="text-primary tracking-eyebrow px-0 uppercase">
                 Admin UI error
               </Badge>
               <Badge variant="destructive">{getErrorName(error)}</Badge>
             </div>
             <div className="flex flex-col gap-3">
-              <CardTitle className="font-heading text-[clamp(1.9rem,2vw,2.6rem)] leading-tight">
+              <CardTitle className="font-heading text-display-sm leading-tight">
                 {DEFAULT_ERROR_TITLE}
               </CardTitle>
               <CardDescription className="max-w-xl text-base leading-7">{message}</CardDescription>
@@ -125,7 +125,7 @@ export function GlobalErrorPage({ error, info, reset }: ErrorComponentProps) {
               {diagnosticChecks.map(([label, value]) => (
                 <Card key={label} className="bg-muted/30" size="sm">
                   <CardContent className="flex flex-col gap-1">
-                    <p className="text-muted-foreground text-xs font-semibold tracking-[0.12em] uppercase">
+                    <p className="text-muted-foreground text-xs font-semibold tracking-widest uppercase">
                       {label}
                     </p>
                     <code className="font-mono text-xs break-all">{value}</code>

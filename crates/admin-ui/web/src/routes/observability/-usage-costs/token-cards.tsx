@@ -32,7 +32,7 @@ export function OwnerCacheList({ rows }: { rows: OwnerCacheRow[] }) {
 
 export function NoTokens() {
   return (
-    <Empty className="rounded-xl border bg-[color:var(--color-surface-muted)]">
+    <Empty className="bg-surface-muted rounded-xl border">
       <EmptyHeader>
         <EmptyTitle>No token usage yet</EmptyTitle>
         <EmptyDescription>

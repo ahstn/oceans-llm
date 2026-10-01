@@ -1,7 +1,6 @@
 import { lazy, Suspense, type ReactNode } from 'react'
 
 import { Skeleton } from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
 
 import {
   COMPACT_FORMATTER,
@@ -18,8 +17,6 @@ const loadChartKit = () => Promise.all([import('recharts'), import('@/components
 
 type ChartProps = {
   chart: SeriesChart
-  /** Tailwind height class; charts fill their card width. */
-  heightClass?: string
   /** Weekly buckets label their tooltip as the week they start. */
   weekly?: boolean
 }
@@ -46,9 +43,9 @@ const LazyTokenVolumeChart = lazy(async () => {
     { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent },
   ] = await loadChartKit()
 
-  function TokenVolumeChartComponent({ chart, heightClass = 'h-64', weekly }: ChartProps) {
+  function TokenVolumeChartComponent({ chart, weekly }: ChartProps) {
     return (
-      <ChartContainer config={chart.config} className={cn(heightClass, 'w-full')}>
+      <ChartContainer config={chart.config} className="h-72 w-full">
         <AreaChart accessibilityLayer data={chart.rows} margin={{ left: 4, right: 12 }}>
           <CartesianGrid vertical={false} />
           <XAxis
@@ -106,9 +103,9 @@ const LazyRequestsBarChart = lazy(async () => {
     { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent },
   ] = await loadChartKit()
 
-  function RequestsBarChartComponent({ chart, heightClass = 'h-64', weekly }: ChartProps) {
+  function RequestsBarChartComponent({ chart, weekly }: ChartProps) {
     return (
-      <ChartContainer config={chart.config} className={cn(heightClass, 'w-full')}>
+      <ChartContainer config={chart.config} className="h-72 w-full">
         <BarChart accessibilityLayer data={chart.rows} margin={{ left: 4, right: 12 }}>
           <CartesianGrid vertical={false} />
           <XAxis
@@ -150,28 +147,17 @@ const LazyRequestsBarChart = lazy(async () => {
   return { default: RequestsBarChartComponent }
 })
 
-function ChartFallback({ heightClass = 'h-64' }: { heightClass?: string }) {
-  return <Skeleton className={cn(heightClass, 'w-full rounded-lg')} />
+function ChartFallback() {
+  return <Skeleton className="h-72 w-full rounded-lg" />
 }
 
 function hasData(chart: SeriesChart) {
   return chart.rows.some((row) => chart.keys.some(({ key }) => Number(row[key]) > 0))
 }
 
-function ChartEmpty({
-  heightClass = 'h-64',
-  children,
-}: {
-  heightClass?: string
-  children: ReactNode
-}) {
+function ChartEmpty({ children }: { children: ReactNode }) {
   return (
-    <div
-      className={cn(
-        heightClass,
-        'text-muted-foreground flex items-center justify-center rounded-lg border border-dashed text-sm',
-      )}
-    >
+    <div className="text-muted-foreground flex h-72 items-center justify-center rounded-lg border border-dashed text-sm">
       {children}
     </div>
   )
@@ -179,10 +165,10 @@ function ChartEmpty({
 
 export function TokenVolumeChart(props: ChartProps) {
   if (!hasData(props.chart)) {
-    return <ChartEmpty heightClass={props.heightClass}>No token usage in this window.</ChartEmpty>
+    return <ChartEmpty>No token usage in this window.</ChartEmpty>
   }
   return (
-    <Suspense fallback={<ChartFallback heightClass={props.heightClass} />}>
+    <Suspense fallback={<ChartFallback />}>
       <LazyTokenVolumeChart {...props} />
     </Suspense>
   )
@@ -190,10 +176,10 @@ export function TokenVolumeChart(props: ChartProps) {
 
 export function RequestsBarChart(props: ChartProps) {
   if (!hasData(props.chart)) {
-    return <ChartEmpty heightClass={props.heightClass}>No requests in this window.</ChartEmpty>
+    return <ChartEmpty>No requests in this window.</ChartEmpty>
   }
   return (
-    <Suspense fallback={<ChartFallback heightClass={props.heightClass} />}>
+    <Suspense fallback={<ChartFallback />}>
       <LazyRequestsBarChart {...props} />
     </Suspense>
   )

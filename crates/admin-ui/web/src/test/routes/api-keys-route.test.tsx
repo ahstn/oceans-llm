@@ -428,7 +428,7 @@ describe('ApiKeysPage', () => {
     const summary = within(dialog).getByTestId('manage-api-key-summary')
     expect(summary).toHaveClass('border-y')
     expect(summary).not.toHaveClass('rounded-lg')
-    expect(summary).not.toHaveClass('bg-[color:var(--color-surface-muted)]')
+    expect(summary).not.toHaveClass('bg-surface-muted')
 
     const metadata = within(dialog).getByTestId('manage-api-key-metadata')
     expect(metadata).toHaveClass('divide-y')
