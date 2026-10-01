@@ -11,6 +11,17 @@ export { normalizeAdminPath }
 
 const PERSONAL_ACCOUNT_PATHS = new Set(['/account/connections'])
 
+/** Self-scoped pages every signed-in user can open. */
+export const PROFILE_PATH = '/profile'
+
+function isPersonalPath(pathname: string) {
+  return (
+    PERSONAL_ACCOUNT_PATHS.has(pathname) ||
+    pathname === PROFILE_PATH ||
+    pathname.startsWith(`${PROFILE_PATH}/`)
+  )
+}
+
 export function isPublicAdminRoute(currentPath: string) {
   return (
     currentPath.startsWith('/invite/') ||
@@ -24,9 +35,10 @@ export function buildRedirectTarget(pathname: string, search: Record<string, unk
   const currentPath = normalizeAdminPath(pathname)
   const query = new URLSearchParams()
 
+  // The router JSON-parses search values (`?create=true` becomes `true`), so scalars are kept too.
   for (const [key, value] of Object.entries(search)) {
-    if (typeof value === 'string') {
-      query.set(key, value)
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      query.set(key, String(value))
     }
   }
 
@@ -34,7 +46,12 @@ export function buildRedirectTarget(pathname: string, search: Record<string, unk
   return searchString ? `${currentPath}?${searchString}` : currentPath
 }
 
+/**
+ * Users with any page access land on their profile, ahead of the configured default page.
+ * Users with no pages still go to `/no-access`, which explains how to get access.
+ */
 export function defaultSignedInPath(session: AuthSessionView) {
+  if (session.permissions.pages.length > 0) return PROFILE_PATH
   const defaultPage = session.permissions.default_page
   return (defaultPage && getAdminPagePath(defaultPage)) || '/no-access'
 }
@@ -53,7 +70,7 @@ export function canPerformAdminAction(
 export function canAccessSignedInPath(session: AuthSessionView, path: string) {
   const pathname = normalizeAdminPath(path.split(/[?#]/, 1)[0])
   if (pathname === '/') return true
-  if (PERSONAL_ACCOUNT_PATHS.has(pathname)) return true
+  if (isPersonalPath(pathname)) return true
   if (pathname === '/no-access') return session.permissions.pages.length === 0
   if (isPlatformAdminOnlyPath(pathname) && !isPlatformAdminSession(session)) return false
   const page = getAdminPageForPath(pathname)

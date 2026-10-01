@@ -35,6 +35,7 @@ import { Route as ObservabilityLeaderboardRouteImport } from './routes/observabi
 import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observability/mcp-invocations'
 import { Route as ObservabilityRequestLogsRouteImport } from './routes/observability/request-logs'
 import { Route as ObservabilityUsageCostsRouteImport } from './routes/observability/usage-costs'
+import { Route as ProfileIndexRouteImport } from './routes/profile/index'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -171,6 +172,11 @@ const ObservabilityUsageCostsRoute = ObservabilityUsageCostsRouteImport.update({
   path: '/observability/usage-costs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProfileIndexRoute = ProfileIndexRouteImport.update({
+  id: '/profile/',
+  path: '/profile/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
   '/mcp/': typeof McpIndexRoute
+  '/profile/': typeof ProfileIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -227,6 +234,7 @@ export interface FileRoutesByTo {
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
   '/mcp': typeof McpIndexRoute
+  '/profile': typeof ProfileIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -256,6 +264,7 @@ export interface FileRoutesById {
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
   '/mcp/': typeof McpIndexRoute
+  '/profile/': typeof ProfileIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -286,6 +295,7 @@ export interface FileRouteTypes {
     | '/observability/request-logs'
     | '/observability/usage-costs'
     | '/mcp/'
+    | '/profile/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -314,6 +324,7 @@ export interface FileRouteTypes {
     | '/observability/request-logs'
     | '/observability/usage-costs'
     | '/mcp'
+    | '/profile'
   id:
     | '__root__'
     | '/'
@@ -342,6 +353,7 @@ export interface FileRouteTypes {
     | '/observability/request-logs'
     | '/observability/usage-costs'
     | '/mcp/'
+    | '/profile/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -371,6 +383,7 @@ export interface RootRouteChildren {
   ObservabilityRequestLogsRoute: typeof ObservabilityRequestLogsRoute
   ObservabilityUsageCostsRoute: typeof ObservabilityUsageCostsRoute
   McpIndexRoute: typeof McpIndexRoute
+  ProfileIndexRoute: typeof ProfileIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -557,6 +570,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ObservabilityUsageCostsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/profile/': {
+      id: '/profile/'
+      path: '/profile'
+      fullPath: '/profile/'
+      preLoaderRoute: typeof ProfileIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -587,6 +607,7 @@ const rootRouteChildren: RootRouteChildren = {
   ObservabilityRequestLogsRoute: ObservabilityRequestLogsRoute,
   ObservabilityUsageCostsRoute: ObservabilityUsageCostsRoute,
   McpIndexRoute: McpIndexRoute,
+  ProfileIndexRoute: ProfileIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

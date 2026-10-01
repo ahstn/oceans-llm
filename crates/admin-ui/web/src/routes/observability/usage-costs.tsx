@@ -336,9 +336,7 @@ function Kpi({
         ) : (
           <CardTitle
             className={
-              tone === 'warning'
-                ? 'text-2xl text-[var(--color-warning)] tabular-nums'
-                : 'text-2xl tabular-nums'
+              tone === 'warning' ? 'text-warning text-2xl tabular-nums' : 'text-2xl tabular-nums'
             }
           >
             {value}
@@ -432,7 +430,7 @@ function ShareTable({
 
 function EmptyReport() {
   return (
-    <Empty className="rounded-xl border bg-[color:var(--color-surface-muted)]">
+    <Empty className="bg-surface-muted rounded-xl border">
       <EmptyHeader>
         <EmptyTitle>No priced spend yet</EmptyTitle>
         <EmptyDescription>

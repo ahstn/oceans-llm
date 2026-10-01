@@ -22,6 +22,7 @@ import {
   getRequestLogDetail,
   getBatchResults,
   getHarnessUsage,
+  getMyProfile as getGatewayMyProfile,
   getGuardrailPolicies,
   getMcpInvocationDetail,
   getMcpConnectionInfo as getGatewayMcpConnectionInfo,
@@ -328,6 +329,10 @@ export const getUsageCosts = createServerFn({ method: 'GET' }).handler(async () 
     ...(await getSpendReport({ days: 7, owner_kind: 'all' })),
     exportOrigin: resolveBrowserGatewayOrigin(),
   }
+})
+
+export const getMyProfile = createServerFn({ method: 'GET' }).handler(async () => {
+  return getGatewayMyProfile()
 })
 
 export const getObservabilityLeaderboard = createServerFn({ method: 'GET' }).handler(

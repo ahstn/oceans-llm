@@ -214,7 +214,7 @@ function SummaryStrip({ summary, totalOwners }: { summary: BudgetSummary; totalO
 
 const STAT_TONE_CLASS = {
   destructive: 'text-destructive',
-  warning: 'text-[var(--color-warning)]',
+  warning: 'text-warning',
 } as const
 
 function StatTile({

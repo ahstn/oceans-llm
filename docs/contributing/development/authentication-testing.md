@@ -9,7 +9,7 @@ This page is for maintainers testing admin authentication from the source-built 
 Run the source-built stack with the SSO profile:
 
 ```shell
-docker compose --profile sso -f compose.local.yaml up --build
+BUN_VERSION="$(mise tool bun --requested)" docker compose --profile sso -f compose.local.yaml up --build
 ```
 
 The stack builds local gateway and admin UI images from the working tree.
@@ -58,7 +58,7 @@ Existing Docker volumes keep the bootstrap admin password that was first seeded.
 1. Start the stack:
 
 ```shell
-docker compose --profile sso -f compose.local.yaml up --build
+BUN_VERSION="$(mise tool bun --requested)" docker compose --profile sso -f compose.local.yaml up --build
 ```
 
 2. Open `http://localhost:8080/admin/login`.

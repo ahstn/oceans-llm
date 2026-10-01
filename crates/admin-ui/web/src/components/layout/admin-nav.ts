@@ -7,6 +7,7 @@ import {
   SearchIcon,
   RoboticIcon,
   TaskDaily01Icon,
+  UserCircleIcon,
   UserIcon,
   UserGroupIcon,
   WaterfallUp02Icon,
@@ -42,6 +43,8 @@ export const adminNavSections: AdminNavSection[] = [
     label: 'Control Plane',
     icon: SearchIcon,
     items: [
+      // Self-scoped, so every signed-in user can open it.
+      { label: 'Profile', to: '/profile', icon: UserCircleIcon },
       {
         page: 'api_keys',
         requiredPage: 'api_keys',

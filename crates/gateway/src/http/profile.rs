@@ -1,0 +1,482 @@
+//! Self-scoped profile summary: the signed-in user's budget, personal API keys, and a year of
+//! usage.
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+use axum::{Json, extract::State, http::HeaderMap};
+use gateway_core::{
+    ApiKeyOwnerKind, BudgetRepository, BudgetScope, GatewayError, HarnessUsageDailyRecord,
+    RequestLogRepository, SpendDailyAggregateRecord, SpendModelTokenDailyRecord, UserStatus,
+    budget_window_utc,
+};
+use gateway_service::{AdminApiKeyService, PersonalApiKey, api_key_display_prefix};
+use serde::Serialize;
+use time::{Duration, OffsetDateTime};
+use utoipa::ToSchema;
+use uuid::Uuid;
+
+use crate::http::{
+    admin_auth::require_authenticated_session,
+    admin_contract::{BudgetSettingsView, BudgetSourceView, Envelope, envelope, format_timestamp},
+    api_keys::ApiKeyModelGrantModeView,
+    error::AppError,
+    spend::{budget_source_to_view, budget_to_settings_view},
+    state::AppState,
+};
+
+/// Days of history returned for the heatmap and trend charts.
+pub const PROFILE_HISTORY_DAYS: i64 = 365;
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MyProfileView {
+    pub window_start: String,
+    pub window_end: String,
+    pub budget: Option<MyProfileBudgetView>,
+    /// API keys the user owns personally. Team and service-account keys are excluded.
+    pub api_keys: Vec<MyProfileApiKeyView>,
+    pub days: Vec<MyProfileDayView>,
+    pub model_days: Vec<MyProfileModelDayView>,
+    pub harness_days: Vec<MyProfileHarnessDayView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MyProfileBudgetView {
+    pub settings: BudgetSettingsView,
+    pub source: BudgetSourceView,
+    /// Current budget period; spend resets at `period_end`.
+    pub period_start: String,
+    pub period_end: String,
+    pub spent_usd_10000: i64,
+}
+
+/// Usage for one UTC day. `day` is an ISO date (`YYYY-MM-DD`).
+#[derive(Debug, Default, Serialize, ToSchema)]
+pub struct MyProfileDayView {
+    pub day: String,
+    pub request_count: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    /// Input with a provider cache split that missed the cache; with the two cache buckets this
+    /// forms the cache hit-rate denominator.
+    pub uncached_input_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+    pub total_tokens: i64,
+    /// Cost of priced requests only; incomplete when either gap count below is non-zero.
+    pub cost_usd_10000: i64,
+    /// Requests with no pricing for their model, so they add nothing to the cost.
+    pub unpriced_request_count: i64,
+    /// Requests whose provider reported no usage, so they could not be priced.
+    pub usage_missing_request_count: i64,
+}
+
+/// A personal key as listed on the profile. Owner details are implied, so unlike the API keys
+/// page's view they are left out.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MyProfileApiKeyView {
+    pub id: String,
+    pub name: String,
+    pub prefix: String,
+    pub status: String,
+    pub model_grant_mode: ApiKeyModelGrantModeView,
+    /// Granted model keys; empty when `model_grant_mode` is `all`.
+    pub model_keys: Vec<String>,
+    pub created_at: String,
+    pub last_used_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MyProfileModelDayView {
+    pub day: String,
+    /// Empty on `is_other` rows.
+    pub model_key: String,
+    /// Sums the day's models that no profile chart range ranks highly enough to show.
+    pub is_other: bool,
+    pub request_count: i64,
+    pub total_tokens: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MyProfileHarnessDayView {
+    pub day: String,
+    pub harness_key: String,
+    pub harness_label: String,
+    pub request_count: i64,
+    pub total_tokens: i64,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/me/profile",
+    responses((status = 200, body = Envelope<MyProfileView>)),
+    security(("session_cookie" = []))
+)]
+pub async fn get_my_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<MyProfileView>>, AppError> {
+    let current_user = require_authenticated_session(&state, &headers).await?;
+    if current_user.status != UserStatus::Active {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "only active users can view their profile".to_string(),
+        )));
+    }
+    let user_id = current_user.user_id;
+    let now = OffsetDateTime::now_utc();
+    let (window_start, window_end) = profile_window_bounds_utc(now);
+    let owner = Some(ApiKeyOwnerKind::User);
+
+    let store = state.store.as_ref();
+    let usage = async {
+        tokio::try_join!(
+            store.list_usage_daily_aggregates(window_start, window_end, owner, Some(user_id)),
+            store.list_usage_model_token_daily_aggregates(
+                window_start,
+                window_end,
+                owner,
+                Some(user_id)
+            ),
+            store.list_user_harness_daily_usage(window_start, window_end, user_id),
+            load_budget(&state, user_id, now),
+        )
+        .map_err(GatewayError::from)
+    };
+    let api_keys = AdminApiKeyService::new(state.store.clone());
+    let ((daily, model_daily, harness_daily, budget), keys) =
+        tokio::try_join!(usage, api_keys.list_personal_api_keys(user_id))?;
+
+    Ok(Json(envelope(MyProfileView {
+        window_start: format_timestamp(window_start),
+        window_end: format_timestamp(window_end),
+        budget,
+        api_keys: keys.iter().map(profile_api_key_view).collect(),
+        days: build_day_views(&daily, &model_daily),
+        model_days: model_day_views(&model_daily, window_end),
+        harness_days: harness_daily.iter().map(harness_day_view).collect(),
+    })))
+}
+
+async fn load_budget(
+    state: &AppState,
+    user_id: Uuid,
+    now: OffsetDateTime,
+) -> Result<Option<MyProfileBudgetView>, gateway_core::StoreError> {
+    let scope = BudgetScope::User { user_id };
+    let Some(budget) = state.store.get_active_budget_by_scope(&scope).await? else {
+        return Ok(None);
+    };
+    let window = budget_window_utc(budget.settings.cadence, now);
+    let spent = state
+        .store
+        .sum_usage_cost_for_budget_scope_in_window(&scope, window.period_start, window.observed_end)
+        .await?;
+    Ok(Some(MyProfileBudgetView {
+        settings: budget_to_settings_view(&budget),
+        source: budget_source_to_view(&budget.source),
+        period_start: format_timestamp(window.period_start),
+        period_end: format_timestamp(window.period_end),
+        spent_usd_10000: spent.as_scaled_i64(),
+    }))
+}
+
+/// History ends at the start of tomorrow (UTC) so today is always included.
+fn profile_window_bounds_utc(now: OffsetDateTime) -> (OffsetDateTime, OffsetDateTime) {
+    let today = now
+        .to_offset(time::UtcOffset::UTC)
+        .date()
+        .midnight()
+        .assume_utc();
+    let window_end = today + Duration::days(1);
+    (
+        window_end - Duration::days(PROFILE_HISTORY_DAYS),
+        window_end,
+    )
+}
+
+/// Merge cost rows with per-model token rows into one row per active day.
+fn build_day_views(
+    daily: &[SpendDailyAggregateRecord],
+    model_daily: &[SpendModelTokenDailyRecord],
+) -> Vec<MyProfileDayView> {
+    let mut days: BTreeMap<OffsetDateTime, MyProfileDayView> = BTreeMap::new();
+    for row in daily {
+        let day = days.entry(row.day_start).or_default();
+        day.cost_usd_10000 += row.priced_cost_usd.as_scaled_i64();
+        day.unpriced_request_count += row.unpriced_request_count;
+        day.usage_missing_request_count += row.usage_missing_request_count;
+    }
+    for row in model_daily {
+        let day = days.entry(row.day_start).or_default();
+        let tokens = &row.tokens;
+        day.request_count += tokens.request_count;
+        day.input_tokens += tokens.input_tokens;
+        day.output_tokens += tokens.output_tokens;
+        day.uncached_input_tokens += tokens.uncached_input_tokens;
+        day.cache_read_tokens += tokens.cache_read_tokens;
+        day.cache_write_tokens += tokens.cache_write_tokens;
+        day.total_tokens += tokens.input_tokens + tokens.output_tokens;
+    }
+    days.into_iter()
+        .map(|(day_start, view)| MyProfileDayView {
+            day: day_start.date().to_string(),
+            ..view
+        })
+        .collect()
+}
+
+fn profile_api_key_view(key: &PersonalApiKey) -> MyProfileApiKeyView {
+    let api_key = &key.api_key;
+    MyProfileApiKeyView {
+        id: api_key.id.to_string(),
+        name: api_key.name.clone(),
+        prefix: api_key_display_prefix(&api_key.public_id),
+        status: api_key.status.as_str().to_string(),
+        model_grant_mode: api_key.model_grant_mode.into(),
+        model_keys: key.model_keys.clone(),
+        created_at: format_timestamp(api_key.created_at),
+        last_used_at: api_key.last_used_at.map(format_timestamp),
+    }
+}
+
+/// Ranges, in days back from the window end, that the profile page ranks models over.
+const RANKED_RANGES_DAYS: [i64; 3] = [30, 90, PROFILE_HISTORY_DAYS];
+/// The page charts the top five models of a range; the rest of this margin absorbs differences
+/// in tie ordering.
+const KEPT_MODELS_PER_RANGE: usize = 10;
+
+/// Per-day model usage, bounded to the models the page can chart. The most used models of each
+/// ranked range are kept, and every other model is folded into one `is_other` row per day, so
+/// the response grows with days rather than days times models.
+fn model_day_views(
+    rows: &[SpendModelTokenDailyRecord],
+    window_end: OffsetDateTime,
+) -> Vec<MyProfileModelDayView> {
+    let mut kept = HashSet::new();
+    for range in RANKED_RANGES_DAYS {
+        let since = window_end - Duration::days(range);
+        let mut totals: HashMap<&str, i64> = HashMap::new();
+        for row in rows.iter().filter(|row| row.day_start >= since) {
+            *totals.entry(row.model_key.as_str()).or_default() += row.tokens.request_count;
+        }
+        let mut ranked: Vec<_> = totals.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+        kept.extend(
+            ranked
+                .into_iter()
+                .take(KEPT_MODELS_PER_RANGE)
+                .map(|(key, _)| key),
+        );
+    }
+
+    let mut views = Vec::new();
+    let mut other: BTreeMap<String, MyProfileModelDayView> = BTreeMap::new();
+    for row in rows {
+        let day = row.day_start.date().to_string();
+        let total_tokens = row.tokens.input_tokens + row.tokens.output_tokens;
+        if kept.contains(row.model_key.as_str()) {
+            views.push(MyProfileModelDayView {
+                day,
+                model_key: row.model_key.clone(),
+                is_other: false,
+                request_count: row.tokens.request_count,
+                total_tokens,
+            });
+            continue;
+        }
+        let entry = other
+            .entry(day.clone())
+            .or_insert_with(|| MyProfileModelDayView {
+                day,
+                model_key: String::new(),
+                is_other: true,
+                request_count: 0,
+                total_tokens: 0,
+            });
+        entry.request_count += row.tokens.request_count;
+        entry.total_tokens += total_tokens;
+    }
+    views.extend(other.into_values());
+    views
+}
+
+fn harness_day_view(row: &HarnessUsageDailyRecord) -> MyProfileHarnessDayView {
+    MyProfileHarnessDayView {
+        day: row.day_start.date().to_string(),
+        harness_key: row.agent_harness_key.clone(),
+        harness_label: row.agent_harness_label.clone(),
+        request_count: row.request_count,
+        total_tokens: row.total_tokens,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gateway_core::{Money4, TokenUsageBuckets};
+    use time::macros::datetime;
+
+    fn tokens(request_count: i64, input: i64, output: i64, cache_read: i64) -> TokenUsageBuckets {
+        TokenUsageBuckets {
+            request_count,
+            input_tokens: input,
+            output_tokens: output,
+            uncached_input_tokens: input - cache_read,
+            cache_read_tokens: cache_read,
+            cache_write_tokens: 0,
+        }
+    }
+
+    #[test]
+    fn window_covers_a_year_including_today() {
+        let (start, end) = profile_window_bounds_utc(datetime!(2026-09-25 13:45 UTC));
+        assert_eq!(end, datetime!(2026-09-26 00:00 UTC));
+        assert_eq!(end - start, Duration::days(PROFILE_HISTORY_DAYS));
+    }
+
+    #[test]
+    fn day_views_merge_cost_and_model_tokens() {
+        let day = datetime!(2026-09-24 00:00 UTC);
+        let other_day = datetime!(2026-09-25 00:00 UTC);
+        let daily = vec![SpendDailyAggregateRecord {
+            day_start: day,
+            priced_cost_usd: Money4::from_scaled(12_500),
+            priced_request_count: 1,
+            unpriced_request_count: 1,
+            usage_missing_request_count: 1,
+            uncached_input_tokens: None,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
+        }];
+        let model_daily = vec![
+            SpendModelTokenDailyRecord {
+                day_start: day,
+                model_key: "fast".to_string(),
+                tokens: tokens(2, 100, 50, 40),
+            },
+            SpendModelTokenDailyRecord {
+                day_start: day,
+                model_key: "smart".to_string(),
+                tokens: tokens(1, 10, 5, 0),
+            },
+            SpendModelTokenDailyRecord {
+                day_start: other_day,
+                model_key: "fast".to_string(),
+                tokens: tokens(1, 1, 1, 0),
+            },
+        ];
+
+        let views = build_day_views(&daily, &model_daily);
+
+        assert_eq!(views.len(), 2);
+        assert_eq!(views[0].day, "2026-09-24");
+        assert_eq!(views[0].request_count, 3);
+        assert_eq!(views[0].total_tokens, 165);
+        assert_eq!(views[0].cache_read_tokens, 40);
+        assert_eq!(views[0].cost_usd_10000, 12_500);
+        assert_eq!(views[0].unpriced_request_count, 1);
+        assert_eq!(views[0].usage_missing_request_count, 1);
+        assert_eq!(views[1].day, "2026-09-25");
+        assert_eq!(views[1].cost_usd_10000, 0);
+    }
+
+    #[test]
+    fn model_days_fold_models_no_range_ranks_highly() {
+        let window_end = datetime!(2026-09-26 00:00 UTC);
+        let recent = datetime!(2026-09-25 00:00 UTC);
+        let old = datetime!(2026-01-10 00:00 UTC);
+        let row = |day_start, model_key: String, requests| SpendModelTokenDailyRecord {
+            day_start,
+            model_key,
+            tokens: tokens(requests, requests * 10, requests, 0),
+        };
+        // Twelve heavy models last January, and one light model used only recently: the year
+        // ranks the heavy ones, and the 30-day range ranks the recent one.
+        let mut rows: Vec<_> = (0..12)
+            .map(|index| row(old, format!("old-{index:02}"), 100 - index))
+            .collect();
+        rows.push(row(recent, "recent".to_string(), 1));
+
+        let views = model_day_views(&rows, window_end);
+
+        let kept: Vec<_> = views
+            .iter()
+            .filter(|view| !view.is_other)
+            .map(|view| view.model_key.as_str())
+            .collect();
+        assert_eq!(kept.len(), KEPT_MODELS_PER_RANGE + 1);
+        assert!(kept.contains(&"recent"));
+        assert!(!kept.contains(&"old-10") && !kept.contains(&"old-11"));
+        let other: Vec<_> = views.iter().filter(|view| view.is_other).collect();
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].day, "2026-01-10");
+        assert_eq!(other[0].request_count, 90 + 89);
+        assert_eq!(other[0].total_tokens, (90 + 89) * 11);
+        assert_eq!(
+            views.iter().map(|view| view.request_count).sum::<i64>(),
+            rows.iter().map(|row| row.tokens.request_count).sum::<i64>()
+        );
+    }
+
+    #[tokio::test]
+    async fn personal_key_summaries_only_include_the_viewers_keys() -> anyhow::Result<()> {
+        use gateway_core::{
+            AdminApiKeyRepository, ApiKeyModelGrantMode, AuthMode, GlobalRole, NewApiKeyRecord,
+        };
+        use gateway_store::{LibsqlStore, run_migrations};
+
+        let tmp = tempfile::tempdir()?;
+        let path = tmp.path().join("profile.db");
+        run_migrations(&path).await?;
+        let store = LibsqlStore::new_local(path.to_str().expect("path")).await?;
+        let mut users = Vec::new();
+        for email in [
+            "viewer@example.com",
+            "other@example.com",
+            "keyless@example.com",
+        ] {
+            users.push(
+                store
+                    .create_identity_user(
+                        email,
+                        email,
+                        email,
+                        GlobalRole::User,
+                        AuthMode::Password,
+                        UserStatus::Active,
+                    )
+                    .await?,
+            );
+        }
+        for (name, owner) in [("viewer key", &users[0]), ("other key", &users[1])] {
+            store
+                .create_api_key(&NewApiKeyRecord {
+                    name: name.to_string(),
+                    public_id: name.replace(' ', "-"),
+                    secret_hash: "hash".to_string(),
+                    model_grant_mode: ApiKeyModelGrantMode::All,
+                    owner_kind: ApiKeyOwnerKind::User,
+                    owner_user_id: Some(owner.user_id),
+                    owner_team_id: None,
+                    owner_service_account_id: None,
+                    created_at: OffsetDateTime::now_utc(),
+                })
+                .await?;
+        }
+
+        let service = AdminApiKeyService::new(std::sync::Arc::new(store));
+        let keys = service.list_personal_api_keys(users[0].user_id).await?;
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].api_key.name, "viewer key");
+        assert_eq!(keys[0].api_key.owner_user_id, Some(users[0].user_id));
+        assert!(keys[0].model_keys.is_empty());
+        let view = profile_api_key_view(&keys[0]);
+        assert_eq!(view.prefix, "gwk_viewer-key");
+        assert_eq!(view.status, "active");
+        assert!(
+            service
+                .list_personal_api_keys(users[2].user_id)
+                .await?
+                .is_empty()
+        );
+        Ok(())
+    }
+}

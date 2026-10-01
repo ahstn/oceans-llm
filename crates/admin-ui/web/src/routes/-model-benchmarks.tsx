@@ -51,7 +51,7 @@ export function BenchmarkAttribution() {
 export function ModelBenchmarks({ model }: { model: ModelView }) {
   if (model.benchmark_scores.length === 0) {
     return (
-      <p className="text-sm text-[var(--color-text-muted)]">
+      <p className="text-subtle-foreground text-sm">
         No benchmark data is available for this model.
       </p>
     )
@@ -65,11 +65,9 @@ export function ModelBenchmarks({ model }: { model: ModelView }) {
             key={`${score.source}:${score.metric_key}`}
             className="grid min-w-0 gap-2 py-3 text-sm sm:grid-cols-[14rem_minmax(0,1fr)]"
           >
-            <dt className="text-[var(--color-text-soft)]">{score.label}</dt>
-            <dd className="flex min-w-0 flex-col gap-1 text-[var(--color-text-muted)]">
-              <span className="font-medium text-[var(--color-text)]">
-                {formatBenchmarkScore(score)}
-              </span>
+            <dt className="text-muted-foreground">{score.label}</dt>
+            <dd className="text-subtle-foreground flex min-w-0 flex-col gap-1">
+              <span className="text-foreground font-medium">{formatBenchmarkScore(score)}</span>
               <span className="text-xs">
                 {matchKindLabel(score.match_kind)} · Updated {formatDataAge(score.updated_at)}
               </span>
@@ -85,7 +83,7 @@ export function ModelBenchmarks({ model }: { model: ModelView }) {
           </div>
         ))}
       </dl>
-      <p className="text-xs text-[var(--color-text-soft)]">
+      <p className="text-muted-foreground text-xs">
         <BenchmarkAttribution />
       </p>
     </div>

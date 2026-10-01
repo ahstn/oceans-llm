@@ -235,27 +235,27 @@ export function RequestLogsPage() {
               </AlertDescription>
             </Alert>
           ) : null}
-          <div className="text-sm text-[var(--color-text-soft)]">
+          <div className="text-muted-foreground text-sm">
             {logPage.total} total logs loaded from gateway observability APIs.
           </div>
 
           <div
-            className="max-h-[34rem] overflow-auto rounded-md border border-[color:var(--color-border)] p-3 lg:hidden"
+            className="border-border max-h-[34rem] overflow-auto rounded-md border p-3 lg:hidden"
             data-testid="request-log-mobile-list"
           >
             <div className="flex flex-col gap-3">
               {logPage.items.map((item) => (
                 <article
                   key={item.request_log_id}
-                  className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+                  className="border-border bg-surface-muted rounded-lg border p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="flex items-center gap-2 truncate font-semibold text-[var(--color-text)]">
+                      <p className="text-foreground flex items-center gap-2 truncate font-semibold">
                         <BrandIcon iconKey={item.model_icon_key} size={16} />
                         <span className="truncate">{item.model_key}</span>
                       </p>
-                      <p className="truncate font-mono text-xs text-[var(--color-text-soft)]">
+                      <p className="text-muted-foreground truncate font-mono text-xs">
                         {item.request_id}
                       </p>
                     </div>
@@ -266,59 +266,57 @@ export function RequestLogsPage() {
 
                   <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     <div>
-                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                         Provider
                       </dt>
-                      <dd className="flex items-center gap-2 text-[var(--color-text-muted)]">
+                      <dd className="text-subtle-foreground flex items-center gap-2">
                         <BrandIcon iconKey={item.provider_icon_key} size={14} />
                         <span>{item.provider_key}</span>
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                         Caller
                       </dt>
-                      <dd className="truncate text-[var(--color-text-muted)]">
+                      <dd className="text-subtle-foreground truncate">
                         {callerPrimary(item) ?? 'Unknown'}
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                         Key
                       </dt>
-                      <dd className="truncate text-[var(--color-text-muted)]">
+                      <dd className="text-subtle-foreground truncate">
                         {item.api_key_name ?? item.api_key_id}
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                         Latency
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">
-                        {formatLatency(item.latency_ms)}
-                      </dd>
+                      <dd className="text-subtle-foreground">{formatLatency(item.latency_ms)}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                         Tokens
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">
+                      <dd className="text-subtle-foreground">
                         {formatTokenCount(item.total_tokens)}
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                         Tools
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">
+                      <dd className="text-subtle-foreground">
                         <ToolCardinalityInline item={item} />
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                         Timestamp
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">
+                      <dd className="text-subtle-foreground">
                         {formatOccurredAt(item.occurred_at)}
                       </dd>
                     </div>
@@ -339,11 +337,11 @@ export function RequestLogsPage() {
           </div>
 
           <div
-            className="hidden min-w-0 overflow-x-auto rounded-md border border-[color:var(--color-border)] lg:block"
+            className="border-border hidden min-w-0 overflow-x-auto rounded-md border lg:block"
             data-testid="request-log-desktop-table"
           >
             <div className="min-w-[80rem]">
-              <div className="grid grid-cols-[minmax(13rem,1.2fr)_minmax(12rem,1.1fr)_minmax(11rem,1fr)_minmax(9rem,0.9fr)_80px_88px_80px_150px_110px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+              <div className="bg-surface-muted text-muted-foreground grid grid-cols-[minmax(13rem,1.2fr)_minmax(12rem,1.1fr)_minmax(11rem,1fr)_minmax(9rem,0.9fr)_80px_88px_80px_150px_110px]">
                 <span className="px-3 py-2 font-semibold">Request</span>
                 <span className="px-3 py-2 font-semibold">Model</span>
                 <span className="px-3 py-2 font-semibold">Caller</span>
@@ -371,41 +369,41 @@ export function RequestLogsPage() {
                     return (
                       <div
                         key={item.request_log_id}
-                        className="absolute top-0 left-0 grid w-full grid-cols-[minmax(13rem,1.2fr)_minmax(12rem,1.1fr)_minmax(11rem,1fr)_minmax(9rem,0.9fr)_80px_88px_80px_150px_110px] border-t border-[color:var(--color-border)] align-top text-sm"
+                        className="border-border absolute top-0 left-0 grid w-full grid-cols-[minmax(13rem,1.2fr)_minmax(12rem,1.1fr)_minmax(11rem,1fr)_minmax(9rem,0.9fr)_80px_88px_80px_150px_110px] border-t align-top text-sm"
                         style={{
                           height: `${virtualRow.size}px`,
                           transform: `translateY(${virtualRow.start}px)`,
                         }}
                       >
                         <div className="min-w-0 px-3 py-3">
-                          <div className="truncate font-mono text-xs text-[var(--color-text)]">
+                          <div className="text-foreground truncate font-mono text-xs">
                             {item.request_id}
                           </div>
-                          <div className="truncate text-xs text-[var(--color-text-soft)]">
+                          <div className="text-muted-foreground truncate text-xs">
                             {formatOccurredAt(item.occurred_at)}
                           </div>
                         </div>
                         <div className="min-w-0 px-3 py-3">
-                          <div className="flex items-center gap-2 truncate text-[var(--color-text)]">
+                          <div className="text-foreground flex items-center gap-2 truncate">
                             <BrandIcon iconKey={item.model_icon_key} size={16} />
                             <span className="truncate">{item.model_key}</span>
                           </div>
-                          <div className="mt-0.5 flex items-center gap-2 truncate text-xs text-[var(--color-text-soft)]">
+                          <div className="text-muted-foreground mt-0.5 flex items-center gap-2 truncate text-xs">
                             <BrandIcon iconKey={item.provider_icon_key} size={12} />
                             <span className="truncate">{item.provider_key}</span>
                           </div>
                         </div>
                         <div className="min-w-0 px-3 py-3">
-                          <div className="truncate text-[var(--color-text)]">
+                          <div className="text-foreground truncate">
                             {callerPrimary(item) ?? 'Unknown'}
                           </div>
                           {callerSecondary(item) ? (
-                            <div className="truncate text-xs text-[var(--color-text-soft)]">
+                            <div className="text-muted-foreground truncate text-xs">
                               {callerSecondary(item)}
                             </div>
                           ) : null}
                         </div>
-                        <span className="truncate px-3 py-3 text-[var(--color-text-muted)]">
+                        <span className="text-subtle-foreground truncate px-3 py-3">
                           {item.api_key_name ?? item.api_key_id}
                         </span>
                         <span className="px-3 py-3">
@@ -413,13 +411,13 @@ export function RequestLogsPage() {
                             {item.status_code ?? 'n/a'}
                           </Badge>
                         </span>
-                        <span className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <span className="text-subtle-foreground px-3 py-3">
                           {formatLatency(item.latency_ms)}
                         </span>
-                        <span className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <span className="text-subtle-foreground px-3 py-3">
                           {formatTokenCount(item.total_tokens)}
                         </span>
-                        <span className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <span className="text-subtle-foreground px-3 py-3">
                           <ToolCardinalityInline item={item} />
                         </span>
                         <div className="px-3 py-2.5">
@@ -447,7 +445,7 @@ export function RequestLogsPage() {
           side="right"
           className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[min(1280px,94vw)]"
         >
-          <SheetHeader className="border-b border-[color:var(--color-border)]">
+          <SheetHeader className="border-border border-b">
             <SheetTitle>Request Log Detail</SheetTitle>
             <SheetDescription>
               Review summary fields and sanitized request and response payloads.
@@ -464,7 +462,7 @@ export function RequestLogsPage() {
               </Alert>
             ) : selectedDetail ? (
               <div className="flex flex-col gap-4">
-                <div className="grid gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="border-border bg-surface-muted grid gap-3 rounded-md border p-4 sm:grid-cols-2 xl:grid-cols-4">
                   <DetailRow label="Request ID" value={selectedDetail.log.request_id} mono />
                   <DetailRow
                     label="Request Log ID"
@@ -571,15 +569,11 @@ function DetailRow({
 }) {
   return (
     <div>
-      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
         {label}
       </dt>
       <dd
-        className={
-          mono
-            ? 'font-mono text-sm break-all text-[var(--color-text)]'
-            : 'text-sm text-[var(--color-text)]'
-        }
+        className={mono ? 'text-foreground font-mono text-sm break-all' : 'text-foreground text-sm'}
       >
         {value}
       </dd>
@@ -724,9 +718,7 @@ function AttemptsSection({ attempts }: { attempts: RequestAttemptView[] }) {
                         {attempt.status}
                       </Badge>
                       {attempt.error_code ? (
-                        <span className="text-xs text-[var(--color-text-soft)]">
-                          {attempt.error_code}
-                        </span>
+                        <span className="text-muted-foreground text-xs">{attempt.error_code}</span>
                       ) : null}
                     </div>
                   </TableCell>
@@ -755,7 +747,7 @@ function AttemptsSection({ attempts }: { attempts: RequestAttemptView[] }) {
               .map((attempt) => (
                 <div
                   key={`${attempt.request_attempt_id}-error`}
-                  className="rounded-md border border-[color:var(--color-border)] p-3"
+                  className="border-border rounded-md border p-3"
                 >
                   <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                     <span>Attempt #{attempt.attempt_number} error detail</span>
@@ -763,10 +755,10 @@ function AttemptsSection({ attempts }: { attempts: RequestAttemptView[] }) {
                       <Badge variant="warning">truncated</Badge>
                     ) : null}
                   </div>
-                  <p className="mt-2 font-mono text-xs text-[var(--color-text-muted)]">
+                  <p className="text-subtle-foreground mt-2 font-mono text-xs">
                     {attempt.error_detail}
                   </p>
-                  <p className="mt-2 font-mono text-xs text-[var(--color-text-soft)]">
+                  <p className="text-muted-foreground mt-2 font-mono text-xs">
                     route: {attempt.route_id}
                   </p>
                 </div>
@@ -786,7 +778,7 @@ function PayloadSection({ detail }: { detail: RequestLogDetailView }) {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-[var(--color-text)]">Payloads</h3>
+        <h3 className="text-foreground text-sm font-semibold">Payloads</h3>
         <ToggleGroup
           type="single"
           variant="outline"
@@ -847,7 +839,7 @@ function PayloadCard({
       </CardHeader>
       <CardContent>
         {payload ? (
-          <pre className="font-mono text-xs leading-6 break-words whitespace-pre-wrap text-[var(--color-text-muted)]">
+          <pre className="text-subtle-foreground font-mono text-xs leading-6 break-words whitespace-pre-wrap">
             {JSON.stringify(payload, null, 2)}
           </pre>
         ) : (
@@ -969,7 +961,7 @@ function RequestTagBadges({ item }: { item: RequestLogView }) {
   ].filter((value): value is string => value !== null)
 
   if (tags.length === 0) {
-    return <span className="text-xs text-[var(--color-text-soft)]">No caller tags</span>
+    return <span className="text-muted-foreground text-xs">No caller tags</span>
   }
 
   return (

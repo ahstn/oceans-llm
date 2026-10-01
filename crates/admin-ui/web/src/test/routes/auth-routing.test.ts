@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildRedirectTarget,
   canAccessSignedInPath,
   defaultSignedInPath,
   postLoginAdminHref,
@@ -10,10 +11,28 @@ import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 const adminSession = platformAdminSession()
 const userSession = regularUserSession()
 
+describe('login redirect target', () => {
+  it('keeps parsed scalar search values so deep links survive sign-in', () => {
+    expect(buildRedirectTarget('/api-keys', { create: true })).toBe('/api-keys?create=true')
+    expect(buildRedirectTarget('/api-keys', { api_key_id: 'key_1', page: 2 })).toBe(
+      '/api-keys?api_key_id=key_1&page=2',
+    )
+    expect(buildRedirectTarget('/api-keys', { filter: { owner: 'me' } })).toBe('/api-keys')
+  })
+})
+
 describe('signed-in route selection', () => {
-  it('uses role-specific default routes', () => {
-    expect(defaultSignedInPath(adminSession)).toBe('/api-keys')
-    expect(defaultSignedInPath(userSession)).toBe('/observability/usage-costs')
+  it('lands every user with page access on their profile', () => {
+    expect(defaultSignedInPath(adminSession)).toBe('/profile')
+    expect(defaultSignedInPath(userSession)).toBe('/profile')
+    expect(defaultSignedInPath(regularUserSession(['models']))).toBe('/profile')
+  })
+
+  it('lets any signed-in user open their profile', () => {
+    const modelsOnlySession = regularUserSession(['models'])
+
+    expect(canAccessSignedInPath(modelsOnlySession, '/profile')).toBe(true)
+    expect(canAccessSignedInPath(modelsOnlySession, '/profiles')).toBe(false)
   })
 
   it('allows regular users to return to self-service routes', () => {
@@ -45,14 +64,13 @@ describe('signed-in route selection', () => {
     expect(canAccessSignedInPath(modelsOnlySession, '/identity/service-accounts')).toBe(false)
     expect(canAccessSignedInPath(modelsOnlySession, '/batches')).toBe(false)
     expect(postLoginAdminHref(modelsOnlySession, '/identity/service-accounts')).toBe(
-      '/admin/models',
+      '/admin/profile',
     )
   })
 
   it('uses the canonical request-log route while granting access to batches', () => {
     const requestLogsOnlySession = regularUserSession(['request_logs'])
 
-    expect(defaultSignedInPath(requestLogsOnlySession)).toBe('/observability/request-logs')
     expect(canAccessSignedInPath(requestLogsOnlySession, '/batches')).toBe(true)
   })
 

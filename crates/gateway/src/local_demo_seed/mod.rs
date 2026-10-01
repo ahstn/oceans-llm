@@ -18,6 +18,7 @@ use uuid::Uuid;
 mod agent_analysis;
 mod agent_session_fixtures;
 mod api_keys;
+mod history;
 mod models;
 mod teams;
 mod usage;
@@ -249,6 +250,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
     // reinserted with deterministic ids and fresh relative timestamps.
     let demo_request_ids = local_demo_request_fixtures()
         .map(|fixture| fixture.request_id.to_string())
+        .chain(history::history_request_ids())
         .collect::<Vec<_>>();
     store
         .delete_request_logs_by_request_ids(&demo_request_ids)
@@ -503,6 +505,21 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
         )
         .await?;
     }
+
+    let history_teams = history::HISTORY_PROFILES
+        .iter()
+        .map(|profile| {
+            let team_id = api_keys::LOCAL_DEMO_API_KEYS
+                .iter()
+                .find(|candidate| candidate.public_id == profile.api_key_public_id)
+                .and_then(|candidate| match candidate.owner {
+                    LocalDemoOwnerFixture::User(email) => user_team_ids.get(email).copied(),
+                })
+                .flatten();
+            (profile.api_key_public_id, team_id)
+        })
+        .collect();
+    history::seed_demo_usage_history(store, &api_keys, &history_teams, &model_ids, now).await?;
 
     let user_batch_key = api_keys
         .get("locdemoalice1")

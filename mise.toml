@@ -13,7 +13,7 @@ config_roots = ["docs", "crates/gateway-store"]
 rust = { version = "1.98.1", components = ["rustfmt", "clippy", "llvm-tools-preview"] }
 "cargo:cargo-llvm-cov" = "0.8.7"
 node = "lts"
-bun = "1.4.0"
+bun = "1.4.2"
 postgres = { version = "18", os = ["macos"] }
 gh = "latest"
 helm = "latest"

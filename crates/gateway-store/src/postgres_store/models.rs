@@ -77,6 +77,48 @@ impl ModelRepository for PostgresStore {
         rows.iter().map(decode_gateway_model).collect()
     }
 
+    async fn list_models_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, Vec<GatewayModel>>, StoreError> {
+        let mut grants: HashMap<Uuid, Vec<GatewayModel>> = HashMap::new();
+        // Bound bind parameters for large key sets. Each chunk is ordered by rank, and a key's
+        // grants all come from the same chunk, so per-key order matches the single-key query.
+        for ids in api_key_ids.chunks(500) {
+            // The key id is the last column so `decode_gateway_model` reads the leading columns.
+            let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+                "SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, \
+                 gm.description, gm.tags_json, gm.rank, grants.api_key_id \
+                 FROM gateway_models gm \
+                 LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id \
+                 INNER JOIN api_key_model_grants grants ON grants.model_id = gm.id \
+                 WHERE grants.api_key_id IN (",
+            );
+            {
+                let mut separated = builder.separated(", ");
+                for api_key_id in ids {
+                    separated.push_bind(api_key_id.to_string());
+                }
+            }
+            builder.push(") ORDER BY gm.rank ASC, gm.model_key ASC");
+
+            let rows = builder
+                .build()
+                .fetch_all(&self.pool)
+                .await
+                .map_err(to_query_error)?;
+            for row in &rows {
+                let api_key_id = parse_uuid(&row.try_get::<String, _>(7).map_err(to_query_error)?)?;
+                grants
+                    .entry(api_key_id)
+                    .or_default()
+                    .push(decode_gateway_model(row)?);
+            }
+        }
+
+        Ok(grants)
+    }
+
     async fn list_model_allowlists_for_models(
         &self,
         model_ids: &[Uuid],

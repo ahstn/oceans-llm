@@ -4090,6 +4090,26 @@ pub(crate) mod tests {
         assert_eq!(accessible_models.len(), 1);
         assert_eq!(accessible_models[0].model_key, "fast");
 
+        // Unknown ids first put the real key in the second parameter chunk.
+        let mut key_ids: Vec<Uuid> = (0..600).map(|_| Uuid::new_v4()).collect();
+        key_ids.push(api_key.id);
+        let mut batched = store
+            .list_models_for_api_keys(&key_ids)
+            .await
+            .expect("models by keys");
+        let batched_ids = batched
+            .remove(&api_key.id)
+            .map(|models| models.iter().map(|model| model.id).collect::<Vec<_>>());
+        assert_eq!(batched_ids, Some(vec![accessible_models[0].id]));
+        assert!(batched.is_empty(), "keys without grants are absent");
+        assert!(
+            store
+                .list_models_for_api_keys(&[])
+                .await
+                .expect("models for no keys")
+                .is_empty()
+        );
+
         let routes = store
             .list_routes_for_model(accessible_models[0].id)
             .await
@@ -4265,6 +4285,74 @@ pub(crate) mod tests {
         assert_eq!(harness_buckets.len(), 1);
         assert_eq!(harness_buckets[0].agent_harness_key, "opencode");
         assert_eq!(harness_buckets[0].request_count, 3);
+
+        let profile_user_id = store
+            .create_identity_user(
+                "Profile",
+                "profile@example.com",
+                "profile@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("create profile user")
+            .user_id;
+        // Same harness on two UTC days: rows must stay split by day, not merged per harness.
+        for (request_id, logged_at, total_tokens) in [
+            ("req-user-harness-day", occurred_at, 40),
+            (
+                "req-user-harness-next-day",
+                occurred_at + Duration::days(1),
+                60,
+            ),
+        ] {
+            store
+                .insert_request_log(
+                    &RequestLogRecord {
+                        request_log_id: Uuid::new_v4(),
+                        request_id: request_id.to_string(),
+                        user_id: Some(profile_user_id),
+                        agent_harness_key: "codex".to_string(),
+                        agent_harness_label: "Codex".to_string(),
+                        total_tokens: Some(total_tokens),
+                        occurred_at: logged_at,
+                        ..zero_counts_log.clone()
+                    },
+                    None,
+                )
+                .await
+                .expect("insert user-scoped request log");
+        }
+        let user_harness_days = store
+            .list_user_harness_daily_usage(
+                occurred_at - Duration::days(1),
+                occurred_at + Duration::days(2),
+                profile_user_id,
+            )
+            .await
+            .expect("user harness daily usage");
+        let first_day = occurred_at.replace_time(time::Time::MIDNIGHT);
+        let days: Vec<_> = user_harness_days
+            .iter()
+            .map(|row| {
+                (
+                    row.day_start,
+                    row.agent_harness_key.as_str(),
+                    row.agent_harness_label.as_str(),
+                    row.request_count,
+                    row.total_tokens,
+                )
+            })
+            .collect();
+        assert_eq!(
+            days,
+            vec![
+                (first_day, "codex", "Codex", 1, 40),
+                (first_day + Duration::days(1), "codex", "Codex", 1, 60),
+            ],
+            "harness usage is bucketed by UTC day"
+        );
     }
 
     #[tokio::test]
@@ -8455,6 +8543,25 @@ pub(crate) mod tests {
                 .any(|model| model.model_key == "fast")
         );
 
+        let per_key = store
+            .list_models_for_api_key(key.id)
+            .await
+            .expect("list models");
+        // Unknown ids first put the real key in the second parameter chunk.
+        let mut key_ids: Vec<Uuid> = (0..600).map(|_| Uuid::new_v4()).collect();
+        key_ids.push(key.id);
+        let mut batched = store
+            .list_models_for_api_keys(&key_ids)
+            .await
+            .expect("list models for keys");
+        let batched_ids = batched
+            .remove(&key.id)
+            .map(|models| models.iter().map(|model| model.id).collect::<Vec<_>>());
+        assert_eq!(
+            batched_ids,
+            Some(per_key.iter().map(|model| model.id).collect())
+        );
+        assert!(batched.is_empty(), "keys without grants are absent");
         let model_id = store
             .list_models_for_api_key(key.id)
             .await

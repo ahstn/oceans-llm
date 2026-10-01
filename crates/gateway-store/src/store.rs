@@ -595,6 +595,13 @@ impl ModelRepository for AnyStore {
         dispatch_store!(self, list_models_for_api_key(api_key_id))
     }
 
+    async fn list_models_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, Vec<gateway_core::GatewayModel>>, StoreError> {
+        dispatch_store!(self, list_models_for_api_keys(api_key_ids))
+    }
+
     async fn list_model_allowlists_for_models(
         &self,
         model_ids: &[Uuid],
@@ -1167,6 +1174,18 @@ impl RequestLogRepository for AnyStore {
                 bucket_hours,
                 agent_harness_keys
             )
+        )
+    }
+
+    async fn list_user_harness_daily_usage(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        user_id: Uuid,
+    ) -> Result<Vec<gateway_core::HarnessUsageDailyRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_user_harness_daily_usage(window_start, window_end, user_id)
         )
     }
 

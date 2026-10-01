@@ -34,7 +34,7 @@ pub mod service;
 pub use admin_api_keys::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
     AdminApiKeyUserOwner, AdminApiKeysPayload, CreateAdminApiKeyInput, CreateAdminApiKeyResult,
-    RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput,
+    PersonalApiKey, RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput, api_key_display_prefix,
 };
 pub use admin_models::{AdminModelStatus, AdminModelSummary, AdminModelsService};
 pub use agent_analysis::{
