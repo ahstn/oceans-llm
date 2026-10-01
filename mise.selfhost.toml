@@ -1,0 +1,108 @@
+# Self-hosting overlay. Loaded only when the `selfhost` config environment is active
+# (MISE_ENV=selfhost or `.miserc.local.toml` with env = ["selfhost"]), so developer
+# machines and CI never see these daemons.
+# Secrets belong in the gitignored `mise.selfhost.local.toml`.
+# Runbook: docs/setup/self-hosting-mise-daemons.md
+# Mask these values in captured task output. Applies to `required` variables too.
+redactions = [
+  "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
+  "GATEWAY_BOOTSTRAP_ADMIN_PASSWORD",
+  "GATEWAY_API_KEY",
+  "OPENAI_API_KEY",
+]
+
+[settings]
+experimental = true
+
+[tools]
+# Provides pg_dump for pre-deploy backups; matches the postgres daemon preset.
+postgres = "18"
+
+# Replaces the base `db` daemon entirely: fixed port (no worktree offset) and start at boot.
+[daemons.db]
+preset = "postgres"
+version = "18"
+port = 5432
+options.database = "oceans_llm"
+boot_start = true
+
+[daemons.admin-ui]
+run = "cd crates/admin-ui/web && HOST=127.0.0.1 exec bun server.ts"
+port = 3001
+ready_port = 3001
+depends = ["gateway"]
+boot_start = true
+retry = 3
+proxy = false
+
+[daemons.gateway]
+run = 'exec "$CARGO_TARGET_DIR/release/gateway" serve'
+port = 8080
+ready_http = "http://127.0.0.1:8080/readyz"
+depends = ["db"]
+boot_start = true
+retry = 3
+proxy = false
+
+[env]
+GATEWAY_CONFIG = "deploy/selfhost/gateway.yaml"
+POSTGRES_URL = "{{ env.DATABASE_URL }}"
+ADMIN_UI_UPSTREAM = "http://127.0.0.1:3001"
+ADMIN_GATEWAY_ORIGIN = "http://127.0.0.1:8080"
+# Set these in mise.selfhost.local.toml (see the runbook). A missing value stops mise
+# before any daemon starts.
+OCEANS_API_KEY_SECRET_ENCRYPTION_KEY = { required = true }
+GATEWAY_BOOTSTRAP_ADMIN_PASSWORD = { required = true }
+GATEWAY_API_KEY = { required = true }
+GATEWAY_PUBLIC_BASE_URL = { required = true }
+OPENAI_API_KEY = { required = true }
+
+[tasks.selfhost-gateway-build]
+description = "Build the release gateway binary that the gateway daemon runs"
+run = "cargo build --locked --release -p gateway"
+
+[tasks.selfhost-backup]
+description = "Dump the oceans database to .local/backups before a deploy; keeps 30 days"
+run = '''
+set -euo pipefail
+umask 077
+if ! pg_isready -q -h 127.0.0.1 -p 5432 -U postgres; then
+  echo "postgres not running; skipping backup (first deploy?)"
+  exit 0
+fi
+mkdir -p .local/backups
+pg_dump -Fc "$POSTGRES_URL" -f ".local/backups/oceans-$(date +%Y%m%dT%H%M%S).dump"
+find .local/backups -name 'oceans-*.dump' -mtime +30 -delete
+'''
+
+[tasks.selfhost-apply]
+description = "Build the checked-out revision, back up, validate config, and restart the stack"
+depends = ["ui-build", "selfhost-gateway-build", "selfhost-backup"]
+run = '''
+set -euo pipefail
+"$CARGO_TARGET_DIR/release/gateway" config validate
+mise daemons register
+mise daemons start db
+mise daemons restart gateway admin-ui
+curl -fsS --retry 10 --retry-delay 2 --retry-connrefused http://127.0.0.1:8080/readyz
+echo
+curl -fsS -o /dev/null http://127.0.0.1:8080/admin/login
+echo "deployed $(git describe --tags --always)"
+'''
+
+[tasks.deploy]
+description = "Check out a ref (default: latest v* tag) and apply it on a self-hosted machine"
+usage = 'arg "[ref]" help="Tag or commit to deploy; defaults to the latest v* tag on origin"'
+run = '''
+set -euo pipefail
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "working tree has tracked changes; refusing to deploy" >&2
+  exit 1
+fi
+git fetch --tags --prune --force origin
+ref="${usage_ref:-$(git tag --list 'v*' --sort=-v:refname | awk 'NR==1')}"
+[ -n "$ref" ] || { echo "no v* tag found and no ref given" >&2; exit 1; }
+git checkout --detach "$ref"
+# New process so the checked-out revision's mise config and tasks are loaded.
+exec mise run selfhost-apply
+'''

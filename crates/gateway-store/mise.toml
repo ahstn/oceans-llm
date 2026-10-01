@@ -3,33 +3,37 @@ description = "Compile gateway-store and gateway Postgres targets"
 run = "cargo check -p gateway-store -p gateway --all-targets"
 
 [tasks."postgres:start"]
-description = "Start local Postgres via pitchfork"
-run = "pitchfork start postgres"
+description = "Start local Postgres (mise daemon `db`, declared in the root mise.toml)"
+run = "mise -C ../.. daemons start db"
 
 [tasks."postgres:stop"]
-description = "Stop local Postgres via pitchfork"
-run = "pitchfork stop postgres"
+description = "Stop local Postgres"
+run = "mise -C ../.. daemons stop db"
 
 [tasks."postgres:status"]
-description = "Show local Postgres daemon status via pitchfork"
-run = "pitchfork list --hide-header | rg '^oceans_llm/postgres\\b'"
+description = "Show local Postgres daemon status"
+run = "mise -C ../.. daemons status db"
 
 [tasks."postgres:logs"]
-description = "Tail local Postgres daemon logs via pitchfork"
-run = "pitchfork logs postgres"
+description = "Show local Postgres daemon logs"
+run = "mise -C ../.. daemons logs db"
 
 [tasks."postgres:reset"]
-description = "Reset the local Postgres data directory and restart via pitchfork"
+description = "Delete the local Postgres data directory and start a fresh database"
 run = """
 set -eu
-pitchfork stop postgres >/dev/null 2>&1 || true
-../../scripts/postgres-pitchfork.sh reset
-pitchfork start postgres
+mise -C ../.. daemons stop db >/dev/null 2>&1 || true
+data_dir="$(mise -C ../.. daemons ls --json | node -e 'const d = JSON.parse(require("fs").readFileSync(0, "utf8")).find((x) => x.name === "db"); process.stdout.write(d?.data_dir ?? "")')"
+[ -n "$data_dir" ] || { echo "db daemon has no data_dir" >&2; exit 1; }
+rm -rf "$data_dir"
+mise -C ../.. daemons start db
 """
 
 [tasks."postgres:env"]
 description = "Print env exports for local Postgres URLs"
-run = "../../scripts/postgres-pitchfork.sh print-env"
+run = '''
+printf 'export POSTGRES_URL="%s"\nexport TEST_POSTGRES_URL="%s"\n' "$DATABASE_URL" "$DATABASE_URL"
+'''
 
 [tasks."test:postgres"]
 description = "Run focused Postgres-backed gateway-store tests"
