@@ -149,13 +149,13 @@ function TrendsCard({ model }: { model: ProfilePageModel }) {
         </CardHeader>
         <CardContent>
           <TabsContent value="tokens">
-            <TokenVolumeChart chart={charts.tokens} weekly={weekly} heightClass="h-72" />
+            <TokenVolumeChart chart={charts.tokens} weekly={weekly} />
           </TabsContent>
           <TabsContent value="models">
-            <RequestsBarChart chart={charts.models} weekly={weekly} heightClass="h-72" />
+            <RequestsBarChart chart={charts.models} weekly={weekly} />
           </TabsContent>
           <TabsContent value="harnesses">
-            <RequestsBarChart chart={charts.harnesses} weekly={weekly} heightClass="h-72" />
+            <RequestsBarChart chart={charts.harnesses} weekly={weekly} />
           </TabsContent>
         </CardContent>
       </Tabs>

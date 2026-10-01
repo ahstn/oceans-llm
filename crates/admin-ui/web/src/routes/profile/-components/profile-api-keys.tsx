@@ -56,23 +56,21 @@ export function ProfileApiKeysTable({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
+      <div className="border-border overflow-hidden rounded-md border">
         <Table>
-          <TableHeader className="bg-[color:var(--color-surface-muted)]">
+          <TableHeader className="bg-surface-muted">
             <TableRow>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                Name
-              </TableHead>
+              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Name</TableHead>
               {dense ? null : (
-                <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                   Models
                 </TableHead>
               )}
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                 Last used
               </TableHead>
               {dense ? null : (
-                <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                   Status
                 </TableHead>
               )}
@@ -94,7 +92,7 @@ export function ProfileApiKeysTable({
                     ) : (
                       <span className="truncate font-medium">{key.name}</span>
                     )}
-                    <span className="flex items-center gap-2 font-mono text-xs text-[var(--color-text-soft)]">
+                    <span className="text-muted-foreground flex items-center gap-2 font-mono text-xs">
                       {maskApiKeyPrefix(key.prefix)}
                       {dense && key.status !== 'active' ? (
                         <KeyStatusBadge status={key.status} />
@@ -103,11 +101,11 @@ export function ProfileApiKeysTable({
                   </div>
                 </TableCell>
                 {dense ? null : (
-                  <TableCell className="max-w-56 truncate px-3 py-2.5 text-[var(--color-text-soft)]">
+                  <TableCell className="text-muted-foreground max-w-56 truncate px-3 py-2.5">
                     {formatModelGrantSummary(key)}
                   </TableCell>
                 )}
-                <TableCell className="px-3 py-2.5 whitespace-nowrap text-[var(--color-text-soft)] tabular-nums">
+                <TableCell className="text-muted-foreground px-3 py-2.5 whitespace-nowrap tabular-nums">
                   {formatLastUsedAt(key.last_used_at)}
                 </TableCell>
                 {dense ? null : (
@@ -138,7 +136,7 @@ export function ProfileApiKeysTable({
 
 function ProfileApiKeysEmpty({ canCreate }: { canCreate: boolean }) {
   return (
-    <Empty className="border border-dashed border-[color:var(--color-border)]">
+    <Empty className="border-border border border-dashed">
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <AppIcon icon={Key01Icon} size={22} stroke={1.5} />

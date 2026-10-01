@@ -41,9 +41,7 @@ export function BarListRow({
       <Progress
         value={progress}
         className={
-          tone
-            ? 'bg-[color-mix(in_oklch,var(--bar-tone)_18%,transparent)] [&>[data-slot=progress-indicator]]:bg-[var(--bar-tone)]'
-            : undefined
+          tone ? 'bg-(--bar-tone)/18 [&>[data-slot=progress-indicator]]:bg-(--bar-tone)' : undefined
         }
         style={tone ? ({ '--bar-tone': tone } as CSSProperties) : undefined}
         {...(progressLabel ? { 'aria-label': progressLabel } : { 'aria-hidden': true })}

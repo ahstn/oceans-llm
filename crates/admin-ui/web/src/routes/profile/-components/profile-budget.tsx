@@ -79,7 +79,7 @@ export function BudgetMeter({
         value={Math.min(100, status.ratio * 100)}
         aria-label="Budget used"
         className={cn(
-          'bg-[color-mix(in_oklch,var(--bar-tone)_18%,transparent)] [&>[data-slot=progress-indicator]]:bg-[var(--bar-tone)]',
+          'bg-(--bar-tone)/18 [&>[data-slot=progress-indicator]]:bg-(--bar-tone)',
           size === 'lg' ? 'h-2.5' : 'h-2',
         )}
         style={{ '--bar-tone': TONE_COLOR[status.tone] } as CSSProperties}

@@ -8,6 +8,7 @@
     "typeAware": true // (npm add|bun i) -D oxlint-tsgolint@latest
   },
   "plugins": ["eslint", "typescript", "react", "unicorn"],
+  "jsPlugins": ["@shadcn/lint"],
   "ignorePatterns": ["node_modules", "dist", ".output", "src/generated"],
   "overrides": [
     {
@@ -24,6 +25,14 @@
       "rules": {
         "max-lines-per-function": "off",
         "no-await-in-loop": "off"
+      }
+    },
+    {
+      // Design-system components own their internals and may need structural values.
+      "files": ["src/components/ui/**", "src/components/reui/**"],
+      "rules": {
+        "shadcn/no-arbitrary-values": "off",
+        "shadcn/require-static-classes": "off"
       }
     },
     {
@@ -68,6 +77,11 @@
     "unicorn/prefer-set-has": "error",
     "unicorn/prefer-array-find": "error",
     "unicorn/prefer-array-flat-map": "error",
-    "unicorn/prefer-logical-operator-over-ternary": "error"
+    "unicorn/prefer-logical-operator-over-ternary": "error",
+
+    // shadcn rules (@shadcn/lint)
+    "shadcn/no-raw-colors": "error",
+    "shadcn/require-static-classes": "error",
+    "shadcn/no-arbitrary-values": ["error", { "allow": ["layout"] }]
   }
 }

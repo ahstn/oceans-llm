@@ -108,18 +108,15 @@ function ServiceAccountTable({
     <div className="flex flex-col gap-4">
       <div className="grid gap-3 md:hidden">
         {rows.map((row) => (
-          <article
-            key={row.id}
-            className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
-          >
+          <article key={row.id} className="border-border bg-surface-muted rounded-lg border p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 <AppIcon icon={RoboticIcon} size={24} stroke={1.5} className="shrink-0" />
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-[var(--color-text)]">
+                  <p className="text-foreground truncate font-semibold">
                     {row.serviceAccount.name}
                   </p>
-                  <p className="truncate font-mono text-xs text-[var(--color-text-soft)]">
+                  <p className="text-muted-foreground truncate font-mono text-xs">
                     {row.serviceAccount.key}
                   </p>
                 </div>
@@ -129,7 +126,7 @@ function ServiceAccountTable({
 
             <dl className="mt-4 grid gap-3 text-sm">
               <div>
-                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                   Team
                 </dt>
                 <dd className="mt-1">
@@ -137,7 +134,7 @@ function ServiceAccountTable({
                 </dd>
               </div>
               <div>
-                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                   Tags
                 </dt>
                 <dd className="mt-1">
@@ -145,10 +142,10 @@ function ServiceAccountTable({
                 </dd>
               </div>
               <div>
-                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                   API key
                 </dt>
-                <dd className="mt-1 text-[var(--color-text-muted)]">
+                <dd className="text-subtle-foreground mt-1">
                   {credentialLabel(row.apiKey, credentialAccessRestricted)}
                 </dd>
               </div>
@@ -161,29 +158,25 @@ function ServiceAccountTable({
         ))}
       </div>
 
-      <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+      <div className="border-border hidden overflow-hidden rounded-md border md:block">
         <Table className="text-left">
-          <TableHeader className="bg-[color:var(--color-surface-muted)]">
+          <TableHeader className="bg-surface-muted">
             <TableRow>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                 Service account name
               </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                 Service account key
               </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                Team
-              </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Team</TableHead>
+              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                 Status
               </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                Tags
-              </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Tags</TableHead>
+              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                 API key name
               </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                 Actions
               </TableHead>
             </TableRow>
@@ -191,13 +184,13 @@ function ServiceAccountTable({
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id}>
-                <TableCell className="px-3 py-3 text-[var(--color-text)]">
+                <TableCell className="text-foreground px-3 py-3">
                   <div className="flex min-w-0 items-center gap-3">
                     <AppIcon icon={RoboticIcon} size={22} stroke={1.5} className="shrink-0" />
                     <span className="truncate font-semibold">{row.serviceAccount.name}</span>
                   </div>
                 </TableCell>
-                <TableCell className="px-3 py-3 font-mono text-xs text-[var(--color-text-muted)]">
+                <TableCell className="text-subtle-foreground px-3 py-3 font-mono text-xs">
                   {row.serviceAccount.key}
                 </TableCell>
                 <TableCell className="px-3 py-3">
@@ -209,14 +202,14 @@ function ServiceAccountTable({
                 <TableCell className="px-3 py-3">
                   <EntityTagBadges tags={row.serviceAccount.tags} />
                 </TableCell>
-                <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                <TableCell className="text-subtle-foreground px-3 py-3">
                   {credentialLabel(row.apiKey, credentialAccessRestricted)}
                 </TableCell>
                 <TableCell className="px-3 py-3">
                   {row.apiKey ? (
                     <ApiKeyLink apiKey={row.apiKey} />
                   ) : (
-                    <span className="text-xs text-[var(--color-text-soft)]">No API key</span>
+                    <span className="text-muted-foreground text-xs">No API key</span>
                   )}
                 </TableCell>
               </TableRow>
@@ -251,9 +244,7 @@ function TeamLink({
         <GeneratedAvatar kind="team" name={serviceAccount.team_name} size={compact ? 20 : 24} />
         <span className="truncate">{serviceAccount.team_name}</span>
         {!compact ? (
-          <span className="font-mono text-xs text-[var(--color-text-soft)]">
-            {serviceAccount.team_key}
-          </span>
+          <span className="text-muted-foreground font-mono text-xs">{serviceAccount.team_key}</span>
         ) : null}
       </Link>
     </Button>

@@ -79,15 +79,15 @@ export function CreatedApiKeyAlert({
   return (
     <Alert>
       <AlertTitle>Copy the new key now</AlertTitle>
-      <div className="mt-1 flex flex-col gap-3 text-sm text-[var(--color-text-muted)]">
+      <div className="text-subtle-foreground mt-1 flex flex-col gap-3 text-sm">
         <p>
           The raw secret is shown once. It is not stored in the control plane and cannot be revealed
           again later.
         </p>
-        <div className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-3">
+        <div className="border-border bg-surface-muted rounded-lg border p-3">
           <p
             data-testid="new-api-key-raw-key"
-            className="font-mono text-xs break-all text-[var(--color-text)]"
+            className="text-foreground font-mono text-xs break-all"
           >
             {result.raw_key}
           </p>
@@ -172,14 +172,11 @@ export function ApiKeyList({
     <>
       <div className="grid gap-3 md:hidden">
         {items.map((item) => (
-          <div
-            key={item.id}
-            className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
-          >
+          <div key={item.id} className="border-border bg-surface-muted rounded-lg border p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex flex-col gap-1">
-                <p className="font-semibold text-[var(--color-text)]">{item.name}</p>
-                <p className="font-mono text-xs text-[var(--color-text-soft)]">
+                <p className="text-foreground font-semibold">{item.name}</p>
+                <p className="text-muted-foreground font-mono text-xs">
                   {maskApiKeyPrefix(item.prefix)}
                 </p>
               </div>
@@ -189,20 +186,20 @@ export function ApiKeyList({
             </div>
             <dl className="mt-3 grid gap-2 text-sm">
               <div>
-                <dt className="text-[var(--color-text-soft)]">Owner</dt>
-                <dd className="text-[var(--color-text)]">{formatOwner(item)}</dd>
+                <dt className="text-muted-foreground">Owner</dt>
+                <dd className="text-foreground">{formatOwner(item)}</dd>
               </div>
               <div>
-                <dt className="text-[var(--color-text-soft)]">Models</dt>
-                <dd className="text-[var(--color-text)]">{formatModelGrantSummary(item)}</dd>
+                <dt className="text-muted-foreground">Models</dt>
+                <dd className="text-foreground">{formatModelGrantSummary(item)}</dd>
               </div>
               <div>
-                <dt className="text-[var(--color-text-soft)]">Created</dt>
-                <dd className="text-[var(--color-text)]">{formatCreatedAt(item.created_at)}</dd>
+                <dt className="text-muted-foreground">Created</dt>
+                <dd className="text-foreground">{formatCreatedAt(item.created_at)}</dd>
               </div>
               <div>
-                <dt className="text-[var(--color-text-soft)]">Last used</dt>
-                <dd className="text-[var(--color-text)]">{formatLastUsedAt(item.last_used_at)}</dd>
+                <dt className="text-muted-foreground">Last used</dt>
+                <dd className="text-foreground">{formatLastUsedAt(item.last_used_at)}</dd>
               </div>
             </dl>
             {onManage ? (
@@ -216,9 +213,9 @@ export function ApiKeyList({
         ))}
       </div>
 
-      <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+      <div className="border-border hidden overflow-hidden rounded-md border md:block">
         <table className="w-full text-left text-sm">
-          <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+          <thead className="bg-surface-muted text-muted-foreground">
             <tr>
               <th className="px-3 py-2 font-semibold">Name</th>
               <th className="px-3 py-2 font-semibold">Owner</th>
@@ -231,23 +228,23 @@ export function ApiKeyList({
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr key={item.id} className="border-t border-[color:var(--color-border)] align-top">
+              <tr key={item.id} className="border-border border-t align-top">
                 <td className="px-3 py-3">
                   <div className="flex flex-col gap-1">
-                    <span className="font-semibold text-[var(--color-text)]">{item.name}</span>
-                    <span className="font-mono text-xs text-[var(--color-text-soft)]">
+                    <span className="text-foreground font-semibold">{item.name}</span>
+                    <span className="text-muted-foreground font-mono text-xs">
                       {maskApiKeyPrefix(item.prefix)}
                     </span>
                   </div>
                 </td>
-                <td className="px-3 py-3 text-[var(--color-text)]">{formatOwner(item)}</td>
-                <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                <td className="text-foreground px-3 py-3">{formatOwner(item)}</td>
+                <td className="text-subtle-foreground px-3 py-3">
                   {formatModelGrantSummary(item)}
                 </td>
-                <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                <td className="text-subtle-foreground px-3 py-3">
                   {formatCreatedAt(item.created_at)}
                 </td>
-                <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                <td className="text-subtle-foreground px-3 py-3">
                   {formatLastUsedAt(item.last_used_at)}
                 </td>
                 <td className="px-3 py-3">
@@ -492,12 +489,12 @@ export function ManageApiKeyDialog({
             <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1">
               <section
                 data-testid="manage-api-key-summary"
-                className="flex flex-col gap-3 border-y border-[color:var(--color-border)] py-4"
+                className="border-border flex flex-col gap-3 border-y py-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 flex-col gap-1">
-                    <p className="font-semibold text-[var(--color-text)]">{target.name}</p>
-                    <p className="font-mono text-xs text-[var(--color-text-soft)]">
+                    <p className="text-foreground font-semibold">{target.name}</p>
+                    <p className="text-muted-foreground font-mono text-xs">
                       {maskApiKeyPrefix(target.prefix)}
                     </p>
                   </div>
@@ -508,21 +505,21 @@ export function ManageApiKeyDialog({
 
                 <dl
                   data-testid="manage-api-key-metadata"
-                  className="flex flex-col divide-y divide-[color:var(--color-border)] text-sm"
+                  className="divide-border flex flex-col divide-y text-sm"
                 >
                   <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
-                    <dt className="text-[var(--color-text-soft)]">Owner</dt>
-                    <dd className="min-w-0 text-[var(--color-text)]">{formatOwner(target)}</dd>
+                    <dt className="text-muted-foreground">Owner</dt>
+                    <dd className="text-foreground min-w-0">{formatOwner(target)}</dd>
                   </div>
                   <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
-                    <dt className="text-[var(--color-text-soft)]">Created</dt>
-                    <dd className="min-w-0 text-[var(--color-text)]">
+                    <dt className="text-muted-foreground">Created</dt>
+                    <dd className="text-foreground min-w-0">
                       {formatCreatedAt(target.created_at)}
                     </dd>
                   </div>
                   <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
-                    <dt className="text-[var(--color-text-soft)]">Last used</dt>
-                    <dd className="min-w-0 text-[var(--color-text)]">
+                    <dt className="text-muted-foreground">Last used</dt>
+                    <dd className="text-foreground min-w-0">
                       {formatLastUsedAt(target.last_used_at)}
                     </dd>
                   </div>
@@ -534,23 +531,21 @@ export function ManageApiKeyDialog({
               target.status === 'active' ? (
                 <section
                   data-testid="manage-api-key-secret"
-                  className="flex flex-col gap-3 border-b border-[color:var(--color-border)] pb-4"
+                  className="border-border flex flex-col gap-3 border-b pb-4"
                 >
                   <div className="flex flex-col gap-1">
-                    <h3 className="text-sm font-semibold text-[var(--color-text)]">
-                      Credential secret
-                    </h3>
-                    <p className="text-sm text-[var(--color-text-muted)]">
+                    <h3 className="text-foreground text-sm font-semibold">Credential secret</h3>
+                    <p className="text-subtle-foreground text-sm">
                       Service-account-owned keys can be revealed for this owner scope.
                     </p>
                   </div>
 
                   {revealedKey ? (
                     <div className="flex flex-col gap-3">
-                      <div className="rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-3">
+                      <div className="border-border bg-surface-muted rounded-md border p-3">
                         <p
                           data-testid="manage-api-key-raw-key"
-                          className="font-mono text-xs break-all text-[var(--color-text)]"
+                          className="text-foreground font-mono text-xs break-all"
                         >
                           {revealedKey}
                         </p>
@@ -625,12 +620,10 @@ export function ManageApiKeyDialog({
               )}
 
               {canRevoke ? (
-                <section className="flex flex-col gap-3 rounded-lg border border-[color:var(--color-border)] p-4">
+                <section className="border-border flex flex-col gap-3 rounded-lg border p-4">
                   <div className="flex flex-col gap-1">
-                    <h3 className="text-sm font-semibold text-[var(--color-text)]">
-                      Lifecycle actions
-                    </h3>
-                    <p className="text-sm text-[var(--color-text-muted)]">
+                    <h3 className="text-foreground text-sm font-semibold">Lifecycle actions</h3>
+                    <p className="text-subtle-foreground text-sm">
                       Revocation takes effect immediately and cannot be undone in this slice.
                     </p>
                   </div>
@@ -647,7 +640,7 @@ export function ManageApiKeyDialog({
                       </Button>
                     </div>
                   ) : (
-                    <p className="text-sm text-[var(--color-text-muted)]">
+                    <p className="text-subtle-foreground text-sm">
                       This key has already been revoked.
                     </p>
                   )}
@@ -708,7 +701,7 @@ function ModelMultiSelectField({
             <span className="truncate text-left">
               {summarizeSelectedModels(selectedModels, placeholder, modelOptions.length === 0)}
             </span>
-            <span className="text-xs text-[var(--color-text-soft)]">▼</span>
+            <span className="text-muted-foreground text-xs">▼</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
@@ -730,13 +723,11 @@ function ModelMultiSelectField({
                         }
                       }}
                     >
-                      <span className="w-4 text-[var(--color-text-soft)]">
-                        {isSelected ? '✓' : ''}
-                      </span>
+                      <span className="text-muted-foreground w-4">{isSelected ? '✓' : ''}</span>
                       <div className="flex min-w-0 flex-1 flex-col gap-1">
                         <span className="truncate font-medium">{model.key}</span>
                         {model.description ? (
-                          <span className="truncate text-xs text-[var(--color-text-muted)]">
+                          <span className="text-subtle-foreground truncate text-xs">
                             {model.description}
                           </span>
                         ) : null}

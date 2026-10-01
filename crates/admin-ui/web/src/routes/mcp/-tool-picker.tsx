@@ -66,7 +66,7 @@ export function EntityComboBox({
           <span className="truncate text-left">
             {options.length === 0 ? 'Nothing to select' : (selected?.label ?? placeholder)}
           </span>
-          <span className="text-xs text-[var(--color-text-soft)]">▼</span>
+          <span className="text-muted-foreground text-xs">▼</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
@@ -84,13 +84,13 @@ export function EntityComboBox({
                     setOpen(false)
                   }}
                 >
-                  <span className="w-4 text-[var(--color-text-soft)]">
+                  <span className="text-muted-foreground w-4">
                     {option.value === value ? '✓' : ''}
                   </span>
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="truncate font-medium">{option.label}</span>
                     {option.sublabel ? (
-                      <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
+                      <span className="text-subtle-foreground truncate font-mono text-xs">
                         {option.sublabel}
                       </span>
                     ) : null}
@@ -143,7 +143,7 @@ export function MultiToolPicker({
           <span className="truncate text-left">
             {totalTools === 0 ? 'No tools available' : summarize(selectedIds.length, buttonLabel)}
           </span>
-          <span className="text-xs text-[var(--color-text-soft)]">▼</span>
+          <span className="text-muted-foreground text-xs">▼</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
@@ -162,12 +162,10 @@ export function MultiToolPicker({
                       disabled={disabled}
                       onSelect={() => onToggle(tool.id, !isSelected)}
                     >
-                      <span className="w-4 text-[var(--color-text-soft)]">
-                        {isSelected ? '✓' : ''}
-                      </span>
+                      <span className="text-muted-foreground w-4">{isSelected ? '✓' : ''}</span>
                       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="truncate font-medium">{tool.display_name}</span>
-                        <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
+                        <span className="text-subtle-foreground truncate font-mono text-xs">
                           {tool.upstream_name}
                         </span>
                       </div>
@@ -207,7 +205,7 @@ export function SelectedToolChips({
             <button
               type="button"
               aria-label={`Remove ${tool?.display_name ?? toolId}`}
-              className="text-[var(--color-text-soft)] hover:text-[var(--color-text)]"
+              className="text-muted-foreground hover:text-foreground"
               onClick={() => onRemove(toolId)}
             >
               ×

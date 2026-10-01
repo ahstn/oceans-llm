@@ -67,7 +67,7 @@ export function BrandIcon({
       <span
         aria-hidden="true"
         className={cn(
-          'inline-flex shrink-0 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)]',
+          'border-border bg-surface-muted inline-flex shrink-0 rounded-full border',
           className,
         )}
         style={{ height: size, width: size, ...style }}
@@ -90,7 +90,7 @@ export function BrandIcon({
       <span
         aria-hidden={title ? undefined : 'true'}
         title={title}
-        className={cn('inline-flex shrink-0 text-[var(--color-text)]', className)}
+        className={cn('text-foreground inline-flex shrink-0', className)}
         style={maskStyle}
         {...props}
       />
@@ -101,7 +101,7 @@ export function BrandIcon({
     return (
       <span
         aria-hidden={title ? undefined : 'true'}
-        className={cn('inline-flex shrink-0 text-[var(--color-text)]', className)}
+        className={cn('text-foreground inline-flex shrink-0', className)}
         style={{ height: size, width: size, ...style }}
         title={title}
         {...props}

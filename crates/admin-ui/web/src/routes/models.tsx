@@ -266,7 +266,7 @@ export function ModelsPage() {
           <CardDescription>Select models to create a configuration file.</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--color-text-muted)]">
+          <div className="text-subtle-foreground flex flex-wrap items-center justify-between gap-3 text-sm">
             <span>
               Showing {modelPage.items.length} of {modelPage.total} models
             </span>
@@ -274,8 +274,8 @@ export function ModelsPage() {
               Page {modelPage.page} of {totalPages}
             </span>
           </div>
-          <div className="hidden flex-wrap items-center justify-between gap-3 border-t border-[color:var(--color-border)] pt-2 md:flex">
-            <span className="text-sm text-[var(--color-text-muted)]">
+          <div className="border-border hidden flex-wrap items-center justify-between gap-3 border-t pt-2 md:flex">
+            <span className="text-subtle-foreground text-sm">
               {selectedModelIds.length === 0
                 ? 'Select models to generate multi-model config'
                 : `${selectedModelIds.length} selected for client config`}
@@ -305,10 +305,8 @@ export function ModelsPage() {
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-64 gap-3 p-3">
                     <div className="flex flex-col gap-1">
-                      <h2 className="text-sm font-medium text-[var(--color-text)]">
-                        Table columns
-                      </h2>
-                      <p className="text-xs text-[var(--color-text-muted)]">
+                      <h2 className="text-foreground text-sm font-medium">Table columns</h2>
+                      <p className="text-subtle-foreground text-xs">
                         Show secondary model details in the desktop table.
                       </p>
                     </div>
@@ -326,10 +324,8 @@ export function ModelsPage() {
                           }}
                         />
                         <span className="flex min-w-0 flex-col gap-0.5">
-                          <span className="font-medium text-[var(--color-text)]">
-                            Context window
-                          </span>
-                          <span className="text-xs text-[var(--color-text-muted)]">
+                          <span className="text-foreground font-medium">Context window</span>
+                          <span className="text-subtle-foreground text-xs">
                             Input and output token limits.
                           </span>
                         </span>
@@ -347,8 +343,8 @@ export function ModelsPage() {
                           }}
                         />
                         <span className="flex min-w-0 flex-col gap-0.5">
-                          <span className="font-medium text-[var(--color-text)]">Capabilities</span>
-                          <span className="text-xs text-[var(--color-text-muted)]">
+                          <span className="text-foreground font-medium">Capabilities</span>
+                          <span className="text-subtle-foreground text-xs">
                             Streaming, vision, tools, and attachment support.
                           </span>
                         </span>
@@ -418,13 +414,13 @@ export function ModelsPage() {
               </div>
 
               <div
-                className="hidden min-w-0 overflow-hidden rounded-md border border-[color:var(--color-border)] md:block"
+                className="border-border hidden min-w-0 overflow-hidden rounded-md border md:block"
                 data-testid="models-desktop-table"
               >
                 <Table className={`${desktopTableMinWidth} table-fixed`}>
-                  <TableHeader className="bg-[color:var(--color-surface-muted)]">
+                  <TableHeader className="bg-surface-muted">
                     <TableRow>
-                      <TableHead className="sticky left-0 z-30 w-[3rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="bg-surface-muted text-muted-foreground sticky left-0 z-30 w-[3rem] px-3 py-2 font-semibold">
                         <ModelCheckbox
                           aria-label="Select all configurable models"
                           checked={allSelectableSelected}
@@ -432,30 +428,30 @@ export function ModelsPage() {
                           onChange={toggleAllSelectableModels}
                         />
                       </TableHead>
-                      <TableHead className="sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)] shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]">
+                      <TableHead className="bg-surface-muted text-muted-foreground shadow-sticky-edge sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] px-3 py-2 font-semibold">
                         Model ID
                       </TableHead>
-                      <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
                         Actions
                       </TableHead>
-                      <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground w-[18rem] px-3 py-2 font-semibold">
                         Provider &amp; Model
                       </TableHead>
-                      <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
                         Cost / 1M tokens
                       </TableHead>
                       {visibleColumns.contextWindow ? (
-                        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
                           Context window
                         </TableHead>
                       ) : null}
                       {visibleColumns.capabilities ? (
-                        <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        <TableHead className="text-muted-foreground w-[18rem] px-3 py-2 font-semibold">
                           Capabilities
                         </TableHead>
                       ) : null}
                       {isPlatformAdmin ? (
-                        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
                           Allow List
                         </TableHead>
                       ) : null}
@@ -473,7 +469,7 @@ export function ModelsPage() {
                           />
                         </TableCell>
                         <TableCell
-                          className="bg-card group-hover:bg-muted/50 sticky left-[3rem] z-20 px-3 py-1 shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)] transition-colors"
+                          className="bg-card group-hover:bg-muted/50 shadow-sticky-edge sticky left-[3rem] z-20 px-3 py-1 transition-colors"
                           data-testid={`models-desktop-cell-${model.id}`}
                         >
                           <div className="flex min-w-0 flex-col gap-2 py-1">
@@ -485,7 +481,7 @@ export function ModelsPage() {
                               />
                               <div className="flex min-w-0 flex-col gap-2">
                                 <div className="flex min-w-0 items-center gap-2">
-                                  <span className="truncate font-semibold text-[var(--color-text)]">
+                                  <span className="text-foreground truncate font-semibold">
                                     {model.id}
                                   </span>
                                   <ModelStatusIndicator status={model.status} />
@@ -520,11 +516,11 @@ export function ModelsPage() {
                           <div className="flex min-w-0 flex-col gap-2 py-1">
                             <div className="flex min-w-0 items-center gap-2">
                               <BrandIcon iconKey={model.model_icon_key} size={14} />
-                              <span className="truncate text-[var(--color-text)]">
+                              <span className="text-foreground truncate">
                                 {model.upstream_model ?? 'Not currently routed'}
                               </span>
                             </div>
-                            <div className="flex min-w-0 items-center gap-2 truncate text-xs tracking-[0.08em] text-[var(--color-text-soft)]">
+                            <div className="tracking-label text-muted-foreground flex min-w-0 items-center gap-2 truncate text-xs">
                               <BrandIcon
                                 iconKey={model.provider_icon_key}
                                 size={14}
@@ -742,7 +738,7 @@ function ModelCheckbox({
     <span className={cn('relative inline-flex size-5 shrink-0', className)}>
       <input
         type="checkbox"
-        className="peer checked:border-primary checked:bg-primary focus-visible:border-ring focus-visible:ring-ring/50 size-5 shrink-0 appearance-none rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] transition-colors focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50"
+        className="peer checked:border-primary checked:bg-primary focus-visible:border-ring focus-visible:ring-ring/50 border-border bg-surface-muted size-5 shrink-0 appearance-none rounded-md border transition-colors focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50"
         {...props}
       />
       <span
@@ -765,7 +761,7 @@ function ClientConfigButton({
   onOpen: (model: ModelView) => void
 }) {
   if (model.client_configurations.length === 0) {
-    return <span className="text-[var(--color-text-soft)]">—</span>
+    return <span className="text-muted-foreground">—</span>
   }
 
   const label = `Generate client config for ${model.id}`
@@ -848,8 +844,8 @@ function ModelInfoDialog({
               <div className="min-w-0 overflow-y-auto py-5">
                 <div className="flex min-w-0 flex-col gap-4">
                   <div>
-                    <h3 className="text-sm font-medium text-[var(--color-text)]">{activeLabel}</h3>
-                    <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                    <h3 className="text-foreground text-sm font-medium">{activeLabel}</h3>
+                    <p className="text-subtle-foreground mt-1 text-sm">
                       {modelInfoSectionDescription(activeSection)}
                     </p>
                   </div>
@@ -964,12 +960,12 @@ function ModelInfoRow({
 }) {
   return (
     <div className="grid min-w-0 gap-2 py-3 text-sm sm:grid-cols-[14rem_minmax(0,1fr)]">
-      <dt className="text-[var(--color-text-soft)]">{label}</dt>
+      <dt className="text-muted-foreground">{label}</dt>
       <dd
         className={
           mono
-            ? 'min-w-0 font-mono text-xs break-words text-[var(--color-text-muted)]'
-            : 'min-w-0 text-[var(--color-text-muted)]'
+            ? 'text-subtle-foreground min-w-0 font-mono text-xs break-words'
+            : 'text-subtle-foreground min-w-0'
         }
       >
         {value}
@@ -1173,16 +1169,10 @@ function MetricDetail({
 }) {
   return (
     <div>
-      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
         {label}
       </dt>
-      <dd
-        className={
-          mono
-            ? 'font-mono text-xs text-[var(--color-text-muted)]'
-            : 'text-[var(--color-text-muted)]'
-        }
-      >
+      <dd className={mono ? 'text-subtle-foreground font-mono text-xs' : 'text-subtle-foreground'}>
         {value}
       </dd>
     </div>
@@ -1190,17 +1180,15 @@ function MetricDetail({
 }
 
 function ModelStatusIndicator({ status }: { status: string }) {
-  const tone =
-    status === 'healthy'
-      ? 'bg-emerald-500 shadow-emerald-500/30'
-      : 'bg-amber-400 shadow-amber-400/30'
-
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span
           aria-label={status}
-          className={`inline-flex size-2.5 shrink-0 rounded-full shadow-[0_0_0_3px] ${tone}`}
+          className={cn(
+            'inline-flex size-2.5 shrink-0 rounded-full ring-3',
+            status === 'healthy' ? 'bg-success ring-success/30' : 'bg-warning ring-warning/30',
+          )}
         />
       </TooltipTrigger>
       <TooltipContent sideOffset={6}>{status}</TooltipContent>
@@ -1212,7 +1200,7 @@ function ModelAllowlistDetail({ compact = false, model }: { compact?: boolean; m
   if (!model.allowlist) {
     return (
       <span
-        className={`inline-flex items-center gap-1.5 text-[var(--color-text-soft)] ${
+        className={`text-muted-foreground inline-flex items-center gap-1.5 ${
           compact ? 'text-sm' : ''
         }`}
       >
@@ -1228,12 +1216,12 @@ function ModelAllowlistDetail({ compact = false, model }: { compact?: boolean; m
 
     return (
       <div className="flex min-w-0 flex-col gap-1">
-        <span className="inline-flex items-center gap-1.5 text-sm text-[var(--color-text)]">
+        <span className="text-foreground inline-flex items-center gap-1.5 text-sm">
           <AppIcon icon={CircleCheckIcon} size={13} stroke={1.5} />
           Restricted
         </span>
         {userCount > 0 || teamCount > 0 ? (
-          <span className="flex flex-wrap gap-x-2 text-xs text-[var(--color-text-soft)]">
+          <span className="text-muted-foreground flex flex-wrap gap-x-2 text-xs">
             {userCount > 0 ? (
               <span>{`${userCount} ${userCount === 1 ? 'User' : 'Users'}`}</span>
             ) : null}
@@ -1252,7 +1240,7 @@ function ModelAllowlistDetail({ compact = false, model }: { compact?: boolean; m
   ].filter((entry) => entry.values.length > 0)
 
   if (refs.length === 0) {
-    return <span className="text-[var(--color-text-soft)]">No users or teams listed</span>
+    return <span className="text-muted-foreground">No users or teams listed</span>
   }
 
   return (
@@ -1264,7 +1252,7 @@ function ModelAllowlistDetail({ compact = false, model }: { compact?: boolean; m
           aria-label={entry.label}
           className="flex min-w-0 flex-col gap-1"
         >
-          <span className="text-xs font-medium text-[var(--color-text-soft)]">{entry.label}</span>
+          <span className="text-muted-foreground text-xs font-medium">{entry.label}</span>
           <div className="flex min-w-0 flex-wrap gap-1">
             {entry.values.map((value) => (
               <Badge key={`${entry.label}:${value}`} variant={compact ? 'secondary' : undefined}>
@@ -1280,15 +1268,13 @@ function ModelAllowlistDetail({ compact = false, model }: { compact?: boolean; m
 
 function ModelNotes({ model }: { model: ModelView }) {
   if (!model.description && model.tags.length === 0) {
-    return <span className="text-[var(--color-text-soft)]">—</span>
+    return <span className="text-muted-foreground">—</span>
   }
 
   return (
     <div className="flex min-w-0 flex-col gap-2 py-1">
       {model.description ? (
-        <p className="line-clamp-2 whitespace-normal text-[var(--color-text-muted)]">
-          {model.description}
-        </p>
+        <p className="text-subtle-foreground line-clamp-2 whitespace-normal">{model.description}</p>
       ) : null}
       {model.tags.length > 0 ? (
         <div className="flex flex-wrap gap-2">
@@ -1317,16 +1303,16 @@ function StackedMetric({
   return (
     <div className="flex min-w-[10rem] flex-col gap-1 py-1">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+        <span className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
           {topLabel}
         </span>
-        <span className="text-[var(--color-text-muted)]">{topValue}</span>
+        <span className="text-subtle-foreground">{topValue}</span>
       </div>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+        <span className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
           {bottomLabel}
         </span>
-        <span className="text-[var(--color-text-muted)]">{bottomValue}</span>
+        <span className="text-subtle-foreground">{bottomValue}</span>
       </div>
     </div>
   )
@@ -1350,7 +1336,7 @@ function CapabilityBadges({ model }: { model: ModelView }) {
   )
 
   if (capabilities.length === 0) {
-    return <span className="text-[var(--color-text-soft)]">—</span>
+    return <span className="text-muted-foreground">—</span>
   }
 
   return (
