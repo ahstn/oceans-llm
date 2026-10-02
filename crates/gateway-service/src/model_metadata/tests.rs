@@ -285,3 +285,197 @@ fn missing_provider_cannot_advertise_reasoning() {
     assert_eq!(metadata.capabilities.reasoning, None);
     assert!(metadata.catalog_metadata.is_none());
 }
+
+struct VertexRepo {
+    models: Vec<GatewayModel>,
+    routes: Vec<ModelRoute>,
+}
+
+#[async_trait::async_trait]
+impl ModelRepository for VertexRepo {
+    async fn list_models(&self) -> Result<Vec<GatewayModel>, gateway_core::StoreError> {
+        Ok(self.models.clone())
+    }
+    async fn list_models_by_keys(
+        &self,
+        keys: &[String],
+    ) -> Result<Vec<GatewayModel>, gateway_core::StoreError> {
+        Ok(self
+            .models
+            .iter()
+            .filter(|model| keys.contains(&model.model_key))
+            .cloned()
+            .collect())
+    }
+    async fn get_model_by_key(
+        &self,
+        key: &str,
+    ) -> Result<Option<GatewayModel>, gateway_core::StoreError> {
+        Ok(self
+            .models
+            .iter()
+            .find(|model| model.model_key == key)
+            .cloned())
+    }
+    async fn list_models_for_api_key(
+        &self,
+        _: Uuid,
+    ) -> Result<Vec<GatewayModel>, gateway_core::StoreError> {
+        Ok(self.models.clone())
+    }
+    async fn list_model_allowlists_for_models(
+        &self,
+        _: &[Uuid],
+    ) -> Result<HashMap<Uuid, gateway_core::ModelAllowlistPolicy>, gateway_core::StoreError> {
+        Ok(HashMap::new())
+    }
+    async fn list_routes_for_model(
+        &self,
+        id: Uuid,
+    ) -> Result<Vec<ModelRoute>, gateway_core::StoreError> {
+        Ok(self
+            .routes
+            .iter()
+            .filter(|route| route.model_id == id)
+            .cloned()
+            .collect())
+    }
+    async fn list_routes_for_models(
+        &self,
+        ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, Vec<ModelRoute>>, gateway_core::StoreError> {
+        let mut routes = HashMap::<Uuid, Vec<ModelRoute>>::new();
+        for route in self
+            .routes
+            .iter()
+            .filter(|route| ids.contains(&route.model_id))
+        {
+            routes
+                .entry(route.model_id)
+                .or_default()
+                .push(route.clone());
+        }
+        Ok(routes)
+    }
+}
+
+#[async_trait::async_trait]
+impl ProviderRepository for VertexRepo {
+    async fn get_provider_by_key(
+        &self,
+        _: &str,
+    ) -> Result<Option<ProviderConnection>, gateway_core::StoreError> {
+        Ok(Some(vertex_provider()))
+    }
+    async fn list_providers_by_keys(
+        &self,
+        _: &[String],
+    ) -> Result<HashMap<String, ProviderConnection>, gateway_core::StoreError> {
+        Ok(HashMap::from([("vertex".into(), vertex_provider())]))
+    }
+}
+
+fn vertex_provider() -> ProviderConnection {
+    ProviderConnection {
+        provider_key: "vertex".into(),
+        provider_type: "gcp_vertex".into(),
+        config: json!({}),
+        secrets: None,
+    }
+}
+
+#[tokio::test]
+async fn models_list_describes_claude_routes_from_catalog_and_provider_type() {
+    let target = GatewayModel {
+        id: Uuid::new_v4(),
+        // Deliberately name-neutral: the Anthropic format must come from the provider type.
+        model_key: "house-large".into(),
+        alias_target_model_key: None,
+        max_reasoning_effort: Some(gateway_core::ReasoningEffort::High),
+        description: Some("Primary coding model".into()),
+        tags: vec![],
+        rank: 0,
+    };
+    let alias = GatewayModel {
+        id: Uuid::new_v4(),
+        model_key: "house-default".into(),
+        alias_target_model_key: Some(target.model_key.clone()),
+        description: None,
+        ..target.clone()
+    };
+    let mut vertex_route = route();
+    vertex_route.model_id = target.id;
+    vertex_route.provider_key = "vertex".into();
+    vertex_route.upstream_model = "anthropic/claude-opus-4-7@default".into();
+    vertex_route.context_window_tokens = None;
+    let repo = VertexRepo {
+        models: vec![target.clone(), alias.clone()],
+        routes: vec![vertex_route],
+    };
+
+    let listed = super::listing::list_models(
+        &repo,
+        vec![target, alias],
+        &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+    )
+    .await
+    .unwrap();
+    let listed = serde_json::to_value(listed).unwrap();
+
+    assert_eq!(listed["has_more"], json!(false));
+    assert_eq!(listed["first_id"], json!("house-large"));
+    assert_eq!(listed["last_id"], json!("house-default"));
+    let card = &listed["data"][0];
+    assert_eq!(card["display_name"], json!("Claude Opus 4.7"));
+    assert_eq!(card["created_at"], json!("2026-04-16T00:00:00Z"));
+    assert_eq!(card["owned_by"], json!("oceans-llm"));
+    assert_eq!(card["max_input_tokens"], json!(1_000_000));
+    assert_eq!(card["max_tokens"], json!(128_000));
+    assert_eq!(
+        card["architecture"]["input_modalities"],
+        json!(["image", "pdf", "text"])
+    );
+    assert_eq!(
+        card["capabilities"]["pdf_input"],
+        json!({"supported": true})
+    );
+    assert_eq!(
+        card["capabilities"]["thinking"],
+        json!({"supported": true, "types": {
+            "adaptive": {"supported": true},
+            "enabled": {"supported": false},
+        }})
+    );
+    // The configured ceiling hides xhigh and max.
+    assert_eq!(
+        card["capabilities"]["effort"],
+        json!({
+            "supported": true,
+            "low": {"supported": true},
+            "medium": {"supported": true},
+            "high": {"supported": true},
+            "xhigh": {"supported": false},
+            "max": {"supported": false},
+        })
+    );
+    let hints = &card["client_hints"];
+    assert_eq!(hints["preferred_api_format"], json!("anthropic-messages"));
+    assert_eq!(
+        hints["harnesses"]["opencode"]["npm"],
+        json!("@ai-sdk/anthropic")
+    );
+    assert_eq!(hints["harnesses"]["pi"]["api"], json!("anthropic-messages"));
+    assert_eq!(
+        hints["harnesses"]["pi"]["compat"],
+        json!({"forceAdaptiveThinking": true})
+    );
+    assert!(card.get("alias_of").is_none());
+
+    let alias_card = &listed["data"][1];
+    assert_eq!(alias_card["alias_of"], json!("house-large"));
+    assert_eq!(alias_card["display_name"], json!("Claude Opus 4.7"));
+    assert_eq!(
+        alias_card["client_hints"]["preferred_api_format"],
+        json!("anthropic-messages")
+    );
+}

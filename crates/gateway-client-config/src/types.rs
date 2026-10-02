@@ -12,6 +12,17 @@ pub fn normalize_gateway_base_url(gateway_base_url: &str) -> &str {
     trimmed.strip_suffix("/v1").unwrap_or(trimmed)
 }
 
+/// Client-facing inference API shapes the gateway exposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ApiFormat {
+    #[serde(rename = "openai-chat-completions")]
+    OpenAiChatCompletions,
+    #[serde(rename = "openai-responses")]
+    OpenAiResponses,
+    AnthropicMessages,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ThinkingPolicy {
@@ -96,6 +107,10 @@ pub struct ClientConfigInput {
     pub thinking_policy: Option<ThinkingPolicy>,
     /// An explicit Codex default. A gateway maximum is a ceiling and must not populate this field.
     pub codex_reasoning_effort: Option<CodexReasoningEffort>,
+    /// The format the primary route's provider speaks natively, when the provider type makes
+    /// it knowable. `None` falls back to model-name matching.
+    #[serde(default)]
+    pub native_api_format: Option<ApiFormat>,
 }
 
 impl ClientConfigInput {
@@ -181,6 +196,7 @@ impl Default for ClientConfigInput {
             capabilities: ClientModelCapabilities::default(),
             thinking_policy: None,
             codex_reasoning_effort: None,
+            native_api_format: None,
         }
     }
 }

@@ -1,8 +1,8 @@
-mod claude_code;
-mod codex;
+pub(crate) mod claude_code;
+pub(crate) mod codex;
 mod notes;
-mod opencode;
-mod pi;
+pub(crate) mod opencode;
+pub(crate) mod pi;
 
 pub use claude_code::ClaudeCodeConfigTemplate;
 pub use codex::CodexConfigTemplate;

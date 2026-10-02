@@ -33,3 +33,7 @@ The v2 cache remains a read-only fallback when the v3 cache is absent or invalid
 Discovery reuses visible models and loads only missing alias targets in batches, bounded by the existing alias depth limit. It does not reload the full model table. A merged cost document with no rates is unknown; explicit zero rates, audio rates, and condition-only prices remain present.
 
 Discovery reads share an in-memory parsed catalog. Refresh success invalidates that snapshot, and pricing reconciliation replaces it from the persisted cache. Reconciliation still reads the store on each retry, so changes from other replicas become visible during the next refresh cycle.
+
+## Enriched `/v1/models` (2026-09-24)
+
+`/v1/models` now adds catalog-derived identity, limits, Anthropic-shaped capabilities, and harness hints while keeping every existing field. See [Enriched model list and client hints](2026-09-24-models-list-client-hints.md). Route-level detail, pricing, and provenance remain in `/v1/model-metadata`.

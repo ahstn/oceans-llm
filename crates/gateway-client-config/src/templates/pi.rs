@@ -4,7 +4,7 @@ use serde_json::{Map, Value, json};
 
 use crate::{
     api_style::{
-        ClientApiStyle, client_api_style, pi_api_key_env_reference, pi_provider_api_for_style,
+        ApiFormat, client_api_style, pi_api_key_env_reference, pi_provider_api_for_style,
         pi_provider_compat,
     },
     cost::pi_cost,
@@ -106,12 +106,12 @@ fn pi_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
     ]
 }
 
-fn pi_base_url(input: &ClientConfigInput, style: ClientApiStyle) -> String {
+fn pi_base_url(input: &ClientConfigInput, style: ApiFormat) -> String {
     match style {
-        ClientApiStyle::OpenAiCompatible | ClientApiStyle::OpenAiResponses => {
+        ApiFormat::OpenAiChatCompletions | ApiFormat::OpenAiResponses => {
             input.openai_compatible_client_base_url()
         }
-        ClientApiStyle::AnthropicMessages => input.client_base_url(),
+        ApiFormat::AnthropicMessages => input.client_base_url(),
     }
 }
 
@@ -126,23 +126,23 @@ enum PiProviderGroup {
 impl PiProviderGroup {
     fn for_input(input: &ClientConfigInput) -> Self {
         match client_api_style(input) {
-            ClientApiStyle::OpenAiCompatible => Self::OpenAiCompatible,
-            ClientApiStyle::OpenAiResponses => Self::OpenAiResponses,
-            ClientApiStyle::AnthropicMessages
+            ApiFormat::OpenAiChatCompletions => Self::OpenAiCompatible,
+            ApiFormat::OpenAiResponses => Self::OpenAiResponses,
+            ApiFormat::AnthropicMessages
                 if input.thinking_policy == Some(ThinkingPolicy::AnthropicSafeEffort) =>
             {
                 Self::AnthropicMessagesAdaptiveThinking
             }
-            ClientApiStyle::AnthropicMessages => Self::AnthropicMessages,
+            ApiFormat::AnthropicMessages => Self::AnthropicMessages,
         }
     }
 
-    const fn api_style(self) -> ClientApiStyle {
+    const fn api_style(self) -> ApiFormat {
         match self {
-            Self::OpenAiCompatible => ClientApiStyle::OpenAiCompatible,
-            Self::OpenAiResponses => ClientApiStyle::OpenAiResponses,
+            Self::OpenAiCompatible => ApiFormat::OpenAiChatCompletions,
+            Self::OpenAiResponses => ApiFormat::OpenAiResponses,
             Self::AnthropicMessages | Self::AnthropicMessagesAdaptiveThinking => {
-                ClientApiStyle::AnthropicMessages
+                ApiFormat::AnthropicMessages
             }
         }
     }
@@ -189,7 +189,7 @@ fn pi_model(input: &ClientConfigInput) -> Map<String, Value> {
     model
 }
 
-fn pi_thinking_level_map(policy: ThinkingPolicy) -> Option<Value> {
+pub(crate) fn pi_thinking_level_map(policy: ThinkingPolicy) -> Option<Value> {
     match policy {
         ThinkingPolicy::AnthropicSafeEffort => Some(json!({
             "off": null,

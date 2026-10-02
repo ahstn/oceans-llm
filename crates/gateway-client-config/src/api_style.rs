@@ -1,17 +1,32 @@
 use serde_json::{Value, json};
 
+pub(crate) use crate::types::ApiFormat;
 use crate::types::{ClientConfigInput, ThinkingPolicy};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum ClientApiStyle {
-    OpenAiCompatible,
-    OpenAiResponses,
-    AnthropicMessages,
+/// Gateway inference APIs that can serve this model. `/v1/messages` is translated onto the
+/// chat pipeline, so any chat-capable model accepts Anthropic Messages as well.
+#[must_use]
+pub fn accepted_api_formats(input: &ClientConfigInput) -> Vec<ApiFormat> {
+    let mut formats = Vec::new();
+    if input.capabilities.chat_completions {
+        formats.push(ApiFormat::OpenAiChatCompletions);
+    }
+    if input.capabilities.responses {
+        formats.push(ApiFormat::OpenAiResponses);
+    }
+    if input.capabilities.chat_completions {
+        formats.push(ApiFormat::AnthropicMessages);
+    }
+    formats
 }
 
 pub(crate) fn uses_anthropic_messages_api(input: &ClientConfigInput) -> bool {
     if !input.capabilities.chat_completions {
         return false;
+    }
+    // A format derived from the route's provider wins; name matching is only the fallback.
+    if let Some(native) = input.native_api_format {
+        return native == ApiFormat::AnthropicMessages;
     }
     let joined = [
         input.model_id.as_str(),
@@ -23,29 +38,31 @@ pub(crate) fn uses_anthropic_messages_api(input: &ClientConfigInput) -> bool {
     joined.contains("anthropic") || joined.contains("claude")
 }
 
-pub(crate) fn client_api_style(input: &ClientConfigInput) -> ClientApiStyle {
+/// The API format a harness should prefer for this model.
+#[must_use]
+pub fn client_api_style(input: &ClientConfigInput) -> ApiFormat {
     if input.capabilities.responses && !input.capabilities.chat_completions {
-        ClientApiStyle::OpenAiResponses
+        ApiFormat::OpenAiResponses
     } else if uses_anthropic_messages_api(input) {
-        ClientApiStyle::AnthropicMessages
+        ApiFormat::AnthropicMessages
     } else {
-        ClientApiStyle::OpenAiCompatible
+        ApiFormat::OpenAiChatCompletions
     }
 }
 
-pub(crate) const fn opencode_provider_package_for_style(style: ClientApiStyle) -> &'static str {
+pub(crate) const fn opencode_provider_package_for_style(style: ApiFormat) -> &'static str {
     match style {
-        ClientApiStyle::OpenAiCompatible => "@ai-sdk/openai-compatible",
-        ClientApiStyle::OpenAiResponses => "@ai-sdk/openai",
-        ClientApiStyle::AnthropicMessages => "@ai-sdk/anthropic",
+        ApiFormat::OpenAiChatCompletions => "@ai-sdk/openai-compatible",
+        ApiFormat::OpenAiResponses => "@ai-sdk/openai",
+        ApiFormat::AnthropicMessages => "@ai-sdk/anthropic",
     }
 }
 
-pub(crate) const fn pi_provider_api_for_style(style: ClientApiStyle) -> &'static str {
+pub(crate) const fn pi_provider_api_for_style(style: ApiFormat) -> &'static str {
     match style {
-        ClientApiStyle::OpenAiCompatible => "openai-completions",
-        ClientApiStyle::OpenAiResponses => "openai-responses",
-        ClientApiStyle::AnthropicMessages => "anthropic-messages",
+        ApiFormat::OpenAiChatCompletions => "openai-completions",
+        ApiFormat::OpenAiResponses => "openai-responses",
+        ApiFormat::AnthropicMessages => "anthropic-messages",
     }
 }
 
@@ -54,10 +71,10 @@ pub(crate) fn pi_api_key_env_reference(input: &ClientConfigInput) -> String {
 }
 
 pub(crate) fn pi_provider_compat(input: &ClientConfigInput) -> Option<Value> {
-    if client_api_style(input) == ClientApiStyle::OpenAiResponses {
+    if client_api_style(input) == ApiFormat::OpenAiResponses {
         return None;
     }
-    if client_api_style(input) == ClientApiStyle::AnthropicMessages {
+    if client_api_style(input) == ApiFormat::AnthropicMessages {
         return (input.thinking_policy == Some(ThinkingPolicy::AnthropicSafeEffort))
             .then(|| json!({"forceAdaptiveThinking": true}));
     }

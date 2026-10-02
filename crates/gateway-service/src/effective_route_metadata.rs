@@ -1,7 +1,8 @@
+use gateway_client_config::ApiFormat;
 use gateway_core::{
-    GatewayError, ModelRoute, Money4, PricingCatalogRepository, PricingLimits, PricingModalities,
-    PricingProvenance, ProviderCapabilities, ProviderConnection, github_copilot_route_capabilities,
-    vertex_route_capabilities_for_upstream_model,
+    GatewayError, GitHubCopilotChatApi, ModelRoute, Money4, PricingCatalogRepository,
+    PricingLimits, PricingModalities, PricingProvenance, ProviderCapabilities, ProviderConnection,
+    github_copilot_route_capabilities, vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
 
@@ -252,6 +253,34 @@ pub(crate) fn provider_capabilities(
             developer_role: false,
         },
         _ => ProviderCapabilities::all_enabled(),
+    }
+}
+
+/// The client-facing format a route's upstream speaks natively, when the provider type
+/// makes it knowable. Generic OpenAI-compatible and Bedrock providers front many model
+/// families, so they return `None` and callers fall back to model-name matching.
+pub(crate) fn native_api_format(
+    provider: &ProviderConnection,
+    route: &ModelRoute,
+) -> Option<ApiFormat> {
+    match provider.provider_type.as_str() {
+        "anthropic_compat" => Some(ApiFormat::AnthropicMessages),
+        "gcp_vertex" if route.upstream_model.starts_with("anthropic/") => {
+            Some(ApiFormat::AnthropicMessages)
+        }
+        "gcp_vertex" => Some(ApiFormat::OpenAiChatCompletions),
+        "github_copilot" => {
+            let compatibility = route.compatibility.github_copilot.as_ref()?;
+            match compatibility.chat_api {
+                Some(GitHubCopilotChatApi::AnthropicMessages) => Some(ApiFormat::AnthropicMessages),
+                Some(GitHubCopilotChatApi::ChatCompletions) => {
+                    Some(ApiFormat::OpenAiChatCompletions)
+                }
+                None if compatibility.supports_responses => Some(ApiFormat::OpenAiResponses),
+                None => None,
+            }
+        }
+        _ => None,
     }
 }
 

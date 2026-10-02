@@ -22,14 +22,13 @@ use axum::{
 use futures_util::{StreamExt, stream as futures_stream};
 use gateway_core::{
     AnthropicMessagesRequest, AuthenticatedApiKey, ChatCompletionsRequest, CoreChatRequest,
-    CoreRequestRequirements, DecisionsRequest, EmbeddingsRequest, GatewayError, ModelsListResponse,
+    CoreRequestRequirements, DecisionsRequest, EmbeddingsRequest, GatewayError,
     ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
     RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
     anthropic_messages_request_to_core, core_chat_request_to_openai, enforce_chat_reasoning_effort,
     enforce_responses_reasoning_effort, openai_chat_request_to_core,
     openai_decisions_request_to_core, openai_embeddings_request_to_core,
-    openai_responses_request_to_core,
-    protocol::{anthropic::anthropic_message_from_openai_chat, openai::ModelCard},
+    openai_responses_request_to_core, protocol::anthropic::anthropic_message_from_openai_chat,
     vertex_route_capabilities_for_upstream_model,
 };
 use gateway_service::{
@@ -112,27 +111,12 @@ pub async fn v1_model_metadata(
 pub async fn v1_models(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<ModelsListResponse>, AppError> {
+) -> Result<Json<gateway_service::model_metadata::ModelsListResponse>, AppError> {
     let auth = state
         .service
         .authenticate(extract_anthropic_authorization_header(&headers).as_deref())
         .await?;
-
-    let models = state.service.list_models_for_api_key(&auth).await?;
-    let data = models
-        .into_iter()
-        .map(|model| ModelCard {
-            id: model.model_key,
-            object: "model".to_string(),
-            created: 0,
-            owned_by: "gateway".to_string(),
-        })
-        .collect::<Vec<_>>();
-
-    Ok(Json(ModelsListResponse {
-        object: "list".to_string(),
-        data,
-    }))
+    Ok(Json(state.service.models_list_for_api_key(&auth).await?))
 }
 
 pub async fn v1_messages(

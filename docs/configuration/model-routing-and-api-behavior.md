@@ -10,7 +10,7 @@ The gateway exposes these authenticated endpoints:
 
 | Endpoint | API family | Route requirement |
 | --- | --- | --- |
-| `GET /v1/models` | OpenAI-compatible model discovery | Model is visible to the caller |
+| `GET /v1/models` | OpenAI- and Anthropic-compatible model discovery | Model is visible to the caller |
 | `POST /v1/chat/completions` | OpenAI Chat Completions | `chat_completions: true` |
 | `POST /v1/responses` | OpenAI Responses | `responses: true` |
 | `POST /v1/embeddings` | OpenAI Embeddings | `embeddings: true` |
@@ -259,7 +259,7 @@ The Models admin API reports logical-model metadata conservatively across select
 - Context provenance is `configured_override`, `catalog`, or `mixed`.
 - Pricing uses the primary route and reports when pricing varies by route.
 
-Generated client configurations use the same conservative limits. `GET /v1/models` remains an identity and discovery response; it does not expose Oceans-specific route metadata.
+Generated client configurations and `GET /v1/models` use the same conservative limits. Route-level detail, pricing, and source provenance stay in `GET /v1/model-metadata`.
 
 The context value is metadata, not request-time token enforcement. Oceans does not currently tokenize every request and reject an oversized prompt before provider execution.
 
@@ -267,7 +267,39 @@ The context value is metadata, not request-time token enforcement. Oceans does n
 
 ### Model discovery
 
-`GET /v1/models` returns gateway model identities visible to the authenticated API key. Visibility does not guarantee that a route can execute every API family. A model can be visible while all routes are disabled, non-viable, or incompatible with the requested operation.
+`GET /v1/models` returns the gateway models visible to the authenticated API key. One response serves both OpenAI and Anthropic clients: Claude Code calls it through `ANTHROPIC_BASE_URL`, and the two list shapes use different keys.
+
+| Field | Source |
+| --- | --- |
+| `id`, `object`, `type`, `owned_by` | Gateway model key; `owned_by` is always `oceans-llm` |
+| `created`, `created_at` | Catalog release date of the first route that has one, else the Unix epoch |
+| `display_name` | Catalog display name, else the model key |
+| `description`, `alias_of` | Gateway model configuration |
+| `context_length`, `max_input_tokens`, `max_tokens` | Conservative limits across enabled routes |
+| `architecture` | Input and output modalities every route with catalog data shares |
+| `capabilities` | Anthropic `ModelCapabilities` shape (see below) |
+| `client_hints` | Harness settings for chat-shaped models (see below) |
+| `has_more`, `first_id`, `last_id` | The list is never paginated, so `has_more` is always `false` |
+
+`capabilities` follows the Anthropic SDK types exactly. `batch`, `citations`, `code_execution`, and `context_management` are always unsupported because the gateway does not serve those Anthropic features. Effort levels come from the model's thinking policy and are clamped to `max_reasoning_effort`. `thinking.types.adaptive` is set for Claude families that accept only adaptive thinking; `enabled` means manual budgets are accepted.
+
+`client_hints` lists every gateway API that can serve the model, based on route capabilities, not on the model name:
+
+```json
+{
+  "api_formats": ["openai-chat-completions", "openai-responses", "anthropic-messages"],
+  "preferred_api_format": "anthropic-messages",
+  "harnesses": {
+    "opencode": { "npm": "@ai-sdk/anthropic", "variants": { "...": "..." } },
+    "pi": { "api": "anthropic-messages", "compat": { "forceAdaptiveThinking": true } },
+    "claude_code": { "model_env_var": "ANTHROPIC_DEFAULT_OPUS_MODEL" }
+  }
+}
+```
+
+`anthropic-messages` is listed for every chat-capable model because `/v1/messages` is translated onto the chat pipeline. `preferred_api_format` comes from the primary route's provider type: `anthropic_compat` and Vertex `anthropic/*` routes prefer Anthropic Messages, and GitHub Copilot follows its configured `chat_api`. Other provider types fall back to model-name matching. Harness blocks use each harness's own config keys and match the snippets from [Client Harness Configuration](client-harness-configuration.md). They never contain a base URL or API key. Embedding-only and Decisions-only models omit `client_hints`.
+
+Visibility does not guarantee that a route can execute every API family. A model can be visible while all routes are disabled, non-viable, or incompatible with the requested operation.
 
 ### Chat Completions
 
