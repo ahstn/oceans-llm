@@ -130,19 +130,20 @@ The CI contract lives in the workflow files under [.github/workflows](.github/wo
 
 Release rationale and the local-to-CI handoff are documented in [docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md](docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md).
 
-## Pitchfork
+## Local PostgreSQL
 
-The repository includes a checked-in `pitchfork.toml` for local PostgreSQL workflow support.
+The root `mise.toml` declares a `db` daemon (the `mise daemons` PostgreSQL preset, supervised by pitchfork). The database is `oceans_llm`, the user is `postgres`, and authentication is `trust` on loopback. In a linked git worktree the port is offset automatically.
 
 Use the mise tasks as the stable interface:
 
-- `mise run postgres-start`
-- `mise run postgres-status`
-- `mise run postgres-logs`
-- `mise run postgres-stop`
-- `mise run postgres-reset`
+- `mise run //crates/gateway-store:postgres:start`
+- `mise run //crates/gateway-store:postgres:status`
+- `mise run //crates/gateway-store:postgres:logs`
+- `mise run //crates/gateway-store:postgres:stop`
+- `mise run //crates/gateway-store:postgres:reset`
+- `eval "$(mise run -q //crates/gateway-store:postgres:env)"` exports `POSTGRES_URL` and `TEST_POSTGRES_URL`
 
-Treat `pitchfork.toml` as local service orchestration for Postgres, not as a replacement for the repo's GitHub templates, PR flow, or CI checks.
+Treat the daemon as local service orchestration for Postgres, not as a replacement for the repo's GitHub templates, PR flow, or CI checks. To run the app on a server, see [Self-Hosting with mise Daemons](docs/setup/self-hosting-mise-daemons.md).
 
 ## VS Code
 

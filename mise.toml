@@ -26,6 +26,16 @@ prek = "latest"
 CARGO_TARGET_DIR = "$HOME/.cache/cargo/target/"
 CARGO_BUILD_BUILD_DIR = "$HOME/.cache/cargo/build/{workspace-path-hash}"
 
+# Local Postgres for development and Postgres-backed tests. Supervised by pitchfork
+# through `mise daemons`; manage it with the `postgres:*` tasks in crates/gateway-store.
+# Exports DATABASE_URL. `port = "auto"` keeps the default port in the primary checkout
+# and offsets it in linked git worktrees.
+[daemons.db]
+preset = "postgres"
+version = "18"
+port = "auto"
+options.database = "oceans_llm"
+
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
 run = "mise install"

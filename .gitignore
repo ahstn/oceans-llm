@@ -1,6 +1,7 @@
 **/.DS_Store
 mise.local.toml
-pitchfork.local.toml
+mise.*.local.toml
+.miserc.local.toml
 
 target/
 .local/

@@ -39,6 +39,8 @@ How implemented:
 
 ### 2. Make local Postgres operations pitchfork-first and singular
 
+> Superseded by [2026-10-01 self-hosting with mise daemons](2026-10-01-self-hosting-with-mise-daemons.md): the `pitchfork.toml` and helper script were replaced by a mise `db` daemon.
+
 For local development and validation, we use `pitchfork` as the single supported Postgres lifecycle path in this iteration.
 
 How implemented:
