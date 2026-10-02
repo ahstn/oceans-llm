@@ -101,7 +101,7 @@ if ! command -v tailscale >/dev/null; then
 fi
 # Serve config persists inside tailscaled, so no daemon is needed. Re-running replaces the same handler.
 if ! timeout 30 tailscale serve --bg --https=443 --yes http://127.0.0.1:8080 </dev/null; then
-  echo "tailscale serve failed or timed out. Enable Serve and HTTPS certificates for this node (the command prints a login.tailscale.com link), then re-run: mise run selfhost-expose" >&2
+  echo "tailscale serve failed. If it says 'serve config denied', run once: sudo tailscale set --operator=\$USER. If it prints a login.tailscale.com link, enable Serve and HTTPS certificates for this node. Then re-run: mise run selfhost-expose" >&2
   exit 1
 fi
 tailscale serve status
