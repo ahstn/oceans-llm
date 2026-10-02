@@ -45,17 +45,30 @@ service_accounts:
 # Replace with the providers and models you actually use. Reference
 # docs/configuration/configuration-reference.md for every provider type.
 providers:
-  - id: openai-prod
+  - id: openrouter
     type: openai_compat
-    base_url: https://api.openai.com/v1
-    pricing_provider_id: openai
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
     auth:
       kind: bearer
-      token: env.OPENAI_API_KEY
+      token: env.OPENROUTER_API_KEY
 
+# OpenRouter "latest" aliases start with `~`. Keep the quotes: a bare `~` is YAML null.
 models:
-  - id: openai-fast
-    description: OpenAI default route
+  - id: gpt-sol-latest
+    description: OpenAI GPT Sol, latest, via OpenRouter
     routes:
-      - provider: openai-prod
-        upstream_model: gpt-6-astra
+      - provider: openrouter
+        upstream_model: "~openai/gpt-sol-latest"
+
+  - id: claude-sonnet-latest
+    description: Anthropic Claude Sonnet, latest, via OpenRouter
+    routes:
+      - provider: openrouter
+        upstream_model: "~anthropic/claude-sonnet-latest"
+
+  - id: deepseek-flash-latest
+    description: DeepSeek Flash, latest, via OpenRouter
+    routes:
+      - provider: openrouter
+        upstream_model: "~deepseek/deepseek-flash-latest"

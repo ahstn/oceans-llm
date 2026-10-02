@@ -54,11 +54,11 @@ OCEANS_API_KEY_SECRET_ENCRYPTION_KEY = "$(openssl rand -base64 32)"
 GATEWAY_BOOTSTRAP_ADMIN_PASSWORD = "$(openssl rand -base64 18)"
 GATEWAY_API_KEY = "gwk_hogwarts.$(openssl rand -hex 24)"
 GATEWAY_PUBLIC_BASE_URL = "https://hogwarts.<tailnet>.ts.net"
-OPENAI_API_KEY = "<key>"
+OPENROUTER_API_KEY = "<key>"
 EOF
 ```
 
-Replace `<tailnet>` and `<key>`. Back up this file somewhere safe. If you lose `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`, stored managed API keys cannot be decrypted.
+Replace `<tailnet>` and `<key>` (create the key at <https://openrouter.ai/settings/keys>). Back up this file somewhere safe. If you lose `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`, stored managed API keys cannot be decrypted.
 
 The overlay lists these names under `redactions`, so mise masks them in captured task output. Redaction does not encrypt the file. `mise env` still prints plain values.
 
@@ -73,7 +73,7 @@ Other ways to supply secrets, if a plain file is not enough:
 
 ### 4. Edit the gateway config
 
-`deploy/selfhost/gateway.yaml` holds one OpenAI-compatible provider and one model as a starting point. Edit providers, models, and teams for your use. Add any new `env.*` secret as `{ required = true }` in `mise.selfhost.toml`, and its value in `mise.selfhost.local.toml`. Add the name to `redactions`.
+`deploy/selfhost/gateway.yaml` holds one OpenRouter provider and three models as a starting point: `gpt-sol-latest`, `claude-sonnet-latest`, and `deepseek-flash-latest`. They map to OpenRouter's `~provider/model-latest` aliases. Keep the quotes around `~...` in YAML. Edit providers, models, and teams for your use. Add any new `env.*` secret as `{ required = true }` in `mise.selfhost.toml`, and its value in `mise.selfhost.local.toml`. Add the name to `redactions`.
 
 ### 5. First deploy
 

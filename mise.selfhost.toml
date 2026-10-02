@@ -8,7 +8,7 @@ redactions = [
   "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
   "GATEWAY_BOOTSTRAP_ADMIN_PASSWORD",
   "GATEWAY_API_KEY",
-  "OPENAI_API_KEY",
+  "OPENROUTER_API_KEY",
 ]
 
 [settings]
@@ -55,7 +55,7 @@ OCEANS_API_KEY_SECRET_ENCRYPTION_KEY = { required = true }
 GATEWAY_BOOTSTRAP_ADMIN_PASSWORD = { required = true }
 GATEWAY_API_KEY = { required = true }
 GATEWAY_PUBLIC_BASE_URL = { required = true }
-OPENAI_API_KEY = { required = true }
+OPENROUTER_API_KEY = { required = true }
 
 [tasks.selfhost-gateway-build]
 description = "Build the release gateway binary that the gateway daemon runs"
