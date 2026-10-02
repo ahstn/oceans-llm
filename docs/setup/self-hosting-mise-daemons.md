@@ -26,7 +26,14 @@ tailnet client --HTTPS--> tailscaled (serve :443)
 
 ### 1. Host prerequisites
 
-- Linux with `systemd`, `curl`, `git`, a C toolchain (`build-essential`, `pkg-config`), and `mise` installed.
+- Linux with `systemd`, `curl`, `git`, and `mise` installed.
+- Build dependencies. The `postgres` tool compiles PostgreSQL from source on Linux, and the gateway needs a C toolchain. On Debian or Ubuntu:
+
+  ```sh
+  sudo apt install build-essential pkg-config bison flex libreadline-dev uuid-dev libicu-dev zlib1g-dev libssl-dev
+  ```
+
+  Without `bison`, `flex`, `libreadline-dev`, or `uuid-dev`, `mise install` fails with `Failed to configure PostgreSQL`.
 - Tailscale running and logged in. In the Tailscale admin console, enable MagicDNS and HTTPS certificates.
 - A normal user, not root. The Postgres preset refuses to run as root.
 
