@@ -1,0 +1,29 @@
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  s_9cb90ef0550904::t_064cd02bb02e02 104-106
+crates/gateway-service/src/model_metadata/listing.rs
+  s_9cb90ef0550904::t_1e9bc0471d3518 7-8,51-52,65-68,304,349-352,357-370,430-433,473-498
+crates/gateway-service/src/model_metadata/tests.rs
+  s_9cb90ef0550904::t_bb5ebf9505f685 430-435
+crates/gateway/src/http/handlers/model_metadata_tests.rs
+  s_9cb90ef0550904::t_30322d7198ecff 77,108
+docs/adr/2026-09-24-models-list-client-hints.md
+  s_9cb90ef0550904::t_df6ea794d5c11c 30-35
+docs/configuration/model-routing-and-api-behavior.md
+  s_9cb90ef0550904::t_eb3c30def32256 276,281,303-304
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b31e3376e907f7368c2af18952d08118013b12db",
+  "prompts": {},
+  "sessions": {
+    "s_9cb90ef0550904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "accf8405-3895-4f10-b03f-d1ae693d2897",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
