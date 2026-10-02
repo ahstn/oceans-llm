@@ -276,7 +276,7 @@ The context value is metadata, not request-time token enforcement. Oceans does n
 | `display_name`, `name` | Catalog display name, else the model key; `name` is the OpenRouter spelling |
 | `description`, `alias_of` | Gateway model configuration |
 | `context_length`, `max_input_tokens`, `max_tokens` | Conservative limits across enabled routes |
-| `architecture` | Input and output modalities every route with catalog data shares |
+| `architecture` | Input and output modalities every route with catalog data shares; decision-capable models add a `decisions` output modality |
 | `capabilities` | Anthropic `ModelCapabilities` shape (see below) |
 | `supported_endpoint_types` | new-api endpoint types, preferred first (see below) |
 | `client_hints` | Harness settings for chat-shaped models (see below) |
@@ -301,6 +301,8 @@ The context value is metadata, not request-time token enforcement. Oceans does n
 `anthropic-messages` is listed for every chat-capable model because `/v1/messages` is translated onto the chat pipeline. `preferred_api_format` comes from the primary route's provider type: `anthropic_compat` and Vertex `anthropic/*` routes prefer Anthropic Messages, and GitHub Copilot follows its configured `chat_api`. Other provider types fall back to model-name matching. Harness blocks use each harness's own config keys and match the snippets from [Client Harness Configuration](client-harness-configuration.md). They never contain a base URL or API key. Embedding-only and Decisions-only models omit `client_hints`.
 
 `supported_endpoint_types` uses the new-api vocabulary (`anthropic`, `openai`, `openai-response`) so proxy-aware clients can pick a wire per model. Clients such as omp with `discovery.type: proxy` choose Anthropic Messages whenever `anthropic` is listed. The gateway therefore lists `anthropic` only when `preferred_api_format` is `anthropic-messages`, even though `/v1/messages` accepts every chat-capable model. Use `client_hints.api_formats` for the complete list.
+
+Decision models served through `POST /v1/decisions` have no new-api endpoint type, so their `supported_endpoint_types` is empty and they carry no `client_hints`. Following OpenRouter, they report `decisions` in `architecture.output_modalities`. Proxy-discovery clients that do not read that modality may list them as chat models.
 
 Visibility does not guarantee that a route can execute every API family. A model can be visible while all routes are disabled, non-viable, or incompatible with the requested operation.
 

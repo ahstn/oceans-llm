@@ -286,13 +286,14 @@ fn missing_provider_cannot_advertise_reasoning() {
     assert!(metadata.catalog_metadata.is_none());
 }
 
-struct VertexRepo {
+struct ListingRepo {
     models: Vec<GatewayModel>,
     routes: Vec<ModelRoute>,
+    provider: ProviderConnection,
 }
 
 #[async_trait::async_trait]
-impl ModelRepository for VertexRepo {
+impl ModelRepository for ListingRepo {
     async fn list_models(&self) -> Result<Vec<GatewayModel>, gateway_core::StoreError> {
         Ok(self.models.clone())
     }
@@ -360,18 +361,21 @@ impl ModelRepository for VertexRepo {
 }
 
 #[async_trait::async_trait]
-impl ProviderRepository for VertexRepo {
+impl ProviderRepository for ListingRepo {
     async fn get_provider_by_key(
         &self,
         _: &str,
     ) -> Result<Option<ProviderConnection>, gateway_core::StoreError> {
-        Ok(Some(vertex_provider()))
+        Ok(Some(self.provider.clone()))
     }
     async fn list_providers_by_keys(
         &self,
         _: &[String],
     ) -> Result<HashMap<String, ProviderConnection>, gateway_core::StoreError> {
-        Ok(HashMap::from([("vertex".into(), vertex_provider())]))
+        Ok(HashMap::from([(
+            self.provider.provider_key.clone(),
+            self.provider.clone(),
+        )]))
     }
 }
 
@@ -408,9 +412,10 @@ async fn models_list_describes_claude_routes_from_catalog_and_provider_type() {
     vertex_route.provider_key = "vertex".into();
     vertex_route.upstream_model = "anthropic/claude-opus-4-7@default".into();
     vertex_route.context_window_tokens = None;
-    let repo = VertexRepo {
+    let repo = ListingRepo {
         models: vec![target.clone(), alias.clone()],
         routes: vec![vertex_route],
+        provider: vertex_provider(),
     };
 
     let listed = super::listing::list_models(
@@ -484,4 +489,48 @@ async fn models_list_describes_claude_routes_from_catalog_and_provider_type() {
         alias_card["client_hints"]["preferred_api_format"],
         json!("anthropic-messages")
     );
+}
+
+#[tokio::test]
+async fn decision_models_report_the_openrouter_decisions_output_modality() {
+    let model = GatewayModel {
+        id: Uuid::new_v4(),
+        model_key: "judge".into(),
+        alias_target_model_key: None,
+        max_reasoning_effort: None,
+        description: None,
+        tags: vec![],
+        rank: 0,
+    };
+    let mut judge_route = route();
+    judge_route.model_id = model.id;
+    judge_route.provider_key = "typesafe".into();
+    judge_route.upstream_model = "jev-latest".into();
+    let repo = ListingRepo {
+        models: vec![model.clone()],
+        routes: vec![judge_route],
+        provider: ProviderConnection {
+            provider_key: "typesafe".into(),
+            provider_type: "typesafe".into(),
+            config: json!({}),
+            secrets: None,
+        },
+    };
+
+    let listed = super::listing::list_models(
+        &repo,
+        vec![model],
+        &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+    )
+    .await
+    .unwrap();
+    let card = serde_json::to_value(&listed.data[0]).unwrap();
+
+    // OpenRouter marks decision models this way; omp's OpenRouter discovery keys on it.
+    assert_eq!(
+        card["architecture"]["output_modalities"],
+        json!(["decisions"])
+    );
+    assert_eq!(card["supported_endpoint_types"], json!([]));
+    assert!(card.get("client_hints").is_none());
 }

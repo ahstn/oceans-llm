@@ -183,6 +183,7 @@ where
                     ProviderCapabilities {
                         chat_completions: acc.chat_completions || caps.chat_completions,
                         responses: acc.responses || caps.responses,
+                        decisions: acc.decisions || caps.decisions,
                         ..acc
                     }
                 });
@@ -241,12 +242,15 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
             .as_ref()
             .map(|modalities| &modalities.input)
     });
-    let output_modalities = common_modalities(&details, |route| {
-        route
-            .modalities
-            .as_ref()
-            .map(|modalities| &modalities.output)
-    });
+    let output_modalities = with_decisions_output(
+        common_modalities(&details, |route| {
+            route
+                .modalities
+                .as_ref()
+                .map(|modalities| &modalities.output)
+        }),
+        transport.decisions,
+    );
     let summary = summarize(model.model_key.clone(), details);
 
     let image_input = summary.capabilities.vision == Some(true);
@@ -409,6 +413,20 @@ fn common_modalities<'a>(
         .map(|values| values.iter().cloned().collect::<BTreeSet<_>>())
         .reduce(|acc, values| acc.intersection(&values).cloned().collect())
         .map(|values| values.into_iter().collect())
+}
+
+/// OpenRouter marks System One decision models with a `decisions` output modality. The
+/// catalog has no decision models, so the gateway adds it from route capabilities.
+fn with_decisions_output(modalities: Option<Vec<String>>, decisions: bool) -> Option<Vec<String>> {
+    if !decisions {
+        return modalities;
+    }
+    let mut modalities = modalities.unwrap_or_default();
+    if !modalities.iter().any(|value| value == "decisions") {
+        modalities.push("decisions".to_string());
+        modalities.sort();
+    }
+    Some(modalities)
 }
 
 /// Accepts the catalog's `YYYY-MM-DD` and `YYYY-MM` release dates.
