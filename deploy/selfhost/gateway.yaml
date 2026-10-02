@@ -41,6 +41,11 @@ service_accounts:
       - id: default
         name: Default
         value: env.GATEWAY_API_KEY
+        # A key can call only the models granted here. Keep in sync with `models` below.
+        allowed_models:
+          - gpt-sol-latest
+          - claude-sonnet-latest
+          - deepseek-flash-latest
 
 # Replace with the providers and models you actually use. Reference
 # docs/configuration/configuration-reference.md for every provider type.
