@@ -62,14 +62,11 @@ description = "Build the release gateway binary that the gateway daemon runs"
 run = "cargo build --locked --release -p gateway"
 
 [tasks.selfhost-backup]
-description = "Dump the oceans database to .local/backups before a deploy; keeps 30 days"
+description = "Dump the oceans database to .local/backups (starts `db` if needed); keeps 30 days"
 run = '''
 set -euo pipefail
 umask 077
-if ! pg_isready -q -h 127.0.0.1 -p 5432 -U postgres; then
-  echo "postgres not running; skipping backup (first deploy?)"
-  exit 0
-fi
+mise daemons start db
 mkdir -p .local/backups
 pg_dump -Fc "$POSTGRES_URL" -f ".local/backups/oceans-$(date +%Y%m%dT%H%M%S).dump"
 find .local/backups -name 'oceans-*.dump' -mtime +30 -delete
@@ -81,11 +78,8 @@ depends = ["ui-build", "selfhost-gateway-build", "selfhost-backup"]
 run = '''
 set -euo pipefail
 "$CARGO_TARGET_DIR/release/gateway" config validate
-mise daemons register
-mise daemons start db
 mise daemons restart gateway admin-ui
 curl -fsS --retry 10 --retry-delay 2 --retry-connrefused http://127.0.0.1:8080/readyz
-echo
 curl -fsS -o /dev/null http://127.0.0.1:8080/admin/login
 mise run selfhost-expose
 echo "deployed $(git describe --tags --always)"
@@ -95,15 +89,8 @@ echo "deployed $(git describe --tags --always)"
 description = "Publish the gateway on the tailnet with `tailscale serve` (idempotent; tailnet-only, never funnel)"
 run = '''
 set -euo pipefail
-if ! command -v tailscale >/dev/null; then
-  echo "tailscale not installed; skipping tailnet exposure" >&2
-  exit 0
-fi
 # Serve config persists inside tailscaled, so no daemon is needed. Re-running replaces the same handler.
-if ! timeout 30 tailscale serve --bg --https=443 --yes http://127.0.0.1:8080 </dev/null; then
-  echo "tailscale serve failed. If it says 'serve config denied', run once: sudo tailscale set --operator=\$USER. If it prints a login.tailscale.com link, enable Serve and HTTPS certificates for this node. Then re-run: mise run selfhost-expose" >&2
-  exit 1
-fi
+tailscale serve --bg --https=443 --yes http://127.0.0.1:8080
 tailscale serve status
 '''
 
@@ -118,7 +105,6 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
 fi
 git fetch --tags --prune --force origin
 ref="${usage_ref:-$(git tag --list 'v*' --sort=-v:refname | awk 'NR==1')}"
-[ -n "$ref" ] || { echo "no v* tag found and no ref given" >&2; exit 1; }
 # A branch name must resolve to the freshly fetched remote ref, not a stale local branch.
 if git show-ref --verify --quiet "refs/remotes/origin/$ref"; then
   ref="origin/$ref"
