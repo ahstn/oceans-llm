@@ -1,0 +1,25 @@
+crates/gateway-service/src/model_metadata/listing.rs
+  s_9cb90ef0550904::t_bc9ed4b1b06036 186,245-253,417-430
+crates/gateway-service/src/model_metadata/tests.rs
+  s_9cb90ef0550904::t_b2c161d4b0cdb7 289,292,296,364,369,375-378,415,418,493-536
+docs/adr/2026-09-24-models-list-client-hints.md
+  s_9cb90ef0550904::t_40e46e4f18e478 36-37
+docs/configuration/model-routing-and-api-behavior.md
+  s_9cb90ef0550904::t_080436b84a2829 279,305-306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba9fd69751526aa397d2a626045cb5c5708740ee",
+  "prompts": {},
+  "sessions": {
+    "s_9cb90ef0550904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "accf8405-3895-4f10-b03f-d1ae693d2897",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
