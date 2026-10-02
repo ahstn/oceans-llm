@@ -94,11 +94,14 @@ This builds the UI and the release gateway, starts Postgres, and starts the gate
 
 ```sh
 sudo tailscale set --operator="$USER"
-tailscale serve --bg --https=443 http://127.0.0.1:8080
-tailscale serve status
+mise run selfhost-expose
 ```
 
-Serve config persists across reboots. Do not run `tailscale funnel`. Funnel makes the service public. Limit who can reach `hogwarts:443` with Tailscale ACLs.
+`selfhost-expose` runs `tailscale serve --bg --https=443 http://127.0.0.1:8080` and is safe to repeat. `deploy` runs it as its last step. Serve config lives inside `tailscaled` and persists across reboots, so no daemon supervises it. The first run may print a `login.tailscale.com` link: open it to enable Serve and HTTPS certificates for the node, then run the task again.
+
+Serve is not strictly required. Binding the gateway to the Tailscale IP would also work, but the session cookie then loses its `Secure` flag (the gateway sets it only when it sees `x-forwarded-proto: https`), and the port is exposed on that interface. Serve avoids both.
+
+Do not run `tailscale funnel`. Funnel makes the service public. Limit who can reach `hogwarts:443` with Tailscale ACLs.
 
 Sign in at `https://hogwarts.<tailnet>.ts.net/admin` as `admin@local` with `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`. The gateway forces a password change.
 
@@ -140,6 +143,7 @@ mise run deploy v0.35.0      # a specific tag or commit
 6. Runs `gateway config validate`.
 7. Re-registers daemons, makes sure `db` runs, and restarts `gateway` and `admin-ui`.
 8. Checks `/readyz` and `/admin/login` on the loopback listener.
+9. Publishes the gateway on the tailnet (`selfhost-expose`).
 
 The gateway is down for the restart window. Postgres is not restarted.
 

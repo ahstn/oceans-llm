@@ -87,7 +87,24 @@ mise daemons restart gateway admin-ui
 curl -fsS --retry 10 --retry-delay 2 --retry-connrefused http://127.0.0.1:8080/readyz
 echo
 curl -fsS -o /dev/null http://127.0.0.1:8080/admin/login
+mise run selfhost-expose
 echo "deployed $(git describe --tags --always)"
+'''
+
+[tasks.selfhost-expose]
+description = "Publish the gateway on the tailnet with `tailscale serve` (idempotent; tailnet-only, never funnel)"
+run = '''
+set -euo pipefail
+if ! command -v tailscale >/dev/null; then
+  echo "tailscale not installed; skipping tailnet exposure" >&2
+  exit 0
+fi
+# Serve config persists inside tailscaled, so no daemon is needed. Re-running replaces the same handler.
+if ! timeout 30 tailscale serve --bg --https=443 --yes http://127.0.0.1:8080 </dev/null; then
+  echo "tailscale serve failed or timed out. Enable Serve and HTTPS certificates for this node (the command prints a login.tailscale.com link), then re-run: mise run selfhost-expose" >&2
+  exit 1
+fi
+tailscale serve status
 '''
 
 [tasks.deploy]
