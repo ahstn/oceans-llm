@@ -74,6 +74,7 @@ async fn model_metadata_requires_authentication_and_matches_visible_models() {
                 "created_at": "1970-01-01T00:00:00Z",
                 "owned_by": "oceans-llm",
                 "display_name": "fast",
+                "name": "fast",
                 "context_length": null,
                 "max_input_tokens": null,
                 "max_tokens": null,
@@ -104,6 +105,7 @@ async fn model_metadata_requires_authentication_and_matches_visible_models() {
                         "types": {"adaptive": {"supported": false}, "enabled": {"supported": false}}
                     }
                 },
+                "supported_endpoint_types": ["openai", "openai-response"],
                 "client_hints": {
                     "api_formats": ["openai-chat-completions", "openai-responses", "anthropic-messages"],
                     "preferred_api_format": "openai-chat-completions",

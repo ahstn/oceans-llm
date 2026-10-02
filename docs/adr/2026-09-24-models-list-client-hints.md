@@ -27,3 +27,9 @@ Hints never include a base URL or API key: the client already knows the URL it c
 `owned_by` changed from `gateway` to `oceans-llm`, and `created` is no longer always zero. Neither field has a documented meaning beyond display. Catalog-derived values change when the snapshot refreshes, so contract tests pin only the gateway-owned fields.
 
 Validation: `gateway-client-config` hint tests, a catalog-backed listing test in `gateway-service`, the authenticated handler test, the E2E gateway contract, workspace Clippy, and Rust formatting.
+
+## Proxy endpoint types (2026-10-02)
+
+omp (Oh My Pi) `discovery.type: proxy` reads `id`, `name`, `context_length`, and new-api's `supported_endpoint_types` from each row. It routes a model over Anthropic Messages whenever `anthropic` appears. Before this change, omp called every Oceans model over chat completions, so Claude models never used `/v1/messages`.
+
+Each card now carries `name` (a copy of `display_name`) and `supported_endpoint_types`, ordered preferred first. `anthropic` is listed only when the preferred format is Anthropic Messages. Listing it for every chat-capable model would be accurate but would send GPT and Gemini models through the Messages translation. `openai` and `openai-response` follow route capabilities. `embeddings` is omitted: route capabilities default embeddings to enabled, so the list would claim embeddings for chat models whose upstream cannot serve them.

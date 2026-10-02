@@ -101,6 +101,9 @@ test('gateway exposes the seeded model and forwards chat completions to the stub
       created: expect.any(Number),
       created_at: expect.any(String),
       display_name: expect.any(String),
+      name: expect.any(String),
+      // omp proxy discovery keeps OpenAI-native models on chat completions.
+      supported_endpoint_types: ['openai', 'openai-response'],
       capabilities: expect.objectContaining({
         batch: { supported: false },
         effort: expect.objectContaining({ supported: expect.any(Boolean) }),

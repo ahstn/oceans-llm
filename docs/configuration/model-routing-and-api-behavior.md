@@ -273,11 +273,12 @@ The context value is metadata, not request-time token enforcement. Oceans does n
 | --- | --- |
 | `id`, `object`, `type`, `owned_by` | Gateway model key; `owned_by` is always `oceans-llm` |
 | `created`, `created_at` | Catalog release date of the first route that has one, else the Unix epoch |
-| `display_name` | Catalog display name, else the model key |
+| `display_name`, `name` | Catalog display name, else the model key; `name` is the OpenRouter spelling |
 | `description`, `alias_of` | Gateway model configuration |
 | `context_length`, `max_input_tokens`, `max_tokens` | Conservative limits across enabled routes |
 | `architecture` | Input and output modalities every route with catalog data shares |
 | `capabilities` | Anthropic `ModelCapabilities` shape (see below) |
+| `supported_endpoint_types` | new-api endpoint types, preferred first (see below) |
 | `client_hints` | Harness settings for chat-shaped models (see below) |
 | `has_more`, `first_id`, `last_id` | The list is never paginated, so `has_more` is always `false` |
 
@@ -298,6 +299,8 @@ The context value is metadata, not request-time token enforcement. Oceans does n
 ```
 
 `anthropic-messages` is listed for every chat-capable model because `/v1/messages` is translated onto the chat pipeline. `preferred_api_format` comes from the primary route's provider type: `anthropic_compat` and Vertex `anthropic/*` routes prefer Anthropic Messages, and GitHub Copilot follows its configured `chat_api`. Other provider types fall back to model-name matching. Harness blocks use each harness's own config keys and match the snippets from [Client Harness Configuration](client-harness-configuration.md). They never contain a base URL or API key. Embedding-only and Decisions-only models omit `client_hints`.
+
+`supported_endpoint_types` uses the new-api vocabulary (`anthropic`, `openai`, `openai-response`) so proxy-aware clients can pick a wire per model. Clients such as omp with `discovery.type: proxy` choose Anthropic Messages whenever `anthropic` is listed. The gateway therefore lists `anthropic` only when `preferred_api_format` is `anthropic-messages`, even though `/v1/messages` accepts every chat-capable model. Use `client_hints.api_formats` for the complete list.
 
 Visibility does not guarantee that a route can execute every API family. A model can be visible while all routes are disabled, non-viable, or incompatible with the requested operation.
 

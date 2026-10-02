@@ -427,6 +427,12 @@ async fn models_list_describes_claude_routes_from_catalog_and_provider_type() {
     assert_eq!(listed["last_id"], json!("house-default"));
     let card = &listed["data"][0];
     assert_eq!(card["display_name"], json!("Claude Opus 4.7"));
+    assert_eq!(card["name"], json!("Claude Opus 4.7"));
+    // omp proxy discovery routes this model over `/v1/messages` because `anthropic` is listed.
+    assert_eq!(
+        card["supported_endpoint_types"],
+        json!(["anthropic", "openai"])
+    );
     assert_eq!(card["created_at"], json!("2026-04-16T00:00:00Z"));
     assert_eq!(card["owned_by"], json!("oceans-llm"));
     assert_eq!(card["max_input_tokens"], json!(1_000_000));

@@ -4,7 +4,8 @@
 use std::collections::BTreeSet;
 
 use gateway_client_config::{
-    ClientConfigInput, ClientHints, ClientModelCapabilities, ThinkingPolicy, client_hints,
+    ApiFormat, ClientConfigInput, ClientHints, ClientModelCapabilities, ThinkingPolicy,
+    client_hints,
 };
 use gateway_core::{
     GatewayError, GatewayModel, ModelRepository, ProviderCapabilities, ProviderRepository,
@@ -47,6 +48,8 @@ pub struct ModelCard {
     pub created_at: String,
     pub owned_by: &'static str,
     pub display_name: String,
+    /// OpenRouter and new-api spelling of `display_name`, read by omp proxy discovery.
+    pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// The model key this alias resolves to.
@@ -59,6 +62,10 @@ pub struct ModelCard {
     pub architecture: ModelArchitecture,
     /// Anthropic `ModelCapabilities` shape; features the gateway cannot serve report `false`.
     pub capabilities: ModelCapabilities,
+    /// new-api endpoint types for the inference APIs, preferred first. omp `discovery.type: proxy` picks the wire
+    /// from this list and lets `anthropic` win, so `anthropic` appears only for models that
+    /// prefer Anthropic Messages. `client_hints.api_formats` lists every accepted format.
+    pub supported_endpoint_types: Vec<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_hints: Option<ClientHints>,
 }
@@ -294,6 +301,7 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
             .format(&Rfc3339)
             .expect("UTC midnight formats as RFC 3339"),
         owned_by: MODEL_OWNER,
+        name: display_name.clone(),
         display_name,
         description: model.description.clone(),
         alias_of: model.alias_target_model_key.clone(),
@@ -338,8 +346,26 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
                 },
             },
         },
+        supported_endpoint_types: supported_endpoint_types(
+            transport,
+            hints.as_ref().map(|hints| hints.preferred_api_format),
+        ),
         client_hints: hints,
     }
+}
+
+fn supported_endpoint_types(
+    transport: ProviderCapabilities,
+    preferred: Option<ApiFormat>,
+) -> Vec<&'static str> {
+    [
+        (preferred == Some(ApiFormat::AnthropicMessages), "anthropic"),
+        (transport.chat_completions, "openai"),
+        (transport.responses, "openai-response"),
+    ]
+    .into_iter()
+    .filter_map(|(supported, endpoint)| supported.then_some(endpoint))
+    .collect()
 }
 
 /// Effort levels a client may request, mirroring the Pi `thinkingLevelMap` translation and
@@ -401,7 +427,10 @@ fn parse_release_date(value: &str) -> Option<OffsetDateTime> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ThinkingPolicy, effort_levels, parse_release_date};
+    use super::{
+        ApiFormat, ProviderCapabilities, ThinkingPolicy, effort_levels, parse_release_date,
+        supported_endpoint_types,
+    };
     use gateway_core::ReasoningEffort::{High, Low, Max, Medium, XHigh};
 
     #[test]
@@ -440,5 +469,31 @@ mod tests {
             [Low, High]
         );
         assert_eq!(effort_levels(true, None, None), [Low, Medium, High]);
+    }
+
+    #[test]
+    fn endpoint_types_put_anthropic_first_only_for_anthropic_preferred_models() {
+        let chat = ProviderCapabilities {
+            chat_completions: true,
+            responses: true,
+            ..ProviderCapabilities::none()
+        };
+        assert_eq!(
+            supported_endpoint_types(chat, Some(ApiFormat::AnthropicMessages)),
+            ["anthropic", "openai", "openai-response"]
+        );
+        // `/v1/messages` still serves this model, but omp must keep it on chat completions.
+        assert_eq!(
+            supported_endpoint_types(chat, Some(ApiFormat::OpenAiChatCompletions)),
+            ["openai", "openai-response"]
+        );
+        let responses_only = ProviderCapabilities {
+            responses: true,
+            ..ProviderCapabilities::none()
+        };
+        assert_eq!(
+            supported_endpoint_types(responses_only, Some(ApiFormat::OpenAiResponses)),
+            ["openai-response"]
+        );
     }
 }
