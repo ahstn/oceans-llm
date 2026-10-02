@@ -22,8 +22,13 @@ run = "mise -C ../.. daemons logs db"
 description = "Delete the local Postgres data directory and start a fresh database"
 run = """
 set -eu
+# The stop command also fails when the supervisor is down, so judge by the reported status.
 mise -C ../.. daemons stop db >/dev/null 2>&1 || true
-data_dir="$(mise -C ../.. daemons ls --json | node -e 'const d = JSON.parse(require("fs").readFileSync(0, "utf8")).find((x) => x.name === "db"); process.stdout.write(d?.data_dir ?? "")')"
+db_field() {
+  mise -C ../.. daemons ls --json | node -e 'const d = JSON.parse(require("fs").readFileSync(0, "utf8")).find((x) => x.name === "db"); process.stdout.write(String(d?.[process.argv[1]] ?? ""))' "$1"
+}
+[ "$(db_field status)" = "stopped" ] || { echo "db daemon did not stop; refusing to delete its data" >&2; exit 1; }
+data_dir="$(db_field data_dir)"
 [ -n "$data_dir" ] || { echo "db daemon has no data_dir" >&2; exit 1; }
 rm -rf "$data_dir"
 mise -C ../.. daemons start db

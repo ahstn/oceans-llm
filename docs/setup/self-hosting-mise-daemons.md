@@ -82,7 +82,15 @@ Other ways to supply secrets, if a plain file is not enough:
 
 `deploy/selfhost/gateway.yaml` holds one OpenRouter provider and three models as a starting point: `gpt-sol-latest`, `claude-sonnet-latest`, and `deepseek-flash-latest`. They map to OpenRouter's `~provider/model-latest` aliases. Keep the quotes around `~...` in YAML. Edit providers, models, and teams for your use. Add any new `env.*` secret as `{ required = true }` in `mise.selfhost.toml`, and its value in `mise.selfhost.local.toml`. Add the name to `redactions`.
 
-### 5. First deploy
+### 5. Allow your user to manage Tailscale
+
+```sh
+sudo tailscale set --operator="$USER"
+```
+
+`deploy` publishes the gateway with `tailscale serve`. A non-root user needs this operator setting first, or the last step of the first deploy fails.
+
+### 6. First deploy
 
 ```sh
 mise run deploy
@@ -90,10 +98,11 @@ mise run deploy
 
 This builds the UI and the release gateway, starts Postgres, and starts the gateway and UI. Migrations, config seeding, and bootstrap admin run on gateway start. The first Rust build is slow.
 
-### 6. Expose on the tailnet
+### 7. Expose on the tailnet
+
+`deploy` already runs `selfhost-expose`. To repeat it alone:
 
 ```sh
-sudo tailscale set --operator="$USER"
 mise run selfhost-expose
 ```
 
@@ -105,7 +114,7 @@ Do not run `tailscale funnel`. Funnel makes the service public. Limit who can re
 
 Sign in at `https://hogwarts.<tailnet>.ts.net/admin` as `admin@local` with `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`. The gateway forces a password change.
 
-### 7. Start at boot
+### 8. Start at boot
 
 ```sh
 pitchfork boot enable
@@ -139,9 +148,9 @@ mise run deploy v0.35.0      # a specific tag or commit
 2. Fetches tags and checks out the ref in detached mode.
 3. Starts a new `mise` process, so the new revision's config and tasks apply.
 4. Builds the UI and the release gateway.
-5. Dumps the database to `.local/backups/` (mode 600, kept 30 days). It skips this when Postgres is not running.
+5. Dumps the database to `.local/backups/` (mode 600, kept 30 days). It starts `db` first if Postgres is stopped, so the dump always runs.
 6. Runs `gateway config validate`.
-7. Re-registers daemons, makes sure `db` runs, and restarts `gateway` and `admin-ui`.
+7. Makes sure `db` runs, and restarts `gateway` and `admin-ui`.
 8. Checks `/readyz` and `/admin/login` on the loopback listener.
 9. Publishes the gateway on the tailnet (`selfhost-expose`).
 

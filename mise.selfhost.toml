@@ -103,8 +103,11 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   echo "working tree has tracked changes; refusing to deploy" >&2
   exit 1
 fi
-git fetch --tags --prune --force origin
-ref="${usage_ref:-$(git tag --list 'v*' --sort=-v:refname | awk 'NR==1')}"
+git fetch --tags --force origin
+# Pick the default from tags that exist on origin now; local tags deleted upstream stay behind.
+latest_tag="$(git ls-remote --tags --refs origin 'v*' | awk '{sub("refs/tags/","",$2); print $2}' | sort -V | awk 'END{print}')"
+ref="${usage_ref:-$latest_tag}"
+[ -n "$ref" ] || { echo "no v* tag on origin and no ref given" >&2; exit 1; }
 # A branch name must resolve to the freshly fetched remote ref, not a stale local branch.
 if git show-ref --verify --quiet "refs/remotes/origin/$ref"; then
   ref="origin/$ref"
