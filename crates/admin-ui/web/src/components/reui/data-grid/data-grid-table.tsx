@@ -1079,7 +1079,7 @@ function DataGridTableHeadRowCellResize<TData extends object>({
         onMouseDown: handleMouseDown,
         onTouchStart: handleTouchStart,
         className: cn(
-          'user-select-none absolute top-0 z-10 flex h-full cursor-col-resize touch-none',
+          'absolute top-0 z-10 flex h-full cursor-col-resize touch-none select-none',
           isPinned === 'end'
             ? cn(
                 // An end-pinned column grows from its START edge (its end is

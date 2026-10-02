@@ -1,5 +1,11 @@
 # Admin UI Conventions
 
+## Styling Tokens
+
+- `@shadcn/lint` (configured in `.oxlintrc.json`) rejects raw palette colors, arbitrary appearance values, and dynamically built classes on components. Run `bun run lint` and fix findings instead of disabling them.
+- Use theme tokens from `src/styles/globals.css`: `text-foreground`, `text-subtle-foreground`, `text-muted-foreground`, `bg-surface-muted`, `border-border`, `tracking-label`, `text-2xs`. Do not write `text-[var(--color-*)]`.
+- For runtime values, set a CSS variable and use the shorthand, e.g. `bg-(--bar-tone)/18`.
+
 ## Cards and Page Structure
 
 - Match existing admin page card rhythm: consistent `Card`, `CardHeader`, `CardTitle`, `CardDescription`, and `CardContent` usage.

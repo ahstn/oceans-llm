@@ -121,6 +121,8 @@ services:
     build:
       context: .
       dockerfile: crates/admin-ui/web/Dockerfile
+      args:
+        BUN_VERSION: ${BUN_VERSION:?set BUN_VERSION from mise.toml, e.g. BUN_VERSION="$(mise tool bun --requested)"}
     environment:
       PORT: "3000"
       ADMIN_GATEWAY_ORIGIN: http://gateway:8080
