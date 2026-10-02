@@ -102,6 +102,10 @@ fi
 git fetch --tags --prune --force origin
 ref="${usage_ref:-$(git tag --list 'v*' --sort=-v:refname | awk 'NR==1')}"
 [ -n "$ref" ] || { echo "no v* tag found and no ref given" >&2; exit 1; }
+# A branch name must resolve to the freshly fetched remote ref, not a stale local branch.
+if git show-ref --verify --quiet "refs/remotes/origin/$ref"; then
+  ref="origin/$ref"
+fi
 git checkout --detach "$ref"
 # New process so the checked-out revision's mise config and tasks are loaded.
 exec mise run selfhost-apply
