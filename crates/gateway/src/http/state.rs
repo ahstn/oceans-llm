@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
-use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
+use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults, SkillObjectStore};
 use gateway_guardrails::{GuardrailConfig, GuardrailEngine};
-use gateway_service::{GatewayService, McpOauthRuntime, WeightedRoutePlanner};
+use gateway_service::{GatewayService, McpOauthRuntime, SkillService, WeightedRoutePlanner};
 use gateway_store::AnyStore;
 
 use crate::http::{
@@ -15,10 +15,12 @@ use crate::{
 };
 
 pub type AppGatewayService = GatewayService<AnyStore, WeightedRoutePlanner>;
+pub type AppSkillService = SkillService<AnyStore, dyn SkillObjectStore>;
 
 #[derive(Clone)]
 pub struct AppState {
     pub service: Arc<AppGatewayService>,
+    pub skills: Option<Arc<AppSkillService>>,
     pub store: Arc<AnyStore>,
     pub providers: ProviderRegistry,
     pub copilot_user_provider_keys: Arc<Vec<String>>,

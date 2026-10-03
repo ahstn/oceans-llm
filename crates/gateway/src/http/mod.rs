@@ -24,6 +24,7 @@ pub mod request_tags;
 mod request_tracing;
 pub mod response_cache;
 pub mod review_agent;
+pub mod skills;
 pub mod spend;
 mod spend_budget_listing;
 pub mod state;
@@ -372,6 +373,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/v1/models", get(v1_models))
         .route("/v1/model-metadata", get(v1_model_metadata))
         .merge(inference_router)
+        .merge(skills::router())
         .route(
             "/mcp",
             post(mcp_aggregate_streamable_http)

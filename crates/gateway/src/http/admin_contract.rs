@@ -47,6 +47,12 @@ pub struct OpenAiErrorEnvelopeView {
     pub error: OpenAiErrorBodyView,
 }
 
+/// Raw ZIP bytes used by skill upload and download operations.
+#[derive(ToSchema)]
+#[schema(value_type = String, format = Binary)]
+#[allow(dead_code)]
+pub struct SkillArchiveBody(Vec<u8>);
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AdminIdentityPayload {
     pub users: Vec<AdminIdentityUserView>,
@@ -1929,6 +1935,19 @@ pub struct AgentSessionDetailView {
         crate::http::batches::get_batch,
         crate::http::batches::get_batch_results,
         crate::http::batches::cancel_batch,
+        crate::http::skills::get_skill_namespace,
+        crate::http::skills::get_skill_limits,
+        crate::http::skills::claim_skill_namespace,
+        crate::http::skills::list_skills,
+        crate::http::skills::create_skill,
+        crate::http::skills::get_skill_by_name,
+        crate::http::skills::get_skill,
+        crate::http::skills::list_skill_versions,
+        crate::http::skills::append_skill_version,
+        crate::http::skills::get_skill_version,
+        crate::http::skills::download_skill_archive,
+        crate::http::skills::get_skill_file,
+        crate::http::skills::set_skill_default_version,
         crate::http::observability::list_mcp_tool_invocations,
         crate::http::observability::get_mcp_tool_invocation_detail,
         crate::http::guardrails::evaluate_guardrail,
@@ -2087,6 +2106,16 @@ mod tests {
         assert!(paths.contains_key("/api/v1/mcp/oauth/{provider_key}/callback"));
         assert!(paths.contains_key("/api/v1/auth/session"));
         assert!(paths.contains_key("/api/v1/auth/logout"));
+        assert!(paths.contains_key("/api/v1/skills"));
+        assert!(paths.contains_key("/api/v1/skills/namespace"));
+        assert!(paths.contains_key("/api/v1/skills/limits"));
+        assert!(paths.contains_key("/api/v1/skills/by-name/{namespace}/{name}"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}/versions"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}/versions/{version}"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}/versions/{version}/archive"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}/versions/{version}/files"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}/default-version"));
 
         assert!(
             components
@@ -2107,6 +2136,20 @@ mod tests {
         );
         assert!(components.schemas.contains_key("AdminModelAllowlistView"));
         assert!(components.schemas.contains_key("AdminModelView"));
+    }
+
+    #[test]
+    fn skill_archives_use_a_binary_schema() {
+        let document = serde_json::to_value(admin_openapi()).expect("OpenAPI JSON");
+        let archive = &document["components"]["schemas"]["SkillArchiveBody"];
+        assert_eq!(archive["type"], "string");
+        assert_eq!(archive["format"], "binary");
+
+        let upload = &document["paths"]["/api/v1/skills"]["post"]["requestBody"];
+        assert_eq!(
+            upload["content"]["application/zip"]["schema"]["$ref"],
+            "#/components/schemas/SkillArchiveBody"
+        );
     }
 
     #[test]

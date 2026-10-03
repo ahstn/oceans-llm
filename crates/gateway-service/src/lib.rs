@@ -30,6 +30,7 @@ pub mod review_agent;
 pub mod route_planner;
 pub mod secret_storage;
 pub mod service;
+pub mod skills;
 
 pub use admin_api_keys::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
@@ -129,3 +130,5 @@ pub use secret_storage::{
     encrypt_gateway_api_key_secret,
 };
 pub use service::{BatchUsageInput, GatewayService, RecordedChatUsage};
+
+pub use skills::SkillService;

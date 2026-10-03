@@ -21,6 +21,7 @@ const primarySidebar = [
       },
       { text: "Kubernetes and Helm", link: "/setup/kubernetes-and-helm" },
       { text: "Self-hosting (mise daemons)", link: "/setup/self-hosting-mise-daemons" },
+      { text: "Agent Skills", link: "/setup/skills" },
     ],
   },
   {

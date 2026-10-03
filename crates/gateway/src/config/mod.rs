@@ -28,6 +28,7 @@ mod routes;
 mod runtime;
 mod seeding;
 mod server;
+mod skills;
 
 pub use agent_analysis::{
     AgentAnalysisAccessDecision, AgentAnalysisCacheProfileConfig, AgentAnalysisCacheTtlConfig,
@@ -62,6 +63,7 @@ pub use routes::{
     RouteCapabilitiesConfig, RouteCompatibilityConfig, RoutePricingOverrideConfig,
 };
 pub use server::ServerConfig;
+pub use skills::{SkillStorageConfig, SkillsConfig};
 
 pub(crate) use references::resolve_secret_reference;
 
@@ -94,6 +96,8 @@ pub struct GatewayConfig {
     pub auth: AuthConfig,
     #[serde(default)]
     pub mcp: McpConfig,
+    #[serde(default)]
+    pub skills: SkillsConfig,
     #[serde(default)]
     pub budget_alerts: BudgetAlertConfig,
     #[serde(default)]
@@ -139,6 +143,7 @@ impl GatewayConfig {
     fn validate(&self) -> anyhow::Result<()> {
         self.server.validate()?;
         self.database.connection_options()?;
+        self.skills.validate()?;
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
         self.agent_analysis.validate()?;

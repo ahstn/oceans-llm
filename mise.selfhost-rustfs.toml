@@ -1,0 +1,36 @@
+# Optional native RustFS dependency for mise.selfhost.toml.
+# Select `selfhost,rustfs,selfhost-rustfs`; see the self-hosting runbook.
+# A daemon override replaces its complete definition.
+
+[env]
+OCEANS_RUSTFS_DATA_DIR = "$HOME/.local/share/oceans-llm/rustfs/data"
+
+[daemons.rustfs]
+run = '''
+set -eu
+: "${RUSTFS_ACCESS_KEY:?Run mise run rustfs:setup first}"
+: "${RUSTFS_SECRET_KEY:?Run mise run rustfs:setup first}"
+mkdir -p "$OCEANS_RUSTFS_DATA_DIR"
+export RUSTFS_CONSOLE_ENABLE=false
+exec rustfs server --address "127.0.0.1:$RUSTFS_PORT" --region "$OCEANS_RUSTFS_REGION" "$OCEANS_RUSTFS_DATA_DIR"
+'''
+port = 9000
+ready_http = { url = "http://127.0.0.1:9000/health/ready", timeout = "150s" }
+boot_start = true
+retry = 3
+proxy = false
+
+[daemons.rustfs-bucket]
+run = "exec bash scripts/rustfs-bucket.sh"
+depends = ["rustfs"]
+oneshot = true
+proxy = false
+
+[daemons.gateway]
+run = 'exec "$CARGO_TARGET_DIR/release/gateway" serve'
+port = 8080
+ready_http = "http://127.0.0.1:8080/readyz"
+depends = ["db", "rustfs-bucket"]
+boot_start = true
+retry = 3
+proxy = false

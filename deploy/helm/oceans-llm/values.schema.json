@@ -104,6 +104,13 @@
         }
       }
     },
+    "rustfs": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
     "secrets": {
       "type": "object",
       "additionalProperties": true,

@@ -27,6 +27,8 @@ gateway:
     database:
       kind: postgres
       url: env.POSTGRES_URL
+    skills:
+      enabled: false
     auth:
       bootstrap_admin:
         enabled: false
@@ -130,6 +132,17 @@ secrets:
   inline: {}
   existingSecret:
     name: ""
+
+# Optional upstream dependency. External S3 needs no RustFS workloads or PVCs.
+# Set storageclass.name to an existing class backed by the cluster's CSI driver.
+rustfs:
+  enabled: false
+  ingress:
+    enabled: false
+  gatewayApi:
+    enabled: false
+  secret:
+    allowInsecureDefaults: false
 
 externalSecrets:
   enabled: false
