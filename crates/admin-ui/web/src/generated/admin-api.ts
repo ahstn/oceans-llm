@@ -1396,6 +1396,166 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_skills"];
+        put?: never;
+        post: operations["create_skill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/by-name/{namespace}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill_by_name"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill_limits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/namespace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill_namespace"];
+        put?: never;
+        post: operations["claim_skill_namespace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}/default-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_skill_default_version"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_skill_versions"];
+        put?: never;
+        post: operations["append_skill_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill_version"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}/versions/{version}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["download_skill_archive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}/versions/{version}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2477,9 +2637,29 @@ export interface components {
             id: string;
             version: string;
         };
+        BundleLimits: {
+            /**
+             * Format: int64
+             * @default 10485760
+             */
+            max_archive_bytes: number;
+            /**
+             * Format: int64
+             * @default 26214400
+             */
+            max_expanded_bytes: number;
+            /**
+             * Format: int32
+             * @default 1000
+             */
+            max_files: number;
+        };
         ChangePasswordRequest: {
             current_password: string;
             new_password: string;
+        };
+        ClaimNamespaceRequest: {
+            handle: string;
         };
         CompleteInvitationRequest: {
             password: string;
@@ -3944,6 +4124,88 @@ export interface components {
         };
         RevokeApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
+        };
+        SetDefaultVersionRequest: {
+            /** Format: int32 */
+            version: number;
+        };
+        /**
+         * Format: binary
+         * @description Raw ZIP bytes used by skill upload and download operations.
+         */
+        SkillArchiveBody: string;
+        SkillDetail: {
+            skill: components["schemas"]["SkillSummary"];
+            versions: components["schemas"]["SkillVersionSummary"][];
+        };
+        SkillFile: {
+            /** @description Slash-separated path relative to the skill root. */
+            path: string;
+            /** Format: int64 */
+            size: number;
+        };
+        SkillFileContent: {
+            content: string;
+            path: string;
+        };
+        /** @description Agent Skills frontmatter. Unknown fields are retained for client extensions. */
+        SkillManifest: {
+            "allowed-tools"?: string | null;
+            compatibility?: string | null;
+            description: string;
+            license?: string | null;
+            metadata?: {
+                [key: string]: string;
+            };
+            name: string;
+        } & {
+            [key: string]: unknown;
+        };
+        SkillNamespace: {
+            handle: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        SkillSummary: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int32 */
+            default_version: number;
+            description: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: int32 */
+            latest_version: number;
+            name: string;
+            namespace: string;
+            /** Format: uuid */
+            owner_user_id: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        SkillUploadResponse: components["schemas"]["SkillDetail"] & {
+            /** Format: int32 */
+            uploaded_version: number;
+        };
+        SkillVersionDetail: {
+            files: components["schemas"]["SkillFile"][];
+            /** @description Complete UTF-8 SKILL.md, including frontmatter, for preview and download. */
+            instructions: string;
+            manifest: components["schemas"]["SkillManifest"];
+            version: components["schemas"]["SkillVersionSummary"];
+        };
+        SkillVersionSummary: {
+            /** Format: int64 */
+            archive_bytes: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            extracted_bytes: number;
+            /** Format: int32 */
+            file_count: number;
+            sha256: string;
+            /** Format: int32 */
+            version: number;
         };
         SpendBudgetServiceAccountView: {
             alert_email_ready: boolean;
@@ -6848,6 +7110,295 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_ActionRunResponse"];
+                };
+            };
+        };
+    };
+    list_skills: {
+        parameters: {
+            query?: {
+                namespace?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSummary"][];
+                };
+            };
+        };
+    };
+    create_skill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/zip": components["schemas"]["SkillArchiveBody"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillUploadResponse"];
+                };
+            };
+        };
+    };
+    get_skill_by_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                namespace: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+        };
+    };
+    get_skill_limits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BundleLimits"];
+                };
+            };
+        };
+    };
+    get_skill_namespace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": null | components["schemas"]["SkillNamespace"];
+                };
+            };
+        };
+    };
+    claim_skill_namespace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimNamespaceRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillNamespace"];
+                };
+            };
+        };
+    };
+    get_skill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+        };
+    };
+    set_skill_default_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDefaultVersionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+        };
+    };
+    list_skill_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillVersionSummary"][];
+                };
+            };
+        };
+    };
+    append_skill_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/zip": components["schemas"]["SkillArchiveBody"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillUploadResponse"];
+                };
+            };
+        };
+    };
+    get_skill_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillVersionDetail"];
+                };
+            };
+        };
+    };
+    download_skill_archive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": components["schemas"]["SkillArchiveBody"];
+                };
+            };
+        };
+    };
+    get_skill_file: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillFileContent"];
                 };
             };
         };

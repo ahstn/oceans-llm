@@ -17,6 +17,8 @@ export const PROFILE_PATH = '/profile'
 function isPersonalPath(pathname: string) {
   return (
     PERSONAL_ACCOUNT_PATHS.has(pathname) ||
+    pathname === '/skills' ||
+    pathname.startsWith('/skills/') ||
     pathname === PROFILE_PATH ||
     pathname.startsWith(`${PROFILE_PATH}/`)
   )

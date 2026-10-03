@@ -17,12 +17,14 @@ gateway-guardrails.workspace = true
 gateway-mcp.workspace = true
 gateway-providers.workspace = true
 gateway-service.workspace = true
+gateway-skills = { workspace = true, features = ["openapi"] }
 gateway-store.workspace = true
 chrono.workspace = true
 clap.workspace = true
 cron.workspace = true
 http.workspace = true
 http-body.workspace = true
+http-body-util.workspace = true
 lettre.workspace = true
 openidconnect.workspace = true
 opentelemetry.workspace = true

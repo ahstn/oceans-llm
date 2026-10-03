@@ -54,6 +54,7 @@ export const adminNavSections: AdminNavSection[] = [
       },
       { page: 'models', requiredPage: 'models', label: 'Models', to: '/models', icon: HomeIcon },
       connectionsNavItem,
+      { label: 'Skills', to: '/skills', icon: TaskDaily01Icon },
       { page: 'mcp', requiredPage: 'mcp', label: 'MCP', to: '/mcp', icon: McpServerIcon },
       {
         page: 'review_agent',

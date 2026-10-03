@@ -9,7 +9,9 @@ members = [
   "crates/gateway-mcp",
   "crates/gateway-providers",
   "crates/gateway-service",
+  "crates/gateway-skills",
   "crates/gateway-store",
+  "crates/oceans-cli",
 ]
 resolver = "2"
 
@@ -22,6 +24,7 @@ gateway-client-config = { path = "crates/gateway-client-config" }
 gateway-mcp = { path = "crates/gateway-mcp" }
 gateway-providers = { path = "crates/gateway-providers" }
 gateway-service = { path = "crates/gateway-service" }
+gateway-skills = { path = "crates/gateway-skills" }
 gateway-store = { path = "crates/gateway-store" }
 anyhow = "1"
 aes-gcm = "0.10"
@@ -30,10 +33,12 @@ async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
 aws-config = "1.8"
 aws-credential-types = "1.2"
+aws-sdk-s3 = { version = "1.149", default-features = false, features = ["rt-tokio", "rustls", "default-https-client"] }
 aws-sigv4 = { version = "1.4", features = ["sign-http", "http1"] }
 aws-smithy-runtime-api = "1.12"
 base64 = "0.23"
 bytes = "1"
+caseless = "0.2.2"
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
 cron = "0.15"
@@ -41,6 +46,7 @@ futures-core = "0.3"
 futures-util = "0.3"
 http = "1"
 http-body = "1"
+http-body-util = "0.1"
 itertools = "0.14"
 lettre = { version = "0.11", default-features = false, features = [
   "builder",
@@ -104,7 +110,9 @@ tracing-subscriber = { version = "0.3", features = [
 ] }
 utoipa = { version = "5", features = ["axum_extras", "time", "uuid"] }
 url = "2"
+unicode-normalization = "0.1"
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # No debuginfo in dev builds. With Mach-O split debug maps, file:line
 # backtraces require retaining every .rcgu.o — ~1 GB per linked test binary

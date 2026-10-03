@@ -44,12 +44,29 @@ run = "mise install"
 description = "Update Helm chart dependencies"
 run = "helm dependency update deploy/helm/oceans-llm"
 
+[tasks.helm-dependency-build]
+description = "Build Helm dependencies from the checked-in lock"
+run = """
+set -eu
+
+helm_temp_dir="$(mktemp -d)"
+trap 'rm -rf "$helm_temp_dir"' EXIT
+
+# Use a private repository list so this task does not change local Helm settings.
+helm repo add oceans-rustfs https://charts.rustfs.com \
+  --repository-config "$helm_temp_dir/repositories.yaml" --repository-cache "$helm_temp_dir"
+helm dependency build deploy/helm/oceans-llm --skip-refresh \
+  --repository-config "$helm_temp_dir/repositories.yaml" --repository-cache "$helm_temp_dir"
+"""
+
 [tasks.helm-lint]
 description = "Lint the Oceans LLM Helm chart"
+depends = ["helm-dependency-build"]
 run = "helm lint deploy/helm/oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres"
 
 [tasks.helm-template]
 description = "Render the Oceans LLM Helm chart examples"
+depends = ["helm-dependency-build"]
 run = """
 set -eu
 
@@ -61,9 +78,14 @@ for values_file in "$chart_dir"/examples/*.yaml; do
 done
 """
 
+[tasks.helm-skills-check]
+description = "Verify skill storage and optional RustFS Helm configuration"
+depends = ["helm-dependency-build"]
+run = "bash scripts/check-skills-helm.sh"
+
 [tasks.helm-check]
 description = "Lint and render the Helm chart"
-depends = ["helm-lint", "helm-template"]
+depends = ["helm-lint", "helm-template", "helm-skills-check"]
 
 [tasks.fmt]
 description = "Format Rust sources"

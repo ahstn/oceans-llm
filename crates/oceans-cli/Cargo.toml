@@ -1,0 +1,26 @@
+[package]
+name = "oceans-cli"
+version = "0.35.0"
+edition = "2024"
+
+[[bin]]
+name = "oceans"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+gateway-skills.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile = "3"
+tokio.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+futures-util.workspace = true
+time.workspace = true

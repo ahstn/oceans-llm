@@ -26,6 +26,7 @@ Unknown top-level, model, user, and user-membership fields are rejected. Correct
 - `auth`
 - `permissions`
 - `mcp`
+- `skills`
 - `budgets`
 - `budget_alerts`
 - `request_logging`
@@ -36,6 +37,8 @@ Unknown top-level, model, user, and user-membership fields are rejected. Correct
 - `users`
 
 ## Value Sources
+
+For `skills` storage fields, upload limits, and AWS S3 or RustFS examples, see [Agent Skills](../setup/skills.md#enable-storage). Skills are disabled by default.
 
 The config supports literal values and env references.
 

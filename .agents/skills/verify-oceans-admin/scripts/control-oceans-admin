@@ -15,6 +15,11 @@ if [[ -z "$run_id" || "$run_id" == "." || "$run_id" == ".." || ! "$run_id" =~ ^[
 fi
 
 run_dir="$state_base/$run_id"
+# Follow the run's recorded listeners even when a later shell only sets its run ID.
+if [[ "${1:-}" != "launch" ]]; then
+  [[ ! -f "$run_dir/gateway-port" ]] || gateway_port="$(<"$run_dir/gateway-port")"
+  [[ ! -f "$run_dir/ui-port" ]] || ui_port="$(<"$run_dir/ui-port")"
+fi
 evidence_dir="$run_dir/evidence"
 stack_pid_file="$run_dir/stack.pid"
 gateway_pid_file="$run_dir/gateway.pid"
@@ -89,8 +94,119 @@ redact_log() {
   mv "$redacted_log" "$log_file"
 }
 
+rustfs_identity() {
+  mise -E rustfs daemons status rustfs --json | mise exec -- bun -e '
+    const state = await Bun.stdin.json();
+    console.log([state.status, state.pid ?? "-", state.port?.[0] ?? "-"].join(" "));
+  '
+}
+
+prepare_skills() {
+  local daemon_status daemon_pid daemon_port setup_status=0
+  read -r daemon_status daemon_pid daemon_port < <(rustfs_identity)
+  if [[ "$daemon_pid" == "-" && "$daemon_status" != "stopped" ]]; then
+    echo "RustFS is changing state; wait for it to stop or become ready before launch." >&2
+    return 1
+  fi
+  [[ "$daemon_pid" != "-" ]] || touch "$run_dir/rustfs-owned"
+  mise -E rustfs run rustfs:setup || setup_status=$?
+  read -r daemon_status daemon_pid daemon_port < <(rustfs_identity)
+  if [[ "$daemon_pid" != "-" && -f "$run_dir/rustfs-owned" ]]; then
+    printf '%s\n' "$daemon_pid" >"$run_dir/rustfs.pid"
+    process_start_time "$daemon_pid" >"$run_dir/rustfs.start-time"
+  fi
+  [[ "$setup_status" == 0 && "$daemon_pid" != "-" ]] || return 1
+  printf '%s\n' "$daemon_port" >"$run_dir/rustfs-port"
+  printf '%s\n' "$daemon_pid" >"$run_dir/rustfs-listener.pid"
+  printf 'skills-verify/%s/%s/\n' "$checkout_key" "$run_id" >"$run_dir/skills-prefix"
+
+  OCEANS_VERIFY_SKILLS_CONFIG_SOURCE="${GATEWAY_CONFIG:-$repo_root/gateway.yaml}" \
+    OCEANS_VERIFY_SKILLS_RUN_DIR="$run_dir" \
+    mise -E rustfs exec --fresh-env -- bun -e '
+      const fs = await import("node:fs/promises");
+      const env = process.env;
+      const dir = env.OCEANS_VERIFY_SKILLS_RUN_DIR;
+      const config = Bun.YAML.parse(await Bun.file(env.OCEANS_VERIFY_SKILLS_CONFIG_SOURCE).text());
+      const endpoint = env.OCEANS_SKILLS_S3_ENDPOINT;
+      const bucket = env.OCEANS_RUSTFS_BUCKET;
+      if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(endpoint) || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) {
+        throw new Error("Skills verification requires the local RustFS endpoint and a valid bucket name");
+      }
+      const serviceAccount = config.service_accounts?.find(account => account.id === "local-ci-runner");
+      const serviceKey = serviceAccount?.keys?.find(key => key.id === "primary");
+      if (!serviceKey) throw new Error("Skills verification requires the seeded local-ci-runner primary key");
+      const token = `gwk_verify${crypto.randomUUID().replaceAll("-", "")}.${crypto.randomUUID().replaceAll("-", "")}`;
+      serviceKey.value = `literal.${token}`;
+      serviceKey.auto_create = false;
+      config.database = { path: `${dir}/skills.db` };
+      config.skills = {
+        enabled: true,
+        storage: {
+          bucket, region: env.OCEANS_RUSTFS_REGION, endpoint,
+          prefix: (await Bun.file(`${dir}/skills-prefix`).text()).trim(),
+          force_path_style: true, allow_http: true,
+          access_key_id: "env.RUSTFS_ACCESS_KEY", secret_access_key: "env.RUSTFS_SECRET_KEY"
+        }
+      };
+      await fs.writeFile(`${dir}/gateway-skills.yaml`, Bun.YAML.stringify(config), { mode: 0o600 });
+      await fs.writeFile(`${dir}/skills-service-account-key`, token, { mode: 0o600 });
+      await fs.writeFile(`${dir}/skills-endpoint`, endpoint);
+      await fs.writeFile(`${dir}/skills-bucket`, bucket);
+      await fs.writeFile(`${dir}/skills-region`, env.OCEANS_RUSTFS_REGION);
+    '
+  export GATEWAY_CONFIG="$run_dir/gateway-skills.yaml"
+}
+
+cleanup_skills() {
+  local cleanup_status=0 daemon_status daemon_pid daemon_port stored_pid stored_start
+  [[ -f "$run_dir/skills-prefix" || -f "$run_dir/rustfs-owned" ]] || return 0
+  activate_mise
+  if [[ -f "$run_dir/skills-prefix" && -f "$run_dir/skills-endpoint" ]]; then
+    local prefix bucket endpoint region
+    prefix="$(<"$run_dir/skills-prefix")"
+    bucket="$(<"$run_dir/skills-bucket")"
+    endpoint="$(<"$run_dir/skills-endpoint")"
+    region="$(<"$run_dir/skills-region")"
+    if [[ "$prefix" != "skills-verify/$checkout_key/$run_id/" || ! "$endpoint" =~ ^http://127\.0\.0\.1:[0-9]+$ ]]; then
+      echo "Refusing Skills object cleanup because its recorded scope is invalid." >&2
+      cleanup_status=1
+    elif ! OCEANS_VERIFY_SKILLS_PREFIX="$prefix" OCEANS_VERIFY_SKILLS_BUCKET="$bucket" \
+      OCEANS_VERIFY_SKILLS_ENDPOINT="$endpoint" OCEANS_VERIFY_SKILLS_REGION="$region" \
+      mise -E rustfs exec --fresh-env -- bash -euc '
+        export AWS_ACCESS_KEY_ID="$RUSTFS_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$RUSTFS_SECRET_KEY"
+        export AWS_EC2_METADATA_DISABLED=true AWS_PAGER=""
+        unset AWS_SESSION_TOKEN AWS_SECURITY_TOKEN AWS_PROFILE
+        args=(--endpoint-url "$OCEANS_VERIFY_SKILLS_ENDPOINT" --region "$OCEANS_VERIFY_SKILLS_REGION" --cli-connect-timeout 5 --cli-read-timeout 10)
+        aws "${args[@]}" s3 rm "s3://$OCEANS_VERIFY_SKILLS_BUCKET/$OCEANS_VERIFY_SKILLS_PREFIX" --recursive --only-show-errors
+        count="$(aws "${args[@]}" s3api list-objects-v2 --bucket "$OCEANS_VERIFY_SKILLS_BUCKET" --prefix "$OCEANS_VERIFY_SKILLS_PREFIX" --max-keys 1 --query KeyCount --output text)"
+        [[ "$count" == 0 ]]
+      '; then
+      echo "Skills object cleanup failed; its recorded scope is retained for retry." >&2
+      cleanup_status=1
+    else
+      rm -f "$run_dir/skills-prefix"
+    fi
+  fi
+  [[ "$cleanup_status" == 0 ]] || return "$cleanup_status"
+  if [[ -f "$run_dir/rustfs.pid" && -f "$run_dir/rustfs.start-time" ]]; then
+    stored_pid="$(<"$run_dir/rustfs.pid")"
+    stored_start="$(<"$run_dir/rustfs.start-time")"
+    read -r daemon_status daemon_pid daemon_port < <(rustfs_identity)
+    if [[ "$daemon_pid" == "$stored_pid" && "$(process_start_time "$stored_pid" || true)" == "$stored_start" ]]; then
+      mise -E rustfs daemons stop rustfs || cleanup_status=1
+    fi
+  fi
+  if [[ "$cleanup_status" == 0 ]]; then
+    rm -f "$run_dir/rustfs-owned" "$run_dir/rustfs.pid" "$run_dir/rustfs.start-time" "$run_dir/rustfs-port" "$run_dir/rustfs-listener.pid" \
+      "$run_dir/skills-endpoint" "$run_dir/skills-bucket" "$run_dir/skills-region" "$run_dir/gateway-skills.yaml" \
+      "$run_dir/skills-prefix" "$run_dir/skills-service-account-key" "$run_dir/skills.db" "$run_dir/skills.db-wal" "$run_dir/skills.db-shm" "$run_dir/skills.db-journal"
+    printf '{"passed":true,"objects_remaining":0,"database_removed":true}\n' >"$evidence_dir/skills-storage-cleanup.json"
+  fi
+  return "$cleanup_status"
+}
+
 cleanup() {
-  local stored current stored_start current_start
+  local stored current stored_start current_start cleanup_status=0
   if [[ -f "$stack_pid_file" && -f "$stack_start_file" ]]; then
     stored="$(<"$stack_pid_file")"
     stored_start="$(<"$stack_start_file")"
@@ -115,15 +231,41 @@ cleanup() {
     fi
   done
 
-  rm -f "$stack_pid_file" "$stack_start_file" "$gateway_pid_file" "$ui_pid_file" "$run_dir/base-url" "$run_dir/gateway-port" "$run_dir/ui-port" "$run_dir/gateway-version"
-  remove_lock_if_owned
+  if [[ -f "$run_dir/skills-prefix" ]]; then
+    for spec in "$gateway_pid_file:$gateway_port" "$ui_pid_file:$ui_port"; do
+      local pid_file="${spec%%:*}" port="${spec##*:}"
+      [[ -f "$pid_file" ]] || continue
+      stored="$(<"$pid_file")"
+      for _ in {1..40}; do
+        [[ "$(listener_pid "$port" || true)" == "$stored" ]] || break
+        sleep 0.25
+      done
+      if [[ "$(listener_pid "$port" || true)" == "$stored" ]]; then
+        echo "Owned listener PID $stored did not stop; retaining Skills storage for retry." >&2
+        cleanup_status=1
+      fi
+    done
+  fi
+  if [[ "$cleanup_status" == 0 ]]; then
+    cleanup_skills || cleanup_status=$?
+  fi
+  if [[ "$cleanup_status" == 0 ]]; then
+    rm -f "$stack_pid_file" "$stack_start_file" "$gateway_pid_file" "$ui_pid_file" "$run_dir/base-url" "$run_dir/gateway-port" "$run_dir/ui-port" "$run_dir/gateway-version"
+    remove_lock_if_owned
+  fi
   redact_log
-  echo "cleanup complete; evidence retained at $evidence_dir"
+  if [[ "$cleanup_status" == 0 ]]; then
+    echo "cleanup complete; evidence retained at $evidence_dir"
+  else
+    echo "cleanup incomplete; retained state at $run_dir" >&2
+  fi
+  return "$cleanup_status"
 }
 
 launch() {
   local existing pid start_time current_gateway current_ui
   mkdir -p "$state_base" "$run_dir" "$evidence_dir"
+  chmod 700 "$run_dir"
   if ! mkdir "$lock_dir" 2>/dev/null; then
     if lock_is_live; then
       echo "Refusing to share this checkout database. Active lock: $lock_dir" >&2
@@ -165,10 +307,16 @@ launch() {
   printf '%s\n' "$ui_port" >"$run_dir/ui-port"
 
   activate_mise
+  if [[ "${OCEANS_VERIFY_SKILLS:-false}" == "true" ]]; then
+    prepare_skills
+  fi
   (
     cd "$repo_root"
     export GATEWAY_PORT="$gateway_port"
     export UI_PORT="$ui_port"
+    if [[ "${OCEANS_VERIFY_SKILLS:-false}" == "true" ]]; then
+      exec mise -E rustfs exec --fresh-env -- mise run dev-stack
+    fi
     exec mise run dev-stack
   ) >"$log_file" 2>&1 &
   pid=$!
@@ -239,6 +387,16 @@ doctor() {
     echo "Port $ui_port is not owned by recorded UI PID $recorded_ui." >&2
     exit 1
   }
+  if [[ -f "$run_dir/rustfs-listener.pid" ]]; then
+    local rustfs_port recorded_rustfs
+    rustfs_port="$(<"$run_dir/rustfs-port")"
+    recorded_rustfs="$(<"$run_dir/rustfs-listener.pid")"
+    [[ "$(listener_pid "$rustfs_port" || true)" == "$recorded_rustfs" ]] || {
+      echo "RustFS port $rustfs_port is not owned by recorded PID $recorded_rustfs." >&2
+      exit 1
+    }
+    curl --silent --fail --max-time 2 "$(<"$run_dir/skills-endpoint")/health/ready" >/dev/null
+  fi
   curl --silent --fail "$base_url/readyz" | grep -q '"status":"ready"'
   health="$(curl --silent --fail "$base_url/api/v1/health")"
   version="$(printf '%s' "$health" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
@@ -258,12 +416,23 @@ drive() {
     backend-gateway) driver="drive-backend-gateway.mjs" ;;
     mcp) driver="drive-mcp.mjs" ;;
     profile) driver="drive-profile.mjs" ;;
+    skills) driver="drive-skills.mjs" ;;
     *)
-      echo "Supported drive targets: models, observability, backend-gateway, mcp, profile" >&2
+      echo "Supported drive targets: models, observability, backend-gateway, mcp, profile, skills" >&2
       exit 2
       ;;
   esac
   doctor
+  if [[ "$target" == "skills" ]]; then
+    [[ -f "$run_dir/skills-prefix" ]] || {
+      echo "Skills verification requires launch with OCEANS_VERIFY_SKILLS=true." >&2
+      exit 1
+    }
+    export OCEANS_VERIFY_SKILLS_PREFIX="$(<"$run_dir/skills-prefix")"
+    export OCEANS_VERIFY_SKILLS_BUCKET="$(<"$run_dir/skills-bucket")"
+    export OCEANS_VERIFY_SKILLS_ENDPOINT="$(<"$run_dir/skills-endpoint")"
+    export OCEANS_VERIFY_SKILLS_SERVICE_ACCOUNT_KEY="$(<"$run_dir/skills-service-account-key")"
+  fi
   activate_mise
   mise run e2e-install
   OCEANS_VERIFY_BASE_URL="$base_url" \
@@ -312,6 +481,21 @@ evidence() {
         exit 1
       }
       ;;
+    skills)
+      [[ -f "$evidence_dir/skills-proof.json" ]] || {
+        echo "Skills proof is missing from $evidence_dir." >&2
+        exit 1
+      }
+      activate_mise
+      mise exec -- bun -e '
+        const proof = await Bun.file(process.argv[1]).json();
+        if (proof.passed !== true) throw new Error("Skills proof did not pass");
+        if (!await Bun.file(process.argv[2]).exists()) {
+          const cleanup = await Bun.file(process.argv[3]).json();
+          if (cleanup.passed !== true) throw new Error("Skills storage cleanup did not pass");
+        }
+      ' "$evidence_dir/skills-proof.json" "$gateway_pid_file" "$evidence_dir/skills-storage-cleanup.json"
+      ;;
     profile)
       [[ -f "$evidence_dir/profile-proof.json" ]] || {
         echo "Profile proof is missing from $evidence_dir." >&2
@@ -319,7 +503,7 @@ evidence() {
       }
       ;;
     *)
-      echo "Supported evidence targets: models, observability, live-llm, backend-gateway, mcp, profile" >&2
+      echo "Supported evidence targets: models, observability, live-llm, backend-gateway, mcp, profile, skills" >&2
       exit 2
       ;;
   esac
@@ -332,7 +516,7 @@ case "${1:-}" in
   evidence) evidence "${2:-models}" ;;
   cleanup) cleanup ;;
   *)
-    echo "Usage: $0 {launch|doctor|drive {models|observability|backend-gateway|mcp|profile}|evidence [models|observability|live-llm|backend-gateway|mcp|profile]|cleanup}" >&2
+    echo "Usage: $0 {launch|doctor|drive {models|observability|backend-gateway|mcp|profile|skills}|evidence [models|observability|live-llm|backend-gateway|mcp|profile|skills]|cleanup}" >&2
     exit 2
     ;;
 esac

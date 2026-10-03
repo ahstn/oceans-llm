@@ -24,6 +24,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
             store.clone(),
             Arc::new(WeightedRoutePlanner::default()),
         )),
+        skills: None,
         store,
         providers: Default::default(),
         copilot_user_provider_keys: Arc::new(Vec::new()),

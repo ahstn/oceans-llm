@@ -91,6 +91,7 @@ describe('AppShell', () => {
     )
 
     expect(screen.getAllByText('Connections').length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: 'Skills' })).toHaveAttribute('href', '/skills')
     expect(screen.getByRole('link', { name: 'Control Plane' })).toHaveAttribute('href', '/profile')
     expect(screen.getAllByText('Models').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Identity').length).toBeGreaterThan(0)
