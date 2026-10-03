@@ -5,19 +5,21 @@ use std::{
 
 use gateway_client_config::{
     ClientConfig, ClientConfigInput, ClientConfigInputSet, ClientModelCapabilities,
-    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, infer_thinking_policy,
-    render_default_configs, render_default_configs_for_models,
+    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, ReasoningLevel,
+    ThinkingPolicy, infer_thinking_policy, render_default_configs,
+    render_default_configs_for_models,
 };
 use gateway_core::{
     GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
     PricingCatalogRepository, PricingLimits, PricingModalities, ProviderCapabilities,
-    ProviderConnection, ProviderRepository,
+    ProviderConnection, ProviderRepository, ReasoningEffort,
 };
 use time::OffsetDateTime;
 
-use crate::effective_route_metadata::effective_provider_route_capabilities;
 #[cfg(test)]
 use crate::effective_route_metadata::provider_capabilities;
+use crate::effective_route_metadata::{effective_provider_route_capabilities, native_api_format};
+use crate::model_resolution::alias_chain_reasoning_ceiling;
 
 use crate::{
     EffectiveMetadataSource, EffectiveRouteMetadata, ModelIconKey, ProviderIconKey,
@@ -309,6 +311,10 @@ where
                     build_client_config_input(ClientConfigContext {
                         model: &model,
                         execution_model: &execution_model,
+                        reasoning_ceiling: alias_chain_reasoning_ceiling(
+                            |key| by_key.get(key),
+                            &model,
+                        ),
                         primary_route: Some(primary_route),
                         primary_provider,
                         provider_display: provider_display.as_ref(),
@@ -386,6 +392,7 @@ struct AdminModelItem {
 struct ClientConfigContext<'a> {
     model: &'a GatewayModel,
     execution_model: &'a GatewayModel,
+    reasoning_ceiling: Option<ReasoningEffort>,
     primary_route: Option<&'a ModelRoute>,
     primary_provider: Option<&'a ProviderConnection>,
     provider_display: Option<&'a crate::ProviderDisplayIdentity>,
@@ -397,32 +404,13 @@ struct ClientConfigContext<'a> {
 
 fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientConfigInput> {
     let primary_route = context.primary_route?;
-    context.primary_provider?;
-    // Most specific first: the upstream model, then the gateway model aliases, then provider
-    // metadata. A provider named after an older model generation must not outrank an alias
-    // that names the actual model.
-    let thinking_policy = infer_thinking_policy(
-        [
-            primary_route.upstream_model.as_str(),
-            context.execution_model.model_key.as_str(),
-            context.model.model_key.as_str(),
-        ]
-        .into_iter()
-        .chain(
-            context
-                .primary_provider
-                .map(|provider| provider.provider_key.as_str()),
-        )
-        .chain(
-            context
-                .primary_provider
-                .map(|provider| provider.provider_type.as_str()),
-        )
-        .chain(
-            context
-                .provider_display
-                .map(|display| display.label.as_str()),
-        ),
+    let primary_provider = context.primary_provider?;
+    let thinking_policy = route_thinking_policy(
+        context.model,
+        context.execution_model,
+        primary_route,
+        primary_provider,
+        context.provider_display,
     );
     let capabilities = effective_provider_route_capabilities(
         context.route_capabilities,
@@ -484,7 +472,43 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
         thinking_policy,
         // max_reasoning_effort is an enforcement ceiling, not a client default.
         codex_reasoning_effort: None,
+        native_api_format: native_api_format(primary_provider, primary_route),
+        max_reasoning_effort: context.reasoning_ceiling.map(reasoning_level),
     })
+}
+
+pub(crate) const fn reasoning_level(effort: ReasoningEffort) -> ReasoningLevel {
+    match effort {
+        ReasoningEffort::Minimal => ReasoningLevel::Minimal,
+        ReasoningEffort::Low => ReasoningLevel::Low,
+        ReasoningEffort::Medium => ReasoningLevel::Medium,
+        ReasoningEffort::High => ReasoningLevel::High,
+        ReasoningEffort::XHigh => ReasoningLevel::XHigh,
+        ReasoningEffort::Max => ReasoningLevel::Max,
+    }
+}
+
+/// Most specific first: the upstream model, then the gateway model aliases, then provider
+/// metadata. A provider named after an older model generation must not outrank an alias
+/// that names the actual model.
+pub(crate) fn route_thinking_policy(
+    model: &GatewayModel,
+    execution_model: &GatewayModel,
+    route: &ModelRoute,
+    provider: &ProviderConnection,
+    provider_display: Option<&crate::ProviderDisplayIdentity>,
+) -> Option<ThinkingPolicy> {
+    infer_thinking_policy(
+        [
+            route.upstream_model.as_str(),
+            execution_model.model_key.as_str(),
+            model.model_key.as_str(),
+            provider.provider_key.as_str(),
+            provider.provider_type.as_str(),
+        ]
+        .into_iter()
+        .chain(provider_display.map(|display| display.label.as_str())),
+    )
 }
 
 #[derive(Debug)]
@@ -555,7 +579,7 @@ fn supports_attachments(modalities: &PricingModalities) -> bool {
         .any(|value| matches!(value.as_str(), "audio" | "file" | "image" | "pdf" | "video"))
 }
 
-fn route_is_eligible(
+pub(crate) fn route_is_eligible(
     providers_by_key: &HashMap<String, ProviderConnection>,
     route: &ModelRoute,
 ) -> bool {
@@ -576,7 +600,7 @@ fn route_health(
     }
 }
 
-fn select_display_route<'a>(
+pub(crate) fn select_display_route<'a>(
     providers_by_key: &HashMap<String, ProviderConnection>,
     routes: &'a [gateway_core::ModelRoute],
 ) -> Option<&'a gateway_core::ModelRoute> {
@@ -1049,6 +1073,7 @@ mod tests {
         let input = super::build_client_config_input(super::ClientConfigContext {
             model: &model,
             execution_model: &model,
+            reasoning_ceiling: None,
             primary_route: Some(&route),
             primary_provider: Some(&provider),
             provider_display: None,
@@ -1898,6 +1923,7 @@ mod tests {
         let input = super::build_client_config_input(super::ClientConfigContext {
             model: &model,
             execution_model: &model,
+            reasoning_ceiling: None,
             primary_route: Some(&route),
             primary_provider: Some(&provider),
             provider_display: None,

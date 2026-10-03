@@ -10,7 +10,7 @@ The gateway exposes these authenticated endpoints:
 
 | Endpoint | API family | Route requirement |
 | --- | --- | --- |
-| `GET /v1/models` | OpenAI-compatible model discovery | Model is visible to the caller |
+| `GET /v1/models` | OpenAI- and Anthropic-compatible model discovery | Model is visible to the caller |
 | `POST /v1/chat/completions` | OpenAI Chat Completions | `chat_completions: true` |
 | `POST /v1/responses` | OpenAI Responses | `responses: true` |
 | `POST /v1/embeddings` | OpenAI Embeddings | `embeddings: true` |
@@ -259,7 +259,7 @@ The Models admin API reports logical-model metadata conservatively across select
 - Context provenance is `configured_override`, `catalog`, or `mixed`.
 - Pricing uses the primary route and reports when pricing varies by route.
 
-Generated client configurations use the same conservative limits. `GET /v1/models` remains an identity and discovery response; it does not expose Oceans-specific route metadata.
+Generated client configurations and `GET /v1/models` use the same conservative limits. Route-level detail, pricing, and source provenance stay in `GET /v1/model-metadata`.
 
 The context value is metadata, not request-time token enforcement. Oceans does not currently tokenize every request and reject an oversized prompt before provider execution.
 
@@ -267,7 +267,44 @@ The context value is metadata, not request-time token enforcement. Oceans does n
 
 ### Model discovery
 
-`GET /v1/models` returns gateway model identities visible to the authenticated API key. Visibility does not guarantee that a route can execute every API family. A model can be visible while all routes are disabled, non-viable, or incompatible with the requested operation.
+`GET /v1/models` returns the gateway models visible to the authenticated API key. One response serves both OpenAI and Anthropic clients: Claude Code calls it through `ANTHROPIC_BASE_URL`, and the two list shapes use different keys.
+
+| Field | Source |
+| --- | --- |
+| `id`, `object`, `type`, `owned_by` | Gateway model key; `owned_by` is always `oceans-llm` |
+| `created`, `created_at` | Catalog release date of the first route that has one, else the Unix epoch |
+| `display_name`, `name` | Catalog display name, else the model key; `name` is the OpenRouter spelling |
+| `description`, `alias_of` | Gateway model configuration |
+| `context_length`, `max_input_tokens`, `max_tokens` | Conservative limits across enabled routes |
+| `architecture` | Input and output modalities every route with catalog data shares; decision-capable models add a `decisions` output modality |
+| `capabilities` | Anthropic `ModelCapabilities` shape (see below) |
+| `supported_endpoint_types` | new-api endpoint types, preferred first (see below) |
+| `client_hints` | Harness settings for chat-shaped models (see below) |
+| `has_more`, `first_id`, `last_id` | The list is never paginated, so `has_more` is always `false` |
+
+`capabilities` follows the Anthropic SDK types exactly and describes what `POST /v1/messages` can accept for the model. `batch`, `citations`, `code_execution`, and `context_management` are always unsupported because the gateway does not serve those Anthropic features. `/v1/messages` hands content blocks, `thinking`, and `output_config` to the route unchanged, so `effort`, `thinking`, `image_input`, `pdf_input`, and `structured_outputs` are reported only when every eligible chat-capable route's upstream speaks Anthropic Messages. The route planner picks by weight within a priority tier and falls back to later tiers, so a single non-Anthropic fallback route turns these off. Those routes are `anthropic_compat`, Vertex `anthropic/*`, GitHub Copilot with `chat_api: anthropic_messages`, and Bedrock with an Anthropic `api_style`. For other models, `architecture.input_modalities` still describes what the model accepts through the OpenAI APIs. Effort levels come from the model's thinking policy and are clamped to the effective ceiling, which is the strictest `max_reasoning_effort` across the alias chain. `thinking.types.adaptive` is set for Claude families that accept only adaptive thinking; `enabled` means manual budgets are accepted.
+
+`client_hints` lists every gateway API that can serve the model, based on route capabilities, not on the model name:
+
+```json
+{
+  "api_formats": ["openai-chat-completions", "openai-responses", "anthropic-messages"],
+  "preferred_api_format": "anthropic-messages",
+  "harnesses": {
+    "opencode": { "npm": "@ai-sdk/anthropic", "variants": { "...": "..." } },
+    "pi": { "api": "anthropic-messages", "compat": { "forceAdaptiveThinking": true } },
+    "claude_code": { "model_env_var": "ANTHROPIC_DEFAULT_OPUS_MODEL" }
+  }
+}
+```
+
+`anthropic-messages` is listed for every chat-capable model because `/v1/messages` is translated onto the chat pipeline. `preferred_api_format` comes from the primary route's provider type: `anthropic_compat` and Vertex `anthropic/*` routes prefer Anthropic Messages, GitHub Copilot follows its configured `chat_api`, and Bedrock follows its `api_style`. A route whose upstream speaks the Responses API prefers it even when chat completions is also served. Other provider types fall back to model-name matching. OpenCode `variants` and Pi `thinkingLevelMap` respect the effective reasoning ceiling: OpenCode presets above it are dropped, and Pi levels above it map to the strongest effort the thinking policy sends within the ceiling. If the policy has no such effort, for example Claude under a `minimal` ceiling, those Pi levels are `null`. Harness blocks use each harness's own config keys and match the snippets from [Client Harness Configuration](client-harness-configuration.md). They never contain a base URL or API key. Embedding-only and Decisions-only models omit `client_hints`.
+
+`supported_endpoint_types` uses the new-api vocabulary (`anthropic`, `openai`, `openai-response`) so proxy-aware clients can pick a wire per model. The preferred format comes first: `anthropic` for Anthropic-preferred models, and `openai-response` before `openai` for Responses-preferred models. Clients such as omp with `discovery.type: proxy` choose Anthropic Messages whenever `anthropic` is listed. The gateway therefore lists `anthropic` only when `preferred_api_format` is `anthropic-messages`, even though `/v1/messages` accepts every chat-capable model. Use `client_hints.api_formats` for the complete list.
+
+Decision models served through `POST /v1/decisions` have no new-api endpoint type, so their `supported_endpoint_types` is empty and they carry no `client_hints`. Following OpenRouter, they report `decisions` in `architecture.output_modalities`. Proxy-discovery clients that do not read that modality may list them as chat models.
+
+Visibility does not guarantee that a route can execute every API family. A model can be visible while all routes are disabled, non-viable, or incompatible with the requested operation.
 
 ### Chat Completions
 

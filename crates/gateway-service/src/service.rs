@@ -253,6 +253,16 @@ where
         crate::model_metadata::list_metadata(self.store.as_ref(), models, &snapshot).await
     }
 
+    /// The `/v1/models` listing: OpenAI and Anthropic list shapes plus harness hints.
+    pub async fn models_list_for_api_key(
+        &self,
+        auth: &AuthenticatedApiKey,
+    ) -> Result<crate::model_metadata::ModelsListResponse, GatewayError> {
+        let models = self.model_access.list_models_for_api_key(auth).await?;
+        let snapshot = self.pricing_catalog.metadata_snapshot().await?;
+        crate::model_metadata::listing::list_models(self.store.as_ref(), models, &snapshot).await
+    }
+
     pub async fn list_models_for_api_key(
         &self,
         auth: &AuthenticatedApiKey,

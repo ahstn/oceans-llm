@@ -4,7 +4,7 @@ use serde_json::{Map, Value, json};
 
 use crate::{
     api_style::{
-        ClientApiStyle, client_api_style, pi_api_key_env_reference, pi_provider_api_for_style,
+        ApiFormat, client_api_style, pi_api_key_env_reference, pi_provider_api_for_style,
         pi_provider_compat,
     },
     cost::pi_cost,
@@ -12,7 +12,7 @@ use crate::{
     templates::notes::{client_notes_for_inputs, thinking_notes},
     types::{
         ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
-        ClientConfigSetupItem, ClientConfigTemplate, ThinkingPolicy,
+        ClientConfigSetupItem, ClientConfigTemplate, ReasoningLevel, ThinkingPolicy,
     },
 };
 
@@ -106,12 +106,12 @@ fn pi_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
     ]
 }
 
-fn pi_base_url(input: &ClientConfigInput, style: ClientApiStyle) -> String {
+fn pi_base_url(input: &ClientConfigInput, style: ApiFormat) -> String {
     match style {
-        ClientApiStyle::OpenAiCompatible | ClientApiStyle::OpenAiResponses => {
+        ApiFormat::OpenAiChatCompletions | ApiFormat::OpenAiResponses => {
             input.openai_compatible_client_base_url()
         }
-        ClientApiStyle::AnthropicMessages => input.client_base_url(),
+        ApiFormat::AnthropicMessages => input.client_base_url(),
     }
 }
 
@@ -126,23 +126,23 @@ enum PiProviderGroup {
 impl PiProviderGroup {
     fn for_input(input: &ClientConfigInput) -> Self {
         match client_api_style(input) {
-            ClientApiStyle::OpenAiCompatible => Self::OpenAiCompatible,
-            ClientApiStyle::OpenAiResponses => Self::OpenAiResponses,
-            ClientApiStyle::AnthropicMessages
+            ApiFormat::OpenAiChatCompletions => Self::OpenAiCompatible,
+            ApiFormat::OpenAiResponses => Self::OpenAiResponses,
+            ApiFormat::AnthropicMessages
                 if input.thinking_policy == Some(ThinkingPolicy::AnthropicSafeEffort) =>
             {
                 Self::AnthropicMessagesAdaptiveThinking
             }
-            ClientApiStyle::AnthropicMessages => Self::AnthropicMessages,
+            ApiFormat::AnthropicMessages => Self::AnthropicMessages,
         }
     }
 
-    const fn api_style(self) -> ClientApiStyle {
+    const fn api_style(self) -> ApiFormat {
         match self {
-            Self::OpenAiCompatible => ClientApiStyle::OpenAiCompatible,
-            Self::OpenAiResponses => ClientApiStyle::OpenAiResponses,
+            Self::OpenAiCompatible => ApiFormat::OpenAiChatCompletions,
+            Self::OpenAiResponses => ApiFormat::OpenAiResponses,
             Self::AnthropicMessages | Self::AnthropicMessagesAdaptiveThinking => {
-                ClientApiStyle::AnthropicMessages
+                ApiFormat::AnthropicMessages
             }
         }
     }
@@ -182,14 +182,37 @@ fn pi_model(input: &ClientConfigInput) -> Map<String, Value> {
         ("cost".to_string(), pi_cost(input)),
     ]);
 
-    if let Some(level_map) = input.thinking_policy.and_then(pi_thinking_level_map) {
+    if let Some(level_map) = pi_thinking_level_map(input) {
         model.insert("thinkingLevelMap".to_string(), level_map);
     }
 
     model
 }
 
-fn pi_thinking_level_map(policy: ThinkingPolicy) -> Option<Value> {
+/// Pi's level map for the model's thinking policy. Levels above the gateway ceiling are
+/// clamped to the strongest effort the policy itself sends within the ceiling, so picking
+/// `max` in Pi still sends an accepted effort. When the policy has no effort within the
+/// ceiling (e.g. Claude under a `minimal` ceiling), the level is hidden with `null`.
+pub(crate) fn pi_thinking_level_map(input: &ClientConfigInput) -> Option<Value> {
+    let mut level_map = policy_level_map(input.thinking_policy?)?;
+    if let (Some(ceiling), Some(levels)) = (input.max_reasoning_effort, level_map.as_object_mut()) {
+        let level_of = |value: &Value| value.as_str().and_then(ReasoningLevel::parse);
+        let clamped = levels
+            .values()
+            .filter_map(level_of)
+            .filter(|level| *level <= ceiling)
+            .max()
+            .map_or(Value::Null, |level| json!(level.as_str()));
+        for value in levels.values_mut() {
+            if level_of(value).is_some_and(|level| level > ceiling) {
+                *value = clamped.clone();
+            }
+        }
+    }
+    Some(level_map)
+}
+
+fn policy_level_map(policy: ThinkingPolicy) -> Option<Value> {
     match policy {
         ThinkingPolicy::AnthropicSafeEffort => Some(json!({
             "off": null,

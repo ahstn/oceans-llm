@@ -125,9 +125,8 @@ pub use protocol::core::{
 };
 pub use protocol::openai::{
     ChatCompletionsRequest, DecisionAnswer, DecisionQuestion, DecisionsRequest, DecisionsResponse,
-    DecisionsUsage, EmbeddingsRequest, ModelsListResponse, NoulCriteria, OpenAiErrorBody,
-    OpenAiErrorEnvelope, ResponseOutputItem, ResponseUsage, ResponsesRequest, ResponsesResponse,
-    ResponsesStreamEvent,
+    DecisionsUsage, EmbeddingsRequest, NoulCriteria, OpenAiErrorBody, OpenAiErrorEnvelope,
+    ResponseOutputItem, ResponseUsage, ResponsesRequest, ResponsesResponse, ResponsesStreamEvent,
 };
 pub use protocol::translate::{
     anthropic_messages_request_to_core, core_chat_request_to_openai,

@@ -194,7 +194,7 @@ fn canonical_claude_code_model_id(value: &str) -> Option<String> {
     }
 }
 
-fn claude_code_default_model_env_var(input: &ClientConfigInput) -> Option<&'static str> {
+pub(crate) fn claude_code_default_model_env_var(input: &ClientConfigInput) -> Option<&'static str> {
     let joined = [
         input.model_id.as_str(),
         input.upstream_model.as_deref().unwrap_or_default(),

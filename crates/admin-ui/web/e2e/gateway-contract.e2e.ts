@@ -90,23 +90,44 @@ test('gateway exposes the seeded model and forwards chat completions to the stub
   })
 
   expect(modelsResponse.ok()).toBe(true)
-  expect(await modelsResponse.json()).toEqual({
+  // Catalog-derived fields (names, dates, limits) follow the pricing snapshot, so only the
+  // gateway-owned shape is pinned here.
+  const gatewayModelCard = (id: string) =>
+    expect.objectContaining({
+      id,
+      object: 'model',
+      type: 'model',
+      owned_by: 'oceans-llm',
+      created: expect.any(Number),
+      created_at: expect.any(String),
+      display_name: expect.any(String),
+      name: expect.any(String),
+      // omp proxy discovery keeps OpenAI-native models on chat completions.
+      supported_endpoint_types: ['openai', 'openai-response'],
+      capabilities: expect.objectContaining({
+        batch: { supported: false },
+        effort: expect.objectContaining({ supported: expect.any(Boolean) }),
+        thinking: expect.objectContaining({ supported: expect.any(Boolean) }),
+      }),
+      client_hints: {
+        api_formats: ['openai-chat-completions', 'openai-responses', 'anthropic-messages'],
+        preferred_api_format: 'openai-chat-completions',
+        harnesses: expect.objectContaining({
+          opencode: expect.objectContaining({ npm: '@ai-sdk/openai-compatible' }),
+          pi: expect.objectContaining({ api: 'openai-completions' }),
+          codex: { wire_api: 'responses' },
+        }),
+      },
+    })
+  const modelsBody = await modelsResponse.json()
+  expect(modelsBody).toEqual({
     object: 'list',
-    data: [
-      {
-        id: 'audit-fast',
-        object: 'model',
-        created: 0,
-        owned_by: 'gateway',
-      },
-      {
-        id: 'fast',
-        object: 'model',
-        created: 0,
-        owned_by: 'gateway',
-      },
-    ],
+    has_more: false,
+    first_id: 'audit-fast',
+    last_id: 'fast',
+    data: [gatewayModelCard('audit-fast'), gatewayModelCard('fast')],
   })
+  expect(JSON.stringify(modelsBody)).not.toMatch(/base_?url|api_?key/i)
 
   const clearResponse = await request.delete(stubAdminUrl('/__admin/requests'))
   expect(clearResponse.ok()).toBe(true)
