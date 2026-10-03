@@ -5,19 +5,21 @@ use std::{
 
 use gateway_client_config::{
     ClientConfig, ClientConfigInput, ClientConfigInputSet, ClientModelCapabilities,
-    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, ThinkingPolicy,
-    infer_thinking_policy, render_default_configs, render_default_configs_for_models,
+    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, ReasoningLevel,
+    ThinkingPolicy, infer_thinking_policy, render_default_configs,
+    render_default_configs_for_models,
 };
 use gateway_core::{
     GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
     PricingCatalogRepository, PricingLimits, PricingModalities, ProviderCapabilities,
-    ProviderConnection, ProviderRepository,
+    ProviderConnection, ProviderRepository, ReasoningEffort,
 };
 use time::OffsetDateTime;
 
 #[cfg(test)]
 use crate::effective_route_metadata::provider_capabilities;
 use crate::effective_route_metadata::{effective_provider_route_capabilities, native_api_format};
+use crate::model_resolution::alias_chain_reasoning_ceiling;
 
 use crate::{
     EffectiveMetadataSource, EffectiveRouteMetadata, ModelIconKey, ProviderIconKey,
@@ -309,6 +311,10 @@ where
                     build_client_config_input(ClientConfigContext {
                         model: &model,
                         execution_model: &execution_model,
+                        reasoning_ceiling: alias_chain_reasoning_ceiling(
+                            |key| by_key.get(key),
+                            &model,
+                        ),
                         primary_route: Some(primary_route),
                         primary_provider,
                         provider_display: provider_display.as_ref(),
@@ -386,6 +392,7 @@ struct AdminModelItem {
 struct ClientConfigContext<'a> {
     model: &'a GatewayModel,
     execution_model: &'a GatewayModel,
+    reasoning_ceiling: Option<ReasoningEffort>,
     primary_route: Option<&'a ModelRoute>,
     primary_provider: Option<&'a ProviderConnection>,
     provider_display: Option<&'a crate::ProviderDisplayIdentity>,
@@ -466,7 +473,19 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
         // max_reasoning_effort is an enforcement ceiling, not a client default.
         codex_reasoning_effort: None,
         native_api_format: native_api_format(primary_provider, primary_route),
+        max_reasoning_effort: context.reasoning_ceiling.map(reasoning_level),
     })
+}
+
+pub(crate) const fn reasoning_level(effort: ReasoningEffort) -> ReasoningLevel {
+    match effort {
+        ReasoningEffort::Minimal => ReasoningLevel::Minimal,
+        ReasoningEffort::Low => ReasoningLevel::Low,
+        ReasoningEffort::Medium => ReasoningLevel::Medium,
+        ReasoningEffort::High => ReasoningLevel::High,
+        ReasoningEffort::XHigh => ReasoningLevel::XHigh,
+        ReasoningEffort::Max => ReasoningLevel::Max,
+    }
 }
 
 /// Most specific first: the upstream model, then the gateway model aliases, then provider
@@ -1054,6 +1073,7 @@ mod tests {
         let input = super::build_client_config_input(super::ClientConfigContext {
             model: &model,
             execution_model: &model,
+            reasoning_ceiling: None,
             primary_route: Some(&route),
             primary_provider: Some(&provider),
             provider_display: None,
@@ -1903,6 +1923,7 @@ mod tests {
         let input = super::build_client_config_input(super::ClientConfigContext {
             model: &model,
             execution_model: &model,
+            reasoning_ceiling: None,
             primary_route: Some(&route),
             primary_provider: Some(&provider),
             provider_display: None,

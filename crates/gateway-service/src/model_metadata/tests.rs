@@ -534,3 +534,111 @@ async fn decision_models_report_the_openrouter_decisions_output_modality() {
     assert_eq!(card["supported_endpoint_types"], json!([]));
     assert!(card.get("client_hints").is_none());
 }
+
+#[tokio::test]
+async fn models_list_holds_aliases_to_the_strictest_ceiling_in_their_chain() {
+    let target = GatewayModel {
+        id: Uuid::new_v4(),
+        model_key: "house-large".into(),
+        alias_target_model_key: None,
+        max_reasoning_effort: Some(gateway_core::ReasoningEffort::High),
+        description: None,
+        tags: vec![],
+        rank: 0,
+    };
+    // Hidden from the caller, but its ceiling still applies to requests through it.
+    let middle = GatewayModel {
+        id: Uuid::new_v4(),
+        model_key: "house-capped".into(),
+        alias_target_model_key: Some(target.model_key.clone()),
+        max_reasoning_effort: Some(gateway_core::ReasoningEffort::Low),
+        ..target.clone()
+    };
+    let alias = GatewayModel {
+        id: Uuid::new_v4(),
+        model_key: "house-fast".into(),
+        alias_target_model_key: Some(middle.model_key.clone()),
+        max_reasoning_effort: None,
+        ..target.clone()
+    };
+    let mut vertex_route = route();
+    vertex_route.model_id = target.id;
+    vertex_route.provider_key = "vertex".into();
+    vertex_route.upstream_model = "anthropic/claude-opus-4-7@default".into();
+    let repo = ListingRepo {
+        models: vec![target, middle, alias.clone()],
+        routes: vec![vertex_route],
+        provider: vertex_provider(),
+    };
+
+    let listed = super::listing::list_models(
+        &repo,
+        vec![alias],
+        &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+    )
+    .await
+    .unwrap();
+    let card = serde_json::to_value(&listed.data[0]).unwrap();
+
+    assert_eq!(
+        card["capabilities"]["effort"],
+        json!({
+            "supported": true,
+            "low": {"supported": true},
+            "medium": {"supported": false},
+            "high": {"supported": false},
+            "xhigh": {"supported": false},
+            "max": {"supported": false},
+        })
+    );
+    let harnesses = &card["client_hints"]["harnesses"];
+    assert!(harnesses["opencode"].get("variants").is_none());
+    assert_eq!(harnesses["pi"]["thinkingLevelMap"]["max"], json!("low"));
+}
+
+#[tokio::test]
+async fn anthropic_request_features_are_only_advertised_for_messages_native_routes() {
+    let model = GatewayModel {
+        id: Uuid::new_v4(),
+        model_key: "gpt".into(),
+        alias_target_model_key: None,
+        max_reasoning_effort: None,
+        description: None,
+        tags: vec![],
+        rank: 0,
+    };
+    let mut openai_route = route();
+    openai_route.model_id = model.id;
+    let repo = ListingRepo {
+        models: vec![model.clone()],
+        routes: vec![openai_route],
+        provider: provider(),
+    };
+
+    let listed = super::listing::list_models(
+        &repo,
+        vec![model],
+        &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+    )
+    .await
+    .unwrap();
+    let card = serde_json::to_value(&listed.data[0]).unwrap();
+
+    // The model itself takes images, and `/v1/chat/completions` can send them...
+    assert_eq!(
+        card["architecture"]["input_modalities"],
+        json!(["image", "text"])
+    );
+    // ...but `/v1/messages` forwards Anthropic blocks, `thinking`, and `output_config`
+    // untranslated, which an OpenAI-compatible upstream rejects.
+    let capabilities = &card["capabilities"];
+    for field in ["image_input", "pdf_input", "structured_outputs"] {
+        assert_eq!(capabilities[field], json!({"supported": false}), "{field}");
+    }
+    assert_eq!(capabilities["thinking"]["supported"], json!(false));
+    assert_eq!(
+        capabilities["thinking"]["types"]["enabled"],
+        json!({"supported": false})
+    );
+    assert_eq!(capabilities["effort"]["supported"], json!(false));
+}

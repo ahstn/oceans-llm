@@ -4,8 +4,8 @@ use toml::Value as TomlValue;
 use crate::{
     ApiFormat, ClaudeCodeConfigTemplate, ClientConfig, ClientConfigInput, ClientConfigInputSet,
     ClientConfigTemplate, ClientModelCapabilities, CodexConfigTemplate, CodexReasoningEffort,
-    OpenCodeConfigTemplate, PiConfigTemplate, ThinkingPolicy, client_hints, infer_thinking_policy,
-    render_default_configs, render_default_configs_for_models,
+    OpenCodeConfigTemplate, PiConfigTemplate, ReasoningLevel, ThinkingPolicy, client_hints,
+    infer_thinking_policy, render_default_configs, render_default_configs_for_models,
 };
 
 fn input(policy: Option<ThinkingPolicy>) -> ClientConfigInput {
@@ -488,6 +488,7 @@ fn pi_fable_5_1_config_matches_expected_shape() {
         thinking_policy: Some(ThinkingPolicy::AnthropicSafeEffort),
         codex_reasoning_effort: None,
         native_api_format: None,
+        max_reasoning_effort: None,
     };
 
     let rendered = PiConfigTemplate.render(&input);
@@ -1269,4 +1270,47 @@ fn native_api_format_overrides_model_name_matching() {
     assert_eq!(hints.preferred_api_format, ApiFormat::OpenAiChatCompletions);
     assert_eq!(hints.harnesses.pi.api, "openai-completions");
     assert!(hints.harnesses.claude_code.is_none());
+}
+
+#[test]
+fn effort_presets_respect_the_gateway_ceiling() {
+    let mut capped = input(Some(ThinkingPolicy::AnthropicSafeEffort));
+    capped.max_reasoning_effort = Some(ReasoningLevel::High);
+    let hints = client_hints(&capped).expect("hints");
+
+    // OpenCode's `max` preset sends `xhigh`, which the gateway would reject.
+    assert_eq!(
+        hints.harnesses.opencode.variants,
+        Some(serde_json::json!({"high": {"reasoningEffort": "high"}}))
+    );
+    assert_eq!(
+        hints.harnesses.pi.thinking_level_map,
+        Some(serde_json::json!({
+            "off": null, "minimal": null, "low": "low", "medium": "medium",
+            "high": "high", "xhigh": "high", "max": "high"
+        }))
+    );
+
+    let rendered = OpenCodeConfigTemplate.render(&capped);
+    let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+    assert_eq!(
+        value["provider"]["oceans-llm"]["models"]["claude-sonnet"]["variants"],
+        serde_json::json!({"high": {"reasoningEffort": "high"}})
+    );
+
+    capped.max_reasoning_effort = Some(ReasoningLevel::Low);
+    let hints = client_hints(&capped).expect("hints");
+    assert_eq!(hints.harnesses.opencode.variants, None);
+}
+
+#[test]
+fn responses_native_routes_prefer_responses_when_chat_is_also_served() {
+    let mut input = non_anthropic_input();
+    input.capabilities.responses = true;
+    input.native_api_format = Some(ApiFormat::OpenAiResponses);
+    let hints = client_hints(&input).expect("hints");
+    assert_eq!(hints.preferred_api_format, ApiFormat::OpenAiResponses);
+    assert_eq!(hints.harnesses.opencode.npm, "@ai-sdk/openai");
+    assert_eq!(hints.harnesses.pi.api, "openai-responses");
+    assert_eq!(hints.harnesses.pi.compat, None);
 }

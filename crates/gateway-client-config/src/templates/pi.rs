@@ -12,7 +12,7 @@ use crate::{
     templates::notes::{client_notes_for_inputs, thinking_notes},
     types::{
         ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
-        ClientConfigSetupItem, ClientConfigTemplate, ThinkingPolicy,
+        ClientConfigSetupItem, ClientConfigTemplate, ReasoningLevel, ThinkingPolicy,
     },
 };
 
@@ -182,14 +182,32 @@ fn pi_model(input: &ClientConfigInput) -> Map<String, Value> {
         ("cost".to_string(), pi_cost(input)),
     ]);
 
-    if let Some(level_map) = input.thinking_policy.and_then(pi_thinking_level_map) {
+    if let Some(level_map) = pi_thinking_level_map(input) {
         model.insert("thinkingLevelMap".to_string(), level_map);
     }
 
     model
 }
 
-pub(crate) fn pi_thinking_level_map(policy: ThinkingPolicy) -> Option<Value> {
+/// Pi's level map for the model's thinking policy. Levels above the gateway ceiling are
+/// clamped to it, so picking `max` in Pi still sends an accepted effort.
+pub(crate) fn pi_thinking_level_map(input: &ClientConfigInput) -> Option<Value> {
+    let mut level_map = policy_level_map(input.thinking_policy?)?;
+    if let (Some(ceiling), Some(levels)) = (input.max_reasoning_effort, level_map.as_object_mut()) {
+        for value in levels.values_mut() {
+            if value
+                .as_str()
+                .and_then(ReasoningLevel::parse)
+                .is_some_and(|level| level > ceiling)
+            {
+                *value = json!(ceiling.as_str());
+            }
+        }
+    }
+    Some(level_map)
+}
+
+fn policy_level_map(policy: ThinkingPolicy) -> Option<Value> {
     match policy {
         ThinkingPolicy::AnthropicSafeEffort => Some(json!({
             "off": null,

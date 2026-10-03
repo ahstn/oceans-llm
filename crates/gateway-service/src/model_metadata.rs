@@ -9,9 +9,12 @@ pub use listing::{
 };
 use std::collections::{BTreeSet, HashMap};
 
-use crate::model_resolution::{execution_model_from_snapshot, load_missing_alias_targets};
+use crate::model_resolution::{
+    alias_chain_reasoning_ceiling, execution_model_from_snapshot, load_missing_alias_targets,
+};
 use gateway_core::{
-    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderConnection, ProviderRepository,
+    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderConnection,
+    ProviderRepository, ReasoningEffort,
 };
 use serde::Serialize;
 use uuid::Uuid;
@@ -99,6 +102,8 @@ where
 /// with the input slice.
 struct LoadedRoutes {
     executions: Vec<Option<GatewayModel>>,
+    /// The strictest reasoning ceiling along each model's alias chain.
+    reasoning_ceilings: Vec<Option<ReasoningEffort>>,
     routes: HashMap<Uuid, Vec<ModelRoute>>,
     providers: HashMap<String, ProviderConnection>,
 }
@@ -132,6 +137,10 @@ where
         .iter()
         .map(|model| execution_model_from_snapshot(&by_key, model).cloned())
         .collect::<Vec<_>>();
+    let reasoning_ceilings = models
+        .iter()
+        .map(|model| alias_chain_reasoning_ceiling(|key| by_key.get(key).copied(), model))
+        .collect::<Vec<_>>();
     let ids = executions
         .iter()
         .flatten()
@@ -151,6 +160,7 @@ where
     let providers = repo.list_providers_by_keys(&keys).await?;
     Ok(LoadedRoutes {
         executions,
+        reasoning_ceilings,
         routes,
         providers,
     })

@@ -9,7 +9,7 @@ use crate::{
     templates::notes::{client_notes_for_inputs, thinking_notes},
     types::{
         ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
-        ClientConfigSetupItem, ClientConfigTemplate, ThinkingPolicy,
+        ClientConfigSetupItem, ClientConfigTemplate, ReasoningLevel, ThinkingPolicy,
     },
 };
 
@@ -154,14 +154,31 @@ fn opencode_model(input: &ClientConfigInput) -> Map<String, Value> {
     if input.capabilities.attachments || input.capabilities.vision {
         model.insert("attachment".to_string(), json!(true));
     }
-    if let Some(variants) = input.thinking_policy.and_then(opencode_variants) {
+    if let Some(variants) = opencode_variants(input) {
         model.insert("variants".to_string(), variants);
     }
 
     model
 }
 
-pub(crate) fn opencode_variants(policy: ThinkingPolicy) -> Option<Value> {
+/// Effort variants for the model's thinking policy, minus any above the gateway ceiling.
+pub(crate) fn opencode_variants(input: &ClientConfigInput) -> Option<Value> {
+    let Value::Object(mut variants) = policy_variants(input.thinking_policy?)? else {
+        return None;
+    };
+    if let Some(ceiling) = input.max_reasoning_effort {
+        variants.retain(|_, variant| {
+            variant
+                .get("reasoningEffort")
+                .and_then(Value::as_str)
+                .and_then(ReasoningLevel::parse)
+                .is_none_or(|level| level <= ceiling)
+        });
+    }
+    (!variants.is_empty()).then_some(Value::Object(variants))
+}
+
+fn policy_variants(policy: ThinkingPolicy) -> Option<Value> {
     match policy {
         ThinkingPolicy::AnthropicSafeEffort => Some(json!({
             "high": {

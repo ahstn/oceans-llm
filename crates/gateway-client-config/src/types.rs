@@ -23,6 +23,47 @@ pub enum ApiFormat {
     AnthropicMessages,
 }
 
+/// Categorical reasoning effort, weakest first, spelled the way harness configs send it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningLevel {
+    Minimal,
+    Low,
+    Medium,
+    High,
+    XHigh,
+    Max,
+}
+
+impl ReasoningLevel {
+    const ALL: [Self; 6] = [
+        Self::Minimal,
+        Self::Low,
+        Self::Medium,
+        Self::High,
+        Self::XHigh,
+        Self::Max,
+    ];
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Minimal => "minimal",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::XHigh => "xhigh",
+            Self::Max => "max",
+        }
+    }
+
+    /// `None` for values outside the scale, such as `none`.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|level| level.as_str() == value)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ThinkingPolicy {
@@ -111,6 +152,10 @@ pub struct ClientConfigInput {
     /// it knowable. `None` falls back to model-name matching.
     #[serde(default)]
     pub native_api_format: Option<ApiFormat>,
+    /// The gateway's reasoning ceiling for the model. Effort presets above it are dropped or
+    /// clamped so harnesses never offer a level the gateway rejects.
+    #[serde(default)]
+    pub max_reasoning_effort: Option<ReasoningLevel>,
 }
 
 impl ClientConfigInput {
@@ -197,6 +242,7 @@ impl Default for ClientConfigInput {
             thinking_policy: None,
             codex_reasoning_effort: None,
             native_api_format: None,
+            max_reasoning_effort: None,
         }
     }
 }

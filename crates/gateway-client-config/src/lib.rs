@@ -20,8 +20,8 @@ pub use thinking::infer_thinking_policy;
 pub use types::{
     ApiFormat, ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
     ClientConfigSetupItem, ClientConfigTemplate, ClientModelCapabilities, CodexReasoningEffort,
-    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, ThinkingPolicy,
-    normalize_gateway_base_url,
+    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, ReasoningLevel,
+    ThinkingPolicy, normalize_gateway_base_url,
 };
 
 #[cfg(test)]

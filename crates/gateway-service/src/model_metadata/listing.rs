@@ -16,7 +16,9 @@ use time::{Date, Month, OffsetDateTime, format_description::well_known::Rfc3339}
 
 use super::{RouteMetadata, load_routes, route_metadata, summarize};
 use crate::{
-    admin_models::{route_is_eligible, route_thinking_policy, select_display_route},
+    admin_models::{
+        reasoning_level, route_is_eligible, route_thinking_policy, select_display_route,
+    },
     effective_route_metadata::{effective_provider_route_capabilities, native_api_format},
     pricing_catalog::PricingCatalogSnapshot,
     resolve_provider_display,
@@ -189,7 +191,7 @@ where
                 });
             model_card(ModelCardContext {
                 model,
-                execution,
+                reasoning_ceiling: loaded.reasoning_ceilings[index],
                 details,
                 thinking_policy,
                 transport,
@@ -210,7 +212,8 @@ where
 
 struct ModelCardContext<'a> {
     model: &'a GatewayModel,
-    execution: &'a GatewayModel,
+    /// The strictest ceiling along the alias chain, as enforced at request time.
+    reasoning_ceiling: Option<ReasoningEffort>,
     details: Vec<RouteMetadata>,
     thinking_policy: Option<ThinkingPolicy>,
     transport: ProviderCapabilities,
@@ -221,7 +224,7 @@ struct ModelCardContext<'a> {
 fn model_card(context: ModelCardContext<'_>) -> ModelCard {
     let ModelCardContext {
         model,
-        execution,
+        reasoning_ceiling,
         details,
         thinking_policy,
         transport,
@@ -273,10 +276,12 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
                     | ThinkingPolicy::GeminiBudget
             )
         );
-    let ceiling = model
-        .max_reasoning_effort
-        .or(execution.max_reasoning_effort);
-    let efforts = effort_levels(reasoning, thinking_policy, ceiling);
+    // `capabilities` describes Anthropic Messages request features. `/v1/messages` hands
+    // content blocks, `thinking`, and `output_config` to the route unchanged, so only routes
+    // whose upstream speaks Anthropic Messages can honour them.
+    let messages_native = native_api_format == Some(ApiFormat::AnthropicMessages);
+    let reasoning = messages_native && reasoning;
+    let efforts = effort_levels(reasoning, thinking_policy, reasoning_ceiling);
     let effort = |level| CapabilitySupport::from(efforts.contains(&level));
     let adaptive = reasoning && thinking_policy == Some(ThinkingPolicy::AnthropicSafeEffort);
 
@@ -293,6 +298,7 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
         },
         thinking_policy,
         native_api_format,
+        max_reasoning_effort: reasoning_ceiling.map(reasoning_level),
         ..ClientConfigInput::default()
     });
 
@@ -336,10 +342,10 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
                 xhigh: Some(effort(ReasoningEffort::XHigh)),
                 max: effort(ReasoningEffort::Max),
             },
-            image_input: CapabilitySupport::from(image_input),
-            pdf_input: CapabilitySupport::from(pdf_input),
+            image_input: CapabilitySupport::from(messages_native && image_input),
+            pdf_input: CapabilitySupport::from(messages_native && pdf_input),
             structured_outputs: CapabilitySupport::from(
-                summary.capabilities.structured_output == Some(true),
+                messages_native && summary.capabilities.structured_output == Some(true),
             ),
             thinking: ThinkingCapability {
                 supported: reasoning,

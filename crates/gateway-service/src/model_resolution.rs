@@ -61,6 +61,30 @@ pub(crate) fn execution_model_from_snapshot<'a>(
     None
 }
 
+/// The reasoning ceiling a request for `model` is held to: the strictest
+/// `max_reasoning_effort` along its alias chain, matching
+/// [`ModelResolver::canonicalize_requested_model`]. A broken or cyclic chain keeps the
+/// ceilings seen before the break.
+pub(crate) fn alias_chain_reasoning_ceiling<'a>(
+    lookup: impl Fn(&str) -> Option<&'a GatewayModel>,
+    model: &'a GatewayModel,
+) -> Option<ReasoningEffort> {
+    let mut ceiling = model.max_reasoning_effort;
+    let mut current = model;
+    let mut seen = BTreeSet::from([model.model_key.as_str()]);
+    for _ in 0..MAX_MODEL_ALIAS_DEPTH {
+        let Some(next) = current.alias_target_model_key.as_deref().and_then(&lookup) else {
+            break;
+        };
+        if !seen.insert(next.model_key.as_str()) {
+            break;
+        }
+        ceiling = strictest_reasoning_effort(ceiling, next.max_reasoning_effort);
+        current = next;
+    }
+    ceiling
+}
+
 fn strictest_reasoning_effort(
     current: Option<ReasoningEffort>,
     candidate: Option<ReasoningEffort>,

@@ -41,7 +41,8 @@ pub(crate) fn uses_anthropic_messages_api(input: &ClientConfigInput) -> bool {
 /// The API format a harness should prefer for this model.
 #[must_use]
 pub fn client_api_style(input: &ClientConfigInput) -> ApiFormat {
-    if input.capabilities.responses && !input.capabilities.chat_completions {
+    let responses_native = input.native_api_format == Some(ApiFormat::OpenAiResponses);
+    if input.capabilities.responses && (responses_native || !input.capabilities.chat_completions) {
         ApiFormat::OpenAiResponses
     } else if uses_anthropic_messages_api(input) {
         ApiFormat::AnthropicMessages

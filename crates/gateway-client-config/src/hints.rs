@@ -77,12 +77,12 @@ pub fn client_hints(input: &ClientConfigInput) -> Option<ClientHints> {
         harnesses: HarnessHints {
             opencode: OpenCodeHints {
                 npm: opencode_provider_package_for_style(style),
-                variants: input.thinking_policy.and_then(opencode_variants),
+                variants: opencode_variants(input),
             },
             pi: PiHints {
                 api: pi_provider_api_for_style(style),
                 compat: pi_provider_compat(input),
-                thinking_level_map: input.thinking_policy.and_then(pi_thinking_level_map),
+                thinking_level_map: pi_thinking_level_map(input),
             },
             claude_code: uses_anthropic_messages_api(input).then(|| ClaudeCodeHints {
                 model_env_var: claude_code_default_model_env_var(input),
