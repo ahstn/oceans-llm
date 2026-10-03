@@ -190,17 +190,22 @@ fn pi_model(input: &ClientConfigInput) -> Map<String, Value> {
 }
 
 /// Pi's level map for the model's thinking policy. Levels above the gateway ceiling are
-/// clamped to it, so picking `max` in Pi still sends an accepted effort.
+/// clamped to the strongest effort the policy itself sends within the ceiling, so picking
+/// `max` in Pi still sends an accepted effort. When the policy has no effort within the
+/// ceiling (e.g. Claude under a `minimal` ceiling), the level is hidden with `null`.
 pub(crate) fn pi_thinking_level_map(input: &ClientConfigInput) -> Option<Value> {
     let mut level_map = policy_level_map(input.thinking_policy?)?;
     if let (Some(ceiling), Some(levels)) = (input.max_reasoning_effort, level_map.as_object_mut()) {
+        let level_of = |value: &Value| value.as_str().and_then(ReasoningLevel::parse);
+        let clamped = levels
+            .values()
+            .filter_map(level_of)
+            .filter(|level| *level <= ceiling)
+            .max()
+            .map_or(Value::Null, |level| json!(level.as_str()));
         for value in levels.values_mut() {
-            if value
-                .as_str()
-                .and_then(ReasoningLevel::parse)
-                .is_some_and(|level| level > ceiling)
-            {
-                *value = json!(ceiling.as_str());
+            if level_of(value).is_some_and(|level| level > ceiling) {
+                *value = clamped.clone();
             }
         }
     }

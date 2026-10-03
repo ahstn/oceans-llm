@@ -170,28 +170,45 @@ where
                 let display = resolve_provider_display(&route.provider_key, Some(provider));
                 route_thinking_policy(model, execution, route, provider, Some(&display))
             });
-            // A request can land on any eligible route, so the served APIs are their union.
-            let transport = routes
+            // A request can land on any eligible route: the planner picks by weight within a
+            // priority tier and falls back to later tiers. Served APIs are therefore the union,
+            // while Anthropic request features need every chat-capable route to honour them.
+            let eligible = routes
                 .iter()
                 .filter(|route| route_is_eligible(&loaded.providers, route))
-                .map(|route| {
-                    effective_provider_route_capabilities(
+                .filter_map(|route| {
+                    let provider = loaded.providers.get(&route.provider_key)?;
+                    let capabilities = effective_provider_route_capabilities(
                         Some(route.capabilities),
-                        loaded.providers.get(&route.provider_key),
+                        Some(provider),
                         Some(route),
-                    )
+                    );
+                    Some((route, provider, capabilities))
                 })
-                .fold(ProviderCapabilities::none(), |acc, caps| {
-                    ProviderCapabilities {
-                        chat_completions: acc.chat_completions || caps.chat_completions,
-                        responses: acc.responses || caps.responses,
-                        decisions: acc.decisions || caps.decisions,
-                        ..acc
-                    }
+                .collect::<Vec<_>>();
+            let transport =
+                eligible
+                    .iter()
+                    .fold(ProviderCapabilities::none(), |acc, (_, _, caps)| {
+                        ProviderCapabilities {
+                            chat_completions: acc.chat_completions || caps.chat_completions,
+                            responses: acc.responses || caps.responses,
+                            decisions: acc.decisions || caps.decisions,
+                            ..acc
+                        }
+                    });
+            let mut chat_routes = eligible
+                .iter()
+                .filter(|(_, _, caps)| caps.chat_completions)
+                .peekable();
+            let messages_native = chat_routes.peek().is_some()
+                && chat_routes.all(|(route, provider, _)| {
+                    native_api_format(provider, route) == Some(ApiFormat::AnthropicMessages)
                 });
             model_card(ModelCardContext {
                 model,
                 reasoning_ceiling: loaded.reasoning_ceilings[index],
+                messages_native,
                 details,
                 thinking_policy,
                 transport,
@@ -214,6 +231,8 @@ struct ModelCardContext<'a> {
     model: &'a GatewayModel,
     /// The strictest ceiling along the alias chain, as enforced at request time.
     reasoning_ceiling: Option<ReasoningEffort>,
+    /// Every chat-capable route speaks Anthropic Messages upstream.
+    messages_native: bool,
     details: Vec<RouteMetadata>,
     thinking_policy: Option<ThinkingPolicy>,
     transport: ProviderCapabilities,
@@ -225,6 +244,7 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
     let ModelCardContext {
         model,
         reasoning_ceiling,
+        messages_native,
         details,
         thinking_policy,
         transport,
@@ -277,9 +297,8 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
             )
         );
     // `capabilities` describes Anthropic Messages request features. `/v1/messages` hands
-    // content blocks, `thinking`, and `output_config` to the route unchanged, so only routes
-    // whose upstream speaks Anthropic Messages can honour them.
-    let messages_native = native_api_format == Some(ApiFormat::AnthropicMessages);
+    // content blocks, `thinking`, and `output_config` to the route unchanged, so they are only
+    // advertised when every route a request could land on speaks Anthropic Messages upstream.
     let reasoning = messages_native && reasoning;
     let efforts = effort_levels(reasoning, thinking_policy, reasoning_ceiling);
     let effort = |level| CapabilitySupport::from(efforts.contains(&level));
@@ -368,10 +387,12 @@ fn supported_endpoint_types(
     transport: ProviderCapabilities,
     preferred: Option<ApiFormat>,
 ) -> Vec<&'static str> {
+    let responses_first = preferred == Some(ApiFormat::OpenAiResponses);
     [
         (preferred == Some(ApiFormat::AnthropicMessages), "anthropic"),
+        (responses_first && transport.responses, "openai-response"),
         (transport.chat_completions, "openai"),
-        (transport.responses, "openai-response"),
+        (!responses_first && transport.responses, "openai-response"),
     ]
     .into_iter()
     .filter_map(|(supported, endpoint)| supported.then_some(endpoint))
@@ -510,6 +531,11 @@ mod tests {
         assert_eq!(
             supported_endpoint_types(chat, Some(ApiFormat::OpenAiChatCompletions)),
             ["openai", "openai-response"]
+        );
+        // Responses-native routes that also serve chat lead with the preferred format.
+        assert_eq!(
+            supported_endpoint_types(chat, Some(ApiFormat::OpenAiResponses)),
+            ["openai-response", "openai"]
         );
         let responses_only = ProviderCapabilities {
             responses: true,

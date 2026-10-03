@@ -1301,6 +1301,18 @@ fn effort_presets_respect_the_gateway_ceiling() {
     capped.max_reasoning_effort = Some(ReasoningLevel::Low);
     let hints = client_hints(&capped).expect("hints");
     assert_eq!(hints.harnesses.opencode.variants, None);
+
+    // Claude rejects `minimal`, so a ceiling below `low` hides every level rather than
+    // clamping Pi onto an effort the Anthropic adapters refuse.
+    capped.max_reasoning_effort = Some(ReasoningLevel::Minimal);
+    let hints = client_hints(&capped).expect("hints");
+    assert_eq!(
+        hints.harnesses.pi.thinking_level_map,
+        Some(serde_json::json!({
+            "off": null, "minimal": null, "low": null, "medium": null,
+            "high": null, "xhigh": null, "max": null
+        }))
+    );
 }
 
 #[test]

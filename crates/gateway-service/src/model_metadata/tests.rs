@@ -642,3 +642,65 @@ async fn anthropic_request_features_are_only_advertised_for_messages_native_rout
     );
     assert_eq!(capabilities["effort"]["supported"], json!(false));
 }
+
+#[tokio::test]
+async fn anthropic_request_features_require_every_fallback_route_to_be_messages_native() {
+    let model = GatewayModel {
+        id: Uuid::new_v4(),
+        model_key: "house-large".into(),
+        alias_target_model_key: None,
+        max_reasoning_effort: None,
+        description: None,
+        tags: vec![],
+        rank: 0,
+    };
+    let mut claude_route = route();
+    claude_route.model_id = model.id;
+    claude_route.provider_key = "vertex".into();
+    claude_route.upstream_model = "anthropic/claude-opus-4-7@default".into();
+    // The planner falls back to later priority tiers, so this route can serve `/v1/messages`
+    // too, and a Gemini upstream cannot take Anthropic content blocks or `thinking`.
+    let mut gemini_fallback = claude_route.clone();
+    gemini_fallback.id = Uuid::new_v4();
+    gemini_fallback.priority = 10;
+    gemini_fallback.upstream_model = "google/gemini-2.5-pro".into();
+
+    let card = |routes: Vec<ModelRoute>| {
+        let repo = ListingRepo {
+            models: vec![model.clone()],
+            routes,
+            provider: vertex_provider(),
+        };
+        let model = model.clone();
+        async move {
+            let listed = super::listing::list_models(
+                &repo,
+                vec![model],
+                &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+            )
+            .await
+            .unwrap();
+            serde_json::to_value(&listed.data[0]).unwrap()
+        }
+    };
+
+    let mixed = card(vec![claude_route.clone(), gemini_fallback.clone()]).await;
+    assert_eq!(mixed["capabilities"]["thinking"]["supported"], json!(false));
+    assert_eq!(mixed["capabilities"]["effort"]["supported"], json!(false));
+    assert_eq!(
+        mixed["capabilities"]["image_input"],
+        json!({"supported": false})
+    );
+
+    // A disabled fallback is never planned, so it no longer holds the card back.
+    gemini_fallback.enabled = false;
+    let claude_only = card(vec![claude_route, gemini_fallback]).await;
+    assert_eq!(
+        claude_only["capabilities"]["thinking"]["supported"],
+        json!(true)
+    );
+    assert_eq!(
+        claude_only["capabilities"]["image_input"],
+        json!({"supported": true})
+    );
+}
