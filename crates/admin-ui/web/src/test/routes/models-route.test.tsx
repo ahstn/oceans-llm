@@ -132,6 +132,18 @@ const modelPage: ModelPageView = {
       supports_tool_calling: true,
       supports_structured_output: true,
       supports_attachments: true,
+      benchmark_scores: [
+        {
+          metric_key: 'artificial_analysis_intelligence_index',
+          label: 'Artificial Analysis Intelligence Index',
+          value: 39,
+          source: 'artificial_analysis',
+          source_model_id: 'google/gemini-2.0-flash',
+          source_url: 'https://openrouter.ai/google/gemini-2.0-flash',
+          match_kind: 'derived',
+          updated_at: '2026-09-24T00:00:00Z',
+        },
+      ],
       supports_decisions: true,
       tags: ['fast', 'cheap'],
       allowlist: null,
@@ -159,6 +171,7 @@ const modelPage: ModelPageView = {
       supports_tool_calling: true,
       supports_structured_output: true,
       supports_attachments: false,
+      benchmark_scores: [],
       supports_decisions: false,
       tags: ['anthropic', 'reasoning'],
       allowlist: {
@@ -254,6 +267,7 @@ const modelPage: ModelPageView = {
       supports_tool_calling: false,
       supports_structured_output: true,
       supports_attachments: true,
+      benchmark_scores: [],
       supports_decisions: false,
       tags: ['fast', 'fallback'],
       allowlist: null,
@@ -507,6 +521,93 @@ describe('ModelsPage table content', () => {
 
     expect(within(table).queryByText('Notes')).not.toBeInTheDocument()
     expect(within(table).queryByText('Gemini fallback on Vertex')).not.toBeInTheDocument()
+  })
+
+  it('shows the optional intelligence score without treating missing data as zero', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Columns' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Intelligence/ }))
+
+    const table = screen.getAllByTestId('models-desktop-table')[0]
+    expect(within(table).getByRole('columnheader', { name: 'Intelligence' })).toBeInTheDocument()
+    const fastRow = within(table).getByText('fast').closest('tr')
+    expect(fastRow).not.toBeNull()
+    expect(within(fastRow as HTMLElement).getByText('39')).toBeInTheDocument()
+    const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
+    expect(claudeRow).not.toBeNull()
+    expect(within(claudeRow as HTMLElement).getByText('—')).toBeInTheDocument()
+  })
+
+  it('shows benchmark provenance and visible Artificial Analysis attribution', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const table = screen.getAllByTestId('models-desktop-table')[0]
+    const fastRow = within(table).getByText('fast').closest('tr')
+    expect(fastRow).not.toBeNull()
+    fireEvent.click(within(fastRow as HTMLElement).getByRole('button', { name: 'Info' }))
+    const dialog = screen.getByRole('dialog', { name: 'Model info' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Benchmarks' }))
+
+    expect(within(dialog).getByRole('heading', { name: 'Benchmarks' })).toBeInTheDocument()
+    expect(within(dialog).getByText('Artificial Analysis Intelligence Index')).toBeInTheDocument()
+    expect(within(dialog).getByText('39')).toBeInTheDocument()
+    expect(within(dialog).getByText(/Matched from upstream model · Updated/)).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole('link', { name: 'google/gemini-2.0-flash on OpenRouter' }),
+    ).toHaveAttribute('href', 'https://openrouter.ai/google/gemini-2.0-flash')
+    expect(within(dialog).getByRole('link', { name: 'Artificial Analysis' })).toHaveAttribute(
+      'href',
+      'https://artificialanalysis.ai/',
+    )
+  })
+
+  it('opens model info from the mobile model card', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const mobileList = screen.getByTestId('models-mobile-list')
+    fireEvent.click(within(mobileList).getByRole('button', { name: 'Model info for fast' }))
+
+    expect(screen.getByRole('dialog', { name: 'Model info' })).toBeInTheDocument()
+  })
+
+  it('shows Artificial Analysis attribution below the model list', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const attribution = screen.getByText(/Benchmark scores by/)
+    expect(attribution).toHaveClass('text-muted-foreground', 'text-right')
+    expect(within(attribution).getByRole('link', { name: 'Artificial Analysis' })).toHaveAttribute(
+      'href',
+      'https://artificialanalysis.ai/',
+    )
+    expect(within(attribution).getByRole('link', { name: 'OpenRouter' })).toHaveAttribute(
+      'href',
+      'https://openrouter.ai/',
+    )
   })
 
   it('renders a Decisions badge only for decisions-capable models', () => {

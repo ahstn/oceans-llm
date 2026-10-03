@@ -33,6 +33,18 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
         supports_tool_calling: true,
         supports_structured_output: true,
         supports_attachments: true,
+        benchmark_scores: [
+          {
+            metric_key: 'artificial_analysis_intelligence_index',
+            label: 'Artificial Analysis Intelligence Index',
+            value: 39,
+            source: 'artificial_analysis',
+            source_model_id: 'google/gemini-2.0-flash',
+            source_url: 'https://openrouter.ai/google/gemini-2.0-flash',
+            match_kind: 'derived',
+            updated_at: '2026-09-24T00:00:00Z',
+          },
+        ],
         tags: ['fast', 'cheap'],
         allowlist: null,
         status: 'healthy',
@@ -59,6 +71,7 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
         supports_tool_calling: true,
         supports_structured_output: true,
         supports_attachments: true,
+        benchmark_scores: [],
         tags: ['reasoning'],
         allowlist: {
           users: ['alice@example.com', 'bob@example.com'],
@@ -88,6 +101,7 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
         supports_tool_calling: false,
         supports_structured_output: true,
         supports_attachments: true,
+        benchmark_scores: [],
         tags: ['fast', 'fallback'],
         allowlist: {
           users: [],

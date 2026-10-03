@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
 use gateway_guardrails::{GuardrailConfig, GuardrailEngine};
@@ -31,6 +31,7 @@ pub struct AppState {
     pub oidc_public_base_url: Arc<Option<String>>,
     pub oauth_public_base_url: Arc<Option<String>>,
     pub client_config_gateway_base_url: Arc<Option<String>>,
+    pub benchmark_model_ids: Arc<HashMap<String, String>>,
     pub budget_defaults: Arc<SeedHumanBudgetDefaults>,
     pub agent_analysis: AgentAnalysisRuntimeCapabilities,
     pub admin_permissions: Arc<ResolvedAdminPermissions>,

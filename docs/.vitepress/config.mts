@@ -164,6 +164,10 @@ const contributingSidebar = [
         link: "/contributing/mcp/mcp-registry-and-discovery",
       },
       { text: "Screenshots", link: "/contributing/reference/screenshots" },
+      {
+        text: "Model Benchmark Snapshot",
+        link: "/contributing/reference/model-benchmark-snapshot",
+      },
     ],
   },
   {

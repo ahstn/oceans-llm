@@ -304,6 +304,7 @@ async fn run_serve_with_store(
             load_client_config_gateway_base_url()
                 .context("failed resolving client config gateway base URL")?,
         ),
+        benchmark_model_ids: Arc::new(config.benchmark_model_ids()),
         budget_defaults: human_budget_defaults,
         agent_analysis: agent_analysis.capabilities,
         admin_permissions,

@@ -1583,6 +1583,21 @@ export interface components {
             teams: string[];
             users: string[];
         };
+        /** @enum {string} */
+        AdminModelBenchmarkMatchKindView: "explicit" | "derived";
+        /** @enum {string} */
+        AdminModelBenchmarkMetricKeyView: "artificial_analysis_intelligence_index" | "artificial_analysis_coding_index" | "artificial_analysis_agentic_index";
+        AdminModelBenchmarkScoreView: {
+            label: string;
+            match_kind: components["schemas"]["AdminModelBenchmarkMatchKindView"];
+            metric_key: components["schemas"]["AdminModelBenchmarkMetricKeyView"];
+            source: string;
+            source_model_id: string;
+            source_url: string;
+            updated_at: string;
+            /** Format: double */
+            value: number;
+        };
         AdminModelClientConfigBlockView: {
             content: string;
             filename: string;
@@ -1615,6 +1630,7 @@ export interface components {
         AdminModelView: {
             alias_of?: string | null;
             allowlist?: null | components["schemas"]["AdminModelAllowlistView"];
+            benchmark_scores: components["schemas"]["AdminModelBenchmarkScoreView"][];
             /** Format: int64 */
             cache_read_cost_per_million_tokens_usd_10000?: number | null;
             /** Format: int64 */

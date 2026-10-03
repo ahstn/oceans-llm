@@ -66,6 +66,10 @@ pub struct ModelAllowlistConfig {
 #[serde(deny_unknown_fields)]
 pub struct ModelConfig {
     pub id: String,
+    /// OpenRouter model ID used to look up vendored Artificial Analysis scores,
+    /// e.g. `anthropic/claude-sonnet-4.6`. Overrides the ID derived from the primary route.
+    #[serde(default)]
+    pub benchmark_model_id: Option<String>,
     #[serde(default)]
     pub alias_of: Option<String>,
     #[serde(default)]
@@ -81,12 +85,32 @@ pub struct ModelConfig {
     pub allowlist: Option<ModelAllowlistConfig>,
 }
 
+fn is_valid_benchmark_model_id(value: &str) -> bool {
+    let Some((publisher, model)) = value.split_once('/') else {
+        return false;
+    };
+    value.trim() == value
+        && !publisher.is_empty()
+        && !model.is_empty()
+        && !value.contains(':')
+        && !value.chars().any(char::is_whitespace)
+}
+
 pub(super) fn validate_models(
     models: &[ModelConfig],
     model_by_id: &BTreeMap<&str, &ModelConfig>,
     provider_by_id: &BTreeMap<String, &ProviderConfig>,
 ) -> anyhow::Result<()> {
     for model in models {
+        if let Some(benchmark_model_id) = model.benchmark_model_id.as_deref()
+            && !is_valid_benchmark_model_id(benchmark_model_id)
+        {
+            bail!(
+                "model `{}` benchmark_model_id must be an OpenRouter model ID like `publisher/model` without a `:variant` suffix",
+                model.id
+            );
+        }
+
         let has_alias = model.alias_of.is_some();
         let has_routes = !model.routes.is_empty();
 
