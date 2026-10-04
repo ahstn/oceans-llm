@@ -216,6 +216,15 @@ run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-re
 description = "Seed the local-only demo dataset (identity, budgets, API keys, request history, and agent session diagnostics) against `gateway.yaml`"
 run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo'
 
+[tasks."skills:cli-build"]
+description = "Build the Oceans CLI for local Skills workflows"
+run = "cargo build --locked -p oceans-cli --bin oceans"
+
+[tasks."skills:import-bundled"]
+description = "Import curated skills using a user-owned API key and the requested namespace"
+depends = ["skills:cli-build"]
+run = "node scripts/import-bundled-skills.mjs"
+
 [tasks.gateway-reset-local-demo]
 description = "Recreate local `gateway.db` with the local-only demo dataset"
 run = 'rm -f gateway.db && OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo'

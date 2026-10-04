@@ -78,7 +78,7 @@ cargo test --locked -p gateway-store --test skill_objects_s3 -- --ignored
 
 [tasks."rustfs:e2e-cli-build"]
 description = "Build the Oceans CLI for the Skills end-to-end tests"
-run = "cargo build --locked -p oceans-cli --bin oceans"
+depends = ["skills:cli-build"]
 
 [tasks."rustfs:e2e"]
 description = "Verify the Skills UI and CLI against a real gateway and local RustFS"

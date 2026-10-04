@@ -96,7 +96,7 @@ describe('skill attribution', () => {
       archive_bytes: 1024,
       extracted_bytes: 2048,
       file_count: 1,
-      created_at: '2026-10-03T00:00:00Z',
+      created_at: '2026-10-03T15:07:59+02:00',
     },
     manifest: {
       name: 'code-review',
@@ -124,6 +124,11 @@ describe('skill attribution', () => {
     expect(screen.getByText('Matt Pocock')).toBeVisible()
     expect(screen.getByText('Upstream version').nextElementSibling).toHaveTextContent('1.0')
     expect(screen.getByText('Version 2')).toBeVisible()
+    expect(screen.getByText('Uploaded').nextElementSibling).toHaveTextContent(/^03\/10\/26 13:07$/)
+    expect(screen.getByText('Contents').nextElementSibling).toHaveTextContent(/^1 file$/)
+    expect(screen.queryByText('SHA-256')).not.toBeInTheDocument()
+    expect(screen.queryByText(detail.version.sha256)).not.toBeInTheDocument()
+    expect(screen.queryByText(/bytes/)).not.toBeInTheDocument()
     const source = screen.getByRole('link', { name: 'View on GitHub' })
     expect(source).toHaveAttribute(
       'href',
@@ -137,12 +142,13 @@ describe('skill attribution', () => {
         skill={skill}
         detail={{
           ...withMetadata({ author: 'Earlier author', version: 'release-candidate' }),
-          version: { ...detail.version, version: 1 },
+          version: { ...detail.version, version: 1, file_count: 2 },
         }}
       />,
     )
     expect(screen.getByText('Earlier author')).toBeVisible()
     expect(screen.getByText('release-candidate')).toBeVisible()
+    expect(screen.getByText('Contents').nextElementSibling).toHaveTextContent(/^2 files$/)
     expect(screen.queryByText('Matt Pocock')).not.toBeInTheDocument()
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })

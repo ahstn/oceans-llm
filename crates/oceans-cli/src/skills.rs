@@ -20,7 +20,10 @@ pub async fn run(client: &Client, command: SkillsCommand, as_json: bool) -> anyh
         SkillsCommand::Namespace { handle } => namespace(client, handle, as_json).await,
         SkillsCommand::List { namespace } => list(client, namespace, as_json).await,
         SkillsCommand::Show(selected) => show(client, &selected, as_json).await,
-        SkillsCommand::Upload { path } => upload(client, &path, as_json).await,
+        SkillsCommand::Upload {
+            path,
+            skip_unchanged,
+        } => upload(client, &path, skip_unchanged, as_json).await,
         SkillsCommand::Versions { skill } => versions(client, &skill, as_json).await,
         SkillsCommand::SetDefault { skill, version } => {
             let detail = resolve(client, &skill).await?;
@@ -183,7 +186,12 @@ async fn versions(client: &Client, skill: &str, as_json: bool) -> anyhow::Result
     emit(&versions, &display, as_json)
 }
 
-async fn upload(client: &Client, path: &Path, as_json: bool) -> anyhow::Result<()> {
+async fn upload(
+    client: &Client,
+    path: &Path,
+    skip_unchanged: bool,
+    as_json: bool,
+) -> anyhow::Result<()> {
     let namespace: Option<SkillNamespace> = client.get(&["namespace"]).await?;
     let namespace =
         namespace.context("register a user namespace first: oceans skills namespace <handle>")?;
@@ -194,6 +202,28 @@ async fn upload(client: &Client, path: &Path, as_json: bool) -> anyhow::Result<(
         .await?;
     let result: SkillUploadResponse = match existing {
         Some(existing) => {
+            if skip_unchanged
+                && existing.versions.iter().any(|version| {
+                    version.version == existing.skill.latest_version
+                        && version.sha256 == bundle.sha256
+                })
+            {
+                return emit(
+                    &json!({
+                        "detail": existing,
+                        "version": existing.skill.latest_version,
+                        "unchanged": true,
+                    }),
+                    &format!(
+                        "Unchanged {}/{} version {} (default {})",
+                        existing.skill.namespace,
+                        existing.skill.name,
+                        existing.skill.latest_version,
+                        existing.skill.default_version,
+                    ),
+                    as_json,
+                );
+            }
             client
                 .upload(
                     &[&existing.skill.id.to_string(), "versions"],

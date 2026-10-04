@@ -22,6 +22,16 @@ import { SkillFiles } from './-files'
 import { SkillUploadDialog } from './-upload-dialog'
 import { SkillsErrorPage } from './-error'
 
+const uploadedAtFormatter = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: '2-digit',
+  year: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+  timeZone: 'UTC',
+})
+
 export const Route = createFileRoute('/skills/$id')({
   validateSearch: (search: Record<string, unknown>): { version?: number } => ({
     version:
@@ -215,17 +225,16 @@ export function VersionMetadata({
       <div>
         <dt className="text-muted-foreground">Uploaded</dt>
         <dd>
-          <time dateTime={detail.version.created_at}>
-            {new Date(detail.version.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC
+          <time dateTime={detail.version.created_at} title="UTC">
+            {uploadedAtFormatter.format(new Date(detail.version.created_at)).replace(',', '')}
           </time>
         </dd>
       </div>
       <div>
         <dt className="text-muted-foreground">Contents</dt>
         <dd>
-          {detail.version.file_count.toLocaleString()} files ·{' '}
-          {detail.version.archive_bytes.toLocaleString()} bytes archived ·{' '}
-          {detail.version.extracted_bytes.toLocaleString()} bytes expanded
+          {detail.version.file_count.toLocaleString()}{' '}
+          {detail.version.file_count === 1 ? 'file' : 'files'}
         </dd>
       </div>
       <div>
@@ -233,10 +242,6 @@ export function VersionMetadata({
         <dd>{detail.manifest.license ?? 'Not specified'}</dd>
       </div>
       <SkillAttribution metadata={detail.manifest.metadata} />
-      <div className="min-w-0 sm:col-span-2">
-        <dt className="text-muted-foreground">SHA-256</dt>
-        <dd className="font-mono break-all">{detail.version.sha256}</dd>
-      </div>
       {detail.manifest.compatibility ? (
         <div className="sm:col-span-2">
           <dt className="text-muted-foreground">Compatibility</dt>

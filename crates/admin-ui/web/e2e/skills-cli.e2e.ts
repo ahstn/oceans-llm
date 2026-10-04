@@ -144,3 +144,109 @@ test('a user API key completes the CLI upload, edit, install, and download workf
     await rm(temporary, { recursive: true, force: true })
   }
 })
+
+test('bundled skills import under the demo admin and unchanged reruns keep one version', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  test.setTimeout(120_000)
+  const root = baseURL ?? requireEnv('E2E_BASE_URL')
+  const executable = await cliExecutable()
+  const adminCookie = await ensureAdminSession(page, request, root)
+  const admin = await createActiveRegularUser(request, root, adminCookie, 'skills-bundled-admin')
+  const namespace = `demo-admin-${admin.id}`
+  let key: { api_key: { id: string }; raw_key: string } | undefined
+  try {
+    const promoted = await request.patch(`${root}/api/v1/admin/identity/users/${admin.id}`, {
+      headers: { cookie: adminCookie },
+      data: { global_role: 'platform_admin', auth_mode: 'password' },
+    })
+    expect(promoted.ok()).toBe(true)
+    const session = await request.get(`${root}/api/v1/auth/session`, {
+      headers: { cookie: admin.cookie },
+    })
+    expect(session.ok()).toBe(true)
+    expect((await session.json()).data.user.global_role).toBe('platform_admin')
+    const keyResponse = await request.post(`${root}/api/v1/admin/api-keys`, {
+      headers: { cookie: adminCookie },
+      data: {
+        name: `Bundled Skills ${Date.now()}`,
+        owner_kind: 'user',
+        owner_user_id: admin.id,
+        owner_team_id: null,
+        owner_service_account_id: null,
+        model_grant_mode: 'all',
+        model_keys: [],
+      },
+    })
+    expect(keyResponse.ok()).toBe(true)
+    key = (await keyResponse.json()).data
+    if (!key) throw new Error('The bundled skill fixture did not receive a user API key')
+    const rawKey = key.raw_key
+    type ImportResult = {
+      namespace: string
+      skills: { name: string; id: string; version: number; unchanged: boolean; sha256: string }[]
+    }
+    async function importBundles(requestedNamespace = namespace): Promise<ImportResult> {
+      try {
+        const { stdout } = await execFileAsync(
+          process.execPath,
+          [path.join(repoRoot, 'scripts/import-bundled-skills.mjs')],
+          {
+            env: {
+              ...process.env,
+              OCEANS_URL: root,
+              OCEANS_API_KEY: rawKey,
+              OCEANS_SKILLS_NAMESPACE: requestedNamespace,
+              OCEANS_CLI_BIN: executable,
+            },
+            timeout: 60_000,
+          },
+        )
+        return JSON.parse(stdout) as ImportResult
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(message.replaceAll(rawKey, '[redacted]'))
+      }
+    }
+
+    const first = await importBundles()
+    expect(first.namespace).toBe(namespace)
+    const grill = first.skills.find((skill) => skill.name === 'grill-me')
+    if (!grill) throw new Error('The curated grill-me skill was not imported')
+    expect(grill).toMatchObject({ version: 1, unchanged: false })
+    const second = await importBundles()
+    expect(second.skills).toEqual(first.skills.map((skill) => ({ ...skill, unchanged: true })))
+    await expect(importBundles('other-owner')).rejects.toThrow(`owns namespace ${namespace}`)
+
+    const detail = await request.get(`${root}/api/v1/skills/${grill.id}`, {
+      headers: { cookie: adminCookie },
+    })
+    const saved = await detail.json()
+    expect(saved.skill.owner_user_id).toBe(admin.id)
+    expect(saved.skill.default_version).toBe(1)
+    expect(saved.versions).toHaveLength(1)
+    expect(saved.versions[0].sha256).toBe(grill.sha256)
+
+    await page.goto(`${root}/admin/skills/${grill.id}`)
+    await expect(
+      page.getByRole('heading', { name: `${namespace}/grill-me`, exact: true }),
+    ).toBeVisible()
+    await expect(page.getByTestId('skill-instructions')).toContainText('Interview me relentlessly')
+    await expect(page.getByText('Matt Pocock', { exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'View on GitHub', exact: true })).toHaveAttribute(
+      'href',
+      /^https:\/\/github\.com\/mattpocock\/skills\/tree\/[a-f0-9]{40}\//,
+    )
+  } finally {
+    if (key) {
+      const revoked = await request.post(`${root}/api/v1/admin/api-keys/${key.api_key.id}/revoke`, {
+        headers: { cookie: adminCookie },
+      })
+      expect(revoked.ok()).toBe(true)
+    }
+    // The last-admin guard excludes the bootstrap identity. The isolated E2E
+    // database is deleted by stack teardown, which also removes this demo admin.
+  }
+})

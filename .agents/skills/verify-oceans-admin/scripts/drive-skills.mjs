@@ -6,6 +6,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { importBundledSkills } from "../../../../scripts/import-bundled-skills.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const requireFromAdminUi = createRequire(path.join(repoRoot, "crates/admin-ui/web/package.json"));
@@ -36,6 +37,7 @@ const proof = {
   actions,
   cleanup: {
     usersDeactivated: [],
+    usersRetainedForDatabaseCleanup: [],
     skills: "Stored in the run-local database; control-oceans-admin cleanup removes that database.",
     objects: "Run prefix is removed by control-oceans-admin cleanup.",
   },
@@ -59,6 +61,8 @@ try {
     action: "open protected Skills page and sign in as platform admin",
     result: "Skills catalog visible",
   });
+
+  proof.bundled = await verifyBundledSkills(adminPage);
 
   const owner = await createUser(adminContext.request, "owner");
   const peer = await createUser(adminContext.request, "reader");
@@ -131,6 +135,12 @@ try {
   }
 } finally {
   for (const user of createdUsers) {
+    // The last ordinary admin is protected by the normal lifecycle. The private database
+    // is removed by stack cleanup; its temporary API key was already revoked.
+    if (user.globalRole === "platform_admin") {
+      proof.cleanup.usersRetainedForDatabaseCleanup.push(user.id);
+      continue;
+    }
     try {
       const response = await adminContext.request.post(
         `${baseURL}/api/v1/admin/identity/users/${user.id}/deactivate`,
@@ -155,9 +165,82 @@ console.log(
 );
 console.log(`evidence: ${evidenceDir}`);
 
-async function createUser(adminApi, label) {
+async function verifyBundledSkills(page) {
+  const demoAdmin = await createUser(page.request, "bundled-admin", "platform_admin");
+  const created = await json(page.request, "/api/v1/admin/api-keys", {
+    method: "POST",
+    data: {
+      name: `Bundled Skills Verification ${suffix}`,
+      owner_kind: "user",
+      owner_user_id: demoAdmin.id,
+      owner_team_id: null,
+      owner_service_account_id: null,
+      model_grant_mode: "all",
+      model_keys: [],
+    },
+  });
+  let imported;
+  try {
+    const options = {
+      url: baseURL,
+      apiKey: created.data.raw_key,
+      namespace: "demo-admin",
+    };
+    imported = await importBundledSkills(options);
+    const repeated = await importBundledSkills(options);
+    assert(repeated.skills.every((skill) => skill.unchanged), "Repeated local import is unchanged");
+    assert.deepEqual(
+      repeated.skills.map(({ id, version }) => ({ id, version })),
+      imported.skills.map(({ id, version }) => ({ id, version })),
+      "Repeated import preserves version identities",
+    );
+  } finally {
+    await json(page.request, `/api/v1/admin/api-keys/${created.data.api_key.id}/revoke`, {
+      method: "POST",
+    });
+  }
+  const bundled = imported.skills.find((skill) => skill.name === "grill-me");
+  assert(bundled, "Curated grill-me is imported");
+  const detail = await json(page.request, `/api/v1/skills/${bundled.id}`);
+  const version = await json(page.request, `/api/v1/skills/${bundled.id}/versions/${bundled.version}`);
+  assert.equal(detail.skill.owner_user_id, demoAdmin.id, "Demo admin owns local import");
+  assert.equal(detail.versions.length, 1, "Repeated import does not append an identical version");
+  assert.equal(version.manifest.metadata.author, "Matt Pocock");
+  assert.equal(version.manifest.license, "MIT");
+  assert.equal(version.manifest.metadata.version, undefined, "No upstream version is invented");
+  await page.goto(`${baseURL}/admin/skills/${bundled.id}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "demo-admin/grill-me", exact: true })).toBeVisible();
+  await expect(page.getByText("Author", { exact: true }).locator("..")).toContainText("Matt Pocock");
+  await expect(page.getByRole("link", { name: "View on GitHub", exact: true })).toHaveAttribute(
+    "href", version.manifest.metadata.github,
+  );
+  await expect(page.getByText("Contents", { exact: true }).locator("..")).toHaveText("Contents2 files");
+  await expect(page.getByText("Uploaded", { exact: true }).locator("..")).toHaveText(
+    /^Uploaded\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}$/,
+  );
+  await expect(page.getByText("SHA-256", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Upstream version", { exact: true })).toHaveCount(0);
+  // The detail page can render before hydration attaches the file button handler.
+  // Retry this read-only selection until the requested preview is visible.
+  await expect(async () => {
+    await page.getByRole("navigation", { name: "Skill files" })
+      .getByRole("button", { name: "LICENSE", exact: true }).click();
+    await expect(page.getByTestId("skill-file-text"), "Bundled license preview").toContainText(
+      "Copyright (c) 2026 Matt Pocock", { timeout: 1_000 },
+    );
+  }).toPass({ timeout: 20_000, intervals: [250, 500, 1_000] });
+  await page.getByRole("navigation", { name: "Skill files" })
+    .getByRole("button", { name: "SKILL.md", exact: true }).click();
+  await expect(page.getByTestId("skill-instructions")).toContainText("Interview me relentlessly");
+  await capture(page, "01b-skills-bundled");
+  actions.push({ action: "import curated skill as demo admin twice", result: "Attribution and license visible; unchanged second import; temporary key revoked" });
+  return { ...imported, repeatedImportUnchanged: true, temporaryKeyRevoked: true };
+}
+
+async function createUser(adminApi, label, globalRole = "user") {
   const user = {
     name: `Skills Verification ${label}`,
+    globalRole,
     email: `skills-${label}-${suffix}@example.com`,
     password: `Skills-${randomUUID()}-9`,
     namespace: `verify-${label}-${suffix}`,
@@ -168,7 +251,7 @@ async function createUser(adminApi, label) {
       name: user.name,
       email: user.email,
       auth_mode: "password",
-      global_role: "user",
+      global_role: globalRole,
       tags: [],
     },
   });

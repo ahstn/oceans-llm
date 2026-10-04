@@ -150,7 +150,7 @@ Require `mcp-proof.json` to report `passed: true` and inspect each candidate res
 
 The Skills proof produces:
 
-- `01-skills-login.*`, `02-skills-before.*`, `03-skills-file-preview.*`, `04-skills-new-version.*`, `05-skills-owner-default.*`, `06-skills-other-owner.*`, and `07-skills-catalog-after.*` screenshots and ARIA snapshots.
+- `01-skills-login.*`, `01b-skills-bundled.*`, `02-skills-before.*`, `03-skills-file-preview.*`, `04-skills-new-version.*`, `05-skills-owner-default.*`, `06-skills-other-owner.*`, and `07-skills-catalog-after.*` screenshots and ARIA snapshots.
 - `skills-proof.json` with the run, storage scope, saved IDs, version digests, caller checks, and action log. It must report `passed: true`.
 - `skills-storage-cleanup.json` after stack teardown confirms that the run's object prefix is empty and its database was removed. `evidence skills` checks this file after teardown.
 - No gateway key, RustFS credential, password, or authorization header in proof artifacts.

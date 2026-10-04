@@ -435,6 +435,9 @@ drive() {
   fi
   activate_mise
   mise run e2e-install
+  if [[ "$target" == "skills" ]]; then
+    mise run skills:cli-build
+  fi
   OCEANS_VERIFY_BASE_URL="$base_url" \
     OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" \
     OCEANS_VERIFY_GATEWAY_VERSION="$(<"$run_dir/gateway-version")" \

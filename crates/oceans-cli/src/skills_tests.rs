@@ -174,8 +174,84 @@ async fn upload_appends_edited_installed_skill_without_installer_record() {
             }),
         );
     let (client, _server) = server(router).await;
-    upload(&client, &installed, true).await.unwrap();
+    upload(&client, &installed, false, true).await.unwrap();
     assert_eq!(uploaded.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn upload_skips_only_when_requested_and_latest_content_matches() {
+    for (skip_unchanged, latest_matches, expected_uploads) in
+        [(true, true, 0), (true, false, 1), (false, true, 1)]
+    {
+        let (directory, bundle, mut detail) = fixture();
+        let mut latest = detail.versions[0].clone();
+        latest.version = 2;
+        if latest_matches {
+            detail.versions[0].sha256 = "a".repeat(64);
+        } else {
+            latest.sha256 = "a".repeat(64);
+        }
+        detail.versions.push(latest);
+        detail.skill.latest_version = 2;
+        let namespace = SkillNamespace {
+            handle: "alice".into(),
+            user_id: detail.skill.owner_user_id,
+        };
+        let upload_path = format!("/api/v1/skills/{}/versions", detail.skill.id);
+        let response = SkillUploadResponse {
+            detail: detail.clone(),
+            uploaded_version: 3,
+        };
+        let uploaded = Arc::new(AtomicUsize::new(0));
+        let observed = uploaded.clone();
+        let router = Router::new()
+            .route(
+                "/api/v1/skills/limits",
+                get(|| async { Json(BundleLimits::default()) }),
+            )
+            .route(
+                "/api/v1/skills/namespace",
+                get(move || {
+                    let value = namespace.clone();
+                    async { Json(value) }
+                }),
+            )
+            .route(
+                "/api/v1/skills/by-name/alice/review",
+                get(move || {
+                    let value = detail.clone();
+                    async { Json(value) }
+                }),
+            )
+            .route(
+                &upload_path,
+                post(move |bytes: Bytes| {
+                    let response = response.clone();
+                    let observed = observed.clone();
+                    let expected_digest = bundle.sha256.clone();
+                    async move {
+                        let received = inspect_archive(&bytes, &BundleLimits::default()).unwrap();
+                        assert_eq!(received.sha256, expected_digest);
+                        observed.fetch_add(1, Ordering::Relaxed);
+                        Json(response)
+                    }
+                }),
+            );
+        let (client, _server) = server(router).await;
+        upload(
+            &client,
+            &directory.path().join("review"),
+            skip_unchanged,
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            uploaded.load(Ordering::Relaxed),
+            expected_uploads,
+            "skip_unchanged={skip_unchanged}, latest_matches={latest_matches}",
+        );
+    }
 }
 
 #[test]
@@ -300,7 +376,7 @@ async fn upload_still_enforces_current_registry_limits() {
             }),
         );
     let (client, _server) = server(router).await;
-    let error = upload(&client, &directory.path().join("review"), false)
+    let error = upload(&client, &directory.path().join("review"), false, false)
         .await
         .unwrap_err();
     assert!(format!("{error:#}").contains("skill bundle exceeds expanded bytes limit"));

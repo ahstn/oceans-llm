@@ -43,7 +43,12 @@ pub enum SkillsCommand {
     /// Show a skill and its selected version.
     Show(VersionArgs),
     /// Upload a skill directory or ZIP to your namespace; append if it exists.
-    Upload { path: PathBuf },
+    Upload {
+        path: PathBuf,
+        /// Skip the upload when its content is identical to the latest version.
+        #[arg(long)]
+        skip_unchanged: bool,
+    },
     /// List the immutable versions of a skill.
     Versions { skill: String },
     /// Change the default version of a skill you own.
@@ -84,7 +89,7 @@ pub struct VersionArgs {
 mod tests {
     use clap::{CommandFactory, Parser};
 
-    use super::Cli;
+    use super::{Cli, Command, SkillsCommand};
 
     #[test]
     fn command_contract_is_valid() {
@@ -93,5 +98,20 @@ mod tests {
             Cli::try_parse_from(["oceans", "skills", "show", "alice/review", "--version", "0"])
                 .is_err()
         );
+        let cli = Cli::try_parse_from([
+            "oceans",
+            "skills",
+            "upload",
+            "bundled-skills/review",
+            "--skip-unchanged",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Skills(SkillsCommand::Upload {
+                skip_unchanged: true,
+                ..
+            })
+        ));
     }
 }

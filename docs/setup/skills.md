@@ -90,6 +90,22 @@ Setup creates local credentials, starts RustFS on a worktree-aware loopback port
 
 For a persistent self-hosted stack, use the `selfhost,rustfs,selfhost-rustfs` environments. The final environment gives RustFS a fixed port and persistent data path, and starts the bucket setup before the gateway. See [Self-hosting (mise daemons)](self-hosting-mise-daemons.md) for the complete environment, startup, and backup procedure.
 
+### Curated skills in local testing
+
+The repository keeps reviewed community copies under `bundled-skills/`, outside agent auto-load directories. The initial copy is Matt Pocock's self-contained `grill-me`, with its MIT license and a source link pinned to the reviewed commit. Local verification imports it into a temporary admin's `demo-admin` namespace. This ordinary user is separate from the bootstrap admin, which is excluded from API-key owner selection.
+
+To import the copies into an existing local or self-hosted gateway, first enable Skills storage and create a user-owned API key in the UI. Supply that key as `OCEANS_API_KEY` through your private environment, then run:
+
+```bash
+export OCEANS_URL=http://127.0.0.1:8080
+export OCEANS_SKILLS_NAMESPACE=my-skills
+mise run skills:import-bundled
+```
+
+For the self-host environment, use `mise -E selfhost,rustfs,selfhost-rustfs run skills:import-bundled`. If the key's owner already has a namespace, set `OCEANS_SKILLS_NAMESPACE` to that exact value. Otherwise the task claims it once. Service-account keys cannot import skills.
+
+This task runs explicitly; starting or upgrading the gateway does not import skills. It uses the normal authenticated upload path. An unchanged latest bundle is skipped; changed content appends a version and preserves the default. The duplicate check supports sequential local reruns, not concurrent production seed jobs. Production image packaging and managed library ownership are separate from this local task.
+
 ### RustFS with Helm
 
 The Oceans chart accepts the official RustFS chart as an optional dependency. An admin supplies an existing CSI StorageClass and the required capacity through the RustFS values. Oceans does not install or manage a CSI driver.
@@ -159,6 +175,8 @@ oceans skills versions alice/code-review
 ```
 
 `namespace` without a handle displays your current namespace. `upload` accepts either a directory or a ZIP. If your namespace already contains that skill name, the command adds an immutable version. To ingest a private Git source, clone it with your existing Git credentials and upload its skill directory.
+
+Use `oceans skills upload --skip-unchanged ./code-review` to skip an upload when its normalized archive matches your skill's latest version. This does not select a new default or change ordinary upload behavior. Concurrent uploads can still append identical versions.
 
 Version 1 becomes the default when a skill is created. Later uploads increase `latest_version` but leave `default_version` unchanged. All versions remain readable. Select a new default with:
 
