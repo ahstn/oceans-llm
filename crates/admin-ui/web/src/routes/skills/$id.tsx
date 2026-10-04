@@ -5,7 +5,14 @@ import { toast } from 'sonner'
 import { PageHeader } from '@/components/layout/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Field, FieldLabel } from '@/components/ui/field'
 import {
   Select,
@@ -110,49 +117,49 @@ function SkillDetailPage() {
         <CardHeader>
           <CardTitle>Version details</CardTitle>
           <CardDescription>
-            Owned by {skill.namespace}. Version contents cannot be changed after upload.
+            Submitted by {skill.namespace}, metadata fetched from skill.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex min-w-0 flex-col gap-5">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <Field className="max-w-sm">
-              <FieldLabel htmlFor="skill-version">Version</FieldLabel>
-              <Select
-                value={String(version.version.version)}
-                onValueChange={(value) =>
-                  void router.navigate({
-                    to: '/skills/$id',
-                    params: { id: skill.id },
-                    search: { version: Number(value) },
-                  })
-                }
-              >
-                <SelectTrigger id="skill-version">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {detail.versions.map((item) => (
-                      <SelectItem key={item.version} value={String(item.version)}>
-                        Version {item.version}
-                        {item.version === skill.default_version ? ' (default)' : ''}
-                        {item.version === skill.latest_version ? ' (latest)' : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Button asChild variant="outline">
-              <a
-                href={`${gatewayOrigin}/api/v1/skills/${skill.id}/versions/${version.version.version}/archive`}
-              >
-                Download ZIP
-              </a>
-            </Button>
-          </div>
+        <CardContent className="min-w-0">
           <VersionMetadata detail={version} skill={skill} />
         </CardContent>
+        <CardFooter className="flex-wrap items-end justify-between gap-4">
+          <Field className="max-w-sm">
+            <FieldLabel htmlFor="skill-version">Version</FieldLabel>
+            <Select
+              value={String(version.version.version)}
+              onValueChange={(value) =>
+                void router.navigate({
+                  to: '/skills/$id',
+                  params: { id: skill.id },
+                  search: { version: Number(value) },
+                })
+              }
+            >
+              <SelectTrigger id="skill-version">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {detail.versions.map((item) => (
+                    <SelectItem key={item.version} value={String(item.version)}>
+                      Version {item.version}
+                      {item.version === skill.default_version ? ' (default)' : ''}
+                      {item.version === skill.latest_version ? ' (latest)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Button asChild variant="outline">
+            <a
+              href={`${gatewayOrigin}/api/v1/skills/${skill.id}/versions/${version.version.version}/archive`}
+            >
+              Download ZIP
+            </a>
+          </Button>
+        </CardFooter>
       </Card>
       <SkillFiles key={`${skill.id}:${version.version.version}`} id={skill.id} detail={version} />
       {uploadOpen ? (
@@ -210,6 +217,14 @@ export function VersionMetadata({
   return (
     <dl className="grid min-w-0 gap-4 text-sm sm:grid-cols-2">
       <div>
+        <dt className="text-muted-foreground">Uploaded</dt>
+        <dd>
+          <time dateTime={detail.version.created_at} title="UTC">
+            {uploadedAtFormatter.format(new Date(detail.version.created_at)).replace(',', '')}
+          </time>
+        </dd>
+      </div>
+      <div>
         <dt className="text-muted-foreground">Status</dt>
         <dd className="mt-1 flex gap-2">
           {detail.version.version === skill.default_version ? (
@@ -220,14 +235,6 @@ export function VersionMetadata({
           {detail.version.version === skill.latest_version ? (
             <Badge variant="secondary">Latest</Badge>
           ) : null}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-muted-foreground">Uploaded</dt>
-        <dd>
-          <time dateTime={detail.version.created_at} title="UTC">
-            {uploadedAtFormatter.format(new Date(detail.version.created_at)).replace(',', '')}
-          </time>
         </dd>
       </div>
       <div>
@@ -265,18 +272,6 @@ function SkillAttribution({ metadata }: { metadata: SkillVersionDetail['manifest
 
   return (
     <>
-      {author ? (
-        <div className="min-w-0">
-          <dt className="text-muted-foreground">Author</dt>
-          <dd className="break-words">{author}</dd>
-        </div>
-      ) : null}
-      {version ? (
-        <div className="min-w-0">
-          <dt className="text-muted-foreground">Upstream version</dt>
-          <dd className="break-words">{version}</dd>
-        </div>
-      ) : null}
       {github ? (
         <div>
           <dt className="text-muted-foreground">Source</dt>
@@ -290,6 +285,18 @@ function SkillAttribution({ metadata }: { metadata: SkillVersionDetail['manifest
               View on GitHub
             </a>
           </dd>
+        </div>
+      ) : null}
+      {version ? (
+        <div className="min-w-0">
+          <dt className="text-muted-foreground">Upstream version</dt>
+          <dd className="break-words">{version}</dd>
+        </div>
+      ) : null}
+      {author ? (
+        <div className="min-w-0">
+          <dt className="text-muted-foreground">Author</dt>
+          <dd className="break-words">{author}</dd>
         </div>
       ) : null}
     </>
