@@ -47,24 +47,25 @@ pub(super) async fn select_provider_route(
     {
         validate_session_headers(headers)?;
     }
-    let eligible = eligible_routes(&state.providers, &resolved.routes, requirements);
+    let mut eligible = eligible_routes(&state.providers, &resolved.routes, requirements);
+    let provider_identities = if policy.is_some() {
+        let mut identities = BTreeMap::new();
+        // Shared policies can reference a local legacy provider whose account is unscoped.
+        eligible.retain(|route| {
+            let Some(identity) = state.providers.routing_identity(&route.provider_key) else {
+                return false;
+            };
+            identities.insert(route.provider_key.clone(), identity.to_string());
+            true
+        });
+        identities
+    } else {
+        BTreeMap::new()
+    };
     let (eligible, credential_versions) = if policy.is_some() {
         filter_credential_routes(state, &resolved.auth, eligible).await?
     } else {
         (eligible, BTreeMap::new())
-    };
-    let provider_identities = if policy.is_some() {
-        eligible
-            .iter()
-            .filter_map(|route| {
-                state
-                    .providers
-                    .routing_identity(&route.provider_key)
-                    .map(|identity| (route.provider_key.clone(), identity.to_string()))
-            })
-            .collect()
-    } else {
-        BTreeMap::new()
     };
     let eligible_route_count = eligible.len();
     let harness = classify_agent_harness(request_headers.get("user-agent").map(String::as_str));

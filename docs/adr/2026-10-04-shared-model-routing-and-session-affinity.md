@@ -26,6 +26,8 @@ Pool membership is the administrator's assertion that the models are equivalent.
 
 First build the eligible route set for the request. An existing valid session binding can select any eligible route, even if a route with a lower priority value has since been added. Otherwise, select within the lowest eligible priority tier.
 
+Configured pools exclude providers that have no runtime routing identity on the local replica. This can occur when another replica seeds a shared policy while the local replica still uses an unscoped dynamic account. The remaining eligible routes can serve new requests. If none remain, return the normal no-compatible-route error. Legacy models without a routing policy can still use these providers.
+
 Preferred placement chooses the first route by stable internal route ID within that tier. Weighted random preserves the existing weighted ordering. Round robin uses a shared database cursor for each execution model and eligible lowest-priority route-ID set. It sorts that set by stable route ID. Separate cursors prevent callers with different eligible sets from consuming each other's turns. Only a new placement advances the cursor. All strategies exclude disabled routes and routes with non-positive weight.
 
 The HTTP edge owns protocol requirements and provider-client eligibility. The service owns policy, session scope, route fingerprints, and continuation rules. The store owns atomic placement, binding refresh, shared cursors, and response-origin records. The domain module holds the policy and repository contracts.
@@ -45,6 +47,8 @@ When a binding expires or its route becomes ineligible, the next request receive
 ### Track Responses origin separately
 
 An opaque `previous_response_id` must return to the route that created it. Store response ownership separately from the idle session binding, scoped to the caller and requested model. Retain it for 30 days. A matching origin write can extend retention; a conflicting origin cannot replace ownership. Origin persistence is required before successful completion. A failed origin write reports a request or stream error, even when the upstream provider succeeded.
+
+For streaming Responses, an origin-write failure stops the stream before forwarding the terminal event. Earlier chunks may already have reached the caller, and reported usage is still accounted for. This prevents the gateway from reporting completion with a continuation ID whose ownership it cannot recover.
 
 Origin selection takes precedence over soft session affinity. When affinity is enabled and a session ID is present, a known continuation binds that session to its origin without advancing the round-robin cursor. Successful completion refreshes the binding. Unknown, expired, changed, or ineligible origins fail before provider execution. The gateway does not replay a continuation on another provider. Configured pools reject opaque `conversation` references until their ownership can be tracked. Callers can start a new request with complete history when a continuation is unavailable.
 

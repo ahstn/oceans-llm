@@ -1806,6 +1806,8 @@ fn wrap_stream_with_request_logging(
                 let ends_stream = observation.ends_stream;
                 state.saw_terminal_event |= observation.has_terminal_event;
                 state.stream_trace.observe_chunk(chunk.len(), observation);
+                // A completed Responses event promises a usable continuation ID.
+                // Stop before forwarding it if its origin cannot be persisted.
                 if observation.has_terminal_event
                     && state.collector.failure().is_none()
                     && let Some(receipt) = state.routing_receipt.as_mut()

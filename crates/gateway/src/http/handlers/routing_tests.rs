@@ -207,6 +207,16 @@ impl RoutingHarness {
         )
     }
 
+    fn replace_provider_without_identity(&mut self, key: &'static str) {
+        self.state.providers.register(Arc::new(RoutingProvider {
+            key,
+            calls: self.calls.clone(),
+            fail: false,
+            stream_end: StreamEnd::Completed,
+        }));
+        assert_eq!(self.state.providers.routing_identity(key), None);
+    }
+
     async fn chat(&self, headers: HeaderMap) -> Result<Response, AppError> {
         let request = serde_json::from_value(json!({
             "model": "fast", "messages": [{"role": "user", "content": "hello"}],
@@ -379,13 +389,7 @@ async fn replacing_a_runtime_provider_invalidates_its_response_origins() {
 async fn configured_routing_pool_rejects_providers_without_runtime_identities() {
     let mut harness = RoutingHarness::new(false).await;
     for key in ["vertex", "secondary"] {
-        harness.state.providers.register(Arc::new(RoutingProvider {
-            key,
-            calls: harness.calls.clone(),
-            fail: false,
-            stream_end: StreamEnd::Completed,
-        }));
-        assert_eq!(harness.state.providers.routing_identity(key), None);
+        harness.replace_provider_without_identity(key);
     }
 
     let error = harness
@@ -393,9 +397,99 @@ async fn configured_routing_pool_rejects_providers_without_runtime_identities() 
         .await
         .unwrap_err();
 
-    assert_eq!(error.0.http_status_code(), 500);
-    assert!(error.0.to_string().contains("no runtime provider identity"));
+    assert_eq!(error.0.http_status_code(), 400);
+    assert!(
+        error
+            .0
+            .to_string()
+            .contains("no configured route supports requested capabilities")
+    );
     assert!(harness.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn configured_routing_pool_skips_only_providers_without_runtime_identities() {
+    let mut harness = RoutingHarness::new(false).await;
+    harness.replace_provider_without_identity("vertex");
+
+    for session in ["session-a", "session-b", "session-c"] {
+        consume(
+            harness
+                .chat(session_headers(session))
+                .await
+                .map_err(|error| error.0)
+                .unwrap(),
+        )
+        .await;
+    }
+
+    let calls = harness.calls.lock().unwrap();
+    assert_eq!(calls.len(), 3);
+    assert!(calls.iter().all(|call| call.provider == "secondary"));
+}
+
+#[tokio::test]
+async fn models_without_a_routing_policy_accept_legacy_provider_registrations() {
+    let mut harness = RoutingHarness::new(false).await;
+    seed_stream_cancellation_test(&harness.state.store).await;
+    harness.replace_provider_without_identity("vertex");
+
+    consume(
+        harness
+            .chat(session_headers("session-a"))
+            .await
+            .map_err(|error| error.0)
+            .unwrap(),
+    )
+    .await;
+
+    let calls = harness.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].provider, "vertex");
+}
+
+#[tokio::test]
+async fn missing_runtime_identity_invalidates_only_its_providers_response_origins() {
+    let mut harness = RoutingHarness::new(false).await;
+    for _ in 0..2 {
+        consume(
+            harness
+                .responses(false, None)
+                .await
+                .map_err(|error| error.0)
+                .unwrap(),
+        )
+        .await;
+    }
+    let origins = harness.calls.lock().unwrap().clone();
+    assert_ne!(origins[0].provider, origins[1].provider);
+    harness.replace_provider_without_identity(origins[0].provider);
+
+    let error = harness
+        .responses(false, Some(&origins[0].response_id))
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.0.http_status_code(), 400);
+    assert!(error.0.to_string().contains("no longer eligible"));
+    assert_eq!(harness.calls.lock().unwrap().len(), 2);
+
+    consume(
+        harness
+            .responses(false, Some(&origins[1].response_id))
+            .await
+            .map_err(|error| error.0)
+            .unwrap(),
+    )
+    .await;
+
+    let calls = harness.calls.lock().unwrap();
+    assert_eq!(calls.len(), 3);
+    assert_eq!(calls[2].provider, origins[1].provider);
+    assert_eq!(
+        calls[2].previous_response_id.as_deref(),
+        Some(origins[1].response_id.as_str())
+    );
 }
 
 #[tokio::test]
