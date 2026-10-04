@@ -1175,6 +1175,7 @@ pub trait ProviderUserTokenResolver: Send + Sync {
         &self,
         provider_key: &str,
         user_id: Uuid,
+        expected_credential_id: Option<Uuid>,
     ) -> Result<String, ProviderError>;
 }
 
@@ -1340,7 +1341,13 @@ pub trait ProviderClient: Send + Sync {
 
 #[derive(Default, Clone)]
 pub struct ProviderRegistry {
-    providers: HashMap<String, Arc<dyn ProviderClient>>,
+    providers: HashMap<String, RegisteredProvider>,
+}
+
+#[derive(Clone)]
+struct RegisteredProvider {
+    client: Arc<dyn ProviderClient>,
+    routing_identity: Option<String>,
 }
 
 impl ProviderRegistry {
@@ -1352,13 +1359,43 @@ impl ProviderRegistry {
     }
 
     pub fn register(&mut self, provider: Arc<dyn ProviderClient>) {
+        self.providers.insert(
+            provider.provider_key().to_string(),
+            RegisteredProvider {
+                client: provider,
+                routing_identity: None,
+            },
+        );
+    }
+
+    /// Registers the initialized adapter with an opaque account and endpoint identity.
+    /// The caller must hash sensitive credential material before registration.
+    pub fn register_with_routing_identity(
+        &mut self,
+        provider: Arc<dyn ProviderClient>,
+        routing_identity: String,
+    ) {
+        self.providers.insert(
+            provider.provider_key().to_string(),
+            RegisteredProvider {
+                client: provider,
+                routing_identity: Some(routing_identity),
+            },
+        );
+    }
+
+    #[must_use]
+    pub fn routing_identity(&self, provider_key: &str) -> Option<&str> {
         self.providers
-            .insert(provider.provider_key().to_string(), provider);
+            .get(provider_key)
+            .and_then(|provider| provider.routing_identity.as_deref())
     }
 
     #[must_use]
     pub fn get(&self, provider_key: &str) -> Option<Arc<dyn ProviderClient>> {
-        self.providers.get(provider_key).cloned()
+        self.providers
+            .get(provider_key)
+            .map(|provider| provider.client.clone())
     }
 
     #[must_use]

@@ -13,6 +13,7 @@ mod any_store_mcp_registry;
 mod any_store_mcp_token_overhead;
 mod any_store_provider_user_credentials;
 mod any_store_review_agent;
+mod any_store_routing;
 mod any_store_skills;
 mod budget_batch;
 mod libsql_store;
@@ -20,6 +21,7 @@ mod migrate;
 mod migration_registry;
 mod postgres_store;
 mod pricing_sync;
+mod routing;
 mod seed;
 mod shared;
 mod skill_objects;
@@ -49,7 +51,10 @@ mod skills_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod model_routing;
     mod request_log_purge;
+    mod route_identity;
+    mod routing;
 
     use std::collections::BTreeMap;
     use std::env;
@@ -268,6 +273,7 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: Vec::new(),
             rank: 10,
@@ -1245,10 +1251,12 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: vec![],
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: None,
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -2247,10 +2255,12 @@ pub(crate) mod tests {
                 model_key: "fast".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: Some("fast tier".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
                 routes: vec![SeedModelRoute {
+                    route_key: None,
                     provider_key: "openai-prod".to_string(),
                     upstream_model: "gpt-4o-mini".to_string(),
                     priority: 10,
@@ -2269,10 +2279,12 @@ pub(crate) mod tests {
                 model_key: "reasoning".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: Some("reasoning tier".to_string()),
                 tags: vec!["reasoning".to_string()],
                 rank: 20,
                 routes: vec![SeedModelRoute {
+                    route_key: None,
                     provider_key: "openai-prod".to_string(),
                     upstream_model: "gpt-5".to_string(),
                     priority: 10,
@@ -3910,14 +3922,16 @@ pub(crate) mod tests {
             secrets: Some(json!({"token": "env.OPENAI_API_KEY"})),
         }];
 
-        let models = vec![SeedModel {
+        let mut models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: Some("primary".to_string()),
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -4032,6 +4046,7 @@ pub(crate) mod tests {
                         provider_key: seeded_route.provider_key.clone(),
                         upstream_model: seeded_route.upstream_model.clone(),
                         owner_user_id: None,
+                        expected_provider_credential_id: None,
                         extra_headers: seeded_route.extra_headers.clone(),
                         extra_body: seeded_route.extra_body.clone(),
                         request_headers: BTreeMap::new(),
@@ -4048,6 +4063,7 @@ pub(crate) mod tests {
             .await
             .expect("insert batch before reseed");
 
+        models[0].routes[0].priority = 20;
         store
             .seed_from_inputs(
                 &providers,
@@ -4121,6 +4137,8 @@ pub(crate) mod tests {
             .await
             .expect("model routes");
         assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].id, seeded_route.id);
+        assert_eq!(routes[0].priority, 20);
         assert_eq!(routes[0].provider_key, "openai-prod");
         assert!(!routes[0].capabilities.stream);
         assert!(!routes[0].capabilities.tools);
@@ -4520,6 +4538,7 @@ pub(crate) mod tests {
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -4792,6 +4811,7 @@ pub(crate) mod tests {
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -5048,6 +5068,7 @@ pub(crate) mod tests {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
                 max_reasoning_effort: Some(ReasoningEffort::Low),
+                routing: None,
                 description: Some("alias".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
@@ -5058,10 +5079,12 @@ pub(crate) mod tests {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: Some(ReasoningEffort::High),
+                routing: None,
                 description: Some("replacement".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 5,
                 routes: vec![SeedModelRoute {
+                    route_key: None,
                     provider_key: "openai-prod".to_string(),
                     upstream_model: "gpt-5".to_string(),
                     priority: 10,
@@ -5181,6 +5204,7 @@ pub(crate) mod tests {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
                 max_reasoning_effort: Some(ReasoningEffort::High),
+                routing: None,
                 description: Some("alias".to_string()),
                 tags: Vec::new(),
                 rank: 10,
@@ -5194,6 +5218,7 @@ pub(crate) mod tests {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: Some("target".to_string()),
                 tags: Vec::new(),
                 rank: 20,
@@ -5247,6 +5272,7 @@ pub(crate) mod tests {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
                 max_reasoning_effort: Some(ReasoningEffort::Low),
+                routing: None,
                 description: Some("alias".to_string()),
                 tags: Vec::new(),
                 rank: 10,
@@ -5260,6 +5286,7 @@ pub(crate) mod tests {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: Some("target".to_string()),
                 tags: Vec::new(),
                 rank: 20,
@@ -5310,6 +5337,7 @@ pub(crate) mod tests {
             model_key: "restricted".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: Some("restricted tier".to_string()),
             tags: Vec::new(),
             rank: 10,
@@ -6848,10 +6876,12 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: Vec::new(),
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: None,
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -8044,10 +8074,12 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string()],
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: None,
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -8477,10 +8509,12 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: None,
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -9154,10 +9188,12 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string()],
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: None,
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -9631,6 +9667,7 @@ pub(crate) mod tests {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
                 max_reasoning_effort: Some(ReasoningEffort::Low),
+                routing: None,
                 description: Some("alias".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
@@ -9641,10 +9678,12 @@ pub(crate) mod tests {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: Some(ReasoningEffort::High),
+                routing: None,
                 description: Some("replacement".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 5,
                 routes: vec![SeedModelRoute {
+                    route_key: None,
                     provider_key: "openai-prod".to_string(),
                     upstream_model: "gpt-5".to_string(),
                     priority: 10,

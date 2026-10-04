@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ModelsPage } from '@/routes/models'
@@ -84,26 +84,60 @@ const codexSetup = (): ClientConfigSetup => [
 
 const navigateMock = vi.hoisted(() => vi.fn())
 const invalidateMock = vi.hoisted(() => vi.fn())
+const getModelsMock = vi.hoisted(() => vi.fn())
 const getModelClientConfigsMock = vi.hoisted(() => vi.fn())
 const refreshModelPricingMock = vi.hoisted(() => vi.fn())
+type MockLocation = {
+  pathname: string
+  search: Record<string, unknown>
+  href: string
+  state: { __TSR_key: string }
+}
+const navigationListeners = vi.hoisted(
+  () => new Set<(event: { toLocation: MockLocation }) => void>(),
+)
+
+const routeConfig = vi.hoisted(() => ({
+  loader: undefined as ((input: { deps: Record<string, unknown> }) => Promise<unknown>) | undefined,
+  validateSearch: undefined as
+    | ((search: Record<string, unknown>) => Record<string, unknown>)
+    | undefined,
+}))
 
 const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
-  useSearch: vi.fn(),
+  useLocationSearch: vi.fn(),
+  pathname: vi.fn(),
+  locationKey: vi.fn(),
+  routerStatus: vi.fn(),
 }))
 
-vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => () => routeMock,
-  useRouter: () => ({
+vi.mock('@tanstack/react-router', () => {
+  const router = {
     navigate: navigateMock,
     invalidate: invalidateMock,
-  }),
-  redirect: vi.fn(),
-}))
+    subscribe: (_event: string, listener: (event: { toLocation: MockLocation }) => void) => {
+      navigationListeners.add(listener)
+      return () => navigationListeners.delete(listener)
+    },
+  }
+  return {
+    createFileRoute: () => (config: typeof routeConfig) => {
+      routeConfig.loader = config.loader
+      routeConfig.validateSearch = config.validateSearch
+      return routeMock
+    },
+    useLocation: () => currentMockLocation(),
+    useRouterState: ({ select }: { select: (state: { status: string }) => unknown }) =>
+      select({ status: routeMock.routerStatus() }),
+    useRouter: () => router,
+    redirect: vi.fn(),
+  }
+})
 
 vi.mock('@/server/admin-data.functions', () => ({
-  getModels: vi.fn(),
+  getModels: getModelsMock,
   getModelClientConfigs: getModelClientConfigsMock,
   refreshModelPricing: refreshModelPricingMock,
   getAuthSession: vi.fn(),
@@ -115,6 +149,7 @@ const modelPage: ModelPageView = {
       id: 'fast',
       resolved_model_key: 'fast',
       alias_of: null,
+      aliases: ['backup-fast'],
       description: 'Gemini via OpenRouter',
       provider_key: 'openrouter',
       provider_label: 'OpenRouter',
@@ -154,6 +189,7 @@ const modelPage: ModelPageView = {
       id: 'claude-sonnet',
       resolved_model_key: 'claude-sonnet',
       alias_of: null,
+      aliases: [],
       description: 'Claude Sonnet via Anthropic',
       provider_key: 'anthropic-prod',
       provider_label: 'Anthropic',
@@ -247,9 +283,10 @@ const modelPage: ModelPageView = {
       ],
     },
     {
-      id: 'backup-fast',
-      resolved_model_key: 'backup-fast',
-      alias_of: 'fast',
+      id: 'vertex-fast',
+      resolved_model_key: 'vertex-fast',
+      alias_of: null,
+      aliases: [],
       description: 'Gemini fallback on Vertex',
       provider_key: 'vertex-gemini',
       provider_label: 'Google Vertex AI',
@@ -295,15 +332,83 @@ beforeEach(() => {
       },
     },
   })
-  routeMock.useSearch.mockReset()
+  routeMock.useLocationSearch.mockReset()
+  routeMock.pathname.mockReset()
+  routeMock.pathname.mockReturnValue('/admin/models')
+  routeMock.locationKey.mockReset()
+  routeMock.locationKey.mockReturnValue('initial')
+  routeMock.routerStatus.mockReset()
+  routeMock.routerStatus.mockReturnValue('idle')
   navigateMock.mockReset()
   invalidateMock.mockReset()
+  getModelsMock.mockReset()
   getModelClientConfigsMock.mockReset()
   refreshModelPricingMock.mockReset()
-  routeMock.useSearch.mockReturnValue({ page: 1, page_size: 30 })
+  routeMock.useLocationSearch.mockReturnValue({ page: 1, page_size: 30 })
 })
 
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
+
+function currentMockLocation(): MockLocation {
+  const pathname = routeMock.pathname()
+  const search = routeMock.useLocationSearch()
+  return {
+    pathname,
+    search,
+    href: `${pathname}?${JSON.stringify(search)}`,
+    state: { __TSR_key: routeMock.locationKey() },
+  }
+}
+
+function beginNavigation(search: Record<string, unknown>, pathname = '/admin/models') {
+  act(() => {
+    routeMock.useLocationSearch.mockReturnValue(search)
+    routeMock.pathname.mockReturnValue(pathname)
+    routeMock.locationKey.mockReturnValue(`${routeMock.locationKey()}-next`)
+    for (const listener of navigationListeners) {
+      listener({ toLocation: currentMockLocation() })
+    }
+  })
+}
+
 describe('ModelsPage layouts', () => {
+  it('forwards the URL query and pagination while requesting direct models', async () => {
+    getModelsMock.mockResolvedValue({ data: modelPage })
+
+    const deps = routeConfig.validateSearch!({ page: '2', page_size: '50', q: '  fast  ' })
+    const result = await routeConfig.loader!({ deps })
+
+    expect(getModelsMock).toHaveBeenCalledExactlyOnceWith({
+      data: { page: 2, page_size: 50, q: '  fast  ', include_aliases: false },
+    })
+    expect(result).toEqual({ data: modelPage })
+  })
+
+  it('keeps aliases in the direct model info instead of separate model rows', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const table = screen.getByTestId('models-desktop-table')
+    const mobileList = screen.getByTestId('models-mobile-list')
+    expect(within(table).queryByText('backup-fast')).not.toBeInTheDocument()
+    expect(within(mobileList).queryByText('backup-fast')).not.toBeInTheDocument()
+    const fastRow = within(table).getByText('fast').closest('tr')!
+    fireEvent.click(within(fastRow).getByRole('button', { name: 'Info' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Model info' })
+    expect(within(dialog).getByText('Aliases')).toBeVisible()
+    expect(within(dialog).getByText('backup-fast')).toBeVisible()
+  })
+
   it('renders dedicated mobile and desktop model layouts from the same payload', () => {
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
 
@@ -318,7 +423,7 @@ describe('ModelsPage layouts', () => {
     expect(
       screen.getByText('Review the models that users can select and check their current status.'),
     ).toBeInTheDocument()
-    expect(screen.getByText('Select models to generate multi-model config')).toBeInTheDocument()
+    expect(screen.getByText('Select models to create a configuration file.')).toBeInTheDocument()
 
     const clearButton = screen.getByRole('button', { name: 'Clear' })
     const generateConfigButton = screen.getByRole('button', { name: 'Generate config' })
@@ -348,29 +453,20 @@ describe('ModelsPage layouts', () => {
       'Model ID',
       'Actions',
       'Provider & Model',
+      'Intelligence Index',
       'Cost / 1M tokens',
       'Allow List',
     ])
-    expect(within(table).getByRole('columnheader', { name: 'Provider & Model' })).toHaveClass(
-      'w-[18rem]',
-    )
 
-    const identityCell = screen.getAllByTestId('models-desktop-cell-backup-fast')[0]
-    expect(within(identityCell).getByText('backup-fast')).toBeInTheDocument()
+    const identityCell = screen.getAllByTestId('models-desktop-cell-vertex-fast')[0]
+    expect(within(identityCell).getByText('vertex-fast')).toBeInTheDocument()
     expect(within(identityCell).getByLabelText('degraded')).toBeInTheDocument()
-    expect(within(identityCell).getByText('alias → fast')).toBeInTheDocument()
 
-    const backupRow = within(table).getByText('backup-fast').closest('tr')
-    expect(backupRow).not.toBeNull()
-    expect(backupRow).toHaveClass('group')
-    const backupCells = within(backupRow as HTMLElement).getAllByRole('cell')
-    for (const cell of backupCells) {
-      expect(cell).toHaveClass('py-1')
-    }
-    expect(backupCells[0]).toHaveClass('group-hover:bg-muted/50')
-    expect(backupCells[1]).toHaveClass('group-hover:bg-muted/50')
+    const vertexRow = within(table).getByText('vertex-fast').closest('tr')
+    expect(vertexRow).not.toBeNull()
+    const vertexCells = within(vertexRow as HTMLElement).getAllByRole('cell')
 
-    const infoButton = within(backupCells[2] as HTMLElement).getByRole('button', { name: 'Info' })
+    const infoButton = within(vertexCells[2] as HTMLElement).getByRole('button', { name: 'Info' })
     expect(infoButton).toHaveAttribute('data-variant', 'outline')
 
     const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
@@ -380,12 +476,13 @@ describe('ModelsPage layouts', () => {
     })
     expect(configButton).toHaveAttribute('data-variant', 'outline')
     expect(
-      within(backupCells[3] as HTMLElement).getByText('google/gemini-2.0-flash'),
+      within(vertexCells[3] as HTMLElement).getByText('google/gemini-2.0-flash'),
     ).toBeInTheDocument()
-    expect(within(backupCells[3] as HTMLElement).getByText('Google Vertex AI')).toBeInTheDocument()
-    expect(within(backupCells[4] as HTMLElement).getByText('Input')).toBeInTheDocument()
-    expect(within(backupCells[4] as HTMLElement).getByText('Output')).toBeInTheDocument()
-    expect(within(backupCells[5] as HTMLElement).getByText('Unrestricted')).toBeInTheDocument()
+    expect(within(vertexCells[3] as HTMLElement).getByText('Google Vertex AI')).toBeInTheDocument()
+    expect(within(vertexCells[4] as HTMLElement).getByText('—')).toBeInTheDocument()
+    expect(within(vertexCells[5] as HTMLElement).getByText('Input')).toBeInTheDocument()
+    expect(within(vertexCells[5] as HTMLElement).getByText('Output')).toBeInTheDocument()
+    expect(within(vertexCells[6] as HTMLElement).getByText('Unrestricted')).toBeInTheDocument()
   })
 })
 
@@ -403,7 +500,7 @@ describe('ModelsPage allowlists', () => {
             },
           }
         }
-        if (model.id === 'backup-fast') {
+        if (model.id === 'vertex-fast') {
           return {
             ...model,
             allowlist: {
@@ -428,25 +525,25 @@ describe('ModelsPage allowlists', () => {
 
     const fastRow = within(table).getByText('fast').closest('tr')
     expect(fastRow).not.toBeNull()
-    const fastAllowlistCell = within(fastRow as HTMLElement).getAllByRole('cell')[5] as HTMLElement
+    const fastAllowlistCell = within(fastRow as HTMLElement).getAllByRole('cell')[6] as HTMLElement
     expect(within(fastAllowlistCell).getByText('Restricted')).toBeInTheDocument()
     expect(within(fastAllowlistCell).getByText('1 User')).toBeInTheDocument()
     expect(within(fastAllowlistCell).queryByText(/Teams?/)).not.toBeInTheDocument()
 
-    const backupRow = within(table).getByText('backup-fast').closest('tr')
-    expect(backupRow).not.toBeNull()
-    const backupAllowlistCell = within(backupRow as HTMLElement).getAllByRole(
+    const vertexRow = within(table).getByText('vertex-fast').closest('tr')
+    expect(vertexRow).not.toBeNull()
+    const vertexAllowlistCell = within(vertexRow as HTMLElement).getAllByRole(
       'cell',
-    )[5] as HTMLElement
-    expect(within(backupAllowlistCell).getByText('Restricted')).toBeInTheDocument()
-    expect(within(backupAllowlistCell).getByText('2 Teams')).toBeInTheDocument()
-    expect(within(backupAllowlistCell).queryByText(/Users?/)).not.toBeInTheDocument()
+    )[6] as HTMLElement
+    expect(within(vertexAllowlistCell).getByText('Restricted')).toBeInTheDocument()
+    expect(within(vertexAllowlistCell).getByText('2 Teams')).toBeInTheDocument()
+    expect(within(vertexAllowlistCell).queryByText(/Users?/)).not.toBeInTheDocument()
 
     const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
     expect(claudeRow).not.toBeNull()
     const claudeAllowlistCell = within(claudeRow as HTMLElement).getAllByRole(
       'cell',
-    )[5] as HTMLElement
+    )[6] as HTMLElement
     expect(within(claudeAllowlistCell).getByText('Restricted')).toBeInTheDocument()
     expect(within(claudeAllowlistCell).getByText('2 Users')).toBeInTheDocument()
     expect(within(claudeAllowlistCell).getByText('1 Team')).toBeInTheDocument()
@@ -454,7 +551,7 @@ describe('ModelsPage allowlists', () => {
     expect(within(claudeAllowlistCell).queryByText('bob@example.com')).not.toBeInTheDocument()
     expect(within(claudeAllowlistCell).queryByText('platform')).not.toBeInTheDocument()
 
-    for (const allowlistCell of [fastAllowlistCell, backupAllowlistCell, claudeAllowlistCell]) {
+    for (const allowlistCell of [fastAllowlistCell, vertexAllowlistCell, claudeAllowlistCell]) {
       expect(within(allowlistCell).queryByRole('button')).not.toBeInTheDocument()
       expect(within(allowlistCell).queryByRole('link')).not.toBeInTheDocument()
       expect(within(allowlistCell).queryByRole('checkbox')).not.toBeInTheDocument()
@@ -523,7 +620,7 @@ describe('ModelsPage table content', () => {
     expect(within(table).queryByText('Gemini fallback on Vertex')).not.toBeInTheDocument()
   })
 
-  it('shows the optional intelligence score without treating missing data as zero', () => {
+  it('always shows Intelligence Index and keeps missing scores unknown on desktop and mobile', () => {
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
 
     render(
@@ -532,17 +629,58 @@ describe('ModelsPage table content', () => {
       </TooltipProvider>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Columns' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: /^Intelligence/ }))
-
     const table = screen.getAllByTestId('models-desktop-table')[0]
-    expect(within(table).getByRole('columnheader', { name: 'Intelligence' })).toBeInTheDocument()
+    expect(
+      within(table).getByRole('columnheader', { name: /^Intelligence Index/ }),
+    ).toBeInTheDocument()
     const fastRow = within(table).getByText('fast').closest('tr')
     expect(fastRow).not.toBeNull()
     expect(within(fastRow as HTMLElement).getByText('39')).toBeInTheDocument()
     const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
     expect(claudeRow).not.toBeNull()
     expect(within(claudeRow as HTMLElement).getByText('—')).toBeInTheDocument()
+
+    const mobileList = screen.getByTestId('models-mobile-list')
+    const fastCard = within(mobileList)
+      .getByRole('heading', { name: 'fast' })
+      .closest('[data-slot="card"]')!
+    expect(within(fastCard as HTMLElement).getByText('Intelligence Index')).toBeVisible()
+    expect(within(fastCard as HTMLElement).getByText('39')).toBeVisible()
+    const claudeCard = within(mobileList)
+      .getByRole('heading', { name: 'claude-sonnet' })
+      .closest('[data-slot="card"]')!
+    const mobileScore = within(claudeCard as HTMLElement)
+      .getByText('Intelligence Index')
+      .closest('div')!
+    expect(within(mobileScore).getByText('—')).toBeVisible()
+    expect(within(mobileScore).queryByText('0')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Columns' }))
+    expect(screen.queryByRole('checkbox', { name: /^Intelligence/ })).not.toBeInTheDocument()
+  })
+
+  it('explains the Intelligence Index source when its help button receives focus', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const table = screen.getByTestId('models-desktop-table')
+    const help = within(table).getByRole('button', { name: 'About Intelligence Index' })
+    fireEvent.focus(help)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Artificial Analysis Intelligence Index, retrieved via OpenRouter.',
+    )
   })
 
   it('shows benchmark provenance and visible Artificial Analysis attribution', () => {
@@ -587,6 +725,36 @@ describe('ModelsPage table content', () => {
     fireEvent.click(within(mobileList).getByRole('button', { name: 'Model info for fast' }))
 
     expect(screen.getByRole('dialog', { name: 'Model info' })).toBeInTheDocument()
+  })
+
+  it('returns keyboard focus to the model Info button after closing', async () => {
+    // Focusing the Info button opens its Radix tooltip, which observes its anchor size.
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const row = screen.getByTestId('models-desktop-cell-fast').closest('tr') as HTMLElement
+    const trigger = within(row).getByRole('button', { name: 'Info' })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const dialog = screen.getByRole('dialog', { name: 'Model info' })
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Model info' })).not.toBeInTheDocument(),
+    )
+    await waitFor(() => expect(trigger).toHaveFocus())
   })
 
   it('shows Artificial Analysis attribution below the model list', () => {
@@ -922,6 +1090,346 @@ describe('ModelsPage multi-model configuration', () => {
   })
 })
 
+describe('ModelsPage search and pagination', () => {
+  it('debounces a typing burst into one latest query without trimming and resets the page', () => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    routeMock.useLocationSearch.mockReturnValue({ page: 2, page_size: 30, q: 'previous query' })
+    const { rerender } = render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const search = screen.getByRole('searchbox', { name: 'Search models' })
+    expect(search).toHaveValue('previous query')
+    fireEvent.change(search, { target: { value: '  Anth' } })
+    void act(() => vi.advanceTimersByTime(100))
+    fireEvent.change(search, { target: { value: '  Anthropic ' } })
+    expect(search).toHaveValue('  Anthropic ')
+    void act(() => vi.advanceTimersByTime(249))
+    expect(navigateMock).not.toHaveBeenCalled()
+    void act(() => vi.advanceTimersByTime(1))
+    expect(navigateMock).toHaveBeenCalledTimes(1)
+
+    const navigation = navigateMock.mock.lastCall![0]
+    expect(navigation).toMatchObject({ to: '/models', replace: true, resetScroll: false })
+    const latestSearch = { page: 7, page_size: 50, q: 'newer URL value' }
+    expect(navigation.search(latestSearch)).toEqual({ page: 1, page_size: 50, q: '  Anthropic ' })
+
+    beginNavigation(navigation.search(latestSearch))
+    rerender(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    expect(search).toHaveValue('  Anthropic ')
+
+    fireEvent.change(search, { target: { value: '' } })
+    expect(search).toHaveValue('')
+    expect(navigateMock).toHaveBeenCalledTimes(1)
+    void act(() => vi.advanceTimersByTime(250))
+    expect(navigateMock).toHaveBeenCalledTimes(2)
+    expect(navigateMock.mock.lastCall![0].search(latestSearch)).toEqual({
+      page: 1,
+      page_size: 50,
+      q: undefined,
+    })
+  })
+
+  it.each([
+    ['a restored query', { page: 2, page_size: 30, q: 'restored' }],
+    ['another page with the same query', { page: 2, page_size: 30, q: 'original' }],
+    ['the same URL in a different history entry', { page: 1, page_size: 30, q: 'original' }],
+  ])('cancels queued input when browser navigation restores %s', (_description, nextSearch) => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    routeMock.useLocationSearch.mockReturnValue({ page: 1, page_size: 30, q: 'original' })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    const search = screen.getByRole('searchbox', { name: 'Search models' })
+    fireEvent.change(search, { target: { value: 'queued query' } })
+    void act(() => vi.advanceTimersByTime(100))
+
+    beginNavigation(nextSearch)
+    expect(search).toHaveValue(nextSearch.q)
+    void act(() => vi.advanceTimersByTime(250))
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    beginNavigation({ page: 1, page_size: 30, q: 'original' })
+    expect(search).toHaveValue('original')
+    void act(() => vi.advanceTimersByTime(250))
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('preserves the latest draft and debounce deadline during a pricing refresh reload', () => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    routeMock.useLocationSearch.mockReturnValue({ page: 4, page_size: 30, q: 'original' })
+    const { rerender } = render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    const search = screen.getByRole('searchbox', { name: 'Search models' })
+    fireEvent.change(search, { target: { value: '  latest draft  ' } })
+    void act(() => vi.advanceTimersByTime(100))
+
+    act(() => {
+      for (const listener of navigationListeners) {
+        listener({ toLocation: currentMockLocation() })
+      }
+    })
+    routeMock.routerStatus.mockReturnValue('pending')
+    rerender(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    expect(search).toHaveValue('  latest draft  ')
+    routeMock.routerStatus.mockReturnValue('idle')
+    rerender(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    expect(search).toHaveValue('  latest draft  ')
+    expect(screen.getByRole('navigation', { name: 'Model pagination' })).toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    void act(() => vi.advanceTimersByTime(149))
+    expect(navigateMock).not.toHaveBeenCalled()
+    void act(() => vi.advanceTimersByTime(1))
+    expect(navigateMock).toHaveBeenCalledTimes(1)
+    expect(navigateMock.mock.lastCall![0].search({ page: 4, page_size: 50 })).toEqual({
+      page: 1,
+      page_size: 50,
+      q: '  latest draft  ',
+    })
+  })
+
+  it('cancels searches on route leave and ignores typing in the retained outgoing page', () => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    const search = screen.getByRole('searchbox', { name: 'Search models' })
+    fireEvent.change(search, { target: { value: 'queued query' } })
+    beginNavigation({}, '/admin/identity/users')
+    fireEvent.change(search, { target: { value: 'outgoing page query' } })
+
+    void act(() => vi.advanceTimersByTime(250))
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('cancels queued input on unmount and removes its navigation listener', () => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    const { unmount } = render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search models' }), {
+      target: { value: 'queued query' },
+    })
+    unmount()
+    void act(() => vi.advanceTimersByTime(250))
+
+    expect(navigateMock).not.toHaveBeenCalled()
+    expect(navigationListeners.size).toBe(0)
+  })
+
+  it('blocks pagination during debounce and cancels when input returns to the URL query', () => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({
+      data: { ...modelPage, page: 4, page_size: 10, total: 100 },
+    })
+    routeMock.useLocationSearch.mockReturnValue({ page: 4, page_size: 10, q: 'original' })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    const search = screen.getByRole('searchbox', { name: 'Search models' })
+    const pagination = screen.getByRole('navigation', { name: 'Model pagination' })
+    const previous = within(pagination).getByRole('button', { name: 'Previous page' })
+    const next = within(pagination).getByRole('button', { name: 'Next page' })
+    const pageSize = within(pagination).getByRole('combobox', { name: 'Rows per page' })
+    fireEvent.change(search, { target: { value: 'queued query' } })
+    expect(pagination).toHaveAttribute('aria-busy', 'true')
+    expect(previous).toBeDisabled()
+    expect(next).toBeDisabled()
+    expect(pageSize).toBeDisabled()
+    expect(search).toBeEnabled()
+    fireEvent.click(next)
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    fireEvent.change(search, { target: { value: 'original' } })
+    expect(pagination).toHaveAttribute('aria-busy', 'false')
+    expect(previous).toBeEnabled()
+    expect(next).toBeEnabled()
+    expect(pageSize).toBeEnabled()
+    void act(() => vi.advanceTimersByTime(250))
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('preserves the latest query when paging and when changing rows per page', () => {
+    const page: ModelPageView = { ...modelPage, items: [modelPage.items[0]], page: 2, page_size: 1 }
+    routeMock.useLoaderData.mockReturnValue({ data: page })
+    routeMock.useLocationSearch.mockReturnValue({ page: 2, page_size: 1, q: 'fast' })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const pagination = screen.getByRole('navigation', { name: 'Model pagination' })
+    expect(within(pagination).getByRole('status')).toHaveTextContent('2–2 of 3')
+    expect(within(pagination).getByText('Page 2 of 3')).toBeVisible()
+    const latestSearch = { page: 2, page_size: 1, q: '  new query  ' }
+    fireEvent.click(within(pagination).getByRole('button', { name: 'Next page' }))
+    expect(navigateMock.mock.lastCall![0].search(latestSearch)).toEqual({
+      page: 3,
+      page_size: 1,
+      q: '  new query  ',
+    })
+    expect(navigateMock.mock.lastCall![0]).toMatchObject({ resetScroll: false })
+
+    fireEvent.click(within(pagination).getByRole('button', { name: 'Previous page' }))
+    expect(navigateMock.mock.lastCall![0].search(latestSearch)).toEqual({
+      page: 1,
+      page_size: 1,
+      q: '  new query  ',
+    })
+
+    const pageSize = within(pagination).getByRole('combobox', { name: 'Rows per page' })
+    expect(pageSize).toHaveTextContent('1')
+    fireEvent.click(pageSize)
+    fireEvent.click(screen.getByRole('option', { name: '50', exact: true }))
+    expect(navigateMock.mock.lastCall![0].search(latestSearch)).toEqual({
+      page: 1,
+      page_size: 50,
+      q: '  new query  ',
+    })
+  })
+
+  it('shows an empty search result with a zero range and disabled pagination', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { ...modelPage, items: [], total: 0 } })
+    routeMock.useLocationSearch.mockReturnValue({ page: 1, page_size: 30, q: 'missing-model' })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByRole('searchbox', { name: 'Search models' })).toHaveValue('missing-model')
+    expect(screen.getByText('No models found')).toBeVisible()
+    const pagination = screen.getByRole('navigation', { name: 'Model pagination' })
+    expect(within(pagination).getByRole('status')).toHaveTextContent('0–0 of 0')
+    expect(within(pagination).getByText('Page 1 of 1')).toBeVisible()
+    expect(within(pagination).getByRole('button', { name: 'Previous page' })).toBeDisabled()
+    expect(within(pagination).getByRole('button', { name: 'Next page' })).toBeDisabled()
+  })
+
+  it('blocks stale pagination while a new search page is pending but keeps search editable', () => {
+    vi.useFakeTimers()
+    const stalePage: ModelPageView = { ...modelPage, page: 4, page_size: 10, total: 100 }
+    routeMock.useLoaderData.mockReturnValue({ data: stalePage })
+    routeMock.useLocationSearch.mockReturnValue({ page: 1, page_size: 10, q: 'new search' })
+    routeMock.routerStatus.mockReturnValue('pending')
+    const { rerender } = render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const pagination = screen.getByRole('navigation', { name: 'Model pagination' })
+    const previous = within(pagination).getByRole('button', { name: 'Previous page' })
+    const next = within(pagination).getByRole('button', { name: 'Next page' })
+    const pageSize = within(pagination).getByRole('combobox', { name: 'Rows per page' })
+    expect(pagination).toHaveAttribute('aria-busy', 'true')
+    expect(within(pagination).getByText('Page 4 of 10')).toBeVisible()
+    expect(previous).toBeDisabled()
+    expect(next).toBeDisabled()
+    expect(pageSize).toBeDisabled()
+    fireEvent.click(next)
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    const search = screen.getByRole('searchbox', { name: 'Search models' })
+    expect(search).toBeEnabled()
+    expect(search).toHaveValue('new search')
+    fireEvent.change(search, { target: { value: 'new search text' } })
+    expect(search).toHaveValue('new search text')
+    expect(navigateMock).not.toHaveBeenCalled()
+    void act(() => vi.advanceTimersByTime(250))
+    expect(navigateMock.mock.lastCall![0].search({ page: 1, page_size: 10 })).toEqual({
+      page: 1,
+      page_size: 10,
+      q: 'new search text',
+    })
+
+    routeMock.useLoaderData.mockReturnValue({ data: { ...stalePage, page: 1 } })
+    beginNavigation({ page: 1, page_size: 10, q: 'new search text' })
+    routeMock.routerStatus.mockReturnValue('idle')
+    rerender(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    expect(pagination).toHaveAttribute('aria-busy', 'false')
+    expect(within(pagination).getByText('Page 1 of 10')).toBeVisible()
+    expect(next).toBeEnabled()
+    expect(pageSize).toBeEnabled()
+    expect(previous).toBeDisabled()
+  })
+
+  it('keeps a selected model available after filtering removes its row', async () => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    getModelClientConfigsMock.mockResolvedValue({
+      data: { client_configurations: modelPage.items[1].client_configurations },
+    })
+    const { rerender } = render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    fireEvent.click(screen.getByLabelText('Select model claude-sonnet'))
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search models' }), {
+      target: { value: 'no-match' },
+    })
+    void act(() => vi.advanceTimersByTime(250))
+    vi.useRealTimers()
+    const nextSearch = navigateMock.mock.lastCall![0].search({ page: 1, page_size: 30 })
+    beginNavigation(nextSearch)
+    routeMock.useLoaderData.mockReturnValue({ data: { ...modelPage, items: [], total: 0 } })
+    rerender(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByText('No models found')).toBeVisible()
+    expect(screen.getByText('1 selected for client config')).toBeVisible()
+    expect(screen.queryByLabelText('Select model claude-sonnet')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Generate config' }))
+    expect(getModelClientConfigsMock).toHaveBeenCalledExactlyOnceWith({
+      data: { model_keys: ['claude-sonnet'] },
+    })
+    expect(await screen.findByRole('dialog', { name: 'Client config' })).toBeVisible()
+  })
+})
+
 describe('ModelsPage paginated configuration', () => {
   it('keeps selected models available when generating after pagination', async () => {
     const configurableFast = {
@@ -1035,5 +1543,9 @@ describe('ModelsPage permissions', () => {
     expect(screen.queryByRole('button', { name: 'Refresh pricing' })).not.toBeInTheDocument()
     expect(screen.queryByText('Allow List')).not.toBeInTheDocument()
     expect(screen.queryByText('alice@example.com')).not.toBeInTheDocument()
+    const table = screen.getByTestId('models-desktop-table')
+    expect(within(table).getByRole('columnheader', { name: /^Intelligence Index/ })).toBeVisible()
+    const fastRow = within(table).getByText('fast').closest('tr')!
+    expect(within(fastRow).getByText('39')).toBeVisible()
   })
 })

@@ -5,6 +5,8 @@ use serde_json::{Map, Value};
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
+use crate::routing::ModelRoutingPolicy;
+
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
 pub const SYSTEM_BOOTSTRAP_ADMIN_EMAIL: &str = "admin@local";
 
@@ -2386,6 +2388,8 @@ pub struct GatewayModel {
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub rank: i32,
+    #[serde(default)]
+    pub routing: Option<ModelRoutingPolicy>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2434,6 +2438,9 @@ pub struct ProviderRequestContext {
     /// Trusted user identity derived from the authenticated gateway API key.
     #[serde(default)]
     pub owner_user_id: Option<Uuid>,
+    /// Credential generation selected during routing, if the provider uses user credentials.
+    #[serde(default)]
+    pub expected_provider_credential_id: Option<Uuid>,
     #[serde(default)]
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
@@ -2950,6 +2957,8 @@ pub struct SeedProvider {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeedModelRoute {
+    #[serde(default)]
+    pub route_key: Option<String>,
     pub provider_key: String,
     pub upstream_model: String,
     pub priority: i32,
@@ -2980,6 +2989,8 @@ pub struct SeedModel {
     #[serde(default)]
     pub tags: Vec<String>,
     pub rank: i32,
+    #[serde(default)]
+    pub routing: Option<ModelRoutingPolicy>,
     #[serde(default)]
     pub routes: Vec<SeedModelRoute>,
     pub allowlist: Option<ModelAllowlistPolicy>,

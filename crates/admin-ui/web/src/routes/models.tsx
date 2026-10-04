@@ -1,19 +1,13 @@
-import { useState, type ComponentProps, type ReactNode } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { createFileRoute, useLocation, useRouter, useRouterState } from '@tanstack/react-router'
 import {
-  AttachmentIcon,
   BadgeInfoIcon,
-  CircleCheckIcon,
   CodeIcon,
   ColumnsThreeCogIcon,
   Copy01Icon,
   HomeIcon,
-  LiveStreaming03Icon,
   RefreshIcon,
-  Target02Icon,
-  ToolsIcon,
   Tick02Icon,
-  VisionIcon,
 } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 
@@ -37,14 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '@/components/ui/empty'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Table,
@@ -60,7 +47,7 @@ import { cn } from '@/lib/utils'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import {
   BenchmarkAttribution,
-  ModelBenchmarks,
+  IntelligenceIndexLabel,
   ModelIntelligenceScore,
 } from '@/routes/-model-benchmarks'
 import {
@@ -69,30 +56,25 @@ import {
   refreshModelPricing,
 } from '@/server/admin-data.functions'
 import type { ModelView } from '@/types/api'
+import { ModelInfoDialog, type ModelInfoSectionKey } from '@/routes/-model-info-dialog'
+import { ModelListPagination, ModelSearch } from '@/routes/-model-list-controls'
+import { formatCost, formatWindow, providerTypeLabel } from '@/routes/-model-formatting'
+import {
+  CapabilityBadges,
+  ModelAllowlistDetail,
+  ModelStatusIndicator,
+} from '@/routes/-model-presentation'
 
 const DEFAULT_PAGE = 1
 const DEFAULT_PAGE_SIZE = 30
 
-const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 4,
-})
-
-const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en-US', {
-  maximumFractionDigits: 2,
-})
-
 const CLIENT_HARNESS_CONFIGURATION_URL =
   'https://oceans-llm.com/configuration/client-harness-configuration.html'
-
-type ModelInfoSectionKey = 'overview' | 'routing' | 'economics' | 'benchmarks' | 'access'
 
 export const Route = createFileRoute('/models')({
   validateSearch: (search: Record<string, unknown>) => normalizeModelsSearch(search),
   loaderDeps: ({ search }) => search,
-  loader: ({ deps }) => getModels({ data: deps }),
+  loader: ({ deps }) => getModels({ data: { ...deps, include_aliases: false } }),
   component: ModelsPage,
 })
 
@@ -102,7 +84,8 @@ export function ModelsPage() {
   const { data: modelPage } = Route.useLoaderData()
   const { session } = Route.useRouteContext()
   const isPlatformAdmin = isPlatformAdminSession(session)
-  const search = Route.useSearch()
+  const { query, updateQuery, isSearchPending } = useModelSearch()
+  const isPagePending = useRouterState({ select: (state) => state.status === 'pending' })
   const router = useRouter()
   const [configDialog, setConfigDialog] = useState<{
     models: ModelView[]
@@ -110,16 +93,15 @@ export function ModelsPage() {
     clientConfigurations: ModelView['client_configurations']
   } | null>(null)
   const [infoDialogModel, setInfoDialogModel] = useState<ModelView | null>(null)
+  const infoDialogTrigger = useRef<HTMLElement | null>(null)
   const [modelInfoSection, setModelInfoSection] = useState<ModelInfoSectionKey>('overview')
   const [selectedModelsById, setSelectedModelsById] = useState<Record<string, ModelView>>({})
   const [visibleColumns, setVisibleColumns] = useState({
     contextWindow: false,
     capabilities: false,
-    intelligence: false,
   })
   const [isGeneratingConfig, setIsGeneratingConfig] = useState(false)
   const [isRefreshingPricing, setIsRefreshingPricing] = useState(false)
-  const totalPages = Math.max(1, Math.ceil(modelPage.total / modelPage.page_size))
   const selectableModels = modelPage.items.filter((model) => model.client_configurations.length > 0)
   const selectedModels = Object.values(selectedModelsById)
   const selectedModelIds = Object.keys(selectedModelsById)
@@ -127,16 +109,19 @@ export function ModelsPage() {
   const allSelectableSelected =
     selectableModels.length > 0 &&
     selectableModels.every((model) => selectedModelIdSet.has(model.id))
-  const desktopTableMinWidthRem = desktopTableMinWidth(isPlatformAdmin, visibleColumns)
+  const desktopColumns = modelTableColumns(isPlatformAdmin, visibleColumns)
+  const desktopColumnsWidth = desktopColumns.reduce((total, column) => total + column.width, 0)
 
-  function navigateToPage(page: number) {
+  function navigateToPage(page: number, pageSize: number) {
     void router.navigate({
       to: '/models',
-      search: normalizeModelsSearch({
-        ...search,
-        page,
-        page_size: search.page_size,
-      }),
+      search: (previous) =>
+        normalizeModelsSearch({
+          ...previous,
+          page,
+          page_size: pageSize,
+        }),
+      resetScroll: false,
     })
   }
 
@@ -234,6 +219,8 @@ export function ModelsPage() {
   }
 
   function openModelInfo(model: ModelView) {
+    infoDialogTrigger.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
     setModelInfoSection('overview')
     setInfoDialogModel(model)
   }
@@ -257,21 +244,14 @@ export function ModelsPage() {
           <CardDescription>Select models to create a configuration file.</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
-          <div className="text-subtle-foreground flex flex-wrap items-center justify-between gap-3 text-sm">
-            <span>
-              Showing {modelPage.items.length} of {modelPage.total} models
-            </span>
-            <span>
-              Page {modelPage.page} of {totalPages}
-            </span>
-          </div>
-          <div className="border-border hidden flex-wrap items-center justify-between gap-3 border-t pt-2 md:flex">
-            <span className="text-subtle-foreground text-sm">
-              {selectedModelIds.length === 0
-                ? 'Select models to generate multi-model config'
-                : `${selectedModelIds.length} selected for client config`}
-            </span>
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+            <ModelSearch query={query} onQueryChange={updateQuery} />
+            <div className="hidden flex-wrap items-center gap-3 md:flex">
+              {selectedModelIds.length > 0 ? (
+                <span className="text-subtle-foreground text-sm">
+                  {selectedModelIds.length} selected for client config
+                </span>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
@@ -318,25 +298,6 @@ export function ModelsPage() {
                           <span className="text-foreground font-medium">Context window</span>
                           <span className="text-subtle-foreground text-xs">
                             Input and output token limits.
-                          </span>
-                        </span>
-                      </label>
-                      <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
-                        <ModelCheckbox
-                          className="mt-0.5"
-                          checked={visibleColumns.intelligence}
-                          onChange={(event) => {
-                            const checked = event.currentTarget.checked
-                            setVisibleColumns((current) => ({
-                              ...current,
-                              intelligence: checked,
-                            }))
-                          }}
-                        />
-                        <span className="flex min-w-0 flex-col gap-0.5">
-                          <span className="text-foreground font-medium">Intelligence</span>
-                          <span className="text-subtle-foreground text-xs">
-                            Artificial Analysis Intelligence Index.
                           </span>
                         </span>
                       </label>
@@ -393,22 +354,7 @@ export function ModelsPage() {
           </div>
 
           {modelPage.items.length === 0 ? (
-            <Card>
-              <CardContent className="pt-5">
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <AppIcon icon={HomeIcon} size={22} stroke={1.5} />
-                    </EmptyMedia>
-                    <EmptyTitle>No models configured</EmptyTitle>
-                    <EmptyDescription>
-                      Add at least one routed model before sending traffic through the gateway.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent />
-                </Empty>
-              </CardContent>
-            </Card>
+            <ModelListEmptyState query={query} />
           ) : (
             <>
               <div className="grid gap-4 md:hidden" data-testid="models-mobile-list">
@@ -430,8 +376,19 @@ export function ModelsPage() {
               >
                 <Table
                   className="table-fixed"
-                  style={{ minWidth: `${desktopTableMinWidthRem}rem` }}
+                  style={{ minWidth: `${desktopColumnsWidth + 3}rem` }}
                 >
+                  <colgroup>
+                    <col className="w-12" />
+                    {desktopColumns.map((column) => (
+                      <col
+                        key={column.key}
+                        style={{
+                          width: column.flexible ? undefined : `${column.width}rem`,
+                        }}
+                      />
+                    ))}
+                  </colgroup>
                   <ModelTableHeader
                     allSelected={allSelectableSelected}
                     hasSelectableModels={selectableModels.length > 0}
@@ -441,8 +398,8 @@ export function ModelsPage() {
                   />
                   <TableBody>
                     {modelPage.items.map((model) => (
-                      <TableRow key={model.id} className="group align-middle">
-                        <TableCell className="bg-card group-hover:bg-muted/50 sticky left-0 z-20 px-3 py-1 transition-colors">
+                      <TableRow key={model.id} className="group hover:bg-muted align-middle">
+                        <TableCell className="bg-card group-hover:bg-muted sticky left-0 z-20 px-3 py-1 transition-colors">
                           <ModelCheckbox
                             aria-label={`Select model ${model.id}`}
                             checked={selectedModelIdSet.has(model.id)}
@@ -451,7 +408,7 @@ export function ModelsPage() {
                           />
                         </TableCell>
                         <TableCell
-                          className="bg-card group-hover:bg-muted/50 shadow-sticky-edge sticky left-[3rem] z-20 px-3 py-1 transition-colors"
+                          className="bg-card group-hover:bg-muted lg:shadow-sticky-edge z-20 px-3 py-1 transition-colors lg:sticky lg:left-[3rem]"
                           data-testid={`models-desktop-cell-${model.id}`}
                         >
                           <div className="flex min-w-0 flex-col gap-2 py-1">
@@ -478,11 +435,6 @@ export function ModelsPage() {
                                     <AppIcon icon={Copy01Icon} size={14} stroke={1.5} />
                                   </Button>
                                 </div>
-                                {model.alias_of ? (
-                                  <div>
-                                    <Badge variant="secondary">{`alias → ${model.alias_of}`}</Badge>
-                                  </div>
-                                ) : null}
                               </div>
                             </div>
                           </div>
@@ -512,6 +464,9 @@ export function ModelsPage() {
                             </div>
                           </div>
                         </TableCell>
+                        <TableCell className="px-3 py-1 whitespace-normal tabular-nums">
+                          <ModelIntelligenceScore model={model} />
+                        </TableCell>
                         <TableCell className="px-3 py-1 whitespace-normal">
                           <StackedMetric
                             topLabel="Input"
@@ -537,11 +492,6 @@ export function ModelsPage() {
                             <CapabilityBadges model={model} />
                           </TableCell>
                         ) : null}
-                        {visibleColumns.intelligence ? (
-                          <TableCell className="px-3 py-1 whitespace-normal">
-                            <ModelIntelligenceScore model={model} />
-                          </TableCell>
-                        ) : null}
                         {isPlatformAdmin ? (
                           <TableCell className="px-3 py-1 whitespace-normal">
                             <ModelAllowlistDetail model={model} compact />
@@ -555,24 +505,11 @@ export function ModelsPage() {
             </>
           )}
 
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => navigateToPage(modelPage.page - 1)}
-              disabled={modelPage.page <= 1}
-            >
-              Previous
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => navigateToPage(modelPage.page + 1)}
-              disabled={modelPage.page >= totalPages}
-            >
-              Next
-            </Button>
-          </div>
+          <ModelListPagination
+            modelPage={modelPage}
+            onPageChange={navigateToPage}
+            isPending={isSearchPending || isPagePending}
+          />
         </CardContent>
       </Card>
       <p className="text-muted-foreground text-right text-xs">
@@ -597,6 +534,12 @@ export function ModelsPage() {
         model={infoDialogModel}
         activeSection={modelInfoSection}
         showAccessDetails={isPlatformAdmin}
+        onCloseAutoFocus={(event) => {
+          if (infoDialogTrigger.current?.isConnected) {
+            event.preventDefault()
+            infoDialogTrigger.current.focus()
+          }
+        }}
         onActiveSectionChange={setModelInfoSection}
         onOpenChange={(open) => {
           if (!open) {
@@ -608,19 +551,41 @@ export function ModelsPage() {
   )
 }
 
+function ModelListEmptyState({ query }: { query: string }) {
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <AppIcon icon={HomeIcon} size={22} stroke={1.5} />
+        </EmptyMedia>
+        <EmptyTitle>{query.trim() ? 'No models found' : 'No models configured'}</EmptyTitle>
+        <EmptyDescription>
+          {query.trim()
+            ? 'Try another model ID, alias, provider, or tag.'
+            : 'Add at least one routed model before sending traffic through the gateway.'}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  )
+}
+
 type VisibleModelColumns = {
   contextWindow: boolean
   capabilities: boolean
-  intelligence: boolean
 }
 
-function desktopTableMinWidth(isPlatformAdmin: boolean, visibleColumns: VisibleModelColumns) {
-  return (
-    (isPlatformAdmin ? 73 : 61) +
-    (visibleColumns.contextWindow ? 12 : 0) +
-    (visibleColumns.capabilities ? 18 : 0) +
-    (visibleColumns.intelligence ? 10 : 0)
-  )
+function modelTableColumns(isPlatformAdmin: boolean, visibleColumns: VisibleModelColumns) {
+  // Names share the remaining space; controls and metrics keep compact widths.
+  return [
+    { key: 'model', width: 18, flexible: true },
+    { key: 'actions', width: 11 },
+    { key: 'provider', width: 20, flexible: true },
+    { key: 'intelligence', width: 12 },
+    { key: 'cost', width: 11 },
+    ...(visibleColumns.contextWindow ? [{ key: 'context', width: 11 }] : []),
+    ...(visibleColumns.capabilities ? [{ key: 'capabilities', width: 18 }] : []),
+    ...(isPlatformAdmin ? [{ key: 'access', width: 10 }] : []),
+  ]
 }
 
 function ModelTableHeader({
@@ -639,7 +604,7 @@ function ModelTableHeader({
   return (
     <TableHeader className="bg-surface-muted">
       <TableRow>
-        <TableHead className="bg-surface-muted text-muted-foreground sticky left-0 z-30 w-[3rem] px-3 py-2 font-semibold">
+        <TableHead className="bg-surface-muted text-muted-foreground sticky left-0 z-30 px-3 py-2 font-semibold">
           <ModelCheckbox
             aria-label="Select all configurable models"
             checked={allSelected}
@@ -647,35 +612,31 @@ function ModelTableHeader({
             onChange={onToggleAll}
           />
         </TableHead>
-        <TableHead className="shadow-sticky-edge bg-surface-muted text-muted-foreground sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] px-3 py-2 font-semibold">
+        <TableHead className="bg-surface-muted text-muted-foreground lg:shadow-sticky-edge z-30 px-3 py-2 font-semibold lg:sticky lg:left-[3rem]">
           Model ID
         </TableHead>
-        <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
-          Actions
-        </TableHead>
-        <TableHead className="text-muted-foreground w-[18rem] px-3 py-2 font-semibold">
+        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Actions</TableHead>
+        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
           Provider &amp; Model
         </TableHead>
-        <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
+        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
+          <IntelligenceIndexLabel />
+        </TableHead>
+        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
           Cost / 1M tokens
         </TableHead>
         {visibleColumns.contextWindow ? (
-          <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
+          <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
             Context window
           </TableHead>
         ) : null}
         {visibleColumns.capabilities ? (
-          <TableHead className="text-muted-foreground w-[18rem] px-3 py-2 font-semibold">
+          <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
             Capabilities
           </TableHead>
         ) : null}
-        {visibleColumns.intelligence ? (
-          <TableHead className="text-muted-foreground w-[10rem] px-3 py-2 font-semibold">
-            Intelligence
-          </TableHead>
-        ) : null}
         {showAccessDetails ? (
-          <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
+          <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
             Allow List
           </TableHead>
         ) : null}
@@ -716,7 +677,6 @@ function ModelCard({
                 >
                   <AppIcon icon={Copy01Icon} size={14} stroke={1.5} />
                 </Button>
-                {model.alias_of ? <Badge>{`alias → ${model.alias_of}`}</Badge> : null}
               </div>
               <CardDescription className="flex flex-wrap items-center gap-2">
                 <BrandIcon iconKey={model.provider_icon_key} size={14} />
@@ -754,6 +714,10 @@ function ModelCard({
             }
           />
           <MetricDetail label="Capabilities" value={<CapabilityBadges model={model} />} />
+          <MetricDetail
+            label={<IntelligenceIndexLabel />}
+            value={<ModelIntelligenceScore model={model} />}
+          />
           {showAccessDetails ? (
             <MetricDetail label="Model allowlist" value={<ModelAllowlistDetail model={model} />} />
           ) : null}
@@ -865,211 +829,6 @@ function ClientConfigButton({
       <TooltipContent sideOffset={6}>{label}</TooltipContent>
     </Tooltip>
   )
-}
-
-function ModelInfoDialog({
-  model,
-  activeSection,
-  onActiveSectionChange,
-  onOpenChange,
-  showAccessDetails,
-}: {
-  model: ModelView | null
-  activeSection: ModelInfoSectionKey
-  onActiveSectionChange: (section: ModelInfoSectionKey) => void
-  onOpenChange: (open: boolean) => void
-  showAccessDetails: boolean
-}) {
-  const sections: Array<{ key: ModelInfoSectionKey; label: string }> = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'routing', label: 'Routing' },
-    { key: 'economics', label: 'Economics' },
-    { key: 'benchmarks', label: 'Benchmarks' },
-    ...(showAccessDetails ? ([{ key: 'access', label: 'Access' }] as const) : []),
-  ]
-
-  const activeLabel = sections.find((section) => section.key === activeSection)?.label ?? 'Overview'
-
-  return (
-    <Dialog open={model !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[min(1080px,calc(100vw-32px))] max-w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-h-[82vh] sm:max-w-[min(1080px,calc(100vw-2rem))]">
-        {model ? (
-          <>
-            <DialogHeader>
-              <DialogTitle>Model info</DialogTitle>
-              <DialogDescription className="flex min-w-0 flex-wrap items-center gap-2">
-                <BrandIcon iconKey={model.model_icon_key} size={14} />
-                <span className="truncate font-mono text-xs">{model.id}</span>
-                <span>via {providerTypeLabel(model)}</span>
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t">
-              <nav
-                aria-label="Model info sections"
-                className="flex gap-3 overflow-x-auto border-b py-3"
-              >
-                {sections.map((section) => (
-                  <Button
-                    key={section.key}
-                    type="button"
-                    variant={activeSection === section.key ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="justify-start px-3"
-                    onClick={() => onActiveSectionChange(section.key)}
-                  >
-                    {section.label}
-                  </Button>
-                ))}
-              </nav>
-
-              <div className="min-w-0 overflow-y-auto py-5">
-                <div className="flex min-w-0 flex-col gap-4">
-                  <div>
-                    <h3 className="text-foreground text-sm font-medium">{activeLabel}</h3>
-                    <p className="text-subtle-foreground mt-1 text-sm">
-                      {modelInfoSectionDescription(activeSection)}
-                    </p>
-                  </div>
-
-                  {activeSection === 'overview' ? <ModelInfoOverview model={model} /> : null}
-                  {activeSection === 'routing' ? <ModelInfoRouting model={model} /> : null}
-                  {activeSection === 'economics' ? <ModelInfoEconomics model={model} /> : null}
-                  {activeSection === 'benchmarks' ? <ModelBenchmarks model={model} /> : null}
-                  {activeSection === 'access' ? <ModelInfoAccess model={model} /> : null}
-                </div>
-              </div>
-            </div>
-          </>
-        ) : null}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function ModelInfoOverview({ model }: { model: ModelView }) {
-  return (
-    <div className="divide-y">
-      <ModelInfoRow label="Gateway model" value={model.id} mono />
-      <ModelInfoRow label="Resolved model" value={model.resolved_model_key} mono />
-      <ModelInfoRow label="Status" value={<ModelStatusIndicator status={model.status} />} />
-      <ModelInfoRow label="Alias of" value={model.alias_of ?? '—'} mono={model.alias_of != null} />
-      <ModelInfoRow label="Description" value={model.description ?? '—'} />
-      <ModelInfoRow
-        label="Tags"
-        value={
-          model.tags.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {model.tags.map((tag) => (
-                <Badge key={tag} variant="outline">
-                  {tag}
-                </Badge>
-              ))}
-            </div>
-          ) : (
-            '—'
-          )
-        }
-      />
-    </div>
-  )
-}
-
-function ModelInfoRouting({ model }: { model: ModelView }) {
-  return (
-    <div className="divide-y">
-      <ModelInfoRow
-        label="Upstream model"
-        value={model.upstream_model ?? 'Not currently routed'}
-        mono={model.upstream_model != null}
-      />
-      <ModelInfoRow label="Model ID" value={model.model_id} mono />
-      <ModelInfoRow label="Provider" value={providerTypeLabel(model)} />
-      <ModelInfoRow label="Provider key" value={model.provider_key ?? '—'} mono />
-      <ModelInfoRow
-        label="Client config"
-        value={
-          model.client_configurations.length > 0
-            ? `${model.client_configurations.length} available`
-            : 'Not available'
-        }
-      />
-    </div>
-  )
-}
-
-function ModelInfoEconomics({ model }: { model: ModelView }) {
-  return (
-    <div className="divide-y">
-      <ModelInfoRow
-        label="Input cost"
-        value={formatCost(model.input_cost_per_million_tokens_usd_10000)}
-      />
-      <ModelInfoRow
-        label="Output cost"
-        value={formatCost(model.output_cost_per_million_tokens_usd_10000)}
-      />
-      <ModelInfoRow
-        label="Cache read cost"
-        value={formatCost(model.cache_read_cost_per_million_tokens_usd_10000)}
-      />
-      <ModelInfoRow
-        label="Input window"
-        value={formatWindow(model.input_window_tokens ?? model.context_window_tokens)}
-      />
-      <ModelInfoRow label="Output window" value={formatWindow(model.output_window_tokens)} />
-      <ModelInfoRow label="Context window" value={formatWindow(model.context_window_tokens)} />
-    </div>
-  )
-}
-
-function ModelInfoAccess({ model }: { model: ModelView }) {
-  return (
-    <div className="divide-y">
-      <ModelInfoRow label="Model allowlist" value={<ModelAllowlistDetail model={model} />} />
-      <ModelInfoRow label="Capabilities" value={<CapabilityBadges model={model} />} />
-    </div>
-  )
-}
-
-function ModelInfoRow({
-  label,
-  mono = false,
-  value,
-}: {
-  label: string
-  mono?: boolean
-  value: ReactNode
-}) {
-  return (
-    <div className="grid min-w-0 gap-2 py-3 text-sm sm:grid-cols-[14rem_minmax(0,1fr)]">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd
-        className={
-          mono
-            ? 'text-subtle-foreground min-w-0 font-mono text-xs break-words'
-            : 'text-subtle-foreground min-w-0'
-        }
-      >
-        {value}
-      </dd>
-    </div>
-  )
-}
-
-function modelInfoSectionDescription(section: ModelInfoSectionKey) {
-  switch (section) {
-    case 'overview':
-      return 'Identity, lifecycle state, tags, and operator-facing description.'
-    case 'routing':
-      return 'Gateway and upstream identifiers used to route requests.'
-    case 'economics':
-      return 'Token pricing and context limits exposed by the current route.'
-    case 'benchmarks':
-      return 'Current sourced capability scores for this exact configured model.'
-    case 'access':
-      return 'Allowlist and runtime capability metadata for this model.'
-  }
 }
 
 // Keep the ordered setup, generated configuration blocks, and notes in one linear dialog.
@@ -1248,7 +1007,7 @@ function MetricDetail({
   mono = false,
   value,
 }: {
-  label: string
+  label: ReactNode
   mono?: boolean
   value: ReactNode
 }) {
@@ -1260,93 +1019,6 @@ function MetricDetail({
       <dd className={mono ? 'text-subtle-foreground font-mono text-xs' : 'text-subtle-foreground'}>
         {value}
       </dd>
-    </div>
-  )
-}
-
-function ModelStatusIndicator({ status }: { status: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          aria-label={status}
-          className={cn(
-            'inline-flex size-2.5 shrink-0 rounded-full ring-3',
-            status === 'healthy' ? 'bg-success ring-success/30' : 'bg-warning ring-warning/30',
-          )}
-        />
-      </TooltipTrigger>
-      <TooltipContent sideOffset={6}>{status}</TooltipContent>
-    </Tooltip>
-  )
-}
-
-function ModelAllowlistDetail({ compact = false, model }: { compact?: boolean; model: ModelView }) {
-  if (!model.allowlist) {
-    return (
-      <span
-        className={`text-muted-foreground inline-flex items-center gap-1.5 ${
-          compact ? 'text-sm' : ''
-        }`}
-      >
-        <AppIcon icon={CircleCheckIcon} size={compact ? 13 : 14} stroke={1.5} />
-        Unrestricted
-      </span>
-    )
-  }
-
-  if (compact) {
-    const userCount = model.allowlist.users.length
-    const teamCount = model.allowlist.teams.length
-
-    return (
-      <div className="flex min-w-0 flex-col gap-1">
-        <span className="text-foreground inline-flex items-center gap-1.5 text-sm">
-          <AppIcon icon={CircleCheckIcon} size={13} stroke={1.5} />
-          Restricted
-        </span>
-        {userCount > 0 || teamCount > 0 ? (
-          <span className="text-muted-foreground flex flex-wrap gap-x-2 text-xs">
-            {userCount > 0 ? (
-              <span>{`${userCount} ${userCount === 1 ? 'User' : 'Users'}`}</span>
-            ) : null}
-            {teamCount > 0 ? (
-              <span>{`${teamCount} ${teamCount === 1 ? 'Team' : 'Teams'}`}</span>
-            ) : null}
-          </span>
-        ) : null}
-      </div>
-    )
-  }
-
-  const refs = [
-    { label: 'Users', values: model.allowlist.users },
-    { label: 'Teams', values: model.allowlist.teams },
-  ].filter((entry) => entry.values.length > 0)
-
-  if (refs.length === 0) {
-    return <span className="text-muted-foreground">No users or teams listed</span>
-  }
-
-  return (
-    <div className="flex min-w-0 flex-col gap-2">
-      {refs.map((entry) => (
-        <div
-          key={entry.label}
-          role="group"
-          aria-label={entry.label}
-          className="flex min-w-0 flex-col gap-1"
-        >
-          <span className="text-muted-foreground text-xs font-medium">{entry.label}</span>
-          <div className="flex min-w-0 flex-wrap gap-1">
-            {entry.values.map((value) => (
-              <Badge key={`${entry.label}:${value}`} variant={compact ? 'secondary' : undefined}>
-                {value}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      ))}
     </div>
   )
 }
@@ -1386,82 +1058,69 @@ function StackedMetric({
   bottomValue: string
 }) {
   return (
-    <div className="flex min-w-[10rem] flex-col gap-1 py-1">
-      <div className="flex items-center justify-between gap-3">
-        <span className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-          {topLabel}
-        </span>
-        <span className="text-subtle-foreground">{topValue}</span>
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <span className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-          {bottomLabel}
-        </span>
-        <span className="text-subtle-foreground">{bottomValue}</span>
-      </div>
+    <div className="grid min-w-0 grid-cols-[auto_auto] items-center justify-start gap-x-4 gap-y-1 py-1">
+      <span className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
+        {topLabel}
+      </span>
+      <span className="text-subtle-foreground text-right tabular-nums">{topValue}</span>
+      <span className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
+        {bottomLabel}
+      </span>
+      <span className="text-subtle-foreground text-right tabular-nums">{bottomValue}</span>
     </div>
   )
 }
 
-function CapabilityBadges({ model }: { model: ModelView }) {
-  const capabilities = [
-    model.supports_streaming ? { label: 'Streaming', icon: LiveStreaming03Icon } : null,
-    model.supports_vision ? { label: 'Vision', icon: VisionIcon } : null,
-    model.supports_tool_calling ? { label: 'Tool Calling', icon: ToolsIcon } : null,
-    model.supports_structured_output ? { label: 'Structured Output', icon: CodeIcon } : null,
-    model.supports_attachments ? { label: 'Attachments', icon: AttachmentIcon } : null,
-    model.supports_decisions ? { label: 'Decisions', icon: Target02Icon } : null,
-  ].filter(
-    (
-      value,
-    ): value is {
-      label: string
-      icon: typeof LiveStreaming03Icon
-    } => value !== null,
-  )
+function useModelSearch() {
+  const router = useRouter()
+  const location = useLocation()
+  const urlQuery = typeof location.search.q === 'string' ? location.search.q : ''
+  const [query, setQuery] = useState(urlQuery)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const currentLocation = useRef(location)
+  const modelsPathname = useRef(location.pathname)
+  const isOnModels = useRef(true)
 
-  if (capabilities.length === 0) {
-    return <span className="text-muted-foreground">—</span>
+  useEffect(() => {
+    const unsubscribe = router.subscribe('onBeforeNavigate', ({ toLocation }) => {
+      // Pricing refresh reloads the current location and must preserve any draft search.
+      if (
+        toLocation.href === currentLocation.current.href &&
+        toLocation.state.__TSR_key === currentLocation.current.state.__TSR_key
+      ) {
+        return
+      }
+      currentLocation.current = toLocation
+      // Cancel before the next loader starts, including Back, Forward, and leaving Models.
+      clearTimeout(timer.current ?? undefined)
+      timer.current = null
+      isOnModels.current = toLocation.pathname === modelsPathname.current
+      setQuery(normalizeModelsSearch(toLocation.search).q ?? '')
+    })
+    return () => {
+      unsubscribe()
+      clearTimeout(timer.current ?? undefined)
+    }
+  }, [router])
+
+  function updateQuery(q: string) {
+    setQuery(q)
+    clearTimeout(timer.current ?? undefined)
+    timer.current = null
+    if (q === urlQuery || !isOnModels.current) return
+
+    timer.current = setTimeout(() => {
+      timer.current = null
+      void router.navigate({
+        to: '/models',
+        search: (previous) => normalizeModelsSearch({ ...previous, q, page: 1 }),
+        replace: true,
+        resetScroll: false,
+      })
+    }, 250)
   }
 
-  return (
-    <div className="flex min-w-0 flex-wrap gap-2 py-1">
-      {capabilities.map((capability) => (
-        <Badge key={capability.label} variant="outline" className="gap-1.5">
-          <AppIcon icon={capability.icon} size={12} stroke={1.5} />
-          {capability.label}
-        </Badge>
-      ))}
-    </div>
-  )
-}
-
-function providerTypeLabel(model: ModelView) {
-  return model.provider_label ?? model.provider_key ?? 'Unresolved'
-}
-
-function formatCost(value: number | null | undefined) {
-  if (value == null) {
-    return '—'
-  }
-
-  return CURRENCY_FORMATTER.format(value / 10_000)
-}
-
-function formatWindow(value: number | null | undefined) {
-  if (value == null) {
-    return '—'
-  }
-
-  if (value >= 1_000_000) {
-    return `${COMPACT_NUMBER_FORMATTER.format(value / 1_000_000)}M`
-  }
-
-  if (value >= 1_000) {
-    return `${COMPACT_NUMBER_FORMATTER.format(value / 1_000)}k`
-  }
-
-  return String(value)
+  return { query, updateQuery, isSearchPending: query !== urlQuery }
 }
 
 function normalizeModelsSearch(search: Record<string, unknown>) {
@@ -1471,6 +1130,9 @@ function normalizeModelsSearch(search: Record<string, unknown>) {
   return {
     page: Number.isFinite(page) && page >= 1 ? Math.floor(page) : DEFAULT_PAGE,
     page_size:
-      Number.isFinite(pageSize) && pageSize >= 1 ? Math.floor(pageSize) : DEFAULT_PAGE_SIZE,
+      Number.isFinite(pageSize) && pageSize >= 1
+        ? Math.min(100, Math.floor(pageSize))
+        : DEFAULT_PAGE_SIZE,
+    q: typeof search.q === 'string' && search.q.length > 0 ? search.q : undefined,
   }
 }

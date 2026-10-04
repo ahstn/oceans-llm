@@ -2075,6 +2075,31 @@
               "format": "int32",
               "minimum": 0
             }
+          },
+          {
+            "name": "include_aliases",
+            "in": "query",
+            "description": "Include alias models in the list. Defaults to true; alias metadata is always retained.",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "default": true
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Trimmed, case-insensitive substring search across model IDs, aliases, visible providers, upstream IDs, and tags.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -6602,6 +6627,93 @@
           }
         }
       },
+      "AdminModelRouteView": {
+        "type": "object",
+        "required": [
+          "id",
+          "provider_key",
+          "provider_label",
+          "provider_icon_key",
+          "upstream_model",
+          "priority",
+          "weight",
+          "enabled",
+          "provider_configured"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "provider_configured": {
+            "type": "boolean"
+          },
+          "provider_icon_key": {
+            "$ref": "#/components/schemas/ProviderIconKeyView"
+          },
+          "provider_key": {
+            "type": "string"
+          },
+          "provider_label": {
+            "type": "string"
+          },
+          "upstream_model": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "AdminModelRoutingPolicyView": {
+        "type": "object",
+        "required": [
+          "strategy"
+        ],
+        "properties": {
+          "affinity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminModelSessionAffinityView"
+              }
+            ]
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/AdminModelRoutingStrategyView"
+          }
+        }
+      },
+      "AdminModelRoutingStrategyView": {
+        "type": "string",
+        "enum": [
+          "preferred",
+          "weighted_random",
+          "round_robin"
+        ]
+      },
+      "AdminModelSessionAffinityView": {
+        "type": "object",
+        "required": [
+          "idle_timeout_seconds"
+        ],
+        "properties": {
+          "idle_timeout_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "AdminModelStatusView": {
         "type": "string",
         "enum": [
@@ -6615,6 +6727,7 @@
           "id",
           "model_id",
           "resolved_model_key",
+          "aliases",
           "tags",
           "status",
           "pricing_varies_by_route",
@@ -6627,6 +6740,13 @@
               "string",
               "null"
             ]
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Other model IDs resolving to the same execution model, excluding this model ID."
           },
           "allowlist": {
             "oneOf": [
@@ -6768,6 +6888,27 @@
           },
           "resolved_model_key": {
             "type": "string"
+          },
+          "routes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AdminModelRouteView"
+            },
+            "description": "Configured routes, including disabled routes. Only visible to platform admins."
+          },
+          "routing": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminModelRoutingPolicyView",
+                "description": "Configured policy. Only visible to platform admins."
+              }
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/AdminModelStatusView"

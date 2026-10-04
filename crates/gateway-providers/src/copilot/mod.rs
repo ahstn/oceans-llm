@@ -223,7 +223,11 @@ impl CopilotProvider {
                     )
                 })?;
                 resolver
-                    .resolve_provider_user_token(&self.config.provider_key, user_id)
+                    .resolve_provider_user_token(
+                        &self.config.provider_key,
+                        user_id,
+                        context.expected_provider_credential_id,
+                    )
                     .await
             }
         }

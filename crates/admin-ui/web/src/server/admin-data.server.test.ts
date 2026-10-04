@@ -175,6 +175,7 @@ describe('server-side admin data wrappers', () => {
               id: 'claude-sonnet',
               resolved_model_key: 'claude-sonnet',
               alias_of: null,
+              aliases: [],
               description: 'Claude on Vertex',
               tags: ['reasoning'],
               status: 'healthy',
@@ -315,6 +316,7 @@ describe('server-side admin data wrappers', () => {
                   id: 'claude-sonnet',
                   resolved_model_key: 'claude-sonnet',
                   alias_of: null,
+                  aliases: [],
                   description: 'Claude on Vertex',
                   tags: ['reasoning'],
                   status: 'healthy',
@@ -769,6 +771,35 @@ describe('server-side admin data wrappers', () => {
     DELETE.mockResolvedValue({
       data: { data: { status: 'ok' }, meta: { generated_at: '2026-03-10T11:32:00Z' } },
       response: { status: 200 },
+    })
+  })
+
+  it.each([false, true])(
+    'forwards include_aliases=%s with model pagination',
+    async (includeAliases) => {
+      const models = await listModels({
+        page: 2,
+        page_size: 50,
+        include_aliases: includeAliases,
+        q: '  OpenRouter  ',
+      })
+
+      expect(GET).toHaveBeenCalledExactlyOnceWith('/api/v1/admin/models', {
+        params: {
+          query: { page: 2, page_size: 50, include_aliases: includeAliases, q: '  OpenRouter  ' },
+        },
+      })
+      expect(models.data.items[0].aliases).toEqual([])
+    },
+  )
+
+  it('leaves model alias inclusion at the API default when no filter is requested', async () => {
+    await listModels()
+
+    expect(GET).toHaveBeenCalledExactlyOnceWith('/api/v1/admin/models', {
+      params: {
+        query: { page: undefined, page_size: undefined, include_aliases: undefined, q: undefined },
+      },
     })
   })
 

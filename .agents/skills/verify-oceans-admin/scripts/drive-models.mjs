@@ -97,6 +97,19 @@ try {
 
   const modelCell = page.getByTestId(`models-desktop-cell-${targetModelId}`)
   const modelRow = modelCell.locator('xpath=ancestor::tr')
+  const intelligenceHeader = page.getByRole('columnheader', { name: /^Intelligence Index/ })
+  await intelligenceHeader.waitFor()
+  const intelligenceColumn = await intelligenceHeader.evaluate((header) =>
+    Array.from(header.parentElement.children).indexOf(header),
+  )
+  const intelligenceScore = apiModel.benchmark_scores.find(
+    (score) => score.metric_key === 'artificial_analysis_intelligence_index',
+  )
+  const intelligenceValue = intelligenceScore
+    ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(intelligenceScore.value)
+    : '—'
+  await modelRow.getByRole('cell').nth(intelligenceColumn).getByText(intelligenceValue, { exact: true }).waitFor()
+  actions.push({ action: 'inspect always-visible Intelligence Index', result: intelligenceValue })
   await modelRow.getByRole('button', { name: 'Info' }).click()
   const infoDialog = page.getByRole('dialog', { name: 'Model info' })
   await infoDialog.getByText(targetModelId, { exact: true }).first().waitFor()
@@ -131,10 +144,9 @@ try {
   await page.getByRole('columnheader', { name: 'Context window', exact: true }).waitFor()
   await page.getByRole('checkbox', { name: /^Capabilities/ }).check()
   await page.getByRole('columnheader', { name: 'Capabilities', exact: true }).waitFor()
-  await page.getByRole('checkbox', { name: /^Intelligence/ }).check()
-  await page.getByRole('columnheader', { name: 'Intelligence', exact: true }).waitFor()
   await page.keyboard.press('Escape')
-  actions.push({ action: 'enable optional model columns', result: 'Context window, Capabilities, and Intelligence visible' })
+  await intelligenceHeader.waitFor()
+  actions.push({ action: 'enable optional model columns', result: 'Context window and Capabilities visible; Intelligence Index remains visible' })
   await capture(page, '04-model-columns')
 
   const configRow = page

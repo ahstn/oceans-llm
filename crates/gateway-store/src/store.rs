@@ -11,9 +11,9 @@ use gateway_core::{
     OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord,
     PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository,
     ProviderUserCredentialRepository, RequestLogRepository, RequestTag, ReviewAgentRepository,
-    SeedApiKey, SeedHumanBudgetDefaults, SeedModel, SeedOauthProvider, SeedOidcProvider,
-    SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, StoreError, StoreHealth,
-    TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
+    RoutingRepository, SeedApiKey, SeedHumanBudgetDefaults, SeedModel, SeedOauthProvider,
+    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, StoreError,
+    StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
     UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
@@ -47,6 +47,7 @@ pub trait GatewayStore:
     + AdminApiKeyRepository
     + BatchRepository
     + ModelRepository
+    + RoutingRepository
     + ProviderRepository
     + ProviderUserCredentialRepository
     + IdentityRepository

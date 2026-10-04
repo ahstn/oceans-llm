@@ -15,7 +15,9 @@ pub(super) struct InferenceExecution<'a> {
     pub request: InferenceRequest<'a>,
     pub route: gateway_core::ModelRoute,
     pub provider: Arc<dyn ProviderClient>,
+    pub expected_provider_credential_id: Option<uuid::Uuid>,
     pub guard_context: InferenceGuardContext,
+    routing_receipt: Option<RoutingReceipt>,
     icon_metadata: RequestLogIconMetadata,
 }
 
@@ -26,7 +28,12 @@ impl<'a> InferenceRequest<'a> {
         requirements: CoreRequestRequirements,
         request: &mut T,
     ) -> Result<InferenceExecution<'a>, AppError> {
-        let (route, provider) = match selected {
+        let SelectedProviderRoute {
+            route,
+            provider,
+            receipt,
+            expected_provider_credential_id,
+        } = match selected {
             Some(selection) => selection,
             None => {
                 let error = no_compatible_route_error(requirements);
@@ -125,7 +132,9 @@ impl<'a> InferenceRequest<'a> {
             request: self,
             route,
             provider,
+            expected_provider_credential_id,
             guard_context,
+            routing_receipt: receipt,
             icon_metadata,
         })
     }
@@ -285,11 +294,13 @@ impl InferenceExecution<'_> {
             resolved_model_key: resolved.selection.execution_model.model_key.clone(),
             execution_model: resolved.selection.execution_model.clone(),
             route: route.clone(),
+            routing_receipt: self.routing_receipt.clone(),
             provider_key: route.provider_key.clone(),
             icon_metadata: icon_metadata.clone(),
             started_at: request_started_at,
             attempt_started_at,
             finished: false,
+            saw_terminal_event: false,
             collector: state.service.new_stream_response_collector(),
             stream_trace,
         });
@@ -337,8 +348,21 @@ impl InferenceExecution<'_> {
             usage_value_from_response(&value),
         )
         .await;
-        if let Err(error) = guard_model_response(state, guard_context, &mut value).await {
-            record_guarded_non_stream_failure(
+        let completion = async {
+            guard_model_response(state, guard_context, &mut value).await?;
+            if let Some(receipt) = &self.routing_receipt {
+                receipt
+                    .complete(
+                        state.store.as_ref(),
+                        value.get("id").and_then(Value::as_str),
+                    )
+                    .await?;
+            }
+            Ok::<(), GatewayError>(())
+        }
+        .await;
+        if let Err(error) = completion {
+            record_post_provider_failure(
                 state,
                 auth,
                 request_log_context,

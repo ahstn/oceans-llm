@@ -31,9 +31,10 @@ requested model
   -> tag selection, when requested
   -> alias resolution and effective model policy
   -> explicit reasoning-effort validation
-  -> enabled and weighted routes
+  -> enabled routes with positive weights
   -> API and feature capability checks
-  -> first eligible route
+  -> continuation origin, session binding, or routing policy
+  -> one eligible route
   -> provider compatibility transforms
   -> upstream provider request
 ```
@@ -179,21 +180,100 @@ Use tags for policy-oriented choices such as `fast`, `coding`, or `low-cost`. Us
 
 ## Control route selection
 
-Each provider-backed model can define several routes. Route selection uses these fields:
+Each provider-backed model can define several routes. Admins declare routes and routing policy in YAML, then apply them through the normal config-seeding workflow. Routing policy is not editable in the admin UI.
 
 | Field | Behavior |
 | --- | --- |
+| `id` | Stable route name, unique within the model; required when the model defines `routing` |
 | `enabled` | Excludes the route when `false` |
 | `priority` | Lower values are considered before higher values |
-| `weight` | Controls weighted selection among routes with the same priority |
+| `weight` | Must be positive for eligibility; controls selection probability with `weighted_random` |
 | `provider` | Selects the configured provider connection |
 | `upstream_model` | Names the model sent to that provider |
 
-Routes with non-positive weight are excluded. Within each priority group, weight changes the probability that a route is selected first.
+Oceans treats models placed in one routing pool as equivalent. Existing API and feature capability checks still exclude routes that cannot serve the request. A route that needs a caller's Copilot connection also requires that connection before selection.
 
-### Weight is not fallback
+### Choose a routing policy
 
-The gateway currently executes only the first eligible route. It does not retry another route after an upstream error and does not send the request to several providers.
+The optional model-level `routing` block selects a policy:
+
+| `routing.strategy` | Selection for a new placement |
+| --- | --- |
+| `preferred` | Use the eligible route with the lowest priority value. Break equal-priority ties by stable internal route ID. |
+| `weighted_random` | Use weighted selection among eligible routes at the lowest priority. This is the default strategy. |
+| `round_robin` | Rotate among eligible routes at the lowest priority, ordered by stable internal route ID. Share a database cursor for each resolved model and eligible route set. |
+
+If no route in one priority tier is eligible, the gateway can select from the next tier. YAML list order does not establish preference. Use different priority values when one provider should be preferred over another.
+
+For example, this pool rotates new sessions between two configured provider connections:
+
+```yaml
+models:
+  - id: coding-pool
+    routing:
+      strategy: round_robin
+      affinity:
+        idle_timeout_seconds: 3600
+    routes:
+      - id: primary
+        provider: openai-primary
+        upstream_model: gpt-6-sol
+        priority: 10
+        weight: 3
+      - id: secondary
+        provider: openai-secondary
+        upstream_model: gpt-6-sol
+        priority: 10
+        weight: 1
+```
+
+The provider connections and upstream model names must exist in the deployment. The same structure can combine different provider types, such as Copilot, OpenRouter, and Bedrock, with each route's native model name and compatibility settings.
+
+Both example routes receive turns under `round_robin`; the `3:1` weights affect placement only if the strategy changes to `weighted_random`. Round robin counts new placements, not requests within an active session. Requests without session affinity also count as new placements. Callers with different eligible route sets use separate cursors, so a restricted caller cannot consume another set's turns. It does not balance tokens, cost, or concurrent work.
+
+Omit `routing` to retain the existing weighted selection on every request, without session affinity. `routing: {}` also selects `weighted_random` without affinity, but requires explicit route IDs. Aliases cannot define their own `routing` block; they use the resolved target's policy.
+
+### Keep route identities stable
+
+An explicit route `id` must contain 1–128 ASCII letters, digits, periods, underscores, or hyphens. It must be unique within the model. Every route needs an ID when the model defines `routing`.
+
+Keep the ID when changing a route's priority, weight, or position in YAML. These edits preserve route identity and do not break a valid session binding. A provider or upstream model change creates a different route identity.
+
+The execution fingerprint uses the initialized provider's endpoint, authentication, and headers, plus request-affecting route settings and the caller's linked provider credential ID. Changes to these values invalidate a binding. Display, pricing, timeout, and batch settings do not affect the fingerprint. Normal provider token refresh does not change it.
+
+Providers using AWS `default_chain` or GCP `adc` or `service_account` authentication need a `routing_account_scope` when a configured routing pool uses them. This label identifies the underlying account or principal. Change it and restart the gateway when that identity changes. Temporary token refresh for the same principal needs no label change. The gateway relies on the configured label; it cannot detect an incorrect label or an unreported ambient identity change. See [Routing Account Scope](configuration-reference.md#routing-account-scope) for syntax.
+
+### Keep sessions on one route
+
+Add `routing.affinity: {}` to enable session affinity with the default idle timeout of 3,600 seconds. Set `idle_timeout_seconds` to another positive integer when required. Omit `affinity` to disable it.
+
+Callers can send `x-oceans-session-id` with a conversation ID. Affinity keys include the API key, requested gateway model, and session namespace. Two callers with the same session string do not share a binding. Two aliases that resolve to one target also keep separate bindings. Use the same API key, model name, and session source on subsequent requests.
+
+The gateway also accepts the session identifiers already used by Claude Code, Codex, OpenCode, Pi, and Oh My Pi. Harness detection must identify the relevant client. This shares the parsers used by agent session analysis, but routing rejects malformed or conflicting values. If the canonical header and a recognized harness session ID are both present, they must agree. Session IDs must contain 1–256 ASCII letters, digits, periods, underscores, colons, or hyphens. Prompt cache keys and prompt content do not identify sessions.
+
+For a new session, the gateway selects a route and stores the binding atomically in PostgreSQL or libSQL. Gateway replicas using that database share the binding. Concurrent first requests for the same session and execution context therefore use one route. Successful responses extend the idle deadline; streams extend it only after a clean completion. Errors and cancelled streams do not refresh it.
+
+If a database error prevents a soft affinity refresh, the gateway preserves the successful response and records a warning. The existing binding can then expire sooner than intended. Response-origin persistence is required and has different failure behavior, as described below.
+
+An active binding takes precedence over the routing strategy while its route remains eligible. Adding a more preferred route does not move active sessions. After the idle deadline, or when the bound route is disabled, removed, changed, or no longer eligible, the next request uses the routing strategy again. A late completion from an old binding cannot refresh a replacement binding.
+
+Affinity applies to Chat Completions, Responses, and Anthropic Messages. The API family forms part of the execution fingerprint because provider state and cache behavior can differ by API. Switching API families within a session can therefore create a new binding. The routing strategy also applies to embeddings and decisions, which do not use session affinity. Durable batch admission keeps its existing route selection and stored route lifecycle.
+
+The idle timeout controls gateway routing state. It does not set provider cache retention or prove a cache hit. Provider eviction, account and region boundaries, prompt changes, and routing within a provider can still affect cache reuse. Keep OpenRouter's own provider policy stable when cache continuity depends on its selected upstream.
+
+### Keep Responses continuations on their origin
+
+For a model with a `routing` policy, a `previous_response_id` is bound to the route that created it. The gateway stores caller-scoped response ownership for 30 days, separately from the session idle timeout. The origin takes precedence over ordinary placement and session affinity.
+
+The gateway must store the origin before it completes a successful Responses result. If that write fails, the request or stream reports an error. A successful upstream result alone is not sufficient to promise a safe continuation.
+
+The gateway rejects a continuation when its origin is unknown, expired, changed, or unavailable for that caller and request. It does not send the identifier to another provider. If affinity is enabled and a session ID is present, a known continuation binds that session to its origin without advancing the round-robin cursor. A successful continuation refreshes that binding's idle deadline.
+
+Responses created before origin tracking was enabled cannot be continued through a routing pool unless their origin is known. Opaque `conversation` references are not supported in configured routing pools. Use full request history when a new placement is needed.
+
+### Selection does not retry provider failures
+
+The gateway executes one selected route. It does not retry another route after an upstream error and does not send the request to several providers. Session affinity does not add failover.
 
 For example, weights of `3` and `1` at the same priority produce weighted first-route selection. They do not mean “try the first provider three times, then fail over to the second.” Configure each selectable route as a valid execution target and monitor provider failures independently.
 
@@ -282,7 +362,7 @@ The context value is metadata, not request-time token enforcement. Oceans does n
 | `client_hints` | Harness settings for chat-shaped models (see below) |
 | `has_more`, `first_id`, `last_id` | The list is never paginated, so `has_more` is always `false` |
 
-`capabilities` follows the Anthropic SDK types exactly and describes what `POST /v1/messages` can accept for the model. `batch`, `citations`, `code_execution`, and `context_management` are always unsupported because the gateway does not serve those Anthropic features. `/v1/messages` hands content blocks, `thinking`, and `output_config` to the route unchanged, so `effort`, `thinking`, `image_input`, `pdf_input`, and `structured_outputs` are reported only when every eligible chat-capable route's upstream speaks Anthropic Messages. The route planner picks by weight within a priority tier and falls back to later tiers, so a single non-Anthropic fallback route turns these off. Those routes are `anthropic_compat`, Vertex `anthropic/*`, GitHub Copilot with `chat_api: anthropic_messages`, and Bedrock with an Anthropic `api_style`. For other models, `architecture.input_modalities` still describes what the model accepts through the OpenAI APIs. Effort levels come from the model's thinking policy and are clamped to the effective ceiling, which is the strictest `max_reasoning_effort` across the alias chain. `thinking.types.adaptive` is set for Claude families that accept only adaptive thinking; `enabled` means manual budgets are accepted.
+`capabilities` follows the Anthropic SDK types exactly and describes what `POST /v1/messages` can accept for the model. `batch`, `citations`, `code_execution`, and `context_management` are always unsupported because the gateway does not serve those Anthropic features. `/v1/messages` hands content blocks, `thinking`, and `output_config` to the route unchanged, so `effort`, `thinking`, `image_input`, `pdf_input`, and `structured_outputs` are reported only when every eligible chat-capable route's upstream speaks Anthropic Messages. Selection can reach later priority tiers, including through an active session binding, so a single eligible non-Anthropic route turns these off. Those Anthropic routes are `anthropic_compat`, Vertex `anthropic/*`, GitHub Copilot with `chat_api: anthropic_messages`, and Bedrock with an Anthropic `api_style`. For other models, `architecture.input_modalities` still describes what the model accepts through the OpenAI APIs. Effort levels come from the model's thinking policy and are clamped to the effective ceiling, which is the strictest `max_reasoning_effort` across the alias chain. `thinking.types.adaptive` is set for Claude families that accept only adaptive thinking; `enabled` means manual budgets are accepted.
 
 `client_hints` lists every gateway API that can serve the model, based on route capabilities, not on the model name:
 
@@ -345,7 +425,7 @@ Start with the returned error and the request log:
 | Symptom | Meaning | Check |
 | --- | --- | --- |
 | Model not found | The model ID does not exist, is not granted, or no tag candidate is accessible | Requested model, tags, API-key grants, and allowlists |
-| `invalid_request` | Model policy or route capability checks rejected the request | Explicit effort fields and effective ceiling; API family and required feature flags |
+| `invalid_request` | Model policy, session identity, continuation origin, or route capability checks rejected the request | Explicit effort fields, session IDs, response origin, API family, and required feature flags |
 | `no_routes_available` | No enabled, positively weighted, viable route remained | Route state, provider configuration, and weight |
 | Provider error | The selected route reached the provider and the upstream request failed | Provider attempt, credentials, compatibility profile, and upstream response |
 | Visible model cannot execute | Discovery access succeeded but no route supports this request | Route capabilities and provider runtime support |
@@ -360,6 +440,9 @@ Use the request ID to correlate the gateway response with **Observability > Requ
 4. Exercise streaming, tools, vision, or structured output when the route advertises them.
 5. Confirm the request log shows the expected requested model, resolved model, provider, and outcome.
 6. Test one unsupported capability and confirm it fails before provider execution.
-7. If routes share a priority, send enough representative requests to observe weighted selection without assuming a fixed sequence.
+7. Exercise the configured strategy with distinct sessions or no session ID. Weighted selection does not promise a fixed sequence; round robin rotates new placements.
+8. Repeat one session and confirm the same provider is selected. Test expiry with a short idle timeout in a test deployment, then restore the intended value.
+9. With multiple gateway replicas, send concurrent first requests for one session and confirm they use one route.
+10. For Responses continuation, confirm a known ID reaches its origin and an unknown ID fails before provider execution.
 
 For failures after route selection, continue with [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md). For provider-specific request and response behavior, use [Provider API Compatibility](../reference/provider-api-compatibility.md).

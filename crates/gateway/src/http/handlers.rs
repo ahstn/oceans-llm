@@ -4,8 +4,13 @@ mod inference;
 mod inference_tests;
 #[cfg(test)]
 mod model_metadata_tests;
+mod routing;
+#[cfg(test)]
+mod routing_tests;
 
 use auth::InferenceAuth;
+use gateway_service::routing::{RoutingEndpoint, RoutingReceipt};
+use routing::{SelectedProviderRoute, no_compatible_route_error, select_provider_route};
 
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
@@ -22,14 +27,13 @@ use axum::{
 use futures_util::{StreamExt, stream as futures_stream};
 use gateway_core::{
     AnthropicMessagesRequest, AuthenticatedApiKey, ChatCompletionsRequest, CoreChatRequest,
-    CoreRequestRequirements, DecisionsRequest, EmbeddingsRequest, GatewayError,
-    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
-    RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
+    CoreRequestRequirements, DecisionsRequest, EmbeddingsRequest, GatewayError, ProviderClient,
+    ProviderError, ProviderRequestContext, ProviderStream, RequestAttemptRecord,
+    RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
     anthropic_messages_request_to_core, core_chat_request_to_openai, enforce_chat_reasoning_effort,
     enforce_responses_reasoning_effort, openai_chat_request_to_core,
     openai_decisions_request_to_core, openai_embeddings_request_to_core,
     openai_responses_request_to_core, protocol::anthropic::anthropic_message_from_openai_chat,
-    vertex_route_capabilities_for_upstream_model,
 };
 use gateway_service::{
     McpAccess, McpTokenOverhead, McpTokenOverheadInput, RequestLogContext, RequestLogIconMetadata,
@@ -78,7 +82,6 @@ where
     })?;
     Ok(context)
 }
-type SelectedProviderRoute = (gateway_core::ModelRoute, Arc<dyn ProviderClient>);
 
 pub async fn healthz() -> Json<serde_json::Value> {
     Json(json!({ "status": "ok" }))
@@ -168,8 +171,16 @@ async fn v1_messages_inner(
         core_request.stream,
         "/v1/messages",
     );
-    let (eligible_route_count, selected) =
-        select_first_eligible_route(&state.providers, &resolved.routes, requirements);
+    let (eligible_route_count, selected) = select_provider_route(
+        &state,
+        &resolved,
+        requirements,
+        &headers,
+        &request.extra,
+        &request_headers,
+        RoutingEndpoint::Messages,
+    )
+    .await?;
 
     tracing::info!(
         request_model = %core_request.model,
@@ -181,7 +192,12 @@ async fn v1_messages_inner(
         "anthropic messages request resolved"
     );
 
-    let (route, provider) = match selected {
+    let SelectedProviderRoute {
+        route,
+        provider,
+        receipt,
+        expected_provider_credential_id,
+    } = match selected {
         Some(selection) => selection,
         None => {
             let error = no_compatible_route_error(requirements);
@@ -253,13 +269,14 @@ async fn v1_messages_inner(
         return Err(AppError(error));
     }
 
-    let context = build_provider_context(
+    let mut context = build_provider_context(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &route,
         &auth,
         request_headers,
     );
+    context.expected_provider_credential_id = expected_provider_credential_id;
 
     if core_request.stream {
         return anthropic_messages_stream_response(
@@ -276,6 +293,7 @@ async fn v1_messages_inner(
             icon_metadata,
             requirements,
             &guard_context,
+            receipt.as_ref(),
         )
         .await;
     }
@@ -343,8 +361,16 @@ async fn v1_messages_inner(
         usage_value_from_response(&openai_value),
     )
     .await;
-    if let Err(error) = guard_model_response(&state, &guard_context, &mut openai_value).await {
-        record_guarded_non_stream_failure(
+    let completion = async {
+        guard_model_response(&state, &guard_context, &mut openai_value).await?;
+        if let Some(receipt) = &receipt {
+            receipt.complete(state.store.as_ref(), None).await?;
+        }
+        Ok::<(), GatewayError>(())
+    }
+    .await;
+    if let Err(error) = completion {
+        record_post_provider_failure(
             &state,
             &auth,
             &request_log_context,
@@ -442,8 +468,16 @@ pub async fn v1_chat_completions(
         core_request.stream,
         "/v1/chat/completions",
     );
-    let (eligible_route_count, selected) =
-        select_first_eligible_route(&state.providers, &resolved.routes, requirements);
+    let (eligible_route_count, selected) = select_provider_route(
+        &state,
+        &resolved,
+        requirements,
+        &headers,
+        &request.extra,
+        &request_headers,
+        RoutingEndpoint::ChatCompletions,
+    )
+    .await?;
 
     tracing::info!(
         request_model = %core_request.model,
@@ -471,13 +505,14 @@ pub async fn v1_chat_completions(
     let guard_context = &execution.guard_context;
     let request_log_context = &execution.request.request_log_context;
 
-    let context = build_provider_context(
+    let mut context = build_provider_context(
         &request_id,
         &resolved.selection.requested_model.model_key,
         route,
         &auth,
         request_headers,
     );
+    context.expected_provider_credential_id = execution.expected_provider_credential_id;
 
     if core_request.stream {
         let stream_started_at = Instant::now();
@@ -603,8 +638,16 @@ pub async fn v1_responses(
         core_request.stream,
         "/v1/responses",
     );
-    let (eligible_route_count, selected) =
-        select_first_eligible_route(&state.providers, &resolved.routes, requirements);
+    let (eligible_route_count, selected) = select_provider_route(
+        &state,
+        &resolved,
+        requirements,
+        &headers,
+        &request.extra,
+        &request_headers,
+        RoutingEndpoint::Responses,
+    )
+    .await?;
 
     tracing::info!(
         request_model = %core_request.model,
@@ -632,13 +675,14 @@ pub async fn v1_responses(
     let guard_context = &execution.guard_context;
     let request_log_context = &execution.request.request_log_context;
 
-    let context = build_provider_context(
+    let mut context = build_provider_context(
         &request_id,
         &resolved.selection.requested_model.model_key,
         route,
         &auth,
         request_headers,
     );
+    context.expected_provider_credential_id = execution.expected_provider_credential_id;
 
     if core_request.stream {
         let stream_started_at = Instant::now();
@@ -756,8 +800,16 @@ pub async fn v1_embeddings(
         &request_headers,
         request_tags,
     );
-    let (eligible_route_count, selected) =
-        select_first_eligible_route(&state.providers, &resolved.routes, requirements);
+    let (eligible_route_count, selected) = select_provider_route(
+        &state,
+        &resolved,
+        requirements,
+        &headers,
+        &request.extra,
+        &request_headers,
+        RoutingEndpoint::Embeddings,
+    )
+    .await?;
 
     tracing::info!(
         request_model = %core_request.model,
@@ -768,7 +820,12 @@ pub async fn v1_embeddings(
         "embeddings request resolved"
     );
 
-    let (route, provider) = match selected {
+    let SelectedProviderRoute {
+        route,
+        provider,
+        receipt: _,
+        expected_provider_credential_id,
+    } = match selected {
         Some(selection) => selection,
         None => {
             return Err(AppError(no_compatible_route_error(requirements)));
@@ -835,13 +892,14 @@ pub async fn v1_embeddings(
         )
         .await?;
 
-    let context = build_provider_context(
+    let mut context = build_provider_context(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &route,
         &auth,
         request_headers,
     );
+    context.expected_provider_credential_id = expected_provider_credential_id;
 
     let attempt_started_at = gateway_service::offset_now();
     let provider_execution_span = provider_operation_span(
@@ -966,8 +1024,16 @@ pub async fn v1_decisions(
         &request_headers,
         request_tags,
     );
-    let (eligible_route_count, selected) =
-        select_first_eligible_route(&state.providers, &resolved.routes, requirements);
+    let (eligible_route_count, selected) = select_provider_route(
+        &state,
+        &resolved,
+        requirements,
+        &headers,
+        &request.extra,
+        &request_headers,
+        RoutingEndpoint::Decisions,
+    )
+    .await?;
 
     tracing::info!(
         request_model = %core_request.model,
@@ -978,7 +1044,12 @@ pub async fn v1_decisions(
         "decisions request resolved"
     );
 
-    let (route, provider) = match selected {
+    let SelectedProviderRoute {
+        route,
+        provider,
+        receipt: _,
+        expected_provider_credential_id,
+    } = match selected {
         Some(selection) => selection,
         None => {
             return Err(AppError(no_compatible_route_error(requirements)));
@@ -1024,13 +1095,14 @@ pub async fn v1_decisions(
         )
         .await?;
 
-    let context = build_provider_context(
+    let mut context = build_provider_context(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &route,
         &auth,
         request_headers,
     );
+    context.expected_provider_credential_id = expected_provider_credential_id;
 
     let attempt_started_at = gateway_service::offset_now();
     let provider_execution_span = provider_operation_span(
@@ -1120,86 +1192,6 @@ pub async fn v1_decisions(
 
     let response = Json(value).into_response();
     Ok(response)
-}
-
-#[tracing::instrument(
-    name = "gateway.route.select",
-    skip_all,
-    fields(gateway.routes.candidate_count = routes.len())
-)]
-fn select_first_eligible_route(
-    providers: &gateway_core::ProviderRegistry,
-    routes: &[gateway_core::ModelRoute],
-    requirements: CoreRequestRequirements,
-) -> (usize, Option<SelectedProviderRoute>) {
-    let mut eligible_route_count = 0usize;
-    let mut selected = None;
-
-    for route in routes {
-        let Some(provider) = providers.get(&route.provider_key) else {
-            continue;
-        };
-        let effective_capabilities =
-            route_capabilities_for_request(provider.as_ref(), route, requirements)
-                .intersect(route.capabilities);
-        if supports_requirements(effective_capabilities, requirements) {
-            eligible_route_count += 1;
-            if selected.is_none() {
-                selected = Some((route.clone(), provider));
-            }
-        }
-    }
-
-    (eligible_route_count, selected)
-}
-
-fn route_capabilities_for_request(
-    provider: &dyn ProviderClient,
-    route: &gateway_core::ModelRoute,
-    requirements: CoreRequestRequirements,
-) -> ProviderCapabilities {
-    let mut capabilities = route_effective_provider_capabilities(provider, route);
-    if provider.provider_type() == "github_copilot"
-        && requirements.chat_completions
-        && route
-            .compatibility
-            .github_copilot
-            .as_ref()
-            .is_some_and(|compatibility| {
-                compatibility.chat_api
-                    == Some(gateway_core::GitHubCopilotChatApi::AnthropicMessages)
-            })
-    {
-        capabilities.json_schema = false;
-    }
-    capabilities
-}
-
-fn route_effective_provider_capabilities(
-    provider: &dyn ProviderClient,
-    route: &gateway_core::ModelRoute,
-) -> ProviderCapabilities {
-    if provider.provider_type() == "gcp_vertex" {
-        return vertex_route_capabilities_for_upstream_model(Some(&route.upstream_model));
-    }
-    if provider.provider_type() == "github_copilot" {
-        return gateway_core::github_copilot_route_capabilities(
-            route.compatibility.github_copilot.as_ref(),
-        );
-    }
-    if provider.provider_type() == "openai_compat"
-        && route
-            .compatibility
-            .openrouter
-            .as_ref()
-            .is_some_and(|openrouter| openrouter.api.is_decisions())
-    {
-        let mut capabilities = provider.capabilities();
-        capabilities.decisions = true;
-        return capabilities;
-    }
-
-    provider.capabilities()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1352,33 +1344,6 @@ fn map_operation_provider_error(
     }
 }
 
-fn supports_requirements(
-    capabilities: ProviderCapabilities,
-    requirements: CoreRequestRequirements,
-) -> bool {
-    (!requirements.chat_completions || capabilities.chat_completions)
-        && (!requirements.responses || capabilities.responses)
-        && (!requirements.stream || capabilities.stream)
-        && (!requirements.embeddings || capabilities.embeddings)
-        && (!requirements.decisions || capabilities.decisions)
-        && (!requirements.tools || capabilities.tools)
-        && (!requirements.vision || capabilities.vision)
-        && (!requirements.json_schema || capabilities.json_schema)
-        && (!requirements.developer_role || capabilities.developer_role)
-}
-
-fn no_compatible_route_error(requirements: CoreRequestRequirements) -> GatewayError {
-    let required = requirements.required_capability_names();
-    let required = if required.is_empty() {
-        "none".to_string()
-    } else {
-        required.join(", ")
-    };
-    GatewayError::InvalidRequest(format!(
-        "no configured route supports requested capabilities ({required})"
-    ))
-}
-
 fn build_provider_context(
     request_id: &str,
     model_key: &str,
@@ -1392,6 +1357,7 @@ fn build_provider_context(
         provider_key: route.provider_key.clone(),
         upstream_model: route.upstream_model.clone(),
         owner_user_id: auth.owner_user_id,
+        expected_provider_credential_id: None,
         extra_headers: route.extra_headers.clone(),
         extra_body: route.extra_body.clone(),
         request_headers,
@@ -1409,11 +1375,13 @@ struct LoggingBodyStreamState {
     resolved_model_key: String,
     execution_model: gateway_core::GatewayModel,
     route: gateway_core::ModelRoute,
+    routing_receipt: Option<RoutingReceipt>,
     provider_key: String,
     icon_metadata: RequestLogIconMetadata,
     started_at: Instant,
     attempt_started_at: OffsetDateTime,
     finished: bool,
+    saw_terminal_event: bool,
     collector: gateway_service::StreamResponseCollector,
     stream_trace: StreamTrace,
 }
@@ -1549,7 +1517,7 @@ async fn record_guarded_pre_provider_failure(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn record_guarded_non_stream_failure(
+async fn record_post_provider_failure(
     state: &AppState,
     auth: &AuthenticatedApiKey,
     request_log_context: &RequestLogContext,
@@ -1712,6 +1680,7 @@ async fn anthropic_messages_stream_response(
     icon_metadata: RequestLogIconMetadata,
     requirements: CoreRequestRequirements,
     guard_context: &InferenceGuardContext,
+    routing_receipt: Option<&RoutingReceipt>,
 ) -> Result<Response, AppError> {
     let stream_started_at = Instant::now();
     let mut stream_trace = StreamTrace::new(
@@ -1800,11 +1769,13 @@ async fn anthropic_messages_stream_response(
         resolved_model_key: resolved.selection.execution_model.model_key.clone(),
         execution_model: resolved.selection.execution_model.clone(),
         route: route.clone(),
+        routing_receipt: routing_receipt.cloned(),
         provider_key: route.provider_key.clone(),
         icon_metadata,
         started_at: request_started_at,
         attempt_started_at,
         finished: false,
+        saw_terminal_event: false,
         collector: state.service.new_stream_response_collector(),
         stream_trace,
     });
@@ -1833,9 +1804,28 @@ fn wrap_stream_with_request_logging(
             Some(Ok(chunk)) => {
                 let observation = state.collector.observe_chunk(chunk.as_ref());
                 let ends_stream = observation.ends_stream;
+                state.saw_terminal_event |= observation.has_terminal_event;
                 state.stream_trace.observe_chunk(chunk.len(), observation);
-                if ends_stream {
-                    finalize_stream(&mut state).await;
+                // A completed Responses event promises a usable continuation ID.
+                // Stop before forwarding it if its origin cannot be persisted.
+                if observation.has_terminal_event
+                    && state.collector.failure().is_none()
+                    && let Some(receipt) = state.routing_receipt.as_mut()
+                    && let Err(error) = receipt
+                        .persist_response_origin(
+                            state.service.store().as_ref(),
+                            state.collector.response_id(),
+                        )
+                        .await
+                {
+                    let result = finalize_stream(&mut state, Some(error))
+                        .await
+                        .map(|()| chunk)
+                        .map_err(|error| std::io::Error::other(error.to_string()));
+                    return Some((result, state));
+                }
+                if ends_stream && let Err(error) = finalize_stream(&mut state, None).await {
+                    return Some((Err(std::io::Error::other(error.to_string())), state));
                 }
 
                 Some((Ok(chunk), state))
@@ -1907,35 +1897,66 @@ fn wrap_stream_with_request_logging(
                 );
                 Some((Err(std::io::Error::other(error_message)), state))
             }
-            None => {
-                finalize_stream(&mut state).await;
-                None
-            }
+            None => match finalize_stream(&mut state, None).await {
+                Ok(()) => None,
+                Err(error) => Some((Err(std::io::Error::other(error.to_string())), state)),
+            },
         }
     })
 }
 
-async fn finalize_stream(state: &mut LoggingBodyStreamState) {
+async fn finalize_stream(
+    state: &mut LoggingBodyStreamState,
+    origin_error: Option<GatewayError>,
+) -> Result<(), GatewayError> {
     if state.finished {
-        return;
+        return Ok(());
     }
     state.finished = true;
     state.collector.finish();
-    let failure = state.collector.failure().cloned();
+    let mut failure = state.collector.failure().cloned();
+    // Failed streams can still report billable usage, but must not refresh affinity.
+    if failure.is_none() || state.collector.usage().is_some() {
+        account_stream_usage(state).await;
+    }
+    let routing_error = if origin_error.is_some() {
+        origin_error
+    } else if failure.is_none() && state.saw_terminal_event {
+        match &state.routing_receipt {
+            Some(receipt) => receipt
+                .complete(
+                    state.service.store().as_ref(),
+                    state.collector.response_id(),
+                )
+                .await
+                .err(),
+            None => None,
+        }
+    } else {
+        None
+    };
+    if let Some(error) = &routing_error {
+        tracing::error!(request_id = %state.request_log_context.request_id,
+            error_code = %error.error_code(), "failed to persist successful route binding");
+        failure = Some(gateway_service::StreamFailureSummary {
+            status_code: error.http_status_code().into(),
+            error_code: error.error_code().to_string(),
+        });
+    }
     state.stream_trace.finish(
-        if failure.is_some() {
+        if routing_error.is_some() {
+            "routing_state_error"
+        } else if failure.is_some() {
             "stream_error_event"
         } else {
             "complete"
         },
-        failure.as_ref().map(|_| "stream_error_event"),
+        if routing_error.is_some() {
+            Some("routing_state_error")
+        } else {
+            failure.as_ref().map(|_| "stream_error_event")
+        },
     );
-    // A clean stream is always accounted (unpriced when the provider sent no
-    // usage). A stream that ended with an error event is charged only when the
-    // provider reported usage before failing.
-    if failure.is_none() || state.collector.usage().is_some() {
-        account_stream_usage(state).await;
-    }
     tracing::info!(
         request_id = %state.request_log_context.request_id,
         provider_key = %state.provider_key,
@@ -1988,6 +2009,10 @@ async fn finalize_stream(state: &mut LoggingBodyStreamState) {
         state.request_log_context.operation,
         &tool_cardinality,
     );
+    match routing_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 /// Records the stream's usage against the ledger and budgets. `collector.usage()`
@@ -2404,12 +2429,14 @@ mod tests {
     use serde_json::{Value, json};
     use tower_http::request_id::RequestId;
 
+    use super::routing::{
+        route_capabilities_for_request, route_effective_provider_capabilities,
+        select_first_eligible_route,
+    };
     use super::{
         LoggingBodyStreamState, anthropic_error_response, api_health, build_provider_context,
         canonical_request_id, extract_anthropic_authorization_header, request_log_icon_metadata,
-        route_capabilities_for_request, route_effective_provider_capabilities,
-        select_first_eligible_route, split_partial_provider_error,
-        wrap_stream_with_request_logging,
+        split_partial_provider_error, wrap_stream_with_request_logging,
     };
     use crate::http::request_tracing::StreamTrace;
     use crate::observability::GatewayMetrics;
@@ -2577,11 +2604,13 @@ mod tests {
                 resolved_model_key: self.resolved.selection.execution_model.model_key.clone(),
                 execution_model: self.resolved.selection.execution_model.clone(),
                 route: self.route.clone(),
+                routing_receipt: None,
                 provider_key: self.route.provider_key.clone(),
                 icon_metadata,
                 started_at: Instant::now(),
                 attempt_started_at: gateway_service::offset_now(),
                 finished: false,
+                saw_terminal_event: false,
                 collector: self.service.new_stream_response_collector(),
                 stream_trace: StreamTrace::new(
                     "chat",
@@ -2788,10 +2817,12 @@ mod tests {
                     model_key: "fast".to_string(),
                     alias_target_model_key: None,
                     max_reasoning_effort: None,
+                    routing: None,
                     description: None,
                     tags: Vec::new(),
                     rank: 0,
                     routes: vec![SeedModelRoute {
+                        route_key: None,
                         provider_key: "vertex".to_string(),
                         upstream_model: "fast-upstream".to_string(),
                         priority: 0,
@@ -3055,7 +3086,7 @@ mod tests {
         assert_eq!(
             selected
                 .expect("supported embedding route")
-                .0
+                .route
                 .upstream_model,
             "google/text-embedding-005"
         );
@@ -3099,7 +3130,7 @@ mod tests {
 
         assert_eq!(eligible_route_count, 1);
         assert_eq!(
-            selected.expect("vision-capable route").0.upstream_model,
+            selected.expect("vision-capable route").route.upstream_model,
             "document-capable"
         );
     }

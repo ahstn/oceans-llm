@@ -1,6 +1,6 @@
 use gateway_core::{
     AgentObservationSetRecord, AgentSessionAnalysisRecord, AgentSessionRecord,
-    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, StoreError,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, ModelRoutingPolicy, StoreError,
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -42,6 +42,19 @@ where
     T: ?Sized + Serialize,
 {
     value.map(serialize_json).transpose()
+}
+
+pub(crate) fn parse_model_routing_policy(
+    value: Option<&str>,
+) -> Result<Option<ModelRoutingPolicy>, StoreError> {
+    value
+        .map(|value| {
+            let policy: ModelRoutingPolicy = serde_json::from_str(value)
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+            policy.validate().map_err(StoreError::Serialization)?;
+            Ok(policy)
+        })
+        .transpose()
 }
 
 fn same_timestamp(left: OffsetDateTime, right: OffsetDateTime) -> bool {

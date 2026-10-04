@@ -165,6 +165,7 @@ async fn aliases_use_batched_target_routes_without_exposing_ungranted_model_ids(
         model_key: "private-target".into(),
         alias_target_model_key: None,
         max_reasoning_effort: None,
+        routing: None,
         description: None,
         tags: vec![],
         rank: 0,
@@ -226,6 +227,7 @@ fn broken_and_cyclic_aliases_have_no_execution_metadata() {
         model_key: "alias".into(),
         alias_target_model_key: Some("missing".into()),
         max_reasoning_effort: None,
+        routing: None,
         description: None,
         tags: vec![],
         rank: 0,
@@ -396,6 +398,7 @@ async fn models_list_describes_claude_routes_from_catalog_and_provider_type() {
         model_key: "house-large".into(),
         alias_target_model_key: None,
         max_reasoning_effort: Some(gateway_core::ReasoningEffort::High),
+        routing: None,
         description: Some("Primary coding model".into()),
         tags: vec![],
         rank: 0,
@@ -498,6 +501,7 @@ async fn decision_models_report_the_openrouter_decisions_output_modality() {
         model_key: "judge".into(),
         alias_target_model_key: None,
         max_reasoning_effort: None,
+        routing: None,
         description: None,
         tags: vec![],
         rank: 0,
@@ -542,6 +546,7 @@ async fn models_list_holds_aliases_to_the_strictest_ceiling_in_their_chain() {
         model_key: "house-large".into(),
         alias_target_model_key: None,
         max_reasoning_effort: Some(gateway_core::ReasoningEffort::High),
+        routing: None,
         description: None,
         tags: vec![],
         rank: 0,
@@ -552,6 +557,7 @@ async fn models_list_holds_aliases_to_the_strictest_ceiling_in_their_chain() {
         model_key: "house-capped".into(),
         alias_target_model_key: Some(target.model_key.clone()),
         max_reasoning_effort: Some(gateway_core::ReasoningEffort::Low),
+        routing: None,
         ..target.clone()
     };
     let alias = GatewayModel {
@@ -559,6 +565,7 @@ async fn models_list_holds_aliases_to_the_strictest_ceiling_in_their_chain() {
         model_key: "house-fast".into(),
         alias_target_model_key: Some(middle.model_key.clone()),
         max_reasoning_effort: None,
+        routing: None,
         ..target.clone()
     };
     let mut vertex_route = route();
@@ -603,6 +610,7 @@ async fn anthropic_request_features_are_only_advertised_for_messages_native_rout
         model_key: "gpt".into(),
         alias_target_model_key: None,
         max_reasoning_effort: None,
+        routing: None,
         description: None,
         tags: vec![],
         rank: 0,
@@ -650,6 +658,7 @@ async fn anthropic_request_features_require_every_fallback_route_to_be_messages_
         model_key: "house-large".into(),
         alias_target_model_key: None,
         max_reasoning_effort: None,
+        routing: None,
         description: None,
         tags: vec![],
         rank: 0,

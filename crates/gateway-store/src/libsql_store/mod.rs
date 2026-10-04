@@ -18,6 +18,7 @@ mod provider_user_credentials;
 mod providers;
 mod request_logs;
 mod review_agent;
+mod routing;
 mod seed;
 mod skills;
 #[cfg(test)]
@@ -94,6 +95,7 @@ use support::*;
 pub struct LibsqlStore {
     database: Arc<libsql::Database>,
     connection: Arc<libsql::Connection>,
+    routing_workers: Arc<tokio::sync::Semaphore>,
 }
 
 impl LibsqlStore {
@@ -115,6 +117,7 @@ impl LibsqlStore {
         Ok(Self {
             database: Arc::new(db),
             connection: Arc::new(connection),
+            routing_workers: Arc::new(tokio::sync::Semaphore::new(4)),
         })
     }
 

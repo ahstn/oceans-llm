@@ -144,6 +144,7 @@ where
         &self,
         provider_key: &str,
         user_id: Uuid,
+        expected_credential_id: Option<Uuid>,
     ) -> Result<String, ProviderError> {
         let credential = self
             .store
@@ -159,6 +160,11 @@ where
                     "user `{user_id}` has no credential configured for provider `{provider_key}`"
                 ))
             })?;
+        if expected_credential_id.is_some_and(|expected| expected != credential.credential_id) {
+            return Err(ProviderError::InvalidRequest(format!(
+                "credential for user `{user_id}` and provider `{provider_key}` changed after route selection"
+            )));
+        }
         let associated_data = credential_associated_data(provider_key, user_id);
         let token = decrypt_secret_with_key_and_aad(
             &credential.secret_ciphertext,
@@ -394,13 +400,13 @@ mod tests {
 
         assert_eq!(
             service
-                .resolve_provider_user_token(provider_key, user_a)
+                .resolve_provider_user_token(provider_key, user_a, None)
                 .await
                 .expect("original owner token"),
             "github-token-a"
         );
         let error = service
-            .resolve_provider_user_token(provider_key, user_b)
+            .resolve_provider_user_token(provider_key, user_b, None)
             .await
             .expect_err("copied ciphertext must fail");
         assert!(error.to_string().contains("could not be decrypted"));
@@ -422,6 +428,56 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    async fn rejects_a_relinked_credential_before_decryption() {
+        let _key = EnvVarGuard::set(
+            PROVIDER_CREDENTIAL_KEY_ENV,
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        );
+        let store = Arc::new(TestCredentialStore::default());
+        let service = ProviderCredentialService::new(store.clone());
+        let provider_key = "github-copilot-user";
+        let user_id = Uuid::new_v4();
+        service
+            .upsert(provider_key, user_id, "original-token")
+            .await
+            .expect("store original token");
+        let selected_id = store
+            .get_provider_user_credential(provider_key, user_id)
+            .await
+            .expect("load original credential")
+            .expect("original credential")
+            .credential_id;
+        service
+            .upsert(provider_key, user_id, "replacement-token")
+            .await
+            .expect("relink credential");
+
+        assert_eq!(
+            service
+                .resolve_provider_user_token(provider_key, user_id, None)
+                .await
+                .expect("legacy request can use current credential"),
+            "replacement-token"
+        );
+        // A generation mismatch must take precedence over even an invalid ciphertext.
+        store
+            .records
+            .lock()
+            .expect("credential records")
+            .get_mut(&(provider_key.to_string(), user_id))
+            .expect("replacement credential")
+            .secret_ciphertext = "invalid-ciphertext".to_string();
+
+        let error = service
+            .resolve_provider_user_token(provider_key, user_id, Some(selected_id))
+            .await
+            .expect_err("a relinked credential cannot serve the selected route");
+        assert!(matches!(error, ProviderError::InvalidRequest(_)));
+        assert!(error.to_string().contains("changed after route selection"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
     async fn rejects_a_credential_that_changes_during_resolution() {
         let _key = EnvVarGuard::set(
             PROVIDER_CREDENTIAL_KEY_ENV,
@@ -437,7 +493,7 @@ mod tests {
         store.reject_touches();
 
         let error = service
-            .resolve_provider_user_token("github-copilot-user", user_id)
+            .resolve_provider_user_token("github-copilot-user", user_id, None)
             .await
             .expect_err("stale credential must not be returned");
 

@@ -11,10 +11,14 @@ use gateway_client_config::{
 };
 use gateway_core::{
     GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
-    PricingCatalogRepository, PricingLimits, PricingModalities, ProviderCapabilities,
-    ProviderConnection, ProviderRepository, ReasoningEffort,
+    ModelRoutingPolicy, PricingCatalogRepository, PricingLimits, PricingModalities,
+    ProviderCapabilities, ProviderConnection, ProviderRepository, ReasoningEffort,
 };
 use time::OffsetDateTime;
+
+mod routing;
+pub use routing::AdminModelRouteSummary;
+use routing::summarize_routes;
 
 #[cfg(test)]
 use crate::effective_route_metadata::provider_capabilities;
@@ -51,10 +55,13 @@ pub struct AdminModelSummary {
     pub model_id: String,
     pub resolved_model_key: String,
     pub alias_of: Option<String>,
+    pub aliases: Vec<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub allowlist: Option<ModelAllowlistPolicy>,
     pub status: AdminModelStatus,
+    pub routing: Option<ModelRoutingPolicy>,
+    pub routes: Vec<AdminModelRouteSummary>,
     pub provider_key: Option<String>,
     pub provider_label: Option<String>,
     pub provider_icon_key: Option<ProviderIconKey>,
@@ -278,6 +285,7 @@ where
                 )
             })
             .collect::<HashMap<_, _>>();
+        let model_keys_by_execution = group_model_keys_by_execution(&execution_models);
         let execution_model_ids = execution_models
             .values()
             .map(|model| model.id)
@@ -389,10 +397,19 @@ where
                     model_id: model.id.to_string(),
                     resolved_model_key: execution_model.model_key.clone(),
                     alias_of: model.alias_target_model_key.clone(),
+                    aliases: model_keys_by_execution
+                        .get(&execution_model.model_key)
+                        .into_iter()
+                        .flatten()
+                        .filter(|key| *key != &model.model_key)
+                        .cloned()
+                        .collect(),
                     description: model.description.clone(),
                     tags: model.tags.clone(),
                     allowlist: allowlists_by_model.get(&model.id).cloned(),
                     status,
+                    routing: execution_model.routing.clone(),
+                    routes: summarize_routes(routes, &providers_by_key),
                     provider_key: primary_route.map(|route| route.provider_key.clone()),
                     provider_label: provider_display
                         .as_ref()
@@ -669,6 +686,22 @@ pub(crate) fn select_display_route<'a>(
         })
         .or_else(|| routes.iter().find(|route| route.enabled))
         .or_else(|| routes.first())
+}
+
+fn group_model_keys_by_execution(
+    execution_models: &HashMap<String, GatewayModel>,
+) -> HashMap<String, Vec<String>> {
+    let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+    for (model_key, execution_model) in execution_models {
+        groups
+            .entry(execution_model.model_key.clone())
+            .or_default()
+            .push(model_key.clone());
+    }
+    for model_keys in groups.values_mut() {
+        model_keys.sort_unstable();
+    }
+    groups
 }
 
 fn resolve_execution_model(
@@ -1095,6 +1128,7 @@ mod tests {
             model_key: "jev".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: Vec::new(),
             rank: 1,
@@ -1212,6 +1246,7 @@ mod tests {
             model_key: model_key.to_string(),
             alias_target_model_key: alias_target_model_key.map(str::to_string),
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: Vec::new(),
             rank: 0,
@@ -1247,10 +1282,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn model_aliases_include_chains_and_canonical_ids_before_pagination() {
+        let repo = Arc::new(CountingRepo {
+            models: vec![
+                plain_model("z-alias", Some("base")),
+                plain_model("unrelated", None),
+                plain_model("base", None),
+                plain_model("a-chain", Some("z-alias")),
+                plain_model("broken", Some("missing")),
+                plain_model("cycle-a", Some("cycle-b")),
+                plain_model("cycle-b", Some("cycle-a")),
+            ],
+            ..Default::default()
+        });
+        let models = AdminModelsService::new(repo.clone())
+            .list_models()
+            .await
+            .unwrap();
+        let aliases = |key: &str| {
+            models
+                .iter()
+                .find(|model| model.id == key)
+                .unwrap()
+                .aliases
+                .clone()
+        };
+        assert_eq!(aliases("base"), ["a-chain", "z-alias"]);
+        assert_eq!(aliases("z-alias"), ["a-chain", "base"]);
+        assert_eq!(aliases("a-chain"), ["base", "z-alias"]);
+        for key in ["unrelated", "broken", "cycle-a", "cycle-b"] {
+            assert!(aliases(key).is_empty());
+        }
+        // The HTTP layer takes pages after this call; off-page aliases stay attached.
+        let first_page: Vec<_> = models.iter().take(1).collect();
+        assert_eq!(first_page[0].id, "z-alias");
+        assert_eq!(first_page[0].aliases, ["a-chain", "base"]);
+        assert_eq!(first_page[0].alias_of.as_deref(), Some("base"));
+        assert_eq!(repo.list_models_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.list_routes_for_models_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.list_routes_for_model_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(repo.list_providers_by_keys_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.get_provider_by_key_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
     async fn list_models_batches_route_and_provider_loading() {
         let execution_model_id = Uuid::new_v4();
         let alias_model_id = Uuid::new_v4();
         let route_id = Uuid::new_v4();
+        let disabled_route_id = Uuid::new_v4();
+        let routing = gateway_core::ModelRoutingPolicy {
+            strategy: gateway_core::RoutingStrategy::RoundRobin,
+            affinity: Some(gateway_core::SessionAffinityPolicy::default()),
+        };
 
         let repo = Arc::new(CountingRepo {
             models: vec![
@@ -1259,6 +1343,7 @@ mod tests {
                     model_key: "friendly-alias".to_string(),
                     alias_target_model_key: Some("gpt-4.1".to_string()),
                     max_reasoning_effort: None,
+                    routing: None,
                     description: Some("alias".to_string()),
                     tags: vec!["alias".to_string()],
                     rank: 1,
@@ -1268,6 +1353,7 @@ mod tests {
                     model_key: "gpt-4.1".to_string(),
                     alias_target_model_key: None,
                     max_reasoning_effort: None,
+                    routing: Some(routing.clone()),
                     description: Some("base".to_string()),
                     tags: vec!["base".to_string()],
                     rank: 2,
@@ -1275,21 +1361,33 @@ mod tests {
             ],
             routes_by_model: HashMap::from([(
                 execution_model_id,
-                vec![ModelRoute {
-                    id: route_id,
-                    model_id: execution_model_id,
-                    provider_key: "openai".to_string(),
-                    upstream_model: "gpt-4.1".to_string(),
-                    priority: 0,
-                    weight: 1.0,
-                    enabled: true,
-                    context_window_tokens: None,
-                    pricing_override: None,
-                    extra_headers: Default::default(),
-                    extra_body: Default::default(),
-                    capabilities: Default::default(),
-                    compatibility: Default::default(),
-                }],
+                vec![
+                    ModelRoute {
+                        id: route_id,
+                        model_id: execution_model_id,
+                        provider_key: "openai".to_string(),
+                        upstream_model: "gpt-4.1".to_string(),
+                        priority: 0,
+                        weight: 1.0,
+                        enabled: true,
+                        context_window_tokens: None,
+                        pricing_override: None,
+                        extra_headers: Default::default(),
+                        extra_body: Default::default(),
+                        capabilities: Default::default(),
+                        compatibility: Default::default(),
+                    },
+                    ModelRoute {
+                        id: disabled_route_id,
+                        model_id: execution_model_id,
+                        provider_key: "openai".to_string(),
+                        upstream_model: "gpt-4.1-disabled".to_string(),
+                        priority: 10,
+                        weight: 2.0,
+                        enabled: false,
+                        ..model_route("gpt-4.1-disabled", ProviderCapabilities::all_enabled())
+                    },
+                ],
             )]),
             providers_by_key: HashMap::from([(
                 "openai".to_string(),
@@ -1355,6 +1453,17 @@ mod tests {
         assert_eq!(alias.status, AdminModelStatus::Healthy);
         assert_eq!(alias.provider_key.as_deref(), Some("openai"));
         assert_eq!(alias.upstream_model.as_deref(), Some("gpt-4.1"));
+        assert_eq!(alias.routing, Some(routing));
+        assert_eq!(alias.routes.len(), 2);
+        assert_eq!(alias.routes[0].id, route_id.to_string());
+        assert_eq!(alias.routes[0].provider_label, "OpenAI");
+        assert!(alias.routes[0].enabled);
+        assert!(alias.routes[0].provider_configured);
+        assert_eq!(alias.routes[1].id, disabled_route_id.to_string());
+        assert!(!alias.routes[1].enabled);
+        assert!(alias.routes[1].provider_configured);
+        assert_eq!(alias.routes[1].priority, 10);
+        assert_eq!(alias.routes[1].weight, 2.0);
         assert_eq!(alias.input_cost_per_million_tokens_usd_10000, Some(12_500));
         assert_eq!(
             alias.output_cost_per_million_tokens_usd_10000,
@@ -1448,6 +1557,7 @@ mod tests {
                 model_key: "missing-provider-model".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
@@ -1478,6 +1588,11 @@ mod tests {
 
         assert_eq!(items[0].status, AdminModelStatus::Degraded);
         assert_eq!(items[0].provider_key.as_deref(), Some("missing"));
+        assert_eq!(items[0].routes.len(), 1);
+        assert_eq!(items[0].routes[0].id, route_id.to_string());
+        assert_eq!(items[0].routes[0].provider_key, "missing");
+        assert!(items[0].routes[0].enabled);
+        assert!(!items[0].routes[0].provider_configured);
         assert_eq!(items[0].input_cost_per_million_tokens_usd_10000, None);
         assert_eq!(items[0].cache_read_cost_per_million_tokens_usd_10000, None);
         assert_eq!(items[0].supports_streaming, Some(true));
@@ -1523,6 +1638,7 @@ mod tests {
                 model_key: "disabled-model".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
@@ -1563,6 +1679,7 @@ mod tests {
                 model_key: "fallback-model".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
@@ -1667,6 +1784,7 @@ mod tests {
                 model_key: "gpt-4.1".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
@@ -1693,6 +1811,7 @@ mod tests {
                 model_key: "unpriced-model".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
@@ -1779,6 +1898,7 @@ mod tests {
                     model_key: "claude-sonnet".to_string(),
                     alias_target_model_key: None,
                     max_reasoning_effort: Some(ReasoningEffort::Max),
+                    routing: None,
                     description: Some("Claude Sonnet".to_string()),
                     tags: vec!["anthropic".to_string()],
                     rank: 1,
@@ -1986,6 +2106,7 @@ mod tests {
             model_key: "mantle-gpt".into(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: vec![],
             rank: 0,
@@ -2104,6 +2225,7 @@ mod tests {
                 model_key: "claude-fable-5-1".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: Some("Claude Fable 5.1".to_string()),
                 tags: vec!["anthropic".to_string()],
                 rank: 1,

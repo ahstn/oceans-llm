@@ -1,5 +1,7 @@
 use serde_json::json;
 
+use crate::redaction::{RequestLogPayloadCaptureMode, RequestLogPayloadPolicy};
+
 use super::super::{
     StreamFailureSummary, StreamResponseCollector, UsageSummary, usage_summary_from_value,
 };
@@ -123,6 +125,71 @@ fn collector_waits_for_done_after_responses_completion() {
 
     let done = collector.observe_chunk(b"data: [DONE]\n\n");
     assert!(done.ends_stream);
+}
+
+#[test]
+fn collector_retains_response_id_before_terminal_delivery_with_capture_disabled() {
+    let policy =
+        RequestLogPayloadPolicy::new(RequestLogPayloadCaptureMode::Disabled, 0, 0, 0, Vec::new());
+    let mut collector = StreamResponseCollector::with_payload_policy(policy);
+    let first = collector.observe_chunk(
+        b"event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_",
+    );
+    assert!(!first.has_terminal_event);
+    assert_eq!(collector.response_id(), None);
+
+    collector.observe_chunk(b"created\"}}\n\n");
+    assert_eq!(collector.response_id(), Some("resp_created"));
+
+    let terminal = collector.observe_chunk(
+        b"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_completed\"}}\n\n",
+    );
+    assert!(terminal.has_terminal_event);
+    assert_eq!(collector.response_id(), Some("resp_completed"));
+    assert_eq!(collector.analysis_payload(), None);
+    collector.finish();
+    assert_eq!(collector.response_id(), Some("resp_completed"));
+}
+
+#[test]
+fn collector_recognizes_root_response_id_from_sse_event_name() {
+    let mut collector = StreamResponseCollector::default();
+    collector.observe_chunk(b"event: response.created\ndata: {\"id\":\"resp_root\"}\n\n");
+    assert_eq!(collector.response_id(), Some("resp_root"));
+}
+
+#[test]
+fn collector_retains_id_from_terminal_only_incomplete_response() {
+    let mut collector = StreamResponseCollector::default();
+    let terminal = collector.observe_chunk(
+        b"data: {\"type\":\"response.incomplete\",\"response\":{\"id\":\"resp_incomplete\",\"status\":\"incomplete\"}}\n\n",
+    );
+    assert!(terminal.has_terminal_event);
+    assert_eq!(collector.failure(), None);
+    assert_eq!(collector.response_id(), Some("resp_incomplete"));
+}
+
+#[test]
+fn collector_ignores_other_event_ids() {
+    let mut collector = StreamResponseCollector::default();
+    collector.observe_chunk(
+        b"data: {\"id\":\"chatcmpl_a\",\"choices\":[]}\n\ndata: {\"type\":\"response.output_item.added\",\"id\":\"item_a\"}\n\n",
+    );
+    assert_eq!(collector.response_id(), None);
+}
+
+#[test]
+fn collector_bounds_response_identifiers_without_truncation() {
+    let mut collector = StreamResponseCollector::default();
+    for id in [json!(null), json!(42), json!(""), json!("a".repeat(257))] {
+        let event = json!({"type": "response.completed", "response": {"id": id}});
+        collector.observe_chunk(format!("data: {event}\n\n").as_bytes());
+        assert_eq!(collector.response_id(), None);
+    }
+    let id = "a".repeat(256);
+    let event = json!({"type": "response.completed", "response": {"id": id}});
+    collector.observe_chunk(format!("data: {event}\n\n").as_bytes());
+    assert_eq!(collector.response_id(), Some(id.as_str()));
 }
 
 #[test]
