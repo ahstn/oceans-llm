@@ -114,12 +114,18 @@ code-review/
 ---
 name: code-review
 description: Review code for correctness and maintainability. Use when reviewing a change before merge.
+metadata:
+  author: example-org
+  version: "1.0"
+  github: https://github.com/example-org/skills/tree/main/code-review
 ---
 
 Read the change and its tests. Report defects with a clear reproduction path.
 ```
 
 The required `name` matches the directory name. The required `description` explains the skill and when to use it. Optional frontmatter includes `license`, `compatibility`, `metadata`, and `allowed-tools`. Scripts, reference documents, and assets remain part of the same versioned bundle.
+
+Optional `metadata.author`, `metadata.version`, and `metadata.github` provide attribution. The author is the original creator, which can differ from the user who owns the skill in Oceans. The upstream version is descriptive text, separate from Oceans' immutable integer versions; it does not need to follow semantic versioning. Do not invent an upstream version when the source does not provide one. Use a GitHub URL pinned to a commit when recording a curated copy's source.
 
 The upload API accepts a ZIP with `SKILL.md` at its root or within one enclosing skill directory. Oceans validates the layout and stores a normalized ZIP with the enclosing directory. The recorded SHA-256 digest describes that stored archive, so it can differ from the digest of the uploaded ZIP.
 
@@ -128,6 +134,8 @@ Validation rejects unsafe paths, duplicate paths, links, invalid frontmatter, an
 ## Use the Skills UI
 
 Open **Skills** at `/admin/skills` in the signed-in UI to browse the shared catalog. Claim your namespace before the first upload. Upload a ZIP to create a skill, then open the skill to inspect its instructions, file list, and versions. The detail view renders `SKILL.md` without raw HTML or remote images and shows other text files as plain text.
+
+The selected version shows its author and upstream version when those values are present and nonempty. A valid HTTPS GitHub repository URL appears as a source link. Missing attribution and invalid links do not prevent viewing a skill. Attribution comes from the uploaded manifest; it is not proof that the named creator published or endorsed that copy.
 
 Only the owner can add a version or select a different default. The detail view shows the namespace and version so skills with the same name remain distinct. A successful upload is immediately readable by other authenticated users.
 

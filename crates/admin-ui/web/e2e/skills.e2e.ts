@@ -64,6 +64,16 @@ test('regular users upload, inspect, and select their own skill versions', async
     page.getByRole('heading', { name: `${namespace}/review-code`, exact: true }),
   ).toBeVisible()
   await expect(page.getByTestId('skill-instructions')).toContainText('checklist version 1')
+  await expect(page.getByText('example-org', { exact: true })).toBeVisible()
+  await expect(page.getByText('Upstream version', { exact: true }).locator('..')).toContainText(
+    '1.0',
+  )
+  const source = page.getByRole('link', { name: 'View on GitHub', exact: true })
+  await expect(source).toHaveAttribute(
+    'href',
+    'https://github.com/example-org/review-skills/tree/main/review-code',
+  )
+  await expect(source).toHaveAttribute('rel', 'noopener noreferrer')
   await page
     .getByRole('navigation', { name: 'Skill files' })
     .getByRole('button', { name: 'references/checklist.md', exact: true })
@@ -83,6 +93,12 @@ test('regular users upload, inspect, and select their own skill versions', async
   await versionDialog.getByLabel('ZIP archive').setInputFiles(fixturePath(2))
   await versionDialog.getByRole('button', { name: 'Upload skill', exact: true }).click()
   await expect(page.getByTestId('skill-instructions')).toContainText('checklist version 2')
+  await expect(page.getByText('example-org-contributors', { exact: true })).toBeVisible()
+  await expect(page.getByText('example-org', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('Upstream version', { exact: true }).locator('..')).toContainText(
+    '2.0',
+  )
+  await expect(source).toHaveCount(0)
   await page.getByRole('button', { name: 'Set as default', exact: true }).click()
   await expect(page.getByText('Default version updated', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Set as default', exact: true })).toBeDisabled()
@@ -94,6 +110,35 @@ test('regular users upload, inspect, and select their own skill versions', async
   expect(savedDetail.skill.default_version).toBe(2)
   expect(savedDetail.skill.latest_version).toBe(2)
   expect(savedDetail.versions).toHaveLength(2)
+  for (const [version, author, github] of [
+    [1, 'example-org', 'https://github.com/example-org/review-skills/tree/main/review-code'],
+    [2, 'example-org-contributors', 'http://github.com/example-org/review-skills'],
+  ] as const) {
+    const response = await request.get(
+      `${root}/api/v1/skills/${createdDetail.skill.id}/versions/${version}`,
+      { headers: { cookie: owner.cookie } },
+    )
+    expect(response.ok()).toBe(true)
+    expect((await response.json()).manifest.metadata).toEqual({
+      author,
+      version: `${version}.0`,
+      github,
+    })
+  }
+
+  await page.getByRole('combobox', { name: 'Version', exact: true }).click()
+  await page.getByRole('option', { name: 'Version 1', exact: true }).click()
+  await expect(page.getByTestId('skill-instructions')).toContainText('checklist version 1')
+  await expect(page.getByText('example-org', { exact: true })).toBeVisible()
+  await expect(page.getByText('Upstream version', { exact: true }).locator('..')).toContainText(
+    '1.0',
+  )
+  await expect(source).toBeVisible()
+  await page.getByRole('combobox', { name: 'Version', exact: true }).click()
+  await page.getByRole('option', { name: 'Version 2 (default) (latest)', exact: true }).click()
+  await expect(page.getByTestId('skill-instructions')).toContainText('checklist version 2')
+  await expect(page.getByText('example-org-contributors', { exact: true })).toBeVisible()
+  await expect(source).toHaveCount(0)
   const downloadEvent = page.waitForEvent('download')
   await page.getByRole('link', { name: 'Download ZIP', exact: true }).click()
   const download = await downloadEvent

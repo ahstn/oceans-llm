@@ -1,10 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { SkillOwnerActions } from './$id'
+import { SkillOwnerActions, VersionMetadata } from './$id'
 import { SkillInstructions } from './-files'
 import { SkillUploadDialog } from './-upload-dialog'
-import type { SkillSummary } from '@/types/skills-api'
+import type { SkillSummary, SkillVersionDetail } from '@/types/skills-api'
 
 const { saveSkillNamespace, uploadSkill } = vi.hoisted(() => ({
   saveSkillNamespace: vi.fn(),
@@ -85,6 +85,108 @@ describe('skill previews', () => {
       'rel',
       'noopener noreferrer',
     )
+  })
+})
+
+describe('skill attribution', () => {
+  const detail: SkillVersionDetail = {
+    version: {
+      version: 2,
+      sha256: 'a'.repeat(64),
+      archive_bytes: 1024,
+      extracted_bytes: 2048,
+      file_count: 1,
+      created_at: '2026-10-03T00:00:00Z',
+    },
+    manifest: {
+      name: 'code-review',
+      description: 'Review a change.',
+    },
+    files: [],
+    instructions: '# Review',
+  }
+
+  function withMetadata(metadata: SkillVersionDetail['manifest']['metadata']): SkillVersionDetail {
+    return { ...detail, manifest: { ...detail.manifest, metadata } }
+  }
+
+  it('shows the selected version attribution separately from the Oceans version', () => {
+    const view = render(
+      <VersionMetadata
+        skill={skill}
+        detail={withMetadata({
+          author: ' Matt Pocock ',
+          version: ' 1.0 ',
+          github: 'https://github.com/mattpocock/skills/tree/main/grill-me',
+        })}
+      />,
+    )
+    expect(screen.getByText('Matt Pocock')).toBeVisible()
+    expect(screen.getByText('Upstream version').nextElementSibling).toHaveTextContent('1.0')
+    expect(screen.getByText('Version 2')).toBeVisible()
+    const source = screen.getByRole('link', { name: 'View on GitHub' })
+    expect(source).toHaveAttribute(
+      'href',
+      'https://github.com/mattpocock/skills/tree/main/grill-me',
+    )
+    expect(source).toHaveAttribute('target', '_blank')
+    expect(source).toHaveAttribute('rel', 'noopener noreferrer')
+
+    view.rerender(
+      <VersionMetadata
+        skill={skill}
+        detail={{
+          ...withMetadata({ author: 'Earlier author', version: 'release-candidate' }),
+          version: { ...detail.version, version: 1 },
+        }}
+      />,
+    )
+    expect(screen.getByText('Earlier author')).toBeVisible()
+    expect(screen.getByText('release-candidate')).toBeVisible()
+    expect(screen.queryByText('Matt Pocock')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it.each([undefined, {}, { author: ' ', version: '\n', github: '\t' }])(
+    'omits missing or blank attribution without affecting the version details',
+    (metadata) => {
+      render(<VersionMetadata skill={skill} detail={withMetadata(metadata)} />)
+      expect(screen.queryByText('Author')).not.toBeInTheDocument()
+      expect(screen.queryByText('Upstream version')).not.toBeInTheDocument()
+      expect(screen.queryByText('Source')).not.toBeInTheDocument()
+      expect(screen.getByText('Version 2')).toBeVisible()
+    },
+  )
+
+  it('renders author text without executing markup', () => {
+    const author = '<img src=x onerror=alert(1)>'
+    const { container } = render(
+      <VersionMetadata skill={skill} detail={withMetadata({ author })} />,
+    )
+    expect(screen.getByText(author)).toBeVisible()
+    expect(container.querySelector('img')).toBeNull()
+  })
+
+  it.each([
+    'not a URL',
+    'javascript:alert(1)',
+    'http://github.com/owner/repo',
+    '//github.com/owner/repo',
+    'https://github.com',
+    'https://github.com/owner',
+    'https://github.com.evil.example/owner/repo',
+    'https://evil.example/github.com/owner/repo',
+    'https://user:password@github.com/owner/repo',
+    'https://github.com:8443/owner/repo',
+    'https://github.com/owner/repo\\path',
+    'https://git\nhub.com/owner/repo',
+    'https://github.com/owner/%2e%2e',
+    'https://github.com/owner/repo%2Fother',
+  ])('omits an invalid GitHub source link: %s', (github) => {
+    render(<VersionMetadata skill={skill} detail={withMetadata({ github, author: 'Creator' })} />)
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.queryByText('Source')).not.toBeInTheDocument()
+    expect(screen.getByText('Creator')).toBeVisible()
   })
 })
 

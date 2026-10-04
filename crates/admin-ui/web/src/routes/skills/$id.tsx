@@ -190,7 +190,13 @@ export function SkillOwnerActions({
   )
 }
 
-function VersionMetadata({ detail, skill }: { detail: SkillVersionDetail; skill: SkillSummary }) {
+export function VersionMetadata({
+  detail,
+  skill,
+}: {
+  detail: SkillVersionDetail
+  skill: SkillSummary
+}) {
   return (
     <dl className="grid min-w-0 gap-4 text-sm sm:grid-cols-2">
       <div>
@@ -226,6 +232,7 @@ function VersionMetadata({ detail, skill }: { detail: SkillVersionDetail; skill:
         <dt className="text-muted-foreground">License</dt>
         <dd>{detail.manifest.license ?? 'Not specified'}</dd>
       </div>
+      <SkillAttribution metadata={detail.manifest.metadata} />
       <div className="min-w-0 sm:col-span-2">
         <dt className="text-muted-foreground">SHA-256</dt>
         <dd className="font-mono break-all">{detail.version.sha256}</dd>
@@ -244,4 +251,71 @@ function VersionMetadata({ detail, skill }: { detail: SkillVersionDetail; skill:
       ) : null}
     </dl>
   )
+}
+
+function SkillAttribution({ metadata }: { metadata: SkillVersionDetail['manifest']['metadata'] }) {
+  const author = attributionText(metadata?.author)
+  const version = attributionText(metadata?.version)
+  const github = githubSourceUrl(metadata?.github)
+
+  return (
+    <>
+      {author ? (
+        <div className="min-w-0">
+          <dt className="text-muted-foreground">Author</dt>
+          <dd className="break-words">{author}</dd>
+        </div>
+      ) : null}
+      {version ? (
+        <div className="min-w-0">
+          <dt className="text-muted-foreground">Upstream version</dt>
+          <dd className="break-words">{version}</dd>
+        </div>
+      ) : null}
+      {github ? (
+        <div>
+          <dt className="text-muted-foreground">Source</dt>
+          <dd>
+            <a
+              href={github}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-4"
+            >
+              View on GitHub
+            </a>
+          </dd>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+function attributionText(value: unknown): string | undefined {
+  return typeof value === 'string' ? value.trim() || undefined : undefined
+}
+
+function githubSourceUrl(value: unknown): string | undefined {
+  const text = attributionText(value)
+  if (!text || /[\s\\]/.test(text)) return undefined
+  try {
+    const url = new URL(text)
+    const [, owner, repository] = url.pathname.split('/')
+    if (
+      url.protocol !== 'https:' ||
+      url.hostname !== 'github.com' ||
+      url.port ||
+      url.username ||
+      url.password ||
+      !/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(owner ?? '') ||
+      !/^[a-z\d_.-]{1,100}$/i.test(repository ?? '') ||
+      repository === '.' ||
+      repository === '..'
+    ) {
+      return undefined
+    }
+    return url.href
+  } catch {
+    return undefined
+  }
 }
