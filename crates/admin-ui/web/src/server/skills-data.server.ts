@@ -6,10 +6,12 @@ import {
 } from '@/server/gateway-client.server'
 import type { SkillUploadResponse } from '@/types/skills-api'
 
-export async function listSkills(input: { offset: number; namespace?: string }) {
+export async function listSkills(input: { offset: number; namespace?: string; q?: string }) {
   return unwrapGatewayResponse(
     await createGatewayApiClient().GET('/api/v1/skills', {
-      params: { query: { limit: 50, offset: input.offset, namespace: input.namespace } },
+      params: {
+        query: { limit: 50, offset: input.offset, namespace: input.namespace, q: input.q },
+      },
     }),
   )
 }

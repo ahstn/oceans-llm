@@ -175,11 +175,21 @@ impl SkillRepository for PostgresStore {
     }
 
     async fn list_skills(&self, query: &SkillListQuery) -> Result<Vec<SkillRecord>, StoreError> {
+        let search = query.q.as_deref().map(str::trim).filter(|q| !q.is_empty());
+        // C collation matches SQLite's ASCII-only lowercasing, independent of the database locale.
         let sql = format!(
-            "SELECT {SKILL_COLUMNS} FROM skills s JOIN skill_namespaces n ON n.user_id = s.owner_user_id WHERE ($1::text IS NULL OR n.handle = $1) ORDER BY s.updated_at DESC, s.skill_id LIMIT $2 OFFSET $3"
+            r#"SELECT {SKILL_COLUMNS}
+               FROM skills s JOIN skill_namespaces n ON n.user_id = s.owner_user_id
+               WHERE ($1::text IS NULL OR n.handle = $1)
+                 AND ($2::text IS NULL
+                      OR strpos(lower(s.name COLLATE "C"), lower($2 COLLATE "C")) > 0
+                      OR strpos(lower(s.description COLLATE "C"), lower($2 COLLATE "C")) > 0
+                      OR strpos(lower(n.handle COLLATE "C"), lower($2 COLLATE "C")) > 0)
+               ORDER BY s.updated_at DESC, s.skill_id LIMIT $3 OFFSET $4"#
         );
         let rows = sqlx::query(&sql)
             .bind(query.namespace.as_deref())
+            .bind(search)
             .bind(i64::from(query.limit.min(500)))
             .bind(i64::from(query.offset))
             .fetch_all(&self.pool)

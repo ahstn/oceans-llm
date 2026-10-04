@@ -5,7 +5,6 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/layout/page-header'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -134,7 +133,7 @@ function SkillDetailPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="min-w-0">
-          <VersionMetadata detail={version} skill={skill} />
+          <VersionMetadata detail={version} />
         </CardContent>
         <SkillVersionControls
           detail={detail}
@@ -239,13 +238,7 @@ export function SkillOwnerActions({
   )
 }
 
-export function VersionMetadata({
-  detail,
-  skill,
-}: {
-  detail: SkillVersionDetail
-  skill: SkillSummary
-}) {
+export function VersionMetadata({ detail }: { detail: SkillVersionDetail }) {
   return (
     <dl className="grid min-w-0 gap-4 text-sm sm:grid-cols-2">
       <div>
@@ -254,19 +247,6 @@ export function VersionMetadata({
           <time dateTime={detail.version.created_at} title="UTC">
             {uploadedAtFormatter.format(new Date(detail.version.created_at)).replace(',', '')}
           </time>
-        </dd>
-      </div>
-      <div>
-        <dt className="text-muted-foreground">Status</dt>
-        <dd className="mt-1 flex gap-2">
-          {detail.version.version === skill.default_version ? (
-            <Badge>Default</Badge>
-          ) : (
-            <Badge variant="outline">Version {detail.version.version}</Badge>
-          )}
-          {detail.version.version === skill.latest_version ? (
-            <Badge variant="secondary">Latest</Badge>
-          ) : null}
         </dd>
       </div>
       <div>

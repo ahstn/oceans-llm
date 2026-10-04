@@ -64,6 +64,9 @@ pub fn router() -> Router<AppState> {
 #[derive(Deserialize, utoipa::IntoParams)]
 pub struct ListSkillsQuery {
     pub namespace: Option<String>,
+    /// Literal search in name, description, and owner namespace, ignoring ASCII letter case.
+    /// Other characters match exactly. Blank input is ignored.
+    pub q: Option<String>,
     #[serde(default = "default_limit")]
     pub limit: u32,
     #[serde(default)]
@@ -120,6 +123,7 @@ pub async fn list_skills(
 ) -> Result<Json<Vec<SkillSummary>>, AppError> {
     let query = SkillListQuery {
         namespace: query.namespace,
+        q: query.q,
         limit: query.limit,
         offset: query.offset,
     };

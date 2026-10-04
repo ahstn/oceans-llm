@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { Search01Icon } from '@hugeicons/core-free-icons'
+import { createFileRoute, Link, useRouter, useRouterState } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/layout/page-header'
+import { AppIcon } from '@/components/icons/app-icon'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { Field, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import {
   Table,
   TableBody,
@@ -22,15 +23,12 @@ import { SkillUploadDialog } from './-upload-dialog'
 import { SkillsErrorPage } from './-error'
 
 export const Route = createFileRoute('/skills/')({
-  validateSearch: (search: Record<string, unknown>): { offset: number; namespace?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { offset: number; q?: string } => ({
     offset:
       typeof search.offset === 'number' && Number.isSafeInteger(search.offset) && search.offset > 0
         ? search.offset
         : 0,
-    namespace:
-      typeof search.namespace === 'string' && search.namespace.trim()
-        ? search.namespace.trim()
-        : undefined,
+    q: typeof search.q === 'string' ? search.q : undefined,
   }),
   loaderDeps: ({ search }) => search,
   loader: ({ deps }) => getSkills({ data: deps }),
@@ -43,7 +41,10 @@ function SkillsPage() {
   const search = Route.useSearch()
   const router = useRouter()
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [namespaceFilter, setNamespaceFilter] = useState(search.namespace ?? '')
+  const query = useRouterState({
+    select: (state) => (typeof state.location.search.q === 'string' ? state.location.search.q : ''),
+  })
+  const searchPending = query !== (search.q ?? '')
 
   async function uploaded(detail: SkillDetail) {
     setUploadOpen(false)
@@ -66,29 +67,25 @@ function SkillsPage() {
           <CardDescription>Filter, view and download existing skills.</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-5">
-          <form
-            className="flex flex-wrap items-end gap-3"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void router.navigate({
-                to: '/skills',
-                search: { offset: 0, namespace: namespaceFilter.trim() || undefined },
-              })
-            }}
-          >
-            <Field className="max-w-sm">
-              <FieldLabel htmlFor="filter-namespace">Owner namespace</FieldLabel>
-              <Input
-                id="filter-namespace"
-                placeholder="All namespaces"
-                value={namespaceFilter}
-                onChange={(event) => setNamespaceFilter(event.target.value)}
-              />
-            </Field>
-            <Button type="submit" variant="outline">
-              Filter
-            </Button>
-          </form>
+          <InputGroup className="w-full sm:max-w-xs">
+            <InputGroupInput
+              aria-label="Search skills"
+              placeholder="Search skills…"
+              value={query}
+              onChange={(event) => {
+                const value = event.target.value
+                void router.navigate({
+                  to: '/skills',
+                  search: { offset: 0, q: value || undefined },
+                  replace: true,
+                  resetScroll: false,
+                })
+              }}
+            />
+            <InputGroupAddon>
+              <AppIcon icon={Search01Icon} aria-hidden />
+            </InputGroupAddon>
+          </InputGroup>
           <SkillCatalog items={items} />
           <div className="flex items-center justify-between gap-3">
             <p className="text-muted-foreground text-sm">
@@ -99,11 +96,12 @@ function SkillsPage() {
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                disabled={search.offset === 0}
+                disabled={searchPending || search.offset === 0}
                 onClick={() =>
                   void router.navigate({
                     to: '/skills',
                     search: { ...search, offset: Math.max(0, search.offset - 50) },
+                    replace: true,
                   })
                 }
               >
@@ -111,11 +109,12 @@ function SkillsPage() {
               </Button>
               <Button
                 variant="outline"
-                disabled={items.length < 50}
+                disabled={searchPending || items.length < 50}
                 onClick={() =>
                   void router.navigate({
                     to: '/skills',
                     search: { ...search, offset: search.offset + 50 },
+                    replace: true,
                   })
                 }
               >
@@ -146,7 +145,7 @@ function SkillCatalog({ items }: { items: SkillSummary[] }) {
       <Empty>
         <EmptyHeader>
           <EmptyTitle>No skills found</EmptyTitle>
-          <EmptyDescription>Upload a skill or try another namespace.</EmptyDescription>
+          <EmptyDescription>Upload a skill or try another search.</EmptyDescription>
         </EmptyHeader>
       </Empty>
     )

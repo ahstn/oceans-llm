@@ -7118,6 +7118,11 @@ export interface operations {
         parameters: {
             query?: {
                 namespace?: string | null;
+                /**
+                 * @description Literal search in name, description, and owner namespace, ignoring ASCII letter case.
+                 *     Other characters match exactly. Blank input is ignored.
+                 */
+                q?: string | null;
                 limit?: number;
                 offset?: number;
             };

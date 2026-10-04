@@ -41,6 +41,9 @@ pub struct SkillVersionRecord {
 #[derive(Debug, Clone)]
 pub struct SkillListQuery {
     pub namespace: Option<String>,
+    /// Literal substring of name, description, or owner namespace, ignoring ASCII letter case.
+    /// Other characters match exactly. Blank input is ignored.
+    pub q: Option<String>,
     pub limit: u32,
     pub offset: u32,
 }
@@ -49,6 +52,7 @@ impl Default for SkillListQuery {
     fn default() -> Self {
         Self {
             namespace: None,
+            q: None,
             limit: 100,
             offset: 0,
         }

@@ -153,10 +153,27 @@ impl SkillRepository for LibsqlStore {
 
     async fn list_skills(&self, query: &SkillListQuery) -> Result<Vec<SkillRecord>, StoreError> {
         let connection = self.skill_connection().await?;
-        let mut rows = connection.query(
-            &format!("{SKILL_SELECT} WHERE (?1 IS NULL OR n.handle = ?1) ORDER BY s.updated_at DESC, s.skill_id LIMIT ?2 OFFSET ?3"),
-            libsql::params![query.namespace.clone(), i64::from(query.limit.min(500)), i64::from(query.offset)],
-        ).await.map_err(to_query_error)?;
+        let search = query.q.as_deref().map(str::trim).filter(|q| !q.is_empty());
+        let mut rows = connection
+            .query(
+                &format!(
+                    "{SKILL_SELECT}
+                 WHERE (?1 IS NULL OR n.handle = ?1)
+                   AND (?2 IS NULL
+                        OR instr(lower(s.name), lower(?2)) > 0
+                        OR instr(lower(s.description), lower(?2)) > 0
+                        OR instr(lower(n.handle), lower(?2)) > 0)
+                 ORDER BY s.updated_at DESC, s.skill_id LIMIT ?3 OFFSET ?4"
+                ),
+                libsql::params![
+                    query.namespace.clone(),
+                    search,
+                    i64::from(query.limit.min(500)),
+                    i64::from(query.offset)
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
         let mut skills = Vec::new();
         while let Some(row) = rows.next().await.map_err(to_query_error)? {
             skills.push(decode_skill(&row)?);

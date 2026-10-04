@@ -201,9 +201,11 @@ Installation refuses an existing destination by default. `--replace` replaces th
 
 The UI and CLI use `/api/v1/skills`. Clients authenticate with `Authorization: Bearer <key>` or `x-oceans-api-key`. Browser sessions use the existing session cookie; write requests must come from the same origin. Requests with conflicting key headers are rejected.
 
+The list endpoint accepts `q` to search skill names, descriptions, and owner namespaces before pagination. Search matches literal substrings and ignores ASCII letter case. Other characters match exactly, so `CAFé` matches `Café`, while `CAFÉ` does not. Leading and trailing whitespace is removed, and a blank query applies no search filter. The exact `namespace` filter can be combined with `q`.
+
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/v1/skills` | List skills; accepts `namespace`, `limit` from 1 to 100, and `offset`. |
+| `GET /api/v1/skills` | List skills; accepts `q`, `namespace`, `limit` from 1 to 100, and `offset`. |
 | `GET /api/v1/skills/limits` | Read the configured archive, expanded-size, and file-count limits. |
 | `POST /api/v1/skills` | Create a skill in the caller's namespace from a ZIP body. |
 | `GET /api/v1/skills/namespace` | Read the caller's namespace, or `null` when none exists. |

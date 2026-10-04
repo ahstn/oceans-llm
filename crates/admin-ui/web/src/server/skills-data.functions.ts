@@ -12,7 +12,7 @@ import {
 } from '@/server/skills-data.server'
 
 export const getSkills = createServerFn({ method: 'GET' })
-  .validator((data: { offset: number; namespace?: string }) => data)
+  .validator((data: { offset: number; namespace?: string; q?: string }) => data)
   .handler(async ({ data }) => {
     const [items, namespace, limits] = await Promise.all([
       listSkills(data),

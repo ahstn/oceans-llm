@@ -110,10 +110,9 @@ describe('skill attribution', () => {
     return { ...detail, manifest: { ...detail.manifest, metadata } }
   }
 
-  it('shows the selected version attribution separately from the Oceans version', () => {
+  it('shows attribution for the selected skill version', () => {
     const view = render(
       <VersionMetadata
-        skill={skill}
         detail={withMetadata({
           author: ' Matt Pocock ',
           version: ' 1.0 ',
@@ -123,7 +122,6 @@ describe('skill attribution', () => {
     )
     expect(screen.getByText('Matt Pocock')).toBeVisible()
     expect(screen.getByText('Upstream version').nextElementSibling).toHaveTextContent('1.0')
-    expect(screen.getByText('Version 2')).toBeVisible()
     expect(screen.getByText('Uploaded').nextElementSibling).toHaveTextContent(/^03\/10\/26 13:07$/)
     expect(screen.getByText('Contents').nextElementSibling).toHaveTextContent(/^1 file$/)
     expect(screen.queryByText('SHA-256')).not.toBeInTheDocument()
@@ -139,7 +137,6 @@ describe('skill attribution', () => {
 
     view.rerender(
       <VersionMetadata
-        skill={skill}
         detail={{
           ...withMetadata({ author: 'Earlier author', version: 'release-candidate' }),
           version: { ...detail.version, version: 1, file_count: 2 },
@@ -156,19 +153,17 @@ describe('skill attribution', () => {
   it.each([undefined, {}, { author: ' ', version: '\n', github: '\t' }])(
     'omits missing or blank attribution without affecting the version details',
     (metadata) => {
-      render(<VersionMetadata skill={skill} detail={withMetadata(metadata)} />)
+      render(<VersionMetadata detail={withMetadata(metadata)} />)
       expect(screen.queryByText('Author')).not.toBeInTheDocument()
       expect(screen.queryByText('Upstream version')).not.toBeInTheDocument()
       expect(screen.queryByText('Source')).not.toBeInTheDocument()
-      expect(screen.getByText('Version 2')).toBeVisible()
+      expect(screen.getByText('Uploaded')).toBeVisible()
     },
   )
 
   it('renders author text without executing markup', () => {
     const author = '<img src=x onerror=alert(1)>'
-    const { container } = render(
-      <VersionMetadata skill={skill} detail={withMetadata({ author })} />,
-    )
+    const { container } = render(<VersionMetadata detail={withMetadata({ author })} />)
     expect(screen.getByText(author)).toBeVisible()
     expect(container.querySelector('img')).toBeNull()
   })
@@ -189,7 +184,7 @@ describe('skill attribution', () => {
     'https://github.com/owner/%2e%2e',
     'https://github.com/owner/repo%2Fother',
   ])('omits an invalid GitHub source link: %s', (github) => {
-    render(<VersionMetadata skill={skill} detail={withMetadata({ github, author: 'Creator' })} />)
+    render(<VersionMetadata detail={withMetadata({ github, author: 'Creator' })} />)
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
     expect(screen.queryByText('Source')).not.toBeInTheDocument()
     expect(screen.getByText('Creator')).toBeVisible()

@@ -5043,6 +5043,18 @@
             }
           },
           {
+            "name": "q",
+            "in": "query",
+            "description": "Literal search in name, description, and owner namespace, ignoring ASCII letter case.\nOther characters match exactly. Blank input is ignored.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,

@@ -206,7 +206,121 @@ async fn exercise_skills(store: &AnyStore) -> (Uuid, Uuid) {
         now,
     )
     .await;
+    exercise_skill_search(store, first.user_id, second.user_id, now).await;
     (first.user_id, first_version.skill_id)
+}
+
+async fn exercise_skill_search(
+    store: &AnyStore,
+    first_owner: Uuid,
+    second_owner: Uuid,
+    now: OffsetDateTime,
+) {
+    let name_match = store
+        .create_skill(first_owner, "name-needle", &metadata("Utility"), now)
+        .await
+        .expect("skill matching by name")
+        .skill_id;
+    let description_match = store
+        .create_skill(
+            second_owner,
+            "catalog",
+            &metadata("Needle in Description: literal 100% and under_score; Café ÉLAN"),
+            now + time::Duration::seconds(1),
+        )
+        .await
+        .expect("skill matching by description")
+        .skill_id;
+    store
+        .create_skill(
+            first_owner,
+            "other",
+            &metadata("Plain utility"),
+            now + time::Duration::seconds(2),
+        )
+        .await
+        .expect("newer skill outside search results");
+
+    for (search, expected) in [
+        ("NAME-N", vec![name_match]),
+        ("description", vec![description_match]),
+        ("  NeEdLe\t", vec![description_match, name_match]),
+        ("%", vec![description_match]),
+        ("_", vec![description_match]),
+        ("CAFé", vec![description_match]),
+        ("CAFÉ", vec![]),
+        ("Élan", vec![description_match]),
+        ("élan", vec![]),
+        ("absent", vec![]),
+    ] {
+        let results = store
+            .list_skills(&SkillListQuery {
+                q: Some(search.to_string()),
+                ..Default::default()
+            })
+            .await
+            .expect("search skills");
+        assert_eq!(
+            results.iter().map(|skill| skill.id).collect::<Vec<_>>(),
+            expected,
+            "query {search:?}"
+        );
+    }
+
+    let by_owner = store
+        .list_skills(&SkillListQuery {
+            q: Some("SECond".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("search owner namespace");
+    assert_eq!(by_owner.len(), 2);
+    assert!(by_owner.iter().all(|skill| skill.namespace == "second"));
+
+    let scoped = store
+        .list_skills(&SkillListQuery {
+            namespace: Some("first".to_string()),
+            q: Some("needle".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("combine namespace and search");
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(scoped[0].id, name_match);
+
+    for (offset, expected) in [
+        (0, vec![description_match]),
+        (1, vec![name_match]),
+        (2, vec![]),
+    ] {
+        let page = store
+            .list_skills(&SkillListQuery {
+                q: Some("needle".to_string()),
+                limit: 1,
+                offset,
+                ..Default::default()
+            })
+            .await
+            .expect("search before pagination");
+        assert_eq!(
+            page.iter().map(|skill| skill.id).collect::<Vec<_>>(),
+            expected,
+            "offset {offset}"
+        );
+    }
+
+    let unfiltered = store
+        .list_skills(&SkillListQuery::default())
+        .await
+        .expect("all skills");
+    let blank = store
+        .list_skills(&SkillListQuery {
+            q: Some(" \t\n ".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("blank search is ignored");
+    assert_eq!(blank, unfiltered);
 }
 
 async fn exercise_versions(

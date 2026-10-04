@@ -72,11 +72,11 @@ try {
   await signIn(ownerPage, owner);
   await ownerPage.getByRole("link", { name: "Skills", exact: true }).first().click();
   await expect(ownerPage.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
-  proof.catalog = { before: await filterCatalog(ownerPage, owner.namespace) };
+  proof.catalog = { before: await searchCatalog(ownerPage, owner.namespace) };
   assert.equal(proof.catalog.before.apiCount, 0, "New namespace starts with an empty catalog");
   await capture(ownerPage, "02-skills-before");
   actions.push({
-    action: "regular user follows Skills sidebar and filters own namespace",
+    action: "regular user follows Skills sidebar and searches own namespace",
     result: "Empty catalog before upload",
   });
 
@@ -120,7 +120,8 @@ try {
   await ownerPage.goto(`${baseURL}/admin/skills`, {
     waitUntil: "domcontentloaded",
   });
-  proof.catalog.after = await filterCatalog(ownerPage, owner.namespace);
+  proof.catalog.search = await verifyCatalogSearch(ownerPage, saved.skill, duplicate.skill);
+  proof.catalog.after = proof.catalog.search.owner;
   assert.deepEqual(proof.catalog.after.skillIds, [saved.skill.id]);
   await expectCatalogSkill(ownerPage, saved.skill);
   await capture(ownerPage, "07-skills-catalog-after");
@@ -293,23 +294,25 @@ async function expectCatalogSkill(page, skill) {
   await expect(link).toHaveAttribute("href", `/admin/skills/${skill.id}`);
 }
 
-async function filterCatalog(page, namespace) {
-  const input = page.getByLabel("Owner namespace", { exact: true });
+async function searchCatalog(page, query) {
+  const input = page.getByRole("textbox", { name: "Search skills", exact: true });
   // SSR can expose this controlled input before hydration attaches its change handler.
-  // Retrying this read-only filter proves that the live form preserved and submitted its value.
+  // Retrying this read-only search proves that typing updates the URL without a submit button.
   await expect(async () => {
-    await input.fill(namespace);
-    await expect(input).toHaveValue(namespace, { timeout: 1_000 });
-    await page.getByRole("button", { name: "Filter", exact: true }).click();
-    await expect(page).toHaveURL((url) => url.searchParams.get("namespace") === namespace, {
-      timeout: 5_000,
-    });
-    await expect(input).toHaveValue(namespace, { timeout: 1_000 });
+    if (query) await input.fill("");
+    await input.fill(query);
+    await expect(input).toHaveValue(query, { timeout: 1_000 });
+    await expect(page).toHaveURL(
+      (url) => (url.searchParams.get("q") ?? "") === query
+        && Number(url.searchParams.get("offset") ?? 0) === 0,
+      { timeout: 5_000 },
+    );
+    await expect(input).toHaveValue(query, { timeout: 1_000 });
   }).toPass({ timeout: 20_000, intervals: [250, 500, 1_000] });
 
   const items = await json(
     page.request,
-    `/api/v1/skills?namespace=${encodeURIComponent(namespace)}`,
+    `/api/v1/skills?q=${encodeURIComponent(query)}&limit=50&offset=0`,
   );
   let uiCount = 0;
   if (items.length === 0) {
@@ -325,11 +328,34 @@ async function filterCatalog(page, namespace) {
     assert.equal(uiCount, items.length, "Filtered UI catalog matches the production API");
   }
   return {
+    query,
     url: page.url(),
     uiCount,
     apiCount: items.length,
     skillIds: items.map((skill) => skill.id),
   };
+}
+
+async function verifyCatalogSearch(page, ownerSkill, peerSkill) {
+  await expect(page.getByRole("button", { name: "Filter", exact: true })).toHaveCount(0);
+  const expectedIds = new Set([ownerSkill.id, peerSkill.id]);
+  const name = await searchCatalog(page, ownerSkill.name);
+  assert.deepEqual(new Set(name.skillIds), expectedIds, "Name search finds both owners");
+  const description = await searchCatalog(page, "repeatable checklist");
+  assert.deepEqual(new Set(description.skillIds), expectedIds, "Description search finds both skills");
+  const missing = await searchCatalog(page, `missing-${suffix}`);
+  assert.equal(missing.apiCount, 0, "An unmatched search shows the empty state");
+  const cleared = await searchCatalog(page, "");
+  for (const id of [...expectedIds, ...proof.bundled.skills.map((skill) => skill.id)]) {
+    assert(cleared.skillIds.includes(id), "Clearing search restores each uploaded skill");
+  }
+  const owner = await searchCatalog(page, ownerSkill.namespace);
+  assert.deepEqual(owner.skillIds, [ownerSkill.id], "Owner search keeps duplicate names distinct");
+  actions.push({
+    action: "search by name, description, and owner; check no match and clear",
+    result: "Search updates without submit; row owners and destinations match the filtered API",
+  });
+  return { name, description, missing, cleared, owner };
 }
 
 async function uploadFirstThroughUi(page, owner) {
@@ -383,6 +409,11 @@ async function verifyOwnerVersions(page, initial) {
   assert.equal(appended.skill.latest_version, 2);
   assert.equal(appended.skill.default_version, 1, "Appending a version must preserve the default");
   assert.equal(appended.versions.length, 2);
+  await expect(page.getByText("Status", { exact: true })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Version", exact: true }).click();
+  await expect(page.getByRole("option", { name: "Version 1 (default)", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "Version 2 (latest)", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await capture(page, "04-skills-new-version");
 
   await page.getByRole("button", { name: "Set as default", exact: true }).click();
