@@ -45,7 +45,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
-import { BenchmarkAttribution, ModelIntelligenceScore } from '@/routes/-model-benchmarks'
+import {
+  BenchmarkAttribution,
+  IntelligenceIndexLabel,
+  ModelIntelligenceScore,
+} from '@/routes/-model-benchmarks'
 import {
   getModelClientConfigs,
   getModels,
@@ -99,7 +103,6 @@ export function ModelsPage() {
   const [visibleColumns, setVisibleColumns] = useState({
     contextWindow: false,
     capabilities: false,
-    intelligence: false,
   })
   const [isGeneratingConfig, setIsGeneratingConfig] = useState(false)
   const [isRefreshingPricing, setIsRefreshingPricing] = useState(false)
@@ -110,7 +113,8 @@ export function ModelsPage() {
   const allSelectableSelected =
     selectableModels.length > 0 &&
     selectableModels.every((model) => selectedModelIdSet.has(model.id))
-  const desktopTableMinWidthRem = desktopTableMinWidth(isPlatformAdmin, visibleColumns)
+  const desktopColumns = modelTableColumns(isPlatformAdmin, visibleColumns)
+  const desktopColumnsWidth = desktopColumns.reduce((total, column) => total + column.width, 0)
 
   function navigateToPage(page: number, pageSize: number) {
     void router.navigate({
@@ -313,25 +317,6 @@ export function ModelsPage() {
                       <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
                         <ModelCheckbox
                           className="mt-0.5"
-                          checked={visibleColumns.intelligence}
-                          onChange={(event) => {
-                            const checked = event.currentTarget.checked
-                            setVisibleColumns((current) => ({
-                              ...current,
-                              intelligence: checked,
-                            }))
-                          }}
-                        />
-                        <span className="flex min-w-0 flex-col gap-0.5">
-                          <span className="text-foreground font-medium">Intelligence</span>
-                          <span className="text-subtle-foreground text-xs">
-                            Artificial Analysis Intelligence Index.
-                          </span>
-                        </span>
-                      </label>
-                      <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
-                        <ModelCheckbox
-                          className="mt-0.5"
                           checked={visibleColumns.capabilities}
                           onChange={(event) => {
                             const checked = event.currentTarget.checked
@@ -416,8 +401,19 @@ export function ModelsPage() {
               >
                 <Table
                   className="table-fixed"
-                  style={{ minWidth: `${desktopTableMinWidthRem}rem` }}
+                  style={{ minWidth: `${desktopColumnsWidth + 3}rem` }}
                 >
+                  <colgroup>
+                    <col className="w-12" />
+                    {desktopColumns.map((column) => (
+                      <col
+                        key={column.key}
+                        style={{
+                          width: column.flexible ? undefined : `${column.width}rem`,
+                        }}
+                      />
+                    ))}
+                  </colgroup>
                   <ModelTableHeader
                     allSelected={allSelectableSelected}
                     hasSelectableModels={selectableModels.length > 0}
@@ -427,8 +423,8 @@ export function ModelsPage() {
                   />
                   <TableBody>
                     {modelPage.items.map((model) => (
-                      <TableRow key={model.id} className="group align-middle">
-                        <TableCell className="bg-card group-hover:bg-muted/50 sticky left-0 z-20 px-3 py-1 transition-colors">
+                      <TableRow key={model.id} className="group hover:bg-muted align-middle">
+                        <TableCell className="bg-card group-hover:bg-muted sticky left-0 z-20 px-3 py-1 transition-colors">
                           <ModelCheckbox
                             aria-label={`Select model ${model.id}`}
                             checked={selectedModelIdSet.has(model.id)}
@@ -437,7 +433,7 @@ export function ModelsPage() {
                           />
                         </TableCell>
                         <TableCell
-                          className="bg-card group-hover:bg-muted/50 shadow-sticky-edge sticky left-[3rem] z-20 px-3 py-1 transition-colors"
+                          className="bg-card group-hover:bg-muted lg:shadow-sticky-edge z-20 px-3 py-1 transition-colors lg:sticky lg:left-[3rem]"
                           data-testid={`models-desktop-cell-${model.id}`}
                         >
                           <div className="flex min-w-0 flex-col gap-2 py-1">
@@ -518,11 +514,9 @@ export function ModelsPage() {
                             <CapabilityBadges model={model} />
                           </TableCell>
                         ) : null}
-                        {visibleColumns.intelligence ? (
-                          <TableCell className="px-3 py-1 whitespace-normal">
-                            <ModelIntelligenceScore model={model} />
-                          </TableCell>
-                        ) : null}
+                        <TableCell className="px-3 py-1 whitespace-normal tabular-nums">
+                          <ModelIntelligenceScore model={model} />
+                        </TableCell>
                         {isPlatformAdmin ? (
                           <TableCell className="px-3 py-1 whitespace-normal">
                             <ModelAllowlistDetail model={model} compact />
@@ -585,16 +579,20 @@ export function ModelsPage() {
 type VisibleModelColumns = {
   contextWindow: boolean
   capabilities: boolean
-  intelligence: boolean
 }
 
-function desktopTableMinWidth(isPlatformAdmin: boolean, visibleColumns: VisibleModelColumns) {
-  return (
-    (isPlatformAdmin ? 73 : 61) +
-    (visibleColumns.contextWindow ? 12 : 0) +
-    (visibleColumns.capabilities ? 18 : 0) +
-    (visibleColumns.intelligence ? 10 : 0)
-  )
+function modelTableColumns(isPlatformAdmin: boolean, visibleColumns: VisibleModelColumns) {
+  // Names share the remaining space; controls and metrics keep compact widths.
+  return [
+    { key: 'model', width: 18, flexible: true },
+    { key: 'actions', width: 11 },
+    { key: 'provider', width: 20, flexible: true },
+    { key: 'cost', width: 11 },
+    ...(visibleColumns.contextWindow ? [{ key: 'context', width: 11 }] : []),
+    ...(visibleColumns.capabilities ? [{ key: 'capabilities', width: 18 }] : []),
+    { key: 'intelligence', width: 12 },
+    ...(isPlatformAdmin ? [{ key: 'access', width: 10 }] : []),
+  ]
 }
 
 function ModelTableHeader({
@@ -613,7 +611,7 @@ function ModelTableHeader({
   return (
     <TableHeader className="bg-surface-muted">
       <TableRow>
-        <TableHead className="bg-surface-muted text-muted-foreground sticky left-0 z-30 w-[3rem] px-3 py-2 font-semibold">
+        <TableHead className="bg-surface-muted text-muted-foreground sticky left-0 z-30 px-3 py-2 font-semibold">
           <ModelCheckbox
             aria-label="Select all configurable models"
             checked={allSelected}
@@ -621,35 +619,31 @@ function ModelTableHeader({
             onChange={onToggleAll}
           />
         </TableHead>
-        <TableHead className="shadow-sticky-edge bg-surface-muted text-muted-foreground sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] px-3 py-2 font-semibold">
+        <TableHead className="bg-surface-muted text-muted-foreground lg:shadow-sticky-edge z-30 px-3 py-2 font-semibold lg:sticky lg:left-[3rem]">
           Model ID
         </TableHead>
-        <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
-          Actions
-        </TableHead>
-        <TableHead className="text-muted-foreground w-[18rem] px-3 py-2 font-semibold">
+        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Actions</TableHead>
+        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
           Provider &amp; Model
         </TableHead>
-        <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
+        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
           Cost / 1M tokens
         </TableHead>
         {visibleColumns.contextWindow ? (
-          <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
+          <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
             Context window
           </TableHead>
         ) : null}
         {visibleColumns.capabilities ? (
-          <TableHead className="text-muted-foreground w-[18rem] px-3 py-2 font-semibold">
+          <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
             Capabilities
           </TableHead>
         ) : null}
-        {visibleColumns.intelligence ? (
-          <TableHead className="text-muted-foreground w-[10rem] px-3 py-2 font-semibold">
-            Intelligence
-          </TableHead>
-        ) : null}
+        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
+          <IntelligenceIndexLabel />
+        </TableHead>
         {showAccessDetails ? (
-          <TableHead className="text-muted-foreground w-[12rem] px-3 py-2 font-semibold">
+          <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
             Allow List
           </TableHead>
         ) : null}
@@ -727,6 +721,10 @@ function ModelCard({
             }
           />
           <MetricDetail label="Capabilities" value={<CapabilityBadges model={model} />} />
+          <MetricDetail
+            label={<IntelligenceIndexLabel />}
+            value={<ModelIntelligenceScore model={model} />}
+          />
           {showAccessDetails ? (
             <MetricDetail label="Model allowlist" value={<ModelAllowlistDetail model={model} />} />
           ) : null}
@@ -1016,7 +1014,7 @@ function MetricDetail({
   mono = false,
   value,
 }: {
-  label: string
+  label: ReactNode
   mono?: boolean
   value: ReactNode
 }) {
@@ -1067,19 +1065,15 @@ function StackedMetric({
   bottomValue: string
 }) {
   return (
-    <div className="flex min-w-[10rem] flex-col gap-1 py-1">
-      <div className="flex items-center justify-between gap-3">
-        <span className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-          {topLabel}
-        </span>
-        <span className="text-subtle-foreground">{topValue}</span>
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <span className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-          {bottomLabel}
-        </span>
-        <span className="text-subtle-foreground">{bottomValue}</span>
-      </div>
+    <div className="grid min-w-0 grid-cols-[auto_auto] items-center justify-start gap-x-4 gap-y-1 py-1">
+      <span className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
+        {topLabel}
+      </span>
+      <span className="text-subtle-foreground text-right tabular-nums">{topValue}</span>
+      <span className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
+        {bottomLabel}
+      </span>
+      <span className="text-subtle-foreground text-right tabular-nums">{bottomValue}</span>
     </div>
   )
 }

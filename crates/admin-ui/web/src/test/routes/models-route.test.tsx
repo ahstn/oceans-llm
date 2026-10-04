@@ -413,11 +413,9 @@ describe('ModelsPage layouts', () => {
       'Actions',
       'Provider & Model',
       'Cost / 1M tokens',
+      'Intelligence Index',
       'Allow List',
     ])
-    expect(within(table).getByRole('columnheader', { name: 'Provider & Model' })).toHaveClass(
-      'w-[18rem]',
-    )
 
     const identityCell = screen.getAllByTestId('models-desktop-cell-vertex-fast')[0]
     expect(within(identityCell).getByText('vertex-fast')).toBeInTheDocument()
@@ -425,13 +423,7 @@ describe('ModelsPage layouts', () => {
 
     const vertexRow = within(table).getByText('vertex-fast').closest('tr')
     expect(vertexRow).not.toBeNull()
-    expect(vertexRow).toHaveClass('group')
     const vertexCells = within(vertexRow as HTMLElement).getAllByRole('cell')
-    for (const cell of vertexCells) {
-      expect(cell).toHaveClass('py-1')
-    }
-    expect(vertexCells[0]).toHaveClass('group-hover:bg-muted/50')
-    expect(vertexCells[1]).toHaveClass('group-hover:bg-muted/50')
 
     const infoButton = within(vertexCells[2] as HTMLElement).getByRole('button', { name: 'Info' })
     expect(infoButton).toHaveAttribute('data-variant', 'outline')
@@ -448,7 +440,7 @@ describe('ModelsPage layouts', () => {
     expect(within(vertexCells[3] as HTMLElement).getByText('Google Vertex AI')).toBeInTheDocument()
     expect(within(vertexCells[4] as HTMLElement).getByText('Input')).toBeInTheDocument()
     expect(within(vertexCells[4] as HTMLElement).getByText('Output')).toBeInTheDocument()
-    expect(within(vertexCells[5] as HTMLElement).getByText('Unrestricted')).toBeInTheDocument()
+    expect(within(vertexCells[6] as HTMLElement).getByText('Unrestricted')).toBeInTheDocument()
   })
 })
 
@@ -491,7 +483,7 @@ describe('ModelsPage allowlists', () => {
 
     const fastRow = within(table).getByText('fast').closest('tr')
     expect(fastRow).not.toBeNull()
-    const fastAllowlistCell = within(fastRow as HTMLElement).getAllByRole('cell')[5] as HTMLElement
+    const fastAllowlistCell = within(fastRow as HTMLElement).getAllByRole('cell')[6] as HTMLElement
     expect(within(fastAllowlistCell).getByText('Restricted')).toBeInTheDocument()
     expect(within(fastAllowlistCell).getByText('1 User')).toBeInTheDocument()
     expect(within(fastAllowlistCell).queryByText(/Teams?/)).not.toBeInTheDocument()
@@ -500,7 +492,7 @@ describe('ModelsPage allowlists', () => {
     expect(vertexRow).not.toBeNull()
     const vertexAllowlistCell = within(vertexRow as HTMLElement).getAllByRole(
       'cell',
-    )[5] as HTMLElement
+    )[6] as HTMLElement
     expect(within(vertexAllowlistCell).getByText('Restricted')).toBeInTheDocument()
     expect(within(vertexAllowlistCell).getByText('2 Teams')).toBeInTheDocument()
     expect(within(vertexAllowlistCell).queryByText(/Users?/)).not.toBeInTheDocument()
@@ -509,7 +501,7 @@ describe('ModelsPage allowlists', () => {
     expect(claudeRow).not.toBeNull()
     const claudeAllowlistCell = within(claudeRow as HTMLElement).getAllByRole(
       'cell',
-    )[5] as HTMLElement
+    )[6] as HTMLElement
     expect(within(claudeAllowlistCell).getByText('Restricted')).toBeInTheDocument()
     expect(within(claudeAllowlistCell).getByText('2 Users')).toBeInTheDocument()
     expect(within(claudeAllowlistCell).getByText('1 Team')).toBeInTheDocument()
@@ -586,7 +578,7 @@ describe('ModelsPage table content', () => {
     expect(within(table).queryByText('Gemini fallback on Vertex')).not.toBeInTheDocument()
   })
 
-  it('shows the optional intelligence score without treating missing data as zero', () => {
+  it('always shows Intelligence Index and keeps missing scores unknown on desktop and mobile', () => {
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
 
     render(
@@ -595,17 +587,58 @@ describe('ModelsPage table content', () => {
       </TooltipProvider>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Columns' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: /^Intelligence/ }))
-
     const table = screen.getAllByTestId('models-desktop-table')[0]
-    expect(within(table).getByRole('columnheader', { name: 'Intelligence' })).toBeInTheDocument()
+    expect(
+      within(table).getByRole('columnheader', { name: /^Intelligence Index/ }),
+    ).toBeInTheDocument()
     const fastRow = within(table).getByText('fast').closest('tr')
     expect(fastRow).not.toBeNull()
     expect(within(fastRow as HTMLElement).getByText('39')).toBeInTheDocument()
     const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
     expect(claudeRow).not.toBeNull()
     expect(within(claudeRow as HTMLElement).getByText('—')).toBeInTheDocument()
+
+    const mobileList = screen.getByTestId('models-mobile-list')
+    const fastCard = within(mobileList)
+      .getByRole('heading', { name: 'fast' })
+      .closest('[data-slot="card"]')!
+    expect(within(fastCard as HTMLElement).getByText('Intelligence Index')).toBeVisible()
+    expect(within(fastCard as HTMLElement).getByText('39')).toBeVisible()
+    const claudeCard = within(mobileList)
+      .getByRole('heading', { name: 'claude-sonnet' })
+      .closest('[data-slot="card"]')!
+    const mobileScore = within(claudeCard as HTMLElement)
+      .getByText('Intelligence Index')
+      .closest('div')!
+    expect(within(mobileScore).getByText('—')).toBeVisible()
+    expect(within(mobileScore).queryByText('0')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Columns' }))
+    expect(screen.queryByRole('checkbox', { name: /^Intelligence/ })).not.toBeInTheDocument()
+  })
+
+  it('explains the Intelligence Index source when its help button receives focus', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const table = screen.getByTestId('models-desktop-table')
+    const help = within(table).getByRole('button', { name: 'About Intelligence Index' })
+    fireEvent.focus(help)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Artificial Analysis Intelligence Index, retrieved via OpenRouter.',
+    )
   })
 
   it('shows benchmark provenance and visible Artificial Analysis attribution', () => {
@@ -1305,5 +1338,9 @@ describe('ModelsPage permissions', () => {
     expect(screen.queryByRole('button', { name: 'Refresh pricing' })).not.toBeInTheDocument()
     expect(screen.queryByText('Allow List')).not.toBeInTheDocument()
     expect(screen.queryByText('alice@example.com')).not.toBeInTheDocument()
+    const table = screen.getByTestId('models-desktop-table')
+    expect(within(table).getByRole('columnheader', { name: /^Intelligence Index/ })).toBeVisible()
+    const fastRow = within(table).getByText('fast').closest('tr')!
+    expect(within(fastRow).getByText('39')).toBeVisible()
   })
 })

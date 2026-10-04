@@ -1,5 +1,9 @@
 import { formatDistanceToNowStrict } from 'date-fns'
+import { BadgeInfoIcon } from '@hugeicons/core-free-icons'
 
+import { AppIcon } from '@/components/icons/app-icon'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { ModelView } from '@/types/api'
 
 const SCORE_FORMAT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
@@ -20,6 +24,29 @@ function formatBenchmarkScore(score: BenchmarkScore) {
 export function ModelIntelligenceScore({ model }: { model: ModelView }) {
   const score = intelligenceIndexScore(model)
   return <>{score ? formatBenchmarkScore(score) : '—'}</>
+}
+
+export function IntelligenceIndexLabel() {
+  return (
+    <span className="inline-flex items-center gap-1">
+      Intelligence Index
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="About Intelligence Index"
+          >
+            <AppIcon icon={BadgeInfoIcon} aria-hidden />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          Artificial Analysis Intelligence Index, retrieved via OpenRouter.
+        </TooltipContent>
+      </Tooltip>
+    </span>
+  )
 }
 
 export function BenchmarkAttribution() {

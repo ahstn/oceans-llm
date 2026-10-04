@@ -5,9 +5,9 @@ Models lets a signed-in user review configured model IDs, routing status, provid
 ## Sub-features
 
 - `models-open` opens Models from the Control Plane sidebar.
-- `models-list` shows the configured model count and desktop or mobile list.
+- `models-list` shows the configured model count and desktop or mobile list, including the always-visible Intelligence Index.
 - `models-info` opens routing, economics, benchmarks, and access details for one model.
-- `models-columns` toggles context-window, capability, and Intelligence columns.
+- `models-columns` toggles the optional context-window and capability columns.
 - `models-client-config` opens client configuration for a configurable model.
 
 ## How to get to it (user POV)
@@ -24,10 +24,10 @@ Preconditions:
 - The browser viewport is at least 768 pixels wide for the desktop table.
 - `control-oceans-admin doctor` passes.
 
-- **Automated proof.** Run `control-oceans-admin drive models`. It ensures Playwright Chromium is installed, signs in, follows the `Models` link, checks the displayed count against rendered rows and the total count against `/api/v1/admin/models?page=1&page_size=100`, checks all five platform-admin information sections, compares the benchmark state with that API response, checks the Artificial Analysis attribution below the model list, enables the optional columns, and opens client configuration for `gpt-6-astra`.
+- **Automated proof.** Run `control-oceans-admin drive models`. It ensures Playwright Chromium is installed, signs in, follows the `Models` link, checks the displayed count against rendered rows and the total count against `/api/v1/admin/models?page=1&page_size=100`, checks the always-visible Intelligence Index against that API response, checks all five platform-admin information sections, compares the benchmark state with that API response, checks the Artificial Analysis attribution below the model list, enables the optional Context window and Capabilities columns, and opens client configuration for `gpt-6-astra`.
 - **Known model.** Locate `models-desktop-cell-gpt-6-astra`. The cell shows `gpt-6-astra` and a status indicator.
 - **Model detail.** In the same table row, choose `Info`. A dialog headed `Model info` contains `gpt-6-astra` and navigation named `Model info sections`.
-- **Columns.** Choose `Columns`, then select `Context window`, `Capabilities`, or `Intelligence`. The matching table header becomes visible without a route change.
+- **Columns.** Intelligence Index is always visible. Choose `Columns`, then select `Context window` or `Capabilities`. The matching optional table header becomes visible without a route change.
 - **Client configuration.** Choose the button named `Generate client config for gpt-6-astra`. A dialog headed `Client config` appears. Do not treat generated configuration as live-provider proof.
 - **Proof.** Retain the Models screenshots and ARIA snapshots, including `03-model-benchmarks`, plus `models-proof.json` in the run evidence directory.
 
