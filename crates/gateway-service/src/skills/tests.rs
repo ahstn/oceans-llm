@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use super::*;
 
@@ -54,6 +54,8 @@ async fn metadata_rejection_cleans_up_but_uncertain_commit_preserves_archive() {
 struct PreviewRepository {
     version: SkillVersionRecord,
     reads: AtomicUsize,
+    upload_response: Option<SkillUploadResponse>,
+    committed: AtomicBool,
 }
 
 #[async_trait::async_trait]
@@ -69,9 +71,14 @@ impl SkillRepository for PreviewRepository {
 
     async fn get_skill_namespace(
         &self,
-        _user_id: Uuid,
+        user_id: Uuid,
     ) -> Result<Option<SkillNamespaceRecord>, StoreError> {
-        unreachable!("preview does not read namespaces")
+        assert!(!self.committed.load(Ordering::Relaxed));
+        Ok(Some(SkillNamespaceRecord {
+            user_id,
+            handle: "owner".into(),
+            created_at: self.version.created_at,
+        }))
     }
 
     async fn list_skills(&self, _query: &SkillListQuery) -> Result<Vec<SkillRecord>, StoreError> {
@@ -79,7 +86,16 @@ impl SkillRepository for PreviewRepository {
     }
 
     async fn get_skill(&self, _skill_id: Uuid) -> Result<Option<SkillRecord>, StoreError> {
-        unreachable!("preview reads the version directly")
+        if self.committed.load(Ordering::Relaxed) {
+            return Err(StoreError::Unavailable("post-commit read failed".into()));
+        }
+        Ok(self.upload_response.as_ref().map(|response| {
+            let mut skill = response.detail.skill.clone();
+            // Simulate a concurrent append/default change after the ownership read.
+            skill.default_version = 1;
+            skill.latest_version = 1;
+            skill
+        }))
     }
 
     async fn get_skill_by_name(
@@ -96,8 +112,9 @@ impl SkillRepository for PreviewRepository {
         _name: &str,
         _metadata: &SkillVersionMetadata,
         _now: OffsetDateTime,
-    ) -> Result<SkillVersionRecord, StoreError> {
-        unreachable!("preview does not create skills")
+    ) -> Result<SkillUploadResponse, StoreError> {
+        self.committed.store(true, Ordering::Relaxed);
+        Ok(self.upload_response.clone().expect("configured upload"))
     }
 
     async fn append_skill_version(
@@ -106,15 +123,16 @@ impl SkillRepository for PreviewRepository {
         _skill_id: Uuid,
         _metadata: &SkillVersionMetadata,
         _now: OffsetDateTime,
-    ) -> Result<SkillVersionRecord, StoreError> {
-        unreachable!("preview does not append versions")
+    ) -> Result<SkillUploadResponse, StoreError> {
+        self.committed.store(true, Ordering::Relaxed);
+        Ok(self.upload_response.clone().expect("configured upload"))
     }
 
     async fn list_skill_versions(
         &self,
         _skill_id: Uuid,
     ) -> Result<Vec<SkillVersionSummary>, StoreError> {
-        unreachable!("preview does not list versions")
+        Err(StoreError::Unavailable("version list read failed".into()))
     }
 
     async fn get_skill_version(
@@ -144,12 +162,14 @@ struct PreviewObjects {
     bytes: Vec<u8>,
     read_limit: AtomicU64,
     reads: AtomicUsize,
+    writes: AtomicUsize,
 }
 
 #[async_trait::async_trait]
 impl SkillObjectStore for PreviewObjects {
     async fn put(&self, _key: &str, _bytes: &[u8]) -> Result<(), StoreError> {
-        unreachable!("preview does not upload")
+        self.writes.fetch_add(1, Ordering::Relaxed);
+        Ok(())
     }
 
     async fn get(&self, _key: &str, max_bytes: u64) -> Result<Vec<u8>, StoreError> {
@@ -164,6 +184,10 @@ impl SkillObjectStore for PreviewObjects {
 }
 
 fn preview_fixture() -> (PreviewRepository, PreviewObjects) {
+    preview_fixture_with_reference("Stored reference.\n")
+}
+
+fn preview_fixture_with_reference(reference: &str) -> (PreviewRepository, PreviewObjects) {
     let directory = std::env::temp_dir().join(format!("skill-preview-{}", Uuid::new_v4()));
     let skill = directory.join("preview-skill");
     std::fs::create_dir_all(&skill).unwrap();
@@ -172,7 +196,7 @@ fn preview_fixture() -> (PreviewRepository, PreviewObjects) {
         "---\nname: preview-skill\ndescription: Test stored previews.\n---\n# Preview\n",
     )
     .unwrap();
-    std::fs::write(skill.join("reference.txt"), "Stored reference.\n").unwrap();
+    std::fs::write(skill.join("reference.txt"), reference).unwrap();
     let bundle = gateway_skills::pack_directory(&skill, &BundleLimits::default());
     std::fs::remove_dir_all(directory).unwrap();
     let bundle = bundle.unwrap();
@@ -186,11 +210,14 @@ fn preview_fixture() -> (PreviewRepository, PreviewObjects) {
         PreviewRepository {
             version,
             reads: AtomicUsize::new(0),
+            upload_response: None,
+            committed: AtomicBool::new(false),
         },
         PreviewObjects {
             bytes: bundle.archive,
             read_limit: AtomicU64::new(0),
             reads: AtomicUsize::new(0),
+            writes: AtomicUsize::new(0),
         },
     )
 }
@@ -371,4 +398,145 @@ async fn stored_file_preview_retains_archive_validation_after_integrity_check() 
     assert!(
         matches!(result, Err(GatewayError::InvalidRequest(message)) if message.contains("unsafe skill path"))
     );
+}
+
+#[tokio::test]
+async fn oversized_file_preview_is_rejected_before_object_read() {
+    let (repository, objects) =
+        preview_fixture_with_reference(&"\u{0001}".repeat(MAX_FILE_PREVIEW_BYTES + 1));
+    let id = repository.version.skill_id;
+    let service = SkillService::new(
+        Arc::new(repository),
+        Arc::new(objects),
+        BundleLimits::default(),
+    );
+    let result = service.file(id, 1, "reference.txt").await;
+    assert!(
+        matches!(result, Err(GatewayError::InvalidRequest(message)) if message.contains("preview limit; download the archive instead"))
+    );
+    assert_eq!(service.objects.reads.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn oversized_file_preview_is_rejected_even_if_recorded_file_size_is_wrong() {
+    let (mut repository, objects) =
+        preview_fixture_with_reference(&"\u{0001}".repeat(MAX_FILE_PREVIEW_BYTES + 1));
+    let id = repository.version.skill_id;
+    repository
+        .version
+        .metadata
+        .files
+        .iter_mut()
+        .find(|file| file.path == "reference.txt")
+        .unwrap()
+        .size = 1;
+    let service = SkillService::new(
+        Arc::new(repository),
+        Arc::new(objects),
+        BundleLimits::default(),
+    );
+    let result = service.file(id, 1, "reference.txt").await;
+    assert!(
+        matches!(result, Err(GatewayError::InvalidRequest(message)) if message.contains("preview limit; download the archive instead"))
+    );
+    assert_eq!(service.objects.reads.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn file_preview_accepts_limit_and_bounds_json_control_character_expansion() {
+    let content = "\u{0001}".repeat(MAX_FILE_PREVIEW_BYTES);
+    let (repository, objects) = preview_fixture_with_reference(&content);
+    let id = repository.version.skill_id;
+    let service = SkillService::new(
+        Arc::new(repository),
+        Arc::new(objects),
+        BundleLimits::default(),
+    );
+    let file = service.file(id, 1, "reference.txt").await.unwrap();
+    assert_eq!(file.content, content);
+    assert!(serde_json::to_vec(&file).unwrap().len() <= MAX_FILE_PREVIEW_BYTES * 6 + 64);
+}
+
+#[tokio::test]
+async fn legacy_instructions_are_bounded_without_blocking_archive_download() {
+    let (mut repository, objects) = preview_fixture();
+    let id = repository.version.skill_id;
+    let expected_archive = objects.bytes.clone();
+    repository.version.metadata.instructions = "\u{0001}".repeat(MAX_INSTRUCTIONS_BYTES + 1);
+    let service = SkillService::new(
+        Arc::new(repository),
+        Arc::new(objects),
+        BundleLimits::default(),
+    );
+    let result = service.version(id, 1).await;
+    assert!(
+        matches!(result, Err(GatewayError::InvalidRequest(message)) if message.contains("preview limit; download the archive instead"))
+    );
+    assert_eq!(service.objects.reads.load(Ordering::Relaxed), 0);
+    assert_eq!(service.archive(id, 1).await.unwrap().0, expected_archive);
+}
+
+#[tokio::test]
+async fn version_instructions_accept_limit_with_bounded_json_expansion() {
+    let (mut repository, objects) = preview_fixture();
+    let id = repository.version.skill_id;
+    repository.version.metadata.instructions = "\u{0001}".repeat(MAX_INSTRUCTIONS_BYTES);
+    let service = SkillService::new(
+        Arc::new(repository),
+        Arc::new(objects),
+        BundleLimits::default(),
+    );
+    let version = service.version(id, 1).await.unwrap();
+    assert_eq!(version.instructions.len(), MAX_INSTRUCTIONS_BYTES);
+    assert!(serde_json::to_vec(&version).unwrap().len() <= MAX_INSTRUCTIONS_BYTES * 6 + 4096);
+}
+
+#[tokio::test]
+async fn uploads_return_committed_snapshot_without_post_commit_reads() {
+    for append in [false, true] {
+        let (mut repository, objects) = preview_fixture();
+        let id = repository.version.skill_id;
+        let owner = Uuid::new_v4();
+        let uploaded_version = if append { 3 } else { 1 };
+        let versions: Vec<_> = (1..=uploaded_version)
+            .rev()
+            .map(|version| SkillVersionSummary {
+                version,
+                ..version_summary(&repository.version)
+            })
+            .collect();
+        let expected = SkillUploadResponse {
+            detail: SkillDetail {
+                skill: SkillRecord {
+                    id,
+                    namespace: "owner".into(),
+                    name: repository.version.metadata.manifest.name.clone(),
+                    owner_user_id: owner,
+                    description: "Description committed by the repository.".into(),
+                    default_version: if append { 2 } else { 1 },
+                    latest_version: uploaded_version,
+                    created_at: repository.version.created_at,
+                    updated_at: repository.version.created_at,
+                },
+                versions,
+            },
+            uploaded_version,
+        };
+        repository.upload_response = Some(expected.clone());
+        let archive = objects.bytes.clone();
+        let service = SkillService::new(
+            Arc::new(repository),
+            Arc::new(objects),
+            BundleLimits::default(),
+        );
+        let actual = if append {
+            service.append(owner, id, archive).await
+        } else {
+            service.create(owner, archive).await
+        }
+        .unwrap();
+        assert_eq!(actual, expected);
+        assert!(service.repository.committed.load(Ordering::Relaxed));
+        assert_eq!(service.objects.writes.load(Ordering::Relaxed), 1);
+    }
 }

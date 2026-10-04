@@ -73,6 +73,10 @@ cleanup_skill_objects() {
 }
 
 cleanup() {
+  local exit_status="$1"
+  trap - EXIT
+  # Finish bounded cleanup once, even when the test runner repeats its signal.
+  trap '' INT TERM
   for pid in "${GATEWAY_PID:-}" "${UI_PID:-}" "${MOCK_PID:-}"; do
     if [[ -n "${pid:-}" ]]; then
       kill "$pid" >/dev/null 2>&1 || true
@@ -81,12 +85,22 @@ cleanup() {
   done
 
   if ! cleanup_skill_objects; then
-    echo "Skills E2E object cleanup failed; inspect the test prefix before retrying" >&2
+    # Keep connection details without retaining object-store credentials.
+    if ! printf 'endpoint=%s\nbucket=%s\nregion=%s\nprefix=%s\n' \
+      "$OCEANS_SKILLS_S3_ENDPOINT" "$skills_bucket" "$skills_region" "$skills_prefix" \
+      >"$RUNTIME_DIR/skills-cleanup.txt"; then
+      echo "Could not write Skills E2E cleanup details" >&2
+    fi
+    echo "Skills E2E object cleanup failed; retained retry state at $RUNTIME_DIR" >&2
+    [[ "$exit_status" -ne 0 ]] || exit_status=1
+  elif ! rm -rf "$RUNTIME_DIR"; then
+    echo "Could not remove E2E runtime directory: $RUNTIME_DIR" >&2
+    [[ "$exit_status" -ne 0 ]] || exit_status=1
   fi
-  rm -rf "$RUNTIME_DIR"
+  exit "$exit_status"
 }
 
-trap cleanup EXIT
+trap 'cleanup "$?"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
@@ -278,7 +292,7 @@ MOCK_PID=$!
 
 (
   cd "$WEB_DIR"
-  PORT="$E2E_UI_PORT" "$MISE_BIN" exec -- bun run start
+  PORT="$E2E_UI_PORT" GATEWAY_PORT="$E2E_GATEWAY_PORT" "$MISE_BIN" exec -- bun run start
 ) >"$UI_LOG" 2>&1 &
 UI_PID=$!
 

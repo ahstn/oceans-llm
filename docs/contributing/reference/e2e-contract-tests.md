@@ -14,6 +14,10 @@ Run it locally with:
 mise run e2e-test
 ```
 
+The Skills suite uses native RustFS through `mise -E rustfs run rustfs:e2e`. It removes only the object prefix assigned to that test run. If object cleanup fails, the stack exits with a failure and retains its runtime directory. Use the endpoint, bucket, region, and prefix in `skills-cleanup.txt` to retry cleanup with your local storage credentials. Remove the retained directory only after its object prefix is empty. The retry file contains no credentials.
+
+Run `mise run e2e-stack-test` to check cleanup failures and shutdown signals with local test doubles. This test also runs with `mise run test`.
+
 ## Why This Harness Exists
 
 The product is same-origin and cross-layer by design.

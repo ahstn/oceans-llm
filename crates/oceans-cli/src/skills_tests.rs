@@ -256,7 +256,11 @@ async fn upload_skips_only_when_requested_and_latest_content_matches() {
 
 #[test]
 fn zip_upload_rejects_installer_metadata_and_directory_keeps_invalid_metadata() {
-    let (directory, _bundle, _detail) = fixture();
+    use std::io::Write;
+
+    use zip::{ZipWriter, write::SimpleFileOptions};
+
+    let (directory, bundle, _detail) = fixture();
     let source = directory.path().join("review");
     let record_path = source.join(install::INSTALL_RECORD);
     fs::write(&record_path, "user content that is not an install record").unwrap();
@@ -265,15 +269,24 @@ fn zip_upload_rejects_installer_metadata_and_directory_keeps_invalid_metadata() 
         fs::read_to_string(&record_path).unwrap(),
         "user content that is not an install record"
     );
-    let archive = pack_directory(&source, &BundleLimits::default()).unwrap();
     let zip_path = directory.path().join("review.zip");
-    fs::write(&zip_path, archive.archive).unwrap();
-    assert!(
-        read_upload(&zip_path, &BundleLimits::default())
-            .unwrap_err()
-            .to_string()
-            .contains("reserved installer file")
-    );
+    // Build invalid input directly because shared bundle validation now rejects this path.
+    let mut archive = ZipWriter::new(File::create(&zip_path).unwrap());
+    for (path, content) in [
+        ("review/SKILL.md".to_string(), bundle.instructions),
+        (
+            format!("review/{}", install::INSTALL_RECORD),
+            "{}".to_string(),
+        ),
+    ] {
+        archive
+            .start_file(path, SimpleFileOptions::default())
+            .unwrap();
+        archive.write_all(content.as_bytes()).unwrap();
+    }
+    archive.finish().unwrap();
+    let error = read_upload(&zip_path, &BundleLimits::default()).unwrap_err();
+    assert!(format!("{error:#}").contains(install::INSTALL_RECORD));
 }
 
 #[tokio::test]
@@ -449,4 +462,27 @@ async fn list_fetches_every_page() {
     let (client, _server) = server(router).await;
     list(&client, Some("alice".into()), true).await.unwrap();
     assert_eq!(*offsets.lock().unwrap(), vec![0, 100]);
+}
+
+#[test]
+fn catalog_description_cannot_add_rows_or_columns_and_json_retains_original() {
+    let (_directory, _bundle, detail) = fixture();
+    let mut summary = detail.skill;
+    let original = "Useful\r\nbob/admin\tdefault 99\tlatest 99\u{2028}Forged row\u{2029}End";
+    summary.description = original.into();
+    let skills = vec![summary.clone(), summary];
+    let display = catalog_display(&skills);
+    let rows: Vec<_> = display.lines().collect();
+    assert_eq!(rows.len(), skills.len());
+    for row in rows {
+        let columns: Vec<_> = row.split('\t').collect();
+        assert_eq!(columns.len(), 4);
+        assert_eq!(columns[0], "alice/review");
+        assert_eq!(
+            columns[3],
+            "Useful bob/admin default 99 latest 99 Forged row End"
+        );
+    }
+    let json = serde_json::to_value(&skills).unwrap();
+    assert_eq!(json[0]["description"], original);
 }

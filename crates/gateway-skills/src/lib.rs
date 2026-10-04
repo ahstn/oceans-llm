@@ -8,7 +8,7 @@ mod zip_validation;
 
 pub use api::*;
 pub use bundle::{
-    BundleError, BundleLimits, ValidatedBundle, inspect_archive, pack_directory,
-    pack_directory_excluding,
+    BundleError, BundleLimits, INSTALL_RECORD, MAX_INSTRUCTIONS_BYTES, ValidatedBundle,
+    inspect_archive, is_reserved_install_path, pack_directory, pack_directory_excluding,
 };
 pub use manifest::{validate_file_path, validate_name, validate_namespace};

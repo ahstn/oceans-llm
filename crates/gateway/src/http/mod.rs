@@ -50,7 +50,12 @@ use self::{
     review_agent::*, spend::*, state::AppState,
 };
 
-pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
+pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
+    if let Some(skills) = &state.skills {
+        admin_ui.max_multipart_body_bytes = usize::try_from(skills.limits().max_archive_bytes)
+            .expect("configured archive limit fits usize")
+            .saturating_add(64 * 1024);
+    }
     let request_id_header = HeaderName::from_static("x-request-id");
     let identity_guard_state = state.clone();
 

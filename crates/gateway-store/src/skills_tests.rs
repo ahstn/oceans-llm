@@ -1,4 +1,6 @@
-use gateway_core::skills::{SkillListQuery, SkillManifest, SkillRepository, SkillVersionMetadata};
+use gateway_core::skills::{
+    SkillListQuery, SkillManifest, SkillRepository, SkillUploadResponse, SkillVersionMetadata,
+};
 use gateway_core::{AuthMode, GlobalRole, StoreError, UserStatus};
 use serial_test::serial;
 use tempfile::tempdir;
@@ -44,16 +46,19 @@ async fn postgres_skill_namespace_ownership_and_versions() {
     );
     let (owner_id, skill_id) = exercise_skills(&store).await;
     let now = OffsetDateTime::now_utc();
-    let one = metadata("concurrent-one");
-    let two = metadata("concurrent-two");
+    let mut one = metadata("concurrent-one");
+    one.sha256 = "b".repeat(64);
+    let mut two = metadata("concurrent-two");
+    two.sha256 = "c".repeat(64);
     let (first, second) = tokio::join!(
         store.append_skill_version(owner_id, skill_id, &one, now),
         store.append_skill_version(owner_id, skill_id, &two, now),
     );
-    let mut versions = [
-        first.expect("first concurrent append").version,
-        second.expect("second concurrent append").version,
-    ];
+    let first = first.expect("first concurrent append");
+    let second = second.expect("second concurrent append");
+    assert_upload_response(&first, &one, 2, "updated");
+    assert_upload_response(&second, &two, 2, "updated");
+    let mut versions = [first.uploaded_version, second.uploaded_version];
     versions.sort_unstable();
     assert_eq!(versions, [3, 4]);
     let skill = store
@@ -62,8 +67,50 @@ async fn postgres_skill_namespace_ownership_and_versions() {
         .expect("skill")
         .expect("exists");
     assert_eq!((skill.default_version, skill.latest_version), (2, 4));
+    let AnyStore::Postgres(postgres) = &store else {
+        unreachable!("postgres fixture")
+    };
+    exercise_postgres_response_rollback(postgres, owner_id, skill_id).await;
     drop(store);
     drop_postgres_test_database(&test_db).await;
+}
+
+async fn exercise_postgres_response_rollback(
+    store: &PostgresStore,
+    owner_id: Uuid,
+    skill_id: Uuid,
+) {
+    let before = store
+        .get_skill(skill_id)
+        .await
+        .expect("skill before append");
+    sqlx::query("UPDATE skill_versions SET created_at = $1 WHERE skill_id = $2 AND version = 1")
+        .bind(i64::MAX)
+        .bind(skill_id.to_string())
+        .execute(store.pool())
+        .await
+        .expect("inject invalid older version summary");
+    let result = store
+        .append_skill_version(
+            owner_id,
+            skill_id,
+            &metadata("response-fails"),
+            OffsetDateTime::now_utc(),
+        )
+        .await;
+    assert!(matches!(result, Err(StoreError::Serialization(_))));
+    assert_eq!(
+        store.get_skill(skill_id).await.expect("rolled back skill"),
+        before
+    );
+    assert!(
+        store
+            .get_skill_version(skill_id, 5)
+            .await
+            .expect("rolled back version")
+            .is_none(),
+        "response decoding must complete before committing the new version"
+    );
 }
 
 fn metadata(label: &str) -> SkillVersionMetadata {
@@ -89,6 +136,32 @@ fn metadata(label: &str) -> SkillVersionMetadata {
         }],
         instructions: format!("---\nname: review\ndescription: {label}\n---\nReview changes."),
     }
+}
+
+fn assert_upload_response(
+    response: &SkillUploadResponse,
+    uploaded: &SkillVersionMetadata,
+    default_version: u32,
+    description: &str,
+) {
+    let detail = &response.detail;
+    assert_eq!(detail.skill.latest_version, response.uploaded_version);
+    assert_eq!(detail.skill.default_version, default_version);
+    assert_eq!(detail.skill.description, description);
+    assert_eq!(
+        detail
+            .versions
+            .iter()
+            .map(|version| version.version)
+            .collect::<Vec<_>>(),
+        (1..=response.uploaded_version).rev().collect::<Vec<_>>(),
+        "the response must reflect the same transaction as its uploaded version"
+    );
+    let latest = &detail.versions[0];
+    assert_eq!(latest.sha256, uploaded.sha256);
+    assert_eq!(latest.archive_bytes, uploaded.archive_bytes);
+    assert_eq!(latest.extracted_bytes, uploaded.extracted_bytes);
+    assert_eq!(latest.file_count, uploaded.file_count);
 }
 
 async fn exercise_skills(store: &AnyStore) -> (Uuid, Uuid) {
@@ -155,11 +228,16 @@ async fn exercise_skills(store: &AnyStore) -> (Uuid, Uuid) {
         .create_skill(first.user_id, "review", &original, now)
         .await
         .expect("create skill");
+    assert_eq!(first_version.uploaded_version, 1);
+    assert_upload_response(&first_version, &original, 1, "original");
+    assert_eq!(first_version.detail.skill.owner_user_id, first.user_id);
+    assert_eq!(first_version.detail.skill.namespace, "first");
+    assert_eq!(first_version.detail.skill.name, "review");
     let other_version = store
         .create_skill(second.user_id, "review", &metadata("other"), now)
         .await
         .expect("same name different owner");
-    assert_ne!(first_version.skill_id, other_version.skill_id);
+    assert_ne!(first_version.detail.skill.id, other_version.detail.skill.id);
     assert!(matches!(
         store
             .create_skill(first.user_id, "review", &metadata("duplicate"), now)
@@ -179,7 +257,7 @@ async fn exercise_skills(store: &AnyStore) -> (Uuid, Uuid) {
         .await
         .expect("filter");
     assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].id, first_version.skill_id);
+    assert_eq!(filtered[0].id, first_version.detail.skill.id);
     assert_eq!(
         store
             .get_skill_by_name("second", "review")
@@ -187,7 +265,7 @@ async fn exercise_skills(store: &AnyStore) -> (Uuid, Uuid) {
             .expect("lookup")
             .expect("exists")
             .id,
-        other_version.skill_id
+        other_version.detail.skill.id
     );
     assert!(
         store
@@ -201,13 +279,13 @@ async fn exercise_skills(store: &AnyStore) -> (Uuid, Uuid) {
         store,
         first.user_id,
         second.user_id,
-        first_version.skill_id,
+        first_version.detail.skill.id,
         &original,
         now,
     )
     .await;
     exercise_skill_search(store, first.user_id, second.user_id, now).await;
-    (first.user_id, first_version.skill_id)
+    (first.user_id, first_version.detail.skill.id)
 }
 
 async fn exercise_skill_search(
@@ -220,7 +298,9 @@ async fn exercise_skill_search(
         .create_skill(first_owner, "name-needle", &metadata("Utility"), now)
         .await
         .expect("skill matching by name")
-        .skill_id;
+        .detail
+        .skill
+        .id;
     let description_match = store
         .create_skill(
             second_owner,
@@ -230,7 +310,9 @@ async fn exercise_skill_search(
         )
         .await
         .expect("skill matching by description")
-        .skill_id;
+        .detail
+        .skill
+        .id;
     store
         .create_skill(
             first_owner,
@@ -342,7 +424,8 @@ async fn exercise_versions(
         .append_skill_version(owner_id, skill_id, &next, now)
         .await
         .expect("append");
-    assert_eq!(appended.version, 2);
+    assert_eq!(appended.uploaded_version, 2);
+    assert_upload_response(&appended, &next, 1, "original");
     let skill = store
         .get_skill(skill_id)
         .await
@@ -407,8 +490,9 @@ async fn exercise_versions(
             .get_skill_version(skill_id, 2)
             .await
             .expect("version")
-            .expect("exists"),
-        appended
+            .expect("exists")
+            .metadata,
+        next
     );
     assert!(
         store

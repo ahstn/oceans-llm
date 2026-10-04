@@ -2,7 +2,8 @@
 
 use async_trait::async_trait;
 pub use gateway_skills::{
-    SkillFile, SkillManifest, SkillSummary as SkillRecord, SkillVersionSummary,
+    SkillDetail, SkillFile, SkillManifest, SkillSummary as SkillRecord, SkillUploadResponse,
+    SkillVersionSummary,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -80,21 +81,23 @@ pub trait SkillRepository: Send + Sync {
         name: &str,
     ) -> Result<Option<SkillRecord>, StoreError>;
     /// Create an owned skill and its first/default version in one transaction.
+    /// Build the response within that transaction before committing it.
     async fn create_skill(
         &self,
         owner_user_id: Uuid,
         name: &str,
         metadata: &SkillVersionMetadata,
         now: OffsetDateTime,
-    ) -> Result<SkillVersionRecord, StoreError>;
+    ) -> Result<SkillUploadResponse, StoreError>;
     /// Allocate a version atomically; leave the default version unchanged.
+    /// Build the response within that transaction before committing it.
     async fn append_skill_version(
         &self,
         owner_user_id: Uuid,
         skill_id: Uuid,
         metadata: &SkillVersionMetadata,
         now: OffsetDateTime,
-    ) -> Result<SkillVersionRecord, StoreError>;
+    ) -> Result<SkillUploadResponse, StoreError>;
     async fn list_skill_versions(
         &self,
         skill_id: Uuid,

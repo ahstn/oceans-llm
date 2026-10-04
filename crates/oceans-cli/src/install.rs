@@ -5,15 +5,14 @@ use std::{
 };
 
 use anyhow::{Context, bail};
+pub use gateway_skills::INSTALL_RECORD;
 use gateway_skills::{
-    BundleLimits, ValidatedBundle, inspect_archive, validate_file_path, validate_name,
-    validate_namespace,
+    BundleLimits, ValidatedBundle, inspect_archive, is_reserved_install_path, validate_file_path,
+    validate_name, validate_namespace,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-
-pub const INSTALL_RECORD: &str = ".oceans-skill-lock.json";
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -67,11 +66,11 @@ pub fn read_install_record(directory: &Path) -> anyhow::Result<Option<InstallRec
 }
 
 pub fn ensure_no_installer_record(bundle: &ValidatedBundle) -> anyhow::Result<()> {
-    if bundle.contents.keys().any(|path| {
-        path.split('/')
-            .next()
-            .is_some_and(|component| component.eq_ignore_ascii_case(INSTALL_RECORD))
-    }) {
+    if bundle
+        .contents
+        .keys()
+        .any(|path| is_reserved_install_path(path))
+    {
         bail!("skill contains reserved installer file {INSTALL_RECORD}");
     }
     Ok(())
@@ -295,7 +294,12 @@ mod tests {
     #[test]
     fn reserved_install_record_is_rejected_case_insensitively() {
         let directory = tempfile::tempdir().unwrap();
-        for path in [".OCEANS-SKILL-LOCK.JSON", ".Oceans-Skill-Lock.Json/nested"] {
+        for path in [
+            ".OCEANS-SKILL-LOCK.JSON",
+            ".Oceans-Skill-Lock.Json/nested",
+            ".oceans-ſkill-lock.json",
+            ".oceans-skill-locK.json/nested",
+        ] {
             let mut conflicting = bundle();
             conflicting
                 .contents

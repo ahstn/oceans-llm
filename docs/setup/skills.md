@@ -66,7 +66,7 @@ Set `access_key_id` and `secret_access_key` together. An optional `session_token
 | `storage.bucket` | Unset | Required when skills are enabled. |
 | `storage.region` | `us-east-1` | Match the bucket or compatible service. |
 | `storage.endpoint` | Unset | Override for RustFS or another S3 endpoint. |
-| `storage.prefix` | `skills/` | Relative object prefix without `.` or `..` segments. |
+| `storage.prefix` | `skills/` | Relative object prefix without `.` or `..` segments. At most 983 UTF-8 bytes after removing trailing slashes, leaving space for archive names within S3's 1024-byte key limit. |
 | `storage.force_path_style` | `false` | Use `true` for the RustFS examples. |
 | `storage.allow_http` | `false` | Required for an HTTP storage endpoint. |
 | `limits.max_archive_bytes` | `10485760` | Maximum ZIP size: 10 MiB. |
@@ -75,7 +75,9 @@ Set `access_key_id` and `secret_access_key` together. An optional `session_token
 
 All limits must be greater than zero. They are Oceans limits, separate from the Agent Skills specification's guidance on instruction length.
 
-These limits apply to new uploads. Lowering a limit does not change stored versions: previews, downloads, and CLI installs use each version's recorded sizes and file count. Each download still verifies the archive size and SHA-256 digest.
+These configurable limits apply to new uploads. Lowering them does not change stored versions: downloads and CLI installs use each version's recorded archive sizes and file count. Each download still verifies the archive size and SHA-256 digest.
+
+Oceans also limits `SKILL.md`, including frontmatter, to 256 KiB. Text previews have a separate 256 KiB limit per file to bound JSON responses. Older versions that exceed these text limits remain available as archive downloads. Bundles cannot contain NUL characters in `SKILL.md` or the reserved `.oceans-skill-lock.json` installer record.
 
 ### RustFS with mise daemons
 
@@ -164,6 +166,8 @@ mise exec -- cargo install --locked --path crates/oceans-cli
 ```
 
 Cargo installs the `oceans` executable into its binary directory. Set `OCEANS_URL` to the gateway URL and supply an existing user-owned key through `OCEANS_API_KEY`. The examples use `oceans` from your `PATH`. `--url` overrides the configured URL, and `--json` prints structured output. The CLI has no separate login flow.
+
+Gateway URLs must use HTTPS. For local development, HTTP is allowed only with a loopback IP address such as `127.0.0.1` or `[::1]`; these HTTP requests bypass proxy environment variables. Use a loopback IP instead of the `localhost` hostname.
 
 ```bash
 export OCEANS_URL=https://oceans.example.com

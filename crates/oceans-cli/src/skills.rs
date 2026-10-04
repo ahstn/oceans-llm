@@ -111,7 +111,11 @@ async fn list(client: &Client, namespace: Option<String>, as_json: bool) -> anyh
             break;
         }
     }
-    let display = skills
+    emit(&skills, &catalog_display(&skills), as_json)
+}
+
+fn catalog_display(skills: &[SkillSummary]) -> String {
+    skills
         .iter()
         .map(|skill| {
             format!(
@@ -120,12 +124,15 @@ async fn list(client: &Client, namespace: Option<String>, as_json: bool) -> anyh
                 skill.name,
                 skill.default_version,
                 skill.latest_version,
-                skill.description
+                skill
+                    .description
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
             )
         })
         .collect::<Vec<_>>()
-        .join("\n");
-    emit(&skills, &display, as_json)
+        .join("\n")
 }
 
 async fn show(client: &Client, selected: &VersionArgs, as_json: bool) -> anyhow::Result<()> {

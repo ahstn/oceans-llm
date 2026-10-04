@@ -7,13 +7,16 @@ use gateway_core::{
     SkillRepository, SkillVersionMetadata, SkillVersionRecord, StoreError,
 };
 use gateway_skills::{
-    BundleLimits, SkillDetail, SkillFileContent, SkillNamespace, SkillSummary, SkillUploadResponse,
-    SkillVersionDetail, SkillVersionSummary, ValidatedBundle, inspect_archive, validate_file_path,
-    validate_namespace,
+    BundleLimits, MAX_INSTRUCTIONS_BYTES, SkillDetail, SkillFileContent, SkillNamespace,
+    SkillSummary, SkillUploadResponse, SkillVersionDetail, SkillVersionSummary, ValidatedBundle,
+    inspect_archive, validate_file_path, validate_namespace,
 };
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+// JSON can expand each control byte to six bytes. Keep inline text responses bounded.
+const MAX_FILE_PREVIEW_BYTES: usize = 256 * 1024;
 
 pub struct SkillService<S, O: ?Sized> {
     repository: Arc<S>,
@@ -94,6 +97,11 @@ where
         version: u32,
     ) -> Result<SkillVersionDetail, GatewayError> {
         let record = self.require_version(id, version).await?;
+        if record.metadata.instructions.len() > MAX_INSTRUCTIONS_BYTES {
+            return Err(GatewayError::InvalidRequest(format!(
+                "skill instructions exceed the {MAX_INSTRUCTIONS_BYTES}-byte preview limit; download the archive instead"
+            )));
+        }
         Ok(SkillVersionDetail {
             version: version_summary(&record),
             manifest: record.metadata.manifest,
@@ -124,11 +132,7 @@ where
                 OffsetDateTime::now_utc(),
             )
             .await;
-        let record = finish_upload(self.objects.as_ref(), &metadata.object_key, result).await?;
-        Ok(SkillUploadResponse {
-            detail: self.detail(record.skill_id).await?,
-            uploaded_version: record.version,
-        })
+        finish_upload(self.objects.as_ref(), &metadata.object_key, result).await
     }
 
     pub async fn append(
@@ -152,11 +156,7 @@ where
             .repository
             .append_skill_version(user_id, id, &metadata, OffsetDateTime::now_utc())
             .await;
-        let record = finish_upload(self.objects.as_ref(), &metadata.object_key, result).await?;
-        Ok(SkillUploadResponse {
-            detail: self.detail(id).await?,
-            uploaded_version: record.version,
-        })
+        finish_upload(self.objects.as_ref(), &metadata.object_key, result).await
     }
 
     pub async fn set_default(
@@ -186,9 +186,12 @@ where
     ) -> Result<SkillFileContent, GatewayError> {
         validate_file_path(path).map_err(invalid_bundle)?;
         let metadata = self.require_version(id, version).await?.metadata;
-        if !metadata.files.iter().any(|file| file.path == path) {
-            return Err(StoreError::NotFound("skill file".into()).into());
-        }
+        let file = metadata
+            .files
+            .iter()
+            .find(|file| file.path == path)
+            .ok_or_else(|| StoreError::NotFound("skill file".into()))?;
+        check_file_preview_size(file.size)?;
         let bytes = self.read_archive(&metadata).await?;
         // Immutable versions retain their validated bounds when upload limits change.
         let limits = BundleLimits {
@@ -201,6 +204,7 @@ where
             .contents
             .remove(path)
             .ok_or_else(|| StoreError::NotFound("skill file".into()))?;
+        check_file_preview_size(bytes.len() as u64)?;
         let content = String::from_utf8(bytes).map_err(|_| {
             GatewayError::InvalidRequest("binary files cannot be previewed as text".into())
         })?;
@@ -267,11 +271,20 @@ where
     }
 }
 
+fn check_file_preview_size(size: u64) -> Result<(), GatewayError> {
+    if size > MAX_FILE_PREVIEW_BYTES as u64 {
+        return Err(GatewayError::InvalidRequest(format!(
+            "skill file exceeds the {MAX_FILE_PREVIEW_BYTES}-byte preview limit; download the archive instead"
+        )));
+    }
+    Ok(())
+}
+
 async fn finish_upload<O: SkillObjectStore + ?Sized>(
     objects: &O,
     object_key: &str,
-    result: Result<SkillVersionRecord, StoreError>,
-) -> Result<SkillVersionRecord, GatewayError> {
+    result: Result<SkillUploadResponse, StoreError>,
+) -> Result<SkillUploadResponse, GatewayError> {
     match result {
         Ok(record) => Ok(record),
         Err(error) => {

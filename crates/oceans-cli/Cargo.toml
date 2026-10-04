@@ -24,3 +24,4 @@ uuid.workspace = true
 axum.workspace = true
 futures-util.workspace = true
 time.workspace = true
+zip.workspace = true

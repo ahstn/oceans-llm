@@ -536,6 +536,7 @@ fn load_admin_ui_config(upstream: String) -> AdminUiConfig {
         upstream,
         connect_timeout_ms: env_u64("ADMIN_UI_CONNECT_TIMEOUT_MS", 750),
         request_timeout_ms: env_u64("ADMIN_UI_REQUEST_TIMEOUT_MS", 10_000),
+        ..AdminUiConfig::default()
     }
 }
 

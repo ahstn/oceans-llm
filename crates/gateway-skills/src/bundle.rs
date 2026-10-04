@@ -1,10 +1,14 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
 };
 
+use cap_fs_ext::{DirExt, FollowSymlinks, MetadataExt, OpenOptionsFollowExt, OpenOptionsSyncExt};
+use cap_std::{
+    ambient_authority,
+    fs::{Dir, File, Metadata, OpenOptions},
+};
 use caseless::Caseless;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -14,6 +18,23 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 use crate::{
     SkillFile, SkillManifest, manifest::parse_manifest, validate_file_path, zip_validation,
 };
+
+/// Maximum complete SKILL.md size, including frontmatter, before JSON serialization.
+pub const MAX_INSTRUCTIONS_BYTES: usize = 256 * 1024;
+
+/// Reserved root-relative record written by the Oceans skill installer.
+pub const INSTALL_RECORD: &str = ".oceans-skill-lock.json";
+
+/// Identify installer records using the same portable equivalence as bundle paths.
+pub fn is_reserved_install_path(path: &str) -> bool {
+    path.split('/')
+        .next()
+        .is_some_and(|root| portable_path_key(root) == INSTALL_RECORD)
+}
+
+fn portable_path_key(path: &str) -> String {
+    path.nfd().default_case_fold().nfd().collect()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -104,7 +125,7 @@ pub fn inspect_archive(
             }
             continue;
         }
-        let content = read_bounded(&mut entry, entry_size_limit(&files, limits)?)?;
+        let content = read_entry(&mut entry, path, &files, limits)?;
         files.insert(path.to_owned(), content, mode & 0o111 != 0, limits)?;
     }
     files.finish(limits, None)
@@ -124,27 +145,22 @@ pub fn pack_directory_excluding(
     for excluded in excluded_paths {
         validate_file_path(excluded)?;
     }
-    if !fs::symlink_metadata(path)?.file_type().is_dir() {
-        return Err(BundleError::UnsafePath(path.display().to_string()));
-    }
-    let path = path.canonicalize()?;
+    // Resolve only the parent through ambient authority. Opening the selected
+    // directory itself and every descendant must reject replacement symlinks.
+    let path = std::path::absolute(path)?;
     let wrapper = path
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| BundleError::UnsafePath(path.display().to_string()))?;
+    let parent = Dir::open_ambient_dir(path.parent().unwrap(), ambient_authority())?;
+    let root = parent.open_dir_nofollow(wrapper)?;
     let mut files = BundleFiles::default();
-    let mut pending = vec![PathBuf::new()];
+    let mut pending = vec![(PathBuf::new(), root)];
     let mut entry_count = 0u32;
-    while let Some(directory) = pending.pop() {
-        for entry in fs::read_dir(path.join(&directory))? {
+    while let Some((relative_directory, directory)) = pending.pop() {
+        for entry in directory.entries()? {
             let entry = entry?;
-            entry_count = entry_count
-                .checked_add(1)
-                .ok_or(BundleError::Limit("file count"))?;
-            if entry_count > limits.max_files {
-                return Err(BundleError::Limit("archive entry count"));
-            }
-            let relative = directory.join(entry.file_name());
+            let relative = relative_directory.join(entry.file_name());
             let name = relative
                 .to_str()
                 .ok_or_else(|| BundleError::UnsafePath(relative.display().to_string()))?
@@ -152,20 +168,25 @@ pub fn pack_directory_excluding(
             if excluded_paths.contains(&name.as_str()) {
                 continue;
             }
-            let metadata = fs::symlink_metadata(entry.path())?;
+            entry_count = entry_count
+                .checked_add(1)
+                .ok_or(BundleError::Limit("file count"))?;
+            if entry_count > limits.max_files {
+                return Err(BundleError::Limit("archive entry count"));
+            }
+            let metadata = entry.metadata()?;
             if metadata.is_symlink() || (!metadata.is_dir() && !metadata.is_file()) {
                 return Err(BundleError::UnsafePath(name));
             }
             files.register_path(&name, metadata.is_dir())?;
             if metadata.is_dir() {
-                pending.push(relative);
+                let child = directory.open_dir_nofollow(entry.file_name())?;
+                pending.push((relative, child));
                 continue;
             }
-            let executable = local_executable(&metadata, &name)?;
-            let content = read_bounded(
-                fs::File::open(entry.path())?,
-                entry_size_limit(&files, limits)?,
-            )?;
+            let file = open_local_file(&directory, &entry.file_name(), &name)?;
+            let executable = local_executable(&file.metadata()?);
+            let content = read_entry(file, &name, &files, limits)?;
             files.insert(name, content, executable, limits)?;
         }
     }
@@ -191,7 +212,7 @@ impl BundleFiles {
             }
             prefix.push_str(component);
             let directory = index + 1 < components.len() || is_dir;
-            let key = prefix.nfd().default_case_fold().nfd().collect::<String>();
+            let key = portable_path_key(&prefix);
             if let Some((existing, was_directory)) = self.paths.get(&key) {
                 if existing != &prefix || !directory || !was_directory {
                     return Err(BundleError::DuplicatePath(path.into()));
@@ -256,7 +277,16 @@ impl BundleFiles {
                 ));
             }
         };
-        let instructions = String::from_utf8(self.contents[skill_path].clone())
+        let instruction_bytes = &self.contents[skill_path];
+        if instruction_bytes.len() > MAX_INSTRUCTIONS_BYTES {
+            return Err(BundleError::Limit("SKILL.md bytes (256 KiB)"));
+        }
+        if instruction_bytes.contains(&0) {
+            return Err(BundleError::Manifest(
+                "SKILL.md must not contain NUL bytes".into(),
+            ));
+        }
+        let instructions = String::from_utf8(instruction_bytes.clone())
             .map_err(|_| BundleError::Manifest("SKILL.md must be UTF-8".into()))?;
         let manifest = parse_manifest(&instructions)?;
         if wrapper
@@ -280,6 +310,14 @@ impl BundleFiles {
             return Err(BundleError::Manifest(
                 "all paths must be inside the skill directory".into(),
             ));
+        }
+        if self.paths.values().any(|(path, _)| {
+            path.strip_prefix(&prefix)
+                .is_some_and(is_reserved_install_path)
+        }) {
+            return Err(BundleError::UnsafePath(format!(
+                "reserved installer record {INSTALL_RECORD}"
+            )));
         }
         let mut contents = BTreeMap::new();
         let mut executable_files = BTreeSet::new();
@@ -341,34 +379,122 @@ fn canonical_archive(
     Ok(writer.finish()?.into_inner())
 }
 
-fn entry_size_limit(files: &BundleFiles, limits: &BundleLimits) -> Result<u64, BundleError> {
-    limits
+fn read_entry(
+    reader: impl Read,
+    path: &str,
+    files: &BundleFiles,
+    limits: &BundleLimits,
+) -> Result<Vec<u8>, BundleError> {
+    let expanded_limit = limits
         .max_expanded_bytes
         .checked_sub(files.extracted_bytes)
-        .ok_or(BundleError::Limit("expanded bytes"))
-}
-
-fn read_bounded(reader: impl Read, limit: u64) -> Result<Vec<u8>, BundleError> {
+        .ok_or(BundleError::Limit("expanded bytes"))?;
+    let instructions = path
+        .rsplit('/')
+        .next()
+        .is_some_and(|name| name.eq_ignore_ascii_case("SKILL.md"));
+    let limit = if instructions {
+        expanded_limit.min(MAX_INSTRUCTIONS_BYTES as u64)
+    } else {
+        expanded_limit
+    };
     let mut bytes = Vec::new();
     reader
         .take(limit.saturating_add(1))
         .read_to_end(&mut bytes)?;
     if bytes.len() as u64 > limit {
-        return Err(BundleError::Limit("expanded bytes"));
+        return Err(BundleError::Limit(
+            if instructions && limit == MAX_INSTRUCTIONS_BYTES as u64 {
+                "SKILL.md bytes (256 KiB)"
+            } else {
+                "expanded bytes"
+            },
+        ));
     }
     Ok(bytes)
 }
 
-#[cfg(unix)]
-fn local_executable(metadata: &fs::Metadata, path: &str) -> Result<bool, BundleError> {
-    use std::os::unix::fs::MetadataExt;
-    if metadata.nlink() != 1 {
+fn open_local_file(
+    directory: &Dir,
+    filename: &std::ffi::OsStr,
+    path: &str,
+) -> Result<File, BundleError> {
+    let mut options = OpenOptions::new();
+    // Nonblocking open also prevents a replacement FIFO from hanging packaging.
+    options.read(true).follow(FollowSymlinks::No).nonblock(true);
+    let file = directory.open_with(filename, &options)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.nlink() != 1 {
         return Err(BundleError::UnsafePath(path.into()));
     }
-    Ok(metadata.mode() & 0o111 != 0)
+    Ok(file)
+}
+
+#[cfg(unix)]
+fn local_executable(metadata: &Metadata) -> bool {
+    use cap_std::fs::MetadataExt;
+    metadata.mode() & 0o111 != 0
 }
 
 #[cfg(not(unix))]
-fn local_executable(_metadata: &fs::Metadata, _path: &str) -> Result<bool, BundleError> {
-    Ok(false)
+fn local_executable(_metadata: &Metadata) -> bool {
+    false
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::{fs, os::unix::fs::symlink};
+
+    #[test]
+    fn opened_directory_rejects_replacement_links_and_stays_anchored_after_rename() {
+        let workspace = std::env::temp_dir().join(format!("skill-race-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(workspace.join("review/assets")).unwrap();
+        fs::create_dir(workspace.join("outside")).unwrap();
+        fs::write(workspace.join("review/file"), b"original").unwrap();
+        fs::write(workspace.join("review/assets/notes"), b"inside").unwrap();
+        fs::write(workspace.join("outside/file"), b"private").unwrap();
+        fs::write(workspace.join("outside/notes"), b"private").unwrap();
+        let directory =
+            Dir::open_ambient_dir(workspace.join("review"), ambient_authority()).unwrap();
+
+        // Simulate replacement after the walker inspected the entry metadata.
+        assert!(directory.symlink_metadata("file").unwrap().is_file());
+        fs::remove_file(workspace.join("review/file")).unwrap();
+        symlink(
+            workspace.join("outside/file"),
+            workspace.join("review/file"),
+        )
+        .unwrap();
+        assert!(open_local_file(&directory, "file".as_ref(), "file").is_err());
+        fs::remove_file(workspace.join("review/file")).unwrap();
+        fs::hard_link(
+            workspace.join("outside/file"),
+            workspace.join("review/file"),
+        )
+        .unwrap();
+        assert!(open_local_file(&directory, "file".as_ref(), "file").is_err());
+
+        let assets = directory.open_dir_nofollow("assets").unwrap();
+        fs::rename(
+            workspace.join("review/assets"),
+            workspace.join("original-assets"),
+        )
+        .unwrap();
+        symlink(workspace.join("outside"), workspace.join("review/assets")).unwrap();
+        assert!(directory.open_dir_nofollow("assets").is_err());
+        let mut contents = String::new();
+        open_local_file(&assets, "notes".as_ref(), "assets/notes")
+            .unwrap()
+            .read_to_string(&mut contents)
+            .unwrap();
+        assert_eq!(contents, "inside");
+
+        // Root replacement also cannot redirect a pinned directory handle.
+        fs::rename(workspace.join("review"), workspace.join("original-review")).unwrap();
+        symlink(workspace.join("outside"), workspace.join("review")).unwrap();
+        assert!(pack_directory(&workspace.join("review"), &BundleLimits::default()).is_err());
+        assert!(open_local_file(&directory, "file".as_ref(), "file").is_err());
+        fs::remove_dir_all(workspace).unwrap();
+    }
 }

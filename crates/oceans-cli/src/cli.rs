@@ -6,7 +6,8 @@ use url::Url;
 #[derive(Parser)]
 #[command(name = "oceans", version, about = "Use the Oceans LLM skill registry")]
 pub struct Cli {
-    /// Gateway URL. Authentication uses the OCEANS_API_KEY environment variable.
+    /// Gateway URL. HTTPS is required except for loopback IP addresses.
+    /// Authentication uses the OCEANS_API_KEY environment variable.
     #[arg(
         long,
         global = true,

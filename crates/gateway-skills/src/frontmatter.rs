@@ -45,6 +45,14 @@ impl Budget {
         self.scalar_bytes += bytes;
         Ok(())
     }
+
+    fn text<E: de::Error>(&mut self, value: &str) -> Result<(), E> {
+        // PostgreSQL text and jsonb cannot represent U+0000, including YAML escapes.
+        if value.contains('\0') {
+            return Err(E::custom("frontmatter must not contain NUL characters"));
+        }
+        self.scalar(value.len())
+    }
 }
 
 struct ValueSeed<'a> {
@@ -109,12 +117,12 @@ impl<'de> Visitor<'de> for ValueVisitor<'_> {
     }
 
     fn visit_str<E: de::Error>(self, value: &str) -> Result<Value, E> {
-        self.budget.scalar(value.len())?;
+        self.budget.text(value)?;
         Ok(Value::String(value.to_owned()))
     }
 
     fn visit_string<E: de::Error>(self, value: String) -> Result<Value, E> {
-        self.budget.scalar(value.len())?;
+        self.budget.text(&value)?;
         Ok(Value::String(value))
     }
 
@@ -176,12 +184,12 @@ impl Visitor<'_> for KeyVisitor<'_> {
     }
 
     fn visit_str<E: de::Error>(self, value: &str) -> Result<String, E> {
-        self.0.scalar(value.len())?;
+        self.0.text(value)?;
         Ok(value.to_owned())
     }
 
     fn visit_string<E: de::Error>(self, value: String) -> Result<String, E> {
-        self.0.scalar(value.len())?;
+        self.0.text(&value)?;
         Ok(value)
     }
 }
@@ -236,6 +244,9 @@ mod tests {
             "name: .inf",
             "options: {1: value}",
             "name: first\n---\nname: second",
+            "description: \"Review\\0code\"",
+            "metadata: {author: \"User\\u0000name\"}",
+            "x-options: {\"bad\\0key\": true}",
         ] {
             assert!(parse_frontmatter(yaml).is_err(), "accepted {yaml}");
         }

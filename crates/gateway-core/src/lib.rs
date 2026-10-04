@@ -141,8 +141,9 @@ pub use reasoning_policy::{
     enforce_responses_reasoning_effort,
 };
 pub use skills::{
-    SkillListQuery, SkillNamespaceRecord, SkillObjectStore, SkillRecord, SkillRepository,
-    SkillVersionMetadata, SkillVersionRecord, SkillVersionSummary,
+    SkillDetail, SkillListQuery, SkillNamespaceRecord, SkillObjectStore, SkillRecord,
+    SkillRepository, SkillUploadResponse, SkillVersionMetadata, SkillVersionRecord,
+    SkillVersionSummary,
 };
 pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};
 pub use traits::{

@@ -89,6 +89,10 @@ for field in access_key_id secret_access_key session_token; do
 done
 
 render mounted-secret \
+  --set gateway.config.skills.enabled=true \
+  --set-string gateway.config.skills.storage.bucket=oceans-skills \
+  --set bootstrapAdminJob.enabled=true \
+  --set seedConfigJob.enabled=true \
   --set-string gateway.config.skills.storage.access_key_id=file./var/run/skills/access-key \
   --set-string gateway.config.skills.storage.secret_access_key=file./var/run/skills/secret-key \
   --set 'gateway.extraVolumes[0].name=skills-s3-files' \
@@ -98,6 +102,13 @@ render mounted-secret \
   --set 'gateway.extraVolumeMounts[0].readOnly=true'
 require_text "$check_dir/mounted-secret/oceans-llm/templates/configmap.yaml" 'access_key_id: file./var/run/skills/access-key'
 test "$(grep -Fc 'mountPath: /var/run/skills' "$check_dir/mounted-secret/oceans-llm/templates/gateway-deployment.yaml")" -eq 2
+for job in migration bootstrap-admin seed-config; do
+  job_file="$check_dir/mounted-secret/oceans-llm/templates/jobs/$job-job.yaml"
+  require_text "$job_file" 'mountPath: /var/run/skills'
+  require_text "$job_file" 'secretName: oceans-skills-s3'
+  test "$(grep -Fc 'name: skills-s3-files' "$job_file")" -eq 2
+  test "$(grep -Fc 'readOnly: true' "$job_file")" -eq 2
+done
 
 expect_rejected 'secret.rustfs.access_key and secret.rustfs.secret_key must be set' \
   --set rustfs.enabled=true

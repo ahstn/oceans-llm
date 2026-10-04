@@ -1,7 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
-use gateway_core::skills::{SkillManifest, SkillRepository, SkillVersionMetadata};
-use gateway_core::{AuthMode, GlobalRole, UserStatus};
+use gateway_core::skills::{
+    SkillManifest, SkillRepository, SkillVersionMetadata, SkillVersionRecord,
+};
+use gateway_core::{AuthMode, GlobalRole, StoreError, UserStatus};
 use tempfile::{TempDir, tempdir};
 use time::OffsetDateTime;
 use tokio::sync::{Barrier, oneshot};
@@ -109,7 +111,9 @@ async fn create_review_skill(store: &LibsqlStore, owner_id: Uuid) -> Uuid {
         .create_skill(owner_id, "review", &metadata("original"), now)
         .await
         .expect("skill")
-        .skill_id
+        .detail
+        .skill
+        .id
 }
 
 async fn session_fixture() -> (TempDir, LibsqlStore, Uuid, Uuid, OffsetDateTime) {
@@ -265,6 +269,7 @@ async fn namespace_claim_survives_main_connection_rollback() {
 async fn skill_creation_survives_main_connection_rollback() {
     let (_directory, store, owner_id) = fixture().await;
     let now = OffsetDateTime::now_utc();
+    let metadata = metadata("original");
     store
         .claim_skill_namespace(owner_id, "owner", now)
         .await
@@ -276,18 +281,31 @@ async fn skill_creation_survives_main_connection_rollback() {
         .await
         .expect("main transaction");
     let created = store
-        .create_skill(owner_id, "review", &metadata("original"), now)
+        .create_skill(owner_id, "review", &metadata, now)
         .await
         .expect("skill creation on independent connection");
     transaction.rollback().await.expect("main rollback");
 
+    assert_eq!(created.uploaded_version, 1);
     assert_eq!(
         store
-            .get_skill_version(created.skill_id, 1)
+            .get_skill_version(created.detail.skill.id, 1)
             .await
             .expect("version"),
-        Some(created),
+        Some(SkillVersionRecord {
+            skill_id: created.detail.skill.id,
+            version: 1,
+            metadata,
+            created_at: created.detail.versions[0].created_at,
+        }),
         "an unrelated transaction must not roll back a committed skill"
+    );
+    assert_eq!(
+        store
+            .get_skill(created.detail.skill.id)
+            .await
+            .expect("skill"),
+        Some(created.detail.skill)
     );
 }
 
@@ -300,21 +318,22 @@ async fn skill_append_survives_main_connection_rollback() {
         .transaction()
         .await
         .expect("main transaction");
+    let metadata = metadata("updated");
     let appended = store
-        .append_skill_version(
-            owner_id,
-            skill_id,
-            &metadata("updated"),
-            OffsetDateTime::now_utc(),
-        )
+        .append_skill_version(owner_id, skill_id, &metadata, OffsetDateTime::now_utc())
         .await
         .expect("append on independent connection");
     transaction.rollback().await.expect("main rollback");
 
-    assert_eq!(appended.version, 2);
+    assert_eq!(appended.uploaded_version, 2);
     assert_eq!(
         store.get_skill_version(skill_id, 2).await.expect("version"),
-        Some(appended)
+        Some(SkillVersionRecord {
+            skill_id,
+            version: 2,
+            metadata,
+            created_at: appended.detail.versions[0].created_at,
+        })
     );
     let skill = store
         .get_skill(skill_id)
@@ -322,6 +341,7 @@ async fn skill_append_survives_main_connection_rollback() {
         .expect("skill")
         .expect("exists");
     assert_eq!((skill.default_version, skill.latest_version), (1, 2));
+    assert_eq!(skill, appended.detail.skill);
 }
 
 #[tokio::test]
@@ -366,23 +386,44 @@ async fn simultaneous_skill_appends_allocate_distinct_versions() {
         tasks.push(tokio::spawn(async move {
             let metadata = metadata(description);
             barrier.wait().await;
-            store
+            let appended = store
                 .append_skill_version(owner_id, skill_id, &metadata, OffsetDateTime::now_utc())
                 .await
-                .expect("concurrent append")
+                .expect("concurrent append");
+            (appended, metadata)
         }));
     }
     barrier.wait().await;
     let mut versions = Vec::new();
     for task in tasks {
-        let appended = task.await.expect("append task");
-        versions.push(appended.version);
+        let (appended, metadata) = task.await.expect("append task");
+        versions.push(appended.uploaded_version);
+        assert_eq!(
+            appended.detail.skill.latest_version,
+            appended.uploaded_version
+        );
+        assert_eq!(appended.detail.skill.default_version, 1);
+        assert_eq!(appended.detail.skill.description, "original");
+        assert_eq!(
+            appended
+                .detail
+                .versions
+                .iter()
+                .map(|version| version.version)
+                .collect::<Vec<_>>(),
+            (1..=appended.uploaded_version).rev().collect::<Vec<_>>()
+        );
         assert_eq!(
             store
-                .get_skill_version(skill_id, appended.version)
+                .get_skill_version(skill_id, appended.uploaded_version)
                 .await
                 .expect("stored version"),
-            Some(appended)
+            Some(SkillVersionRecord {
+                skill_id,
+                version: appended.uploaded_version,
+                metadata,
+                created_at: appended.detail.versions[0].created_at,
+            })
         );
     }
 
@@ -395,4 +436,78 @@ async fn simultaneous_skill_appends_allocate_distinct_versions() {
         .expect("exists");
     assert_eq!((skill.default_version, skill.latest_version), (1, 3));
     assert_eq!(skill.description, "original");
+}
+
+async fn install_invalid_version_timestamp(store: &LibsqlStore) {
+    store
+        .connection()
+        .execute(
+            "CREATE TRIGGER invalid_version_timestamp AFTER INSERT ON skill_versions
+             BEGIN
+                 UPDATE skill_versions SET created_at = 9223372036854775807
+                 WHERE skill_id = NEW.skill_id AND version = NEW.version;
+             END",
+            (),
+        )
+        .await
+        .expect("install invalid response timestamp trigger");
+}
+
+#[tokio::test]
+async fn skill_creation_rolls_back_when_response_decoding_fails() {
+    let (_directory, store, owner_id) = fixture().await;
+    let now = OffsetDateTime::now_utc();
+    store
+        .claim_skill_namespace(owner_id, "owner", now)
+        .await
+        .expect("namespace");
+    install_invalid_version_timestamp(&store).await;
+
+    let result = store
+        .create_skill(owner_id, "review", &metadata("original"), now)
+        .await;
+    assert!(matches!(result, Err(StoreError::Serialization(_))));
+    assert_eq!(
+        store
+            .get_skill_by_name("owner", "review")
+            .await
+            .expect("skill lookup after rollback"),
+        None
+    );
+    let mut rows = store
+        .connection()
+        .query("SELECT COUNT(*) FROM skill_versions", ())
+        .await
+        .expect("version count");
+    let row = rows.next().await.expect("next").expect("count");
+    assert_eq!(row.get::<i64>(0).expect("version count"), 0);
+}
+
+#[tokio::test]
+async fn skill_append_rolls_back_when_response_decoding_fails() {
+    let (_directory, store, owner_id) = fixture().await;
+    let skill_id = create_review_skill(&store, owner_id).await;
+    let original = store.get_skill(skill_id).await.expect("original skill");
+    install_invalid_version_timestamp(&store).await;
+
+    let result = store
+        .append_skill_version(
+            owner_id,
+            skill_id,
+            &metadata("updated"),
+            OffsetDateTime::now_utc(),
+        )
+        .await;
+    assert!(matches!(result, Err(StoreError::Serialization(_))));
+    assert_eq!(
+        store.get_skill(skill_id).await.expect("rolled back skill"),
+        original
+    );
+    assert_eq!(
+        store
+            .get_skill_version(skill_id, 2)
+            .await
+            .expect("version lookup after rollback"),
+        None
+    );
 }

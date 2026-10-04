@@ -7,6 +7,9 @@ use serde::Deserialize;
 
 use super::references::{resolve_path_reference, resolve_secret_reference};
 
+// S3 keys include a separator and the service's generated `<uuid>.zip` archive name.
+const MAX_STORAGE_PREFIX_BYTES: usize = 1024 - 1 - uuid::fmt::Hyphenated::LENGTH - ".zip".len();
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SkillsConfig {
@@ -97,8 +100,12 @@ impl SkillStorageConfig {
             }
         }
         let prefix = self.prefix.trim_end_matches('/');
-        if self.prefix.len() > 1024
-            || self.prefix.contains('\\')
+        if prefix.len() > MAX_STORAGE_PREFIX_BYTES {
+            bail!(
+                "skills.storage.prefix must be at most {MAX_STORAGE_PREFIX_BYTES} bytes after removing trailing slashes to leave room for archive names"
+            );
+        }
+        if self.prefix.contains('\\')
             || self.prefix.chars().any(char::is_control)
             || (!self.prefix.is_empty()
                 && prefix

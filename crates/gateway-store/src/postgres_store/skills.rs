@@ -2,8 +2,8 @@ use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
 use gateway_core::skills::SkillVersionSummary;
 use gateway_core::{
-    SkillListQuery, SkillNamespaceRecord, SkillRecord, SkillRepository, SkillVersionMetadata,
-    SkillVersionRecord,
+    SkillDetail, SkillListQuery, SkillNamespaceRecord, SkillRecord, SkillRepository,
+    SkillUploadResponse, SkillVersionMetadata, SkillVersionRecord,
 };
 
 const SKILL_COLUMNS: &str = "s.skill_id, n.handle, s.owner_user_id, s.name, s.description, s.default_version, s.latest_version, s.created_at, s.updated_at";
@@ -135,6 +135,41 @@ async fn insert_version(
     decode_version(&row)
 }
 
+async fn read_versions<'e>(
+    executor: impl sqlx::Executor<'e, Database = sqlx::Postgres>,
+    skill_id: Uuid,
+) -> Result<Vec<SkillVersionSummary>, StoreError> {
+    let rows = sqlx::query(
+        "SELECT version, sha256, archive_bytes, extracted_bytes, file_count, created_at FROM skill_versions WHERE skill_id = $1 ORDER BY version DESC",
+    )
+    .bind(skill_id.to_string())
+    .fetch_all(executor)
+    .await
+    .map_err(to_query_error)?;
+    rows.iter().map(decode_version_summary).collect()
+}
+
+async fn upload_response(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    skill_id: Uuid,
+    uploaded_version: u32,
+) -> Result<SkillUploadResponse, StoreError> {
+    let sql = format!(
+        "SELECT {SKILL_COLUMNS} FROM skills s JOIN skill_namespaces n ON n.user_id = s.owner_user_id WHERE s.skill_id = $1"
+    );
+    let row = sqlx::query(&sql)
+        .bind(skill_id.to_string())
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(to_query_error)?;
+    let skill = decode_skill(&row)?;
+    let versions = read_versions(&mut **tx, skill_id).await?;
+    Ok(SkillUploadResponse {
+        detail: SkillDetail { skill, versions },
+        uploaded_version,
+    })
+}
+
 #[async_trait]
 impl SkillRepository for PostgresStore {
     async fn claim_skill_namespace(
@@ -237,7 +272,7 @@ impl SkillRepository for PostgresStore {
         name: &str,
         metadata: &SkillVersionMetadata,
         now: OffsetDateTime,
-    ) -> Result<SkillVersionRecord, StoreError> {
+    ) -> Result<SkillUploadResponse, StoreError> {
         let skill_id = Uuid::new_v4();
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
         let inserted = sqlx::query(
@@ -257,8 +292,9 @@ impl SkillRepository for PostgresStore {
             ));
         }
         let version = insert_version(&mut tx, skill_id, 1, metadata, now).await?;
+        let response = upload_response(&mut tx, skill_id, version.version).await?;
         tx.commit().await.map_err(to_query_error)?;
-        Ok(version)
+        Ok(response)
     }
 
     async fn append_skill_version(
@@ -267,7 +303,7 @@ impl SkillRepository for PostgresStore {
         skill_id: Uuid,
         metadata: &SkillVersionMetadata,
         now: OffsetDateTime,
-    ) -> Result<SkillVersionRecord, StoreError> {
+    ) -> Result<SkillUploadResponse, StoreError> {
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
         let row = sqlx::query(
             "UPDATE skills SET latest_version = latest_version + 1, updated_at = $3 WHERE skill_id = $1 AND owner_user_id = $2 AND latest_version < 4294967295 RETURNING latest_version",
@@ -295,22 +331,16 @@ impl SkillRepository for PostgresStore {
         };
         let version = read_u32(&row, "latest_version")?;
         let version = insert_version(&mut tx, skill_id, version, metadata, now).await?;
+        let response = upload_response(&mut tx, skill_id, version.version).await?;
         tx.commit().await.map_err(to_query_error)?;
-        Ok(version)
+        Ok(response)
     }
 
     async fn list_skill_versions(
         &self,
         skill_id: Uuid,
     ) -> Result<Vec<SkillVersionSummary>, StoreError> {
-        let rows = sqlx::query(
-            "SELECT version, sha256, archive_bytes, extracted_bytes, file_count, created_at FROM skill_versions WHERE skill_id = $1 ORDER BY version DESC",
-        )
-        .bind(skill_id.to_string())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(to_query_error)?;
-        rows.iter().map(decode_version_summary).collect()
+        read_versions(&self.pool, skill_id).await
     }
 
     async fn get_skill_version(

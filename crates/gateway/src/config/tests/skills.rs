@@ -149,3 +149,47 @@ fn skills_reject_zero_limits_and_unknown_limit_fields() {
         GatewayConfig::from_path(&path).expect_err("invalid skill limits");
     }
 }
+
+#[test]
+fn skills_prefix_reserves_archive_key_space_in_utf8_bytes() {
+    let cases = [
+        (String::new(), true),
+        ("a".repeat(983), true),
+        (format!("{}/", "a".repeat(983)), true),
+        (format!("{}///", "a".repeat(983)), true),
+        (format!("{}a/", "é".repeat(491)), true),
+        ("a".repeat(984), false),
+        (format!("{}/", "a".repeat(984)), false),
+        (format!("{}/", "é".repeat(492)), false),
+    ];
+    for (prefix, valid) in cases {
+        let tmp = tempdir().expect("tempdir");
+        let path = tmp.path().join("gateway.yaml");
+        write_config(
+            &path,
+            &format!(
+                "skills:\n  enabled: true\n  storage:\n    bucket: oceans-skills\n    prefix: '{prefix}'\n"
+            ),
+        );
+
+        let config = GatewayConfig::from_path(&path);
+        if valid {
+            let storage = config
+                .expect("valid prefix")
+                .skills
+                .storage_options()
+                .expect("storage options");
+            let prefix = storage.prefix.trim_end_matches('/');
+            let archive_name = format!("{}.zip", uuid::Uuid::nil());
+            let object_key = if prefix.is_empty() {
+                archive_name
+            } else {
+                format!("{prefix}/{archive_name}")
+            };
+            assert!(object_key.len() <= 1024, "generated key exceeds S3 limit");
+        } else {
+            let error = config.expect_err("prefix cannot accommodate an archive name");
+            assert!(format!("{error:#}").contains("at most 983 bytes"));
+        }
+    }
+}

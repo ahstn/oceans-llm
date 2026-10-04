@@ -6,7 +6,7 @@ use reqwest::{
     header::{AUTHORIZATION, HeaderValue},
 };
 use serde::{Serialize, de::DeserializeOwned};
-use url::Url;
+use url::{Host, Url};
 
 const MAX_JSON_BYTES: usize = 4 * 1024 * 1024;
 const MAX_ERROR_BYTES: usize = 8 * 1024;
@@ -30,6 +30,17 @@ impl Client {
         {
             bail!("gateway URL must not contain credentials, a query, or a fragment");
         }
+        let plaintext = base_url.scheme() == "http";
+        if plaintext {
+            let loopback = match base_url.host() {
+                Some(Host::Ipv4(address)) => address.is_loopback(),
+                Some(Host::Ipv6(address)) => address.is_loopback(),
+                _ => false,
+            };
+            if !loopback {
+                bail!("gateway URL must use HTTPS unless the host is a loopback IP address");
+            }
+        }
         if api_key.trim().is_empty() {
             bail!("OCEANS_API_KEY is empty");
         }
@@ -46,9 +57,10 @@ impl Client {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(120))
             // Registry APIs serve archives directly. Never follow a credential-bearing redirect.
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .context("could not initialize HTTP client")?;
+            .redirect(reqwest::redirect::Policy::none());
+        // A proxy could forward a plaintext loopback request outside this machine.
+        let http = if plaintext { http.no_proxy() } else { http };
+        let http = http.build().context("could not initialize HTTP client")?;
         Ok(Self {
             http,
             base_url,

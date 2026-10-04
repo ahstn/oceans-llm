@@ -167,7 +167,12 @@ depends = [
   "ui-test",
   "review-agent-action-test",
   "copilot-installation-canary-test",
+  "e2e-stack-test",
 ]
+
+[tasks.e2e-stack-test]
+description = "Verify E2E cleanup failures retain retry state"
+run = "node --test scripts/start-e2e-stack.test.mjs"
 
 [tasks.gateway-serve]
 description = "Run local `gateway serve` against `gateway.yaml`"

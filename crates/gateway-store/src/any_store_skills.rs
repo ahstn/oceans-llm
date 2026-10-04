@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use gateway_core::StoreError;
 use gateway_core::skills::{
-    SkillListQuery, SkillNamespaceRecord, SkillRecord, SkillRepository, SkillVersionMetadata,
-    SkillVersionRecord, SkillVersionSummary,
+    SkillListQuery, SkillNamespaceRecord, SkillRecord, SkillRepository, SkillUploadResponse,
+    SkillVersionMetadata, SkillVersionRecord, SkillVersionSummary,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -53,7 +53,7 @@ impl SkillRepository for AnyStore {
         name: &str,
         metadata: &SkillVersionMetadata,
         now: OffsetDateTime,
-    ) -> Result<SkillVersionRecord, StoreError> {
+    ) -> Result<SkillUploadResponse, StoreError> {
         dispatch_store!(self, create_skill(owner_user_id, name, metadata, now))
     }
     async fn append_skill_version(
@@ -62,7 +62,7 @@ impl SkillRepository for AnyStore {
         skill_id: Uuid,
         metadata: &SkillVersionMetadata,
         now: OffsetDateTime,
-    ) -> Result<SkillVersionRecord, StoreError> {
+    ) -> Result<SkillUploadResponse, StoreError> {
         dispatch_store!(
             self,
             append_skill_version(owner_user_id, skill_id, metadata, now)

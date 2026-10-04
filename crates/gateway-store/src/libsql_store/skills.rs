@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use gateway_core::StoreError;
 use gateway_core::skills::{
-    SkillListQuery, SkillNamespaceRecord, SkillRecord, SkillRepository, SkillVersionMetadata,
-    SkillVersionRecord, SkillVersionSummary,
+    SkillDetail, SkillListQuery, SkillNamespaceRecord, SkillRecord, SkillRepository,
+    SkillUploadResponse, SkillVersionMetadata, SkillVersionRecord, SkillVersionSummary,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -104,6 +104,56 @@ async fn insert_version(
         ],
     ).await.map_err(to_write_error)?;
     Ok(())
+}
+
+async fn read_versions(
+    connection: &libsql::Connection,
+    skill_id: Uuid,
+) -> Result<Vec<SkillVersionSummary>, StoreError> {
+    let mut rows = connection
+        .query(
+            "SELECT version, sha256, archive_bytes, extracted_bytes, file_count, created_at FROM skill_versions WHERE skill_id = ?1 ORDER BY version DESC",
+            [skill_id.to_string()],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let mut versions = Vec::new();
+    while let Some(row) = rows.next().await.map_err(to_query_error)? {
+        versions.push(SkillVersionSummary {
+            version: read_u32(&row, 0)?,
+            sha256: row.get(1).map_err(to_query_error)?,
+            archive_bytes: read_u64(&row, 2)?,
+            extracted_bytes: read_u64(&row, 3)?,
+            file_count: read_u32(&row, 4)?,
+            created_at: unix_to_datetime(row.get(5).map_err(to_query_error)?)?,
+        });
+    }
+    Ok(versions)
+}
+
+async fn upload_response(
+    tx: &libsql::Transaction,
+    skill_id: Uuid,
+    uploaded_version: u32,
+) -> Result<SkillUploadResponse, StoreError> {
+    let mut rows = tx
+        .query(
+            &format!("{SKILL_SELECT} WHERE s.skill_id = ?1"),
+            [skill_id.to_string()],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let row = rows
+        .next()
+        .await
+        .map_err(to_query_error)?
+        .ok_or_else(|| StoreError::NotFound("skill not found".to_string()))?;
+    let skill = decode_skill(&row)?;
+    let versions = read_versions(tx, skill_id).await?;
+    Ok(SkillUploadResponse {
+        detail: SkillDetail { skill, versions },
+        uploaded_version,
+    })
 }
 
 #[async_trait]
@@ -225,7 +275,7 @@ impl SkillRepository for LibsqlStore {
         name: &str,
         metadata: &SkillVersionMetadata,
         now: OffsetDateTime,
-    ) -> Result<SkillVersionRecord, StoreError> {
+    ) -> Result<SkillUploadResponse, StoreError> {
         let connection = self.skill_connection().await?;
         let skill_id = Uuid::new_v4();
         let tx = connection
@@ -242,13 +292,9 @@ impl SkillRepository for LibsqlStore {
             ));
         }
         insert_version(&tx, skill_id, 1, metadata, now).await?;
+        let response = upload_response(&tx, skill_id, 1).await?;
         tx.commit().await.map_err(to_write_error)?;
-        Ok(SkillVersionRecord {
-            skill_id,
-            version: 1,
-            metadata: metadata.clone(),
-            created_at: unix_to_datetime(now.unix_timestamp())?,
-        })
+        Ok(response)
     }
 
     async fn append_skill_version(
@@ -257,7 +303,7 @@ impl SkillRepository for LibsqlStore {
         skill_id: Uuid,
         metadata: &SkillVersionMetadata,
         now: OffsetDateTime,
-    ) -> Result<SkillVersionRecord, StoreError> {
+    ) -> Result<SkillUploadResponse, StoreError> {
         let connection = self.skill_connection().await?;
         let tx = connection
             .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
@@ -288,13 +334,9 @@ impl SkillRepository for LibsqlStore {
         rows.next().await.map_err(to_query_error)?;
         drop(rows);
         insert_version(&tx, skill_id, version, metadata, now).await?;
+        let response = upload_response(&tx, skill_id, version).await?;
         tx.commit().await.map_err(to_write_error)?;
-        Ok(SkillVersionRecord {
-            skill_id,
-            version,
-            metadata: metadata.clone(),
-            created_at: unix_to_datetime(now.unix_timestamp())?,
-        })
+        Ok(response)
     }
 
     async fn list_skill_versions(
@@ -302,25 +344,7 @@ impl SkillRepository for LibsqlStore {
         skill_id: Uuid,
     ) -> Result<Vec<SkillVersionSummary>, StoreError> {
         let connection = self.skill_connection().await?;
-        let mut rows = connection
-            .query(
-                "SELECT version, sha256, archive_bytes, extracted_bytes, file_count, created_at FROM skill_versions WHERE skill_id = ?1 ORDER BY version DESC",
-                [skill_id.to_string()],
-            )
-            .await
-            .map_err(to_query_error)?;
-        let mut versions = Vec::new();
-        while let Some(row) = rows.next().await.map_err(to_query_error)? {
-            versions.push(SkillVersionSummary {
-                version: read_u32(&row, 0)?,
-                sha256: row.get(1).map_err(to_query_error)?,
-                archive_bytes: read_u64(&row, 2)?,
-                extracted_bytes: read_u64(&row, 3)?,
-                file_count: read_u32(&row, 4)?,
-                created_at: unix_to_datetime(row.get(5).map_err(to_query_error)?)?,
-            });
-        }
-        Ok(versions)
+        read_versions(&connection, skill_id).await
     }
 
     async fn get_skill_version(

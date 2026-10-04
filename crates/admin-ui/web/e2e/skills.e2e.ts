@@ -268,3 +268,47 @@ test('shared reads retain owner-only writes and immutable versions', async ({
   await expect(page.getByRole('button', { name: 'Upload new version' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Set as default' })).toHaveCount(0)
 })
+
+test('multipart server functions reject hostile origins and oversized bodies before dispatch', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const root = baseURL ?? requireEnv('E2E_BASE_URL')
+  const cookie = await ensureAdminSession(page, request, root)
+  // A nonexistent function makes every probe incapable of changing skill data.
+  const functionPath = '/admin/_serverFn/skills-ingress-regression'
+  const contentType = 'multipart/form-data; boundary=proof'
+  for (const originHeaders of [
+    { origin: 'https://hostile.invalid', 'sec-fetch-site': 'same-site' },
+    { origin: 'https://hostile.invalid', 'sec-fetch-site': 'cross-site' },
+    { origin: 'https://hostile.invalid' },
+    {},
+  ]) {
+    const response = await request.post(`${root}${functionPath}`, {
+      headers: { cookie, 'content-type': contentType, ...originHeaders },
+      data: '--proof--\r\n',
+    })
+    expect(response.status()).toBe(403)
+    expect(await response.text()).toBe('Forbidden')
+  }
+
+  const limitsResponse = await request.get(`${root}/api/v1/skills/limits`, { headers: { cookie } })
+  expect(limitsResponse.ok()).toBe(true)
+  const limits = await limitsResponse.json()
+  const body = Buffer.alloc(limits.max_archive_bytes + 64 * 1024 + 1, 'x')
+  const directUi = `http://127.0.0.1:${requireEnv('E2E_UI_PORT')}`
+  for (const origin of [root, directUi]) {
+    const response = await request.post(`${origin}${functionPath}`, {
+      headers: {
+        cookie,
+        origin,
+        'sec-fetch-site': 'same-origin',
+        'content-type': contentType,
+      },
+      data: body,
+    })
+    expect(response.status()).toBe(413)
+    expect(await response.text()).toBe('Multipart upload is too large')
+  }
+})

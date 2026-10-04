@@ -184,3 +184,41 @@ fn gateway_url_rejects_embedded_credentials_and_secret_queries() {
     }
     assert!(Client::new("https://example.com".parse().unwrap(), "bad\nvalue").is_err());
 }
+
+#[test]
+fn plaintext_gateway_urls_require_loopback_ip_literals() {
+    for url in [
+        "http://gateway.example.com",
+        "http://192.0.2.1",
+        "http://10.0.0.1",
+        "http://0.0.0.0",
+        "http://[::]",
+        "http://[2001:db8::1]",
+        "http://[::ffff:192.0.2.1]",
+        "http://localhost",
+        "http://localhost.",
+        "http://localhost.example.com",
+        "http://127.0.0.1.example.com",
+        "http://example.localhost",
+    ] {
+        assert!(
+            Client::new(url.parse().unwrap(), "gwk_test.secret").is_err(),
+            "must reject {url} before sending credentials"
+        );
+    }
+    for url in [
+        "https://gateway.example.com",
+        "https://192.0.2.1",
+        "http://127.0.0.1:8080",
+        "http://127.23.45.67",
+        "http://[::1]:8080",
+        "http://127.1",
+        "http://2130706433",
+        "http://0x7f000001",
+    ] {
+        assert!(
+            Client::new(url.parse().unwrap(), "gwk_test.secret").is_ok(),
+            "must accept {url} after parsed host validation"
+        );
+    }
+}

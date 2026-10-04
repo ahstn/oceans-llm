@@ -5,7 +5,8 @@ use std::{
 };
 
 use gateway_skills::{
-    BundleError, BundleLimits, inspect_archive, pack_directory, pack_directory_excluding,
+    BundleError, BundleLimits, INSTALL_RECORD, MAX_INSTRUCTIONS_BYTES, inspect_archive,
+    pack_directory, pack_directory_excluding,
 };
 use zip::{ZipWriter, write::SimpleFileOptions};
 
@@ -260,6 +261,76 @@ fn manifest_fields_are_strict_and_extensions_survive() {
     }
 }
 
+#[test]
+fn instruction_limit_applies_to_root_wrapped_and_local_bundles() {
+    let mut instructions = SKILL.to_vec();
+    instructions.resize(MAX_INSTRUCTIONS_BYTES, b'a');
+    let limits = BundleLimits::default();
+    let directory = TestDirectory::new();
+    for size in [MAX_INSTRUCTIONS_BYTES, MAX_INSTRUCTIONS_BYTES + 1] {
+        instructions.resize(size, b'a');
+        for path in ["SKILL.md", "review/SKILL.md"] {
+            let result = inspect_archive(&archive(&[(path, &instructions)]), &limits);
+            if size == MAX_INSTRUCTIONS_BYTES {
+                assert_eq!(result.unwrap().instructions.len(), size);
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(BundleError::Limit("SKILL.md bytes (256 KiB)"))
+                ));
+            }
+        }
+        fs::write(directory.0.join("SKILL.md"), &instructions).unwrap();
+        assert_eq!(
+            pack_directory(&directory.0, &limits).is_ok(),
+            size == MAX_INSTRUCTIONS_BYTES
+        );
+    }
+}
+
+#[test]
+fn rejects_raw_and_yaml_escaped_nul_in_instructions() {
+    for instructions in [
+        "---\nname: review\ndescription: Review code.\n---\nBody\0text",
+        "---\nname: review\ndescription: \"Review\\0code\"\n---\nBody",
+        "---\nname: review\ndescription: Review code.\nmetadata: {author: \"a\\u0000b\"}\n---\nBody",
+        "---\nname: review\ndescription: Review code.\nx-options: {\"a\\0b\": value}\n---\nBody",
+    ] {
+        let result = inspect_archive(
+            &archive(&[("SKILL.md", instructions.as_bytes())]),
+            &BundleLimits::default(),
+        );
+        assert!(matches!(result, Err(BundleError::Manifest(message)) if message.contains("NUL")));
+    }
+}
+
+#[test]
+fn rejects_reserved_installer_records_in_root_and_wrapped_archives() {
+    for prefix in ["", "review/"] {
+        for path in [
+            INSTALL_RECORD,
+            ".OCEANS-SKILL-LOCK.JSON",
+            ".Oceans-Skill-Lock.Json/nested",
+            ".oceans-ſkill-lock.json",
+            ".oceans-skill-locK.json/nested",
+        ] {
+            let bytes = archive(&[
+                (&format!("{prefix}SKILL.md"), SKILL),
+                (&format!("{prefix}{path}"), b"record"),
+            ]);
+            assert!(matches!(
+                inspect_archive(&bytes, &BundleLimits::default()),
+                Err(BundleError::UnsafePath(_))
+            ));
+        }
+    }
+    let bytes = archive(&[
+        ("SKILL.md", SKILL),
+        ("assets/.oceans-skill-lock.json", b"asset"),
+    ]);
+    assert!(inspect_archive(&bytes, &BundleLimits::default()).is_ok());
+}
+
 struct TestDirectory(PathBuf);
 
 impl TestDirectory {
@@ -330,6 +401,23 @@ fn local_pack_can_omit_only_exact_client_metadata_paths() {
     );
 }
 
+#[test]
+fn excluded_installer_record_does_not_consume_entry_limit() {
+    let directory = TestDirectory::new();
+    fs::write(directory.0.join(INSTALL_RECORD), b"record").unwrap();
+    let limits = BundleLimits {
+        max_files: 1,
+        ..Default::default()
+    };
+    let bundle = pack_directory_excluding(&directory.0, &limits, &[INSTALL_RECORD]).unwrap();
+    assert_eq!(bundle.files.len(), 1);
+    fs::write(directory.0.join("extra.txt"), b"file").unwrap();
+    assert!(matches!(
+        pack_directory_excluding(&directory.0, &limits, &[INSTALL_RECORD]),
+        Err(BundleError::Limit("archive entry count"))
+    ));
+}
+
 #[cfg(unix)]
 #[test]
 fn local_pack_rejects_links() {
@@ -339,4 +427,7 @@ fn local_pack_rejects_links() {
     fs::remove_file(directory.0.join("link")).unwrap();
     fs::hard_link(directory.0.join("SKILL.md"), directory.0.join("hardlink")).unwrap();
     assert!(pack_directory(&directory.0, &BundleLimits::default()).is_err());
+    let alias = directory.0.parent().unwrap().join("alias");
+    std::os::unix::fs::symlink(&directory.0, &alias).unwrap();
+    assert!(pack_directory(&alias, &BundleLimits::default()).is_err());
 }
