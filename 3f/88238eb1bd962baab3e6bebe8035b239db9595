@@ -1,0 +1,26 @@
+docs/adr/2026-10-04-shared-model-routing-and-session-affinity.md
+  s_25801eaca752ce::t_31cf71ee141951 53
+crates/gateway-service/src/routing.rs
+  s_25801eaca752ce::t_354944b9b01a6f 140-146,170-172
+crates/gateway-service/src/routing/tests.rs
+  s_25801eaca752ce::t_354944b9b01a6f 506,508
+  s_25801eaca752ce::t_6ce805e8bd2d93 497-505,507,509-520,525-535,538,540,545,550,557
+  s_25801eaca752ce::t_a5af96841898f4 521-524
+  s_25801eaca752ce::t_3dec3bd0660bb7 496
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3f88238eb1bd962baab3e6bebe8035b239db9595",
+  "prompts": {},
+  "sessions": {
+    "s_25801eaca752ce": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1062a-3e70-7ff1-9e79-38cfc8f28d45",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
