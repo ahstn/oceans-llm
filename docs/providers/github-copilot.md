@@ -82,3 +82,6 @@ Prepare a GitHub App and installation as described in [GitHub's server-to-server
 4. Enable Copilot requests from GitHub App installations for the organization.
 5. Select one model that advertises `/chat/completions`, streaming, and tool calls.
 6. Select one model that advertises `/v1/messages` and streaming.
+
+> [!NOTE]
+> GitHub does not document where to enable "Copilot requests from GitHub App installations" (step 4). It may map to the organization Copilot policy **Allow use of Copilot CLI billed to the organization**, found under **Copilot CLI** in the organization's Copilot policy settings. This is unconfirmed. Enable that policy if the App is rejected with `401 Unauthorized`, and report back whether it resolves the error.
