@@ -1,0 +1,20 @@
+crates/admin-ui/web/src/routes/models.tsx
+  s_25801eaca752ce::t_0b7c654ca19cf8 357,554-568
+  s_25801eaca752ce::t_5c51d678a4c75f 569-571
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be7346a6e03806f879affaf582eb3c05e2b7d408",
+  "prompts": {},
+  "sessions": {
+    "s_25801eaca752ce": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1062a-3e70-7ff1-9e79-38cfc8f28d45",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
