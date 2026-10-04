@@ -219,6 +219,15 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/api/v1/me/spend/focus.csv", get(get_my_focus_export))
         .route("/api/v1/me/profile", get(get_my_profile))
         .route(
+            "/api/v1/me/provider-credentials",
+            get(list_my_provider_credentials),
+        )
+        .route(
+            "/api/v1/me/provider-credentials/{provider_key}",
+            axum::routing::put(set_my_provider_credential)
+                .layer(DefaultBodyLimit::max(PROVIDER_CREDENTIAL_BODY_LIMIT)),
+        )
+        .route(
             "/api/v1/admin/spend/budgets",
             get(list_spend_budgets).put(upsert_budget),
         )

@@ -1952,6 +1952,8 @@ pub struct AgentSessionDetailView {
         crate::http::identity::update_identity_user,
         crate::http::provider_credentials::upsert_identity_user_provider_credential,
         crate::http::provider_credentials::delete_identity_user_provider_credential,
+        crate::http::provider_credentials::list_my_provider_credentials,
+        crate::http::provider_credentials::set_my_provider_credential,
         crate::http::identity::deactivate_identity_user,
         crate::http::identity::reactivate_identity_user,
         crate::http::identity::reset_identity_user_onboarding,

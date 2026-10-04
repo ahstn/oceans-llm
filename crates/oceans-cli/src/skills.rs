@@ -16,6 +16,7 @@ use crate::{
 };
 
 pub async fn run(client: &Client, command: SkillsCommand, as_json: bool) -> anyhow::Result<()> {
+    let client = &client.scoped(&["skills"]);
     match command {
         SkillsCommand::Namespace { handle } => namespace(client, handle, as_json).await,
         SkillsCommand::List { namespace } => list(client, namespace, as_json).await,

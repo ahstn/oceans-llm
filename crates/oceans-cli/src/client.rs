@@ -12,6 +12,7 @@ const MAX_JSON_BYTES: usize = 4 * 1024 * 1024;
 const MAX_ERROR_BYTES: usize = 8 * 1024;
 
 // This client owns transport only. Authorization and ownership stay on the server.
+#[derive(Clone)]
 pub struct Client {
     http: reqwest::Client,
     base_url: Url,
@@ -48,7 +49,7 @@ impl Client {
             .path_segments_mut()
             .map_err(|_| anyhow::anyhow!("invalid gateway URL"))?
             .pop_if_empty()
-            .extend(["api", "v1", "skills"]);
+            .extend(["api", "v1"]);
         let mut authorization = HeaderValue::from_str(&format!("Bearer {}", api_key.trim()))
             .map_err(|_| anyhow::anyhow!("OCEANS_API_KEY contains invalid header characters"))?;
         authorization.set_sensitive(true);
@@ -56,7 +57,7 @@ impl Client {
             .user_agent(concat!("oceans/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(120))
-            // Registry APIs serve archives directly. Never follow a credential-bearing redirect.
+            // Never follow a credential-bearing redirect.
             .redirect(reqwest::redirect::Policy::none());
         // A proxy could forward a plaintext loopback request outside this machine.
         let http = if plaintext { http.no_proxy() } else { http };
@@ -66,6 +67,16 @@ impl Client {
             base_url,
             authorization,
         })
+    }
+
+    pub fn scoped(&self, path: &[&str]) -> Self {
+        let mut scoped = self.clone();
+        scoped
+            .base_url
+            .path_segments_mut()
+            .expect("validated HTTP base URL")
+            .extend(path.iter().copied());
+        scoped
     }
 
     fn request(&self, method: Method, path: &[&str]) -> reqwest::RequestBuilder {
@@ -135,6 +146,29 @@ impl Client {
             .await
     }
 
+    pub async fn get_sensitive<T: DeserializeOwned>(&self, path: &[&str]) -> anyhow::Result<T> {
+        let response = self.request(Method::GET, path).send().await.map_err(|_| {
+            anyhow::anyhow!("could not send provider credential request to the gateway")
+        })?;
+        decode_sensitive(response).await
+    }
+
+    pub async fn put_sensitive<T: DeserializeOwned>(
+        &self,
+        path: &[&str],
+        body: &impl Serialize,
+    ) -> anyhow::Result<T> {
+        let response = self
+            .request(Method::PUT, path)
+            .json(body)
+            .send()
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!("could not send provider credential request to the gateway")
+            })?;
+        decode_sensitive(response).await
+    }
+
     pub async fn upload<T: DeserializeOwned>(
         &self,
         path: &[&str],
@@ -164,6 +198,27 @@ impl Client {
         let bytes = read_bounded(response, MAX_JSON_BYTES).await?;
         serde_json::from_slice(&bytes).context("gateway returned an invalid JSON response")
     }
+}
+
+async fn decode_sensitive<T: DeserializeOwned>(response: Response) -> anyhow::Result<T> {
+    let status = response.status();
+    if !status.is_success() {
+        // Credential APIs must never display response bodies, including errors from proxies.
+        let guidance = match status {
+            StatusCode::UNAUTHORIZED => "check OCEANS_API_KEY",
+            StatusCode::FORBIDDEN => "this request requires an eligible user-owned API key",
+            StatusCode::NOT_FOUND => "the provider credential API or provider was not found",
+            StatusCode::SERVICE_UNAVAILABLE => "provider credential storage is unavailable",
+            _ => "provider credential request failed",
+        };
+        bail!("gateway returned HTTP {status}: {guidance}");
+    }
+    let bytes = read_bounded(response, MAX_JSON_BYTES)
+        .await
+        .map_err(|_| anyhow::anyhow!("could not read a bounded provider credential response"))?;
+    // Serde errors can quote invalid values, so do not retain the source error.
+    serde_json::from_slice(&bytes)
+        .map_err(|_| anyhow::anyhow!("gateway returned an invalid provider credential response"))
 }
 
 async fn check_status(
