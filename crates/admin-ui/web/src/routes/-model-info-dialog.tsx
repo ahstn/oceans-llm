@@ -18,13 +18,8 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/u
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { ModelBenchmarks } from '@/routes/-model-benchmarks'
-import {
-  CapabilityBadges,
-  ModelAllowlistDetail,
-  formatCost,
-  formatWindow,
-  providerTypeLabel,
-} from '@/routes/-model-presentation'
+import { formatCost, formatWindow, providerTypeLabel } from '@/routes/-model-formatting'
+import { CapabilityBadges, ModelAllowlistDetail } from '@/routes/-model-presentation'
 import type { ModelView } from '@/types/api'
 
 export type ModelInfoSectionKey = 'overview' | 'routing' | 'benchmarks' | 'access'
@@ -52,6 +47,21 @@ const SECTIONS = [
     description: 'Who can use this model.',
   },
 ] as const
+
+const ROUTING_POLICIES = {
+  preferred: {
+    label: 'Preferred order',
+    description: 'New placements use the first eligible route at the lowest priority number.',
+  },
+  round_robin: {
+    label: 'Round robin',
+    description: 'New placements take turns across eligible routes at the lowest priority number.',
+  },
+  weighted_random: {
+    label: 'Weighted random',
+    description: 'Weights control selection among eligible routes at the lowest priority number.',
+  },
+} as const
 
 export function ModelInfoDialog({
   model,
@@ -278,22 +288,7 @@ function ModelInfoRouting({ model }: { model: ModelView }) {
 function RoutingPolicy({ model }: { model: ModelView }) {
   const strategy = model.routing?.strategy ?? 'weighted_random'
   const affinity = model.routing?.affinity
-  const policies = {
-    preferred: {
-      label: 'Preferred order',
-      description: 'New placements use the first eligible route at the lowest priority number.',
-    },
-    round_robin: {
-      label: 'Round robin',
-      description:
-        'New placements take turns across eligible routes at the lowest priority number.',
-    },
-    weighted_random: {
-      label: 'Weighted random',
-      description: 'Weights control selection among eligible routes at the lowest priority number.',
-    },
-  }
-  const policy = policies[strategy]
+  const policy = ROUTING_POLICIES[strategy]
 
   return (
     <div className="flex min-w-0 flex-col gap-3">

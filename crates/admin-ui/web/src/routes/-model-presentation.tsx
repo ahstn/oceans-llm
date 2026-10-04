@@ -13,17 +13,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import type { ModelView } from '@/types/api'
 
-const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 4,
-})
-
-const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en-US', {
-  maximumFractionDigits: 2,
-})
-
 export function ModelStatusIndicator({ status }: { status: string }) {
   return (
     <Tooltip>
@@ -63,27 +52,7 @@ export function ModelAllowlistDetail({
   }
 
   if (compact) {
-    const userCount = model.allowlist.users.length
-    const teamCount = model.allowlist.teams.length
-
-    return (
-      <div className="flex min-w-0 flex-col gap-1">
-        <span className="text-foreground inline-flex items-center gap-1.5 text-sm">
-          <AppIcon icon={CircleCheckIcon} size={13} stroke={1.5} />
-          Restricted
-        </span>
-        {userCount > 0 || teamCount > 0 ? (
-          <span className="text-muted-foreground flex flex-wrap gap-x-2 text-xs">
-            {userCount > 0 ? (
-              <span>{`${userCount} ${userCount === 1 ? 'User' : 'Users'}`}</span>
-            ) : null}
-            {teamCount > 0 ? (
-              <span>{`${teamCount} ${teamCount === 1 ? 'Team' : 'Teams'}`}</span>
-            ) : null}
-          </span>
-        ) : null}
-      </div>
-    )
+    return <CompactModelAllowlist allowlist={model.allowlist} />
   }
 
   const refs = [
@@ -107,13 +76,35 @@ export function ModelAllowlistDetail({
           <span className="text-muted-foreground text-xs font-medium">{entry.label}</span>
           <div className="flex min-w-0 flex-wrap gap-1">
             {entry.values.map((value) => (
-              <Badge key={`${entry.label}:${value}`} variant={compact ? 'secondary' : undefined}>
-                {value}
-              </Badge>
+              <Badge key={`${entry.label}:${value}`}>{value}</Badge>
             ))}
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+function CompactModelAllowlist({ allowlist }: { allowlist: NonNullable<ModelView['allowlist']> }) {
+  const userCount = allowlist.users.length
+  const teamCount = allowlist.teams.length
+
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-foreground inline-flex items-center gap-1.5 text-sm">
+        <AppIcon icon={CircleCheckIcon} size={13} stroke={1.5} />
+        Restricted
+      </span>
+      {userCount > 0 || teamCount > 0 ? (
+        <span className="text-muted-foreground flex flex-wrap gap-x-2 text-xs">
+          {userCount > 0 ? (
+            <span>{`${userCount} ${userCount === 1 ? 'User' : 'Users'}`}</span>
+          ) : null}
+          {teamCount > 0 ? (
+            <span>{`${teamCount} ${teamCount === 1 ? 'Team' : 'Teams'}`}</span>
+          ) : null}
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -149,32 +140,4 @@ export function CapabilityBadges({ model }: { model: ModelView }) {
       ))}
     </div>
   )
-}
-
-export function providerTypeLabel(model: ModelView) {
-  return model.provider_label ?? model.provider_key ?? 'Unresolved'
-}
-
-export function formatCost(value: number | null | undefined) {
-  if (value == null) {
-    return '—'
-  }
-
-  return CURRENCY_FORMATTER.format(value / 10_000)
-}
-
-export function formatWindow(value: number | null | undefined) {
-  if (value == null) {
-    return '—'
-  }
-
-  if (value >= 1_000_000) {
-    return `${COMPACT_NUMBER_FORMATTER.format(value / 1_000_000)}M`
-  }
-
-  if (value >= 1_000) {
-    return `${COMPACT_NUMBER_FORMATTER.format(value / 1_000)}k`
-  }
-
-  return String(value)
 }

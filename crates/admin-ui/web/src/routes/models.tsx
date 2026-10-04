@@ -1,4 +1,4 @@
-import { useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { createFileRoute, useLocation, useRouter, useRouterState } from '@tanstack/react-router'
 import {
   BadgeInfoIcon,
@@ -58,13 +58,11 @@ import {
 import type { ModelView } from '@/types/api'
 import { ModelInfoDialog, type ModelInfoSectionKey } from '@/routes/-model-info-dialog'
 import { ModelListPagination, ModelSearch } from '@/routes/-model-list-controls'
+import { formatCost, formatWindow, providerTypeLabel } from '@/routes/-model-formatting'
 import {
   CapabilityBadges,
   ModelAllowlistDetail,
   ModelStatusIndicator,
-  formatCost,
-  formatWindow,
-  providerTypeLabel,
 } from '@/routes/-model-presentation'
 
 const DEFAULT_PAGE = 1
@@ -86,9 +84,7 @@ export function ModelsPage() {
   const { data: modelPage } = Route.useLoaderData()
   const { session } = Route.useRouteContext()
   const isPlatformAdmin = isPlatformAdminSession(session)
-  const query = useLocation({
-    select: (location) => (typeof location.search.q === 'string' ? location.search.q : ''),
-  })
+  const { query, updateQuery, isSearchPending } = useModelSearch()
   const isPagePending = useRouterState({ select: (state) => state.status === 'pending' })
   const router = useRouter()
   const [configDialog, setConfigDialog] = useState<{
@@ -125,15 +121,6 @@ export function ModelsPage() {
           page,
           page_size: pageSize,
         }),
-      resetScroll: false,
-    })
-  }
-
-  function updateQuery(q: string) {
-    void router.navigate({
-      to: '/models',
-      search: (previous) => normalizeModelsSearch({ ...previous, q, page: 1 }),
-      replace: true,
       resetScroll: false,
     })
   }
@@ -489,6 +476,9 @@ export function ModelsPage() {
                             </div>
                           </div>
                         </TableCell>
+                        <TableCell className="px-3 py-1 whitespace-normal tabular-nums">
+                          <ModelIntelligenceScore model={model} />
+                        </TableCell>
                         <TableCell className="px-3 py-1 whitespace-normal">
                           <StackedMetric
                             topLabel="Input"
@@ -514,9 +504,6 @@ export function ModelsPage() {
                             <CapabilityBadges model={model} />
                           </TableCell>
                         ) : null}
-                        <TableCell className="px-3 py-1 whitespace-normal tabular-nums">
-                          <ModelIntelligenceScore model={model} />
-                        </TableCell>
                         {isPlatformAdmin ? (
                           <TableCell className="px-3 py-1 whitespace-normal">
                             <ModelAllowlistDetail model={model} compact />
@@ -533,7 +520,7 @@ export function ModelsPage() {
           <ModelListPagination
             modelPage={modelPage}
             onPageChange={navigateToPage}
-            isPending={isPagePending}
+            isPending={isSearchPending || isPagePending}
           />
         </CardContent>
       </Card>
@@ -587,10 +574,10 @@ function modelTableColumns(isPlatformAdmin: boolean, visibleColumns: VisibleMode
     { key: 'model', width: 18, flexible: true },
     { key: 'actions', width: 11 },
     { key: 'provider', width: 20, flexible: true },
+    { key: 'intelligence', width: 12 },
     { key: 'cost', width: 11 },
     ...(visibleColumns.contextWindow ? [{ key: 'context', width: 11 }] : []),
     ...(visibleColumns.capabilities ? [{ key: 'capabilities', width: 18 }] : []),
-    { key: 'intelligence', width: 12 },
     ...(isPlatformAdmin ? [{ key: 'access', width: 10 }] : []),
   ]
 }
@@ -627,6 +614,9 @@ function ModelTableHeader({
           Provider &amp; Model
         </TableHead>
         <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
+          <IntelligenceIndexLabel />
+        </TableHead>
+        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
           Cost / 1M tokens
         </TableHead>
         {visibleColumns.contextWindow ? (
@@ -639,9 +629,6 @@ function ModelTableHeader({
             Capabilities
           </TableHead>
         ) : null}
-        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-          <IntelligenceIndexLabel />
-        </TableHead>
         {showAccessDetails ? (
           <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
             Allow List
@@ -1076,6 +1063,58 @@ function StackedMetric({
       <span className="text-subtle-foreground text-right tabular-nums">{bottomValue}</span>
     </div>
   )
+}
+
+function useModelSearch() {
+  const router = useRouter()
+  const location = useLocation()
+  const urlQuery = typeof location.search.q === 'string' ? location.search.q : ''
+  const [query, setQuery] = useState(urlQuery)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const currentLocation = useRef(location)
+  const modelsPathname = useRef(location.pathname)
+  const isOnModels = useRef(true)
+
+  useEffect(() => {
+    const unsubscribe = router.subscribe('onBeforeNavigate', ({ toLocation }) => {
+      // Pricing refresh reloads the current location and must preserve any draft search.
+      if (
+        toLocation.href === currentLocation.current.href &&
+        toLocation.state.__TSR_key === currentLocation.current.state.__TSR_key
+      ) {
+        return
+      }
+      currentLocation.current = toLocation
+      // Cancel before the next loader starts, including Back, Forward, and leaving Models.
+      clearTimeout(timer.current ?? undefined)
+      timer.current = null
+      isOnModels.current = toLocation.pathname === modelsPathname.current
+      setQuery(normalizeModelsSearch(toLocation.search).q ?? '')
+    })
+    return () => {
+      unsubscribe()
+      clearTimeout(timer.current ?? undefined)
+    }
+  }, [router])
+
+  function updateQuery(q: string) {
+    setQuery(q)
+    clearTimeout(timer.current ?? undefined)
+    timer.current = null
+    if (q === urlQuery || !isOnModels.current) return
+
+    timer.current = setTimeout(() => {
+      timer.current = null
+      void router.navigate({
+        to: '/models',
+        search: (previous) => normalizeModelsSearch({ ...previous, q, page: 1 }),
+        replace: true,
+        resetScroll: false,
+      })
+    }, 250)
+  }
+
+  return { query, updateQuery, isSearchPending: query !== urlQuery }
 }
 
 function normalizeModelsSearch(search: Record<string, unknown>) {

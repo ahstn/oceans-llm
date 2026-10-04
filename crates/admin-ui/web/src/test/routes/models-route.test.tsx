@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -87,6 +87,15 @@ const invalidateMock = vi.hoisted(() => vi.fn())
 const getModelsMock = vi.hoisted(() => vi.fn())
 const getModelClientConfigsMock = vi.hoisted(() => vi.fn())
 const refreshModelPricingMock = vi.hoisted(() => vi.fn())
+type MockLocation = {
+  pathname: string
+  search: Record<string, unknown>
+  href: string
+  state: { __TSR_key: string }
+}
+const navigationListeners = vi.hoisted(
+  () => new Set<(event: { toLocation: MockLocation }) => void>(),
+)
 
 const routeConfig = vi.hoisted(() => ({
   loader: undefined as ((input: { deps: Record<string, unknown> }) => Promise<unknown>) | undefined,
@@ -99,28 +108,33 @@ const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
   useLocationSearch: vi.fn(),
+  pathname: vi.fn(),
+  locationKey: vi.fn(),
   routerStatus: vi.fn(),
 }))
 
-vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => (config: typeof routeConfig) => {
-    routeConfig.loader = config.loader
-    routeConfig.validateSearch = config.validateSearch
-    return routeMock
-  },
-  useLocation: ({
-    select,
-  }: {
-    select: (location: { search: Record<string, unknown> }) => unknown
-  }) => select({ search: routeMock.useLocationSearch() }),
-  useRouterState: ({ select }: { select: (state: { status: string }) => unknown }) =>
-    select({ status: routeMock.routerStatus() }),
-  useRouter: () => ({
+vi.mock('@tanstack/react-router', () => {
+  const router = {
     navigate: navigateMock,
     invalidate: invalidateMock,
-  }),
-  redirect: vi.fn(),
-}))
+    subscribe: (_event: string, listener: (event: { toLocation: MockLocation }) => void) => {
+      navigationListeners.add(listener)
+      return () => navigationListeners.delete(listener)
+    },
+  }
+  return {
+    createFileRoute: () => (config: typeof routeConfig) => {
+      routeConfig.loader = config.loader
+      routeConfig.validateSearch = config.validateSearch
+      return routeMock
+    },
+    useLocation: () => currentMockLocation(),
+    useRouterState: ({ select }: { select: (state: { status: string }) => unknown }) =>
+      select({ status: routeMock.routerStatus() }),
+    useRouter: () => router,
+    redirect: vi.fn(),
+  }
+})
 
 vi.mock('@/server/admin-data.functions', () => ({
   getModels: getModelsMock,
@@ -319,6 +333,10 @@ beforeEach(() => {
     },
   })
   routeMock.useLocationSearch.mockReset()
+  routeMock.pathname.mockReset()
+  routeMock.pathname.mockReturnValue('/admin/models')
+  routeMock.locationKey.mockReset()
+  routeMock.locationKey.mockReturnValue('initial')
   routeMock.routerStatus.mockReset()
   routeMock.routerStatus.mockReturnValue('idle')
   navigateMock.mockReset()
@@ -331,8 +349,31 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
+
+function currentMockLocation(): MockLocation {
+  const pathname = routeMock.pathname()
+  const search = routeMock.useLocationSearch()
+  return {
+    pathname,
+    search,
+    href: `${pathname}?${JSON.stringify(search)}`,
+    state: { __TSR_key: routeMock.locationKey() },
+  }
+}
+
+function beginNavigation(search: Record<string, unknown>, pathname = '/admin/models') {
+  act(() => {
+    routeMock.useLocationSearch.mockReturnValue(search)
+    routeMock.pathname.mockReturnValue(pathname)
+    routeMock.locationKey.mockReturnValue(`${routeMock.locationKey()}-next`)
+    for (const listener of navigationListeners) {
+      listener({ toLocation: currentMockLocation() })
+    }
+  })
+}
 
 describe('ModelsPage layouts', () => {
   it('forwards the URL query and pagination while requesting direct models', async () => {
@@ -412,8 +453,8 @@ describe('ModelsPage layouts', () => {
       'Model ID',
       'Actions',
       'Provider & Model',
-      'Cost / 1M tokens',
       'Intelligence Index',
+      'Cost / 1M tokens',
       'Allow List',
     ])
 
@@ -438,8 +479,9 @@ describe('ModelsPage layouts', () => {
       within(vertexCells[3] as HTMLElement).getByText('google/gemini-2.0-flash'),
     ).toBeInTheDocument()
     expect(within(vertexCells[3] as HTMLElement).getByText('Google Vertex AI')).toBeInTheDocument()
-    expect(within(vertexCells[4] as HTMLElement).getByText('Input')).toBeInTheDocument()
-    expect(within(vertexCells[4] as HTMLElement).getByText('Output')).toBeInTheDocument()
+    expect(within(vertexCells[4] as HTMLElement).getByText('—')).toBeInTheDocument()
+    expect(within(vertexCells[5] as HTMLElement).getByText('Input')).toBeInTheDocument()
+    expect(within(vertexCells[5] as HTMLElement).getByText('Output')).toBeInTheDocument()
     expect(within(vertexCells[6] as HTMLElement).getByText('Unrestricted')).toBeInTheDocument()
   })
 })
@@ -1049,7 +1091,8 @@ describe('ModelsPage multi-model configuration', () => {
 })
 
 describe('ModelsPage search and pagination', () => {
-  it('updates the latest URL query without trimming input and resets the page', () => {
+  it('debounces a typing burst into one latest query without trimming and resets the page', () => {
+    vi.useFakeTimers()
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
     routeMock.useLocationSearch.mockReturnValue({ page: 2, page_size: 30, q: 'previous query' })
     const { rerender } = render(
@@ -1060,14 +1103,21 @@ describe('ModelsPage search and pagination', () => {
 
     const search = screen.getByRole('searchbox', { name: 'Search models' })
     expect(search).toHaveValue('previous query')
+    fireEvent.change(search, { target: { value: '  Anth' } })
+    void act(() => vi.advanceTimersByTime(100))
     fireEvent.change(search, { target: { value: '  Anthropic ' } })
+    expect(search).toHaveValue('  Anthropic ')
+    void act(() => vi.advanceTimersByTime(249))
+    expect(navigateMock).not.toHaveBeenCalled()
+    void act(() => vi.advanceTimersByTime(1))
+    expect(navigateMock).toHaveBeenCalledTimes(1)
 
     const navigation = navigateMock.mock.lastCall![0]
     expect(navigation).toMatchObject({ to: '/models', replace: true, resetScroll: false })
     const latestSearch = { page: 7, page_size: 50, q: 'newer URL value' }
     expect(navigation.search(latestSearch)).toEqual({ page: 1, page_size: 50, q: '  Anthropic ' })
 
-    routeMock.useLocationSearch.mockReturnValue(navigation.search(latestSearch))
+    beginNavigation(navigation.search(latestSearch))
     rerender(
       <TooltipProvider>
         <ModelsPage />
@@ -1076,11 +1126,159 @@ describe('ModelsPage search and pagination', () => {
     expect(search).toHaveValue('  Anthropic ')
 
     fireEvent.change(search, { target: { value: '' } })
+    expect(search).toHaveValue('')
+    expect(navigateMock).toHaveBeenCalledTimes(1)
+    void act(() => vi.advanceTimersByTime(250))
+    expect(navigateMock).toHaveBeenCalledTimes(2)
     expect(navigateMock.mock.lastCall![0].search(latestSearch)).toEqual({
       page: 1,
       page_size: 50,
       q: undefined,
     })
+  })
+
+  it.each([
+    ['a restored query', { page: 2, page_size: 30, q: 'restored' }],
+    ['another page with the same query', { page: 2, page_size: 30, q: 'original' }],
+    ['the same URL in a different history entry', { page: 1, page_size: 30, q: 'original' }],
+  ])('cancels queued input when browser navigation restores %s', (_description, nextSearch) => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    routeMock.useLocationSearch.mockReturnValue({ page: 1, page_size: 30, q: 'original' })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    const search = screen.getByRole('searchbox', { name: 'Search models' })
+    fireEvent.change(search, { target: { value: 'queued query' } })
+    void act(() => vi.advanceTimersByTime(100))
+
+    beginNavigation(nextSearch)
+    expect(search).toHaveValue(nextSearch.q)
+    void act(() => vi.advanceTimersByTime(250))
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    beginNavigation({ page: 1, page_size: 30, q: 'original' })
+    expect(search).toHaveValue('original')
+    void act(() => vi.advanceTimersByTime(250))
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('preserves the latest draft and debounce deadline during a pricing refresh reload', () => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    routeMock.useLocationSearch.mockReturnValue({ page: 4, page_size: 30, q: 'original' })
+    const { rerender } = render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    const search = screen.getByRole('searchbox', { name: 'Search models' })
+    fireEvent.change(search, { target: { value: '  latest draft  ' } })
+    void act(() => vi.advanceTimersByTime(100))
+
+    act(() => {
+      for (const listener of navigationListeners) {
+        listener({ toLocation: currentMockLocation() })
+      }
+    })
+    routeMock.routerStatus.mockReturnValue('pending')
+    rerender(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    expect(search).toHaveValue('  latest draft  ')
+    routeMock.routerStatus.mockReturnValue('idle')
+    rerender(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    expect(search).toHaveValue('  latest draft  ')
+    expect(screen.getByRole('navigation', { name: 'Model pagination' })).toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    void act(() => vi.advanceTimersByTime(149))
+    expect(navigateMock).not.toHaveBeenCalled()
+    void act(() => vi.advanceTimersByTime(1))
+    expect(navigateMock).toHaveBeenCalledTimes(1)
+    expect(navigateMock.mock.lastCall![0].search({ page: 4, page_size: 50 })).toEqual({
+      page: 1,
+      page_size: 50,
+      q: '  latest draft  ',
+    })
+  })
+
+  it('cancels searches on route leave and ignores typing in the retained outgoing page', () => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    const search = screen.getByRole('searchbox', { name: 'Search models' })
+    fireEvent.change(search, { target: { value: 'queued query' } })
+    beginNavigation({}, '/admin/identity/users')
+    fireEvent.change(search, { target: { value: 'outgoing page query' } })
+
+    void act(() => vi.advanceTimersByTime(250))
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('cancels queued input on unmount and removes its navigation listener', () => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+    const { unmount } = render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search models' }), {
+      target: { value: 'queued query' },
+    })
+    unmount()
+    void act(() => vi.advanceTimersByTime(250))
+
+    expect(navigateMock).not.toHaveBeenCalled()
+    expect(navigationListeners.size).toBe(0)
+  })
+
+  it('blocks pagination during debounce and cancels when input returns to the URL query', () => {
+    vi.useFakeTimers()
+    routeMock.useLoaderData.mockReturnValue({
+      data: { ...modelPage, page: 4, page_size: 10, total: 100 },
+    })
+    routeMock.useLocationSearch.mockReturnValue({ page: 4, page_size: 10, q: 'original' })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    const search = screen.getByRole('searchbox', { name: 'Search models' })
+    const pagination = screen.getByRole('navigation', { name: 'Model pagination' })
+    const previous = within(pagination).getByRole('button', { name: 'Previous page' })
+    const next = within(pagination).getByRole('button', { name: 'Next page' })
+    const pageSize = within(pagination).getByRole('combobox', { name: 'Rows per page' })
+    fireEvent.change(search, { target: { value: 'queued query' } })
+    expect(pagination).toHaveAttribute('aria-busy', 'true')
+    expect(previous).toBeDisabled()
+    expect(next).toBeDisabled()
+    expect(pageSize).toBeDisabled()
+    expect(search).toBeEnabled()
+    fireEvent.click(next)
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    fireEvent.change(search, { target: { value: 'original' } })
+    expect(pagination).toHaveAttribute('aria-busy', 'false')
+    expect(previous).toBeEnabled()
+    expect(next).toBeEnabled()
+    expect(pageSize).toBeEnabled()
+    void act(() => vi.advanceTimersByTime(250))
+    expect(navigateMock).not.toHaveBeenCalled()
   })
 
   it('preserves the latest query when paging and when changing rows per page', () => {
@@ -1142,6 +1340,7 @@ describe('ModelsPage search and pagination', () => {
   })
 
   it('blocks stale pagination while a new search page is pending but keeps search editable', () => {
+    vi.useFakeTimers()
     const stalePage: ModelPageView = { ...modelPage, page: 4, page_size: 10, total: 100 }
     routeMock.useLoaderData.mockReturnValue({ data: stalePage })
     routeMock.useLocationSearch.mockReturnValue({ page: 1, page_size: 10, q: 'new search' })
@@ -1168,6 +1367,9 @@ describe('ModelsPage search and pagination', () => {
     expect(search).toBeEnabled()
     expect(search).toHaveValue('new search')
     fireEvent.change(search, { target: { value: 'new search text' } })
+    expect(search).toHaveValue('new search text')
+    expect(navigateMock).not.toHaveBeenCalled()
+    void act(() => vi.advanceTimersByTime(250))
     expect(navigateMock.mock.lastCall![0].search({ page: 1, page_size: 10 })).toEqual({
       page: 1,
       page_size: 10,
@@ -1175,7 +1377,7 @@ describe('ModelsPage search and pagination', () => {
     })
 
     routeMock.useLoaderData.mockReturnValue({ data: { ...stalePage, page: 1 } })
-    routeMock.useLocationSearch.mockReturnValue({ page: 1, page_size: 10, q: 'new search text' })
+    beginNavigation({ page: 1, page_size: 10, q: 'new search text' })
     routeMock.routerStatus.mockReturnValue('idle')
     rerender(
       <TooltipProvider>
@@ -1191,6 +1393,7 @@ describe('ModelsPage search and pagination', () => {
   })
 
   it('keeps a selected model available after filtering removes its row', async () => {
+    vi.useFakeTimers()
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
     getModelClientConfigsMock.mockResolvedValue({
       data: { client_configurations: modelPage.items[1].client_configurations },
@@ -1205,8 +1408,10 @@ describe('ModelsPage search and pagination', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search models' }), {
       target: { value: 'no-match' },
     })
+    void act(() => vi.advanceTimersByTime(250))
+    vi.useRealTimers()
     const nextSearch = navigateMock.mock.lastCall![0].search({ page: 1, page_size: 30 })
-    routeMock.useLocationSearch.mockReturnValue(nextSearch)
+    beginNavigation(nextSearch)
     routeMock.useLoaderData.mockReturnValue({ data: { ...modelPage, items: [], total: 0 } })
     rerender(
       <TooltipProvider>
