@@ -1,6 +1,6 @@
 ---
 name: verify-oceans-admin
-description: Verify the Oceans LLM admin control plane and backend gateway against the real local stack, seeded demo data, and bounded live providers when required. Use for user-path checks of sign-in, models, API keys, observability, agent sessions, request logs, MCP registry and tool access, OpenRouter routing, and guardrails.
+description: Verify the Oceans LLM admin control plane and backend gateway against the real local stack, seeded demo data, and bounded live providers when required. Use for user-path checks of sign-in, models, API keys, observability, agent sessions, request logs, MCP registry and tool access, OpenRouter routing, guardrails, and Skills storage.
 ---
 
 # Verify Oceans Admin
@@ -25,7 +25,9 @@ export OCEANS_VERIFY_UI_PORT=33010
 
 The instance is ready when `launch` prints `ready` and both `/readyz` and `/api/v1/health` answer. The sign-in URL is `http://127.0.0.1:$OCEANS_VERIFY_GATEWAY_PORT/admin/login`. Protected feature routes remain under `/admin/*`.
 
-This checkout cannot run two verification stacks safely because both would write `gateway.db`. A stack in another checkout has a separate database and is safe when ports differ. Do not drive a pre-existing instance.
+For Skills storage, set `OCEANS_VERIFY_SKILLS=true` before launch. The harness starts native RustFS through the `rustfs` mise profile and creates a private run-local configuration, database, and synthetic service-account key. See [features/skills.md](./features/skills.md) for the full recipe. This option leaves `gateway.db` unchanged.
+
+This checkout cannot run two verification stacks safely because ordinary runs would both write `gateway.db`. The checkout lock also applies to Skills verification. A stack in another checkout has a separate database and is safe when ports differ. Do not drive a pre-existing instance.
 
 Teardown uses the recorded process IDs:
 
@@ -88,6 +90,16 @@ export OCEANS_VERIFY_MCP_CANDIDATES_FILE=/absolute/path/to/mcp-candidates.json
 
 Read [features/mcp.md](./features/mcp.md) before launch. It defines the required gateway credential aliases and the candidate file. The MCP driver creates temporary servers, two tool sets, and one API key through the UI. It verifies saved membership, independent drafts, client configurations, grant enforcement, direct and aggregate tool calls, and invocation records. The API key UI requires one explicit model grant; the driver selects one model but sends no model request. This proof uses public access or static upstream credentials and does not test OAuth consent or token refresh.
 
+Prove Skills storage and ownership with Oceans and native RustFS:
+
+```bash
+# Set OCEANS_VERIFY_SKILLS=true before the launch command.
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive skills
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin evidence skills
+```
+
+Read [features/skills.md](./features/skills.md) before launch. This proof drives regular-user namespace claims, ZIP uploads, file previews, version and default changes, and browser downloads. It compares saved API state and archive digests, verifies shared reads and owner-only updates, and checks service-account restrictions. It sends no LLM request.
+
 ## Live LLM requests
 
 Read-only control-plane verification is the default and does not call an upstream provider. Add one short, paid live request when the change affects request routing, provider authentication, request or response translation, streaming, tool calls, usage accounting, request logging, provider error mapping, or another behavior that a configured model list cannot prove. Do not add a paid request for UI-only, documentation-only, seed-only, or unrelated configuration changes.
@@ -136,6 +148,13 @@ The MCP proof produces:
 
 Require `mcp-proof.json` to report `passed: true` and inspect each candidate result. An optional candidate failure remains a reported gap. Check `control-oceans-admin evidence mcp` before and after stack cleanup.
 
+The Skills proof produces:
+
+- `01-skills-login.*`, `01b-skills-bundled.*`, `02-skills-before.*`, `03-skills-file-preview.*`, `04-skills-new-version.*`, `05-skills-owner-default.*`, `06-skills-other-owner.*`, and `07-skills-catalog-after.*` screenshots and ARIA snapshots.
+- `skills-proof.json` with the run, storage scope, saved IDs, version digests, caller checks, and action log. It must report `passed: true`.
+- `skills-storage-cleanup.json` after stack teardown confirms that the run's object prefix is empty and its database was removed. `evidence skills` checks this file after teardown.
+- No gateway key, RustFS credential, password, or authorization header in proof artifacts.
+
 Mocks are valid only when the production boundary already isolates an external system. This Models proof uses no mock. Do not interpret a rendered configured provider as proof that its credentials or live upstream service work.
 
 ## Cleanup
@@ -146,7 +165,7 @@ Always run cleanup after success and after each failed attempt:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin cleanup
 ```
 
-Cleanup sends termination only to the process IDs recorded by this run and checks port ownership before it signals a remaining listener. It removes the run's control files and checkout lock. It does not remove `evidence/` or `stack.log`, and it does not delete `gateway.db`.
+Cleanup sends termination only to the process IDs recorded by this run and checks port ownership before it signals a remaining listener. It removes the run's control files and checkout lock. It does not remove `evidence/` or `stack.log`, and it does not delete `gateway.db`. For an opt-in Skills run, it also removes the run-specific RustFS object prefix and private database/config/token, then stops RustFS only if this run started the recorded process. RustFS credentials, its data directory, and other object prefixes remain intact.
 
 Confirm that proof survived teardown:
 
@@ -168,9 +187,10 @@ control-oceans-admin drive observability
 control-oceans-admin drive backend-gateway
 control-oceans-admin drive mcp
 control-oceans-admin drive profile
-control-oceans-admin evidence [models|observability|live-llm|backend-gateway|mcp|profile]
+control-oceans-admin drive skills
+control-oceans-admin evidence [models|observability|live-llm|backend-gateway|mcp|profile|skills]
 control-oceans-admin cleanup
 
 ```
 
-The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs), [scripts/drive-mcp.mjs](./scripts/drive-mcp.mjs), and [scripts/drive-profile.mjs](./scripts/drive-profile.mjs). The MCP driver uses [scripts/mcp-browser.mjs](./scripts/mcp-browser.mjs) and [scripts/mcp-canary.mjs](./scripts/mcp-canary.mjs). Call the drivers through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.
+The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs), [scripts/drive-mcp.mjs](./scripts/drive-mcp.mjs), [scripts/drive-profile.mjs](./scripts/drive-profile.mjs), and [scripts/drive-skills.mjs](./scripts/drive-skills.mjs). The MCP driver uses [scripts/mcp-browser.mjs](./scripts/mcp-browser.mjs) and [scripts/mcp-canary.mjs](./scripts/mcp-canary.mjs). Call the drivers through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.

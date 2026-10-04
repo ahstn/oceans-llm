@@ -10,6 +10,7 @@ This page is the admin, user, caller, and client map for the gateway. Use `Contr
 - Deployment Artifacts, Database Migrations and general Operations: [Deploy and Operations](setup/deploy-and-operations.md)
 - YAML shape, auth modes, provider fields, and config limits: [Configuration Reference](configuration/configuration-reference.md)
 - Budgets, spend windows, alerts, and reporting: [Budgets](access/budgets.md)
+- Skill storage, uploads, and authenticated installation: [Agent Skills](setup/skills.md)
 
 ### MCP
 - Server registration and upstream auth modes: [MCP Servers](configuration/mcp-servers.md)

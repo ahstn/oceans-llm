@@ -31,3 +31,6 @@ gateway.db*
 !.agents/skills/verify-oceans-admin/
 !.agents/skills/verify-oceans-admin/**
 .claude/settings.local.json
+
+# Built from the pinned Helm dependency lock.
+deploy/helm/oceans-llm/charts/

@@ -36,6 +36,8 @@ import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observ
 import { Route as ObservabilityRequestLogsRouteImport } from './routes/observability/request-logs'
 import { Route as ObservabilityUsageCostsRouteImport } from './routes/observability/usage-costs'
 import { Route as ProfileIndexRouteImport } from './routes/profile/index'
+import { Route as SkillsIndexRouteImport } from './routes/skills/index'
+import { Route as SkillsIdRouteImport } from './routes/skills/$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -177,6 +179,16 @@ const ProfileIndexRoute = ProfileIndexRouteImport.update({
   path: '/profile/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SkillsIndexRoute = SkillsIndexRouteImport.update({
+  id: '/skills/',
+  path: '/skills/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SkillsIdRoute = SkillsIdRouteImport.update({
+  id: '/skills/$id',
+  path: '/skills/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -204,8 +216,10 @@ export interface FileRoutesByFullPath {
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
+  '/skills/$id': typeof SkillsIdRoute
   '/mcp/': typeof McpIndexRoute
   '/profile/': typeof ProfileIndexRoute
+  '/skills/': typeof SkillsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -233,8 +247,10 @@ export interface FileRoutesByTo {
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
+  '/skills/$id': typeof SkillsIdRoute
   '/mcp': typeof McpIndexRoute
   '/profile': typeof ProfileIndexRoute
+  '/skills': typeof SkillsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -263,8 +279,10 @@ export interface FileRoutesById {
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
+  '/skills/$id': typeof SkillsIdRoute
   '/mcp/': typeof McpIndexRoute
   '/profile/': typeof ProfileIndexRoute
+  '/skills/': typeof SkillsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -294,8 +312,10 @@ export interface FileRouteTypes {
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
     | '/observability/usage-costs'
+    | '/skills/$id'
     | '/mcp/'
     | '/profile/'
+    | '/skills/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -323,8 +343,10 @@ export interface FileRouteTypes {
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
     | '/observability/usage-costs'
+    | '/skills/$id'
     | '/mcp'
     | '/profile'
+    | '/skills'
   id:
     | '__root__'
     | '/'
@@ -352,8 +374,10 @@ export interface FileRouteTypes {
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
     | '/observability/usage-costs'
+    | '/skills/$id'
     | '/mcp/'
     | '/profile/'
+    | '/skills/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -382,8 +406,10 @@ export interface RootRouteChildren {
   ObservabilityMcpInvocationsRoute: typeof ObservabilityMcpInvocationsRoute
   ObservabilityRequestLogsRoute: typeof ObservabilityRequestLogsRoute
   ObservabilityUsageCostsRoute: typeof ObservabilityUsageCostsRoute
+  SkillsIdRoute: typeof SkillsIdRoute
   McpIndexRoute: typeof McpIndexRoute
   ProfileIndexRoute: typeof ProfileIndexRoute
+  SkillsIndexRoute: typeof SkillsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -577,6 +603,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProfileIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/skills/': {
+      id: '/skills/'
+      path: '/skills'
+      fullPath: '/skills/'
+      preLoaderRoute: typeof SkillsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/skills/$id': {
+      id: '/skills/$id'
+      path: '/skills/$id'
+      fullPath: '/skills/$id'
+      preLoaderRoute: typeof SkillsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -606,18 +646,21 @@ const rootRouteChildren: RootRouteChildren = {
   ObservabilityMcpInvocationsRoute: ObservabilityMcpInvocationsRoute,
   ObservabilityRequestLogsRoute: ObservabilityRequestLogsRoute,
   ObservabilityUsageCostsRoute: ObservabilityUsageCostsRoute,
+  SkillsIdRoute: SkillsIdRoute,
   McpIndexRoute: McpIndexRoute,
   ProfileIndexRoute: ProfileIndexRoute,
+  SkillsIndexRoute: SkillsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
 
 import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
+import type { startInstance } from './start.ts'
 declare module '@tanstack/react-start' {
   interface Register {
     ssr: true
     router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
   }
 }

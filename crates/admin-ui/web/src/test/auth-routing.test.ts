@@ -64,4 +64,13 @@ describe('admin route capabilities', () => {
     expect(canAccessSignedInPath(member, '/api-keys')).toBe(true)
     expect(canAccessSignedInPath(member, '/observability/agent-sessions')).toBe(false)
   })
+
+  it('allows signed-in users to browse skills without admin page grants', () => {
+    const member = session({})
+    member.permissions.pages = []
+
+    expect(canAccessSignedInPath(member, '/admin/skills')).toBe(true)
+    expect(canAccessSignedInPath(member, '/admin/skills/skill-id')).toBe(true)
+    expect(canAccessSignedInPath(member, '/admin/skills-other')).toBe(false)
+  })
 })

@@ -7,20 +7,26 @@ use gateway::{
     cli::{Cli, Command, ConfigCommand, MigrateAction, ServeArgs},
     config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
     email::build_budget_alert_sender,
-    http::{build_router, response_cache::ResponseCache, state::AppState},
+    http::{
+        build_router,
+        response_cache::ResponseCache,
+        state::{AppSkillService, AppState},
+    },
     observability,
 };
-use gateway_core::{McpRegistryRepository, ProviderRegistry, SeedHumanBudgetDefaults};
+use gateway_core::{
+    McpRegistryRepository, ProviderRegistry, SeedHumanBudgetDefaults, SkillObjectStore,
+};
 use gateway_providers::{
     AnthropicCompatProvider, BedrockProvider, CopilotAuthConfig, CopilotProvider,
     OpenAiCompatProvider, TypeSafeProvider, VertexProvider,
 };
 use gateway_service::{
     AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
-    ProviderCredentialService, WeightedRoutePlanner, hash_gateway_key_secret,
+    ProviderCredentialService, SkillService, WeightedRoutePlanner, hash_gateway_key_secret,
 };
 use gateway_store::{
-    AnyStore, GatewayStore, MigrationStatus, check_migrations_with_options,
+    AnyStore, GatewayStore, MigrationStatus, S3SkillObjectStore, check_migrations_with_options,
     run_migrations_with_options, status_migrations_with_options,
 };
 use tokio::net::TcpListener;
@@ -268,6 +274,7 @@ async fn run_serve_with_store(
 
     let state = AppState {
         service: service.clone(),
+        skills: build_skill_service(config, service.store().clone()).await?,
         store: service.store().clone(),
         providers,
         copilot_user_provider_keys,
@@ -325,6 +332,26 @@ async fn run_serve_with_store(
         .context("gateway server stopped unexpectedly")?;
 
     Ok(())
+}
+
+async fn build_skill_service(
+    config: &GatewayConfig,
+    store: Arc<AnyStore>,
+) -> anyhow::Result<Option<Arc<AppSkillService>>> {
+    if !config.skills.enabled {
+        return Ok(None);
+    }
+    let options = config.skills.storage_options()?;
+    let objects: Arc<dyn SkillObjectStore> = Arc::new(
+        S3SkillObjectStore::new(options)
+            .await
+            .context("failed to initialize skill object storage")?,
+    );
+    Ok(Some(Arc::new(SkillService::new(
+        store,
+        objects,
+        config.skills.limits,
+    ))))
 }
 
 async fn run_migrate(config: &GatewayConfig, action: MigrateAction) -> anyhow::Result<()> {
@@ -509,6 +536,7 @@ fn load_admin_ui_config(upstream: String) -> AdminUiConfig {
         upstream,
         connect_timeout_ms: env_u64("ADMIN_UI_CONNECT_TIMEOUT_MS", 750),
         request_timeout_ms: env_u64("ADMIN_UI_REQUEST_TIMEOUT_MS", 10_000),
+        ..AdminUiConfig::default()
     }
 }
 

@@ -717,15 +717,15 @@ mod tests {
         let repo = ArcCredentialRepo::new([
             (
                 team_key.clone(),
-                binding(&server, &team_key, "env/OCEANS_MCP_CREDENTIAL_TEAM"),
+                binding(&server, &team_key, "env/OCEANS_MCP_CREDENTIAL_SA_TEAM"),
             ),
             (
                 user_key.clone(),
-                binding(&server, &user_key, "env/OCEANS_MCP_CREDENTIAL_USER"),
+                binding(&server, &user_key, "env/OCEANS_MCP_CREDENTIAL_SA_USER"),
             ),
         ]);
-        let _team_secret = EnvVarGuard::set("OCEANS_MCP_CREDENTIAL_TEAM", "team-token");
-        let _user_secret = EnvVarGuard::set("OCEANS_MCP_CREDENTIAL_USER", "user-token");
+        let _team_secret = EnvVarGuard::set("OCEANS_MCP_CREDENTIAL_SA_TEAM", "team-token");
+        let _user_secret = EnvVarGuard::set("OCEANS_MCP_CREDENTIAL_SA_USER", "user-token");
         let service = McpCredentialService::new(std::sync::Arc::new(repo));
         let auth = AuthenticatedApiKey {
             id: Uuid::new_v4(),
@@ -769,17 +769,25 @@ mod tests {
             None,
         )
         .expect("team key");
-        let mut expired = binding(&server, &user_key, "env/OCEANS_MCP_CREDENTIAL_USER");
+        let mut expired = binding(
+            &server,
+            &user_key,
+            "env/OCEANS_MCP_CREDENTIAL_FALLBACK_USER",
+        );
         expired.expires_at = Some(OffsetDateTime::now_utc() - Duration::seconds(1));
         let repo = ArcCredentialRepo::new([
             (user_key, expired),
             (
                 team_key.clone(),
-                binding(&server, &team_key, "env/OCEANS_MCP_CREDENTIAL_TEAM"),
+                binding(
+                    &server,
+                    &team_key,
+                    "env/OCEANS_MCP_CREDENTIAL_FALLBACK_TEAM",
+                ),
             ),
         ])
         .with_membership(user_id, team_id);
-        let _team_secret = EnvVarGuard::set("OCEANS_MCP_CREDENTIAL_TEAM", "team-token");
+        let _team_secret = EnvVarGuard::set("OCEANS_MCP_CREDENTIAL_FALLBACK_TEAM", "team-token");
         let service = McpCredentialService::new(std::sync::Arc::new(repo));
         let auth = AuthenticatedApiKey {
             id: Uuid::new_v4(),
@@ -820,11 +828,11 @@ mod tests {
             binding(
                 &server,
                 &format!("mcp_credential:v1:user:{user_id}"),
-                "env/OCEANS_MCP_CREDENTIAL_USER",
+                "env/OCEANS_MCP_CREDENTIAL_REVOKED_USER",
             ),
         )])
         .with_touch_succeeds(false);
-        let _user_secret = EnvVarGuard::set("OCEANS_MCP_CREDENTIAL_USER", "user-token");
+        let _user_secret = EnvVarGuard::set("OCEANS_MCP_CREDENTIAL_REVOKED_USER", "user-token");
         let service = McpCredentialService::new(std::sync::Arc::new(repo));
         let auth = AuthenticatedApiKey {
             id: Uuid::new_v4(),
@@ -856,7 +864,7 @@ mod tests {
             None,
         )
         .expect("user key");
-        let mut expired = binding(&server, &user_key, "env/OCEANS_MCP_CREDENTIAL_USER");
+        let mut expired = binding(&server, &user_key, "env/OCEANS_MCP_CREDENTIAL_EXPIRED_USER");
         expired.expires_at = Some(OffsetDateTime::now_utc() - Duration::seconds(1));
         let repo = ArcCredentialRepo::new([(user_key, expired)]);
         let service = McpCredentialService::new(std::sync::Arc::new(repo));

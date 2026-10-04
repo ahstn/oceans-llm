@@ -22,6 +22,69 @@ tailnet client --HTTPS--> tailscaled (serve :443)
 - Every listener binds to `127.0.0.1`. `tailscale serve` is the only way in.
 - The gateway and UI run from source built on the host. Nothing is pulled from a registry.
 
+## Optional Skills Storage with RustFS
+
+Skills use an S3 bucket for their archives. An external S3 service needs no additional daemon. For a local S3 service, the optional RustFS profiles use the upstream native binary with the same mise and Pitchfork lifecycle as Postgres. The profiles pin RustFS 1.0.1 and AWS CLI 2.27.49. They require mise 2026.9.18 or later and a current Pitchfork installation.
+
+RustFS provides binaries for Linux x86-64 and ARM64, and macOS Apple Silicon. Current releases do not provide Intel macOS binaries; use a source build or a container there. See the [upstream installation guide](https://docs.rustfs.com/en/installation/macos). A single local disk is suitable for development and a small single-host deployment, but it provides no disk redundancy.
+
+### Local development
+
+From the repository root, run:
+
+```sh
+mise -E rustfs run rustfs:setup
+mise -E rustfs run rustfs:status
+mise -E rustfs run rustfs:test
+```
+
+To run the focused Skills UI and CLI tests against a real gateway and this object store, use `mise -E rustfs run rustfs:e2e`. The task builds both binaries and installs the browser dependencies. It uses gateway, UI, and mock-provider ports `49480`, `49481`, and `49482` by default; the existing `E2E_*_PORT` variables can override them. Each run writes objects under its own `skills-e2e/<runtime>/` prefix. Stack cleanup removes only that prefix and retains the bucket and other skills.
+
+The setup task creates random credentials in `.local/rustfs/credentials.env` with mode `600`, starts RustFS, waits for `/health/ready`, and creates the `oceans-skills` bucket if it is absent. Repeating the task retains the existing credentials and bucket. Other bucket errors, including denied access, cause the task to fail.
+
+The development daemon stores data in `.local/rustfs/data`, which is ignored by Git. Each checkout has its own directory. The primary checkout uses port `9000`; linked worktrees use a derived port. Mise does not search for a free port. Inspect the endpoint without printing credentials:
+
+```sh
+mise -E rustfs x -- sh -c 'printf "%s\n" "$OCEANS_SKILLS_S3_ENDPOINT"'
+```
+
+RustFS binds only to `127.0.0.1`. The console is disabled through `RUSTFS_CONSOLE_ENABLE=false`. For the pinned release, `--console-enable` is a switch: a following `false` is parsed as a volume path. Do not pass `--console-enable false`.
+
+Use these commands to manage the service:
+
+```sh
+mise -E rustfs run rustfs:logs
+mise -E rustfs daemons restart rustfs
+mise -E rustfs run rustfs:stop
+```
+
+Stop and restart retain data. No reset task removes the bucket or data directory. A missing credentials file with an existing data directory is an error; restore the file from backup. Avoid `mise env` or `rustfs server --help` in shared logs because both can display credentials from the environment.
+
+Use `OCEANS_SKILLS_S3_ENDPOINT` for the Skills storage endpoint, `us-east-1` for the region, and `oceans-skills` for the bucket. Enable path-style addressing and HTTP for this loopback endpoint. The generated file supplies `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY`. See [Skills setup](skills.md) for the gateway configuration and client workflow. Run the gateway or its test command under `mise -E rustfs x -- ...` to load these values.
+
+### Self-hosted RustFS
+
+Complete the base host setup and secrets configuration below first. Then select all three profiles in this order:
+
+```toml
+# .miserc.local.toml
+env = ["selfhost", "rustfs", "selfhost-rustfs"]
+```
+
+Run `mise run rustfs:setup` before the first deployment. Add the Skills configuration described above to your gateway YAML. The base `selfhost` profile remains suitable for external S3 and does not start RustFS.
+
+The final profile replaces the full RustFS daemon definition. It uses fixed port `9000`, sets `boot_start = true`, and stores data at `$HOME/.local/share/oceans-llm/rustfs/data`, outside the checkout. The generated credentials remain in `.local/rustfs/credentials.env`; back up that file separately. A one-shot bucket check runs after RustFS is ready and before the gateway starts. The gateway still waits for Postgres. Existing Pitchfork boot registration starts this dependency chain after a host restart.
+
+To choose another durable data location, set `OCEANS_RUSTFS_DATA_DIR` in `mise.selfhost-rustfs.local.toml`. Stop RustFS before moving existing data, copy it with its permissions, and retain the original until a download check passes. For deployment, use a bucket-scoped gateway identity if other applications also use this RustFS instance. Keep the root credentials for storage administration.
+
+### Backup and restore
+
+`selfhost-backup` only creates a PostgreSQL dump. Skills also require their S3 objects. A database dump alone cannot restore uploaded archives.
+
+For a consistent backup on this single host, stop the gateway and UI so uploads and deletions cannot change metadata, then stop RustFS. Capture the PostgreSQL dump, the complete RustFS data directory, and the credentials file as one backup set. Protect and copy that set off the host. Start RustFS and then the gateway and UI after the backup completes. Do not copy live RustFS data files as a substitute for a tested storage backup procedure.
+
+Restore metadata and objects from the same backup set. Start the service, download an existing skill version, and compare its SHA-256 digest with the stored version digest before reopening access. For external S3, use the storage provider's backup or replication controls and retain the same metadata-to-object consistency requirement.
+
 ## One-Time Setup
 
 ### 1. Host prerequisites

@@ -1,0 +1,101 @@
+# Optional Skills object store. Select with `mise -E rustfs ...`.
+# Self-hosting: select `selfhost,rustfs,selfhost-rustfs` in that order.
+min_version = "2026.9.18"
+
+[settings]
+# Setup creates this profile's credentials file. Read it on the next invocation.
+env_cache = false
+
+[tools]
+rustfs = "1.0.1"
+aws-cli = "2.27.49"
+
+[env]
+_.file = { path = ".local/rustfs/credentials.env", redact = true }
+OCEANS_RUSTFS_DATA_DIR = "{{ config_root }}/.local/rustfs/data"
+OCEANS_RUSTFS_BUCKET = "oceans-skills"
+OCEANS_RUSTFS_REGION = "us-east-1"
+OCEANS_SKILLS_S3_ENDPOINT = "http://127.0.0.1:$RUSTFS_PORT"
+
+[daemons.rustfs]
+run = '''
+set -eu
+: "${RUSTFS_ACCESS_KEY:?Run mise run rustfs:setup first}"
+: "${RUSTFS_SECRET_KEY:?Run mise run rustfs:setup first}"
+mkdir -p "$OCEANS_RUSTFS_DATA_DIR"
+export RUSTFS_CONSOLE_ENABLE=false
+exec rustfs server --address "127.0.0.1:$RUSTFS_PORT" --region "$OCEANS_RUSTFS_REGION" "$OCEANS_RUSTFS_DATA_DIR"
+'''
+port = { auto = true, base = 9000 }
+ready_cmd = { run = 'curl --fail --silent --output /dev/null --max-time 2 "http://127.0.0.1:$RUSTFS_PORT/health/ready"', timeout = "150s" }
+retry = 3
+proxy = false
+
+[tasks."rustfs:credentials"]
+description = "Create private local RustFS credentials without replacing existing keys"
+run = "bash scripts/rustfs-credentials.sh"
+
+[tasks."rustfs:setup"]
+description = "Create credentials, start RustFS, and create the Skills bucket"
+run = '''
+set -eu
+mise run rustfs:credentials
+# Reload mise after creating the credentials file.
+mise daemons start rustfs
+mise run rustfs:bucket
+'''
+
+[tasks."rustfs:bucket"]
+description = "Create the Skills bucket if it does not exist"
+daemons = ["rustfs"]
+run = "bash scripts/rustfs-bucket.sh"
+
+[tasks."rustfs:stop"]
+description = "Stop local RustFS without removing data or credentials"
+run = "mise daemons stop rustfs"
+
+[tasks."rustfs:status"]
+description = "Show local RustFS status"
+run = "mise daemons status rustfs"
+
+[tasks."rustfs:logs"]
+description = "Show local RustFS logs"
+run = "mise daemons logs rustfs"
+
+[tasks."rustfs:test"]
+description = "Run the S3 storage contract against local RustFS"
+depends = ["rustfs:bucket"]
+daemons = ["rustfs"]
+run = '''
+export SKILL_S3_TEST_ENDPOINT="$OCEANS_SKILLS_S3_ENDPOINT"
+export SKILL_S3_TEST_BUCKET="$OCEANS_RUSTFS_BUCKET"
+export SKILL_S3_TEST_REGION="$OCEANS_RUSTFS_REGION"
+export SKILL_S3_TEST_ACCESS_KEY_ID="$RUSTFS_ACCESS_KEY"
+export SKILL_S3_TEST_SECRET_ACCESS_KEY="$RUSTFS_SECRET_KEY"
+unset SKILL_S3_TEST_SESSION_TOKEN
+cargo test --locked -p gateway-store --test skill_objects_s3 -- --ignored
+'''
+
+[tasks."rustfs:e2e-cli-build"]
+description = "Build the Oceans CLI for the Skills end-to-end tests"
+depends = ["skills:cli-build"]
+
+[tasks."rustfs:e2e"]
+description = "Verify the Skills UI and CLI against a real gateway and local RustFS"
+depends = ["rustfs:setup", "e2e-install", "e2e-gateway-build", "rustfs:e2e-cli-build"]
+run = '''
+# Setup can create the credentials file, so resolve the environment again.
+mise exec --fresh-env -- bash -euc '
+export OCEANS_SKILLS_S3_ACCESS_KEY_ID="$RUSTFS_ACCESS_KEY"
+export OCEANS_SKILLS_S3_SECRET_ACCESS_KEY="$RUSTFS_SECRET_KEY"
+export OCEANS_SKILLS_S3_BUCKET="$OCEANS_RUSTFS_BUCKET"
+export OCEANS_SKILLS_S3_REGION="$OCEANS_RUSTFS_REGION"
+export E2E_SKILLS_ENABLED=true
+export E2E_GATEWAY_API_KEY="${E2E_GATEWAY_API_KEY:-gwk_e2e.secret-value}"
+export E2E_GATEWAY_PORT="${E2E_GATEWAY_PORT:-49480}"
+export E2E_UI_PORT="${E2E_UI_PORT:-49481}"
+export E2E_UPSTREAM_PORT="${E2E_UPSTREAM_PORT:-49482}"
+export E2E_BASE_URL="${E2E_BASE_URL:-http://127.0.0.1:$E2E_GATEWAY_PORT}"
+exec bun run --cwd crates/admin-ui/web playwright test e2e/skills.e2e.ts e2e/skills-cli.e2e.ts
+'
+'''

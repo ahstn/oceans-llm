@@ -3,6 +3,7 @@
 # machines and CI never see these daemons.
 # Secrets belong in the gitignored `mise.selfhost.local.toml`.
 # Runbook: docs/setup/self-hosting-mise-daemons.md
+# Optional local Skills storage: add the `rustfs,selfhost-rustfs` environments.
 # Mask these values in captured task output. Applies to `required` variables too.
 redactions = [
   "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",

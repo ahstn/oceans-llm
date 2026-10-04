@@ -13,6 +13,7 @@ mod any_store_mcp_registry;
 mod any_store_mcp_token_overhead;
 mod any_store_provider_user_credentials;
 mod any_store_review_agent;
+mod any_store_skills;
 mod budget_batch;
 mod libsql_store;
 mod migrate;
@@ -21,6 +22,7 @@ mod postgres_store;
 mod pricing_sync;
 mod seed;
 mod shared;
+mod skill_objects;
 mod store;
 
 pub use libsql_store::LibsqlStore;
@@ -30,6 +32,7 @@ pub use migrate::{
 };
 pub use postgres_store::PostgresStore;
 pub use seed::seed_local_demo_batches;
+pub use skill_objects::{S3SkillObjectStore, S3SkillStorageConfig};
 pub use store::{AnyStore, GatewayStore, StoreConnectionOptions};
 
 #[cfg(test)]
@@ -40,6 +43,9 @@ mod agent_analysis_tests;
 
 #[cfg(test)]
 mod budget_reconciliation_tests;
+
+#[cfg(test)]
+mod skills_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {

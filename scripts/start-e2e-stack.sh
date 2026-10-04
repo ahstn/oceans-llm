@@ -20,6 +20,7 @@ DB_PATH="$RUNTIME_DIR/gateway.e2e.db"
 MOCK_LOG="$RUNTIME_DIR/mock-upstream.log"
 UI_LOG="$RUNTIME_DIR/admin-ui.log"
 GATEWAY_LOG="$RUNTIME_DIR/gateway.log"
+skills_prefix=""
 
 E2E_GATEWAY_PORT="${E2E_GATEWAY_PORT:-38080}"
 E2E_UI_PORT="${E2E_UI_PORT:-33001}"
@@ -51,7 +52,31 @@ export E2E_ADMIN_EMAIL
 export E2E_ADMIN_PASSWORD
 export E2E_ADMIN_NEW_PASSWORD
 
+cleanup_skill_objects() {
+  [[ -n "$skills_prefix" ]] || return 0
+  # Never accept a caller-supplied prefix or remove the whole bucket.
+  if [[ "$skills_prefix" != "skills-e2e/$(basename "$RUNTIME_DIR")/" ]]; then
+    echo "Refusing unexpected Skills E2E cleanup prefix" >&2
+    return 1
+  fi
+
+  (
+    export AWS_ACCESS_KEY_ID="$OCEANS_SKILLS_S3_ACCESS_KEY_ID"
+    export AWS_SECRET_ACCESS_KEY="$OCEANS_SKILLS_S3_SECRET_ACCESS_KEY"
+    export AWS_EC2_METADATA_DISABLED=true AWS_PAGER=""
+    unset AWS_PROFILE AWS_SESSION_TOKEN AWS_SECURITY_TOKEN
+    aws --endpoint-url "$OCEANS_SKILLS_S3_ENDPOINT" --region "$skills_region" \
+      --cli-connect-timeout 5 --cli-read-timeout 10 \
+      s3 rm "s3://$skills_bucket/$skills_prefix" --recursive --only-show-errors
+  ) || return 1
+  echo "Cleaned Skills E2E object prefix: $skills_prefix"
+}
+
 cleanup() {
+  local exit_status="$1"
+  trap - EXIT
+  # Finish bounded cleanup once, even when the test runner repeats its signal.
+  trap '' INT TERM
   for pid in "${GATEWAY_PID:-}" "${UI_PID:-}" "${MOCK_PID:-}"; do
     if [[ -n "${pid:-}" ]]; then
       kill "$pid" >/dev/null 2>&1 || true
@@ -59,10 +84,25 @@ cleanup() {
     fi
   done
 
-  rm -rf "$RUNTIME_DIR"
+  if ! cleanup_skill_objects; then
+    # Keep connection details without retaining object-store credentials.
+    if ! printf 'endpoint=%s\nbucket=%s\nregion=%s\nprefix=%s\n' \
+      "$OCEANS_SKILLS_S3_ENDPOINT" "$skills_bucket" "$skills_region" "$skills_prefix" \
+      >"$RUNTIME_DIR/skills-cleanup.txt"; then
+      echo "Could not write Skills E2E cleanup details" >&2
+    fi
+    echo "Skills E2E object cleanup failed; retained retry state at $RUNTIME_DIR" >&2
+    [[ "$exit_status" -ne 0 ]] || exit_status=1
+  elif ! rm -rf "$RUNTIME_DIR"; then
+    echo "Could not remove E2E runtime directory: $RUNTIME_DIR" >&2
+    [[ "$exit_status" -ne 0 ]] || exit_status=1
+  fi
+  exit "$exit_status"
 }
 
-trap cleanup EXIT INT TERM
+trap 'cleanup "$?"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 cat >"$CONFIG_PATH" <<EOF
 server:
@@ -193,6 +233,44 @@ EOF
     ;;
 esac
 
+# Skill tests use a real, already provisioned S3-compatible service. The base
+# E2E suite has no object-storage dependency unless this profile is selected.
+if [[ "${E2E_SKILLS_ENABLED:-false}" == "true" ]]; then
+  : "${OCEANS_SKILLS_S3_ENDPOINT:?Set the test S3 endpoint}"
+  : "${OCEANS_SKILLS_S3_ACCESS_KEY_ID:?Set the test S3 access key}"
+  : "${OCEANS_SKILLS_S3_SECRET_ACCESS_KEY:?Set the test S3 secret key}"
+  if ! command -v aws >/dev/null 2>&1; then
+    echo "Skills E2E cleanup requires AWS CLI; select the rustfs mise profile" >&2
+    exit 1
+  fi
+  skills_bucket="${OCEANS_SKILLS_S3_BUCKET:-oceans-skills}"
+  skills_region="${OCEANS_SKILLS_S3_REGION:-us-east-1}"
+  if [[ ! "$skills_bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]; then
+    echo "Invalid Skills E2E bucket name" >&2
+    exit 1
+  fi
+  if [[ ! "$skills_region" =~ ^[a-z0-9-]+$ ]]; then
+    echo "Invalid Skills E2E region" >&2
+    exit 1
+  fi
+  skills_prefix="skills-e2e/$(basename "$RUNTIME_DIR")/"
+  cat >>"$CONFIG_PATH" <<EOF
+
+skills:
+  enabled: true
+  storage:
+    bucket: "$skills_bucket"
+    region: "$skills_region"
+    endpoint: env.OCEANS_SKILLS_S3_ENDPOINT
+    prefix: "$skills_prefix"
+    force_path_style: true
+    allow_http: true
+    access_key_id: env.OCEANS_SKILLS_S3_ACCESS_KEY_ID
+    secret_access_key: env.OCEANS_SKILLS_S3_SECRET_ACCESS_KEY
+EOF
+  echo "Skills E2E object prefix: $skills_prefix"
+fi
+
 if [[ ! -x "$E2E_GATEWAY_BIN" ]]; then
   echo "Gateway binary not found at $E2E_GATEWAY_BIN; building it before starting the E2E stack."
   (
@@ -214,7 +292,7 @@ MOCK_PID=$!
 
 (
   cd "$WEB_DIR"
-  PORT="$E2E_UI_PORT" "$MISE_BIN" exec -- bun run start
+  PORT="$E2E_UI_PORT" GATEWAY_PORT="$E2E_GATEWAY_PORT" "$MISE_BIN" exec -- bun run start
 ) >"$UI_LOG" 2>&1 &
 UI_PID=$!
 

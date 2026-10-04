@@ -44,12 +44,29 @@ run = "mise install"
 description = "Update Helm chart dependencies"
 run = "helm dependency update deploy/helm/oceans-llm"
 
+[tasks.helm-dependency-build]
+description = "Build Helm dependencies from the checked-in lock"
+run = """
+set -eu
+
+helm_temp_dir="$(mktemp -d)"
+trap 'rm -rf "$helm_temp_dir"' EXIT
+
+# Use a private repository list so this task does not change local Helm settings.
+helm repo add oceans-rustfs https://charts.rustfs.com \
+  --repository-config "$helm_temp_dir/repositories.yaml" --repository-cache "$helm_temp_dir"
+helm dependency build deploy/helm/oceans-llm --skip-refresh \
+  --repository-config "$helm_temp_dir/repositories.yaml" --repository-cache "$helm_temp_dir"
+"""
+
 [tasks.helm-lint]
 description = "Lint the Oceans LLM Helm chart"
+depends = ["helm-dependency-build"]
 run = "helm lint deploy/helm/oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres"
 
 [tasks.helm-template]
 description = "Render the Oceans LLM Helm chart examples"
+depends = ["helm-dependency-build"]
 run = """
 set -eu
 
@@ -61,9 +78,14 @@ for values_file in "$chart_dir"/examples/*.yaml; do
 done
 """
 
+[tasks.helm-skills-check]
+description = "Verify skill storage and optional RustFS Helm configuration"
+depends = ["helm-dependency-build"]
+run = "bash scripts/check-skills-helm.sh"
+
 [tasks.helm-check]
 description = "Lint and render the Helm chart"
-depends = ["helm-lint", "helm-template"]
+depends = ["helm-lint", "helm-template", "helm-skills-check"]
 
 [tasks.fmt]
 description = "Format Rust sources"
@@ -145,7 +167,12 @@ depends = [
   "ui-test",
   "review-agent-action-test",
   "copilot-installation-canary-test",
+  "e2e-stack-test",
 ]
+
+[tasks.e2e-stack-test]
+description = "Verify E2E cleanup failures retain retry state"
+run = "node --test scripts/start-e2e-stack.test.mjs"
 
 [tasks.gateway-serve]
 description = "Run local `gateway serve` against `gateway.yaml`"
@@ -193,6 +220,15 @@ run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-re
 [tasks.gateway-seed-local-demo]
 description = "Seed the local-only demo dataset (identity, budgets, API keys, request history, and agent session diagnostics) against `gateway.yaml`"
 run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo'
+
+[tasks."skills:cli-build"]
+description = "Build the Oceans CLI for local Skills workflows"
+run = "cargo build --locked -p oceans-cli --bin oceans"
+
+[tasks."skills:import-bundled"]
+description = "Import curated skills using a user-owned API key and the requested namespace"
+depends = ["skills:cli-build"]
+run = "node scripts/import-bundled-skills.mjs"
 
 [tasks.gateway-reset-local-demo]
 description = "Recreate local `gateway.db` with the local-only demo dataset"

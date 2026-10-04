@@ -14,3 +14,8 @@ keywords:
 maintainers:
   - name: Oceans LLM maintainers
 icon: https://oceans-llm.com/images/oceans-docs-hero.png
+dependencies:
+  - name: rustfs
+    version: 1.0.1
+    repository: https://charts.rustfs.com
+    condition: rustfs.enabled

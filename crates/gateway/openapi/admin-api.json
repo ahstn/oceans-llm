@@ -5023,6 +5023,595 @@
           }
         ]
       }
+    },
+    "/api/v1/skills": {
+      "get": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "list_skills",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Literal search in name, description, and owner namespace, ignoring ASCII letter case.\nOther characters match exactly. Blank input is ignored.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SkillSummary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "create_skill",
+        "requestBody": {
+          "content": {
+            "application/zip": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillArchiveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillUploadResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/skills/by-name/{namespace}/{name}": {
+      "get": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "get_skill_by_name",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/skills/limits": {
+      "get": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "get_skill_limits",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BundleLimits"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/skills/namespace": {
+      "get": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "get_skill_namespace",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SkillNamespace"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "claim_skill_namespace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimNamespaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillNamespace"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/skills/{skill_id}": {
+      "get": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "get_skill",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/skills/{skill_id}/default-version": {
+      "put": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "set_skill_default_version",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDefaultVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/skills/{skill_id}/versions": {
+      "get": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "list_skill_versions",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SkillVersionSummary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "append_skill_version",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/zip": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillArchiveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillUploadResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/skills/{skill_id}/versions/{version}": {
+      "get": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "get_skill_version",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/skills/{skill_id}/versions/{version}/archive": {
+      "get": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "download_skill_archive",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillArchiveBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/skills/{skill_id}/versions/{version}/files": {
+      "get": {
+        "tags": [
+          "crate::http::skills"
+        ],
+        "operationId": "get_skill_file",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillFileContent"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -9433,6 +10022,30 @@
           }
         }
       },
+      "BundleLimits": {
+        "type": "object",
+        "properties": {
+          "max_archive_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "default": 10485760,
+            "minimum": 0
+          },
+          "max_expanded_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "default": 26214400,
+            "minimum": 0
+          },
+          "max_files": {
+            "type": "integer",
+            "format": "int32",
+            "default": 1000,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "required": [
@@ -9444,6 +10057,17 @@
             "type": "string"
           },
           "new_password": {
+            "type": "string"
+          }
+        }
+      },
+      "ClaimNamespaceRequest": {
+        "type": "object",
+        "required": [
+          "handle"
+        ],
+        "properties": {
+          "handle": {
             "type": "string"
           }
         }
@@ -15436,6 +16060,273 @@
         "properties": {
           "api_key": {
             "$ref": "#/components/schemas/AdminApiKeyView"
+          }
+        }
+      },
+      "SetDefaultVersionRequest": {
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "SkillArchiveBody": {
+        "type": "string",
+        "format": "binary",
+        "description": "Raw ZIP bytes used by skill upload and download operations."
+      },
+      "SkillDetail": {
+        "type": "object",
+        "required": [
+          "skill",
+          "versions"
+        ],
+        "properties": {
+          "skill": {
+            "$ref": "#/components/schemas/SkillSummary"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillVersionSummary"
+            }
+          }
+        }
+      },
+      "SkillFile": {
+        "type": "object",
+        "required": [
+          "path",
+          "size"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Slash-separated path relative to the skill root."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "SkillFileContent": {
+        "type": "object",
+        "required": [
+          "path",
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "SkillManifest": {
+        "type": "object",
+        "description": "Agent Skills frontmatter. Unknown fields are retained for client extensions.",
+        "required": [
+          "name",
+          "description"
+        ],
+        "properties": {
+          "allowed-tools": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "compatibility": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "license": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {}
+      },
+      "SkillNamespace": {
+        "type": "object",
+        "required": [
+          "handle",
+          "user_id"
+        ],
+        "properties": {
+          "handle": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SkillSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "namespace",
+          "name",
+          "owner_user_id",
+          "description",
+          "default_version",
+          "latest_version",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "default_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "latest_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "owner_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SkillUploadResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SkillDetail"
+          },
+          {
+            "type": "object",
+            "required": [
+              "uploaded_version"
+            ],
+            "properties": {
+              "uploaded_version": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          }
+        ]
+      },
+      "SkillVersionDetail": {
+        "type": "object",
+        "required": [
+          "version",
+          "manifest",
+          "files",
+          "instructions"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillFile"
+            }
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Complete UTF-8 SKILL.md, including frontmatter, for preview and download."
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/SkillManifest"
+          },
+          "version": {
+            "$ref": "#/components/schemas/SkillVersionSummary"
+          }
+        }
+      },
+      "SkillVersionSummary": {
+        "type": "object",
+        "required": [
+          "version",
+          "sha256",
+          "archive_bytes",
+          "extracted_bytes",
+          "file_count",
+          "created_at"
+        ],
+        "properties": {
+          "archive_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "extracted_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "file_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },

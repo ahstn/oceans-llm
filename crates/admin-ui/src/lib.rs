@@ -8,6 +8,8 @@ pub struct AdminUiConfig {
     pub upstream: String,
     pub connect_timeout_ms: u64,
     pub request_timeout_ms: u64,
+    /// Archive limit plus multipart framing overhead, enforced before proxy buffering.
+    pub max_multipart_body_bytes: usize,
 }
 
 impl Default for AdminUiConfig {
@@ -17,6 +19,7 @@ impl Default for AdminUiConfig {
             upstream: "http://localhost:3001".to_string(),
             connect_timeout_ms: 750,
             request_timeout_ms: 10_000,
+            max_multipart_body_bytes: 10 * 1024 * 1024 + 64 * 1024,
         }
     }
 }

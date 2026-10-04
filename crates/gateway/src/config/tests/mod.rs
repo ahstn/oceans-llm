@@ -37,4 +37,5 @@ mod models;
 mod openrouter;
 mod providers;
 mod routes;
+mod skills;
 mod validation_order;

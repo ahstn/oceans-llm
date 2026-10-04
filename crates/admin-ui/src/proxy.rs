@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{error::Error as _, time::Duration};
 
 use axum::{
     Json, Router,
@@ -21,6 +21,7 @@ struct ProxyState {
     base_path: String,
     upstream: String,
     client: reqwest::Client,
+    max_multipart_body_bytes: usize,
 }
 
 impl ProxyState {
@@ -37,6 +38,7 @@ impl ProxyState {
             base_path,
             upstream,
             client,
+            max_multipart_body_bytes: config.max_multipart_body_bytes,
         }
     }
 }
@@ -81,9 +83,34 @@ async fn proxy_request(State(state): State<ProxyState>, req: Request<Body>) -> R
     let uri = parts.uri;
     let inbound_headers = parts.headers;
 
-    let body_bytes = match to_bytes(body, usize::MAX).await {
+    let is_multipart = inbound_headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.split(';').next().is_some_and(|media_type| {
+                media_type
+                    .trim()
+                    .eq_ignore_ascii_case("multipart/form-data")
+            })
+        });
+    let body_limit = if is_multipart {
+        state.max_multipart_body_bytes
+    } else {
+        usize::MAX
+    };
+    let body_bytes = match to_bytes(body, body_limit).await {
         Ok(bytes) => bytes,
         Err(error) => {
+            if error
+                .source()
+                .is_some_and(|source| source.is::<http_body_util::LengthLimitError>())
+            {
+                return (
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "Multipart upload is too large",
+                )
+                    .into_response();
+            }
             warn!(%error, "failed to read incoming admin UI proxy request body");
             return ui_unavailable_response();
         }
@@ -276,6 +303,41 @@ mod tests {
         let captured = captured.lock().expect("capture lock");
         assert_eq!(captured.len(), 1);
         assert_eq!(captured[0].path_and_query, "/admin/models?x=1");
+    }
+
+    #[tokio::test]
+    async fn proxy_bounds_multipart_before_forwarding_without_content_length() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let upstream = start_upstream(captured.clone()).await;
+        let app = mount_admin_ui(
+            Router::new(),
+            AdminUiConfig {
+                upstream,
+                max_multipart_body_bytes: 8,
+                ..AdminUiConfig::default()
+            },
+        );
+
+        for (body, expected) in [
+            ("12345678", StatusCode::OK),
+            ("123456789", StatusCode::PAYLOAD_TOO_LARGE),
+        ] {
+            let request = Request::builder()
+                .uri("/admin/_serverFn/upload")
+                .method("POST")
+                .header("content-type", "multipart/form-data; boundary=test")
+                .body(Body::from(body))
+                .expect("request must build");
+            assert_eq!(
+                app.clone()
+                    .oneshot(request)
+                    .await
+                    .expect("response")
+                    .status(),
+                expected
+            );
+        }
+        assert_eq!(captured.lock().expect("capture lock").len(), 1);
     }
 
     #[tokio::test]

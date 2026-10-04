@@ -7,6 +7,7 @@ pub mod error;
 pub mod gateway_keys;
 pub mod protocol;
 pub mod reasoning_policy;
+pub mod skills;
 pub mod streaming;
 pub mod traits;
 
@@ -138,6 +139,11 @@ pub use protocol::translate::{
 pub use reasoning_policy::{
     enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
     enforce_responses_reasoning_effort,
+};
+pub use skills::{
+    SkillDetail, SkillListQuery, SkillNamespaceRecord, SkillObjectStore, SkillRecord,
+    SkillRepository, SkillUploadResponse, SkillVersionMetadata, SkillVersionRecord,
+    SkillVersionSummary,
 };
 pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};
 pub use traits::{

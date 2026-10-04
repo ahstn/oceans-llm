@@ -32,6 +32,8 @@ export default defineConfig({
     url: `${baseURL}/readyz`,
     reuseExistingServer: false,
     timeout: 300_000,
+    // Let stack cleanup remove temporary objects before forced termination.
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 30_000 },
     stdout: 'pipe',
     stderr: 'pipe',
     env: {
