@@ -3,7 +3,6 @@ import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/layout/page-header'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
@@ -58,17 +57,13 @@ function SkillsPage() {
       <PageHeader
         section="Control Plane"
         title="Skills"
-        description="Share reusable agent instructions and files. Every signed-in user can read skills; only the owner can add versions or change the default."
+        description="Share re-usable agent skills. All users can fetch or add new skills."
         actions={<Button onClick={() => setUploadOpen(true)}>Upload skill</Button>}
       />
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Skill catalog</CardTitle>
-          <CardDescription>
-            {namespace
-              ? `Your namespace is ${namespace.handle}.`
-              : 'Choose a permanent namespace when you upload your first skill.'}
-          </CardDescription>
+          <CardDescription>Filter, view and download existing skills.</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-5">
           <form
@@ -162,7 +157,6 @@ function SkillCatalog({ items }: { items: SkillSummary[] }) {
           <TableRow>
             <TableHead>Skill</TableHead>
             <TableHead>Owner</TableHead>
-            <TableHead>Default</TableHead>
             <TableHead>Latest</TableHead>
           </TableRow>
         </TableHeader>
@@ -175,16 +169,13 @@ function SkillCatalog({ items }: { items: SkillSummary[] }) {
                   params={{ id: skill.id }}
                   className="font-medium break-all underline-offset-4 hover:underline"
                 >
-                  {skill.namespace}/{skill.name}
+                  {skill.name}
                 </Link>
                 <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">
                   {skill.description}
                 </p>
               </TableCell>
               <TableCell>{skill.namespace}</TableCell>
-              <TableCell>
-                <Badge variant="secondary">v{skill.default_version}</Badge>
-              </TableCell>
               <TableCell>v{skill.latest_version}</TableCell>
             </TableRow>
           ))}

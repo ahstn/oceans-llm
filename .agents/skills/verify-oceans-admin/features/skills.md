@@ -19,7 +19,7 @@ Skills verification follows the real browser path from namespace selection and Z
 
 - Open `/admin/skills` and sign in, or follow the `Skills` sidebar link.
 - Choose `Upload skill` to claim a namespace on first use and select a ZIP archive.
-- Open the `namespace/skill-name` link to view instructions, versions, files, and download controls.
+- Open the skill-name link in the matching Owner row to view instructions, versions, files, and download controls. The detail heading shows `namespace/skill-name`.
 - Owners can use `Upload new version`, choose `Version`, and use `Set as default`.
 
 ## Driving it with control-oceans-admin

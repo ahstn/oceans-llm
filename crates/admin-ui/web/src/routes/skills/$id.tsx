@@ -1,5 +1,7 @@
 import { useState, useTransition } from 'react'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { ArrowLeft01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/layout/page-header'
@@ -24,7 +26,12 @@ import {
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { getSkill, saveSkillDefault } from '@/server/skills-data.functions'
-import type { SkillUploadResponse, SkillSummary, SkillVersionDetail } from '@/types/skills-api'
+import type {
+  SkillDetail,
+  SkillUploadResponse,
+  SkillSummary,
+  SkillVersionDetail,
+} from '@/types/skills-api'
 import { SkillFiles } from './-files'
 import { SkillUploadDialog } from './-upload-dialog'
 import { SkillsErrorPage } from './-error'
@@ -94,6 +101,12 @@ function SkillDetailPage() {
       <div>
         <Button asChild variant="ghost" size="sm">
           <Link to="/skills" search={{ offset: 0 }}>
+            <HugeiconsIcon
+              icon={ArrowLeft01Icon}
+              strokeWidth={2}
+              data-icon="inline-start"
+              aria-hidden="true"
+            />
             Back to skills
           </Link>
         </Button>
@@ -123,43 +136,11 @@ function SkillDetailPage() {
         <CardContent className="min-w-0">
           <VersionMetadata detail={version} skill={skill} />
         </CardContent>
-        <CardFooter className="flex-wrap items-end justify-between gap-4">
-          <Field className="max-w-sm">
-            <FieldLabel htmlFor="skill-version">Version</FieldLabel>
-            <Select
-              value={String(version.version.version)}
-              onValueChange={(value) =>
-                void router.navigate({
-                  to: '/skills/$id',
-                  params: { id: skill.id },
-                  search: { version: Number(value) },
-                })
-              }
-            >
-              <SelectTrigger id="skill-version">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {detail.versions.map((item) => (
-                    <SelectItem key={item.version} value={String(item.version)}>
-                      Version {item.version}
-                      {item.version === skill.default_version ? ' (default)' : ''}
-                      {item.version === skill.latest_version ? ' (latest)' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Button asChild variant="outline">
-            <a
-              href={`${gatewayOrigin}/api/v1/skills/${skill.id}/versions/${version.version.version}/archive`}
-            >
-              Download ZIP
-            </a>
-          </Button>
-        </CardFooter>
+        <SkillVersionControls
+          detail={detail}
+          version={version.version.version}
+          gatewayOrigin={gatewayOrigin}
+        />
       </Card>
       <SkillFiles key={`${skill.id}:${version.version.version}`} id={skill.id} detail={version} />
       {uploadOpen ? (
@@ -172,6 +153,57 @@ function SkillDetailPage() {
         />
       ) : null}
     </div>
+  )
+}
+
+function SkillVersionControls({
+  detail,
+  version,
+  gatewayOrigin,
+}: {
+  detail: SkillDetail
+  version: number
+  gatewayOrigin: string
+}) {
+  const router = useRouter()
+  const skill = detail.skill
+
+  return (
+    <CardFooter className="flex-wrap items-end justify-between gap-4">
+      <Field className="max-w-sm">
+        <FieldLabel htmlFor="skill-version">Version</FieldLabel>
+        <Select
+          value={String(version)}
+          onValueChange={(value) =>
+            void router.navigate({
+              to: '/skills/$id',
+              params: { id: skill.id },
+              search: { version: Number(value) },
+            })
+          }
+        >
+          <SelectTrigger id="skill-version">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {detail.versions.map((item) => (
+                <SelectItem key={item.version} value={String(item.version)}>
+                  Version {item.version}
+                  {item.version === skill.default_version ? ' (default)' : ''}
+                  {item.version === skill.latest_version ? ' (latest)' : ''}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </Field>
+      <Button asChild variant="outline">
+        <a href={`${gatewayOrigin}/api/v1/skills/${skill.id}/versions/${version}/archive`}>
+          Download ZIP
+        </a>
+      </Button>
+    </CardFooter>
   )
 }
 

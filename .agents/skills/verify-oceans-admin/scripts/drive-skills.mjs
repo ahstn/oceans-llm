@@ -122,9 +122,7 @@ try {
   });
   proof.catalog.after = await filterCatalog(ownerPage, owner.namespace);
   assert.deepEqual(proof.catalog.after.skillIds, [saved.skill.id]);
-  await expect(
-    ownerPage.getByRole("link", { name: `${owner.namespace}/review-code`, exact: true }),
-  ).toBeVisible();
+  await expectCatalogSkill(ownerPage, saved.skill);
   await capture(ownerPage, "07-skills-catalog-after");
   proof.passed = true;
 } catch (error) {
@@ -286,6 +284,15 @@ async function fillSignIn(page, email, password) {
   await signIn.click();
 }
 
+async function expectCatalogSkill(page, skill) {
+  const row = page.getByRole("table").getByRole("row")
+    .filter({ has: page.getByRole("cell", { name: skill.namespace, exact: true }) })
+    .filter({ has: page.getByRole("link", { name: skill.name, exact: true }) });
+  const link = row.getByRole("link", { name: skill.name, exact: true });
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("href", `/admin/skills/${skill.id}`);
+}
+
 async function filterCatalog(page, namespace) {
   const input = page.getByLabel("Owner namespace", { exact: true });
   // SSR can expose this controlled input before hydration attaches its change handler.
@@ -310,9 +317,7 @@ async function filterCatalog(page, namespace) {
     await expect(page.getByRole("table")).toHaveCount(0);
   } else {
     for (const skill of items) {
-      await expect(
-        page.getByRole("link", { name: `${skill.namespace}/${skill.name}`, exact: true }),
-      ).toBeVisible();
+      await expectCatalogSkill(page, skill);
     }
     const rows = page.getByRole("table").getByRole("row");
     await expect(rows).toHaveCount(items.length + 1);
