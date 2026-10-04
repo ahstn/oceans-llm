@@ -31,12 +31,24 @@ pub(crate) fn model_uuid(model_key: &str) -> Uuid {
 
 pub(crate) fn route_uuid(
     model_key: &str,
+    route_key: Option<&str>,
     provider_key: &str,
     upstream_model: &str,
     priority: i32,
     route_index: usize,
 ) -> Uuid {
-    let key = format!("route:{model_key}:{provider_key}:{upstream_model}:{priority}:{route_index}");
+    let key = match route_key {
+        Some(route_key) => format!(
+            "route-key:v1:{}:{model_key}:{}:{route_key}:{}:{provider_key}:{}:{upstream_model}",
+            model_key.len(),
+            route_key.len(),
+            provider_key.len(),
+            upstream_model.len()
+        ),
+        None => {
+            format!("route:{model_key}:{provider_key}:{upstream_model}:{priority}:{route_index}")
+        }
+    };
     Uuid::new_v5(&Uuid::NAMESPACE_OID, key.as_bytes())
 }
 
@@ -330,6 +342,7 @@ fn demo_batch_job(
             provider_key: route.provider_key.clone(),
             upstream_model: route.upstream_model.clone(),
             owner_user_id: None,
+            expected_provider_credential_id: None,
             extra_headers: route.extra_headers.clone(),
             extra_body: route.extra_body.clone(),
             request_headers: BTreeMap::new(),

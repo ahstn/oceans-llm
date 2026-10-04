@@ -1,4 +1,196 @@
 use super::*;
+use gateway_core::RoutingStrategy;
+
+fn routing_model_config(routing_yaml: &str) -> String {
+    format!(
+        r#"
+providers:
+  - id: openai
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: pooled
+    {routing_yaml}
+    routes:
+      - id: openai-primary
+        provider: openai
+        upstream_model: gpt-5
+  - id: plain
+    routes:
+      - provider: openai
+        upstream_model: gpt-5
+"#
+    )
+}
+
+#[test]
+fn seeds_each_routing_strategy_and_optional_affinity() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    for (strategy, expected) in [
+        ("preferred", RoutingStrategy::Preferred),
+        ("weighted_random", RoutingStrategy::WeightedRandom),
+        ("round_robin", RoutingStrategy::RoundRobin),
+    ] {
+        write_config(
+            &config_path,
+            &routing_model_config(&format!(
+                "routing:\n      strategy: {strategy}\n      affinity:\n        idle_timeout_seconds: 7200"
+            )),
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let seeds = config.seed_models().expect("seed models");
+        let routing = seeds[0].routing.as_ref().expect("routing policy");
+        assert_eq!(routing.strategy, expected);
+        assert_eq!(
+            routing
+                .affinity
+                .as_ref()
+                .expect("affinity policy")
+                .idle_timeout_seconds,
+            7200
+        );
+        assert!(
+            seeds[1].routing.is_none(),
+            "omitted policy must remain unset"
+        );
+        assert_eq!(
+            seeds[0].routes[0].route_key.as_deref(),
+            Some("openai-primary")
+        );
+        assert!(seeds[1].routes[0].route_key.is_none());
+    }
+}
+
+#[test]
+fn routing_defaults_preserve_weighted_selection_and_use_one_hour_affinity() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    for (routing_yaml, expected_timeout) in [
+        ("routing: {}", None),
+        ("routing:\n      affinity: {}", Some(3600)),
+    ] {
+        write_config(&config_path, &routing_model_config(routing_yaml));
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let seeds = config.seed_models().expect("seed models");
+        let routing = seeds[0].routing.as_ref().expect("routing policy");
+        assert_eq!(routing.strategy, RoutingStrategy::WeightedRandom);
+        assert_eq!(
+            routing
+                .affinity
+                .as_ref()
+                .map(|affinity| affinity.idle_timeout_seconds),
+            expected_timeout
+        );
+    }
+}
+
+#[test]
+fn rejects_invalid_routing_policy() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    for (routing_yaml, expected_error) in [
+        (
+            "routing:\n      strategy: unknown",
+            "unknown variant `unknown`",
+        ),
+        (
+            "routing:\n      preference: openai",
+            "unknown field `preference`",
+        ),
+        (
+            "routing:\n      affinity:\n        timeout: 3600",
+            "unknown field `timeout`",
+        ),
+        (
+            "routing:\n      affinity:\n        idle_timeout_seconds: 0",
+            "model `pooled` routing.affinity.idle_timeout_seconds must be positive",
+        ),
+    ] {
+        write_config(&config_path, &routing_model_config(routing_yaml));
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains(expected_error),
+            "unexpected error for `{routing_yaml}`: {error_text}"
+        );
+    }
+}
+
+#[test]
+fn rejects_alias_with_its_own_routing_policy() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    let mut yaml = routing_model_config("routing:\n      strategy: round_robin");
+    yaml.push_str("  - id: alias\n    alias_of: pooled\n    routing:\n      strategy: preferred\n");
+    write_config(&config_path, &yaml);
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    let error_text = format!("{error:#}");
+    assert!(
+        error_text.contains("model `alias` cannot define routing with alias_of"),
+        "unexpected error: {error_text}"
+    );
+}
+
+#[test]
+fn routing_requires_explicit_unique_route_ids() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    let yaml = routing_model_config("routing: {}");
+    for (yaml, expected_error) in [
+        (
+            yaml.replace("      - id: openai-primary\n        provider:", "      - provider:"),
+            "requires an explicit id for every route when routing is configured",
+        ),
+        (
+            yaml.replace(
+                "  - id: plain",
+                "      - id: openai-primary\n        provider: openai\n        upstream_model: gpt-5\n  - id: plain",
+            ),
+            "defines duplicate route id `openai-primary`",
+        ),
+    ] {
+        write_config(&config_path, &yaml);
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains(expected_error),
+            "unexpected error: {error_text}"
+        );
+    }
+}
+
+#[test]
+fn rejects_invalid_explicit_route_ids() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    for id in [
+        "",
+        "with space",
+        "with/slash",
+        "with:colon",
+        "日本語",
+        &"a".repeat(129),
+    ] {
+        let yaml = routing_model_config("routing: {}")
+            .replace("id: openai-primary", &format!("id: '{id}'"));
+        write_config(&config_path, &yaml);
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("route id must contain 1 to 128 ASCII letters"),
+            "unexpected error for `{id}`: {error_text}"
+        );
+    }
+}
 
 #[test]
 fn accepts_alias_backed_model_config() {

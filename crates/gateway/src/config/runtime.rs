@@ -20,6 +20,26 @@ use super::{
 use gateway_providers::DEFAULT_REQUEST_TIMEOUT_MS;
 
 impl GatewayConfig {
+    #[must_use]
+    pub fn provider_routing_account_scope(&self, provider_key: &str) -> Option<&str> {
+        self.providers
+            .iter()
+            .find(|provider| provider.id() == provider_key)
+            .and_then(ProviderConfig::routing_account_scope)
+    }
+
+    /// A policy loaded from shared storage must not use an unscoped dynamic account.
+    #[must_use]
+    pub fn provider_routing_identity_enabled(&self, provider_key: &str) -> bool {
+        self.providers
+            .iter()
+            .find(|provider| provider.id() == provider_key)
+            .is_some_and(|provider| {
+                !provider.requires_routing_account_scope()
+                    || provider.routing_account_scope().is_some()
+            })
+    }
+
     pub fn openai_compatible_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {
         let mut configs = Vec::new();
 
@@ -84,12 +104,15 @@ impl GatewayConfig {
                         }
                     };
 
+                    let routing_auth_identity =
+                        crate::provider_routing_identity::cloud_run_auth(&auth);
                     let mut config = OpenAiCompatConfig::new_cloud_run(
                         provider.id.clone(),
                         provider.base_url.clone(),
                         provider.auth_header.into_provider_header(),
                         auth,
                     )?;
+                    config.routing_auth_identity = Some(routing_auth_identity);
                     config.default_headers = provider.default_headers.clone();
                     config.request_timeout_ms = provider
                         .timeouts

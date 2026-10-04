@@ -8,7 +8,7 @@ impl ModelRepository for PostgresStore {
     async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError> {
         let rows = sqlx::query(
             r#"
-            SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
+            SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank, gm.routing_policy_json
             FROM gateway_models gm
             LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
             ORDER BY gm.rank ASC, gm.model_key ASC
@@ -29,7 +29,7 @@ impl ModelRepository for PostgresStore {
             return Ok(Vec::new());
         }
         let rows = sqlx::query(
-            "SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
+            "SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank, gm.routing_policy_json
              FROM gateway_models gm
              LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
              WHERE gm.model_key = ANY($1) ORDER BY gm.rank ASC, gm.model_key ASC"
@@ -40,7 +40,7 @@ impl ModelRepository for PostgresStore {
     async fn get_model_by_key(&self, model_key: &str) -> Result<Option<GatewayModel>, StoreError> {
         let row = sqlx::query(
             r#"
-            SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
+            SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank, gm.routing_policy_json
             FROM gateway_models gm
             LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
             WHERE gm.model_key = $1
@@ -61,7 +61,7 @@ impl ModelRepository for PostgresStore {
     ) -> Result<Vec<GatewayModel>, StoreError> {
         let rows = sqlx::query(
             r#"
-            SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
+            SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank, gm.routing_policy_json
             FROM gateway_models gm
             LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
             INNER JOIN api_key_model_grants grants ON grants.model_id = gm.id
@@ -88,7 +88,7 @@ impl ModelRepository for PostgresStore {
             // The key id is the last column so `decode_gateway_model` reads the leading columns.
             let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
                 "SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, \
-                 gm.description, gm.tags_json, gm.rank, grants.api_key_id \
+                 gm.description, gm.tags_json, gm.rank, gm.routing_policy_json, grants.api_key_id \
                  FROM gateway_models gm \
                  LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id \
                  INNER JOIN api_key_model_grants grants ON grants.model_id = gm.id \
@@ -108,7 +108,7 @@ impl ModelRepository for PostgresStore {
                 .await
                 .map_err(to_query_error)?;
             for row in &rows {
-                let api_key_id = parse_uuid(&row.try_get::<String, _>(7).map_err(to_query_error)?)?;
+                let api_key_id = parse_uuid(&row.try_get::<String, _>(8).map_err(to_query_error)?)?;
                 grants
                     .entry(api_key_id)
                     .or_default()

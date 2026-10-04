@@ -803,6 +803,33 @@ Supported provider types in the checked-in configs:
 
 Provider auth config controls how the gateway authenticates to upstream providers. It is separate from gateway API keys, which authenticate callers to the gateway.
 
+### Routing Account Scope
+
+`providers[*].routing_account_scope` is available on `aws_bedrock`, `gcp_vertex`, and `gcp_cloud_run_openai_compat`. It is required when a model with a `routing` policy references one of these authentication modes:
+
+| Provider type | Auth mode requiring a scope |
+| --- | --- |
+| `aws_bedrock` | `default_chain` |
+| `gcp_vertex` | `adc`, `service_account` |
+| `gcp_cloud_run_openai_compat` | `adc`, `service_account` |
+
+The label identifies the account or principal behind credentials that can change outside YAML. Use a stable account and principal reference, such as an AWS role ARN or Google service-account email. It must contain 1–256 UTF-8 bytes, with no control characters or leading or trailing whitespace. The label is not a secret and does not select or verify the provider identity.
+
+```yaml
+providers:
+  - id: bedrock-runtime
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+    routing_account_scope: arn:aws:iam::123456789012:role/oceans-gateway
+    auth:
+      mode: default_chain
+```
+
+Change the label and restart the gateway when the underlying account or principal changes. This invalidates session bindings and response origins tied to the old identity. Temporary token refresh for the same principal does not require a change. The gateway trusts the label and cannot detect an incorrect label or an unreported identity change.
+
+The field is optional for static or bearer authentication on these providers. If present, it is validated and included in the routing fingerprint. Models without `routing` do not require it.
+
 ### `openai_compat`
 
 Important fields:
@@ -1042,9 +1069,26 @@ Important fields:
 - `tags`
 - `rank`
 - `max_reasoning_effort`
+- `routing`
 - `routes`
 - `alias_of`
 - `allowlist`
+
+### Routing Policy and Session Affinity
+
+`models[*].routing` is optional and applies to provider-backed models. Aliases inherit the resolved target's policy and cannot define their own block.
+
+| Field | Default | Accepted values |
+| --- | --- | --- |
+| `routing.strategy` | `weighted_random` | `preferred`, `weighted_random`, `round_robin` |
+| `routing.affinity` | Absent; no session affinity | An object; `{}` enables the default timeout |
+| `routing.affinity.idle_timeout_seconds` | `3600` | Integer from `1` to `4294967295` |
+
+Every route needs an explicit `id` when `routing` is present, including `routing: {}`. Unknown routing fields and strategy names fail configuration loading. Omitting `routing` preserves existing weighted selection without affinity.
+
+Policies apply to online chat, messages, Responses, embeddings, and decisions. Session affinity applies to chat, messages, and Responses. Durable batches keep their existing route lifecycle. Policy configuration is YAML-only; reseed the deployment to apply changes.
+
+See [Model Routing and APIs](model-routing-and-api-behavior.md#control-route-selection) for examples, priority rules, caller-scoped session IDs, response-origin tracking, and cache limits.
 
 ### Reasoning Effort Ceilings
 
@@ -1104,6 +1148,7 @@ Rules that matter:
 
 Important fields:
 
+- `id`
 - `provider`
 - `upstream_model`
 - `priority`
@@ -1113,6 +1158,8 @@ Important fields:
 - `compatibility`
 - `extra_headers`
 - `extra_body`
+
+Route `id` is optional for models without a `routing` policy and required for every route in a configured routing pool. It must be unique within the model and contain 1–128 ASCII letters, digits, periods, underscores, or hyphens. Keep it stable when changing priority, weight, or YAML order. Provider or upstream model changes create a different internal route identity.
 
 When a model has `max_reasoning_effort`, startup also validates explicit effort values in each of its route `extra_body` objects. Known values above the ceiling, unknown strings, and malformed non-string values make configuration invalid. Omitted fields and `null` values pass. Startup does not clamp or mutate `extra_body`.
 

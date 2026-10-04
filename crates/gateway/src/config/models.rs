@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Context, bail};
-use gateway_core::{ModelAllowlistPolicy, ReasoningEffort, enforce_reasoning_effort_map};
+use gateway_core::{
+    ModelAllowlistPolicy, ModelRoutingPolicy, ReasoningEffort, enforce_reasoning_effort_map,
+};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -81,6 +83,8 @@ pub struct ModelConfig {
     #[serde(default = "default_model_rank")]
     pub rank: i32,
     #[serde(default)]
+    pub routing: Option<ModelRoutingPolicy>,
+    #[serde(default)]
     pub routes: Vec<ModelRouteConfig>,
     pub allowlist: Option<ModelAllowlistConfig>,
 }
@@ -94,6 +98,25 @@ fn is_valid_benchmark_model_id(value: &str) -> bool {
         && !model.is_empty()
         && !value.contains(':')
         && !value.chars().any(char::is_whitespace)
+}
+
+fn validate_route_ids(model: &ModelConfig) -> anyhow::Result<()> {
+    let mut route_ids = std::collections::BTreeSet::new();
+    for route in &model.routes {
+        match route.id.as_deref() {
+            Some(id) if !route_ids.insert(id) => {
+                bail!("model `{}` defines duplicate route id `{id}`", model.id);
+            }
+            None if model.routing.is_some() => {
+                bail!(
+                    "model `{}` requires an explicit id for every route when routing is configured",
+                    model.id
+                );
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn validate_models(
@@ -126,6 +149,19 @@ pub(super) fn validate_models(
             _ => {}
         }
 
+        if has_alias && model.routing.is_some() {
+            bail!(
+                "model `{}` cannot define routing with alias_of; aliases inherit the target model routing policy",
+                model.id
+            );
+        }
+        if let Some(routing) = &model.routing {
+            routing
+                .validate()
+                .map_err(|error| anyhow::anyhow!("model `{}` {error}", model.id))?;
+        }
+        validate_route_ids(model)?;
+
         if let Some(alias_target) = model.alias_of.as_deref() {
             if alias_target == model.id {
                 bail!("model `{}` cannot alias itself", model.id);
@@ -144,16 +180,23 @@ pub(super) fn validate_models(
         }
 
         for route in &model.routes {
-            route.validate(
-                &model.id,
-                model.max_reasoning_effort,
-                provider_by_id.get(route.provider.as_str()).copied(),
-            )?;
-            if !provider_by_id.contains_key(route.provider.as_str()) {
+            let provider = provider_by_id.get(route.provider.as_str()).copied();
+            route.validate(&model.id, model.max_reasoning_effort, provider)?;
+            let Some(provider) = provider else {
                 bail!(
                     "model `{}` route references unknown provider `{}`",
                     model.id,
                     route.provider
+                );
+            };
+            if model.routing.is_some()
+                && provider.requires_routing_account_scope()
+                && provider.routing_account_scope().is_none()
+            {
+                bail!(
+                    "model `{}` routing pool provider `{}` requires routing_account_scope for ambient or service-account-file credentials",
+                    model.id,
+                    provider.id()
                 );
             }
         }

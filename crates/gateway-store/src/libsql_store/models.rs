@@ -10,7 +10,7 @@ impl ModelRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
+                SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank, gm.routing_policy_json
                 FROM gateway_models gm
                 LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
                 ORDER BY gm.rank ASC, gm.model_key ASC
@@ -41,7 +41,7 @@ impl ModelRepository for LibsqlStore {
         for keys in model_keys.chunks(500) {
             let placeholders = vec!["?"; keys.len()].join(", ");
             let query = format!(
-                "SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
+                "SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank, gm.routing_policy_json
                  FROM gateway_models gm
                  LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
                  WHERE gm.model_key IN ({placeholders}) ORDER BY gm.rank ASC, gm.model_key ASC"
@@ -67,7 +67,7 @@ impl ModelRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
+                SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank, gm.routing_policy_json
                 FROM gateway_models gm
                 LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
                 WHERE gm.model_key = ?1
@@ -97,7 +97,7 @@ impl ModelRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank
+                SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, gm.description, gm.tags_json, gm.rank, gm.routing_policy_json
                 FROM gateway_models gm
                 LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
                 INNER JOIN api_key_model_grants grants ON grants.model_id = gm.id
@@ -137,7 +137,7 @@ impl ModelRepository for LibsqlStore {
             // The key id is the last column so `decode_gateway_model` reads the leading columns.
             let query = format!(
                 "SELECT gm.id, gm.model_key, alias_target.model_key, gm.max_reasoning_effort, \
-                 gm.description, gm.tags_json, gm.rank, grants.api_key_id \
+                 gm.description, gm.tags_json, gm.rank, gm.routing_policy_json, grants.api_key_id \
                  FROM gateway_models gm \
                  LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id \
                  INNER JOIN api_key_model_grants grants ON grants.model_id = gm.id \
@@ -154,7 +154,7 @@ impl ModelRepository for LibsqlStore {
                 .await
                 .map_err(|error| StoreError::Query(error.to_string()))?
             {
-                let api_key_id = parse_uuid(&row.get::<String>(7).map_err(to_query_error)?)?;
+                let api_key_id = parse_uuid(&row.get::<String>(8).map_err(to_query_error)?)?;
                 grants
                     .entry(api_key_id)
                     .or_default()

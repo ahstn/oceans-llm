@@ -1785,10 +1785,35 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        AdminModelRouteView: {
+            enabled: boolean;
+            id: string;
+            /** Format: int32 */
+            priority: number;
+            provider_configured: boolean;
+            provider_icon_key: components["schemas"]["ProviderIconKeyView"];
+            provider_key: string;
+            provider_label: string;
+            upstream_model: string;
+            /** Format: double */
+            weight: number;
+        };
+        AdminModelRoutingPolicyView: {
+            affinity?: null | components["schemas"]["AdminModelSessionAffinityView"];
+            strategy: components["schemas"]["AdminModelRoutingStrategyView"];
+        };
+        /** @enum {string} */
+        AdminModelRoutingStrategyView: "preferred" | "weighted_random" | "round_robin";
+        AdminModelSessionAffinityView: {
+            /** Format: int32 */
+            idle_timeout_seconds: number;
+        };
         /** @enum {string} */
         AdminModelStatusView: "healthy" | "degraded";
         AdminModelView: {
             alias_of?: string | null;
+            /** @description Other model IDs resolving to the same execution model, excluding this model ID. */
+            aliases: string[];
             allowlist?: null | components["schemas"]["AdminModelAllowlistView"];
             benchmark_scores: components["schemas"]["AdminModelBenchmarkScoreView"][];
             /** Format: int64 */
@@ -1817,6 +1842,9 @@ export interface components {
             provider_key?: string | null;
             provider_label?: string | null;
             resolved_model_key: string;
+            /** @description Configured routes, including disabled routes. Only visible to platform admins. */
+            routes?: components["schemas"]["AdminModelRouteView"][] | null;
+            routing?: null | components["schemas"]["AdminModelRoutingPolicyView"];
             status: components["schemas"]["AdminModelStatusView"];
             supports_attachments?: boolean | null;
             supports_decisions?: boolean | null;
@@ -5648,6 +5676,10 @@ export interface operations {
             query?: {
                 page?: number | null;
                 page_size?: number | null;
+                /** @description Include alias models in the list. Defaults to true; alias metadata is always retained. */
+                include_aliases?: boolean | null;
+                /** @description Trimmed, case-insensitive substring search across model IDs, aliases, visible providers, upstream IDs, and tags. */
+                q?: string | null;
             };
             header?: never;
             path?: never;

@@ -36,6 +36,33 @@ impl ProviderConfig {
             Self::TypeSafe(provider) => &provider.id,
         }
     }
+
+    pub(super) fn routing_account_scope(&self) -> Option<&str> {
+        match self {
+            Self::GcpCloudRunOpenAiCompat(provider) => provider.routing_account_scope.as_deref(),
+            Self::GcpVertex(provider) => provider.routing_account_scope.as_deref(),
+            Self::AwsBedrock(provider) => provider.routing_account_scope.as_deref(),
+            _ => None,
+        }
+    }
+
+    pub(super) fn requires_routing_account_scope(&self) -> bool {
+        match self {
+            Self::GcpCloudRunOpenAiCompat(provider) => matches!(
+                provider.auth,
+                GcpCloudRunOpenAiCompatAuthConfig::Adc
+                    | GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { .. }
+            ),
+            Self::GcpVertex(provider) => matches!(
+                provider.auth,
+                GcpVertexAuthConfig::Adc | GcpVertexAuthConfig::ServiceAccount { .. }
+            ),
+            Self::AwsBedrock(provider) => {
+                matches!(provider.auth, AwsBedrockAuthConfig::DefaultChain)
+            }
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -149,6 +176,8 @@ pub struct GcpCloudRunOpenAiCompatProviderConfig {
     pub pricing_provider_id: String,
     pub auth: GcpCloudRunOpenAiCompatAuthConfig,
     #[serde(default)]
+    pub routing_account_scope: Option<String>,
+    #[serde(default)]
     pub auth_header: GcpCloudRunOpenAiCompatAuthHeaderConfig,
     #[serde(default)]
     pub default_headers: BTreeMap<String, String>,
@@ -203,6 +232,8 @@ pub struct GcpVertexProviderConfig {
     pub api_host: Option<String>,
     pub auth: GcpVertexAuthConfig,
     #[serde(default)]
+    pub routing_account_scope: Option<String>,
+    #[serde(default)]
     pub default_headers: BTreeMap<String, String>,
     #[serde(default)]
     pub timeouts: Option<ProviderTimeouts>,
@@ -236,6 +267,8 @@ pub struct AwsBedrockProviderConfig {
     pub endpoint_url: Option<String>,
     #[serde(default)]
     pub auth: AwsBedrockAuthConfig,
+    #[serde(default)]
+    pub routing_account_scope: Option<String>,
     #[serde(default)]
     pub default_headers: BTreeMap<String, String>,
     #[serde(default)]
@@ -337,6 +370,17 @@ pub(super) fn validate_providers(providers: &[ProviderConfig]) -> anyhow::Result
     for provider in providers {
         if !provider_ids.insert(provider.id()) {
             bail!("duplicate provider id `{}`", provider.id());
+        }
+        if let Some(scope) = provider.routing_account_scope()
+            && (scope.is_empty()
+                || scope.len() > 256
+                || scope.trim() != scope
+                || scope.chars().any(char::is_control))
+        {
+            bail!(
+                "provider `{}` routing_account_scope must contain 1 to 256 bytes without surrounding whitespace or control characters",
+                provider.id()
+            );
         }
         match provider {
             ProviderConfig::OpenAiCompat(provider) => provider.validate()?,

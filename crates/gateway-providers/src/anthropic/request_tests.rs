@@ -11,6 +11,7 @@ fn context() -> ProviderRequestContext {
         provider_key: "zen".into(),
         upstream_model: "claude-sonnet-4-6".into(),
         owner_user_id: None,
+        expected_provider_credential_id: None,
         extra_headers: Default::default(),
         extra_body: Default::default(),
         request_headers: Default::default(),

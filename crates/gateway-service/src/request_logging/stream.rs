@@ -10,6 +10,8 @@ use crate::{
 
 use super::{tool_cardinality::ToolCallCounter, truncate_payload};
 
+const MAX_RESPONSE_ID_BYTES: usize = 256;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamFailureSummary {
     pub status_code: i64,
@@ -32,6 +34,7 @@ pub struct StreamResponseCollector {
     payload_policy: RequestLogPayloadPolicy,
     events: Vec<Value>,
     usage: Option<Value>,
+    response_id: Option<String>,
     failure: Option<StreamFailureSummary>,
     tool_calls: ToolCallCounter,
     finished: bool,
@@ -98,6 +101,11 @@ impl StreamResponseCollector {
                 observation.ends_stream = true;
             }
             if let Some(parsed) = parsed.as_ref() {
+                if let Some(response_id) =
+                    response_id_from_stream_event(parsed, event.event.as_deref())
+                {
+                    self.response_id = Some(response_id.to_string());
+                }
                 self.observe_tool_calls(parsed);
                 observation.has_output |= stream_event_has_output(parsed);
                 observation.has_terminal_event |= stream_event_is_terminal(parsed);
@@ -134,6 +142,12 @@ impl StreamResponseCollector {
     #[must_use]
     pub fn usage(&self) -> Option<&Value> {
         self.usage.as_ref()
+    }
+
+    /// The last bounded Responses ID observed, independent of payload capture limits.
+    #[must_use]
+    pub fn response_id(&self) -> Option<&str> {
+        self.response_id.as_deref()
     }
 
     #[must_use]
@@ -176,6 +190,21 @@ impl StreamResponseCollector {
         )
         .map_truncated(self.truncated)
     }
+}
+
+fn response_id_from_stream_event<'a>(value: &'a Value, event: Option<&str>) -> Option<&'a str> {
+    let event_type = value.get("type").and_then(Value::as_str).or(event)?;
+    if !matches!(
+        event_type,
+        "response.created" | "response.completed" | "response.incomplete"
+    ) {
+        return None;
+    }
+    value
+        .pointer("/response/id")
+        .or_else(|| value.get("id"))
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty() && id.len() <= MAX_RESPONSE_ID_BYTES)
 }
 
 fn stream_event_has_output(value: &Value) -> bool {

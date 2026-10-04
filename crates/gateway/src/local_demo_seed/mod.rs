@@ -986,11 +986,13 @@ mod tests {
                 model_key: model_key.to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 0,
                 routes: if model_key == "gpt-6-astra" {
                     vec![SeedModelRoute {
+                        route_key: None,
                         provider_key: "openai-prod".to_string(),
                         upstream_model: "gpt-6-astra".to_string(),
                         priority: 0,

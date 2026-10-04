@@ -63,7 +63,7 @@ export function ModelBenchmarks({ model }: { model: ModelView }) {
         {model.benchmark_scores.map((score) => (
           <div
             key={`${score.source}:${score.metric_key}`}
-            className="grid min-w-0 gap-2 py-3 text-sm sm:grid-cols-[14rem_minmax(0,1fr)]"
+            className="grid min-w-0 gap-2 py-3 text-sm sm:grid-cols-[9rem_minmax(0,1fr)]"
           >
             <dt className="text-muted-foreground">{score.label}</dt>
             <dd className="text-subtle-foreground flex min-w-0 flex-col gap-1">
@@ -72,7 +72,7 @@ export function ModelBenchmarks({ model }: { model: ModelView }) {
                 {matchKindLabel(score.match_kind)} · Updated {formatDataAge(score.updated_at)}
               </span>
               <a
-                className="w-fit text-xs underline underline-offset-4"
+                className="max-w-full text-xs break-words underline underline-offset-4"
                 href={score.source_url}
                 target="_blank"
                 rel="noreferrer"

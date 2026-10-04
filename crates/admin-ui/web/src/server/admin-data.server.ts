@@ -181,6 +181,8 @@ export async function updateApiKey(
 export async function listModels(params?: {
   page?: number
   page_size?: number
+  include_aliases?: boolean
+  q?: string
 }): Promise<ApiEnvelope<ModelPageView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
@@ -189,6 +191,8 @@ export async function listModels(params?: {
         query: {
           page: params?.page,
           page_size: params?.page_size,
+          include_aliases: params?.include_aliases,
+          q: params?.q,
         },
       },
     }),

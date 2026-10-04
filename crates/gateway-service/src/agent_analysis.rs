@@ -49,7 +49,9 @@ pub(crate) const SESSION_ANALYSIS_DIAGNOSTIC_HEADERS: &[&str] = &[
 ];
 use uuid::Uuid;
 
-use crate::redaction::REDACTED_VALUE;
+#[cfg(test)]
+use crate::client_session::MAX_EXTERNAL_IDENTIFIER_BYTES;
+pub(crate) use crate::client_session::SessionCorrelationLimitation;
 use crate::{budget_scopes::usage_ownership_scope_key, service::scaled_cost_for_tokens};
 
 pub const COHORT_VERSION: &str = "successful-boundary-group-v2";
@@ -67,8 +69,7 @@ pub(crate) use ingestion::{
 };
 use report_builder::generate_report;
 pub(crate) use session_resolution::{
-    PassiveRequestMetadata, SessionCorrelationLimitation, extract_request_metadata,
-    serialized_request_prompt_bytes,
+    PassiveRequestMetadata, extract_request_metadata, serialized_request_prompt_bytes,
 };
 use session_resolution::{hash_identifier, hash_lineage_candidate, stable_uuid};
 use worker::ensure_supported_versions;
@@ -88,8 +89,6 @@ const OBSERVATION_SET_ID_NAMESPACE: Uuid = Uuid::from_u128(0x373f2ed6_0734_4af4_
 const OBSERVATION_ID_NAMESPACE: Uuid = Uuid::from_u128(0xbdfc8775_f822_425d_8d0f_9a553961fc58);
 const ANALYSIS_ID_NAMESPACE: Uuid = Uuid::from_u128(0x6e390d51_3f14_4cee_9b85_c0b238fe99a2);
 const QUEUE_ID_NAMESPACE: Uuid = Uuid::from_u128(0x08d4bc47_3379_4137_843c_3e63be6d500d);
-const MAX_EXTERNAL_IDENTIFIER_BYTES: usize = 256;
-const MAX_TURN_METADATA_BYTES: usize = 4_096;
 const MAX_INFERRED_TOOL_CALLS: usize = 128;
 const MAX_TOOL_CALL_SCAN_DEPTH: usize = 32;
 const MAX_TOOL_CALL_SCAN_NODES: usize = 4_096;

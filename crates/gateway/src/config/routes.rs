@@ -29,6 +29,8 @@ const fn default_enabled() -> bool {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModelRouteConfig {
+    #[serde(default)]
+    pub id: Option<String>,
     pub provider: String,
     pub upstream_model: String,
     #[serde(default = "default_route_priority")]
@@ -58,6 +60,17 @@ impl ModelRouteConfig {
         max_reasoning_effort: Option<ReasoningEffort>,
         provider: Option<&ProviderConfig>,
     ) -> anyhow::Result<()> {
+        if let Some(id) = &self.id
+            && (id.is_empty()
+                || id.len() > 128
+                || !id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-')))
+        {
+            bail!(
+                "model `{model_id}` route id must contain 1 to 128 ASCII letters, digits, underscores, periods, or hyphens"
+            );
+        }
         if let Some(context_window_tokens) = self.context_window_tokens
             && context_window_tokens <= 0
         {

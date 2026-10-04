@@ -1,6 +1,7 @@
 use std::{fs, path::Path};
 
 use anyhow::Context;
+use gateway_core::{ModelRoutingPolicy, RoutingStrategy};
 use gateway_service::{
     AdminModelStatus as ServiceAdminModelStatus, BenchmarkMatchKind, BenchmarkMetric,
     ModelIconKey as ServiceModelIconKey, ProviderIconKey as ServiceProviderIconKey,
@@ -330,6 +331,55 @@ pub struct AdminModelAllowlistView {
     pub teams: Vec<String>,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelRoutingPolicyView {
+    pub strategy: AdminModelRoutingStrategyView,
+    pub affinity: Option<AdminModelSessionAffinityView>,
+}
+
+impl From<ModelRoutingPolicy> for AdminModelRoutingPolicyView {
+    fn from(policy: ModelRoutingPolicy) -> Self {
+        Self {
+            strategy: match policy.strategy {
+                RoutingStrategy::Preferred => AdminModelRoutingStrategyView::Preferred,
+                RoutingStrategy::WeightedRandom => AdminModelRoutingStrategyView::WeightedRandom,
+                RoutingStrategy::RoundRobin => AdminModelRoutingStrategyView::RoundRobin,
+            },
+            affinity: policy
+                .affinity
+                .map(|affinity| AdminModelSessionAffinityView {
+                    idle_timeout_seconds: affinity.idle_timeout_seconds,
+                }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AdminModelRoutingStrategyView {
+    Preferred,
+    WeightedRandom,
+    RoundRobin,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelSessionAffinityView {
+    pub idle_timeout_seconds: u32,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelRouteView {
+    pub id: String,
+    pub provider_key: String,
+    pub provider_label: String,
+    pub provider_icon_key: ProviderIconKeyView,
+    pub upstream_model: String,
+    pub priority: i32,
+    pub weight: f64,
+    pub enabled: bool,
+    pub provider_configured: bool,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EffectiveMetadataSourceKindView {
@@ -352,9 +402,15 @@ pub struct AdminModelView {
     pub model_id: String,
     pub resolved_model_key: String,
     pub alias_of: Option<String>,
+    /// Other model IDs resolving to the same execution model, excluding this model ID.
+    pub aliases: Vec<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub allowlist: Option<AdminModelAllowlistView>,
+    /// Configured policy. Only visible to platform admins.
+    pub routing: Option<AdminModelRoutingPolicyView>,
+    /// Configured routes, including disabled routes. Only visible to platform admins.
+    pub routes: Option<Vec<AdminModelRouteView>>,
     pub status: AdminModelStatusView,
     pub provider_key: Option<String>,
     pub provider_label: Option<String>,
@@ -499,6 +555,11 @@ pub struct RefreshModelPricingCatalogResponse {
 pub struct AdminModelListQuery {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
+    /// Include alias models in the list. Defaults to true; alias metadata is always retained.
+    #[param(default = true)]
+    pub include_aliases: Option<bool>,
+    /// Trimmed, case-insensitive substring search across model IDs, aliases, visible providers, upstream IDs, and tags.
+    pub q: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -2061,6 +2122,55 @@ mod tests {
     }
 
     #[test]
+    fn models_query_documents_optional_case_insensitive_search() {
+        let document = serde_json::to_value(admin_openapi()).expect("serialize OpenAPI");
+        let parameters = document["paths"]["/api/v1/admin/models"]["get"]["parameters"]
+            .as_array()
+            .expect("models query parameters");
+        let query = parameters
+            .iter()
+            .find(|parameter| parameter["name"] == "q")
+            .expect("q query parameter");
+
+        assert_eq!(query["in"], "query");
+        assert_eq!(query["required"], false);
+        assert_eq!(query["schema"]["type"], json!(["string", "null"]));
+        let description = query["description"]
+            .as_str()
+            .expect("search query description")
+            .to_ascii_lowercase();
+        assert!(description.contains("case-insensitive"));
+        assert!(description.contains("trim"));
+    }
+
+    #[test]
+    fn models_query_documents_optional_alias_filter_enabled_by_default() {
+        let document = serde_json::to_value(admin_openapi()).expect("serialize OpenAPI");
+        let parameters = document["paths"]["/api/v1/admin/models"]["get"]["parameters"]
+            .as_array()
+            .expect("models query parameters");
+        let include_aliases = parameters
+            .iter()
+            .find(|parameter| parameter["name"] == "include_aliases")
+            .expect("include_aliases query parameter");
+
+        assert_eq!(include_aliases["in"], "query");
+        assert_eq!(include_aliases["required"], false);
+        assert_eq!(
+            include_aliases["schema"]["type"],
+            serde_json::json!(["boolean", "null"])
+        );
+        assert_eq!(include_aliases["schema"]["default"], true);
+        assert!(
+            include_aliases["description"]
+                .as_str()
+                .expect("alias filter description")
+                .to_ascii_lowercase()
+                .contains("alias")
+        );
+    }
+
+    #[test]
     fn openapi_document_includes_live_admin_paths_and_envelopes() {
         let openapi = admin_openapi();
         let paths = openapi.paths.paths;
@@ -2135,6 +2245,22 @@ mod tests {
                 .contains_key("Envelope_McpToolInvocationDetailView")
         );
         assert!(components.schemas.contains_key("AdminModelAllowlistView"));
+        assert!(
+            components
+                .schemas
+                .contains_key("AdminModelRoutingPolicyView")
+        );
+        assert!(
+            components
+                .schemas
+                .contains_key("AdminModelRoutingStrategyView")
+        );
+        assert!(
+            components
+                .schemas
+                .contains_key("AdminModelSessionAffinityView")
+        );
+        assert!(components.schemas.contains_key("AdminModelRouteView"));
         assert!(components.schemas.contains_key("AdminModelView"));
     }
 

@@ -314,6 +314,7 @@ where
         provider_key: route.provider_key.clone(),
         upstream_model: route.upstream_model.clone(),
         owner_user_id: auth.owner_user_id,
+        expected_provider_credential_id: None,
         extra_headers: route.extra_headers.clone(),
         extra_body: route.extra_body.clone(),
         request_headers: BTreeMap::new(),

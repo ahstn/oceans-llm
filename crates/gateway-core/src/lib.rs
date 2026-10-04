@@ -7,6 +7,7 @@ pub mod error;
 pub mod gateway_keys;
 pub mod protocol;
 pub mod reasoning_policy;
+pub mod routing;
 pub mod skills;
 pub mod streaming;
 pub mod traits;
@@ -139,6 +140,11 @@ pub use protocol::translate::{
 pub use reasoning_policy::{
     enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
     enforce_responses_reasoning_effort,
+};
+pub use routing::{
+    ModelRoutingPolicy, ResponseRouteOrigin, RouteBindingReceipt, RouteSelection,
+    RouteSelectionMode, RouteSelectionRequest, RoutingCandidate, RoutingRepository,
+    RoutingStrategy, SessionAffinityPolicy,
 };
 pub use skills::{
     SkillDetail, SkillListQuery, SkillNamespaceRecord, SkillObjectStore, SkillRecord,

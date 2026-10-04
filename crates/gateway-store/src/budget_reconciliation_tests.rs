@@ -65,6 +65,7 @@ async fn exercise_human_budget_defaults<S: GatewayStore + ?Sized>(store: &S) {
         model_key: "fable-5".to_string(),
         alias_target_model_key: None,
         max_reasoning_effort: None,
+        routing: None,
         description: None,
         tags: Vec::new(),
         rank: 10,
