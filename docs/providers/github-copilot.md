@@ -33,25 +33,44 @@ Set a stable encryption key for encrypting user-provided Copilot tokens outside 
 export OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 ```
 
-### Fetch and store a Copilot token (users)
+### Store a Copilot token with the CLI (users)
 
-Sign in to GitHub CLI with your user account:
+Install the [Oceans CLI](../setup/skills.md#use-the-oceans-cli). Set `OCEANS_URL` to your gateway and supply a user-owned Oceans API key through `OCEANS_API_KEY`. These settings authenticate you to Oceans; the GitHub token is a separate credential.
+
+Check that GitHub CLI uses the account with your Copilot access, then send its token directly to Oceans:
 
 ```bash
 gh auth status --hostname github.com
-gh auth refresh --hostname github.com
-gh auth token --hostname github.com
+gh auth token --hostname github.com | oceans providers set-copilot-token --token-stdin
 ```
 
-> [!WARNING]
->
-> Treat the output of `gh auth token` as a password. Do not place it in shell history, YAML, logs, an issue, or a support message.
+You can also enter the token at a prompt that does not display your input:
 
-Store the token in Oceans using the following steps:
+```bash
+oceans providers set-copilot-token
+```
 
-1. Sign in to the Oceans admin UI
+The command selects the provider automatically when the gateway has exactly one provider in `github_user` mode. If several providers exist, select the configured provider ID:
+
+```bash
+oceans providers set-copilot-token --provider github-copilot-user
+```
+
+The command also accepts `oceans providers set-copilot-token TOKEN`. Prefer the prompt or `--token-stdin`: a positional token can appear in shell history and process listings. Never place a real token in YAML, logs, an issue, or a support message. Use only one input method. Scripts must use an explicit token or `--token-stdin`; the command does not prompt when standard input is not a terminal.
+
+`--url` overrides `OCEANS_URL`, and `--json` returns status metadata without the token. Remote gateways require HTTPS. The command permits HTTP only for loopback IP addresses and does not follow redirects.
+
+A successful save confirms that Oceans stored the token. It does not confirm GitHub entitlement, model access, or token validity. Oceans does not refresh your GitHub user token. Run the command again to replace an expired or revoked token.
+
+The credential belongs to your Oceans user and the selected provider, rather than to one API key. Replacement affects all your user-owned keys for that provider. Any active API key owned by your user can make this change, including a key with restricted model access. Service-account keys and disabled users cannot use this command. The command cannot read a saved token or change another user's credential.
+
+### Manage stored tokens in the UI (platform admins)
+
+Platform admins can store or replace a user's token through the existing admin UI:
+
+1. Sign in to the Oceans admin UI as a platform admin.
 2. Open **Identity > Users**.
-3. Select your user profile.
+3. Select the user's profile.
 4. Open **Provider Configuration**.
 5. Find the `github_user` provider.
 6. Paste the output of `gh auth token` and select **Save token**.

@@ -96,7 +96,7 @@ async fn download_pins_summary_version_and_digest_without_fetching_preview() {
         );
     let (client, _server) = server(router).await;
     let fetched = fetch_archive(
-        &client,
+        &client.scoped(&["skills"]),
         &VersionArgs {
             skill: "alice/review".into(),
             version: None,
@@ -174,7 +174,9 @@ async fn upload_appends_edited_installed_skill_without_installer_record() {
             }),
         );
     let (client, _server) = server(router).await;
-    upload(&client, &installed, false, true).await.unwrap();
+    upload(&client.scoped(&["skills"]), &installed, false, true)
+        .await
+        .unwrap();
     assert_eq!(uploaded.load(Ordering::Relaxed), 1);
 }
 
@@ -239,7 +241,7 @@ async fn upload_skips_only_when_requested_and_latest_content_matches() {
             );
         let (client, _server) = server(router).await;
         upload(
-            &client,
+            &client.scoped(&["skills"]),
             &directory.path().join("review"),
             skip_unchanged,
             true,
@@ -333,7 +335,7 @@ async fn stored_versions_remain_downloadable_and_installable_after_upload_limits
         );
     let (client, _server) = server(router).await;
     let fetched = fetch_archive(
-        &client,
+        &client.scoped(&["skills"]),
         &VersionArgs {
             skill: "alice/review".into(),
             version: None,
@@ -389,9 +391,14 @@ async fn upload_still_enforces_current_registry_limits() {
             }),
         );
     let (client, _server) = server(router).await;
-    let error = upload(&client, &directory.path().join("review"), false, false)
-        .await
-        .unwrap_err();
+    let error = upload(
+        &client.scoped(&["skills"]),
+        &directory.path().join("review"),
+        false,
+        false,
+    )
+    .await
+    .unwrap_err();
     assert!(format!("{error:#}").contains("skill bundle exceeds expanded bytes limit"));
 }
 
@@ -429,7 +436,7 @@ async fn show_bounds_escaped_preview_by_selected_version_without_upload_limits()
         );
     let (client, _server) = server(router).await;
     show(
-        &client,
+        &client.scoped(&["skills"]),
         &VersionArgs {
             skill: "alice/review".into(),
             version: Some(2),
@@ -460,7 +467,9 @@ async fn list_fetches_every_page() {
         }),
     );
     let (client, _server) = server(router).await;
-    list(&client, Some("alice".into()), true).await.unwrap();
+    list(&client.scoped(&["skills"]), Some("alice".into()), true)
+        .await
+        .unwrap();
     assert_eq!(*offsets.lock().unwrap(), vec![0, 100]);
 }
 

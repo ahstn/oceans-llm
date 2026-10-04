@@ -30,7 +30,9 @@ async fn server(router: Router, prefix: &str) -> (Client, Server) {
         axum::serve(listener, router).await.unwrap();
     });
     (
-        Client::new(url.parse().unwrap(), "gwk_test.secret").unwrap(),
+        Client::new(url.parse().unwrap(), "gwk_test.secret")
+            .unwrap()
+            .scoped(&["skills"]),
         Server(task),
     )
 }

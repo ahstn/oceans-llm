@@ -4766,6 +4766,97 @@
         ]
       }
     },
+    "/api/v1/me/provider-credentials": {
+      "get": {
+        "tags": [
+          "crate::http::provider_credentials"
+        ],
+        "operationId": "list_my_provider_credentials",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SelfProviderCredentialView"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid gateway API key"
+          },
+          "403": {
+            "description": "An active user-owned gateway API key is required"
+          }
+        },
+        "security": [
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/provider-credentials/{provider_key}": {
+      "put": {
+        "tags": [
+          "crate::http::provider_credentials"
+        ],
+        "operationId": "set_my_provider_credential",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMyProviderCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfProviderCredentialView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid token or provider is not configured for GitHub user authentication"
+          },
+          "401": {
+            "description": "Missing or invalid gateway API key"
+          },
+          "403": {
+            "description": "An active user-owned gateway API key is required"
+          },
+          "413": {
+            "description": "Request body exceeds 8 KiB"
+          }
+        },
+        "security": [
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
     "/api/v1/me/spend/focus.csv": {
       "get": {
         "tags": [
@@ -16204,6 +16295,33 @@
           }
         }
       },
+      "SelfProviderCredentialView": {
+        "type": "object",
+        "required": [
+          "provider_key",
+          "configured"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_key": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "SetDefaultVersionRequest": {
         "type": "object",
         "required": [
@@ -16216,6 +16334,18 @@
             "minimum": 0
           }
         }
+      },
+      "SetMyProviderCredentialRequest": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "SkillArchiveBody": {
         "type": "string",

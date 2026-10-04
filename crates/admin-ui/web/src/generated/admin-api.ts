@@ -1300,6 +1300,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/provider-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_my_provider_credentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/provider-credentials/{provider_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_my_provider_credential"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/spend/focus.csv": {
         parameters: {
             query?: never;
@@ -4153,9 +4185,18 @@ export interface components {
         RevokeApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
         };
+        SelfProviderCredentialView: {
+            configured: boolean;
+            last_used_at?: string | null;
+            provider_key: string;
+            updated_at?: string | null;
+        };
         SetDefaultVersionRequest: {
             /** Format: int32 */
             version: number;
+        };
+        SetMyProviderCredentialRequest: {
+            token: string;
         };
         /**
          * Format: binary
@@ -6991,6 +7032,92 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Envelope_MyProfileView"];
                 };
+            };
+        };
+    };
+    list_my_provider_credentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfProviderCredentialView"][];
+                };
+            };
+            /** @description Missing or invalid gateway API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An active user-owned gateway API key is required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_my_provider_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMyProviderCredentialRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfProviderCredentialView"];
+                };
+            };
+            /** @description Invalid token or provider is not configured for GitHub user authentication */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid gateway API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An active user-owned gateway API key is required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request body exceeds 8 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
