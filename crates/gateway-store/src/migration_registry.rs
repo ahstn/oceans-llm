@@ -296,6 +296,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V53__model_routing_policy.sql"),
         postgres_sql: include_str!("../migrations/postgres/V53__model_routing_policy.sql"),
     },
+    MigrationManifest {
+        version: 54,
+        name: "request_log_request_tool_count",
+        checksum: "V54__request_log_request_tool_count.sql",
+        libsql_sql: include_str!("../migrations/V54__request_log_request_tool_count.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V54__request_log_request_tool_count.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

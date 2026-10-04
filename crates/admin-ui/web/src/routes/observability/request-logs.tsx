@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from 'reac
 import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
+import { DatabaseLightningIcon } from '@hugeicons/core-free-icons'
+
+import { AppIcon } from '@/components/icons/app-icon'
 import { BrandIcon } from '@/components/icons/brand-icon'
 import { canAccessPage } from '@/components/layout/admin-nav'
 import { PageHeader } from '@/components/layout/page-header'
@@ -17,7 +20,6 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Sheet,
@@ -35,6 +37,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { formatUsd10000Precise } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
 import type {
@@ -44,6 +48,8 @@ import type {
   RequestLogView,
 } from '@/types/api'
 
+import { RequestLogToolbar } from './-request-log-filters'
+
 export const Route = createFileRoute('/observability/request-logs')({
   validateSearch: (search: Record<string, unknown>) => normalizeFilterSearch(search),
   loaderDeps: ({ search }) => search,
@@ -51,20 +57,11 @@ export const Route = createFileRoute('/observability/request-logs')({
   component: RequestLogsPage,
 })
 
-const initialFilters: RequestLogFiltersInput = {
-  request_id: '',
-  model_key: '',
-  provider_key: '',
-  service: '',
-  component: '',
-  env: '',
-  tag_key: '',
-  tag_value: '',
-}
-
 const requestLogRowEstimatePx = 56
 const requestLogDesktopPreviewRows = 12
 const requestLogDesktopTableHeightPx = requestLogRowEstimatePx * requestLogDesktopPreviewRows
+const requestLogGridColumns =
+  'grid grid-cols-[minmax(11rem,0.8fr)_minmax(12rem,1.3fr)_minmax(11rem,1.1fr)_76px_88px_84px_104px_160px_104px]'
 
 // Filters, virtualization, selection, and detail loading share one request-log explorer state.
 // oxlint-disable-next-line eslint/max-lines-per-function
@@ -73,19 +70,11 @@ export function RequestLogsPage() {
   const search = Route.useSearch()
   const router = useRouter()
   const parentRef = useRef<HTMLDivElement | null>(null)
-  const [filters, setFilters] = useState<RequestLogFiltersInput>(() => ({
-    ...initialFilters,
-    ...search,
-  }))
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
   const [selectedDetail, setSelectedDetail] = useState<RequestLogDetailView | null>(null)
   const [detailPending, setDetailPending] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [isListPending, startListTransition] = useTransition()
-
-  useEffect(() => {
-    setFilters({ ...initialFilters, ...search })
-  }, [search])
 
   useEffect(() => {
     if (!selectedLogId) {
@@ -99,7 +88,9 @@ export function RequestLogsPage() {
     setDetailPending(true)
     setDetailError(null)
 
-    void getObservabilityRequestLogDetail({ data: { requestLogId: selectedLogId } })
+    void getObservabilityRequestLogDetail({
+      data: { requestLogId: selectedLogId },
+    })
       .then((response) => {
         if (!cancelled) {
           setSelectedDetail(response.data)
@@ -139,22 +130,16 @@ export function RequestLogsPage() {
     setDetailError(null)
   }
 
-  function applyFilters(nextFilters: RequestLogFiltersInput) {
+  function applyFilters(nextFilters: RequestLogFiltersInput, options?: { replace?: boolean }) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/request-logs',
         search: normalizeFilterSearch(nextFilters),
+        replace: options?.replace,
+        resetScroll: false,
       })
     })
   }
-
-  function updateFilter(key: keyof RequestLogFiltersInput, value: string) {
-    setFilters((current) => ({ ...current, [key]: value }))
-  }
-
-  const normalizedFilters = normalizeFilterSearch(filters)
-  const hasPartialTagFilter =
-    Boolean(normalizedFilters.tag_key) !== Boolean(normalizedFilters.tag_value)
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
@@ -174,70 +159,13 @@ export function RequestLogsPage() {
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <Input
-              data-testid="request-log-filter-service"
-              placeholder="Service"
-              value={filters.service ?? ''}
-              onChange={(event) => updateFilter('service', event.target.value)}
-            />
-            <Input
-              data-testid="request-log-filter-component"
-              placeholder="Component"
-              value={filters.component ?? ''}
-              onChange={(event) => updateFilter('component', event.target.value)}
-            />
-            <Input
-              data-testid="request-log-filter-env"
-              placeholder="Environment"
-              value={filters.env ?? ''}
-              onChange={(event) => updateFilter('env', event.target.value)}
-            />
-            <Input
-              data-testid="request-log-filter-tag-key"
-              placeholder="Tag key"
-              value={filters.tag_key ?? ''}
-              onChange={(event) => updateFilter('tag_key', event.target.value)}
-            />
-            <Input
-              data-testid="request-log-filter-tag-value"
-              placeholder="Tag value"
-              value={filters.tag_value ?? ''}
-              onChange={(event) => updateFilter('tag_value', event.target.value)}
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => applyFilters(normalizedFilters)}
-              disabled={isListPending || hasPartialTagFilter}
-            >
-              {isListPending ? 'Filtering...' : 'Apply Filters'}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setFilters(initialFilters)
-                applyFilters(initialFilters)
-              }}
-              disabled={isListPending}
-            >
-              Clear
-            </Button>
-          </div>
-          {hasPartialTagFilter ? (
-            <Alert>
-              <AlertTitle>Incomplete tag filter</AlertTitle>
-              <AlertDescription>
-                Provide both a tag key and tag value to filter bespoke request tags.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          <div className="text-muted-foreground text-sm">
-            {logPage.total} total logs loaded from gateway observability APIs.
-          </div>
+          <RequestLogToolbar
+            filters={search}
+            shownCount={logPage.items.length}
+            totalCount={logPage.total}
+            isPending={isListPending}
+            onApply={applyFilters}
+          />
 
           <div
             className="border-border max-h-[34rem] overflow-auto rounded-md border p-3 lg:hidden"
@@ -251,12 +179,12 @@ export function RequestLogsPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-foreground flex items-center gap-2 truncate font-semibold">
+                      <p className="text-foreground truncate text-sm font-semibold tabular-nums">
+                        {formatOccurredAt(item.occurred_at)}
+                      </p>
+                      <p className="text-subtle-foreground flex items-center gap-2 truncate text-sm">
                         <BrandIcon iconKey={item.model_icon_key} size={16} />
                         <span className="truncate">{item.model_key}</span>
-                      </p>
-                      <p className="text-muted-foreground truncate font-mono text-xs">
-                        {item.request_id}
                       </p>
                     </div>
                     <Badge variant={badgeVariant(item.status_code)}>
@@ -265,61 +193,21 @@ export function RequestLogsPage() {
                   </div>
 
                   <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Provider
-                      </dt>
-                      <dd className="text-subtle-foreground flex items-center gap-2">
+                    <MobileField label="Provider">
+                      <span className="flex items-center gap-2">
                         <BrandIcon iconKey={item.provider_icon_key} size={14} />
                         <span>{item.provider_key}</span>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Caller
-                      </dt>
-                      <dd className="text-subtle-foreground truncate">
-                        {callerPrimary(item) ?? 'Unknown'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Key
-                      </dt>
-                      <dd className="text-subtle-foreground truncate">
-                        {item.api_key_name ?? item.api_key_id}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Latency
-                      </dt>
-                      <dd className="text-subtle-foreground">{formatLatency(item.latency_ms)}</dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Tokens
-                      </dt>
-                      <dd className="text-subtle-foreground">
-                        {formatTokenCount(item.total_tokens)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Tools
-                      </dt>
-                      <dd className="text-subtle-foreground">
-                        <ToolCardinalityInline item={item} />
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Timestamp
-                      </dt>
-                      <dd className="text-subtle-foreground">
-                        {formatOccurredAt(item.occurred_at)}
-                      </dd>
-                    </div>
+                      </span>
+                    </MobileField>
+                    <MobileField label="Caller">{callerPrimary(item) ?? 'Unknown'}</MobileField>
+                    <MobileField label="Cost">{formatRequestCost(item.cost_usd_10000)}</MobileField>
+                    <MobileField label="Latency">{formatLatency(item.latency_ms)}</MobileField>
+                    <MobileField label="Tokens">
+                      <TokensWithCache item={item} />
+                    </MobileField>
+                    <MobileField label="Tools (Used / Total)">
+                      <ToolUsage item={item} />
+                    </MobileField>
                   </dl>
 
                   <div className="mt-4 flex justify-end">
@@ -340,16 +228,21 @@ export function RequestLogsPage() {
             className="border-border hidden min-w-0 overflow-x-auto rounded-md border lg:block"
             data-testid="request-log-desktop-table"
           >
-            <div className="min-w-[80rem]">
-              <div className="bg-surface-muted text-muted-foreground grid grid-cols-[minmax(13rem,1.2fr)_minmax(12rem,1.1fr)_minmax(11rem,1fr)_minmax(9rem,0.9fr)_80px_88px_80px_150px_110px]">
-                <span className="px-3 py-2 font-semibold">Request</span>
+            <div className="min-w-[68rem]">
+              <div
+                className={cn(
+                  requestLogGridColumns,
+                  'bg-surface-muted text-muted-foreground text-sm',
+                )}
+              >
+                <span className="px-3 py-2 font-semibold">Time</span>
                 <span className="px-3 py-2 font-semibold">Model</span>
                 <span className="px-3 py-2 font-semibold">Caller</span>
-                <span className="px-3 py-2 font-semibold">Key</span>
                 <span className="px-3 py-2 font-semibold">Status</span>
+                <span className="px-3 py-2 font-semibold">Cost</span>
                 <span className="px-3 py-2 font-semibold">Latency</span>
                 <span className="px-3 py-2 font-semibold">Tokens</span>
-                <span className="px-3 py-2 font-semibold">Tools</span>
+                <span className="px-3 py-2 font-semibold">Tools (Used / Total)</span>
                 <span className="px-3 py-2 font-semibold">Inspect</span>
               </div>
               <div
@@ -369,21 +262,22 @@ export function RequestLogsPage() {
                     return (
                       <div
                         key={item.request_log_id}
-                        className="border-border absolute top-0 left-0 grid w-full grid-cols-[minmax(13rem,1.2fr)_minmax(12rem,1.1fr)_minmax(11rem,1fr)_minmax(9rem,0.9fr)_80px_88px_80px_150px_110px] border-t align-top text-sm"
+                        className={cn(
+                          requestLogGridColumns,
+                          'border-border hover:bg-surface-muted absolute top-0 left-0 w-full items-center border-t text-sm',
+                        )}
                         style={{
                           height: `${virtualRow.size}px`,
                           transform: `translateY(${virtualRow.start}px)`,
                         }}
                       >
-                        <div className="min-w-0 px-3 py-3">
-                          <div className="text-foreground truncate font-mono text-xs">
-                            {item.request_id}
-                          </div>
-                          <div className="text-muted-foreground truncate text-xs">
-                            {formatOccurredAt(item.occurred_at)}
-                          </div>
-                        </div>
-                        <div className="min-w-0 px-3 py-3">
+                        <span
+                          className="text-foreground truncate px-3 tabular-nums"
+                          title={item.occurred_at}
+                        >
+                          {formatOccurredAt(item.occurred_at)}
+                        </span>
+                        <div className="min-w-0 px-3">
                           <div className="text-foreground flex items-center gap-2 truncate">
                             <BrandIcon iconKey={item.model_icon_key} size={16} />
                             <span className="truncate">{item.model_key}</span>
@@ -393,7 +287,7 @@ export function RequestLogsPage() {
                             <span className="truncate">{item.provider_key}</span>
                           </div>
                         </div>
-                        <div className="min-w-0 px-3 py-3">
+                        <div className="min-w-0 px-3">
                           <div className="text-foreground truncate">
                             {callerPrimary(item) ?? 'Unknown'}
                           </div>
@@ -403,27 +297,28 @@ export function RequestLogsPage() {
                             </div>
                           ) : null}
                         </div>
-                        <span className="text-subtle-foreground truncate px-3 py-3">
-                          {item.api_key_name ?? item.api_key_id}
-                        </span>
-                        <span className="px-3 py-3">
+                        <span className="px-3">
                           <Badge variant={badgeVariant(item.status_code)}>
                             {item.status_code ?? 'n/a'}
                           </Badge>
                         </span>
-                        <span className="text-subtle-foreground px-3 py-3">
+                        <span className="text-subtle-foreground px-3 tabular-nums">
+                          {formatRequestCost(item.cost_usd_10000)}
+                        </span>
+                        <span className="text-subtle-foreground px-3 tabular-nums">
                           {formatLatency(item.latency_ms)}
                         </span>
-                        <span className="text-subtle-foreground px-3 py-3">
-                          {formatTokenCount(item.total_tokens)}
+                        <span className="text-subtle-foreground px-3">
+                          <TokensWithCache item={item} />
                         </span>
-                        <span className="text-subtle-foreground px-3 py-3">
-                          <ToolCardinalityInline item={item} />
+                        <span className="text-subtle-foreground px-3">
+                          <ToolUsage item={item} />
                         </span>
-                        <div className="px-3 py-2.5">
+                        <div className="px-3">
                           <Button
                             type="button"
-                            variant="secondary"
+                            variant="outline"
+                            size="sm"
                             className="w-full"
                             onClick={() => openDetail(item.request_log_id)}
                           >
@@ -515,6 +410,21 @@ export function RequestLogsPage() {
                   <DetailRow
                     label="Tokens"
                     value={formatTokenCount(selectedDetail.log.total_tokens)}
+                  />
+                  <DetailRow
+                    label="Cached Tokens"
+                    value={
+                      selectedDetail.log.cache_read_tokens
+                        ? cacheHitLabel(
+                            selectedDetail.log.cache_read_tokens,
+                            selectedDetail.log.prompt_tokens,
+                          )
+                        : 'none'
+                    }
+                  />
+                  <DetailRow
+                    label="Cost"
+                    value={formatRequestCost(selectedDetail.log.cost_usd_10000)}
                   />
                   <OperationDetailRow item={selectedDetail.log} />
                   <DetailRow
@@ -628,15 +538,49 @@ function McpTokenOverheadCard({ detail }: { detail: RequestLogDetailView }) {
   )
 }
 
-function ToolCardinalityInline({ item }: { item: RequestLogView }) {
+function MobileField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
+        {label}
+      </dt>
+      <dd className="text-subtle-foreground truncate">{children}</dd>
+    </div>
+  )
+}
+
+/** Total tokens plus an OpenRouter-style cache indicator when the provider served cached prompt tokens. */
+function TokensWithCache({ item }: { item: RequestLogView }) {
+  const cachedTokens = item.cache_read_tokens ?? 0
+
+  return (
+    <span className="inline-flex items-center gap-1.5 tabular-nums">
+      {formatTokenCount(item.total_tokens)}
+      {cachedTokens > 0 ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 inline-flex rounded-sm outline-none focus-visible:ring-3"
+              aria-label="Cache hit"
+              data-testid="request-log-cache-hit"
+            >
+              <AppIcon icon={DatabaseLightningIcon} size={14} stroke={1.5} aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{cacheHitLabel(cachedTokens, item.prompt_tokens)}</TooltipContent>
+        </Tooltip>
+      ) : null}
+    </span>
+  )
+}
+
+function ToolUsage({ item }: { item: RequestLogView }) {
   const counts = item.tool_cardinality
 
   return (
-    <span className="inline-flex flex-wrap gap-x-2 gap-y-1 text-xs tabular-nums">
-      <span>MCP {formatToolCount(counts.referenced_mcp_server_count)}</span>
-      <span>exposed {formatToolCount(counts.exposed_tool_count)}</span>
-      <span>called {formatToolCount(counts.invoked_tool_count)}</span>
-      <span>filtered {formatToolCount(counts.filtered_tool_count)}</span>
+    <span className="tabular-nums" data-testid="request-log-tool-usage">
+      {formatToolCount(counts.invoked_tool_count)} / {formatToolCount(counts.request_tool_count)}
     </span>
   )
 }
@@ -661,11 +605,12 @@ function ToolCardinalityCard({ item }: { item: RequestLogView }) {
         ) : null}
       </CardHeader>
       <CardContent>
-        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
           <DetailRow
             label="MCP Servers"
             value={formatToolCount(counts.referenced_mcp_server_count)}
           />
+          <DetailRow label="Request Tools" value={formatToolCount(counts.request_tool_count)} />
           <DetailRow label="Tools Exposed" value={formatToolCount(counts.exposed_tool_count)} />
           <DetailRow label="Tools Called" value={formatToolCount(counts.invoked_tool_count)} />
           <DetailRow label="Tools Filtered" value={formatToolCount(counts.filtered_tool_count)} />
@@ -878,8 +823,8 @@ function callerLabel(item: RequestLogView): string {
 }
 
 function formatOccurredAt(occurredAt: string) {
-  // RFC3339 from the gateway; trim to a compact minute-resolution display.
-  return occurredAt.replace('T', ' ').slice(0, 16)
+  // RFC3339 from the gateway; trim to a compact second-resolution display.
+  return occurredAt.replace('T', ' ').slice(0, 19)
 }
 
 function badgeVariant(statusCode: number | null): 'success' | 'warning' | 'outline' {
@@ -900,6 +845,19 @@ function formatLatency(latencyMs: number | null) {
 
 function formatTokenCount(totalTokens: number | null) {
   return totalTokens === null ? 'n/a' : String(totalTokens)
+}
+
+function formatRequestCost(costUsd10000: number | null | undefined) {
+  return costUsd10000 == null ? '—' : formatUsd10000Precise(costUsd10000)
+}
+
+function cacheHitLabel(cachedTokens: number, promptTokens: number | null | undefined) {
+  const cached = cachedTokens.toLocaleString('en-US')
+  if (!promptTokens) {
+    return `${cached} prompt tokens served from cache`
+  }
+  const percent = Math.round((cachedTokens / promptTokens) * 100)
+  return `${cached} of ${promptTokens.toLocaleString('en-US')} prompt tokens cached (${percent}%)`
 }
 
 function formatBasisPoints(value: number | null) {
@@ -977,6 +935,7 @@ function RequestTagBadges({ item }: { item: RequestLogView }) {
 
 function normalizeFilterSearch(search: Record<string, unknown>): RequestLogFiltersInput {
   return {
+    q: searchParamValue(search.q),
     request_id: searchParamValue(search.request_id),
     model_key: searchParamValue(search.model_key),
     provider_key: searchParamValue(search.provider_key),

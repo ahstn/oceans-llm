@@ -10,6 +10,44 @@ use gateway_core::{
 
 const REQUEST_LOG_PURGE_BATCH_SIZE: i64 = 1_000;
 
+/// Shared FROM/WHERE for the request log list count and page queries. `$13` is the free-text
+/// search, matched case-insensitively against model keys and the caller's user name/email.
+/// C collation matches SQLite's ASCII-only lowercasing, independent of the database locale.
+const REQUEST_LOG_LIST_FROM_WHERE: &str = r#"
+            FROM request_logs
+            LEFT JOIN users ON users.user_id = request_logs.user_id
+            WHERE ($1::text IS NULL OR request_logs.request_id = $1)
+              AND ($2::text IS NULL OR request_logs.model_key = $2)
+              AND ($3::text IS NULL OR request_logs.provider_key = $3)
+              AND ($4::bigint IS NULL OR request_logs.status_code = $4)
+              AND ($5::text IS NULL OR request_logs.user_id = $5)
+              AND ($6::text IS NULL OR request_logs.team_id = $6)
+              AND ($7::text IS NULL OR request_logs.service_account_id = $7)
+              AND ($8::text IS NULL OR request_logs.caller_service = $8)
+              AND ($9::text IS NULL OR request_logs.caller_component = $9)
+              AND ($10::text IS NULL OR request_logs.caller_env = $10)
+              AND (
+                ($11::text IS NULL AND $12::text IS NULL)
+                OR EXISTS (
+                  SELECT 1
+                  FROM request_log_tags
+                  WHERE request_log_tags.request_log_id = request_logs.request_log_id
+                    AND request_log_tags.tag_key = $11
+                    AND request_log_tags.tag_value = $12
+                )
+              )
+              AND (
+                $13::text IS NULL
+                OR strpos(lower(request_logs.model_key COLLATE "C"), lower($13 COLLATE "C")) > 0
+                OR strpos(
+                  lower(request_logs.resolved_model_key COLLATE "C"),
+                  lower($13 COLLATE "C")
+                ) > 0
+                OR strpos(lower(users.name COLLATE "C"), lower($13 COLLATE "C")) > 0
+                OR strpos(lower(users.email COLLATE "C"), lower($13 COLLATE "C")) > 0
+              )
+"#;
+
 fn normalize_query(query: &RequestLogQuery) -> (i64, i64) {
     let page = query.page.max(1);
     let page_size = query.page_size.clamp(1, MAX_REQUEST_LOG_PAGE_SIZE);
@@ -59,6 +97,7 @@ fn decode_request_log_row(row: &PgRow) -> Result<RequestLogRecord, StoreError> {
             exposed_tool_count: row.try_get(24).map_err(to_query_error)?,
             invoked_tool_count: row.try_get(25).map_err(to_query_error)?,
             filtered_tool_count: row.try_get(26).map_err(to_query_error)?,
+            request_tool_count: row.try_get(30).map_err(to_query_error)?,
         },
         user_agent_raw: row.try_get(27).map_err(to_query_error)?,
         agent_harness_key: row.try_get(28).map_err(to_query_error)?,
@@ -223,8 +262,8 @@ impl RequestLogRepository for PostgresStore {
                 response_payload_truncated, caller_service, caller_component, caller_env,
                 error_code, metadata_json, occurred_at, referenced_mcp_server_count,
                 exposed_tool_count, invoked_tool_count, filtered_tool_count, user_agent_raw,
-                agent_harness_key, agent_harness_label
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+                agent_harness_key, agent_harness_label, request_tool_count
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
             "#,
         )
         .bind(log.request_log_id.to_string())
@@ -265,6 +304,7 @@ impl RequestLogRepository for PostgresStore {
         .bind(log.user_agent_raw.as_deref())
         .bind(log.agent_harness_key.as_str())
         .bind(log.agent_harness_label.as_str())
+        .bind(log.tool_cardinality.request_tool_count)
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;
@@ -323,83 +363,50 @@ impl RequestLogRepository for PostgresStore {
         let tag_key = query.tag_key.as_deref();
         let tag_value = query.tag_value.as_deref();
 
-        let total_row = sqlx::query(
-            r#"
-            SELECT COUNT(*)
-            FROM request_logs
-            WHERE ($1::text IS NULL OR request_id = $1)
-              AND ($2::text IS NULL OR model_key = $2)
-              AND ($3::text IS NULL OR provider_key = $3)
-              AND ($4::bigint IS NULL OR status_code = $4)
-              AND ($5::text IS NULL OR user_id = $5)
-              AND ($6::text IS NULL OR team_id = $6)
-              AND ($7::text IS NULL OR service_account_id = $7)
-              AND ($8::text IS NULL OR caller_service = $8)
-              AND ($9::text IS NULL OR caller_component = $9)
-              AND ($10::text IS NULL OR caller_env = $10)
-              AND (
-                ($11::text IS NULL AND $12::text IS NULL)
-                OR EXISTS (
-                  SELECT 1
-                  FROM request_log_tags
-                  WHERE request_log_tags.request_log_id = request_logs.request_log_id
-                    AND request_log_tags.tag_key = $11
-                    AND request_log_tags.tag_value = $12
-                )
-              )
-            "#,
-        )
-        .bind(request_id)
-        .bind(model_key)
-        .bind(provider_key)
-        .bind(query.status_code)
-        .bind(user_id.clone())
-        .bind(team_id.clone())
-        .bind(service_account_id.clone())
-        .bind(service)
-        .bind(component)
-        .bind(env)
-        .bind(tag_key)
-        .bind(tag_value)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(to_query_error)?;
+        let search = query.q.as_deref().map(str::trim).filter(|q| !q.is_empty());
+
+        let total_row = sqlx::query(&format!("SELECT COUNT(*) {REQUEST_LOG_LIST_FROM_WHERE}"))
+            .bind(request_id)
+            .bind(model_key)
+            .bind(provider_key)
+            .bind(query.status_code)
+            .bind(user_id.clone())
+            .bind(team_id.clone())
+            .bind(service_account_id.clone())
+            .bind(service)
+            .bind(component)
+            .bind(env)
+            .bind(tag_key)
+            .bind(tag_value)
+            .bind(search)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(to_query_error)?;
         let total: i64 = total_row.try_get(0).map_err(to_query_error)?;
 
-        let mut items = sqlx::query(
+        let mut items = sqlx::query(&format!(
             r#"
-            SELECT request_log_id, request_id, api_key_id, user_id, team_id, service_account_id, model_key,
-                   resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
-                   completion_tokens, total_tokens, has_payload, request_payload_truncated,
-                   response_payload_truncated, caller_service, caller_component, caller_env,
-                   metadata_json, occurred_at, error_code, referenced_mcp_server_count,
-                   exposed_tool_count, invoked_tool_count, filtered_tool_count, user_agent_raw,
-                   agent_harness_key, agent_harness_label
-            FROM request_logs
-            WHERE ($1::text IS NULL OR request_id = $1)
-              AND ($2::text IS NULL OR model_key = $2)
-              AND ($3::text IS NULL OR provider_key = $3)
-              AND ($4::bigint IS NULL OR status_code = $4)
-              AND ($5::text IS NULL OR user_id = $5)
-              AND ($6::text IS NULL OR team_id = $6)
-              AND ($7::text IS NULL OR service_account_id = $7)
-              AND ($8::text IS NULL OR caller_service = $8)
-              AND ($9::text IS NULL OR caller_component = $9)
-              AND ($10::text IS NULL OR caller_env = $10)
-              AND (
-                ($11::text IS NULL AND $12::text IS NULL)
-                OR EXISTS (
-                  SELECT 1
-                  FROM request_log_tags
-                  WHERE request_log_tags.request_log_id = request_logs.request_log_id
-                    AND request_log_tags.tag_key = $11
-                    AND request_log_tags.tag_value = $12
-                )
-              )
-            ORDER BY occurred_at DESC, request_log_id DESC
-            LIMIT $13 OFFSET $14
-            "#,
-        )
+            SELECT request_logs.request_log_id, request_logs.request_id,
+                   request_logs.api_key_id, request_logs.user_id, request_logs.team_id,
+                   request_logs.service_account_id, request_logs.model_key,
+                   request_logs.resolved_model_key, request_logs.provider_key,
+                   request_logs.status_code, request_logs.latency_ms,
+                   request_logs.prompt_tokens, request_logs.completion_tokens,
+                   request_logs.total_tokens, request_logs.has_payload,
+                   request_logs.request_payload_truncated,
+                   request_logs.response_payload_truncated, request_logs.caller_service,
+                   request_logs.caller_component, request_logs.caller_env,
+                   request_logs.metadata_json, request_logs.occurred_at,
+                   request_logs.error_code, request_logs.referenced_mcp_server_count,
+                   request_logs.exposed_tool_count, request_logs.invoked_tool_count,
+                   request_logs.filtered_tool_count, request_logs.user_agent_raw,
+                   request_logs.agent_harness_key, request_logs.agent_harness_label,
+                   request_logs.request_tool_count
+            {REQUEST_LOG_LIST_FROM_WHERE}
+            ORDER BY request_logs.occurred_at DESC, request_logs.request_log_id DESC
+            LIMIT $14 OFFSET $15
+            "#
+        ))
         .bind(request_id)
         .bind(model_key)
         .bind(provider_key)
@@ -412,6 +419,7 @@ impl RequestLogRepository for PostgresStore {
         .bind(env)
         .bind(tag_key)
         .bind(tag_value)
+        .bind(search)
         .bind(page_size)
         .bind(offset)
         .fetch_all(&self.pool)
@@ -588,7 +596,7 @@ impl RequestLogRepository for PostgresStore {
                    rl.referenced_mcp_server_count, rl.exposed_tool_count,
                    rl.invoked_tool_count, rl.filtered_tool_count,
                    rl.user_agent_raw, rl.agent_harness_key, rl.agent_harness_label,
-                   rlp.request_json, rlp.response_json
+                   rl.request_tool_count, rlp.request_json, rlp.response_json
             FROM request_logs rl
             LEFT JOIN request_log_payloads rlp
               ON rlp.request_log_id = rl.request_log_id
@@ -611,8 +619,8 @@ impl RequestLogRepository for PostgresStore {
             .await?
             .remove(&request_log_id)
             .unwrap_or_default();
-        let request_json: Option<serde_json::Value> = row.try_get(30).map_err(to_query_error)?;
-        let response_json: Option<serde_json::Value> = row.try_get(31).map_err(to_query_error)?;
+        let request_json: Option<serde_json::Value> = row.try_get(31).map_err(to_query_error)?;
+        let response_json: Option<serde_json::Value> = row.try_get(32).map_err(to_query_error)?;
         let payload = match (request_json, response_json) {
             (Some(request_json), Some(response_json)) => Some(RequestLogPayloadRecord {
                 request_log_id,

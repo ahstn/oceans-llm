@@ -18,7 +18,7 @@ use gateway_core::{
     McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection, ProviderRepository,
     RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery,
     RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord, RequestTag, RequestTags,
-    ScoreMaturity, SessionLifecycleState,
+    ScoreMaturity, SessionLifecycleState, UsageLedgerRecord,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
@@ -411,6 +411,7 @@ pub async fn list_request_logs(
         env: empty_to_none(query.env),
         tag_key: None,
         tag_value: None,
+        q: empty_to_none(query.q),
     };
     let (tag_key, tag_value) = parse_optional_tag_filter(query.tag_key, query.tag_value)?;
     let query = RequestLogQuery {
@@ -422,10 +423,18 @@ pub async fn list_request_logs(
     let page = state.service.list_request_logs(&query).await?;
     let providers = provider_connections_by_key(&state, &page.items).await?;
     let callers = request_caller_directory(&state, &page.items).await?;
+    let usage = request_usage_directory(&state, &page.items).await?;
     let items = page
         .items
         .iter()
-        .map(|log| summary_view(log, providers.get(log.provider_key.as_str()), &callers))
+        .map(|log| {
+            summary_view(
+                log,
+                providers.get(log.provider_key.as_str()),
+                &callers,
+                &usage,
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Json(envelope(RequestLogPageView {
         items,
@@ -460,6 +469,7 @@ pub async fn get_request_log_detail(
     )?;
     let provider = provider_connection(&state, detail.log.provider_key.as_str()).await?;
     let callers = request_caller_directory(&state, std::slice::from_ref(&detail.log)).await?;
+    let usage = request_usage_directory(&state, std::slice::from_ref(&detail.log)).await?;
     let mcp_token_overhead = state
         .store
         .get_request_mcp_token_overhead(&detail.log.request_id)
@@ -468,6 +478,7 @@ pub async fn get_request_log_detail(
         detail,
         provider.as_ref(),
         &callers,
+        &usage,
         mcp_token_overhead,
     )?)))
 }
@@ -663,6 +674,48 @@ async fn request_caller_directory(
     Ok(directory)
 }
 
+/// Usage ledger cost and cache figures for a page of request logs. Usage events carry no
+/// request log id, so they are matched on `(request_id, api_key_id)`; when several ownership
+/// scopes recorded the same request, the store's `usage_event_id` order picks the first.
+#[derive(Debug, Default)]
+struct RequestUsageDirectory {
+    by_request_id: HashMap<String, Vec<UsageLedgerRecord>>,
+}
+
+impl RequestUsageDirectory {
+    fn usage_for(&self, log: &RequestLogRecord) -> Option<&UsageLedgerRecord> {
+        self.by_request_id
+            .get(&log.request_id)?
+            .iter()
+            .find(|record| record.api_key_id == log.api_key_id)
+    }
+}
+
+async fn request_usage_directory(
+    state: &AppState,
+    logs: &[RequestLogRecord],
+) -> Result<RequestUsageDirectory, AppError> {
+    let request_ids: Vec<String> = logs
+        .iter()
+        .map(|log| log.request_id.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let mut directory = RequestUsageDirectory::default();
+    for record in state
+        .store
+        .get_usage_ledgers_by_request_ids(&request_ids)
+        .await?
+    {
+        directory
+            .by_request_id
+            .entry(record.request_id.clone())
+            .or_default()
+            .push(record);
+    }
+    Ok(directory)
+}
+
 fn mcp_invocation_detail_view(detail: McpToolInvocationDetail) -> McpToolInvocationDetailView {
     McpToolInvocationDetailView {
         invocation: mcp_invocation_summary_view(&detail.invocation),
@@ -714,6 +767,7 @@ fn summary_view(
     log: &RequestLogRecord,
     provider: Option<&ProviderConnection>,
     callers: &RequestCallerDirectory,
+    usage: &RequestUsageDirectory,
 ) -> Result<RequestLogSummaryView, AppError> {
     let provider_icon_key = provider_icon_key_from_metadata(&log.metadata)
         .or_else(|| Some(resolve_provider_display(log.provider_key.as_str(), provider).icon_key))
@@ -725,6 +779,7 @@ fn summary_view(
         .map(Into::into);
 
     let user = log.user_id.and_then(|user_id| callers.users.get(&user_id));
+    let usage = usage.usage_for(log);
 
     Ok(RequestLogSummaryView {
         request_log_id: log.request_log_id.to_string(),
@@ -749,6 +804,11 @@ fn summary_view(
         prompt_tokens: log.prompt_tokens,
         completion_tokens: log.completion_tokens,
         total_tokens: log.total_tokens,
+        cache_read_tokens: usage.and_then(|record| record.cache_read_tokens),
+        // Unpriced and usage-missing rows store a zero cost, which would read as "free".
+        cost_usd_10000: usage
+            .filter(|record| record.pricing_status.counts_toward_spend())
+            .map(|record| record.computed_cost_usd.as_scaled_i64()),
         error_code: log.error_code.clone(),
         has_payload: log.has_payload,
         request_payload_truncated: log.request_payload_truncated,
@@ -760,6 +820,7 @@ fn summary_view(
             exposed_tool_count: log.tool_cardinality.exposed_tool_count,
             invoked_tool_count: log.tool_cardinality.invoked_tool_count,
             filtered_tool_count: log.tool_cardinality.filtered_tool_count,
+            request_tool_count: log.tool_cardinality.request_tool_count,
         },
         agent_harness_key: log.agent_harness_key.clone(),
         agent_harness_label: log.agent_harness_label.clone(),
@@ -831,10 +892,11 @@ fn detail_view(
     detail: RequestLogDetail,
     provider: Option<&ProviderConnection>,
     callers: &RequestCallerDirectory,
+    usage: &RequestUsageDirectory,
     mcp_token_overhead: Option<RequestMcpTokenOverheadRecord>,
 ) -> Result<RequestLogDetailView, AppError> {
     Ok(RequestLogDetailView {
-        log: summary_view(&detail.log, provider, callers)?,
+        log: summary_view(&detail.log, provider, callers, usage)?,
         user_agent_raw: detail.log.user_agent_raw,
         payload: detail.payload.map(payload_view),
         attempts: detail.attempts.into_iter().map(attempt_view).collect(),
@@ -1050,6 +1112,7 @@ fn leaderboard_window_bounds_utc(
 
 #[cfg(test)]
 mod tests {
+    use gateway_core::UsagePricingStatus;
     use gateway_service::REQUEST_LOG_PROVIDER_ICON_KEY;
     use serde_json::{Map, Value, json};
     use time::OffsetDateTime;
@@ -1072,8 +1135,13 @@ mod tests {
             secrets: None,
         };
 
-        let summary = summary_view(&log, Some(&provider), &RequestCallerDirectory::default())
-            .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
+        let summary = summary_view(
+            &log,
+            Some(&provider),
+            &RequestCallerDirectory::default(),
+            &RequestUsageDirectory::default(),
+        )
+        .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
 
         assert!(matches!(
             summary.provider_icon_key,
@@ -1085,8 +1153,13 @@ mod tests {
     fn summary_view_falls_back_to_provider_key_when_provider_config_is_unavailable() {
         let log = request_log_record(payload_policy_metadata());
 
-        let summary = summary_view(&log, None, &RequestCallerDirectory::default())
-            .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
+        let summary = summary_view(
+            &log,
+            None,
+            &RequestCallerDirectory::default(),
+            &RequestUsageDirectory::default(),
+        )
+        .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
 
         assert!(matches!(
             summary.provider_icon_key,
@@ -1115,8 +1188,13 @@ mod tests {
             secrets: None,
         };
 
-        let summary = summary_view(&log, Some(&provider), &RequestCallerDirectory::default())
-            .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
+        let summary = summary_view(
+            &log,
+            Some(&provider),
+            &RequestCallerDirectory::default(),
+            &RequestUsageDirectory::default(),
+        )
+        .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
 
         assert!(matches!(
             summary.provider_icon_key,
@@ -1128,8 +1206,13 @@ mod tests {
     fn summary_view_requires_payload_policy_metadata() {
         let log = request_log_record(Map::new());
 
-        let error = summary_view(&log, None, &RequestCallerDirectory::default())
-            .expect_err("summary should fail");
+        let error = summary_view(
+            &log,
+            None,
+            &RequestCallerDirectory::default(),
+            &RequestUsageDirectory::default(),
+        )
+        .expect_err("summary should fail");
 
         assert!(
             error
@@ -1148,8 +1231,13 @@ mod tests {
             .insert("capture_mode".to_string(), json!("legacy"));
         let log = request_log_record(metadata);
 
-        let error = summary_view(&log, None, &RequestCallerDirectory::default())
-            .expect_err("summary should fail");
+        let error = summary_view(
+            &log,
+            None,
+            &RequestCallerDirectory::default(),
+            &RequestUsageDirectory::default(),
+        )
+        .expect_err("summary should fail");
 
         assert!(
             error
@@ -1168,8 +1256,13 @@ mod tests {
             .insert("request_max_bytes".to_string(), json!("65536"));
         let log = request_log_record(metadata);
 
-        let error = summary_view(&log, None, &RequestCallerDirectory::default())
-            .expect_err("summary should fail");
+        let error = summary_view(
+            &log,
+            None,
+            &RequestCallerDirectory::default(),
+            &RequestUsageDirectory::default(),
+        )
+        .expect_err("summary should fail");
 
         assert!(
             error
@@ -1188,8 +1281,13 @@ mod tests {
             .insert("stream_max_events".to_string(), json!(0));
         let log = request_log_record(metadata);
 
-        let error = summary_view(&log, None, &RequestCallerDirectory::default())
-            .expect_err("summary should fail");
+        let error = summary_view(
+            &log,
+            None,
+            &RequestCallerDirectory::default(),
+            &RequestUsageDirectory::default(),
+        )
+        .expect_err("summary should fail");
 
         assert!(
             error
@@ -1269,6 +1367,92 @@ mod tests {
             Duration::days(7),
             "expected exactly seven days of data"
         );
+    }
+
+    #[test]
+    fn summary_view_reports_usage_for_matching_api_key_and_hides_unpriced_cost() {
+        let mut log = request_log_record(payload_policy_metadata());
+        log.tool_cardinality.request_tool_count = Some(5);
+        let other_key_usage = UsageLedgerRecord {
+            api_key_id: Uuid::new_v4(),
+            computed_cost_usd: gateway_core::Money4::from_scaled(999),
+            cache_read_tokens: Some(1),
+            ..usage_ledger_record(&log)
+        };
+        let summary_with = |pricing_status| {
+            let mut usage = RequestUsageDirectory::default();
+            usage.by_request_id.insert(
+                log.request_id.clone(),
+                vec![
+                    other_key_usage.clone(),
+                    UsageLedgerRecord {
+                        pricing_status,
+                        ..usage_ledger_record(&log)
+                    },
+                ],
+            );
+            summary_view(&log, None, &RequestCallerDirectory::default(), &usage)
+                .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0))
+        };
+
+        let priced = summary_with(UsagePricingStatus::Priced);
+        assert_eq!(priced.cost_usd_10000, Some(1_234));
+        assert_eq!(priced.cache_read_tokens, Some(80));
+        assert_eq!(priced.tool_cardinality.request_tool_count, Some(5));
+        let legacy = summary_with(UsagePricingStatus::LegacyEstimated);
+        assert_eq!(legacy.cost_usd_10000, Some(1_234));
+        let unpriced = summary_with(UsagePricingStatus::Unpriced);
+        assert_eq!(unpriced.cost_usd_10000, None);
+        assert_eq!(unpriced.cache_read_tokens, Some(80));
+
+        let without_usage = summary_view(
+            &log,
+            None,
+            &RequestCallerDirectory::default(),
+            &RequestUsageDirectory::default(),
+        )
+        .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
+        assert_eq!(without_usage.cost_usd_10000, None);
+        assert_eq!(without_usage.cache_read_tokens, None);
+    }
+
+    fn usage_ledger_record(log: &RequestLogRecord) -> UsageLedgerRecord {
+        UsageLedgerRecord {
+            usage_event_id: Uuid::new_v4(),
+            request_id: log.request_id.clone(),
+            ownership_scope_key: "user:test".to_string(),
+            api_key_id: log.api_key_id,
+            user_id: None,
+            team_id: None,
+            service_account_id: None,
+            actor_user_id: None,
+            model_id: None,
+            model_route_id: None,
+            provider_key: log.provider_key.clone(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            prompt_tokens: Some(100),
+            uncached_input_tokens: Some(20),
+            cache_read_tokens: Some(80),
+            cache_write_tokens: Some(0),
+            completion_tokens: Some(50),
+            total_tokens: Some(150),
+            provider_usage: json!({}),
+            pricing_status: UsagePricingStatus::Priced,
+            unpriced_reason: None,
+            pricing_row_id: None,
+            pricing_provider_id: None,
+            pricing_model_id: None,
+            pricing_source: None,
+            pricing_source_etag: None,
+            pricing_source_fetched_at: None,
+            pricing_last_updated: None,
+            input_cost_per_million_tokens: None,
+            output_cost_per_million_tokens: None,
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+            computed_cost_usd: gateway_core::Money4::from_scaled(1_234),
+            occurred_at: log.occurred_at,
+        }
     }
 
     fn request_log_record(metadata: Map<String, Value>) -> RequestLogRecord {

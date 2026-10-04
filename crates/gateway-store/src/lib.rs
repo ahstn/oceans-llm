@@ -52,6 +52,7 @@ mod skills_tests;
 #[cfg(test)]
 pub(crate) mod tests {
     mod model_routing;
+    mod request_log_list;
     mod request_log_purge;
     mod route_identity;
     mod routing;
@@ -2547,6 +2548,7 @@ pub(crate) mod tests {
                     exposed_tool_count: Some(0),
                     invoked_tool_count: Some(0),
                     filtered_tool_count: None,
+                    request_tool_count: None,
                 },
                 user_agent_raw: Some("opencode/1.2.3".to_string()),
                 agent_harness_key: "opencode".to_string(),
@@ -2579,6 +2581,7 @@ pub(crate) mod tests {
                     exposed_tool_count: Some(3),
                     invoked_tool_count: Some(1),
                     filtered_tool_count: None,
+                    request_tool_count: None,
                 },
                 user_agent_raw: Some("opencode/1.2.4".to_string()),
                 agent_harness_key: "opencode".to_string(),
@@ -4200,6 +4203,7 @@ pub(crate) mod tests {
                 exposed_tool_count: Some(0),
                 invoked_tool_count: Some(0),
                 filtered_tool_count: None,
+                request_tool_count: None,
             },
             user_agent_raw: Some("opencode/1.2.3".to_string()),
             agent_harness_key: "opencode".to_string(),
@@ -4251,6 +4255,7 @@ pub(crate) mod tests {
                 env: None,
                 tag_key: None,
                 tag_value: None,
+                q: None,
             })
             .await
             .expect("list request logs");

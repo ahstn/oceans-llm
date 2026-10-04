@@ -476,6 +476,17 @@ pub trait BudgetRepository: Send + Sync {
         }
         Ok(records)
     }
+    /// Usage ledger rows for any ownership scope, so callers holding only request ids (e.g.
+    /// request log pages) can join cost data. A request id may match more than one row.
+    async fn get_usage_ledgers_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<Vec<UsageLedgerRecord>, StoreError> {
+        let _ = request_ids;
+        Err(StoreError::Unexpected(
+            "get_usage_ledgers_by_request_ids is not implemented for this repository".to_string(),
+        ))
+    }
     async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
         scope: &BudgetScope,

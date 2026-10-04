@@ -1253,6 +1253,9 @@ pub struct RequestLogListQuery {
     pub env: Option<String>,
     pub tag_key: Option<String>,
     pub tag_value: Option<String>,
+    /// Trimmed, case-insensitive substring search across the requested or resolved model key and
+    /// the caller's user name or email.
+    pub q: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]
@@ -1352,6 +1355,11 @@ pub struct RequestLogSummaryView {
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
+    /// Prompt tokens served from the provider cache, from the usage ledger.
+    pub cache_read_tokens: Option<i64>,
+    /// Computed request cost in USD scaled by 10,000. Null when no usage was recorded or the
+    /// request could not be priced.
+    pub cost_usd_10000: Option<i64>,
     pub error_code: Option<String>,
     pub has_payload: bool,
     pub request_payload_truncated: bool,
@@ -1372,6 +1380,9 @@ pub struct RequestToolCardinalityView {
     pub exposed_tool_count: Option<i64>,
     pub invoked_tool_count: Option<i64>,
     pub filtered_tool_count: Option<i64>,
+    /// Tools declared in the request body's `tools` array: native client tools plus any MCP
+    /// tools the client loaded. Null for requests logged before this was recorded.
+    pub request_tool_count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]

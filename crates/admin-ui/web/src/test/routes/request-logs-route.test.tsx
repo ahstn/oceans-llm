@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { regularUserSession } from '@/test/auth-session'
 import type { RequestLogView } from '@/types/api'
 
@@ -54,6 +55,8 @@ const items: RequestLogView[] = [
     prompt_tokens: 400,
     completion_tokens: 942,
     total_tokens: 1342,
+    cache_read_tokens: 300,
+    cost_usd_10000: 457,
     error_code: null,
     has_payload: true,
     request_payload_truncated: false,
@@ -78,6 +81,7 @@ const items: RequestLogView[] = [
     tool_cardinality: {
       referenced_mcp_server_count: null,
       exposed_tool_count: 2,
+      request_tool_count: 5,
       invoked_tool_count: 0,
       filtered_tool_count: null,
     },
@@ -87,23 +91,39 @@ const items: RequestLogView[] = [
   },
 ]
 
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+async function renderPage() {
+  const { RequestLogsPage } = await import('@/routes/observability/request-logs')
+  return render(
+    <TooltipProvider>
+      <RequestLogsPage />
+    </TooltipProvider>,
+  )
+}
+
 describe('RequestLogsPage', () => {
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
     routeMock.useRouteContext.mockReset()
-    routeMock.useRouteContext.mockReturnValue({ session: regularUserSession() })
+    routeMock.useRouteContext.mockReturnValue({
+      session: regularUserSession(),
+    })
     routeMock.useSearch.mockReset()
     getObservabilityRequestLogDetailMock.mockReset()
     navigateMock.mockReset()
     routeMock.useSearch.mockReturnValue({})
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
   })
 
   it('renders dedicated mobile and desktop log layouts from the same payload', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
 
-    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
-
-    render(<RequestLogsPage />)
+    await renderPage()
 
     expect(screen.getByTestId('request-log-mobile-list')).toBeInTheDocument()
     expect(screen.getByTestId('request-log-desktop-table')).toBeInTheDocument()
@@ -118,14 +138,20 @@ describe('RequestLogsPage', () => {
     ).toBeInTheDocument()
     expect(screen.getAllByText('gpt-4.1-mini')).toHaveLength(2)
     expect(screen.getAllByText('openai')).toHaveLength(2)
-    expect(screen.getAllByText('req_1')).toHaveLength(2)
-    expect(screen.getAllByText(/exposed 2/)).toHaveLength(2)
-    expect(screen.getAllByText(/called 0/)).toHaveLength(2)
-    expect(screen.getAllByText(/MCP n\/a/)).toHaveLength(2)
-    expect(screen.getAllByText('Checkout Service Key')).toHaveLength(2)
+    // The overview leads with the request time; request id and key name live in the detail sheet.
+    expect(screen.queryByText('req_1')).not.toBeInTheDocument()
+    expect(screen.queryByText('Checkout Service Key')).not.toBeInTheDocument()
+    expect(screen.getAllByText('2026-03-10 11:32:00')).toHaveLength(2)
+    expect(screen.getByText('Time')).toBeInTheDocument()
+    expect(screen.getAllByText('Tools (Used / Total)')).toHaveLength(2)
+    expect(screen.getAllByTestId('request-log-tool-usage').map((el) => el.textContent)).toEqual([
+      '0 / 5',
+      '0 / 5',
+    ])
+    expect(screen.getAllByText('$0.0457')).toHaveLength(2)
     expect(screen.getAllByText('Alice Example')).toHaveLength(2)
     expect(screen.getByText('alice@example.com')).toBeInTheDocument()
-    expect(screen.getAllByText('2026-03-10 11:32')).toHaveLength(2)
+    expect(screen.getByText('Showing 1 of 1')).toBeInTheDocument()
     expect(screen.queryByText('Chat Completions')).not.toBeInTheDocument()
     expect(screen.queryByText('redacted payloads')).not.toBeInTheDocument()
     expect(screen.queryByText('payload')).not.toBeInTheDocument()
@@ -156,18 +182,45 @@ describe('RequestLogsPage', () => {
       data: { items: [serviceAccountItem, unknownCallerItem], total: 2 },
     })
 
-    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
-
-    render(<RequestLogsPage />)
+    await renderPage()
 
     // The mocked virtualizer renders only the first row in the desktop table,
     // so the second item is asserted via the mobile list alone.
     expect(screen.getAllByText('Batch Jobs Account')).toHaveLength(2)
     expect(screen.getAllByText('service account').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Nightly Rollup Key')).toHaveLength(2)
+    expect(screen.queryByText('Nightly Rollup Key')).not.toBeInTheDocument()
     expect(screen.getAllByText('Unknown')).toHaveLength(1)
-    // Keys without a resolved name fall back to the raw api key id.
-    expect(screen.getAllByText('api_key_1')).toHaveLength(1)
+  })
+
+  it('shows a cache-hit indicator with cached token share and n/a fallbacks', async () => {
+    const uncachedLegacyItem: RequestLogView = {
+      ...items[0],
+      request_log_id: 'reqlog_4',
+      cache_read_tokens: null,
+      cost_usd_10000: null,
+      tool_cardinality: {
+        ...items[0].tool_cardinality,
+        request_tool_count: null,
+      },
+    }
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [items[0], uncachedLegacyItem], total: 2 },
+    })
+
+    const view = await renderPage()
+    const scope = within(view.container)
+
+    // Only the cached row (mobile + desktop) renders the indicator.
+    const cacheIcons = scope.getAllByTestId('request-log-cache-hit')
+    expect(cacheIcons).toHaveLength(2)
+    expect(scope.getAllByText('—')).toHaveLength(1)
+    expect(scope.getAllByText('0 / n/a')).toHaveLength(1)
+
+    fireEvent.focus(cacheIcons[0])
+
+    expect(
+      (await screen.findAllByText('300 of 400 prompt tokens cached (75%)')).length,
+    ).toBeGreaterThan(0)
   })
 
   it('renders request-log detail without fallback-era fields', async () => {
@@ -207,9 +260,7 @@ describe('RequestLogsPage', () => {
       },
     })
 
-    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
-
-    render(<RequestLogsPage />)
+    await renderPage()
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
     await waitFor(() => {
@@ -235,6 +286,9 @@ describe('RequestLogsPage', () => {
     expect(screen.getByText('Opencode')).toBeInTheDocument()
     expect(screen.getByText('opencode/1.2.3')).toBeInTheDocument()
     expect(screen.getByText('Tools Called')).toBeInTheDocument()
+    expect(within(dialog).getByText('Request Tools')).toBeInTheDocument()
+    expect(within(dialog).getByText('req_1')).toBeInTheDocument()
+    expect(within(dialog).getByText('300 of 400 prompt tokens cached (75%)')).toBeInTheDocument()
     expect(screen.getAllByText('0').length).toBeGreaterThan(0)
     expect(screen.getAllByText('n/a').length).toBeGreaterThan(0)
     expect(screen.getByText('Provider Attempts')).toBeInTheDocument()
@@ -267,7 +321,9 @@ describe('RequestLogsPage', () => {
       provider_key: 'openrouter',
       metadata: { operation: 'decisions', stream: false },
     }
-    routeMock.useLoaderData.mockReturnValue({ data: { items: [decisionsItem], total: 1 } })
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [decisionsItem], total: 1 },
+    })
     getObservabilityRequestLogDetailMock.mockResolvedValue({
       data: {
         log: decisionsItem,
@@ -277,9 +333,7 @@ describe('RequestLogsPage', () => {
       },
     })
 
-    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
-
-    render(<RequestLogsPage />)
+    await renderPage()
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
     await waitFor(() => {
@@ -304,7 +358,9 @@ describe('RequestLogsPage', () => {
         version: 'builtin:v1',
       },
     }
-    routeMock.useLoaderData.mockReturnValue({ data: { items: [summaryOnlyItem], total: 1 } })
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [summaryOnlyItem], total: 1 },
+    })
     getObservabilityRequestLogDetailMock.mockResolvedValue({
       data: {
         log: summaryOnlyItem,
@@ -314,9 +370,7 @@ describe('RequestLogsPage', () => {
       },
     })
 
-    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
-
-    render(<RequestLogsPage />)
+    await renderPage()
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
     await waitFor(() => {
@@ -328,9 +382,7 @@ describe('RequestLogsPage', () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
     getObservabilityRequestLogDetailMock.mockRejectedValue(new Error('request log missing'))
 
-    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
-
-    render(<RequestLogsPage />)
+    await renderPage()
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
@@ -339,36 +391,85 @@ describe('RequestLogsPage', () => {
     })
   })
 
-  it('treats whitespace-only tag input as empty when gating filters', async () => {
+  it('adds a tag filter chip and treats whitespace-only input as empty', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
 
-    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
-
-    const view = render(<RequestLogsPage />)
+    const view = await renderPage()
     const scope = within(view.container)
 
-    const tagKeyInput = scope.getByTestId('request-log-filter-tag-key')
+    fireEvent.keyDown(scope.getByRole('button', { name: /Filters/ }), {
+      key: 'Enter',
+    })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Tag' }))
+
+    const tagKeyInput = await scope.findByTestId('request-log-filter-tag-key')
     const tagValueInput = scope.getByTestId('request-log-filter-tag-value')
 
     fireEvent.change(tagKeyInput, { target: { value: '   ' } })
     fireEvent.change(tagValueInput, { target: { value: 'guest_checkout' } })
+    fireEvent.keyDown(tagValueInput, { key: 'Enter' })
 
-    expect(scope.getByRole('button', { name: 'Apply Filters' })).toBeDisabled()
     expect(
       scope.getByText('Provide both a tag key and tag value to filter bespoke request tags.'),
     ).toBeInTheDocument()
+    expect(navigateMock).not.toHaveBeenCalled()
 
     fireEvent.change(tagKeyInput, { target: { value: ' feature ' } })
-    fireEvent.click(scope.getByRole('button', { name: 'Apply Filters' }))
+    fireEvent.keyDown(tagKeyInput, { key: 'Enter' })
 
     await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({
-        to: '/observability/request-logs',
-        search: {
-          tag_key: 'feature',
-          tag_value: 'guest_checkout',
-        },
-      })
+      expect(navigateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: '/observability/request-logs',
+          search: {
+            tag_key: 'feature',
+            tag_value: 'guest_checkout',
+          },
+        }),
+      )
+    })
+  })
+
+  it('renders URL filters as removable chips', async () => {
+    routeMock.useSearch.mockReturnValue({ request_id: 'req_1', q: 'alice' })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = await renderPage()
+    const scope = within(view.container)
+
+    expect(scope.getByTestId('request-log-filter-request-id')).toHaveValue('req_1')
+    expect(scope.getByRole('button', { name: /Filters/ })).toHaveTextContent('1')
+    expect(scope.getByRole('searchbox', { name: /model or user/ })).toHaveValue('alice')
+
+    fireEvent.click(scope.getByRole('button', { name: 'Remove Request ID filter' }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          search: expect.objectContaining({ q: 'alice' }),
+        }),
+      )
+    })
+    expect(navigateMock.mock.calls[0][0].search.request_id).toBeUndefined()
+  })
+
+  it('debounces the model/user search into the q URL param', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = await renderPage()
+    const search = within(view.container).getByPlaceholderText('Search by model or user…')
+
+    fireEvent.change(search, { target: { value: 'gpt' } })
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: '/observability/request-logs',
+          search: expect.objectContaining({ q: 'gpt' }),
+          replace: true,
+        }),
+      )
     })
   })
 })

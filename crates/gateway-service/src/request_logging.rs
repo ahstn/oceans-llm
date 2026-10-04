@@ -282,7 +282,7 @@ where
         let user_agent_raw = normalized_user_agent(request_user_agent(input.request_headers));
         let harness = classify_agent_harness(user_agent_raw.as_deref());
         let request_body = serde_json::to_value(input.request).unwrap_or_else(|_| json!({}));
-        let exposed_tool_count = shallow_tool_count_from_request_body(&request_body);
+        let request_tool_count = shallow_tool_count_from_request_body(&request_body);
         let prepared =
             self.prepare_request_payload(request_body, input.request_headers, harness.key);
 
@@ -297,11 +297,14 @@ where
             agent_harness_key: harness.key.to_string(),
             agent_harness_label: harness.label.to_string(),
             payload_policy: self.payload_policy.clone(),
+            // `exposed_tool_count` starts as the request-body count and may later be replaced by
+            // the MCP grant inventory; `request_tool_count` keeps the request-body count.
             tool_cardinality: RequestToolCardinality {
                 referenced_mcp_server_count: None,
-                exposed_tool_count,
+                exposed_tool_count: request_tool_count,
                 invoked_tool_count: Some(0),
                 filtered_tool_count: None,
+                request_tool_count,
             },
             request_json: prepared.request_json,
             request_payload_truncated: prepared.request_payload_truncated,
