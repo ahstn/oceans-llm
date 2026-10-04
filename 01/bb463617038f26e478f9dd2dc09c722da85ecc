@@ -310,6 +310,7 @@ crates/gateway-store/src/libsql_store/batches.rs
   s_25801eaca752ce::t_21d519f9417ca9 635
 crates/gateway-store/src/migration_registry.rs
   s_25801eaca752ce::t_aca4c3fec10c54 285-286,294,298
+  s_25801eaca752ce::t_2ce97daac99148 292-293,295-297
 crates/gateway-providers/src/openai_compat.rs
   s_25801eaca752ce::t_75005e4ba8033b 77-78,97
   s_25801eaca752ce::t_e0e612205089fc 888,946,1186,1259,1419,1866,1935,2017,2087,2161,2234,2307,2375,2448,2517,2586,2655
@@ -370,6 +371,7 @@ crates/gateway/src/main.rs
   s_25801eaca752ce::t_75005e4ba8033b 15
   s_25801eaca752ce::t_9187d8d2ad1829 486-489,511,513-514,521,523-524
   s_25801eaca752ce::t_da6950fc312d94 16,765
+  s_25801eaca752ce::t_2ce97daac99148 19
 crates/gateway-store/src/libsql_store/mod.rs
   s_25801eaca752ce::t_fbfd8b42772e17 21,98,121
   s_25801eaca752ce::t_5bd087af5a17e8 99,122
