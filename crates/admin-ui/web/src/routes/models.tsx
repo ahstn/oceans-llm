@@ -354,19 +354,7 @@ export function ModelsPage() {
           </div>
 
           {modelPage.items.length === 0 ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <AppIcon icon={HomeIcon} size={22} stroke={1.5} />
-                </EmptyMedia>
-                <EmptyTitle>{query.trim() ? 'No models found' : 'No models configured'}</EmptyTitle>
-                <EmptyDescription>
-                  {query.trim()
-                    ? 'Try another model ID, alias, provider, or tag.'
-                    : 'Add at least one routed model before sending traffic through the gateway.'}
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            <ModelListEmptyState query={query} />
           ) : (
             <>
               <div className="grid gap-4 md:hidden" data-testid="models-mobile-list">
@@ -560,6 +548,24 @@ export function ModelsPage() {
         }}
       />
     </div>
+  )
+}
+
+function ModelListEmptyState({ query }: { query: string }) {
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <AppIcon icon={HomeIcon} size={22} stroke={1.5} />
+        </EmptyMedia>
+        <EmptyTitle>{query.trim() ? 'No models found' : 'No models configured'}</EmptyTitle>
+        <EmptyDescription>
+          {query.trim()
+            ? 'Try another model ID, alias, provider, or tag.'
+            : 'Add at least one routed model before sending traffic through the gateway.'}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }
 
