@@ -113,6 +113,8 @@ pub trait SkillRepository: Send + Sync {
 #[async_trait]
 pub trait SkillObjectStore: Send + Sync {
     async fn put(&self, key: &str, bytes: &[u8]) -> Result<(), StoreError>;
-    async fn get(&self, key: &str) -> Result<Vec<u8>, StoreError>;
+    /// Read within the bound recorded for this immutable archive, independently
+    /// of the current upload policy.
+    async fn get(&self, key: &str, max_bytes: u64) -> Result<Vec<u8>, StoreError>;
     async fn delete(&self, key: &str) -> Result<(), StoreError>;
 }

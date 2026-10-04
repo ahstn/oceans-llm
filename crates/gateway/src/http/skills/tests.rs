@@ -35,7 +35,7 @@ impl SkillObjectStore for MemoryObjects {
         Ok(())
     }
 
-    async fn get(&self, key: &str) -> Result<Vec<u8>, StoreError> {
+    async fn get(&self, key: &str, _max_bytes: u64) -> Result<Vec<u8>, StoreError> {
         self.0
             .lock()
             .unwrap()

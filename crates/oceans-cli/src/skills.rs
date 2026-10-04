@@ -128,12 +128,16 @@ async fn list(client: &Client, namespace: Option<String>, as_json: bool) -> anyh
 async fn show(client: &Client, selected: &VersionArgs, as_json: bool) -> anyhow::Result<()> {
     let detail = resolve(client, &selected.skill).await?;
     let version = selected.version.unwrap_or(detail.skill.default_version);
+    let metadata = detail
+        .versions
+        .iter()
+        .find(|candidate| candidate.version == version)
+        .with_context(|| format!("skill has no version {version}"))?;
     // JSON can escape each input byte as six ASCII bytes. Only previews need this larger bound.
-    let limits: BundleLimits = client.get(&["limits"]).await?;
-    let preview_limit = usize::try_from(limits.max_expanded_bytes)?
+    let preview_limit = usize::try_from(metadata.extracted_bytes)?
         .checked_mul(6)
         .and_then(|limit| limit.checked_add(4 * 1024 * 1024))
-        .context("configured bundle limit is too large for this client")?;
+        .context("stored skill version is too large for this client")?;
     let selected_version: SkillVersionDetail = client
         .get_with_limit(
             &[
@@ -270,8 +274,13 @@ async fn fetch_archive(client: &Client, selected: &VersionArgs) -> anyhow::Resul
         .into_iter()
         .find(|candidate| candidate.version == version)
         .with_context(|| format!("skill has no version {version}"))?;
-    let limits: BundleLimits = client.get(&["limits"]).await?;
-    let limit = usize::try_from(limits.max_archive_bytes)?;
+    // Upload policy may have changed since this immutable version was accepted.
+    let limits = BundleLimits {
+        max_archive_bytes: metadata.archive_bytes,
+        max_expanded_bytes: metadata.extracted_bytes,
+        max_files: metadata.file_count,
+    };
+    let limit = usize::try_from(metadata.archive_bytes)?;
     let bytes = client
         .download(&[&id, "versions", &version_path, "archive"], limit)
         .await?;

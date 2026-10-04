@@ -61,7 +61,7 @@ impl SkillsConfig {
         {
             bail!("skills.limits values must be greater than zero");
         }
-        let max_object_bytes = usize::try_from(self.limits.max_archive_bytes)
+        let max_upload_bytes = usize::try_from(self.limits.max_archive_bytes)
             .context("skills.limits.max_archive_bytes is too large for this platform")?;
         self.storage.validate()?;
         Ok(S3SkillStorageConfig {
@@ -83,7 +83,7 @@ impl SkillsConfig {
                 self.storage.session_token.as_deref(),
                 "skills.storage.session_token",
             )?,
-            max_object_bytes,
+            max_upload_bytes,
             request_timeout: Duration::from_secs(30),
         })
     }

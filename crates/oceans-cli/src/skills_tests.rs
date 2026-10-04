@@ -81,10 +81,6 @@ async fn download_pins_summary_version_and_digest_without_fetching_preview() {
     let expected = bundle.archive.clone();
     let router = Router::new()
         .route(
-            "/api/v1/skills/limits",
-            get(|| async { Json(BundleLimits::default()) }),
-        )
-        .route(
             "/api/v1/skills/by-name/alice/review",
             get(move || {
                 let detail = detail.clone();
@@ -205,17 +201,31 @@ fn zip_upload_rejects_installer_metadata_and_directory_keeps_invalid_metadata() 
 }
 
 #[tokio::test]
-async fn download_applies_the_registry_configured_archive_limit() {
-    let (_directory, bundle, detail) = fixture();
+async fn stored_versions_remain_downloadable_and_installable_after_upload_limits_shrink() {
+    let (directory, _bundle, mut detail) = fixture();
+    let skill_directory = directory.path().join("review");
+    fs::write(skill_directory.join("notes.txt"), "Stored reference notes").unwrap();
+    let bundle = pack_directory(&skill_directory, &BundleLimits::default()).unwrap();
+    detail.versions[0].sha256 = bundle.sha256.clone();
+    detail.versions[0].archive_bytes = bundle.archive.len() as u64;
+    detail.versions[0].extracted_bytes = bundle.extracted_bytes;
+    detail.versions[0].file_count = bundle.files.len() as u32;
     let archive_path = format!("/api/v1/skills/{}/versions/1/archive", detail.skill.id);
+    let limits_requests = Arc::new(AtomicUsize::new(0));
+    let observed = limits_requests.clone();
+    let expected = bundle.archive.clone();
     let router = Router::new()
         .route(
             "/api/v1/skills/limits",
-            get(|| async {
-                Json(BundleLimits {
-                    max_archive_bytes: 1,
-                    ..BundleLimits::default()
-                })
+            get(move || {
+                observed.fetch_add(1, Ordering::Relaxed);
+                async {
+                    Json(BundleLimits {
+                        max_archive_bytes: 1,
+                        max_expanded_bytes: 1,
+                        max_files: 1,
+                    })
+                }
             }),
         )
         .route(
@@ -233,7 +243,7 @@ async fn download_applies_the_registry_configured_archive_limit() {
             }),
         );
     let (client, _server) = server(router).await;
-    let error = fetch_archive(
+    let fetched = fetch_archive(
         &client,
         &VersionArgs {
             skill: "alice/review".into(),
@@ -241,9 +251,104 @@ async fn download_applies_the_registry_configured_archive_limit() {
         },
     )
     .await
-    .err()
     .unwrap();
-    assert!(error.to_string().contains("1-byte limit"));
+    assert_eq!(fetched.bytes, expected);
+    let destination = tempfile::tempdir().unwrap();
+    run(
+        &client,
+        SkillsCommand::Install {
+            selected: VersionArgs {
+                skill: "alice/review".into(),
+                version: Some(1),
+            },
+            directory: destination.path().to_owned(),
+            replace: false,
+        },
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fs::read_to_string(destination.path().join("review/notes.txt")).unwrap(),
+        "Stored reference notes"
+    );
+    assert_eq!(limits_requests.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn upload_still_enforces_current_registry_limits() {
+    let (directory, _bundle, detail) = fixture();
+    let namespace = SkillNamespace {
+        handle: "alice".into(),
+        user_id: detail.skill.owner_user_id,
+    };
+    let router = Router::new()
+        .route(
+            "/api/v1/skills/namespace",
+            get(move || {
+                let namespace = namespace.clone();
+                async { Json(namespace) }
+            }),
+        )
+        .route(
+            "/api/v1/skills/limits",
+            get(|| async {
+                Json(BundleLimits {
+                    max_expanded_bytes: 1,
+                    ..BundleLimits::default()
+                })
+            }),
+        );
+    let (client, _server) = server(router).await;
+    let error = upload(&client, &directory.path().join("review"), false)
+        .await
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("skill bundle exceeds expanded bytes limit"));
+}
+
+#[tokio::test]
+async fn show_bounds_escaped_preview_by_selected_version_without_upload_limits() {
+    let (_directory, bundle, mut detail) = fixture();
+    let instructions = format!("{}{}", bundle.instructions, "\u{1}".repeat(710_000));
+    let mut summary = detail.versions[0].clone();
+    summary.version = 2;
+    summary.extracted_bytes = instructions.len() as u64;
+    detail.skill.latest_version = 2;
+    detail.versions.push(summary.clone());
+    let preview = SkillVersionDetail {
+        version: summary,
+        manifest: bundle.manifest,
+        files: vec![],
+        instructions,
+    };
+    assert!(serde_json::to_vec(&preview).unwrap().len() > 4 * 1024 * 1024 + 6);
+    let preview_path = format!("/api/v1/skills/{}/versions/2", detail.skill.id);
+    let router = Router::new()
+        .route(
+            "/api/v1/skills/by-name/alice/review",
+            get(move || {
+                let detail = detail.clone();
+                async { Json(detail) }
+            }),
+        )
+        .route(
+            &preview_path,
+            get(move || {
+                let preview = preview.clone();
+                async { Json(preview) }
+            }),
+        );
+    let (client, _server) = server(router).await;
+    show(
+        &client,
+        &VersionArgs {
+            skill: "alice/review".into(),
+            version: Some(2),
+        },
+        false,
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

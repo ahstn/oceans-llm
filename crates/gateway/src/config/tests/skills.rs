@@ -64,7 +64,7 @@ skills:
     assert!(storage.allow_http);
     assert_eq!(storage.access_key_id.as_deref(), Some("test-access"));
     assert_eq!(storage.secret_access_key.as_deref(), Some("test-secret"));
-    assert_eq!(storage.max_object_bytes, 10 * 1024 * 1024);
+    assert_eq!(storage.max_upload_bytes, 10 * 1024 * 1024);
     assert_eq!(config.skills.limits.max_files, 42);
 }
 

@@ -75,6 +75,8 @@ Set `access_key_id` and `secret_access_key` together. An optional `session_token
 
 All limits must be greater than zero. They are Oceans limits, separate from the Agent Skills specification's guidance on instruction length.
 
+These limits apply to new uploads. Lowering a limit does not change stored versions: previews, downloads, and CLI installs use each version's recorded sizes and file count. Each download still verifies the archive size and SHA-256 digest.
+
 ### RustFS with mise daemons
 
 The optional `rustfs` environment manages RustFS as a local runtime dependency. From the repository root, run:

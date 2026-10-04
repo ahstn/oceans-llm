@@ -110,7 +110,7 @@ where
         self.namespace(user_id).await?.ok_or_else(|| {
             GatewayError::InvalidRequest("claim a skill namespace before uploading".into())
         })?;
-        let bundle = self.validate(bytes).await?;
+        let bundle = Self::validate(bytes, self.limits).await?;
         let metadata = version_metadata(&bundle)?;
         self.objects
             .put(&metadata.object_key, &bundle.archive)
@@ -138,7 +138,7 @@ where
         bytes: Vec<u8>,
     ) -> Result<SkillUploadResponse, GatewayError> {
         let skill = self.require_owner(user_id, id).await?;
-        let bundle = self.validate(bytes).await?;
+        let bundle = Self::validate(bytes, self.limits).await?;
         if bundle.manifest.name != skill.name {
             return Err(GatewayError::InvalidRequest(
                 "a new version must keep the skill name".into(),
@@ -174,14 +174,7 @@ where
 
     pub async fn archive(&self, id: Uuid, version: u32) -> Result<(Vec<u8>, String), GatewayError> {
         let record = self.require_version(id, version).await?;
-        let bytes = self.objects.get(&record.metadata.object_key).await?;
-        if bytes.len() as u64 != record.metadata.archive_bytes
-            || format!("{:x}", Sha256::digest(&bytes)) != record.metadata.sha256
-        {
-            return Err(
-                StoreError::Unavailable("skill archive failed its integrity check".into()).into(),
-            );
-        }
+        let bytes = self.read_archive(&record.metadata).await?;
         Ok((bytes, record.metadata.sha256))
     }
 
@@ -192,8 +185,18 @@ where
         path: &str,
     ) -> Result<SkillFileContent, GatewayError> {
         validate_file_path(path).map_err(invalid_bundle)?;
-        let (bytes, _) = self.archive(id, version).await?;
-        let mut bundle = self.validate(bytes).await?;
+        let metadata = self.require_version(id, version).await?.metadata;
+        if !metadata.files.iter().any(|file| file.path == path) {
+            return Err(StoreError::NotFound("skill file".into()).into());
+        }
+        let bytes = self.read_archive(&metadata).await?;
+        // Immutable versions retain their validated bounds when upload limits change.
+        let limits = BundleLimits {
+            max_archive_bytes: metadata.archive_bytes,
+            max_expanded_bytes: metadata.extracted_bytes,
+            max_files: metadata.file_count,
+        };
+        let mut bundle = Self::validate(bytes, limits).await?;
         let bytes = bundle
             .contents
             .remove(path)
@@ -207,13 +210,30 @@ where
         })
     }
 
-    async fn validate(&self, bytes: Vec<u8>) -> Result<ValidatedBundle, GatewayError> {
-        if bytes.len() as u64 > self.limits.max_archive_bytes {
+    async fn read_archive(&self, metadata: &SkillVersionMetadata) -> Result<Vec<u8>, GatewayError> {
+        let bytes = self
+            .objects
+            .get(&metadata.object_key, metadata.archive_bytes)
+            .await?;
+        if bytes.len() as u64 != metadata.archive_bytes
+            || format!("{:x}", Sha256::digest(&bytes)) != metadata.sha256
+        {
+            return Err(
+                StoreError::Unavailable("skill archive failed its integrity check".into()).into(),
+            );
+        }
+        Ok(bytes)
+    }
+
+    async fn validate(
+        bytes: Vec<u8>,
+        limits: BundleLimits,
+    ) -> Result<ValidatedBundle, GatewayError> {
+        if bytes.len() as u64 > limits.max_archive_bytes {
             return Err(GatewayError::PayloadTooLarge {
-                limit_bytes: usize::try_from(self.limits.max_archive_bytes).unwrap_or(usize::MAX),
+                limit_bytes: usize::try_from(limits.max_archive_bytes).unwrap_or(usize::MAX),
             });
         }
-        let limits = self.limits;
         tokio::task::spawn_blocking(move || inspect_archive(&bytes, &limits))
             .await
             .map_err(|_| GatewayError::Internal("skill validation task failed".into()))?

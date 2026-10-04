@@ -25,7 +25,7 @@ fn config(endpoint: &str) -> S3SkillStorageConfig {
         access_key_id: Some("test-access-key".to_owned()),
         secret_access_key: Some("test-secret-key".to_owned()),
         session_token: None,
-        max_object_bytes: 1024,
+        max_upload_bytes: 1024,
         request_timeout: Duration::from_secs(5),
     }
 }
@@ -99,6 +99,12 @@ async fn mock_s3(State(fixture): State<Arc<S3Fixture>>, request: Request) -> Res
             Ok::<_, std::convert::Infallible>("delayed body")
         })));
     }
+    if key.ends_with("/streamed.zip") {
+        return Response::new(Body::from_stream(futures_util::stream::iter([
+            Ok::<_, std::convert::Infallible>("arc"),
+            Ok("hive"),
+        ])));
+    }
     match *request.method() {
         Method::PUT => {
             assert_eq!(request.headers()["if-none-match"], "*");
@@ -145,33 +151,64 @@ async fn s3_requests_preserve_immutable_archive_and_map_missing_objects() {
     let store = S3SkillObjectStore::new(config(&endpoint)).await.unwrap();
 
     store.put("test.zip", b"archive").await.unwrap();
-    assert_eq!(store.get("test.zip").await.unwrap(), b"archive");
+    assert_eq!(store.get("test.zip", 7).await.unwrap(), b"archive");
     assert!(matches!(
         store.put("test.zip", b"replacement").await,
         Err(StoreError::Conflict(_))
     ));
-    assert_eq!(store.get("test.zip").await.unwrap(), b"archive");
+    assert_eq!(store.get("test.zip", 7).await.unwrap(), b"archive");
     assert!(store.put("large.zip", &[0; 1025]).await.is_err());
-    assert!(store.get("../test.zip").await.is_err());
+    assert!(store.get("../test.zip", 7).await.is_err());
     fixture
         .objects
         .lock()
         .await
         .insert("/skills-test/archives/large.zip".to_owned(), vec![0; 1025]);
-    assert!(store.get("large.zip").await.is_err());
-    let denied = store.get("denied.zip").await.unwrap_err().to_string();
+    assert!(store.get("large.zip", 1024).await.is_err());
+    let denied = store.get("denied.zip", 1024).await.unwrap_err().to_string();
     assert!(denied.contains("403"));
     assert!(!denied.contains("server-secret-value"));
     store.delete("test.zip").await.unwrap();
     assert!(matches!(
-        store.get("test.zip").await,
+        store.get("test.zip", 7).await,
         Err(StoreError::NotFound(_))
     ));
     store.delete("test.zip").await.unwrap();
     let mut short_timeout = config(&endpoint);
     short_timeout.request_timeout = Duration::from_millis(100);
     let store = S3SkillObjectStore::new(short_timeout).await.unwrap();
-    let timeout = store.get("slow.zip").await.unwrap_err().to_string();
+    let timeout = store.get("slow.zip", 1024).await.unwrap_err().to_string();
     assert!(timeout.contains("timed out"));
+    server.abort();
+}
+
+#[tokio::test]
+async fn reduced_upload_limit_preserves_reads_with_recorded_archive_bounds() {
+    let fixture = Arc::new(S3Fixture::default());
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let router = Router::new().fallback(mock_s3).with_state(fixture);
+    let server = tokio::spawn(async { axum::serve(listener, router).await.unwrap() });
+    let store = S3SkillObjectStore::new(config(&endpoint)).await.unwrap();
+    store.put("test.zip", b"archive").await.unwrap();
+
+    let mut reduced = config(&endpoint);
+    reduced.max_upload_bytes = 1;
+    let store = S3SkillObjectStore::new(reduced).await.unwrap();
+    assert!(matches!(
+        store.put("new.zip", b"archive").await,
+        Err(StoreError::Unexpected(_))
+    ));
+    assert_eq!(store.get("test.zip", 7).await.unwrap(), b"archive");
+    // Known Content-Length and chunked bodies must both obey the persisted bound.
+    assert!(matches!(
+        store.get("test.zip", 6).await,
+        Err(StoreError::Unexpected(_))
+    ));
+    assert_eq!(store.get("streamed.zip", 7).await.unwrap(), b"archive");
+    assert!(matches!(
+        store.get("streamed.zip", 6).await,
+        Err(StoreError::Unexpected(_))
+    ));
     server.abort();
 }

@@ -20,7 +20,7 @@ pub struct S3SkillStorageConfig {
     pub access_key_id: Option<String>,
     pub secret_access_key: Option<String>,
     pub session_token: Option<String>,
-    pub max_object_bytes: usize,
+    pub max_upload_bytes: usize,
     pub request_timeout: Duration,
 }
 
@@ -30,7 +30,7 @@ pub struct S3SkillObjectStore {
     client: Client,
     bucket: String,
     prefix: String,
-    max_object_bytes: usize,
+    max_upload_bytes: usize,
     request_timeout: Duration,
 }
 
@@ -65,7 +65,7 @@ impl S3SkillObjectStore {
             client: Client::from_conf(builder.build()),
             bucket: config.bucket,
             prefix: config.prefix.trim_end_matches('/').to_owned(),
-            max_object_bytes: config.max_object_bytes,
+            max_upload_bytes: config.max_upload_bytes,
             request_timeout: config.request_timeout,
         })
     }
@@ -83,7 +83,7 @@ impl S3SkillObjectStore {
         Ok(key)
     }
 
-    async fn read_archive(&self, key: String) -> Result<Vec<u8>, StoreError> {
+    async fn read_archive(&self, key: String, max_bytes: usize) -> Result<Vec<u8>, StoreError> {
         let object = self
             .client
             .get_object()
@@ -101,12 +101,13 @@ impl S3SkillObjectStore {
                     storage_error("read", error.raw_response().map(|r| r.status().as_u16()))
                 }
             })?;
-        if object.content_length().is_some_and(|length| {
-            length < 0 || u64::try_from(length).unwrap_or(u64::MAX) > self.max_object_bytes as u64
-        }) {
-            return Err(archive_too_large());
+        if let Some(length) = object.content_length() {
+            let length = usize::try_from(length).map_err(|_| archive_too_large())?;
+            if length > max_bytes {
+                return Err(archive_too_large());
+            }
         }
-        read_bounded_body(object.body, self.max_object_bytes).await
+        read_bounded_body(object.body, max_bytes).await
     }
 }
 
@@ -114,7 +115,7 @@ impl S3SkillObjectStore {
 impl SkillObjectStore for S3SkillObjectStore {
     async fn put(&self, key: &str, bytes: &[u8]) -> Result<(), StoreError> {
         let key = self.object_key(key)?;
-        if bytes.len() > self.max_object_bytes {
+        if bytes.len() > self.max_upload_bytes {
             return Err(archive_too_large());
         }
         self.client
@@ -137,11 +138,13 @@ impl SkillObjectStore for S3SkillObjectStore {
         Ok(())
     }
 
-    async fn get(&self, key: &str) -> Result<Vec<u8>, StoreError> {
+    async fn get(&self, key: &str, max_bytes: u64) -> Result<Vec<u8>, StoreError> {
         let key = self.object_key(key)?;
+        let max_bytes = usize::try_from(max_bytes)
+            .map_err(|_| invalid_config("skill archive read bound exceeds platform size"))?;
         // SDK operation timeouts end when the response body starts. Bound the
         // complete download too, including a stalled or indefinitely slow body.
-        tokio::time::timeout(self.request_timeout, self.read_archive(key))
+        tokio::time::timeout(self.request_timeout, self.read_archive(key, max_bytes))
             .await
             .map_err(|_| StoreError::Unavailable("skill archive read timed out".to_owned()))?
     }
@@ -181,7 +184,7 @@ fn validate_config(config: &S3SkillStorageConfig) -> Result<(), StoreError> {
             "skill storage bucket and region must not be empty",
         ));
     }
-    if config.max_object_bytes == 0 || config.request_timeout.is_zero() {
+    if config.max_upload_bytes == 0 || config.request_timeout.is_zero() {
         return Err(invalid_config(
             "skill storage limits must be greater than zero",
         ));
@@ -243,7 +246,7 @@ fn invalid_config(message: &str) -> StoreError {
 }
 
 fn archive_too_large() -> StoreError {
-    StoreError::Unexpected("skill archive exceeds configured storage limit".to_owned())
+    StoreError::Unexpected("skill archive exceeds storage size limit".to_owned())
 }
 
 fn storage_error(operation: &str, status: Option<u16>) -> StoreError {
