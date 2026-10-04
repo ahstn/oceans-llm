@@ -1,0 +1,20 @@
+crates/admin-ui/web/src/routes/skills/$id.tsx
+  s_3364883fc2ce42::t_229fe5c2766fe6 127-161,290-301
+  s_3364883fc2ce42::t_751d7cae473c3a 8-15,120,123,126,162,219-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "53e15efb89f0d21d76687e219f74d0141dac3276",
+  "prompts": {},
+  "sessions": {
+    "s_3364883fc2ce42": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1030b-a73e-7ee0-ba99-c3e2b528cb13",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
