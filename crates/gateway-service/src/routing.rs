@@ -137,12 +137,13 @@ pub async fn select_route(
                 reused: false,
             }));
     };
-    // Keep stateful resources on their origin. Conversation objects have a separate
-    // lifecycle that this first routing implementation does not yet track.
-    if request
-        .extra
-        .get("conversation")
-        .is_some_and(|value| !value.is_null())
+    // Responses conversation objects have a separate ownership lifecycle that this
+    // first routing implementation does not yet track.
+    if request.endpoint == RoutingEndpoint::Responses
+        && request
+            .extra
+            .get("conversation")
+            .is_some_and(|value| !value.is_null())
     {
         return Err(GatewayError::InvalidRequest(
             "conversation resources are not supported by routing pools; send full history or previous_response_id".into(),
@@ -166,7 +167,9 @@ pub async fn select_route(
         .affinity
         .as_ref()
         .map_or(3600, |policy| policy.idle_timeout_seconds);
-    let selection = if let Some(previous) = previous_response_id(request.extra)? {
+    let selection = if request.endpoint == RoutingEndpoint::Responses
+        && let Some(previous) = previous_response_id(request.extra)?
+    {
         let origin = store
             .get_response_route_origin(&owner_key, &digest(&[previous]), now)
             .await?

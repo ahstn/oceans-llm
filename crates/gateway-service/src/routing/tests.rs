@@ -494,23 +494,67 @@ async fn successful_completion_records_origin_before_refreshing_its_exact_bindin
 }
 
 #[tokio::test]
+async fn non_responses_endpoints_do_not_interpret_response_ownership_fields() {
+    for endpoint in [
+        RoutingEndpoint::ChatCompletions,
+        RoutingEndpoint::Messages,
+        RoutingEndpoint::Embeddings,
+        RoutingEndpoint::Decisions,
+    ] {
+        for extra in [
+            BTreeMap::from([("conversation".into(), json!("provider-conversation"))]),
+            BTreeMap::from([("conversation".into(), json!({"provider_option": true}))]),
+            BTreeMap::from([("previous_response_id".into(), json!("provider-response"))]),
+            BTreeMap::from([("previous_response_id".into(), json!(3))]),
+        ] {
+            let store = MockStore::default();
+            let mut request = TestRequest::sticky(RoutingStrategy::RoundRobin);
+            request.endpoint = endpoint;
+            request.extra = extra;
+
+            let selected = select_route(&store, request.request())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(selected.route.id, Uuid::from_u128(1));
+            if let Some(receipt) = selected.receipt {
+                receipt
+                    .complete(&store, Some("provider-result"))
+                    .await
+                    .unwrap();
+            }
+
+            let state = store.state.lock().unwrap();
+            assert_eq!(state.selections.len(), 1);
+            assert_eq!(state.selections[0].mode, RouteSelectionMode::RoundRobin);
+            assert!(!state.events.contains(&"lookup"));
+            assert!(state.origins.is_empty());
+        }
+    }
+}
+
+#[tokio::test]
 async fn conflicting_sessions_and_unsupported_conversation_resources_fail_before_selection() {
-    for (headers, extra) in [
+    for (endpoint, headers, extra) in [
         (
+            RoutingEndpoint::ChatCompletions,
             BTreeMap::from([("session-id".into(), "other-session".into())]),
             BTreeMap::new(),
         ),
         (
+            RoutingEndpoint::Responses,
             BTreeMap::new(),
             BTreeMap::from([("conversation".into(), json!("conv-owned"))]),
         ),
         (
+            RoutingEndpoint::Responses,
             BTreeMap::new(),
             BTreeMap::from([("previous_response_id".into(), json!(3))]),
         ),
     ] {
         let store = MockStore::default();
         let mut request = TestRequest::sticky(RoutingStrategy::Preferred);
+        request.endpoint = endpoint;
         request.harness = "codex";
         request.headers.extend(headers);
         request.extra = extra;

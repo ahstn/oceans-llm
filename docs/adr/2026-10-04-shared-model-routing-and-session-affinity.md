@@ -50,7 +50,7 @@ An opaque `previous_response_id` must return to the route that created it. Store
 
 For streaming Responses, an origin-write failure stops the stream before forwarding the terminal event. Earlier chunks may already have reached the caller, and reported usage is still accounted for. This prevents the gateway from reporting completion with a continuation ID whose ownership it cannot recover.
 
-Origin selection takes precedence over soft session affinity. When affinity is enabled and a session ID is present, a known continuation binds that session to its origin without advancing the round-robin cursor. Successful completion refreshes the binding. Unknown, expired, changed, or ineligible origins fail before provider execution. The gateway does not replay a continuation on another provider. Configured pools reject opaque `conversation` references until their ownership can be tracked. Callers can start a new request with complete history when a continuation is unavailable.
+Origin selection takes precedence over soft session affinity. When affinity is enabled and a session ID is present, a known continuation binds that session to its origin without advancing the round-robin cursor. Successful completion refreshes the binding. Unknown, expired, changed, or ineligible origins fail before provider execution. The gateway does not replay a continuation on another provider. For Responses requests, configured pools reject opaque `conversation` references until their ownership can be tracked. Other endpoints pass through these extension fields without applying Responses continuation rules. Callers can start a new request with complete history when a continuation is unavailable.
 
 ### Keep one provider attempt
 
