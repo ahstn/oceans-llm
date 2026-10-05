@@ -1,0 +1,51 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_ae1604a44e2b1a::t_30fc8a70b617f4 4062-4067
+crates/gateway-core/src/domain.rs
+  s_ae1604a44e2b1a::t_05c25d82821af1 1263-1264
+crates/gateway-service/src/request_logging.rs
+  s_ae1604a44e2b1a::t_df03dc9ad537cd 40-42,95,106,117,138,314,446,519,544,650
+crates/gateway-service/src/request_logging/stream.rs
+  s_ae1604a44e2b1a::t_4c0446d017e937 168-172
+crates/gateway-service/src/request_logging/tests/stream.rs
+  s_ae1604a44e2b1a::t_f5761ce223c040 392-412
+crates/gateway-service/src/request_logging/tool_cardinality.rs
+  s_ae1604a44e2b1a::t_6818bbaf61e3cc 11-17,22,27-31,47-50,74-81,89,113,133,153,163,193,206,210-220
+crates/gateway-store/migrations/V55__request_log_invoked_distinct_tool_count.sql
+  s_ae1604a44e2b1a::t_282ece868baf35 1-2
+crates/gateway-store/migrations/postgres/V55__request_log_invoked_distinct_tool_count.sql
+  s_ae1604a44e2b1a::t_c344ed077cd9c6 1-2
+crates/gateway-store/src/lib.rs
+  s_ae1604a44e2b1a::t_85861f33de9f7c 2552,2586,4209
+crates/gateway-store/src/libsql_store/budgets.rs
+  s_ae1604a44e2b1a::t_5e781493fb3080 423,448-456
+crates/gateway-store/src/libsql_store/request_logs.rs
+  s_ae1604a44e2b1a::t_5c712bd181d743 97,273-275,308-309,427,665-666,688-689
+crates/gateway-store/src/migration_registry.rs
+  s_ae1604a44e2b1a::t_41327cd919da49 308-316
+crates/gateway-store/src/postgres_store/budgets.rs
+  s_ae1604a44e2b1a::t_6de0fd7c99f0a9 383,404-412
+crates/gateway-store/src/postgres_store/request_logs.rs
+  s_ae1604a44e2b1a::t_d4d6469286a3fe 101,266-268,310,407,602-603,626-627
+crates/gateway-store/src/store.rs
+  s_ae1604a44e2b1a::t_4a0fd52b768248 886,890
+crates/gateway/openapi/admin-api.json
+  s_ae1604a44e2b1a::t_4bae43754ee254 2778,2976,15805-15812
+crates/gateway/src/local_demo_seed/usage.rs
+  s_ae1604a44e2b1a::t_3c40d8ff83a626 1192,1203,1214,1223,1233,1242,1250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c0472766972a2f89ad8cb35ef78e7c1da9be2c4f",
+  "prompts": {},
+  "sessions": {
+    "s_ae1604a44e2b1a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33c1a7e4-971a-4028-aceb-69bf987f7f82",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
