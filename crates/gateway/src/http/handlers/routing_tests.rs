@@ -167,6 +167,7 @@ impl RoutingHarness {
             tags: Vec::new(),
             rank: 0,
             routing: Some(ModelRoutingPolicy {
+                failover: None,
                 strategy: RoutingStrategy::RoundRobin,
                 affinity: Some(SessionAffinityPolicy::default()),
             }),

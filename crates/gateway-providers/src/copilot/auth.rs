@@ -9,7 +9,7 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::http::map_reqwest_error;
+use crate::http::{credential_response_text, map_reqwest_error, retry_after};
 use crate::token::{AccessToken, AccessTokenSource};
 
 const DEFAULT_GITHUB_API_URL: &str = "https://api.github.com";
@@ -180,12 +180,14 @@ impl AccessTokenSource for GitHubAppInstallationTokenSource {
             .map_err(map_reqwest_error)?;
 
         let status = response.status();
-        let text = response.text().await.map_err(map_reqwest_error)?;
+        let retry_after = retry_after(response.headers());
+        let text = credential_response_text(response).await?;
 
         if !status.is_success() {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                retry_after,
             });
         }
 

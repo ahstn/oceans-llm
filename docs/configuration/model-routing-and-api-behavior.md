@@ -1,6 +1,6 @@
 # Model Routing and APIs
 
-Oceans gives callers stable gateway model names while admins control the providers, upstream models, capabilities, and compatibility settings behind them. This page explains how an authenticated API request becomes one provider request and how behavior differs across the public API families.
+Oceans gives callers stable gateway model names while admins control the providers, upstream models, capabilities, and compatibility settings behind them. This page explains how an authenticated API request selects and executes provider routes, including optional failover, and how behavior differs across the public API families.
 
 `See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Identity and Access](../access/identity-and-access.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md)
 
@@ -39,7 +39,7 @@ requested model
   -> upstream provider request
 ```
 
-Oceans records the requested model, resolved model, selected provider, and provider attempt in request observability. This keeps the caller-facing identity separate from the route that executed it.
+Oceans records the requested model, resolved model, selected provider, and provider attempts in request observability. With failover enabled, a retryable failure can repeat the dispatch step or select another eligible route. This keeps the caller-facing identity separate from the routes that executed it.
 
 ## Configure a provider-backed model
 
@@ -271,11 +271,68 @@ The gateway rejects a continuation when its origin is unknown, expired, changed,
 
 Responses created before origin tracking was enabled cannot be continued through a routing pool unless their origin is known. Opaque `conversation` references are not supported in configured routing pools. Use full request history when a new placement is needed.
 
-### Selection does not retry provider failures
+### Enable bounded provider failover
 
-The gateway executes one selected route. It does not retry another route after an upstream error and does not send the request to several providers. Session affinity does not add failover.
+Add `routing.failover: {}` to enable retries, fallback routes, and shared cooldowns for an online routing pool. Omit `failover` to keep one provider attempt per request. Session affinity alone does not enable failover. Durable batches keep their existing route lifecycle.
 
-For example, weights of `3` and `1` at the same priority produce weighted first-route selection. They do not mean “try the first provider three times, then fail over to the second.” Configure each selectable route as a valid execution target and monitor provider failures independently.
+For example, add this policy to a provider-backed model whose routes have explicit IDs:
+
+```yaml
+routing:
+  strategy: preferred
+  affinity: {}
+  failover: {}
+```
+
+All retry and cooldown settings are optional within `failover`:
+
+| Field | Default | Constraint |
+| --- | --- | --- |
+| `max_retries_per_route` | `2` | Integer from `0` to `5`; excludes the first dispatch |
+| `max_attempts` | `6` | Integer from `1` to `32`; includes every route's first dispatch and retries |
+| `initial_backoff_ms` | `250` | Positive integer, no greater than `max_backoff_ms` |
+| `max_backoff_ms` | `2000` | Integer from `1` to `30000` |
+| `quota_cooldown_seconds` | `300` | Positive integer, no greater than `max_cooldown_seconds`; also applies to credential failures |
+| `transient_cooldown_seconds` | `30` | Positive integer, no greater than `max_cooldown_seconds` |
+| `max_cooldown_seconds` | `86400` | Integer from `1` to `604800`; must cover both configured cooldowns |
+
+Apply policy changes through the normal config-seeding workflow. Aliases inherit the resolved target's policy. There are no failover controls in the admin UI.
+
+#### Classify a failed attempt
+
+The gateway uses the provider error class and structured error codes to choose the next action:
+
+| Failure | Action |
+| --- | --- |
+| HTTP `408`, `429`, or `5xx`; transport error; timeout | Retry the same route within the limits, then apply a transient cooldown and consider another route |
+| Recognized provider quota error | Skip same-route retries, apply the quota cooldown, and consider another route |
+| HTTP `401` | Skip same-route retries, apply the credential cooldown, and consider another route |
+| Policy denial, invalid request, unsupported operation, or unknown HTTP error such as `400`, `403`, or `422` | Return the error without retry or fallback |
+| Error with partial usage, or a successful HTTP response whose body cannot be read or decoded | Return the error without retry or fallback |
+
+An explicit policy denial takes precedence over an otherwise retryable HTTP status or quota code. Error message text does not change the failure class. See [Copilot quota and policy errors](../providers/github-copilot.md#quota-and-policy-errors) for that provider's recognized quota signals and source limits.
+
+Retries use exponential backoff without jitter. The default delays are 250 ms and 500 ms. A parsed `Retry-After` value can extend either delay up to `max_backoff_ms`. If it exceeds that limit, the gateway skips further retries on that route and considers a fallback. The cooldown is the larger of the configured duration and `Retry-After`, capped at `max_cooldown_seconds`.
+
+#### Select a fallback and recover
+
+The gateway removes a failed route from the current request after its retries end. It selects another route using the configured priority and strategy. Each fallback must still pass API, feature, runtime provider, and caller credential checks. A route is not revisited during the same request. Weight controls route selection; it does not set a retry count.
+
+Cooldowns are stored in the shared database and apply across gateway replicas. A cooldown identifies one route and its runtime provider and credential context. For user-owned credentials, it includes the user and credential generation. The same user's API keys, aliases, API endpoints, and sessions share that route's cooldown. Other users do not. A route that uses shared provider credentials shares its cooldown across callers. This scope does not claim that the provider's quota is route-specific or account-wide.
+
+Replacing a credential or changing the route's runtime context creates a new cooldown identity. When a cooldown expires, the route becomes eligible for new placements. The gateway returns HTTP `503` with `routes_temporarily_unavailable` when cooldowns exclude every otherwise eligible route. If retries or available routes are exhausted during execution, the request stops with the relevant failure.
+
+Failover invalidates only the failed session binding that the request used. A stale failure cannot remove a newer binding. Selection reserves the replacement binding, and successful completion refreshes its idle deadline. Recovery of a preferred route does not displace a healthy fallback binding.
+
+For Responses with `previous_response_id`, retries can use only the origin route. Failover never sends that identifier to another route. An origin in cooldown remains unavailable until it can be selected again. Send complete history in a new request when another route is required.
+
+#### Keep completion and accounting boundaries
+
+Retries stop as soon as the provider client returns a response value or a stream. A stream is never replayed, even if it fails before the caller receives its first event. Prompt or response guardrail failures, gateway budget failures, and failures after partial usage do not trigger fallback. Reported partial usage is still accounted for.
+
+When request logging is enabled, each actual provider dispatch has an ordered attempt record. Only the last dispatch is marked terminal. A guardrail or budget rejection before dispatch does not create a provider attempt. Gateway accounting charges the successful result once, using the winning route.
+
+A timeout or transport error can occur after a provider accepted work. Bounded retries limit duplicate work but cannot prove that the provider charged only once. The gateway cannot account for usage that the provider never reports.
 
 ## Gate routes by capability
 
@@ -324,7 +381,7 @@ OpenAI-compatible Chat Completions profiles can remove unsupported `store` field
 
 Responses is a separate API family with its own typed request and streaming path. Chat Completions transforms are not used as Responses shims.
 
-Provider-specific profiles also cover Amazon Bedrock API styles and OpenRouter provider policy. OpenRouter's `order`, `only`, `ignore`, zero-data-retention, latency, and price settings affect upstream selection inside the chosen OpenRouter route. They do not change Oceans route priority, weight, or single-route execution.
+Provider-specific profiles also cover Amazon Bedrock API styles and OpenRouter provider policy. OpenRouter's `order`, `only`, `ignore`, zero-data-retention, latency, and price settings affect upstream selection inside the chosen OpenRouter route. They do not change Oceans route priority, weight, or failover policy.
 
 Put additive provider request fields that are not compatibility behavior in route `extra_body` or `extra_headers`. See [Provider API Compatibility](../reference/provider-api-compatibility.md) for supported profiles and API-specific constraints.
 
@@ -427,10 +484,11 @@ Start with the returned error and the request log:
 | Model not found | The model ID does not exist, is not granted, or no tag candidate is accessible | Requested model, tags, API-key grants, and allowlists |
 | `invalid_request` | Model policy, session identity, continuation origin, or route capability checks rejected the request | Explicit effort fields, session IDs, response origin, API family, and required feature flags |
 | `no_routes_available` | No enabled, positively weighted, viable route remained | Route state, provider configuration, and weight |
+| `routes_temporarily_unavailable` | All otherwise eligible routes are in cooldown; HTTP `503` | Recent provider attempts, quota or credential errors, and configured cooldown durations |
 | Provider error | The selected route reached the provider and the upstream request failed | Provider attempt, credentials, compatibility profile, and upstream response |
 | Visible model cannot execute | Discovery access succeeded but no route supports this request | Route capabilities and provider runtime support |
 
-Use the request ID to correlate the gateway response with **Observability > Request Logs** and exported traces. Request logs preserve requested and resolved model identities, the selected provider, and the provider attempt.
+Use the request ID to correlate the gateway response with **Observability > Request Logs** and exported traces. Request logs preserve requested and resolved model identities, the selected provider, and ordered provider attempts.
 
 ## Verify a routing change
 

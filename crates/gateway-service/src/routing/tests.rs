@@ -24,6 +24,8 @@ struct StoreState {
     events: Vec<&'static str>,
     fail_refresh: bool,
     fail_origin: bool,
+    failures: Vec<RouteFailureRecord>,
+    all_cooled: bool,
 }
 
 #[async_trait]
@@ -31,16 +33,19 @@ impl RoutingRepository for MockStore {
     async fn select_route(
         &self,
         request: &RouteSelectionRequest,
-    ) -> Result<RouteSelection, StoreError> {
+    ) -> Result<Option<RouteSelection>, StoreError> {
         let mut state = self.state.lock().unwrap();
         state.selections.push(request.clone());
         state.events.push("select");
+        if state.all_cooled {
+            return Ok(None);
+        }
         let route_id = request
             .candidates
             .first()
             .expect("eligible candidate")
             .route_id;
-        Ok(RouteSelection {
+        Ok(Some(RouteSelection {
             route_id,
             binding: request
                 .affinity_key
@@ -53,7 +58,12 @@ impl RoutingRepository for MockStore {
                     idle_timeout_seconds: request.idle_timeout_seconds,
                 }),
             reused: false,
-        })
+        }))
+    }
+
+    async fn record_route_failure(&self, failure: &RouteFailureRecord) -> Result<(), StoreError> {
+        self.state.lock().unwrap().failures.push(failure.clone());
+        Ok(())
     }
 
     async fn refresh_route_binding(
@@ -200,6 +210,7 @@ impl TestRequest {
         let mut request = Self::new(Some(ModelRoutingPolicy {
             strategy,
             affinity: Some(SessionAffinityPolicy::default()),
+            failover: None,
         }));
         request
             .headers
@@ -237,6 +248,117 @@ async fn omitted_policy_keeps_legacy_order_without_reading_routing_state() {
     assert_eq!(selection.route.id, Uuid::from_u128(2));
     assert!(selection.receipt.is_none());
     assert!(store.state.lock().unwrap().events.is_empty());
+}
+
+#[tokio::test]
+async fn failover_reads_shared_state_without_affinity_and_records_exact_failure() {
+    for strategy in [RoutingStrategy::Preferred, RoutingStrategy::WeightedRandom] {
+        let store = MockStore::default();
+        let mut request = TestRequest::new(Some(ModelRoutingPolicy {
+            strategy,
+            failover: Some(gateway_core::ProviderFailoverPolicy::default()),
+            ..ModelRoutingPolicy::default()
+        }));
+        let selected = select_route(&store, request.request())
+            .await
+            .unwrap()
+            .unwrap();
+        let receipt = selected.receipt.unwrap();
+        receipt
+            .record_failure(&store, Duration::from_secs(300))
+            .await
+            .unwrap();
+        {
+            let state = store.state.lock().unwrap();
+            assert_eq!(state.selections.len(), 1);
+            assert!(state.selections[0].affinity_key.is_none());
+            assert_eq!(state.failures[0].cooldown_key, receipt.cooldown_key);
+            assert!(state.failures[0].binding.is_none());
+        }
+        request
+            .resolved
+            .selection
+            .execution_model
+            .routing
+            .as_mut()
+            .unwrap()
+            .affinity = Some(SessionAffinityPolicy::default());
+        request
+            .headers
+            .insert("x-oceans-session-id".into(), "session".into());
+        let selected = select_route(&store, request.request())
+            .await
+            .unwrap()
+            .unwrap();
+        let receipt = selected.receipt.unwrap();
+        receipt
+            .record_failure(&store, Duration::from_secs(30))
+            .await
+            .unwrap();
+        assert_eq!(
+            store.state.lock().unwrap().failures[1].binding,
+            receipt.binding
+        );
+    }
+}
+
+#[test]
+fn cooldowns_share_user_credentials_across_keys_and_isolate_other_users() {
+    let mut request = TestRequest::new(Some(ModelRoutingPolicy {
+        failover: Some(gateway_core::ProviderFailoverPolicy::default()),
+        ..ModelRoutingPolicy::default()
+    }));
+    request
+        .credential_versions
+        .insert("provider-2".into(), "credential-a".into());
+    let original = candidates(&request.request()).unwrap();
+    request.resolved.auth.id = Uuid::new_v4();
+    request.resolved.selection.requested_model.id = Uuid::new_v4();
+    request.endpoint = RoutingEndpoint::Responses;
+    let same_user = candidates(&request.request()).unwrap();
+    assert_eq!(original[0].cooldown_key, same_user[0].cooldown_key);
+    request.resolved.auth.owner_user_id = Some(Uuid::new_v4());
+    let other_user = candidates(&request.request()).unwrap();
+    assert_ne!(same_user[0].cooldown_key, other_user[0].cooldown_key);
+    // Shared provider credentials do not acquire a caller-specific cooldown.
+    assert_eq!(original[1].cooldown_key, other_user[1].cooldown_key);
+    request
+        .credential_versions
+        .insert("provider-2".into(), "credential-b".into());
+    let relinked = candidates(&request.request()).unwrap();
+    assert_ne!(other_user[0].cooldown_key, relinked[0].cooldown_key);
+}
+
+#[tokio::test]
+async fn cooled_continuation_never_chooses_a_different_origin() {
+    let store = MockStore::default();
+    let mut request = TestRequest::new(Some(ModelRoutingPolicy {
+        failover: Some(gateway_core::ProviderFailoverPolicy::default()),
+        ..ModelRoutingPolicy::default()
+    }));
+    request.endpoint = RoutingEndpoint::Responses;
+    let selected = select_route(&store, request.request())
+        .await
+        .unwrap()
+        .unwrap();
+    selected
+        .receipt
+        .unwrap()
+        .complete(&store, Some("resp-owned"))
+        .await
+        .unwrap();
+    request
+        .extra
+        .insert("previous_response_id".into(), json!("resp-owned"));
+    store.state.lock().unwrap().all_cooled = true;
+    let error = select_route(&store, request.request()).await.err().unwrap();
+    assert_eq!(error.http_status_code(), 503);
+    assert_eq!(error.error_code(), "routes_temporarily_unavailable");
+    let state = store.state.lock().unwrap();
+    let continued = state.selections.last().unwrap();
+    assert_eq!(continued.candidates.len(), 1);
+    assert_eq!(continued.candidates[0].route_id, selected.route.id);
+    assert!(continued.affinity_key.is_none());
 }
 
 #[tokio::test]

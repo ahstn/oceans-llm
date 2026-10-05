@@ -301,6 +301,7 @@ mod tests {
             routing: Some(ModelRoutingPolicy {
                 strategy: RoutingStrategy::RoundRobin,
                 affinity: Some(SessionAffinityPolicy::default()),
+                failover: None,
             }),
             routes: vec![
                 AdminModelRouteSummary {
@@ -652,6 +653,7 @@ mod tests {
             model.routing = Some(ModelRoutingPolicy {
                 strategy,
                 affinity: None,
+                failover: None,
             });
 
             let value = serde_json::to_value(map_model_summary(model, true)).unwrap();

@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     anthropic::{normalize_anthropic_response, normalize_anthropic_stream},
-    http::{execute_request, map_reqwest_error},
+    http::{execute_request, map_reqwest_error, partial_usage_error, retry_after},
     token::{
         AccessTokenSource, AdcTokenSource, CLOUD_PLATFORM_SCOPE, CachedAccessTokenSource,
         ServiceAccountTokenSource, StaticBearerTokenSource,
@@ -39,7 +39,7 @@ use embeddings::{
 };
 use error::VertexAdapterError;
 use google_request::map_google_request;
-use google_response::normalize_google_response;
+use google_response::{map_google_usage, normalize_google_response};
 use google_stream::normalize_google_stream;
 
 const ANTHROPIC_USAGE_SOURCE: &str = "vertex_anthropic";
@@ -176,15 +176,20 @@ impl VertexProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
-        let text = response.text().await.map_err(map_reqwest_error)?;
+        let retry_after = retry_after(response.headers());
+        let text = response.inference_text().await?;
         if !status.is_success() {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                retry_after,
             });
         }
-        serde_json::from_str(&text)
-            .map_err(|error| ProviderError::Transport(format!("invalid JSON from vertex: {error}")))
+        serde_json::from_str(&text).map_err(|error| {
+            partial_usage_error(ProviderError::Transport(format!(
+                "invalid JSON from vertex: {error}"
+            )))
+        })
     }
 }
 
@@ -269,7 +274,12 @@ impl ProviderClient for VertexProvider {
                 let body = map_google_request(request, context, model_id, false)?;
                 let endpoint = self.model_endpoint(publisher, model_id, "generateContent");
                 let value = self.post_json(&endpoint, &body, context).await?;
-                Ok(normalize_google_response(&value, context)?)
+                normalize_google_response(&value, context).map_err(|error| {
+                    ProviderError::PartialUsage {
+                        source: Box::new(error.into()),
+                        provider_usage: map_google_usage(&value),
+                    }
+                })
             }
             PublisherFamily::Anthropic => {
                 let body = map_vertex_anthropic_request(
@@ -321,10 +331,12 @@ impl ProviderClient for VertexProvider {
         .map_err(map_reqwest_error)?;
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.map_err(map_reqwest_error)?;
+            let retry_after = retry_after(response.headers());
+            let body = response.inference_text().await?;
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body,
+                retry_after,
             });
         }
 
@@ -364,7 +376,10 @@ impl ProviderClient for VertexProvider {
         let endpoint = self.model_endpoint(publisher, model_id, vertex_embedding_method(model_id));
         let mut outputs: Vec<GoogleEmbeddingOutput> = Vec::with_capacity(mapped.input_count);
         for (body, expected) in mapped.bodies.iter().zip(&mapped.batch_sizes) {
-            let request = self.build_request(&endpoint, body, context).await?;
+            let request = self
+                .build_request(&endpoint, body, context)
+                .await
+                .map_err(|error| partial_google_embedding_failure(error, &outputs, false))?;
             let response = match execute_request(
                 &self.client,
                 request,
@@ -383,13 +398,23 @@ impl ProviderClient for VertexProvider {
                 }
             };
             let status = response.status();
+            let retry_after = retry_after(response.headers());
             let text = match response.text().await {
                 Ok(text) => text,
                 Err(error) => {
+                    let source = if status.is_success() {
+                        map_reqwest_error(error)
+                    } else {
+                        ProviderError::UpstreamHttp {
+                            status: status.as_u16(),
+                            body: error.to_string(),
+                            retry_after,
+                        }
+                    };
                     return Err(partial_google_embedding_failure(
-                        map_reqwest_error(error),
+                        source,
                         &outputs,
-                        true,
+                        status.is_success(),
                     ));
                 }
             };
@@ -398,6 +423,7 @@ impl ProviderClient for VertexProvider {
                     ProviderError::UpstreamHttp {
                         status: status.as_u16(),
                         body: text,
+                        retry_after,
                     },
                     &outputs,
                     false,

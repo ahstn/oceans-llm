@@ -1083,8 +1083,9 @@ Important fields:
 | `routing.strategy` | `weighted_random` | `preferred`, `weighted_random`, `round_robin` |
 | `routing.affinity` | Absent; no session affinity | An object; `{}` enables the default timeout |
 | `routing.affinity.idle_timeout_seconds` | `3600` | Integer from `1` to `4294967295` |
+| `routing.failover` | Absent; one provider attempt | An object; `{}` enables bounded retries, fallback, and cooldowns; see [failover settings](model-routing-and-api-behavior.md#enable-bounded-provider-failover) |
 
-Every route needs an explicit `id` when `routing` is present, including `routing: {}`. Unknown routing fields and strategy names fail configuration loading. Omitting `routing` preserves existing weighted selection without affinity.
+Every route needs an explicit `id` when `routing` is present, including `routing: {}`. Unknown routing fields and strategy names fail configuration loading. Omitting `routing` preserves existing weighted selection without affinity or failover.
 
 Policies apply to online chat, messages, Responses, embeddings, and decisions. Session affinity applies to chat, messages, and Responses. Durable batches keep their existing route lifecycle. Policy configuration is YAML-only; reseed the deployment to apply changes.
 

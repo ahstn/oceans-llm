@@ -38,11 +38,16 @@ async fn exercise_model_routing_policy<S: GatewayStore + Sync>(store: &S) {
         Some(ModelRoutingPolicy {
             strategy: RoutingStrategy::Preferred,
             affinity: Some(SessionAffinityPolicy::default()),
+            failover: None,
         }),
         Some(ModelRoutingPolicy {
             strategy: RoutingStrategy::RoundRobin,
             affinity: Some(SessionAffinityPolicy {
                 idle_timeout_seconds: 900,
+            }),
+            failover: Some(gateway_core::ProviderFailoverPolicy {
+                max_retries_per_route: 1,
+                ..Default::default()
             }),
         }),
         None,

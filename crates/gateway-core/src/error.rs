@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde_json::Value;
 use thiserror::Error;
 
@@ -63,6 +65,8 @@ pub enum RouteError {
     ModelNotFound(String),
     #[error("no routes are available for model `{0}`")]
     NoRoutesAvailable(String),
+    #[error("all eligible routes for model `{0}` are temporarily unavailable")]
+    TemporarilyUnavailable(String),
     #[error("routing policy could not evaluate routes: {0}")]
     Policy(String),
 }
@@ -76,7 +80,11 @@ pub enum ProviderError {
     #[error("upstream provider transport failure: {0}")]
     Transport(String),
     #[error("upstream provider returned {status}: {body}")]
-    UpstreamHttp { status: u16, body: String },
+    UpstreamHttp {
+        status: u16,
+        body: String,
+        retry_after: Option<Duration>,
+    },
     #[error("provider call failed after billable upstream usage: {source}")]
     PartialUsage {
         source: Box<ProviderError>,
@@ -87,19 +95,19 @@ pub enum ProviderError {
 }
 
 impl ProviderError {
+    /// Whether an error can be retried without provider-specific context.
+    /// Online route failover must use `failure_kind` with the provider type.
     #[must_use]
     pub fn is_retryable(&self) -> bool {
+        self.failure_kind("") == crate::provider_failure::ProviderFailureKind::Transient
+    }
+
+    #[must_use]
+    pub fn retry_after(&self) -> Option<Duration> {
         match self {
-            Self::PartialUsage { source, .. } => source.is_retryable(),
-            _ => matches!(
-                self,
-                Self::Timeout
-                    | Self::Transport(_)
-                    | Self::UpstreamHttp {
-                        status: 408 | 429 | 500..=599,
-                        ..
-                    }
-            ),
+            Self::UpstreamHttp { retry_after, .. } => *retry_after,
+            Self::PartialUsage { source, .. } => source.retry_after(),
+            _ => None,
         }
     }
 }
@@ -198,7 +206,9 @@ impl GatewayError {
             Self::Provider(ProviderError::UpstreamHttp { status, .. }) => *status,
             Self::Provider(ProviderError::Timeout) => 504,
             Self::Provider(ProviderError::Transport(_)) => 502,
-            Self::Route(RouteError::NoRoutesAvailable(_)) => 503,
+            Self::Route(
+                RouteError::NoRoutesAvailable(_) | RouteError::TemporarilyUnavailable(_),
+            ) => 503,
             Self::Store(StoreError::Unavailable(_)) => 503,
             Self::Auth(AuthError::HashVerification(_))
             | Self::Store(_)
@@ -269,6 +279,7 @@ impl GatewayError {
             Self::Store(_) => "store_error",
             Self::Route(RouteError::ModelNotFound(_)) => "model_not_found",
             Self::Route(RouteError::NoRoutesAvailable(_)) => "no_routes_available",
+            Self::Route(RouteError::TemporarilyUnavailable(_)) => "routes_temporarily_unavailable",
             Self::Route(RouteError::Policy(_)) => "routing_policy_error",
             Self::Provider(ProviderError::PartialUsage { source, .. }) => match source.as_ref() {
                 ProviderError::Timeout => "upstream_timeout",

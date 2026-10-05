@@ -1,16 +1,19 @@
+use std::collections::HashSet;
+
 use async_trait::async_trait;
 use gateway_core::{
-    ResponseRouteOrigin, RouteBindingReceipt, RouteSelection, RouteSelectionMode,
-    RouteSelectionRequest, RoutingRepository, StoreError,
+    ResponseRouteOrigin, RouteBindingReceipt, RouteFailureRecord, RouteSelection,
+    RouteSelectionMode, RouteSelectionRequest, RoutingRepository, StoreError,
 };
 use sqlx::{Executor, Postgres, Row, postgres::PgRow};
 use time::OffsetDateTime;
+use uuid::Uuid;
 
 use super::{PostgresStore, support::to_query_error};
 use crate::{
     routing::{
         RESPONSE_ORIGIN_RETENTION_SECONDS, StoredRouteBinding, binding_expiry, choose_route,
-        new_selection, reuse_binding, routing_pool_key,
+        cooldown_keys, new_selection, reuse_binding, routing_pool_key,
     },
     shared::parse_uuid,
 };
@@ -54,61 +57,173 @@ fn decode_response_origin(row: &PgRow) -> Result<ResponseRouteOrigin, StoreError
     })
 }
 
+async fn lock_cooldown(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    key: &str,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "SELECT pg_advisory_xact_lock(
+            hashtextextended('oceans:model_route_cooldown:' || $1, 0)
+        )",
+    )
+    .bind(key)
+    .execute(&mut **tx)
+    .await
+    .map_err(to_query_error)?;
+    Ok(())
+}
+
+async fn lock_affinity(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    model_id: Uuid,
+    affinity_key: Option<&str>,
+) -> Result<(), StoreError> {
+    if let Some(affinity_key) = affinity_key {
+        sqlx::query(
+            "SELECT pg_advisory_xact_lock(
+                hashtextextended('oceans:model_routing:' || $1 || ':' || $2, 0)
+            )",
+        )
+        .bind(model_id.to_string())
+        .bind(affinity_key)
+        .execute(&mut **tx)
+        .await
+        .map_err(to_query_error)?;
+    }
+    Ok(())
+}
+
+async fn exclude_cooling_routes(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    request: &mut RouteSelectionRequest,
+) -> Result<(), StoreError> {
+    let keys = cooldown_keys(request);
+    if keys.is_empty() {
+        return Ok(());
+    }
+    // Every selector and failure writer locks cooldown identities before affinity.
+    // Sorting gives overlapping candidate pools the same advisory lock order.
+    for key in &keys {
+        sqlx::query(
+            "SELECT pg_advisory_xact_lock_shared(
+                hashtextextended('oceans:model_route_cooldown:' || $1, 0)
+            )",
+        )
+        .bind(key)
+        .execute(&mut **tx)
+        .await
+        .map_err(to_query_error)?;
+    }
+    let active = sqlx::query_scalar::<_, String>(
+        "SELECT cooldown_key FROM model_route_cooldowns
+         WHERE cooldown_key = ANY($1) AND expires_at > $2",
+    )
+    .bind(&keys)
+    .bind(request.now.unix_timestamp())
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(to_query_error)?
+    .into_iter()
+    .collect::<HashSet<_>>();
+    request.candidates.retain(|candidate| {
+        !candidate
+            .cooldown_key
+            .as_ref()
+            .is_some_and(|key| active.contains(key))
+    });
+    Ok(())
+}
+
+async fn load_cursor(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    pool_key: &str,
+) -> Result<i64, StoreError> {
+    sqlx::query(
+        "INSERT INTO model_routing_cursors (pool_key, next_index) VALUES ($1, 0)
+         ON CONFLICT (pool_key) DO NOTHING",
+    )
+    .bind(pool_key)
+    .execute(&mut **tx)
+    .await
+    .map_err(to_query_error)?;
+    sqlx::query_scalar(
+        "SELECT next_index FROM model_routing_cursors WHERE pool_key = $1 FOR UPDATE",
+    )
+    .bind(pool_key)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(to_query_error)
+}
+
+async fn cleanup_cooldowns(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    now: OffsetDateTime,
+) -> Result<(), StoreError> {
+    // Cleanup is the final lock-taking operation. Do not hold unrelated cooldown
+    // rows while waiting for an affinity lock needed by a failure writer.
+    sqlx::query(
+        "DELETE FROM model_route_cooldowns WHERE cooldown_key IN (
+            SELECT cooldown_key FROM model_route_cooldowns
+            WHERE expires_at <= $1 ORDER BY expires_at LIMIT 64
+            FOR UPDATE SKIP LOCKED
+        )",
+    )
+    .bind(now.unix_timestamp())
+    .execute(&mut **tx)
+    .await
+    .map_err(to_query_error)?;
+    Ok(())
+}
+
 #[async_trait]
 impl RoutingRepository for PostgresStore {
     async fn select_route(
         &self,
         request: &RouteSelectionRequest,
-    ) -> Result<RouteSelection, StoreError> {
+    ) -> Result<Option<RouteSelection>, StoreError> {
         binding_expiry(request.now, request.idle_timeout_seconds)?;
         let (candidate, _) = choose_route(request, 0)?;
-        if request.affinity_key.is_none() && request.mode == RouteSelectionMode::First {
-            return Ok(new_selection(request, candidate));
+        let checks_cooldowns = !cooldown_keys(request).is_empty();
+        if !checks_cooldowns
+            && request.affinity_key.is_none()
+            && request.mode == RouteSelectionMode::First
+        {
+            return Ok(Some(new_selection(request, candidate)));
         }
-        if let Some(selection) = load_reusable_binding(&self.pool, request).await? {
-            return Ok(selection);
+        if !checks_cooldowns
+            && let Some(selection) = load_reusable_binding(&self.pool, request).await?
+        {
+            return Ok(Some(selection));
         }
 
-        let pool_key = routing_pool_key(request)?.to_string();
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
-        if let Some(affinity_key) = &request.affinity_key {
-            // Different eligible pools must still agree on the same session's binding.
-            sqlx::query(
-                "SELECT pg_advisory_xact_lock(
-                     hashtextextended('oceans:model_routing:' || $1 || ':' || $2, 0)
-                 )",
-            )
-            .bind(request.model_id.to_string())
-            .bind(affinity_key)
-            .execute(&mut *tx)
-            .await
-            .map_err(to_query_error)?;
-        }
-        sqlx::query(
-            "INSERT INTO model_routing_cursors (pool_key, next_index) VALUES ($1, 0)
-             ON CONFLICT (pool_key) DO NOTHING",
-        )
-        .bind(&pool_key)
-        .execute(&mut *tx)
-        .await
-        .map_err(to_query_error)?;
-        let row = sqlx::query(
-            "SELECT next_index FROM model_routing_cursors WHERE pool_key = $1 FOR UPDATE",
-        )
-        .bind(&pool_key)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(to_query_error)?;
-
-        // Recheck after locking in case another request created the session's binding.
-        if let Some(selection) = load_reusable_binding(&mut *tx, request).await? {
+        let mut request = request.clone();
+        exclude_cooling_routes(&mut tx, &mut request).await?;
+        if request.candidates.is_empty() {
+            cleanup_cooldowns(&mut tx, request.now).await?;
             tx.commit().await.map_err(to_query_error)?;
-            return Ok(selection);
+            return Ok(None);
         }
-        let cursor = row.try_get(0).map_err(to_query_error)?;
-        let (candidate, next_cursor) = choose_route(request, cursor)?;
-        let selection = new_selection(request, candidate);
-        if request.mode == RouteSelectionMode::RoundRobin {
+        // Different eligible pools must still agree on the same session's binding.
+        lock_affinity(&mut tx, request.model_id, request.affinity_key.as_deref()).await?;
+        // Recheck after locking in case another request created the session's binding.
+        if let Some(selection) = load_reusable_binding(&mut *tx, &request).await? {
+            if checks_cooldowns {
+                cleanup_cooldowns(&mut tx, request.now).await?;
+            }
+            tx.commit().await.map_err(to_query_error)?;
+            return Ok(Some(selection));
+        }
+        let (pool_key, cursor) = if request.mode == RouteSelectionMode::RoundRobin {
+            let pool_key = routing_pool_key(&request)?.to_string();
+            let cursor = load_cursor(&mut tx, &pool_key).await?;
+            (Some(pool_key), cursor)
+        } else {
+            (None, 0)
+        };
+        let (candidate, next_cursor) = choose_route(&request, cursor)?;
+        let selection = new_selection(&request, candidate);
+        if let Some(pool_key) = pool_key {
             sqlx::query("UPDATE model_routing_cursors SET next_index = $1 WHERE pool_key = $2")
                 .bind(next_cursor)
                 .bind(&pool_key)
@@ -133,8 +248,48 @@ impl RoutingRepository for PostgresStore {
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;
+        if checks_cooldowns {
+            cleanup_cooldowns(&mut tx, request.now).await?;
+        }
         tx.commit().await.map_err(to_query_error)?;
-        Ok(selection)
+        Ok(Some(selection))
+    }
+
+    async fn record_route_failure(&self, failure: &RouteFailureRecord) -> Result<(), StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        if let Some(key) = &failure.cooldown_key {
+            lock_cooldown(&mut tx, key).await?;
+        }
+        if let Some(binding) = &failure.binding {
+            lock_affinity(&mut tx, binding.model_id, Some(&binding.affinity_key)).await?;
+        }
+        if let Some(key) = &failure.cooldown_key {
+            sqlx::query(
+                "INSERT INTO model_route_cooldowns (cooldown_key, expires_at)
+                 VALUES ($1, $2) ON CONFLICT(cooldown_key) DO UPDATE SET
+                    expires_at = GREATEST(model_route_cooldowns.expires_at, EXCLUDED.expires_at)",
+            )
+            .bind(key)
+            .bind(failure.cooldown_until.unix_timestamp())
+            .execute(&mut *tx)
+            .await
+            .map_err(to_query_error)?;
+        }
+        if let Some(binding) = &failure.binding {
+            sqlx::query(
+                "DELETE FROM model_route_bindings WHERE model_id = $1 AND affinity_key = $2
+                 AND binding_token = $3 AND route_id = $4",
+            )
+            .bind(binding.model_id.to_string())
+            .bind(&binding.affinity_key)
+            .bind(binding.token.to_string())
+            .bind(binding.route_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(to_query_error)?;
+        }
+        tx.commit().await.map_err(to_query_error)?;
+        Ok(())
     }
 
     async fn refresh_route_binding(

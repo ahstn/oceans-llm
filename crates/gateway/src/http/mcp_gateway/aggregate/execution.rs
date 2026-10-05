@@ -175,7 +175,12 @@ impl CatalogInvocation<'_> {
                     result => result.to_string(),
                 };
                 Err(CatalogCallError::Gateway(
-                    ProviderError::UpstreamHttp { status, body }.into(),
+                    ProviderError::UpstreamHttp {
+                        status,
+                        body,
+                        retry_after: None,
+                    }
+                    .into(),
                 ))
             }
             Err(McpClientError::JsonRpc(error)) => {
@@ -362,9 +367,12 @@ fn aggregate_tool_error(
 fn map_mcp_client_error(error: McpClientError) -> GatewayError {
     match error {
         McpClientError::Timeout => ProviderError::Timeout.into(),
-        McpClientError::Http { status, body } => {
-            ProviderError::UpstreamHttp { status, body }.into()
+        McpClientError::Http { status, body } => ProviderError::UpstreamHttp {
+            status,
+            body,
+            retry_after: None,
         }
+        .into(),
         McpClientError::ResponseTooLarge { limit_bytes } => {
             GatewayError::PayloadTooLarge { limit_bytes }
         }

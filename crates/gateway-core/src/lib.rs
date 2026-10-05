@@ -4,8 +4,10 @@ pub mod batch;
 pub mod budgets;
 pub mod domain;
 pub mod error;
+pub mod failover;
 pub mod gateway_keys;
 pub mod protocol;
+pub mod provider_failure;
 pub mod reasoning_policy;
 pub mod routing;
 pub mod skills;
@@ -110,6 +112,7 @@ pub use domain::{
     vertex_route_capabilities_for_upstream_model, vertex_text_embedding_capabilities,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
+pub use failover::ProviderFailoverPolicy;
 pub use gateway_keys::{
     EncryptedSecret, GATEWAY_API_KEY_SECRET_KEY_ENV, GATEWAY_API_KEY_SECRET_KEY_ID,
     decrypt_gateway_api_key_secret, decrypt_secret_with_key, decrypt_secret_with_key_and_aad,
@@ -137,13 +140,14 @@ pub use protocol::translate::{
     openai_decisions_request_to_core, openai_embeddings_request_to_core,
     openai_responses_request_to_core,
 };
+pub use provider_failure::ProviderFailureKind;
 pub use reasoning_policy::{
     enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
     enforce_responses_reasoning_effort,
 };
 pub use routing::{
-    ModelRoutingPolicy, ResponseRouteOrigin, RouteBindingReceipt, RouteSelection,
-    RouteSelectionMode, RouteSelectionRequest, RoutingCandidate, RoutingRepository,
+    ModelRoutingPolicy, ResponseRouteOrigin, RouteBindingReceipt, RouteFailureRecord,
+    RouteSelection, RouteSelectionMode, RouteSelectionRequest, RoutingCandidate, RoutingRepository,
     RoutingStrategy, SessionAffinityPolicy,
 };
 pub use skills::{

@@ -35,6 +35,7 @@ use super::{
 
 mod anthropic_request;
 mod embeddings;
+mod failures;
 mod gemini;
 mod google_request;
 mod google_tools;

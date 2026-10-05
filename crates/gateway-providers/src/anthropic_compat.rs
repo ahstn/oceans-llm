@@ -13,7 +13,9 @@ use crate::anthropic::{
     AnthropicRequestOptions, map_anthropic_request, normalize_anthropic_response,
     normalize_anthropic_stream,
 };
-use crate::http::{execute_request, join_base_url, map_reqwest_error};
+use crate::http::{
+    execute_request, join_base_url, map_reqwest_error, partial_usage_error, retry_after,
+};
 
 const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
 
@@ -173,17 +175,21 @@ impl ProviderClient for AnthropicCompatProvider {
         .map_err(map_reqwest_error)?;
 
         let status = response.status();
-        let text = response.text().await.map_err(map_reqwest_error)?;
+        let retry_after = retry_after(response.headers());
+        let text = response.inference_text().await?;
 
         if !status.is_success() {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                retry_after,
             });
         }
 
         let value: Value = serde_json::from_str(&text).map_err(|err| {
-            ProviderError::Transport(format!("invalid JSON from anthropic_compat: {err}"))
+            partial_usage_error(ProviderError::Transport(format!(
+                "invalid JSON from anthropic_compat: {err}"
+            )))
         })?;
 
         Ok(normalize_anthropic_response(
@@ -218,11 +224,13 @@ impl ProviderClient for AnthropicCompatProvider {
         .map_err(map_reqwest_error)?;
 
         let status = response.status();
+        let retry_after = retry_after(response.headers());
         if !status.is_success() {
-            let text = response.text().await.map_err(map_reqwest_error)?;
+            let text = response.inference_text().await?;
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                retry_after,
             });
         }
 

@@ -4,6 +4,8 @@
 - Status: Accepted
 - Issue: [#409](https://github.com/ahstn/oceans-llm/issues/409)
 
+Supersession note, 2026-10-05: [Bounded Provider Failover and Shared Cooldowns](2026-10-05-bounded-provider-failover-and-shared-cooldowns.md) supersedes the one-attempt restriction when `routing.failover` is enabled. It adds bounded retries, shared cooldowns, and receipt-checked session rebinding. The original context and continuation-origin rules remain in this record.
+
 ## Context
 
 One Oceans model ID can expose several provider routes. A deployment can route the same logical model through Copilot, OpenRouter, or Bedrock. The existing planner uses priority and weight for each request. This can move a conversation between providers and reduce prompt cache reuse.

@@ -14,6 +14,17 @@ pub(crate) struct StoredRouteBinding {
     pub expires_at: i64,
 }
 
+pub(crate) fn cooldown_keys(request: &RouteSelectionRequest) -> Vec<&str> {
+    let mut keys = request
+        .candidates
+        .iter()
+        .filter_map(|candidate| candidate.cooldown_key.as_deref())
+        .collect::<Vec<_>>();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
+}
+
 pub(crate) fn binding_expiry(now: OffsetDateTime, timeout_seconds: u32) -> Result<i64, StoreError> {
     if timeout_seconds == 0 {
         return Err(StoreError::Serialization(
@@ -134,6 +145,7 @@ mod tests {
                     route_id: Uuid::from_u128(id),
                     fingerprint: id.to_string(),
                     priority: 10,
+                    cooldown_key: None,
                 })
                 .collect(),
             mode: RouteSelectionMode::RoundRobin,
@@ -153,6 +165,7 @@ mod tests {
             route_id: Uuid::from_u128(4),
             fingerprint: "fallback".to_string(),
             priority: 20,
+            cooldown_key: None,
         });
         assert_eq!(routing_pool_key(&request).unwrap(), original);
         request.model_id = Uuid::from_u128(10);

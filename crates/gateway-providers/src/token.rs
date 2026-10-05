@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::Mutex;
 
-use crate::http::map_reqwest_error;
+use crate::http::{credential_response_text, map_reqwest_error, retry_after};
 
 const DEFAULT_OAUTH_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const METADATA_TOKEN_URL: &str =
@@ -518,11 +518,13 @@ async fn fetch_metadata_server_token(
         .map_err(map_reqwest_error)?;
 
     let status = response.status();
-    let text = response.text().await.map_err(map_reqwest_error)?;
+    let retry_after = retry_after(response.headers());
+    let text = credential_response_text(response).await?;
     if !status.is_success() {
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after,
         });
     }
 
@@ -550,11 +552,13 @@ async fn fetch_metadata_server_id_token(
         .map_err(map_reqwest_error)?;
 
     let status = response.status();
-    let text = response.text().await.map_err(map_reqwest_error)?;
+    let retry_after = retry_after(response.headers());
+    let text = credential_response_text(response).await?;
     if !status.is_success() {
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after,
         });
     }
 
@@ -605,12 +609,14 @@ async fn parse_oauth_token_response(
     response: reqwest::Response,
 ) -> Result<AccessToken, ProviderError> {
     let status = response.status();
-    let text = response.text().await.map_err(map_reqwest_error)?;
+    let retry_after = retry_after(response.headers());
+    let text = credential_response_text(response).await?;
 
     if !status.is_success() {
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after,
         });
     }
 
@@ -629,12 +635,14 @@ async fn parse_oauth_id_token_response(
     response: reqwest::Response,
 ) -> Result<AccessToken, ProviderError> {
     let status = response.status();
-    let text = response.text().await.map_err(map_reqwest_error)?;
+    let retry_after = retry_after(response.headers());
+    let text = credential_response_text(response).await?;
 
     if !status.is_success() {
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after,
         });
     }
 

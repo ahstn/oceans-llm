@@ -66,6 +66,14 @@ This document is schema-oriented. It describes the persistent relationships that
 
 Compatibility metadata is not a provider config fallback and is not an `extra_body` convention.
 
+### Route Cooldowns
+
+`model_route_cooldowns` stores shared failover state. Migration `V56__model_route_cooldowns.sql` adds the table and an expiry index in both libSQL/SQLite and PostgreSQL. Its columns are `cooldown_key` (`TEXT`, primary key) and `expires_at` (`INTEGER` in libSQL/SQLite, `BIGINT` in PostgreSQL).
+
+The service builds the opaque key from the route, runtime provider, and credential context. User-owned credentials include the user and credential generation. API keys, aliases, endpoints, and sessions do not divide that cooldown scope. The table has no foreign key to `model_routes`, because configuration seeding can replace route rows.
+
+The store extends an existing expiry with the later timestamp and invalidates only the failed affinity binding's matching receipt, in one transaction. Selection excludes active cooldowns before binding reuse, priority selection, or cursor advancement. See [Bounded Provider Failover and Shared Cooldowns](../../adr/2026-10-05-bounded-provider-failover-and-shared-cooldowns.md) for the decision and migration boundary.
+
 ### Identity and Access Tables
 
 - `teams`

@@ -4,8 +4,8 @@ use std::{
 };
 
 use gateway_core::{
-    ResponseRouteOrigin, RouteSelectionMode, RouteSelectionRequest, RoutingCandidate,
-    RoutingRepository, StoreError,
+    ResponseRouteOrigin, RouteFailureRecord, RouteSelectionMode, RouteSelectionRequest,
+    RoutingCandidate, RoutingRepository, StoreError,
 };
 use serial_test::serial;
 use tempfile::tempdir;
@@ -18,6 +18,8 @@ use crate::{
     LibsqlStore, PostgresStore, StoreConnectionOptions, run_migrations, run_migrations_with_options,
 };
 
+mod postgres_locks;
+
 fn selection_request(mode: RouteSelectionMode) -> RouteSelectionRequest {
     RouteSelectionRequest {
         model_id: Uuid::new_v4(),
@@ -28,6 +30,7 @@ fn selection_request(mode: RouteSelectionMode) -> RouteSelectionRequest {
             .map(|(index, priority)| RoutingCandidate {
                 route_id: Uuid::from_u128(index as u128 + 1),
                 fingerprint: Uuid::new_v4().to_string(),
+                cooldown_key: None,
                 priority,
             })
             .collect(),
@@ -37,24 +40,44 @@ fn selection_request(mode: RouteSelectionMode) -> RouteSelectionRequest {
     }
 }
 
+fn cooldown_request(mode: RouteSelectionMode) -> RouteSelectionRequest {
+    let mut request = selection_request(mode);
+    for candidate in &mut request.candidates {
+        candidate.cooldown_key = Some(Uuid::new_v4().to_string());
+    }
+    request
+}
+
 async fn exercise_idle_expiry<S: RoutingRepository>(store: &S) {
     let mut request = selection_request(RouteSelectionMode::First);
     let start = request.now;
-    let first = store.select_route(&request).await.expect("initial route");
+    let first = store
+        .select_route(&request)
+        .await
+        .expect("initial route")
+        .expect("eligible route");
     assert_eq!(first.route_id, request.candidates[0].route_id);
     assert!(!first.reused);
     let original = first.binding.expect("initial binding");
 
     request.candidates.swap(0, 1);
     request.now = start + Duration::seconds(3_599);
-    let reused = store.select_route(&request).await.expect("live binding");
+    let reused = store
+        .select_route(&request)
+        .await
+        .expect("live binding")
+        .expect("eligible route");
     assert!(reused.reused);
     assert_eq!(reused.route_id, original.route_id);
     assert_eq!(reused.binding.as_ref(), Some(&original));
 
     // Merely selecting the binding does not extend its idle deadline.
     request.now = start + Duration::seconds(3_600);
-    let expired = store.select_route(&request).await.expect("expired binding");
+    let expired = store
+        .select_route(&request)
+        .await
+        .expect("expired binding")
+        .expect("eligible route");
     assert!(!expired.reused);
     assert_eq!(expired.route_id, request.candidates[0].route_id);
     let replacement = expired.binding.expect("replacement binding");
@@ -68,7 +91,8 @@ async fn exercise_idle_expiry<S: RoutingRepository>(store: &S) {
     let refreshed = store
         .select_route(&request)
         .await
-        .expect("refreshed binding");
+        .expect("refreshed binding")
+        .expect("eligible route");
     assert!(refreshed.reused);
     assert_eq!(refreshed.binding.as_ref(), Some(&replacement));
     request.now = start + Duration::seconds(7_300);
@@ -77,6 +101,7 @@ async fn exercise_idle_expiry<S: RoutingRepository>(store: &S) {
             .select_route(&request)
             .await
             .expect("refreshed binding expiry")
+            .expect("eligible route")
             .reused
     );
 }
@@ -88,6 +113,7 @@ async fn exercise_refresh_guards<S: RoutingRepository>(store: &S) {
         .select_route(&request)
         .await
         .expect("initial route")
+        .expect("eligible route")
         .binding
         .expect("initial binding");
     store
@@ -102,7 +128,8 @@ async fn exercise_refresh_guards<S: RoutingRepository>(store: &S) {
     let retained = store
         .select_route(&request)
         .await
-        .expect("monotonic deadline");
+        .expect("monotonic deadline")
+        .expect("eligible route");
     assert!(retained.reused);
     assert_eq!(retained.binding.as_ref(), Some(&initial));
 
@@ -111,6 +138,7 @@ async fn exercise_refresh_guards<S: RoutingRepository>(store: &S) {
         .select_route(&request)
         .await
         .expect("replace expired binding")
+        .expect("eligible route")
         .binding
         .expect("replacement binding");
     assert_eq!(replacement.route_id, initial.route_id);
@@ -130,7 +158,8 @@ async fn exercise_refresh_guards<S: RoutingRepository>(store: &S) {
     let expired = store
         .select_route(&request)
         .await
-        .expect("guarded deadline");
+        .expect("guarded deadline")
+        .expect("eligible route");
     assert!(!expired.reused);
     assert_ne!(
         expired.binding.expect("new binding").token,
@@ -140,12 +169,20 @@ async fn exercise_refresh_guards<S: RoutingRepository>(store: &S) {
 
 async fn exercise_candidate_changes<S: RoutingRepository>(store: &S) {
     let mut request = selection_request(RouteSelectionMode::First);
-    let initial = store.select_route(&request).await.expect("initial route");
+    let initial = store
+        .select_route(&request)
+        .await
+        .expect("initial route")
+        .expect("eligible route");
     let original = initial.binding.expect("initial binding");
 
     // A priority change affects new placements, but keeps a valid live binding.
     request.candidates[0].priority = 30;
-    let retained = store.select_route(&request).await.expect("priority update");
+    let retained = store
+        .select_route(&request)
+        .await
+        .expect("priority update")
+        .expect("eligible route");
     assert!(retained.reused);
     assert_eq!(retained.binding.as_ref(), Some(&original));
     let mut other_session = request.clone();
@@ -153,7 +190,8 @@ async fn exercise_candidate_changes<S: RoutingRepository>(store: &S) {
     let preferred = store
         .select_route(&other_session)
         .await
-        .expect("new placement after priority update");
+        .expect("new placement after priority update")
+        .expect("eligible route");
     assert_eq!(preferred.route_id, request.candidates[1].route_id);
 
     request.candidates[0].priority = 10;
@@ -161,14 +199,19 @@ async fn exercise_candidate_changes<S: RoutingRepository>(store: &S) {
     let changed = store
         .select_route(&request)
         .await
-        .expect("changed fingerprint");
+        .expect("changed fingerprint")
+        .expect("eligible route");
     assert!(!changed.reused);
     assert_eq!(changed.route_id, original.route_id);
     let changed_receipt = changed.binding.expect("changed binding");
     assert_ne!(changed_receipt.token, original.token);
 
     request.candidates.remove(0);
-    let removed = store.select_route(&request).await.expect("removed route");
+    let removed = store
+        .select_route(&request)
+        .await
+        .expect("removed route")
+        .expect("eligible route");
     assert!(!removed.reused);
     assert_eq!(removed.route_id, request.candidates[0].route_id);
     assert_ne!(
@@ -178,7 +221,11 @@ async fn exercise_candidate_changes<S: RoutingRepository>(store: &S) {
 
     // The same caller/conversation key is independent for each Oceans model.
     request.model_id = Uuid::new_v4();
-    let other_model = store.select_route(&request).await.expect("other model");
+    let other_model = store
+        .select_route(&request)
+        .await
+        .expect("other model")
+        .expect("eligible route");
     assert!(!other_model.reused);
     assert_eq!(
         other_model.binding.expect("other model binding").model_id,
@@ -190,7 +237,11 @@ async fn exercise_shared_round_robin<S: RoutingRepository>(first: &S, second: &S
     let mut request = selection_request(RouteSelectionMode::RoundRobin);
     request.affinity_key = None;
     for (index, store) in [first, second, first, second].into_iter().enumerate() {
-        let selected = store.select_route(&request).await.expect("shared cursor");
+        let selected = store
+            .select_route(&request)
+            .await
+            .expect("shared cursor")
+            .expect("eligible route");
         assert_eq!(selected.route_id, request.candidates[index % 2].route_id);
         assert!(selected.binding.is_none());
         assert!(!selected.reused);
@@ -200,13 +251,22 @@ async fn exercise_shared_round_robin<S: RoutingRepository>(first: &S, second: &S
     let bound = first
         .select_route(&request)
         .await
-        .expect("sticky round robin");
+        .expect("sticky round robin")
+        .expect("eligible route");
     assert_eq!(bound.route_id, request.candidates[0].route_id);
-    let reused = second.select_route(&request).await.expect("shared binding");
+    let reused = second
+        .select_route(&request)
+        .await
+        .expect("shared binding")
+        .expect("eligible route");
     assert!(reused.reused);
     assert_eq!(reused.binding, bound.binding);
     request.affinity_key = Some("caller:second-sticky-session".to_string());
-    let next = second.select_route(&request).await.expect("next placement");
+    let next = second
+        .select_route(&request)
+        .await
+        .expect("next placement")
+        .expect("eligible route");
     assert_eq!(next.route_id, request.candidates[1].route_id);
 
     // A smaller eligible pool uses its own cursor and excludes the fallback tier.
@@ -218,6 +278,7 @@ async fn exercise_shared_round_robin<S: RoutingRepository>(first: &S, second: &S
                 .select_route(&request)
                 .await
                 .expect("smaller pool")
+                .expect("eligible route")
                 .route_id,
             request.candidates[0].route_id
         );
@@ -242,12 +303,14 @@ async fn exercise_round_robin_eligible_pools<S: RoutingRepository>(first: &S, se
         let full_selection = full_store
             .select_route(&full_pool)
             .await
-            .expect("full pool round robin");
+            .expect("full pool round robin")
+            .expect("eligible route");
         assert_eq!(full_selection.route_id, Uuid::from_u128(index % 3 + 1));
         let subset_selection = subset_store
             .select_route(&subset)
             .await
-            .expect("subset round robin");
+            .expect("subset round robin")
+            .expect("eligible route");
         assert_eq!(subset_selection.route_id, Uuid::from_u128(index % 2 + 2));
 
         // Neither candidate order nor another eligible set may alter this pool's cycle.
@@ -273,6 +336,7 @@ async fn exercise_concurrent_binding<S: RoutingRepository + 'static>(
                 .select_route(&request)
                 .await
                 .expect("concurrent selection")
+                .expect("eligible route")
         });
     }
     barrier.wait().await;
@@ -296,8 +360,298 @@ async fn exercise_concurrent_binding<S: RoutingRepository + 'static>(
             .select_route(&request)
             .await
             .expect("next session")
+            .expect("eligible route")
             .route_id,
         request.candidates[1].route_id
+    );
+}
+
+async fn exercise_shared_cooldowns<S: RoutingRepository>(first: &S, second: &S) {
+    let mut request = cooldown_request(RouteSelectionMode::First);
+    first
+        .select_route(&request)
+        .await
+        .expect("initial binding")
+        .expect("route A");
+    let cooldown_until = request.now + Duration::seconds(60);
+    first
+        .record_route_failure(&RouteFailureRecord {
+            cooldown_key: request.candidates[0].cooldown_key.clone(),
+            cooldown_until,
+            binding: None,
+        })
+        .await
+        .expect("shared route failure");
+
+    // Cooldown applies even to a live binding not invalidated by this failure.
+    for affinity_key in [
+        request.affinity_key.clone(),
+        Some("new-session".to_string()),
+        None,
+    ] {
+        request.affinity_key = affinity_key;
+        let selected = second
+            .select_route(&request)
+            .await
+            .expect("exclude cooled route")
+            .expect("route B");
+        assert_eq!(selected.route_id, request.candidates[1].route_id);
+        assert!(!selected.reused);
+    }
+    request.mode = RouteSelectionMode::RoundRobin;
+    assert_eq!(
+        second
+            .select_route(&request)
+            .await
+            .expect("round robin excludes cooldown")
+            .map(|selection| selection.route_id),
+        Some(request.candidates[1].route_id)
+    );
+    for (index, expected) in [(1, Some(request.candidates[2].route_id)), (2, None)] {
+        first
+            .record_route_failure(&RouteFailureRecord {
+                cooldown_key: request.candidates[index].cooldown_key.clone(),
+                cooldown_until,
+                binding: None,
+            })
+            .await
+            .expect("cool remaining route");
+        for mode in [RouteSelectionMode::First, RouteSelectionMode::RoundRobin] {
+            request.mode = mode;
+            assert_eq!(
+                second
+                    .select_route(&request)
+                    .await
+                    .expect("fallback or exhausted pool")
+                    .map(|selection| selection.route_id),
+                expected
+            );
+        }
+    }
+}
+
+async fn exercise_cooldown_expiry_and_scope<S: RoutingRepository>(first: &S, second: &S) {
+    let mut request = cooldown_request(RouteSelectionMode::First);
+    request.affinity_key = None;
+    let deadline = request.now + Duration::seconds(60);
+    let failure = RouteFailureRecord {
+        cooldown_key: request.candidates[0].cooldown_key.clone(),
+        cooldown_until: deadline,
+        binding: None,
+    };
+    first
+        .record_route_failure(&failure)
+        .await
+        .expect("initial cooldown");
+    second
+        .record_route_failure(&RouteFailureRecord {
+            cooldown_until: deadline - Duration::seconds(30),
+            ..failure.clone()
+        })
+        .await
+        .expect("older failure cannot shorten cooldown");
+    request.now = deadline - Duration::seconds(1);
+    for (cooldown_key, expected) in [
+        (failure.cooldown_key.clone(), request.candidates[1].route_id),
+        (
+            Some(Uuid::new_v4().to_string()),
+            request.candidates[0].route_id,
+        ),
+        (None, request.candidates[0].route_id),
+    ] {
+        let mut scoped = request.clone();
+        scoped.candidates[0].cooldown_key = cooldown_key;
+        assert_eq!(
+            second
+                .select_route(&scoped)
+                .await
+                .expect("cooldown scope")
+                .map(|selection| selection.route_id),
+            Some(expected)
+        );
+    }
+    request.now = deadline;
+    assert_eq!(
+        second
+            .select_route(&request)
+            .await
+            .expect("cooldown expiry boundary")
+            .map(|selection| selection.route_id),
+        Some(request.candidates[0].route_id)
+    );
+}
+
+async fn exercise_failure_receipt_guards<S: RoutingRepository>(first: &S, second: &S) {
+    let mut request = cooldown_request(RouteSelectionMode::First);
+    request.idle_timeout_seconds = 60;
+    let start = request.now;
+    let original = first
+        .select_route(&request)
+        .await
+        .expect("initial selection")
+        .expect("route A")
+        .binding
+        .expect("initial receipt");
+    let mut wrong_route = original.clone();
+    wrong_route.route_id = request.candidates[1].route_id;
+    let mut wrong_token = original.clone();
+    wrong_token.token = Uuid::new_v4();
+    for receipt in [wrong_route, wrong_token] {
+        second
+            .record_route_failure(&RouteFailureRecord {
+                cooldown_key: None,
+                cooldown_until: start + Duration::seconds(120),
+                binding: Some(receipt),
+            })
+            .await
+            .expect("mismatched failure receipt");
+        assert_eq!(
+            first
+                .select_route(&request)
+                .await
+                .expect("guarded binding")
+                .expect("route A")
+                .binding,
+            Some(original.clone())
+        );
+    }
+    second
+        .record_route_failure(&RouteFailureRecord {
+            cooldown_key: None,
+            cooldown_until: start + Duration::seconds(120),
+            binding: Some(original.clone()),
+        })
+        .await
+        .expect("matching receipt invalidates without cooldown");
+    let renewed = first
+        .select_route(&request)
+        .await
+        .expect("rebind still-eligible route")
+        .expect("route A");
+    assert!(!renewed.reused);
+    let renewed = renewed.binding.expect("new route A receipt");
+    assert_eq!(renewed.route_id, original.route_id);
+    assert_ne!(renewed.token, original.token);
+    let original = renewed;
+    let failure = RouteFailureRecord {
+        cooldown_key: request.candidates[0].cooldown_key.clone(),
+        cooldown_until: start + Duration::seconds(120),
+        binding: Some(original.clone()),
+    };
+    first
+        .record_route_failure(&failure)
+        .await
+        .expect("invalidate failed binding");
+    request.now = start + Duration::seconds(1);
+    let replacement = second
+        .select_route(&request)
+        .await
+        .expect("replacement selection")
+        .expect("route B")
+        .binding
+        .expect("replacement receipt");
+    assert_eq!(replacement.route_id, request.candidates[1].route_id);
+    assert_ne!(replacement.token, original.token);
+    second
+        .refresh_route_binding(&replacement, start + Duration::seconds(10))
+        .await
+        .expect("replacement success");
+    first
+        .refresh_route_binding(&original, start + Duration::seconds(1_000))
+        .await
+        .expect("late original success");
+    first
+        .record_route_failure(&failure)
+        .await
+        .expect("late original failure");
+    request.now = start + Duration::seconds(69);
+    assert_eq!(
+        second
+            .select_route(&request)
+            .await
+            .expect("replacement survives stale completion")
+            .expect("route B")
+            .binding,
+        Some(replacement.clone())
+    );
+    request.now = start + Duration::seconds(70);
+    let expired = second
+        .select_route(&request)
+        .await
+        .expect("replacement expiry")
+        .expect("route B");
+    assert!(!expired.reused);
+    assert_ne!(
+        expired.binding.expect("new receipt").token,
+        replacement.token
+    );
+}
+
+async fn exercise_concurrent_failover<S: RoutingRepository + 'static>(
+    first: Arc<S>,
+    second: Arc<S>,
+) {
+    let mut request = cooldown_request(RouteSelectionMode::RoundRobin);
+    for candidate in &mut request.candidates {
+        candidate.priority = 10;
+    }
+    let original = first
+        .select_route(&request)
+        .await
+        .expect("initial selection")
+        .expect("route A");
+    let failure = RouteFailureRecord {
+        cooldown_key: request.candidates[0].cooldown_key.clone(),
+        cooldown_until: request.now + Duration::seconds(60),
+        binding: original.binding,
+    };
+    let barrier = Arc::new(Barrier::new(13));
+    let mut tasks = JoinSet::new();
+    for index in 0..12 {
+        let store = Arc::clone(if index % 2 == 0 { &first } else { &second });
+        let request = request.clone();
+        let failure = failure.clone();
+        let barrier = Arc::clone(&barrier);
+        tasks.spawn(async move {
+            barrier.wait().await;
+            store
+                .record_route_failure(&failure)
+                .await
+                .expect("duplicate failure");
+            store
+                .select_route(&request)
+                .await
+                .expect("concurrent failover")
+                .expect("route B")
+        });
+    }
+    barrier.wait().await;
+    let mut receipt = None;
+    let mut placements = 0;
+    while let Some(result) = tasks.join_next().await {
+        let selected = result.expect("failover task");
+        assert_eq!(selected.route_id, request.candidates[1].route_id);
+        placements += usize::from(!selected.reused);
+        let binding = selected.binding.expect("replacement receipt");
+        if let Some(expected) = &receipt {
+            assert_eq!(&binding, expected);
+        } else {
+            receipt = Some(binding);
+        }
+    }
+    assert_eq!(
+        placements, 1,
+        "duplicate failures must create one replacement"
+    );
+    request.affinity_key = Some("caller:after-failover".to_string());
+    assert_eq!(
+        second
+            .select_route(&request)
+            .await
+            .expect("next placement")
+            .map(|selection| selection.route_id),
+        Some(request.candidates[2].route_id),
+        "only one replacement may advance the remaining pool's cursor"
     );
 }
 
@@ -429,7 +783,11 @@ async fn exercise_routing<S: RoutingRepository + 'static>(first: Arc<S>, second:
     exercise_candidate_changes(first.as_ref()).await;
     exercise_shared_round_robin(first.as_ref(), second.as_ref()).await;
     exercise_round_robin_eligible_pools(first.as_ref(), second.as_ref()).await;
+    exercise_shared_cooldowns(first.as_ref(), second.as_ref()).await;
+    exercise_cooldown_expiry_and_scope(first.as_ref(), second.as_ref()).await;
+    exercise_failure_receipt_guards(first.as_ref(), second.as_ref()).await;
     exercise_response_origins(first.as_ref(), second.as_ref()).await;
+    exercise_concurrent_failover(Arc::clone(&first), Arc::clone(&second)).await;
     exercise_concurrent_binding(first, second).await;
 }
 
@@ -482,7 +840,8 @@ async fn libsql_routing_writer_contention_does_not_block_runtime() {
     let selected = selection
         .await
         .expect("selection task")
-        .expect("selection succeeds after writer release");
+        .expect("selection succeeds after writer release")
+        .expect("eligible route");
     assert_eq!(selected.route_id, Uuid::from_u128(1));
 }
 

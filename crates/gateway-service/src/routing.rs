@@ -1,9 +1,10 @@
 //! Route policies and caller-scoped session continuity for online inference.
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
 use gateway_core::{
-    GatewayError, ModelRoute, ResponseRouteOrigin, RouteBindingReceipt, RouteSelectionMode,
-    RouteSelectionRequest, RoutingCandidate, RoutingRepository, RoutingStrategy,
+    GatewayError, ModelRoute, ResponseRouteOrigin, RouteBindingReceipt, RouteError,
+    RouteFailureRecord, RouteSelectionMode, RouteSelectionRequest, RoutingCandidate,
+    RoutingRepository, RoutingStrategy,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -65,9 +66,34 @@ pub struct RoutedSelection {
 pub struct RoutingReceipt {
     binding: Option<RouteBindingReceipt>,
     response_origin: Option<(String, ResponseRouteOrigin)>,
+    cooldown_key: Option<String>,
 }
 
 impl RoutingReceipt {
+    /// Remove only this failed reservation and share its cooldown with other replicas.
+    pub async fn record_failure(
+        &self,
+        store: &impl RoutingRepository,
+        cooldown: Duration,
+    ) -> Result<(), GatewayError> {
+        let now = OffsetDateTime::now_utc();
+        let cooldown_until = now
+            .checked_add(time::Duration::try_from(cooldown).map_err(|_| {
+                GatewayError::Internal("route cooldown exceeds supported time".into())
+            })?)
+            .ok_or_else(|| {
+                GatewayError::Internal("route cooldown exceeds supported time".into())
+            })?;
+        store
+            .record_route_failure(&RouteFailureRecord {
+                cooldown_key: self.cooldown_key.clone(),
+                cooldown_until,
+                binding: self.binding.clone(),
+            })
+            .await?;
+        Ok(())
+    }
+
     /// Call after a successful guarded response, or a clean stream completion.
     /// Persist response ownership before exposing the completed response to the caller.
     pub async fn complete(
@@ -182,7 +208,7 @@ pub async fn select_route(
                 "the origin route for previous_response_id is no longer eligible; send full history to start a new response".into(),
             ));
         }
-        if affinity_key.is_some() {
+        if affinity_key.is_some() || policy.failover.is_some() {
             // Provider-owned state is authoritative over a soft cache preference.
             // Reserve that origin without advancing the round-robin cursor.
             store
@@ -196,15 +222,15 @@ pub async fn select_route(
                 })
                 .await?
         } else {
-            gateway_core::RouteSelection {
+            Some(gateway_core::RouteSelection {
                 route_id: origin.route_id,
                 binding: None,
                 reused: true,
-            }
+            })
         }
     } else if candidates.is_empty() {
         return Ok(None);
-    } else if affinity_key.is_some() || policy.strategy == RoutingStrategy::RoundRobin {
+    } else if affinity_key.is_some() || policy.strategy == RoutingStrategy::RoundRobin || policy.failover.is_some() {
         store
             .select_route(&RouteSelectionRequest {
                 model_id: request.resolved.selection.execution_model.id,
@@ -220,12 +246,12 @@ pub async fn select_route(
             })
             .await?
     } else {
-        gateway_core::RouteSelection {
+        Some(gateway_core::RouteSelection {
             route_id: candidates[0].route_id,
             binding: None,
             reused: false,
-        }
-    };
+        })
+    }.ok_or_else(|| RouteError::TemporarilyUnavailable(request.resolved.selection.execution_model.model_key.clone()))?;
     let route = request
         .eligible_routes
         .iter()
@@ -248,11 +274,17 @@ pub async fn select_route(
     } else {
         None
     };
+    let cooldown_key = candidates
+        .iter()
+        .find(|candidate| candidate.route_id == route.id)
+        .and_then(|candidate| candidate.cooldown_key.clone());
     let receipt =
-        (selection.binding.is_some() || response_origin.is_some()).then_some(RoutingReceipt {
-            binding: selection.binding,
-            response_origin,
-        });
+        (selection.binding.is_some() || response_origin.is_some() || cooldown_key.is_some())
+            .then_some(RoutingReceipt {
+                binding: selection.binding,
+                response_origin,
+                cooldown_key,
+            });
     Ok(Some(RoutedSelection {
         route,
         receipt,
@@ -285,6 +317,31 @@ fn candidates(request: &RoutingRequest<'_>) -> Result<Vec<RoutingCandidate>, Gat
                 route_id: route.id,
                 priority: route.priority,
                 fingerprint: digest(&[&identity.to_string()]),
+                cooldown_key: request
+                    .resolved
+                    .selection
+                    .execution_model
+                    .routing
+                    .as_ref()
+                    .and_then(|policy| policy.failover.as_ref())
+                    .map(|_| {
+                        // A linked credential is shared by a user's API keys. Do not
+                        // include the API key, alias, session, or endpoint in its cooldown.
+                        let mut cooldown_identity = identity.clone();
+                        cooldown_identity
+                            .as_object_mut()
+                            .expect("identity is an object")
+                            .remove("endpoint");
+                        cooldown_identity["route_id"] = json!(route.id);
+                        if request
+                            .credential_versions
+                            .contains_key(&route.provider_key)
+                        {
+                            cooldown_identity["user_id"] =
+                                json!(request.resolved.auth.owner_user_id);
+                        }
+                        digest(&["oceans-route-cooldown-v1", &cooldown_identity.to_string()])
+                    }),
             })
         })
         .collect()

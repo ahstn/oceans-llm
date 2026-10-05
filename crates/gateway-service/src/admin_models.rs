@@ -1334,6 +1334,7 @@ mod tests {
         let routing = gateway_core::ModelRoutingPolicy {
             strategy: gateway_core::RoutingStrategy::RoundRobin,
             affinity: Some(gateway_core::SessionAffinityPolicy::default()),
+            failover: None,
         };
 
         let repo = Arc::new(CountingRepo {

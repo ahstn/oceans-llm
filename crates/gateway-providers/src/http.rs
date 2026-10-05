@@ -1,6 +1,6 @@
 use std::{
     pin::Pin,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use bytes::Bytes;
@@ -88,6 +88,24 @@ impl TracedResponse {
         result
     }
 
+    /// Successful inference responses can represent billed work even when their
+    /// bodies cannot be read. Keep that boundary visible to retry policy.
+    pub(crate) async fn inference_text(self) -> Result<String, ProviderError> {
+        let status = self.status();
+        let retry_after = retry_after(self.headers());
+        self.text().await.map_err(|error| {
+            if status.is_success() {
+                partial_usage_error(map_reqwest_error(error))
+            } else {
+                ProviderError::UpstreamHttp {
+                    status: status.as_u16(),
+                    body: error.without_url().to_string(),
+                    retry_after,
+                }
+            }
+        })
+    }
+
     pub fn bytes_stream(self) -> TracedResponseStream {
         let Self {
             response,
@@ -131,6 +149,52 @@ pub fn map_reqwest_error(error: reqwest::Error) -> ProviderError {
     }
 }
 
+pub(crate) fn partial_usage_error(source: ProviderError) -> ProviderError {
+    ProviderError::PartialUsage {
+        source: Box::new(source),
+        provider_usage: None,
+    }
+}
+
+/// Credential requests have not consumed inference usage, but a known access
+/// rejection must not become a retryable timeout when its body cannot be read.
+pub(crate) async fn credential_response_text(
+    response: reqwest::Response,
+) -> Result<String, ProviderError> {
+    let status = response.status();
+    let retry_after = retry_after(response.headers());
+    response.text().await.map_err(|error| {
+        if status.is_success() {
+            map_reqwest_error(error)
+        } else {
+            ProviderError::UpstreamHttp {
+                status: status.as_u16(),
+                body: error.without_url().to_string(),
+                retry_after,
+            }
+        }
+    })
+}
+
+pub(crate) fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+    retry_after_at(headers, SystemTime::now())
+}
+
+fn retry_after_at(headers: &reqwest::header::HeaderMap, now: SystemTime) -> Option<Duration> {
+    let value = headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim();
+    if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return value.parse().ok().map(Duration::from_secs);
+    }
+    httpdate::parse_http_date(value)
+        .ok()?
+        .duration_since(now)
+        .ok()
+}
+
 /// Non-streaming JSON round trip shared by provider adapters. Upstream HTTP
 /// errors keep their status and body; only successful bodies are parsed.
 pub async fn execute_json_request(
@@ -143,14 +207,17 @@ pub async fn execute_json_request(
         .await
         .map_err(map_reqwest_error)?;
     let status = response.status();
-    let text = response.text().await.map_err(map_reqwest_error)?;
+    let retry_after = retry_after(response.headers());
+    let text = response.inference_text().await?;
     if !status.is_success() {
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after,
         });
     }
-    serde_json::from_str(&text).map_err(|error| ProviderError::Transport(error.to_string()))
+    serde_json::from_str(&text)
+        .map_err(|error| partial_usage_error(ProviderError::Transport(error.to_string())))
 }
 
 pub async fn execute_request(
@@ -293,6 +360,148 @@ fn reqwest_error_type(error: &reqwest::Error) -> &'static str {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn credential_body_timeout_preserves_known_access_rejection() {
+        use axum::{Router, body::Body, http::Response, routing::post};
+
+        for status in [200, 403] {
+            let app = Router::new().route(
+                "/",
+                post(move || async move {
+                    Response::builder()
+                        .status(status)
+                        .header("retry-after", "30")
+                        .body(Body::from_stream(futures_util::stream::pending::<
+                            Result<Bytes, std::io::Error>,
+                        >()))
+                        .unwrap()
+                }),
+            );
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let response = provider_http_client(100)
+                .unwrap()
+                .post(format!("http://{address}/"))
+                .send()
+                .await
+                .unwrap();
+            let error = credential_response_text(response).await.unwrap_err();
+            if status == 403 {
+                assert_eq!(
+                    error.failure_kind("github_copilot"),
+                    gateway_core::ProviderFailureKind::Terminal
+                );
+                assert!(
+                    matches!(error, ProviderError::UpstreamHttp { status: 403, retry_after: Some(delay), .. } if delay == Duration::from_secs(30))
+                );
+            } else {
+                assert!(matches!(error, ProviderError::Timeout));
+            }
+            server.abort();
+        }
+    }
+
+    #[test]
+    fn retry_after_accepts_seconds_and_http_dates() {
+        let now = httpdate::parse_http_date("Sun, 06 Nov 1994 08:49:00 GMT").unwrap();
+        for (value, expected) in [
+            ("120", Some(Duration::from_secs(120))),
+            ("0", Some(Duration::ZERO)),
+            (" 42 ", Some(Duration::from_secs(42))),
+            (
+                "Sun, 06 Nov 1994 08:49:37 GMT",
+                Some(Duration::from_secs(37)),
+            ),
+            (
+                "Sunday, 06-Nov-94 08:49:37 GMT",
+                Some(Duration::from_secs(37)),
+            ),
+            ("Sun Nov  6 08:49:37 1994", Some(Duration::from_secs(37))),
+            ("Sun, 06 Nov 1994 08:48:59 GMT", None),
+            ("-1", None),
+            ("+1", None),
+            ("1.5", None),
+            ("18446744073709551616", None),
+            ("not a date", None),
+            ("", None),
+        ] {
+            let mut headers = reqwest::header::HeaderMap::new();
+            headers.insert(reqwest::header::RETRY_AFTER, value.parse().unwrap());
+            assert_eq!(retry_after_at(&headers, now), expected, "{value}");
+        }
+        assert_eq!(
+            retry_after_at(&reqwest::header::HeaderMap::new(), now),
+            None
+        );
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::RETRY_AFTER,
+            reqwest::header::HeaderValue::from_bytes(&[0xff]).unwrap(),
+        );
+        assert_eq!(retry_after_at(&headers, now), None);
+    }
+
+    #[tokio::test]
+    async fn successful_inference_with_invalid_json_preserves_consumed_marker() {
+        let app = axum::Router::new().route("/", axum::routing::post(|| async { "invalid JSON" }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = provider_http_client(1000).unwrap();
+        let request = client.post(format!("http://{address}/")).build().unwrap();
+        let error = execute_json_request(&client, request, "test", "test")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ProviderError::PartialUsage { source, provider_usage: None }
+                if matches!(*source, ProviderError::Transport(_))
+        ));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn inference_body_timeout_is_consumed_only_after_success() {
+        use axum::{Router, body::Body, http::Response, routing::post};
+
+        for status in [200, 403, 503] {
+            let app = Router::new().route(
+                "/",
+                post(move || async move {
+                    let chunks = futures_util::stream::once(async {
+                        Ok::<_, std::io::Error>(Bytes::from_static(b"{"))
+                    })
+                    .chain(futures_util::stream::pending());
+                    Response::builder()
+                        .status(status)
+                        .header("retry-after", "23")
+                        .body(Body::from_stream(chunks))
+                        .unwrap()
+                }),
+            );
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let client = provider_http_client(250).unwrap();
+            let request = client.post(format!("http://{address}/")).build().unwrap();
+            let response = execute_request(&client, request, "test", "test")
+                .await
+                .unwrap();
+            let error = response.inference_text().await.unwrap_err();
+            if status == 200 {
+                assert!(matches!(error, ProviderError::PartialUsage {
+                    source, provider_usage: None
+                } if matches!(*source, ProviderError::Timeout)));
+            } else {
+                assert!(matches!(error, ProviderError::UpstreamHttp {
+                    status: actual, retry_after: Some(delay), ..
+                } if actual == status && delay == Duration::from_secs(23)));
+            }
+            server.abort();
+        }
+    }
 
     pub(crate) async fn timed_out_body_error() -> reqwest::Error {
         use axum::{Router, body::Body, routing::get};
