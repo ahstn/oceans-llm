@@ -241,7 +241,9 @@ describe('skill uploads', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('SKILL.md is required.'),
     )
     expect(onUploaded).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Upload skill' })).toBeEnabled()
+    // The error commits before the async transition settles, so wait for the button to leave its
+    // pending state rather than asserting in the same tick.
+    expect(await screen.findByRole('button', { name: 'Upload skill' })).toBeEnabled()
   })
 
   it('accepts larger uploads when the gateway limit allows them', async () => {
