@@ -1,0 +1,59 @@
+cog.toml
+  s_78881642dd4a24::t_0be8c18591a68c 17
+  s_78881642dd4a24::t_5fc6a5a16b6dbe 16
+scripts/check-cli-release.sh
+  s_78881642dd4a24::t_0be8c18591a68c 1-14,16,18,21-33
+  s_78881642dd4a24::t_3cf3a0f92a5ad9 15,17,19-20
+.github/workflows/release-product.yml
+  s_78881642dd4a24::t_90756d15404e00 1,4-8,84
+  s_78881642dd4a24::t_18958b532ed55b 2-3,9-83,85-154
+docs/adr/2026-10-05-cli-binary-distribution-with-cargo-dist.md
+  s_78881642dd4a24::t_e275749caec273 1-45
+dist-workspace.toml
+  s_78881642dd4a24::t_0be8c18591a68c 1-6,8-27,30-53
+  s_78881642dd4a24::t_5fc6a5a16b6dbe 7,54
+  s_78881642dd4a24::t_0c37fd2e29f88d 55
+  s_78881642dd4a24::t_647345c1ac2d80 28-29
+docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md
+  s_78881642dd4a24::t_e275749caec273 6-7
+crates/oceans-cli/Cargo.toml
+  s_78881642dd4a24::t_0be8c18591a68c 5-7
+  s_78881642dd4a24::t_5fc6a5a16b6dbe 9-10
+  s_78881642dd4a24::t_fab87297dd4ac1 8
+Cargo.toml
+  s_78881642dd4a24::t_0be8c18591a68c 132-136
+docs/contributing/reference/release-process.md
+  s_78881642dd4a24::t_e275749caec273 9,17,25-27,70,76,78-82,87-93,103-124,130-132,144-146,148
+.github/workflows/release-cli-check.yml
+  s_78881642dd4a24::t_0be8c18591a68c 1-44
+docs/internal/exa-results/cli-release-binaries-2026-10-05.md
+  s_78881642dd4a24::t_35124383b3ab4a 1-134
+.github/dist-build-setup.yml
+  s_78881642dd4a24::t_0be8c18591a68c 1-8
+.github/workflows/release.yml
+  s_78881642dd4a24::t_2bc3efe424de12 138
+  s_78881642dd4a24::t_afeae1c60a7bc3 311-314,333-337
+  s_78881642dd4a24::t_97aae53ffb6f7d 1-14,16-40,42,45,48-96,99-114,116-119,122-131,133-137,140-169,171-173,175-178,180-211,213-216,218-220,222-225,227-234,236-250,252,255-257,259-271,273-282,284-298,300-310,315-332,338-346,348
+mise.toml
+  s_78881642dd4a24::t_647345c1ac2d80 26,447-450
+  s_78881642dd4a24::t_2696b72f7b72b3 463
+  s_78881642dd4a24::t_0be8c18591a68c 23-25,428,434,438-446,451-462
+mise.lock
+  s_78881642dd4a24::t_32331ab154b738 3-36,61-128,361-389
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "06d60708b3c20cf8117ff844cd83e79fe01a9656",
+  "prompts": {},
+  "sessions": {
+    "s_78881642dd4a24": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10d3f-86b5-72f3-a0de-dca84e1143be",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
