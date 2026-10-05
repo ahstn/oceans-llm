@@ -2775,7 +2775,7 @@
     "/api/v1/admin/observability/request-logs": {
       "get": {
         "tags": [
-          "crate::http::observability"
+          "crate::http::observability::request_logs"
         ],
         "operationId": "list_request_logs",
         "parameters": [
@@ -2973,7 +2973,7 @@
     "/api/v1/admin/observability/request-logs/{request_log_id}": {
       "get": {
         "tags": [
-          "crate::http::observability"
+          "crate::http::observability::request_logs"
         ],
         "operationId": "get_request_log_detail",
         "parameters": [
@@ -15801,6 +15801,14 @@
               "null"
             ],
             "format": "int64"
+          },
+          "invoked_distinct_tool_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Distinct tool names the model called; `invoked_tool_count` counts every call. Null for\nrequests logged before this was recorded."
           },
           "invoked_tool_count": {
             "type": [

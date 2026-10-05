@@ -165,6 +165,11 @@ impl StreamResponseCollector {
         self.tool_calls.count()
     }
 
+    #[must_use]
+    pub fn invoked_distinct_tool_count(&self) -> i64 {
+        self.tool_calls.distinct_tool_count()
+    }
+
     fn observe_tool_calls(&mut self, value: &Value) {
         self.tool_calls.observe_value(value);
     }

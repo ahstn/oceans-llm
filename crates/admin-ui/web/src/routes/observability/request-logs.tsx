@@ -598,10 +598,12 @@ function TokensWithCache({ item }: { item: RequestLogView }) {
 
 function ToolUsage({ item }: { item: RequestLogView }) {
   const counts = item.tool_cardinality
+  // Logs recorded before distinct tools were tracked only carry the raw call count.
+  const usedTools = counts.invoked_distinct_tool_count ?? counts.invoked_tool_count
 
   return (
     <span className="tabular-nums" data-testid="request-log-tool-usage">
-      {formatToolCount(counts.invoked_tool_count)} / {formatToolCount(counts.request_tool_count)}
+      {formatToolCount(usedTools)} / {formatToolCount(counts.request_tool_count)}
     </span>
   )
 }
@@ -626,14 +628,18 @@ function ToolCardinalityCard({ item }: { item: RequestLogView }) {
         ) : null}
       </CardHeader>
       <CardContent>
-        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
           <DetailRow
             label="MCP Servers"
             value={formatToolCount(counts.referenced_mcp_server_count)}
           />
           <DetailRow label="Request Tools" value={formatToolCount(counts.request_tool_count)} />
           <DetailRow label="Tools Exposed" value={formatToolCount(counts.exposed_tool_count)} />
-          <DetailRow label="Tools Called" value={formatToolCount(counts.invoked_tool_count)} />
+          <DetailRow label="Tool Calls" value={formatToolCount(counts.invoked_tool_count)} />
+          <DetailRow
+            label="Distinct Tools Called"
+            value={formatToolCount(counts.invoked_distinct_tool_count)}
+          />
           <DetailRow label="Tools Filtered" value={formatToolCount(counts.filtered_tool_count)} />
         </dl>
       </CardContent>

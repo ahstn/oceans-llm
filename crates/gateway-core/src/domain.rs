@@ -1260,6 +1260,8 @@ pub struct RequestToolCardinality {
     /// Tools declared in the client request body, before any MCP grant inventory replaces
     /// `exposed_tool_count`.
     pub request_tool_count: Option<i64>,
+    /// Distinct tool names the model called, whereas `invoked_tool_count` counts every call.
+    pub invoked_distinct_tool_count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]

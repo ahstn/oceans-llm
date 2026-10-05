@@ -675,8 +675,9 @@ async fn request_caller_directory(
 }
 
 /// Usage ledger cost and cache figures for a page of request logs. Usage events carry no
-/// request log id, so they are matched on `(request_id, api_key_id)`; when several ownership
-/// scopes recorded the same request, the store's `usage_event_id` order picks the first.
+/// request log id, so they are matched on `(request_id, api_key_id)`. The store only returns
+/// usage whose pair identifies a single request log, so a reused client request id shows no
+/// cost instead of another request's cost.
 #[derive(Debug, Default)]
 struct RequestUsageDirectory {
     by_request_id: HashMap<String, Vec<UsageLedgerRecord>>,
@@ -704,7 +705,7 @@ async fn request_usage_directory(
     let mut directory = RequestUsageDirectory::default();
     for record in state
         .store
-        .get_usage_ledgers_by_request_ids(&request_ids)
+        .get_request_log_usage_by_request_ids(&request_ids)
         .await?
     {
         directory
@@ -821,6 +822,7 @@ fn summary_view(
             invoked_tool_count: log.tool_cardinality.invoked_tool_count,
             filtered_tool_count: log.tool_cardinality.filtered_tool_count,
             request_tool_count: log.tool_cardinality.request_tool_count,
+            invoked_distinct_tool_count: log.tool_cardinality.invoked_distinct_tool_count,
         },
         agent_harness_key: log.agent_harness_key.clone(),
         agent_harness_label: log.agent_harness_label.clone(),

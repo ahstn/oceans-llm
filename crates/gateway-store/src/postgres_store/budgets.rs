@@ -380,7 +380,7 @@ impl BudgetRepository for PostgresStore {
         rows.iter().map(decode_usage_ledger_record).collect()
     }
 
-    async fn get_usage_ledgers_by_request_ids(
+    async fn get_request_log_usage_by_request_ids(
         &self,
         request_ids: &[String],
     ) -> Result<Vec<UsageLedgerRecord>, StoreError> {
@@ -401,9 +401,15 @@ impl BudgetRepository for PostgresStore {
                 cache_read_cost_per_million_tokens_10000,
                 cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
                 uncached_input_tokens, cache_read_tokens, cache_write_tokens
-            FROM usage_cost_events
-            WHERE request_id = ANY($1)
-            ORDER BY request_id, usage_event_id
+            FROM usage_cost_events AS ledger
+            WHERE ledger.request_id = ANY($1)
+              AND (
+                SELECT COUNT(*)
+                FROM request_logs AS log
+                WHERE log.request_id = ledger.request_id
+                  AND log.api_key_id = ledger.api_key_id
+              ) = 1
+            ORDER BY ledger.request_id, ledger.usage_event_id
             "#,
         )
         .bind(request_ids)

@@ -116,6 +116,7 @@ async fn seed_request_logs<S: GatewayStore + Sync>(store: &S) -> SeededLogs {
             invoked_tool_count: Some(1),
             filtered_tool_count: Some(0),
             request_tool_count: Some(7),
+            invoked_distinct_tool_count: Some(1),
         },
         user_agent_raw: None,
         agent_harness_key: "unknown".to_string(),
@@ -238,6 +239,10 @@ async fn exercise_request_log_list_search<S: GatewayStore + Sync>(store: &S) {
         .expect("ada log detail");
     assert_eq!(detail.log.tool_cardinality.request_tool_count, Some(7));
     assert_eq!(detail.log.tool_cardinality.exposed_tool_count, Some(3));
+    assert_eq!(
+        detail.log.tool_cardinality.invoked_distinct_tool_count,
+        Some(1)
+    );
     let detail = store
         .get_request_log_detail(logs.grace_log.request_log_id)
         .await
@@ -273,7 +278,7 @@ async fn exercise_request_log_list_search<S: GatewayStore + Sync>(store: &S) {
             .expect("insert usage event");
     }
     let usage = store
-        .get_usage_ledgers_by_request_ids(&[
+        .get_request_log_usage_by_request_ids(&[
             logs.ada_log.request_id.clone(),
             logs.anonymous_log.request_id.clone(),
             "req-missing".to_string(),
@@ -290,9 +295,55 @@ async fn exercise_request_log_list_search<S: GatewayStore + Sync>(store: &S) {
     assert_eq!(priced.cache_read_tokens, Some(80));
     assert!(
         store
-            .get_usage_ledgers_by_request_ids(&[])
+            .get_request_log_usage_by_request_ids(&[])
             .await
             .expect("empty usage lookup")
+            .is_empty()
+    );
+
+    // A client-supplied request id reused on the same key makes the usage row ambiguous: the
+    // ledger keeps one row per scope, so it must not be attributed to either request log.
+    let grace_scope = format!("user:{}", logs.grace_log.user_id.expect("grace user id"));
+    let grace_usage = build_usage_ledger_record(
+        &logs.grace_log.request_id,
+        grace_scope,
+        logs.grace_log.api_key_id,
+        logs.grace_log.user_id,
+        None,
+        None,
+        None,
+        "reasoning-pro-2026",
+        UsagePricingStatus::Priced,
+        42,
+        logs.grace_log.occurred_at,
+    );
+    store
+        .insert_usage_ledger_if_absent(&grace_usage)
+        .await
+        .expect("insert grace usage event");
+    let grace_ids = [logs.grace_log.request_id.clone()];
+    assert_eq!(
+        store
+            .get_request_log_usage_by_request_ids(&grace_ids)
+            .await
+            .expect("unique grace usage")
+            .len(),
+        1
+    );
+    let reused_request_id_log = RequestLogRecord {
+        request_log_id: Uuid::new_v4(),
+        occurred_at: logs.grace_log.occurred_at + Duration::milliseconds(10),
+        ..logs.grace_log.clone()
+    };
+    store
+        .insert_request_log(&reused_request_id_log, None)
+        .await
+        .expect("insert reused request id log");
+    assert!(
+        store
+            .get_request_log_usage_by_request_ids(&grace_ids)
+            .await
+            .expect("ambiguous grace usage")
             .is_empty()
     );
 }

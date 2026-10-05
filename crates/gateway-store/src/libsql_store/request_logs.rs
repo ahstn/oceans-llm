@@ -94,6 +94,7 @@ fn decode_request_log_row(row: &libsql::Row) -> Result<RequestLogRecord, StoreEr
             invoked_tool_count: row.get(25).map_err(to_query_error)?,
             filtered_tool_count: row.get(26).map_err(to_query_error)?,
             request_tool_count: row.get(30).map_err(to_query_error)?,
+            invoked_distinct_tool_count: row.get(31).map_err(to_query_error)?,
         },
         user_agent_raw: row.get(27).map_err(to_query_error)?,
         agent_harness_key: row.get(28).map_err(to_query_error)?,
@@ -269,8 +270,9 @@ impl RequestLogRepository for LibsqlStore {
                     response_payload_truncated, caller_service, caller_component, caller_env,
                     error_code, metadata_json, occurred_at, referenced_mcp_server_count,
                     exposed_tool_count, invoked_tool_count, filtered_tool_count, user_agent_raw,
-                    agent_harness_key, agent_harness_label, request_tool_count
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31)
+                    agent_harness_key, agent_harness_label, request_tool_count,
+                    invoked_distinct_tool_count
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)
                 "#,
             libsql::params![
                 log.request_log_id.to_string(),
@@ -303,7 +305,8 @@ impl RequestLogRepository for LibsqlStore {
                 log.user_agent_raw.as_deref(),
                 log.agent_harness_key.as_str(),
                 log.agent_harness_label.as_str(),
-                log.tool_cardinality.request_tool_count
+                log.tool_cardinality.request_tool_count,
+                log.tool_cardinality.invoked_distinct_tool_count
             ],
         )
         .await
@@ -421,7 +424,7 @@ impl RequestLogRepository for LibsqlStore {
                        request_logs.exposed_tool_count, request_logs.invoked_tool_count,
                        request_logs.filtered_tool_count, request_logs.user_agent_raw,
                        request_logs.agent_harness_key, request_logs.agent_harness_label,
-                       request_logs.request_tool_count
+                       request_logs.request_tool_count, request_logs.invoked_distinct_tool_count
                 {REQUEST_LOG_LIST_FROM_WHERE}
                 ORDER BY request_logs.occurred_at DESC, request_logs.request_log_id DESC
                 LIMIT ?14 OFFSET ?15
@@ -659,7 +662,8 @@ impl RequestLogRepository for LibsqlStore {
                        rl.referenced_mcp_server_count, rl.exposed_tool_count,
                        rl.invoked_tool_count, rl.filtered_tool_count,
                        rl.user_agent_raw, rl.agent_harness_key, rl.agent_harness_label,
-                       rl.request_tool_count, rlp.request_json, rlp.response_json
+                       rl.request_tool_count, rl.invoked_distinct_tool_count,
+                       rlp.request_json, rlp.response_json
                 FROM request_logs rl
                 LEFT JOIN request_log_payloads rlp
                   ON rlp.request_log_id = rl.request_log_id
@@ -681,8 +685,8 @@ impl RequestLogRepository for LibsqlStore {
         };
 
         let mut log = decode_request_log_row(&row)?;
-        let request_json: Option<String> = row.get(31).map_err(to_query_error)?;
-        let response_json: Option<String> = row.get(32).map_err(to_query_error)?;
+        let request_json: Option<String> = row.get(32).map_err(to_query_error)?;
+        let response_json: Option<String> = row.get(33).map_err(to_query_error)?;
         log.request_tags.bespoke = load_bespoke_tags_for_logs(&self.connection, &[request_log_id])
             .await?
             .remove(&request_log_id)

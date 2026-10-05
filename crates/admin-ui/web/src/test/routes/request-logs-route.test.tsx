@@ -83,6 +83,7 @@ const items: RequestLogView[] = [
       exposed_tool_count: 2,
       request_tool_count: 5,
       invoked_tool_count: 0,
+      invoked_distinct_tool_count: 0,
       filtered_tool_count: null,
     },
     agent_harness_key: 'opencode',
@@ -165,6 +166,37 @@ describe('RequestLogsPage table', () => {
     expect(screen.queryByText('Chat Completions')).not.toBeInTheDocument()
     expect(screen.queryByText('redacted payloads')).not.toBeInTheDocument()
     expect(screen.queryByText('payload')).not.toBeInTheDocument()
+  })
+
+  it('counts distinct tools used and falls back to call counts for older logs', async () => {
+    const repeatedToolItem: RequestLogView = {
+      ...items[0],
+      request_log_id: 'reqlog_repeat',
+      tool_cardinality: {
+        ...items[0].tool_cardinality,
+        invoked_tool_count: 3,
+        invoked_distinct_tool_count: 1,
+      },
+    }
+    const legacyItem: RequestLogView = {
+      ...items[0],
+      request_log_id: 'reqlog_legacy',
+      tool_cardinality: {
+        ...items[0].tool_cardinality,
+        invoked_tool_count: 2,
+        invoked_distinct_tool_count: null,
+      },
+    }
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [repeatedToolItem, legacyItem], total: 2 },
+    })
+
+    await renderPage()
+
+    const usage = screen.getAllByTestId('request-log-tool-usage').map((el) => el.textContent)
+    expect(usage).toContain('1 / 5')
+    expect(usage).toContain('2 / 5')
+    expect(usage).not.toContain('3 / 5')
   })
 
   it('renders service-account and unknown callers with sensible fallbacks', async () => {
@@ -299,7 +331,8 @@ describe('RequestLogsPage detail', () => {
     expect(screen.getByText('Agent Harness')).toBeInTheDocument()
     expect(screen.getByText('Opencode')).toBeInTheDocument()
     expect(screen.getByText('opencode/1.2.3')).toBeInTheDocument()
-    expect(screen.getByText('Tools Called')).toBeInTheDocument()
+    expect(screen.getByText('Tool Calls')).toBeInTheDocument()
+    expect(screen.getByText('Distinct Tools Called')).toBeInTheDocument()
     expect(within(dialog).getByText('Request Tools')).toBeInTheDocument()
     expect(within(dialog).getByText('req_1')).toBeInTheDocument()
     expect(within(dialog).getByText('300 of 400 prompt tokens cached (75%)')).toBeInTheDocument()

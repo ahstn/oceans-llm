@@ -4059,6 +4059,12 @@ export interface components {
             exposed_tool_count?: number | null;
             /** Format: int64 */
             filtered_tool_count?: number | null;
+            /**
+             * Format: int64
+             * @description Distinct tool names the model called; `invoked_tool_count` counts every call. Null for
+             *     requests logged before this was recorded.
+             */
+            invoked_distinct_tool_count?: number | null;
             /** Format: int64 */
             invoked_tool_count?: number | null;
             /** Format: int64 */

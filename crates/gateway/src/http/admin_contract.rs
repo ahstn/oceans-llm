@@ -1383,6 +1383,9 @@ pub struct RequestToolCardinalityView {
     /// Tools declared in the request body's `tools` array: native client tools plus any MCP
     /// tools the client loaded. Null for requests logged before this was recorded.
     pub request_tool_count: Option<i64>,
+    /// Distinct tool names the model called; `invoked_tool_count` counts every call. Null for
+    /// requests logged before this was recorded.
+    pub invoked_distinct_tool_count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]

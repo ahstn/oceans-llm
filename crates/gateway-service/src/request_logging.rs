@@ -37,7 +37,9 @@ pub use harness::{AgentHarness, classify_agent_harness};
 pub use stream::{
     StreamChunkObservation, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
 };
-pub use tool_cardinality::invoked_tool_count_from_response_body;
+pub use tool_cardinality::{
+    invoked_distinct_tool_count_from_response_body, invoked_tool_count_from_response_body,
+};
 
 use harness::{normalized_user_agent, request_user_agent};
 use tool_cardinality::shallow_tool_count_from_request_body;
@@ -90,6 +92,7 @@ struct RequestLogSummary {
     latency_ms: i64,
     usage: UsageSummary,
     invoked_tool_count: i64,
+    invoked_distinct_tool_count: i64,
 }
 
 impl RequestLogSummary {
@@ -100,6 +103,7 @@ impl RequestLogSummary {
         latency_ms: i64,
         usage: UsageSummary,
         invoked_tool_count: i64,
+        invoked_distinct_tool_count: i64,
     ) -> Self {
         Self {
             provider_key,
@@ -110,6 +114,7 @@ impl RequestLogSummary {
             latency_ms,
             usage,
             invoked_tool_count,
+            invoked_distinct_tool_count,
         }
     }
 
@@ -130,6 +135,7 @@ impl RequestLogSummary {
             latency_ms,
             usage: UsageSummary::default(),
             invoked_tool_count: 0,
+            invoked_distinct_tool_count: 0,
         }
     }
 }
@@ -305,6 +311,7 @@ where
                 invoked_tool_count: Some(0),
                 filtered_tool_count: None,
                 request_tool_count,
+                invoked_distinct_tool_count: Some(0),
             },
             request_json: prepared.request_json,
             request_payload_truncated: prepared.request_payload_truncated,
@@ -436,6 +443,7 @@ where
                 latency_ms,
                 usage,
                 invoked_tool_count,
+                invoked_distinct_tool_count_from_response_body(response_body),
             ),
             response_json,
             response_payload_truncated,
@@ -508,6 +516,7 @@ where
         let failure = failure.or_else(|| collector.failure().cloned());
         let usage = usage_summary_from_value(collector.usage());
         let invoked_tool_count = collector.invoked_tool_count();
+        let invoked_distinct_tool_count = collector.invoked_distinct_tool_count();
         let (response_json, response_payload_truncated) =
             if self.payload_policy.should_capture_payloads() {
                 let (response_json, response_payload_truncated) =
@@ -532,6 +541,7 @@ where
                 latency_ms,
                 usage,
                 invoked_tool_count,
+                invoked_distinct_tool_count,
             ),
         };
         self.persist_chat_log(
@@ -637,6 +647,7 @@ where
             request_tags: context.request_tags.clone(),
             tool_cardinality: RequestToolCardinality {
                 invoked_tool_count: Some(summary.invoked_tool_count),
+                invoked_distinct_tool_count: Some(summary.invoked_distinct_tool_count),
                 ..context.tool_cardinality
             },
             user_agent_raw: context.user_agent_raw.clone(),
