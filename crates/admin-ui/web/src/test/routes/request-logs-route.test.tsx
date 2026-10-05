@@ -106,19 +106,29 @@ async function renderPage() {
   )
 }
 
-describe('RequestLogsPage', () => {
-  beforeEach(() => {
-    routeMock.useLoaderData.mockReset()
-    routeMock.useRouteContext.mockReset()
-    routeMock.useRouteContext.mockReturnValue({
-      session: regularUserSession(),
-    })
-    routeMock.useSearch.mockReset()
-    getObservabilityRequestLogDetailMock.mockReset()
-    navigateMock.mockReset()
-    routeMock.useSearch.mockReturnValue({})
-    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+function resetMocks() {
+  routeMock.useLoaderData.mockReset()
+  routeMock.useRouteContext.mockReset()
+  routeMock.useRouteContext.mockReturnValue({
+    session: regularUserSession(),
   })
+  routeMock.useSearch.mockReset()
+  getObservabilityRequestLogDetailMock.mockReset()
+  navigateMock.mockReset()
+  routeMock.useSearch.mockReturnValue({})
+  vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+}
+
+/** Resolves the functional `search` passed to `router.navigate` against a prior URL search. */
+function navigatedSearch(callIndex: number, previous: Record<string, unknown> = {}) {
+  const search = navigateMock.mock.calls[callIndex][0].search as (
+    previous: Record<string, unknown>,
+  ) => Record<string, unknown>
+  return search(previous)
+}
+
+describe('RequestLogsPage table', () => {
+  beforeEach(resetMocks)
 
   it('renders dedicated mobile and desktop log layouts from the same payload', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
@@ -222,6 +232,10 @@ describe('RequestLogsPage', () => {
       (await screen.findAllByText('300 of 400 prompt tokens cached (75%)')).length,
     ).toBeGreaterThan(0)
   })
+})
+
+describe('RequestLogsPage detail', () => {
+  beforeEach(resetMocks)
 
   it('renders request-log detail without fallback-era fields', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
@@ -312,6 +326,10 @@ describe('RequestLogsPage', () => {
     expect(screen.queryByText(/"prompt": "ping"/)).not.toBeInTheDocument()
     expect(screen.getByText(/"output": "pong"/)).toBeInTheDocument()
   })
+})
+
+describe('RequestLogsPage detail states', () => {
+  beforeEach(resetMocks)
 
   it('labels decisions request-log operations explicitly', async () => {
     const decisionsItem: RequestLogView = {
@@ -390,6 +408,10 @@ describe('RequestLogsPage', () => {
       expect(screen.getByText('request log missing')).toBeInTheDocument()
     })
   })
+})
+
+describe('RequestLogsPage filter chips', () => {
+  beforeEach(resetMocks)
 
   it('adds a tag filter chip and treats whitespace-only input as empty', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
@@ -419,15 +441,12 @@ describe('RequestLogsPage', () => {
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          to: '/observability/request-logs',
-          search: {
-            tag_key: 'feature',
-            tag_value: 'guest_checkout',
-          },
-        }),
+        expect.objectContaining({ to: '/observability/request-logs' }),
       )
     })
+    expect(navigatedSearch(0)).toEqual(
+      expect.objectContaining({ tag_key: 'feature', tag_value: 'guest_checkout' }),
+    )
   })
 
   it('renders URL filters as removable chips', async () => {
@@ -444,14 +463,41 @@ describe('RequestLogsPage', () => {
     fireEvent.click(scope.getByRole('button', { name: 'Remove Request ID filter' }))
 
     await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          search: expect.objectContaining({ q: 'alice' }),
-        }),
-      )
+      expect(navigateMock).toHaveBeenCalled()
     })
-    expect(navigateMock.mock.calls[0][0].search.request_id).toBeUndefined()
+    const next = navigatedSearch(0, { request_id: 'req_1', q: 'alice' })
+    expect(next.q).toBe('alice')
+    expect(next.request_id).toBeUndefined()
   })
+
+  it('keeps a chip edit typed while an earlier filter navigation was loading', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = await renderPage()
+    const scope = within(view.container)
+
+    fireEvent.keyDown(scope.getByRole('button', { name: /Filters/ }), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Environment' }))
+    fireEvent.change(await scope.findByTestId('request-log-filter-env'), {
+      target: { value: 'staging' },
+    })
+
+    // An earlier provider filter lands while the environment value is still uncommitted.
+    routeMock.useSearch.mockReturnValue({ provider_key: 'openai' })
+    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
+    view.rerender(
+      <TooltipProvider>
+        <RequestLogsPage />
+      </TooltipProvider>,
+    )
+
+    expect(scope.getByTestId('request-log-filter-provider-key')).toHaveValue('openai')
+    expect(scope.getByTestId('request-log-filter-env')).toHaveValue('staging')
+  })
+})
+
+describe('RequestLogsPage search', () => {
+  beforeEach(resetMocks)
 
   it('debounces the model/user search into the q URL param', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
@@ -464,12 +510,26 @@ describe('RequestLogsPage', () => {
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          to: '/observability/request-logs',
-          search: expect.objectContaining({ q: 'gpt' }),
-          replace: true,
-        }),
+        expect.objectContaining({ to: '/observability/request-logs', replace: true }),
       )
     })
+    expect(navigatedSearch(0).q).toBe('gpt')
+  })
+
+  it('merges the debounced search into filters committed after typing started', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = await renderPage()
+    fireEvent.change(within(view.container).getByPlaceholderText('Search by model or user…'), {
+      target: { value: 'gpt' },
+    })
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalled()
+    })
+    // The URL gained a provider chip before the timer fired; the search must not drop it.
+    expect(navigatedSearch(0, { provider_key: 'openai' })).toEqual(
+      expect.objectContaining({ provider_key: 'openai', q: 'gpt' }),
+    )
   })
 })

@@ -101,7 +101,8 @@ interface RequestLogToolbarProps {
   shownCount: number
   totalCount: number
   isPending: boolean
-  onApply: (next: RequestLogFilterValues, options?: { replace?: boolean }) => void
+  /** Merges `patch` into the current URL search; keys set to `undefined` are removed. */
+  onApply: (patch: RequestLogFilterValues, options?: { replace?: boolean }) => void
 }
 
 /**
@@ -123,10 +124,11 @@ export function RequestLogToolbar({
 
   const [syncedFilters, setSyncedFilters] = useState(filters)
 
-  // Reset chip drafts whenever the URL-backed filters change (navigation, Back/Forward, Clear).
+  // Adopt URL-backed filter changes (navigation, Back/Forward, Clear) without discarding chip
+  // edits that were typed while a previous navigation was still loading.
   if (syncedFilters !== filters) {
     setSyncedFilters(filters)
-    setDrafts(filters)
+    setDrafts((current) => rebaseDrafts(current, syncedFilters, filters))
   }
 
   const visibleFields = filterFields.filter(
@@ -145,7 +147,7 @@ export function RequestLogToolbar({
     if (tagIsPartial || sameFilters(next, filters)) {
       return
     }
-    onApply({ ...next, q: filters.q })
+    onApply(pickFilterParams(next))
   }
 
   function removeField(key: FilterFieldKey) {
@@ -159,8 +161,10 @@ export function RequestLogToolbar({
   }
 
   function clearAll() {
+    const cleared = pickFilterParams({})
     setAddedFields([])
-    onApply({ q: filters.q })
+    setDrafts((current) => ({ ...current, ...cleared }))
+    onApply(cleared)
   }
 
   return (
@@ -168,7 +172,7 @@ export function RequestLogToolbar({
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
         <RequestLogSearch
           value={filters.q ?? ''}
-          onSearch={(q) => onApply({ ...filters, q }, { replace: true })}
+          onSearch={(q) => onApply({ q }, { replace: true })}
         />
         <div className="flex items-center gap-3">
           <span className="text-muted-foreground text-sm tabular-nums">
@@ -237,6 +241,12 @@ export function RequestLogToolbar({
 function RequestLogSearch({ value, onSearch }: { value: string; onSearch: (q: string) => void }) {
   const [query, setQuery] = useState(value)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The debounce timer outlives the render that scheduled it, so read the latest props from refs.
+  const latest = useRef({ value, onSearch })
+
+  useEffect(() => {
+    latest.current = { value, onSearch }
+  })
 
   useEffect(() => {
     // Only adopt URL changes (Back/Forward, Clear) when no keystrokes are waiting to be sent.
@@ -252,8 +262,8 @@ function RequestLogSearch({ value, onSearch }: { value: string; onSearch: (q: st
     clearTimeout(timer.current ?? undefined)
     timer.current = setTimeout(() => {
       timer.current = null
-      if (next.trim() !== value) {
-        onSearch(next)
+      if (next.trim() !== latest.current.value) {
+        latest.current.onSearch(next)
       }
     }, searchDebounceMs)
   }
@@ -398,8 +408,38 @@ function isFieldActive(filters: RequestLogFilterValues, key: FilterFieldKey) {
   return fieldParams(key).some((param) => Boolean(filters[param]))
 }
 
+const filterParams: FilterParam[] = filterFields.flatMap((field) => fieldParams(field.key))
+
+function normalizedParam(value: string | null | undefined) {
+  return value?.trim() || undefined
+}
+
+/** The chip-owned params of `values`, with absent params set to `undefined` so they clear. */
+function pickFilterParams(values: RequestLogFilterValues): RequestLogFilterValues {
+  return Object.fromEntries(filterParams.map((param) => [param, normalizedParam(values[param])]))
+}
+
 function sameFilters(left: RequestLogFilterValues, right: RequestLogFilterValues) {
-  return filterFields
-    .flatMap((field) => fieldParams(field.key))
-    .every((param) => (left[param]?.trim() || undefined) === (right[param] || undefined))
+  return filterParams.every(
+    (param) => normalizedParam(left[param]) === normalizedParam(right[param]),
+  )
+}
+
+/**
+ * Moves drafts onto newly applied URL filters. Params whose draft still matches the previous URL
+ * value are clean and take the new value; params edited since then keep the in-progress edit.
+ */
+function rebaseDrafts(
+  drafts: RequestLogFilterValues,
+  previous: RequestLogFilterValues,
+  next: RequestLogFilterValues,
+): RequestLogFilterValues {
+  const rebased: RequestLogFilterValues = { ...next }
+  for (const param of filterParams) {
+    const isDirty = normalizedParam(drafts[param]) !== normalizedParam(previous[param])
+    if (isDirty) {
+      rebased[param] = drafts[param]
+    }
+  }
+  return rebased
 }
