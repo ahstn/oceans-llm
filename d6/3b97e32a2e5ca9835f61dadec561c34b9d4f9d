@@ -1,0 +1,14 @@
+crates/admin-ui/web/src/routes/skills/-skills.test.tsx
+  h_2f452a9c375069 244-246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d63b97e32a2e5ca9835f61dadec561c34b9d4f9d",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
