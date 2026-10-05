@@ -420,6 +420,52 @@ impl BudgetRepository for LibsqlStore {
         Ok(records)
     }
 
+    async fn get_request_log_usage_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<Vec<UsageLedgerRecord>, StoreError> {
+        if request_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let request_ids_json = serde_json::to_string(request_ids)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT
+                    usage_event_id, request_id, ownership_scope_key, api_key_id, user_id,
+                    team_id, service_account_id, actor_user_id, model_id, model_route_id,
+                    provider_key, upstream_model, prompt_tokens, completion_tokens, total_tokens,
+                    provider_usage_json, pricing_status, unpriced_reason, pricing_row_id,
+                    pricing_provider_id, pricing_model_id, pricing_source, pricing_source_etag,
+                    pricing_source_fetched_at, pricing_last_updated,
+                    input_cost_per_million_tokens_10000,
+                    output_cost_per_million_tokens_10000,
+                    cache_read_cost_per_million_tokens_10000,
+                    cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
+                    uncached_input_tokens, cache_read_tokens, cache_write_tokens
+                FROM usage_cost_events AS ledger
+                WHERE ledger.request_id IN (SELECT value FROM json_each(?1))
+                  AND (
+                    SELECT COUNT(*)
+                    FROM request_logs AS log
+                    WHERE log.request_id = ledger.request_id
+                      AND log.api_key_id = ledger.api_key_id
+                  ) = 1
+                ORDER BY ledger.request_id, ledger.usage_event_id
+                "#,
+                libsql::params![request_ids_json],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut records = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            records.push(decode_usage_ledger_record(&row)?);
+        }
+        Ok(records)
+    }
+
     async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
         scope: &BudgetScope,

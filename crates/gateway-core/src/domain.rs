@@ -1257,6 +1257,11 @@ pub struct RequestToolCardinality {
     pub exposed_tool_count: Option<i64>,
     pub invoked_tool_count: Option<i64>,
     pub filtered_tool_count: Option<i64>,
+    /// Tools declared in the client request body, before any MCP grant inventory replaces
+    /// `exposed_tool_count`.
+    pub request_tool_count: Option<i64>,
+    /// Distinct tool names the model called, whereas `invoked_tool_count` counts every call.
+    pub invoked_distinct_tool_count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
@@ -1348,6 +1353,8 @@ pub struct RequestLogQuery {
     pub env: Option<String>,
     pub tag_key: Option<String>,
     pub tag_value: Option<String>,
+    /// Case-insensitive substring match on model keys or user name/email.
+    pub q: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

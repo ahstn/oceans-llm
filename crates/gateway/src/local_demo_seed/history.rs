@@ -8,6 +8,7 @@ use gateway_core::{
     ApiKeyRecord, BudgetRepository, Money4, RequestLogRecord, RequestLogRepository, RequestTags,
     UsageLedgerRecord, UsagePricingStatus,
 };
+use gateway_service::{RequestLogPayloadCaptureMode, RequestLogPayloadPolicy};
 use gateway_store::AnyStore;
 use serde_json::{Map, Value, json};
 use time::{Duration, OffsetDateTime, Time};
@@ -248,10 +249,25 @@ async fn insert_history_request(
         user_agent_raw: Some(user_agent.to_string()),
         agent_harness_key: harness_key.to_string(),
         agent_harness_label: harness_label.to_string(),
-        metadata: Map::from_iter([(
-            "seed_source".to_string(),
-            Value::String("local_demo_seed_history".to_string()),
-        )]),
+        // The admin request-log contract requires a payload policy on every row; history rows
+        // carry no payloads, so record them as summary-only captures.
+        metadata: Map::from_iter([
+            (
+                "payload_policy".to_string(),
+                RequestLogPayloadPolicy::new(
+                    RequestLogPayloadCaptureMode::SummaryOnly,
+                    65_536,
+                    65_536,
+                    128,
+                    Vec::new(),
+                )
+                .metadata_value(),
+            ),
+            (
+                "seed_source".to_string(),
+                Value::String("local_demo_seed_history".to_string()),
+            ),
+        ]),
         occurred_at: request.occurred_at,
     };
     store

@@ -883,6 +883,13 @@ impl BudgetRepository for AnyStore {
         )
     }
 
+    async fn get_request_log_usage_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<Vec<gateway_core::UsageLedgerRecord>, StoreError> {
+        dispatch_store!(self, get_request_log_usage_by_request_ids(request_ids))
+    }
+
     async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
         scope: &gateway_core::BudgetScope,

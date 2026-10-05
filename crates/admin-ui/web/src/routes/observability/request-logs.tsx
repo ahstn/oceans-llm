@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from 'reac
 import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
+import { DatabaseLightningIcon } from '@hugeicons/core-free-icons'
+
+import { AppIcon } from '@/components/icons/app-icon'
 import { BrandIcon } from '@/components/icons/brand-icon'
 import { canAccessPage } from '@/components/layout/admin-nav'
 import { PageHeader } from '@/components/layout/page-header'
@@ -17,7 +20,6 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Sheet,
@@ -35,6 +37,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { formatUsd10000Precise } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
 import type {
@@ -44,6 +48,8 @@ import type {
   RequestLogView,
 } from '@/types/api'
 
+import { RequestLogToolbar, type RequestLogFilterValues } from './-request-log-filters'
+
 export const Route = createFileRoute('/observability/request-logs')({
   validateSearch: (search: Record<string, unknown>) => normalizeFilterSearch(search),
   loaderDeps: ({ search }) => search,
@@ -51,110 +57,31 @@ export const Route = createFileRoute('/observability/request-logs')({
   component: RequestLogsPage,
 })
 
-const initialFilters: RequestLogFiltersInput = {
-  request_id: '',
-  model_key: '',
-  provider_key: '',
-  service: '',
-  component: '',
-  env: '',
-  tag_key: '',
-  tag_value: '',
-}
-
 const requestLogRowEstimatePx = 56
 const requestLogDesktopPreviewRows = 12
 const requestLogDesktopTableHeightPx = requestLogRowEstimatePx * requestLogDesktopPreviewRows
+const requestLogGridColumns =
+  'grid grid-cols-[minmax(11rem,0.8fr)_minmax(12rem,1.3fr)_minmax(11rem,1.1fr)_76px_88px_84px_104px_160px_104px]'
 
-// Filters, virtualization, selection, and detail loading share one request-log explorer state.
-// oxlint-disable-next-line eslint/max-lines-per-function
 export function RequestLogsPage() {
   const { data: logPage } = Route.useLoaderData()
   const search = Route.useSearch()
   const router = useRouter()
-  const parentRef = useRef<HTMLDivElement | null>(null)
-  const [filters, setFilters] = useState<RequestLogFiltersInput>(() => ({
-    ...initialFilters,
-    ...search,
-  }))
-  const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
-  const [selectedDetail, setSelectedDetail] = useState<RequestLogDetailView | null>(null)
-  const [detailPending, setDetailPending] = useState(false)
-  const [detailError, setDetailError] = useState<string | null>(null)
+  const detail = useRequestLogDetail()
   const [isListPending, startListTransition] = useTransition()
 
-  useEffect(() => {
-    setFilters({ ...initialFilters, ...search })
-  }, [search])
-
-  useEffect(() => {
-    if (!selectedLogId) {
-      setSelectedDetail(null)
-      setDetailPending(false)
-      setDetailError(null)
-      return
-    }
-
-    let cancelled = false
-    setDetailPending(true)
-    setDetailError(null)
-
-    void getObservabilityRequestLogDetail({ data: { requestLogId: selectedLogId } })
-      .then((response) => {
-        if (!cancelled) {
-          setSelectedDetail(response.data)
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setDetailError(
-            error instanceof Error ? error.message : 'Failed to load request log detail',
-          )
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setDetailPending(false)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [selectedLogId])
-
-  const rowVirtualizer = useVirtualizer({
-    count: logPage.items.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => requestLogRowEstimatePx,
-    overscan: 12,
-  })
-
-  const rows = rowVirtualizer.getVirtualItems()
-
-  function openDetail(requestLogId: string) {
-    setSelectedLogId(requestLogId)
-    setSelectedDetail(null)
-    setDetailPending(true)
-    setDetailError(null)
-  }
-
-  function applyFilters(nextFilters: RequestLogFiltersInput) {
+  // Patches merge into the latest location so a debounced search and a chip commit that land
+  // close together cannot overwrite each other with stale filter values.
+  function applyFilters(patch: RequestLogFilterValues, options?: { replace?: boolean }) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/request-logs',
-        search: normalizeFilterSearch(nextFilters),
+        search: (previous) => normalizeFilterSearch({ ...previous, ...patch }),
+        replace: options?.replace,
+        resetScroll: false,
       })
     })
   }
-
-  function updateFilter(key: keyof RequestLogFiltersInput, value: string) {
-    setFilters((current) => ({ ...current, [key]: value }))
-  }
-
-  const normalizedFilters = normalizeFilterSearch(filters)
-  const hasPartialTagFilter =
-    Boolean(normalizedFilters.tag_key) !== Boolean(normalizedFilters.tag_value)
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
@@ -174,386 +101,390 @@ export function RequestLogsPage() {
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <Input
-              data-testid="request-log-filter-service"
-              placeholder="Service"
-              value={filters.service ?? ''}
-              onChange={(event) => updateFilter('service', event.target.value)}
-            />
-            <Input
-              data-testid="request-log-filter-component"
-              placeholder="Component"
-              value={filters.component ?? ''}
-              onChange={(event) => updateFilter('component', event.target.value)}
-            />
-            <Input
-              data-testid="request-log-filter-env"
-              placeholder="Environment"
-              value={filters.env ?? ''}
-              onChange={(event) => updateFilter('env', event.target.value)}
-            />
-            <Input
-              data-testid="request-log-filter-tag-key"
-              placeholder="Tag key"
-              value={filters.tag_key ?? ''}
-              onChange={(event) => updateFilter('tag_key', event.target.value)}
-            />
-            <Input
-              data-testid="request-log-filter-tag-value"
-              placeholder="Tag value"
-              value={filters.tag_value ?? ''}
-              onChange={(event) => updateFilter('tag_value', event.target.value)}
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => applyFilters(normalizedFilters)}
-              disabled={isListPending || hasPartialTagFilter}
-            >
-              {isListPending ? 'Filtering...' : 'Apply Filters'}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setFilters(initialFilters)
-                applyFilters(initialFilters)
-              }}
-              disabled={isListPending}
-            >
-              Clear
-            </Button>
-          </div>
-          {hasPartialTagFilter ? (
-            <Alert>
-              <AlertTitle>Incomplete tag filter</AlertTitle>
-              <AlertDescription>
-                Provide both a tag key and tag value to filter bespoke request tags.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          <div className="text-muted-foreground text-sm">
-            {logPage.total} total logs loaded from gateway observability APIs.
-          </div>
-
-          <div
-            className="border-border max-h-[34rem] overflow-auto rounded-md border p-3 lg:hidden"
-            data-testid="request-log-mobile-list"
-          >
-            <div className="flex flex-col gap-3">
-              {logPage.items.map((item) => (
-                <article
-                  key={item.request_log_id}
-                  className="border-border bg-surface-muted rounded-lg border p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-foreground flex items-center gap-2 truncate font-semibold">
-                        <BrandIcon iconKey={item.model_icon_key} size={16} />
-                        <span className="truncate">{item.model_key}</span>
-                      </p>
-                      <p className="text-muted-foreground truncate font-mono text-xs">
-                        {item.request_id}
-                      </p>
-                    </div>
-                    <Badge variant={badgeVariant(item.status_code)}>
-                      {item.status_code ?? 'n/a'}
-                    </Badge>
-                  </div>
-
-                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Provider
-                      </dt>
-                      <dd className="text-subtle-foreground flex items-center gap-2">
-                        <BrandIcon iconKey={item.provider_icon_key} size={14} />
-                        <span>{item.provider_key}</span>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Caller
-                      </dt>
-                      <dd className="text-subtle-foreground truncate">
-                        {callerPrimary(item) ?? 'Unknown'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Key
-                      </dt>
-                      <dd className="text-subtle-foreground truncate">
-                        {item.api_key_name ?? item.api_key_id}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Latency
-                      </dt>
-                      <dd className="text-subtle-foreground">{formatLatency(item.latency_ms)}</dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Tokens
-                      </dt>
-                      <dd className="text-subtle-foreground">
-                        {formatTokenCount(item.total_tokens)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Tools
-                      </dt>
-                      <dd className="text-subtle-foreground">
-                        <ToolCardinalityInline item={item} />
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-                        Timestamp
-                      </dt>
-                      <dd className="text-subtle-foreground">
-                        {formatOccurredAt(item.occurred_at)}
-                      </dd>
-                    </div>
-                  </dl>
-
-                  <div className="mt-4 flex justify-end">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => openDetail(item.request_log_id)}
-                    >
-                      Inspect
-                    </Button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-
-          <div
-            className="border-border hidden min-w-0 overflow-x-auto rounded-md border lg:block"
-            data-testid="request-log-desktop-table"
-          >
-            <div className="min-w-[80rem]">
-              <div className="bg-surface-muted text-muted-foreground grid grid-cols-[minmax(13rem,1.2fr)_minmax(12rem,1.1fr)_minmax(11rem,1fr)_minmax(9rem,0.9fr)_80px_88px_80px_150px_110px]">
-                <span className="px-3 py-2 font-semibold">Request</span>
-                <span className="px-3 py-2 font-semibold">Model</span>
-                <span className="px-3 py-2 font-semibold">Caller</span>
-                <span className="px-3 py-2 font-semibold">Key</span>
-                <span className="px-3 py-2 font-semibold">Status</span>
-                <span className="px-3 py-2 font-semibold">Latency</span>
-                <span className="px-3 py-2 font-semibold">Tokens</span>
-                <span className="px-3 py-2 font-semibold">Tools</span>
-                <span className="px-3 py-2 font-semibold">Inspect</span>
-              </div>
-              <div
-                ref={parentRef}
-                className="overflow-y-auto"
-                data-testid="request-log-desktop-table-viewport"
-                style={{ height: `${requestLogDesktopTableHeightPx}px` }}
-              >
-                <div
-                  className="relative"
-                  style={{
-                    height: `${rowVirtualizer.getTotalSize()}px`,
-                  }}
-                >
-                  {rows.map((virtualRow) => {
-                    const item = logPage.items[virtualRow.index]
-                    return (
-                      <div
-                        key={item.request_log_id}
-                        className="border-border absolute top-0 left-0 grid w-full grid-cols-[minmax(13rem,1.2fr)_minmax(12rem,1.1fr)_minmax(11rem,1fr)_minmax(9rem,0.9fr)_80px_88px_80px_150px_110px] border-t align-top text-sm"
-                        style={{
-                          height: `${virtualRow.size}px`,
-                          transform: `translateY(${virtualRow.start}px)`,
-                        }}
-                      >
-                        <div className="min-w-0 px-3 py-3">
-                          <div className="text-foreground truncate font-mono text-xs">
-                            {item.request_id}
-                          </div>
-                          <div className="text-muted-foreground truncate text-xs">
-                            {formatOccurredAt(item.occurred_at)}
-                          </div>
-                        </div>
-                        <div className="min-w-0 px-3 py-3">
-                          <div className="text-foreground flex items-center gap-2 truncate">
-                            <BrandIcon iconKey={item.model_icon_key} size={16} />
-                            <span className="truncate">{item.model_key}</span>
-                          </div>
-                          <div className="text-muted-foreground mt-0.5 flex items-center gap-2 truncate text-xs">
-                            <BrandIcon iconKey={item.provider_icon_key} size={12} />
-                            <span className="truncate">{item.provider_key}</span>
-                          </div>
-                        </div>
-                        <div className="min-w-0 px-3 py-3">
-                          <div className="text-foreground truncate">
-                            {callerPrimary(item) ?? 'Unknown'}
-                          </div>
-                          {callerSecondary(item) ? (
-                            <div className="text-muted-foreground truncate text-xs">
-                              {callerSecondary(item)}
-                            </div>
-                          ) : null}
-                        </div>
-                        <span className="text-subtle-foreground truncate px-3 py-3">
-                          {item.api_key_name ?? item.api_key_id}
-                        </span>
-                        <span className="px-3 py-3">
-                          <Badge variant={badgeVariant(item.status_code)}>
-                            {item.status_code ?? 'n/a'}
-                          </Badge>
-                        </span>
-                        <span className="text-subtle-foreground px-3 py-3">
-                          {formatLatency(item.latency_ms)}
-                        </span>
-                        <span className="text-subtle-foreground px-3 py-3">
-                          {formatTokenCount(item.total_tokens)}
-                        </span>
-                        <span className="text-subtle-foreground px-3 py-3">
-                          <ToolCardinalityInline item={item} />
-                        </span>
-                        <div className="px-3 py-2.5">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            className="w-full"
-                            onClick={() => openDetail(item.request_log_id)}
-                          >
-                            Inspect
-                          </Button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
+          <RequestLogToolbar
+            filters={search}
+            shownCount={logPage.items.length}
+            totalCount={logPage.total}
+            isPending={isListPending}
+            onApply={applyFilters}
+          />
+          <RequestLogMobileList items={logPage.items} onInspect={detail.open} />
+          <RequestLogDesktopTable items={logPage.items} onInspect={detail.open} />
         </CardContent>
       </Card>
 
-      <Sheet open={selectedLogId !== null} onOpenChange={(open) => !open && setSelectedLogId(null)}>
-        <SheetContent
-          side="right"
-          className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[min(1280px,94vw)]"
-        >
-          <SheetHeader className="border-border border-b">
-            <SheetTitle>Request Log Detail</SheetTitle>
-            <SheetDescription>
-              Review summary fields and sanitized request and response payloads.
-            </SheetDescription>
-          </SheetHeader>
+      <RequestLogDetailSheet detail={detail} />
+    </div>
+  )
+}
 
-          <div className="flex-1 overflow-y-auto p-4">
-            {detailPending ? (
-              <DetailSkeleton />
-            ) : detailError ? (
-              <Alert variant="destructive">
-                <AlertTitle>Request log detail failed</AlertTitle>
-                <AlertDescription>{detailError}</AlertDescription>
-              </Alert>
-            ) : selectedDetail ? (
-              <div className="flex flex-col gap-4">
-                <div className="border-border bg-surface-muted grid gap-3 rounded-md border p-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <DetailRow label="Request ID" value={selectedDetail.log.request_id} mono />
-                  <DetailRow
-                    label="Request Log ID"
-                    value={selectedDetail.log.request_log_id}
-                    mono
-                  />
-                  <DetailRow
-                    label="API Key"
-                    value={selectedDetail.log.api_key_name ?? selectedDetail.log.api_key_id}
-                    mono={!selectedDetail.log.api_key_name}
-                  />
-                  <DetailRow label="Caller" value={callerLabel(selectedDetail.log)} />
-                  <DetailRow
-                    label="Model"
-                    value={
-                      <span className="inline-flex items-center gap-2">
-                        <BrandIcon iconKey={selectedDetail.log.model_icon_key} size={16} />
-                        <span>{selectedDetail.log.model_key}</span>
-                      </span>
-                    }
-                  />
-                  <DetailRow
-                    label="Resolved Model"
-                    value={
-                      <span className="inline-flex items-center gap-2">
-                        <BrandIcon iconKey={selectedDetail.log.model_icon_key} size={16} />
-                        <span>{selectedDetail.log.resolved_model_key}</span>
-                      </span>
-                    }
-                  />
-                  <DetailRow
-                    label="Provider"
-                    value={
-                      <span className="inline-flex items-center gap-2">
-                        <BrandIcon iconKey={selectedDetail.log.provider_icon_key} size={14} />
-                        <span>{selectedDetail.log.provider_key}</span>
-                      </span>
-                    }
-                  />
-                  <DetailRow label="Occurred At" value={selectedDetail.log.occurred_at} />
-                  <DetailRow
-                    label="Status"
-                    value={
-                      selectedDetail.log.status_code !== null
-                        ? String(selectedDetail.log.status_code)
-                        : 'n/a'
-                    }
-                  />
-                  <DetailRow label="Latency" value={formatLatency(selectedDetail.log.latency_ms)} />
-                  <DetailRow
-                    label="Tokens"
-                    value={formatTokenCount(selectedDetail.log.total_tokens)}
-                  />
-                  <OperationDetailRow item={selectedDetail.log} />
-                  <DetailRow
-                    label="Stream"
-                    value={metadataBoolean(selectedDetail.log, 'stream') ? 'yes' : 'no'}
-                  />
-                  <DetailRow label="Agent Harness" value={selectedDetail.log.agent_harness_label} />
-                  <DetailRow
-                    label="User-Agent"
-                    value={selectedDetail.user_agent_raw ?? 'n/a'}
-                    mono={Boolean(selectedDetail.user_agent_raw)}
-                  />
-                </div>
+type RequestLogDetailState = ReturnType<typeof useRequestLogDetail>
 
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                  <ToolCardinalityCard item={selectedDetail.log} />
+function useRequestLogDetail() {
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
+  const [selectedDetail, setSelectedDetail] = useState<RequestLogDetailView | null>(null)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Request Tags</CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex flex-wrap gap-2">
-                      <RequestTagBadges item={selectedDetail.log} />
-                    </CardContent>
-                  </Card>
-                </div>
+  useEffect(() => {
+    if (!selectedLogId) {
+      setSelectedDetail(null)
+      setPending(false)
+      setError(null)
+      return
+    }
 
-                <McpTokenOverheadCard detail={selectedDetail} />
+    let cancelled = false
+    setPending(true)
+    setError(null)
 
-                <AttemptsSection attempts={selectedDetail.attempts} />
+    void getObservabilityRequestLogDetail({
+      data: { requestLogId: selectedLogId },
+    })
+      .then((response) => {
+        if (!cancelled) {
+          setSelectedDetail(response.data)
+        }
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : 'Failed to load request log detail')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPending(false)
+        }
+      })
 
-                <PayloadSection detail={selectedDetail} />
+    return () => {
+      cancelled = true
+    }
+  }, [selectedLogId])
+
+  function open(requestLogId: string) {
+    setSelectedLogId(requestLogId)
+    setSelectedDetail(null)
+    setPending(true)
+    setError(null)
+  }
+
+  return {
+    isOpen: selectedLogId !== null,
+    selectedDetail,
+    pending,
+    error,
+    open,
+    close: () => setSelectedLogId(null),
+  }
+}
+
+function RequestLogMobileList({
+  items,
+  onInspect,
+}: {
+  items: RequestLogView[]
+  onInspect: (requestLogId: string) => void
+}) {
+  return (
+    <div
+      className="border-border max-h-[34rem] overflow-auto rounded-md border p-3 lg:hidden"
+      data-testid="request-log-mobile-list"
+    >
+      <div className="flex flex-col gap-3">
+        {items.map((item) => (
+          <article
+            key={item.request_log_id}
+            className="border-border bg-surface-muted rounded-lg border p-4"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-foreground truncate text-sm font-semibold tabular-nums">
+                  {formatOccurredAt(item.occurred_at)}
+                </p>
+                <p className="text-subtle-foreground flex items-center gap-2 truncate text-sm">
+                  <BrandIcon iconKey={item.model_icon_key} size={16} />
+                  <span className="truncate">{item.model_key}</span>
+                </p>
               </div>
-            ) : (
-              <DetailSkeleton />
-            )}
+              <Badge variant={badgeVariant(item.status_code)}>{item.status_code ?? 'n/a'}</Badge>
+            </div>
+
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <MobileField label="Provider">
+                <span className="flex items-center gap-2">
+                  <BrandIcon iconKey={item.provider_icon_key} size={14} />
+                  <span>{item.provider_key}</span>
+                </span>
+              </MobileField>
+              <MobileField label="Caller">{callerPrimary(item) ?? 'Unknown'}</MobileField>
+              <MobileField label="Cost">{formatRequestCost(item.cost_usd_10000)}</MobileField>
+              <MobileField label="Latency">{formatLatency(item.latency_ms)}</MobileField>
+              <MobileField label="Tokens">
+                <TokensWithCache item={item} />
+              </MobileField>
+              <MobileField label="Tools (Used / Total)">
+                <ToolUsage item={item} />
+              </MobileField>
+            </dl>
+
+            <div className="mt-4 flex justify-end">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => onInspect(item.request_log_id)}
+              >
+                Inspect
+              </Button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function RequestLogDesktopTable({
+  items,
+  onInspect,
+}: {
+  items: RequestLogView[]
+  onInspect: (requestLogId: string) => void
+}) {
+  const parentRef = useRef<HTMLDivElement | null>(null)
+  const rowVirtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => requestLogRowEstimatePx,
+    overscan: 12,
+  })
+
+  return (
+    <div
+      className="border-border hidden min-w-0 overflow-x-auto rounded-md border lg:block"
+      data-testid="request-log-desktop-table"
+    >
+      <div className="min-w-[68rem]">
+        <div
+          className={cn(requestLogGridColumns, 'bg-surface-muted text-muted-foreground text-sm')}
+        >
+          <span className="px-3 py-2 font-semibold">Time</span>
+          <span className="px-3 py-2 font-semibold">Model</span>
+          <span className="px-3 py-2 font-semibold">Caller</span>
+          <span className="px-3 py-2 font-semibold">Status</span>
+          <span className="px-3 py-2 font-semibold">Cost</span>
+          <span className="px-3 py-2 font-semibold">Latency</span>
+          <span className="px-3 py-2 font-semibold">Tokens</span>
+          <span className="px-3 py-2 font-semibold">Tools (Used / Total)</span>
+          <span className="px-3 py-2 font-semibold">Inspect</span>
+        </div>
+        <div
+          ref={parentRef}
+          className="overflow-y-auto"
+          data-testid="request-log-desktop-table-viewport"
+          style={{ height: `${requestLogDesktopTableHeightPx}px` }}
+        >
+          <div className="relative" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => (
+              <RequestLogDesktopRow
+                key={items[virtualRow.index].request_log_id}
+                item={items[virtualRow.index]}
+                size={virtualRow.size}
+                start={virtualRow.start}
+                onInspect={onInspect}
+              />
+            ))}
           </div>
-        </SheetContent>
-      </Sheet>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RequestLogDesktopRow({
+  item,
+  size,
+  start,
+  onInspect,
+}: {
+  item: RequestLogView
+  size: number
+  start: number
+  onInspect: (requestLogId: string) => void
+}) {
+  const secondaryCaller = callerSecondary(item)
+
+  return (
+    <div
+      className={cn(
+        requestLogGridColumns,
+        'border-border hover:bg-surface-muted absolute top-0 left-0 w-full items-center border-t text-sm',
+      )}
+      style={{ height: `${size}px`, transform: `translateY(${start}px)` }}
+    >
+      <span className="text-foreground truncate px-3 tabular-nums" title={item.occurred_at}>
+        {formatOccurredAt(item.occurred_at)}
+      </span>
+      <div className="min-w-0 px-3">
+        <div className="text-foreground flex items-center gap-2 truncate">
+          <BrandIcon iconKey={item.model_icon_key} size={16} />
+          <span className="truncate">{item.model_key}</span>
+        </div>
+        <div className="text-muted-foreground mt-0.5 flex items-center gap-2 truncate text-xs">
+          <BrandIcon iconKey={item.provider_icon_key} size={12} />
+          <span className="truncate">{item.provider_key}</span>
+        </div>
+      </div>
+      <div className="min-w-0 px-3">
+        <div className="text-foreground truncate">{callerPrimary(item) ?? 'Unknown'}</div>
+        {secondaryCaller ? (
+          <div className="text-muted-foreground truncate text-xs">{secondaryCaller}</div>
+        ) : null}
+      </div>
+      <span className="px-3">
+        <Badge variant={badgeVariant(item.status_code)}>{item.status_code ?? 'n/a'}</Badge>
+      </span>
+      <span className="text-subtle-foreground px-3 tabular-nums">
+        {formatRequestCost(item.cost_usd_10000)}
+      </span>
+      <span className="text-subtle-foreground px-3 tabular-nums">
+        {formatLatency(item.latency_ms)}
+      </span>
+      <span className="text-subtle-foreground px-3">
+        <TokensWithCache item={item} />
+      </span>
+      <span className="text-subtle-foreground px-3">
+        <ToolUsage item={item} />
+      </span>
+      <div className="px-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => onInspect(item.request_log_id)}
+        >
+          Inspect
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function RequestLogDetailSheet({ detail }: { detail: RequestLogDetailState }) {
+  return (
+    <Sheet open={detail.isOpen} onOpenChange={(open) => !open && detail.close()}>
+      <SheetContent
+        side="right"
+        className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[min(1280px,94vw)]"
+      >
+        <SheetHeader className="border-border border-b">
+          <SheetTitle>Request Log Detail</SheetTitle>
+          <SheetDescription>
+            Review summary fields and sanitized request and response payloads.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {detail.error && !detail.pending ? (
+            <Alert variant="destructive">
+              <AlertTitle>Request log detail failed</AlertTitle>
+              <AlertDescription>{detail.error}</AlertDescription>
+            </Alert>
+          ) : detail.selectedDetail && !detail.pending ? (
+            <RequestLogDetailBody detail={detail.selectedDetail} />
+          ) : (
+            <DetailSkeleton />
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function RequestLogDetailBody({ detail }: { detail: RequestLogDetailView }) {
+  const log = detail.log
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="border-border bg-surface-muted grid gap-3 rounded-md border p-4 sm:grid-cols-2 xl:grid-cols-4">
+        <DetailRow label="Request ID" value={log.request_id} mono />
+        <DetailRow label="Request Log ID" value={log.request_log_id} mono />
+        <DetailRow
+          label="API Key"
+          value={log.api_key_name ?? log.api_key_id}
+          mono={!log.api_key_name}
+        />
+        <DetailRow label="Caller" value={callerLabel(log)} />
+        <DetailRow
+          label="Model"
+          value={
+            <span className="inline-flex items-center gap-2">
+              <BrandIcon iconKey={log.model_icon_key} size={16} />
+              <span>{log.model_key}</span>
+            </span>
+          }
+        />
+        <DetailRow
+          label="Resolved Model"
+          value={
+            <span className="inline-flex items-center gap-2">
+              <BrandIcon iconKey={log.model_icon_key} size={16} />
+              <span>{log.resolved_model_key}</span>
+            </span>
+          }
+        />
+        <DetailRow
+          label="Provider"
+          value={
+            <span className="inline-flex items-center gap-2">
+              <BrandIcon iconKey={log.provider_icon_key} size={14} />
+              <span>{log.provider_key}</span>
+            </span>
+          }
+        />
+        <DetailRow label="Occurred At" value={log.occurred_at} />
+        <DetailRow
+          label="Status"
+          value={log.status_code !== null ? String(log.status_code) : 'n/a'}
+        />
+        <DetailRow label="Latency" value={formatLatency(log.latency_ms)} />
+        <DetailRow label="Tokens" value={formatTokenCount(log.total_tokens)} />
+        <DetailRow
+          label="Cached Tokens"
+          value={
+            log.cache_read_tokens ? cacheHitLabel(log.cache_read_tokens, log.prompt_tokens) : 'none'
+          }
+        />
+        <DetailRow label="Cost" value={formatRequestCost(log.cost_usd_10000)} />
+        <OperationDetailRow item={log} />
+        <DetailRow label="Stream" value={metadataBoolean(log, 'stream') ? 'yes' : 'no'} />
+        <DetailRow label="Agent Harness" value={log.agent_harness_label} />
+        <DetailRow
+          label="User-Agent"
+          value={detail.user_agent_raw ?? 'n/a'}
+          mono={Boolean(detail.user_agent_raw)}
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <ToolCardinalityCard item={log} />
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Request Tags</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            <RequestTagBadges item={log} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <McpTokenOverheadCard detail={detail} />
+
+      <AttemptsSection attempts={detail.attempts} />
+
+      <PayloadSection detail={detail} />
     </div>
   )
 }
@@ -628,15 +559,51 @@ function McpTokenOverheadCard({ detail }: { detail: RequestLogDetailView }) {
   )
 }
 
-function ToolCardinalityInline({ item }: { item: RequestLogView }) {
-  const counts = item.tool_cardinality
+function MobileField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
+        {label}
+      </dt>
+      <dd className="text-subtle-foreground truncate">{children}</dd>
+    </div>
+  )
+}
+
+/** Total tokens plus an OpenRouter-style cache indicator when the provider served cached prompt tokens. */
+function TokensWithCache({ item }: { item: RequestLogView }) {
+  const cachedTokens = item.cache_read_tokens ?? 0
 
   return (
-    <span className="inline-flex flex-wrap gap-x-2 gap-y-1 text-xs tabular-nums">
-      <span>MCP {formatToolCount(counts.referenced_mcp_server_count)}</span>
-      <span>exposed {formatToolCount(counts.exposed_tool_count)}</span>
-      <span>called {formatToolCount(counts.invoked_tool_count)}</span>
-      <span>filtered {formatToolCount(counts.filtered_tool_count)}</span>
+    <span className="inline-flex items-center gap-1.5 tabular-nums">
+      {formatTokenCount(item.total_tokens)}
+      {cachedTokens > 0 ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 inline-flex rounded-sm outline-none focus-visible:ring-3"
+              aria-label="Cache hit"
+              data-testid="request-log-cache-hit"
+            >
+              <AppIcon icon={DatabaseLightningIcon} size={14} stroke={1.5} aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{cacheHitLabel(cachedTokens, item.prompt_tokens)}</TooltipContent>
+        </Tooltip>
+      ) : null}
+    </span>
+  )
+}
+
+function ToolUsage({ item }: { item: RequestLogView }) {
+  const counts = item.tool_cardinality
+  // Logs recorded before distinct tools were tracked only carry the raw call count.
+  const usedTools = counts.invoked_distinct_tool_count ?? counts.invoked_tool_count
+
+  return (
+    <span className="tabular-nums" data-testid="request-log-tool-usage">
+      {formatToolCount(usedTools)} / {formatToolCount(counts.request_tool_count)}
     </span>
   )
 }
@@ -661,13 +628,18 @@ function ToolCardinalityCard({ item }: { item: RequestLogView }) {
         ) : null}
       </CardHeader>
       <CardContent>
-        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
           <DetailRow
             label="MCP Servers"
             value={formatToolCount(counts.referenced_mcp_server_count)}
           />
+          <DetailRow label="Request Tools" value={formatToolCount(counts.request_tool_count)} />
           <DetailRow label="Tools Exposed" value={formatToolCount(counts.exposed_tool_count)} />
-          <DetailRow label="Tools Called" value={formatToolCount(counts.invoked_tool_count)} />
+          <DetailRow label="Tool Calls" value={formatToolCount(counts.invoked_tool_count)} />
+          <DetailRow
+            label="Distinct Tools Called"
+            value={formatToolCount(counts.invoked_distinct_tool_count)}
+          />
           <DetailRow label="Tools Filtered" value={formatToolCount(counts.filtered_tool_count)} />
         </dl>
       </CardContent>
@@ -878,8 +850,8 @@ function callerLabel(item: RequestLogView): string {
 }
 
 function formatOccurredAt(occurredAt: string) {
-  // RFC3339 from the gateway; trim to a compact minute-resolution display.
-  return occurredAt.replace('T', ' ').slice(0, 16)
+  // RFC3339 from the gateway; trim to a compact second-resolution display.
+  return occurredAt.replace('T', ' ').slice(0, 19)
 }
 
 function badgeVariant(statusCode: number | null): 'success' | 'warning' | 'outline' {
@@ -900,6 +872,19 @@ function formatLatency(latencyMs: number | null) {
 
 function formatTokenCount(totalTokens: number | null) {
   return totalTokens === null ? 'n/a' : String(totalTokens)
+}
+
+function formatRequestCost(costUsd10000: number | null | undefined) {
+  return costUsd10000 == null ? '—' : formatUsd10000Precise(costUsd10000)
+}
+
+function cacheHitLabel(cachedTokens: number, promptTokens: number | null | undefined) {
+  const cached = cachedTokens.toLocaleString('en-US')
+  if (!promptTokens) {
+    return `${cached} prompt tokens served from cache`
+  }
+  const percent = Math.round((cachedTokens / promptTokens) * 100)
+  return `${cached} of ${promptTokens.toLocaleString('en-US')} prompt tokens cached (${percent}%)`
 }
 
 function formatBasisPoints(value: number | null) {
@@ -977,6 +962,7 @@ function RequestTagBadges({ item }: { item: RequestLogView }) {
 
 function normalizeFilterSearch(search: Record<string, unknown>): RequestLogFiltersInput {
   return {
+    q: searchParamValue(search.q),
     request_id: searchParamValue(search.request_id),
     model_key: searchParamValue(search.model_key),
     provider_key: searchParamValue(search.provider_key),

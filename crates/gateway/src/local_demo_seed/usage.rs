@@ -1188,6 +1188,8 @@ pub(super) fn demo_tool_cardinality(
             exposed_tool_count: Some(if jira_session { 6 } else { 12 }),
             invoked_tool_count: Some(1),
             filtered_tool_count: Some(0),
+            request_tool_count: Some(if jira_session { 6 } else { 12 }),
+            invoked_distinct_tool_count: Some(1),
         };
     }
 
@@ -1197,6 +1199,8 @@ pub(super) fn demo_tool_cardinality(
             exposed_tool_count: Some(8),
             invoked_tool_count: Some(0),
             filtered_tool_count: Some(2),
+            request_tool_count: Some(10),
+            invoked_distinct_tool_count: Some(0),
         };
     }
 
@@ -1206,6 +1210,8 @@ pub(super) fn demo_tool_cardinality(
             exposed_tool_count: Some(27),
             invoked_tool_count: Some(6),
             filtered_tool_count: Some(5),
+            request_tool_count: Some(31),
+            invoked_distinct_tool_count: Some(4),
         },
         "customer-brief" | "prototype-review" | "design-critique" | "trace-archive" => {
             gateway_core::RequestToolCardinality {
@@ -1213,6 +1219,8 @@ pub(super) fn demo_tool_cardinality(
                 exposed_tool_count: Some(18),
                 invoked_tool_count: Some(4),
                 filtered_tool_count: Some(3),
+                request_tool_count: Some(21),
+                invoked_distinct_tool_count: Some(3),
             }
         }
         "longform-eval" | "bedrock-routing" | "metric-synthesis" => {
@@ -1221,6 +1229,8 @@ pub(super) fn demo_tool_cardinality(
                 exposed_tool_count: Some(14),
                 invoked_tool_count: Some(2),
                 filtered_tool_count: Some(1),
+                request_tool_count: Some(16),
+                invoked_distinct_tool_count: Some(2),
             }
         }
         "incident-review" | "runbook-update" => gateway_core::RequestToolCardinality {
@@ -1228,12 +1238,16 @@ pub(super) fn demo_tool_cardinality(
             exposed_tool_count: Some(9),
             invoked_tool_count: Some(1),
             filtered_tool_count: Some(0),
+            request_tool_count: Some(9),
+            invoked_distinct_tool_count: Some(1),
         },
         _ => gateway_core::RequestToolCardinality {
             referenced_mcp_server_count: Some(0),
             exposed_tool_count: Some(0),
             invoked_tool_count: Some(0),
             filtered_tool_count: Some(0),
+            request_tool_count: Some(0),
+            invoked_distinct_tool_count: Some(0),
         },
     }
 }

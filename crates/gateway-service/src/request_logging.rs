@@ -37,7 +37,9 @@ pub use harness::{AgentHarness, classify_agent_harness};
 pub use stream::{
     StreamChunkObservation, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
 };
-pub use tool_cardinality::invoked_tool_count_from_response_body;
+pub use tool_cardinality::{
+    invoked_distinct_tool_count_from_response_body, invoked_tool_count_from_response_body,
+};
 
 use harness::{normalized_user_agent, request_user_agent};
 use tool_cardinality::shallow_tool_count_from_request_body;
@@ -90,6 +92,7 @@ struct RequestLogSummary {
     latency_ms: i64,
     usage: UsageSummary,
     invoked_tool_count: i64,
+    invoked_distinct_tool_count: i64,
 }
 
 impl RequestLogSummary {
@@ -100,6 +103,7 @@ impl RequestLogSummary {
         latency_ms: i64,
         usage: UsageSummary,
         invoked_tool_count: i64,
+        invoked_distinct_tool_count: i64,
     ) -> Self {
         Self {
             provider_key,
@@ -110,6 +114,7 @@ impl RequestLogSummary {
             latency_ms,
             usage,
             invoked_tool_count,
+            invoked_distinct_tool_count,
         }
     }
 
@@ -130,6 +135,7 @@ impl RequestLogSummary {
             latency_ms,
             usage: UsageSummary::default(),
             invoked_tool_count: 0,
+            invoked_distinct_tool_count: 0,
         }
     }
 }
@@ -282,7 +288,7 @@ where
         let user_agent_raw = normalized_user_agent(request_user_agent(input.request_headers));
         let harness = classify_agent_harness(user_agent_raw.as_deref());
         let request_body = serde_json::to_value(input.request).unwrap_or_else(|_| json!({}));
-        let exposed_tool_count = shallow_tool_count_from_request_body(&request_body);
+        let request_tool_count = shallow_tool_count_from_request_body(&request_body);
         let prepared =
             self.prepare_request_payload(request_body, input.request_headers, harness.key);
 
@@ -297,11 +303,15 @@ where
             agent_harness_key: harness.key.to_string(),
             agent_harness_label: harness.label.to_string(),
             payload_policy: self.payload_policy.clone(),
+            // `exposed_tool_count` starts as the request-body count and may later be replaced by
+            // the MCP grant inventory; `request_tool_count` keeps the request-body count.
             tool_cardinality: RequestToolCardinality {
                 referenced_mcp_server_count: None,
-                exposed_tool_count,
+                exposed_tool_count: request_tool_count,
                 invoked_tool_count: Some(0),
                 filtered_tool_count: None,
+                request_tool_count,
+                invoked_distinct_tool_count: Some(0),
             },
             request_json: prepared.request_json,
             request_payload_truncated: prepared.request_payload_truncated,
@@ -433,6 +443,7 @@ where
                 latency_ms,
                 usage,
                 invoked_tool_count,
+                invoked_distinct_tool_count_from_response_body(response_body),
             ),
             response_json,
             response_payload_truncated,
@@ -505,6 +516,7 @@ where
         let failure = failure.or_else(|| collector.failure().cloned());
         let usage = usage_summary_from_value(collector.usage());
         let invoked_tool_count = collector.invoked_tool_count();
+        let invoked_distinct_tool_count = collector.invoked_distinct_tool_count();
         let (response_json, response_payload_truncated) =
             if self.payload_policy.should_capture_payloads() {
                 let (response_json, response_payload_truncated) =
@@ -529,6 +541,7 @@ where
                 latency_ms,
                 usage,
                 invoked_tool_count,
+                invoked_distinct_tool_count,
             ),
         };
         self.persist_chat_log(
@@ -634,6 +647,7 @@ where
             request_tags: context.request_tags.clone(),
             tool_cardinality: RequestToolCardinality {
                 invoked_tool_count: Some(summary.invoked_tool_count),
+                invoked_distinct_tool_count: Some(summary.invoked_distinct_tool_count),
                 ..context.tool_cardinality
             },
             user_agent_raw: context.user_agent_raw.clone(),

@@ -154,8 +154,18 @@ async fn logs_service_account_requests_with_payload_and_redaction() {
                 model_icon_key: Some(crate::ModelIconKey::OpenAI),
             },
             120,
-            0,
-            &json!({"usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}}),
+            2,
+            &json!({
+                "choices": [{
+                    "message": {
+                        "tool_calls": [
+                            {"id": "call_1", "type": "function", "function": {"name": "search"}},
+                            {"id": "call_2", "type": "function", "function": {"name": "search"}}
+                        ]
+                    }
+                }],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}
+            }),
             Vec::new(),
         )
         .await
@@ -192,6 +202,11 @@ async fn logs_service_account_requests_with_payload_and_redaction() {
     assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
     assert!(logs[0].metadata.get("fallback_used").is_none());
     assert!(logs[0].metadata.get("attempt_count").is_none());
+    assert_eq!(logs[0].tool_cardinality.invoked_tool_count, Some(2));
+    assert_eq!(
+        logs[0].tool_cardinality.invoked_distinct_tool_count,
+        Some(1)
+    );
 }
 
 #[tokio::test]

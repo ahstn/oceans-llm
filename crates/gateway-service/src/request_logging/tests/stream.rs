@@ -390,6 +390,27 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\
 }
 
 #[test]
+fn stream_collector_counts_distinct_tool_names_from_opening_deltas() {
+    let mut collector = StreamResponseCollector::default();
+
+    collector.observe_chunk(
+        br#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"search","arguments":""}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_2","type":"function","function":{"name":"search","arguments":""}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":2,"id":"call_3","type":"function","function":{"name":"fetch","arguments":""}}]}}]}
+
+"#,
+    );
+    collector.finish();
+
+    assert_eq!(collector.invoked_tool_count(), 3);
+    assert_eq!(collector.invoked_distinct_tool_count(), 2);
+}
+
+#[test]
 fn stream_collector_counts_anthropic_messages_tool_use_starts() {
     let mut collector = StreamResponseCollector::default();
 

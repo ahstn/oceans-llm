@@ -3997,8 +3997,19 @@ export interface components {
             agent_harness_label: string;
             api_key_id: string;
             api_key_name?: string | null;
+            /**
+             * Format: int64
+             * @description Prompt tokens served from the provider cache, from the usage ledger.
+             */
+            cache_read_tokens?: number | null;
             /** Format: int64 */
             completion_tokens?: number | null;
+            /**
+             * Format: int64
+             * @description Computed request cost in USD scaled by 10,000. Null when no usage was recorded or the
+             *     request could not be priced.
+             */
+            cost_usd_10000?: number | null;
             error_code?: string | null;
             has_payload: boolean;
             /** Format: int64 */
@@ -4080,10 +4091,22 @@ export interface components {
             exposed_tool_count?: number | null;
             /** Format: int64 */
             filtered_tool_count?: number | null;
+            /**
+             * Format: int64
+             * @description Distinct tool names the model called; `invoked_tool_count` counts every call. Null for
+             *     requests logged before this was recorded.
+             */
+            invoked_distinct_tool_count?: number | null;
             /** Format: int64 */
             invoked_tool_count?: number | null;
             /** Format: int64 */
             referenced_mcp_server_count?: number | null;
+            /**
+             * Format: int64
+             * @description Tools declared in the request body's `tools` array: native client tools plus any MCP
+             *     tools the client loaded. Null for requests logged before this was recorded.
+             */
+            request_tool_count?: number | null;
         };
         ResponseMeta: {
             generated_at: string;
@@ -6014,6 +6037,11 @@ export interface operations {
                 env?: string | null;
                 tag_key?: string | null;
                 tag_value?: string | null;
+                /**
+                 * @description Trimmed, case-insensitive substring search across the requested or resolved model key and
+                 *     the caller's user name or email.
+                 */
+                q?: string | null;
             };
             header?: never;
             path?: never;
