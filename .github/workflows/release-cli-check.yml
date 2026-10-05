@@ -1,0 +1,44 @@
+name: Check CLI release artifacts
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.plan).ci.github.artifacts_matrix }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup mise and Rust
+        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          install_args: rust
+          cache: false
+      - name: Download the built CLI archive
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: artifacts-build-local-${{ join(matrix.targets, '_') }}
+          path: target/distrib
+      - name: Check the archive checksum and executable
+        env:
+          RELEASE_TARGET: ${{ matrix.targets[0] }}
+          RELEASE_TAG: ${{ fromJSON(inputs.plan).announcement_tag }}
+        run: mise exec -- bash scripts/check-cli-release.sh
+      - name: Test CLI and bundle behavior on the target operating system
+        run: mise run cli-test

@@ -20,6 +20,10 @@ helm = "latest"
 opentofu = "latest"
 git-cliff = "latest"
 cocogitto = "latest"
+cargo-dist = "0.33.0"
+cargo-release = "1.1.6"
+actionlint = "1.7.12"
+shellcheck = "0.11.0"
 prek = "latest"
 
 [env]
@@ -421,14 +425,39 @@ description = "Run the opt-in live GitHub Copilot installation-token canary"
 run = "node scripts/copilot-installation-canary.mjs"
 
 [tasks.release]
-description = "Create and publish a release"
+description = "Prepare a release and push its source for CI publication"
 depends = ["sync-pricing-catalog"]
 env = { GITHUB_TOKEN = { required = true } }
 run = '''
 set -euo pipefail
 
-cog bump --auto --skip-untracked
+mise exec -- cog bump --auto --skip-untracked
 tag="$(cog --verbose get-version --tag)"
 git push --atomic origin main "$tag"
-gh release create "$tag" --title "$tag" --notes "$(git-cliff --latest)"
 '''
+
+[tasks.dist-generate]
+description = "Regenerate the cargo-dist release workflow"
+run = "dist generate"
+
+[tasks.dist-check]
+description = "Check generated release CI and lint release workflows"
+run = """
+dist generate --check
+# Check generated shell commands without applying repository shell style rules.
+actionlint -shellcheck= .github/workflows/release.yml
+actionlint .github/workflows/release-product.yml .github/workflows/release-cli-check.yml
+shellcheck scripts/check-cli-release.sh
+"""
+
+[tasks.dist-plan]
+description = "Show the CLI archives and installers for the current version"
+run = "dist plan"
+
+[tasks.dist-build]
+description = "Build CLI distribution artifacts for the local platform"
+run = "dist build"
+
+[tasks.cli-test]
+description = "Test the CLI and shared skill bundle behavior"
+run = "mise exec -- cargo test --locked -p oceans-cli -p gateway-skills"
