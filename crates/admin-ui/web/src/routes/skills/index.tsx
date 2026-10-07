@@ -56,7 +56,7 @@ function SkillsPage() {
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
-        section="Control Plane"
+        section="Agent Extensions"
         title="Skills"
         description="Share re-usable agent skills. All users can fetch or add new skills."
         actions={<Button onClick={() => setUploadOpen(true)}>Upload skill</Button>}

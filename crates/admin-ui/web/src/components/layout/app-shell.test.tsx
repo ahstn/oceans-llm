@@ -54,6 +54,10 @@ describe('AppShell', () => {
       'Control Plane',
       'Observability',
       'MCP Invocations',
+      'Agent Extensions',
+      'Agent Plugins',
+      'Skills',
+      'MCP Servers',
       'Identity',
       'Admin User',
       'admin@example.com',
@@ -80,8 +84,8 @@ describe('AppShell', () => {
     expect(screen.queryByText(/^Oceans v/)).not.toBeInTheDocument()
   })
 
-  it('shows the connection page within regular-user navigation', () => {
-    routerPath = '/admin/account/connections'
+  it('groups agent extensions and omits connections from regular-user navigation', () => {
+    routerPath = '/admin/profile'
     render(
       <TooltipProvider>
         <AppShell oceansVersion="0.17.0" session={regularUserSession()}>
@@ -90,9 +94,14 @@ describe('AppShell', () => {
       </TooltipProvider>,
     )
 
-    expect(screen.getAllByText('Connections').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Connections')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Agent Plugins' })).toHaveAttribute(
+      'href',
+      '/agent-plugins',
+    )
     expect(screen.getByRole('link', { name: 'Skills' })).toHaveAttribute('href', '/skills')
     expect(screen.getByRole('link', { name: 'Control Plane' })).toHaveAttribute('href', '/profile')
+    expect(screen.getByText('Agent Extensions')).toBeVisible()
     expect(screen.getAllByText('Models').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Identity').length).toBeGreaterThan(0)
   })
@@ -130,7 +139,7 @@ describe('AppShell', () => {
     expect(screen.getByText('Usage Costs')).toBeVisible()
     expect(screen.getByText('Request Logs')).toBeVisible()
     expect(screen.getByText('MCP Invocations')).toBeVisible()
-    expect(screen.getByText('Connections')).toBeVisible()
+    expect(screen.getByText('Agent Plugins')).toBeVisible()
     expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Models').length).toBeGreaterThan(0)
     expect(screen.getByText('Teams')).toBeVisible()
