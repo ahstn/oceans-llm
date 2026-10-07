@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { adminNavSections } from '@/components/layout/admin-nav'
 import { AppShell } from '@/components/layout/app-shell'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { platformAdminSession, regularUserSession } from '@/test/auth-session'
@@ -56,7 +57,7 @@ describe('AppShell', () => {
       'MCP Invocations',
       'Agent Extensions',
       'Agent Plugins',
-      'Skills',
+      'Agent Skills',
       'MCP Servers',
       'Identity',
       'Admin User',
@@ -69,6 +70,15 @@ describe('AppShell', () => {
     }
 
     expect(screen.queryByText('Server-first · same-origin')).not.toBeInTheDocument()
+  })
+
+  it('orders the agent extensions group', () => {
+    const section = adminNavSections.find((item) => item.label === 'Agent Extensions')
+    expect(section?.items.map((item) => item.label)).toEqual([
+      'MCP Servers',
+      'Agent Skills',
+      'Agent Plugins',
+    ])
   })
 
   it('renders an unversioned fallback when gateway version is unavailable', () => {
@@ -99,7 +109,7 @@ describe('AppShell', () => {
       'href',
       '/agent-plugins',
     )
-    expect(screen.getByRole('link', { name: 'Skills' })).toHaveAttribute('href', '/skills')
+    expect(screen.getByRole('link', { name: 'Agent Skills' })).toHaveAttribute('href', '/skills')
     expect(screen.getByRole('link', { name: 'Control Plane' })).toHaveAttribute('href', '/profile')
     expect(screen.getByText('Agent Extensions')).toBeVisible()
     expect(screen.getAllByText('Models').length).toBeGreaterThan(0)

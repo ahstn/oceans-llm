@@ -61,9 +61,9 @@ export const adminNavSections: AdminNavSection[] = [
     label: 'Agent Extensions',
     icon: PuzzleIcon,
     items: [
-      { label: 'Agent Plugins', to: '/agent-plugins', icon: PuzzleIcon },
-      { label: 'Skills', to: '/skills', icon: TaskDaily01Icon },
       { page: 'mcp', requiredPage: 'mcp', label: 'MCP Servers', to: '/mcp', icon: McpServerIcon },
+      { label: 'Agent Skills', to: '/skills', icon: TaskDaily01Icon },
+      { label: 'Agent Plugins', to: '/agent-plugins', icon: PuzzleIcon },
     ],
   },
   {
