@@ -2,6 +2,12 @@
 name = "oceans-cli"
 version = "0.37.0"
 edition = "2024"
+description = "Command-line client for Oceans LLM"
+repository = "https://github.com/ahstn/oceans-llm"
+license = "AGPL-3.0-only"
+
+[package.metadata.dist]
+dist = true
 
 [[bin]]
 name = "oceans"

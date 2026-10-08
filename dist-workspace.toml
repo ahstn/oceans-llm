@@ -1,0 +1,55 @@
+[workspace]
+members = ["cargo:."]
+
+[dist]
+cargo-dist-version = "0.33.0"
+ci = ["github"]
+dist = false
+precise-builds = true
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]
+installers = ["shell", "powershell"]
+unix-archive = ".tar.gz"
+windows-archive = ".zip"
+checksum = "sha256"
+source-tarball = false
+merge-tasks = false
+pr-run-mode = "upload"
+github-build-setup = "../dist-build-setup.yml"
+# No package manager publishes depend on hosted URLs, so announce only after
+# the CLI checks, container images, and Helm chart succeed.
+github-release = "announce"
+github-attestations = true
+# Fork pull requests can build artifacts but cannot write attestations.
+github-attestations-phase = "announce"
+publish-prereleases = true
+global-artifacts-jobs = ["./release-cli-check"]
+publish-jobs = ["./release-product"]
+
+[dist.github-custom-runners]
+x86_64-unknown-linux-gnu = "ubuntu-22.04"
+aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
+x86_64-apple-darwin = "macos-15-intel"
+aarch64-apple-darwin = "macos-14"
+x86_64-pc-windows-msvc = "windows-2022"
+
+[dist.github-custom-job-permissions.release-product]
+contents = "read"
+packages = "write"
+attestations = "write"
+id-token = "write"
+
+[dist.github-custom-job-permissions.release-cli-check]
+contents = "read"
+
+[dist.github-action-commits]
+"actions/checkout" = "3d3c42e5aac5ba805825da76410c181273ba90b1"
+"actions/upload-artifact" = "ea165f8d65b6e75b540449e92b4886f43607fa02"
+"actions/download-artifact" = "634f93cb2916e3fdff6788551b99b062d0335ce0"
+"actions/attest" = "1e69f48acb82d1966a394da916b4c1698aa569d6"
+"swatinem/rust-cache" = "6323deb102c322ba6fcbdcafc7e3dddab59af2b6"

@@ -129,3 +129,8 @@ split-debuginfo = "off"
 # backend codegen rather than falling back to the non-incremental default.
 incremental = false
 codegen-units = 256
+
+# cargo-dist builds only the CLI package with this shipping profile.
+[profile.dist]
+inherits = "release"
+lto = "thin"
