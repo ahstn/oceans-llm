@@ -39,6 +39,7 @@ describe('signed-in route selection', () => {
     expect(canAccessSignedInPath(userSession, '/api-keys')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/models?page=2')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/account/connections')).toBe(true)
+    expect(canAccessSignedInPath(userSession, '/agent-plugins')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/identity/teams')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/identity/users?user_id=user_2')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/identity/service-accounts')).toBe(true)
