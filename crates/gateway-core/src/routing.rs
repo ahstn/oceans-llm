@@ -22,12 +22,17 @@ pub struct ModelRoutingPolicy {
     pub strategy: RoutingStrategy,
     #[serde(default)]
     pub affinity: Option<SessionAffinityPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failover: Option<crate::ProviderFailoverPolicy>,
 }
 
 impl ModelRoutingPolicy {
     pub fn validate(&self) -> Result<(), String> {
         if let Some(affinity) = &self.affinity {
             affinity.validate()?;
+        }
+        if let Some(failover) = &self.failover {
+            failover.validate()?;
         }
         Ok(())
     }
@@ -67,6 +72,8 @@ pub struct RoutingCandidate {
     pub route_id: Uuid,
     pub fingerprint: String,
     pub priority: i32,
+    /// Opaque route and credential identity for shared failure cooldowns.
+    pub cooldown_key: Option<String>,
 }
 
 /// Weighted ordering is computed by the service before the atomic store selection.
@@ -95,6 +102,13 @@ pub struct RouteBindingReceipt {
     pub idle_timeout_seconds: u32,
 }
 
+#[derive(Debug, Clone)]
+pub struct RouteFailureRecord {
+    pub cooldown_key: Option<String>,
+    pub cooldown_until: OffsetDateTime,
+    pub binding: Option<RouteBindingReceipt>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouteSelection {
     pub route_id: Uuid,
@@ -113,10 +127,14 @@ pub struct ResponseRouteOrigin {
 #[async_trait]
 pub trait RoutingRepository: Send + Sync {
     /// Atomically reuses a valid binding or assigns one route to a new session.
+    /// Returns None when cooldowns exclude every supplied candidate.
     async fn select_route(
         &self,
         request: &RouteSelectionRequest,
-    ) -> Result<RouteSelection, StoreError>;
+    ) -> Result<Option<RouteSelection>, StoreError>;
+
+    /// Atomically extends a cooldown and removes only the failed binding token.
+    async fn record_route_failure(&self, failure: &RouteFailureRecord) -> Result<(), StoreError>;
 
     /// Refreshes only the binding represented by this receipt after upstream success.
     async fn refresh_route_binding(

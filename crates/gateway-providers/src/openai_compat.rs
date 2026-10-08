@@ -14,6 +14,7 @@ use serde_json::{Map, Value, json};
 
 use crate::http::{
     TracedResponse, execute_json_request, execute_request, join_base_url, map_reqwest_error,
+    partial_usage_error, retry_after,
 };
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTokenSource};
@@ -473,11 +474,13 @@ impl OpenAiCompatProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
+        let retry_after = retry_after(response.headers());
         if !status.is_success() {
-            let body = response.text().await.map_err(map_reqwest_error)?;
+            let body = response.inference_text().await?;
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body,
+                retry_after,
             });
         }
 
@@ -491,9 +494,9 @@ impl OpenAiCompatProvider {
             .is_some_and(is_event_stream_content_type)
         {
             let rendered = content_type.unwrap_or_else(|| "<missing>".to_string());
-            return Err(ProviderError::Transport(format!(
+            return Err(partial_usage_error(ProviderError::Transport(format!(
                 "openai_compat stream response content-type must be `text/event-stream`, got `{rendered}`"
-            )));
+            ))));
         }
 
         Ok(response)
@@ -2546,7 +2549,13 @@ mod tests {
             Ok(_) => panic!("stream should fail"),
         };
         match error {
-            ProviderError::Transport(message) => {
+            ProviderError::PartialUsage {
+                source,
+                provider_usage: None,
+            } => {
+                let ProviderError::Transport(message) = *source else {
+                    panic!("expected a content-type error: {source:?}");
+                };
                 assert!(message.contains("text/event-stream"));
             }
             other => panic!("unexpected error variant: {other:?}"),

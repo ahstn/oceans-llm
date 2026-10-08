@@ -80,6 +80,7 @@ fn routing_defaults_preserve_weighted_selection_and_use_one_hour_affinity() {
         let seeds = config.seed_models().expect("seed models");
         let routing = seeds[0].routing.as_ref().expect("routing policy");
         assert_eq!(routing.strategy, RoutingStrategy::WeightedRandom);
+        assert!(routing.failover.is_none());
         assert_eq!(
             routing
                 .affinity
@@ -87,6 +88,30 @@ fn routing_defaults_preserve_weighted_selection_and_use_one_hour_affinity() {
                 .map(|affinity| affinity.idle_timeout_seconds),
             expected_timeout
         );
+    }
+}
+
+#[test]
+fn failover_is_opt_in_and_seeded_with_validated_limits() {
+    let tmp = tempdir().expect("tempdir");
+    let path = tmp.path().join("gateway.yaml");
+    write_config(&path, &routing_model_config("routing:\n      failover: {}"));
+    let config = GatewayConfig::from_path(&path).unwrap();
+    let models = config.seed_models().unwrap();
+    assert_eq!(
+        models[0].routing.as_ref().unwrap().failover,
+        Some(gateway_core::ProviderFailoverPolicy::default())
+    );
+    for policy in [
+        "max_attempts: 0",
+        "max_retries_per_route: 6",
+        "retry_limit: 2",
+    ] {
+        write_config(
+            &path,
+            &routing_model_config(&format!("routing:\n      failover:\n        {policy}")),
+        );
+        assert!(GatewayConfig::from_path(&path).is_err(), "{policy}");
     }
 }
 

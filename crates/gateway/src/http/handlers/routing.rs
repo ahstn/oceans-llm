@@ -1,6 +1,6 @@
 //! Provider eligibility and route selection for inference requests.
 use std::{
-    collections::{BTreeMap, btree_map::Entry},
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
     sync::Arc,
 };
 
@@ -36,6 +36,30 @@ pub(super) async fn select_provider_route(
     request_headers: &BTreeMap<String, String>,
     endpoint: RoutingEndpoint,
 ) -> Result<(usize, Option<SelectedProviderRoute>), GatewayError> {
+    select_provider_route_excluding(
+        state,
+        resolved,
+        requirements,
+        headers,
+        extra,
+        request_headers,
+        endpoint,
+        &BTreeSet::new(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn select_provider_route_excluding(
+    state: &AppState,
+    resolved: &ResolvedGatewayRequest,
+    requirements: CoreRequestRequirements,
+    headers: &HeaderMap,
+    extra: &BTreeMap<String, Value>,
+    request_headers: &BTreeMap<String, String>,
+    endpoint: RoutingEndpoint,
+    excluded_route_ids: &BTreeSet<uuid::Uuid>,
+) -> Result<(usize, Option<SelectedProviderRoute>), GatewayError> {
     let policy = resolved.selection.execution_model.routing.as_ref();
     if policy.is_some_and(|policy| policy.affinity.is_some())
         && matches!(
@@ -48,6 +72,7 @@ pub(super) async fn select_provider_route(
         validate_session_headers(headers)?;
     }
     let mut eligible = eligible_routes(&state.providers, &resolved.routes, requirements);
+    eligible.retain(|route| !excluded_route_ids.contains(&route.id));
     let provider_identities = if policy.is_some() {
         let mut identities = BTreeMap::new();
         // Shared policies can reference a local legacy provider whose account is unscoped.

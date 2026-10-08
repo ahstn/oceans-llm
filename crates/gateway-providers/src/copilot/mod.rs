@@ -16,6 +16,7 @@ use crate::bedrock::{
 };
 use crate::http::{
     TracedResponse, execute_request as execute_http_request, join_base_url, map_reqwest_error,
+    partial_usage_error, retry_after,
 };
 use crate::openai_compat::{
     apply_openai_compat_empty_tools_profile, apply_openai_compat_request_profile,
@@ -487,11 +488,13 @@ impl CopilotProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
+        let retry_after = retry_after(response.headers());
         if !status.is_success() {
-            let body = response.text().await.map_err(map_reqwest_error)?;
+            let body = response.inference_text().await?;
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body,
+                retry_after,
             });
         }
         Ok(response)
@@ -502,8 +505,9 @@ impl CopilotProvider {
         request: reqwest::Request,
     ) -> Result<Value, ProviderError> {
         let response = self.execute_request(request).await?;
-        let text = response.text().await.map_err(map_reqwest_error)?;
-        serde_json::from_str(&text).map_err(|error| ProviderError::Transport(error.to_string()))
+        let text = response.inference_text().await?;
+        serde_json::from_str(&text)
+            .map_err(|error| partial_usage_error(ProviderError::Transport(error.to_string())))
     }
 
     async fn execute_stream_request(

@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use super::{VertexProvider, map_google_request, normalize_google_response, parse_upstream_model};
-use crate::http::map_reqwest_error;
+use crate::http::{map_reqwest_error, retry_after};
 
 impl VertexProvider {
     pub(super) fn batch_capabilities_impl(&self) -> BatchCapabilities {
@@ -523,11 +523,13 @@ impl VertexProvider {
         }
         let response = builder.send().await.map_err(map_reqwest_error)?;
         let status = response.status();
+        let retry_after = retry_after(response.headers());
         let text = response.text().await.map_err(map_reqwest_error)?;
         if !status.is_success() {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                retry_after,
             });
         }
         if text.is_empty() {
@@ -859,6 +861,7 @@ mod tests {
         assert!(table_already_exists(&ProviderError::UpstreamHttp {
             status: 409,
             body: "table exists".to_string(),
+            retry_after: None,
         }));
     }
 

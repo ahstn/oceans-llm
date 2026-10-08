@@ -180,7 +180,12 @@ impl ProviderClient for TypeSafeProvider {
             &self.config.provider_key,
         )
         .await?;
-        validate_decisions_response(&value, request)?;
+        validate_decisions_response(&value, request).map_err(|source| {
+            ProviderError::PartialUsage {
+                source: Box::new(source),
+                provider_usage: value.get("usage").cloned(),
+            }
+        })?;
         Ok(value)
     }
 }

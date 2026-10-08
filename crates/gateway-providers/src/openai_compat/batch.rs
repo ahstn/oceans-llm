@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 use super::{
     OpenAiBatchDialect, OpenAiCompatProvider, normalize_anthropic_messages_tools_for_openai,
 };
-use crate::http::{join_base_url, map_reqwest_error};
+use crate::http::{join_base_url, map_reqwest_error, retry_after};
 
 #[derive(Serialize)]
 struct OpenRouterCreate<'a> {
@@ -395,10 +395,12 @@ impl OpenAiCompatProvider {
             .await?;
         let response = builder.send().await.map_err(map_reqwest_error)?;
         let status = response.status();
+        let retry_after = retry_after(response.headers());
         if !status.is_success() {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: response.text().await.map_err(map_reqwest_error)?,
+                retry_after,
             });
         }
         let mut chunks = response.bytes_stream();
@@ -482,6 +484,7 @@ fn submission_is_unknown(error: &ProviderError) -> bool {
 
 async fn response_text(response: reqwest::Response) -> Result<String, ProviderError> {
     let status = response.status();
+    let retry_after = retry_after(response.headers());
     let text = response.text().await.map_err(map_reqwest_error)?;
     if status.is_success() {
         Ok(text)
@@ -489,6 +492,7 @@ async fn response_text(response: reqwest::Response) -> Result<String, ProviderEr
         Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after,
         })
     }
 }
@@ -740,10 +744,12 @@ mod tests {
         assert!(submission_is_unknown(&ProviderError::UpstreamHttp {
             status: 503,
             body: "unavailable".to_string(),
+            retry_after: None,
         }));
         assert!(!submission_is_unknown(&ProviderError::UpstreamHttp {
             status: 400,
             body: "invalid".to_string(),
+            retry_after: None,
         }));
     }
 

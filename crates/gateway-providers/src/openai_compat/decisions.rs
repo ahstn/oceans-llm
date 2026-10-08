@@ -18,7 +18,12 @@ impl OpenAiCompatProvider {
         let http_request =
             self.build_decisions_request_with_token(request, context, token.as_deref())?;
         let value = self.execute_json_request(http_request).await?;
-        validate_decisions_response(&value, request)?;
+        validate_decisions_response(&value, request).map_err(|source| {
+            ProviderError::PartialUsage {
+                source: Box::new(source),
+                provider_usage: value.get("usage").cloned(),
+            }
+        })?;
         Ok(value)
     }
 
@@ -313,7 +318,11 @@ mod tests {
             .decisions(&request(), &context())
             .await
             .expect_err("malformed answers");
-        assert!(matches!(error, ProviderError::Transport(_)), "{error:?}");
+        assert!(
+            matches!(&error, ProviderError::PartialUsage { source, .. }
+            if matches!(source.as_ref(), ProviderError::Transport(_))),
+            "{error:?}"
+        );
     }
 
     #[tokio::test]

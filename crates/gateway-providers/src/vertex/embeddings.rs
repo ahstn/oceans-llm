@@ -579,7 +579,11 @@ pub(super) fn partial_google_embedding_failure(
 
     ProviderError::PartialUsage {
         source: Box::new(source),
-        provider_usage: google_embedding_usage_from_outputs(outputs).unwrap_or(None),
+        provider_usage: if outputs.is_empty() {
+            None
+        } else {
+            google_embedding_usage_from_outputs(outputs).unwrap_or(None)
+        },
     }
 }
 
@@ -616,7 +620,8 @@ pub(super) fn normalize_google_embedding_outputs(
     context: &ProviderRequestContext,
 ) -> Result<Value, ProviderError> {
     let mut data = Vec::with_capacity(outputs.len());
-    let usage = google_embedding_usage_from_outputs(&outputs)?;
+    let usage = google_embedding_usage_from_outputs(&outputs)
+        .map_err(|error| partial_google_embedding_failure(error, &outputs, true))?;
 
     for output in outputs {
         data.push(json!({

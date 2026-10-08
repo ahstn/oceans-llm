@@ -91,6 +91,26 @@ If any step cannot prove a user-owned credential, the request fails. No provider
 
 A disabled Oceans user cannot use an existing user-owned gateway API key. The encrypted credential remains stored until a platform admin removes it or deletes the user record.
 
+## Quota and policy errors
+
+With [provider failover](../configuration/model-routing-and-api-behavior.md#enable-bounded-provider-failover) enabled, Oceans treats Copilot HTTP `402` as a quota failure. These structured error codes have the same effect:
+
+| Quota error code |
+| --- |
+| `quota_exceeded` |
+| `free_quota_exceeded` |
+| `additional_spend_limit_reached` |
+| `overage_limit_reached` |
+| `billing_not_configured` |
+
+The gateway stops retries on that route and can select another eligible route. See the routing guide for retry limits, cooldown scope, session binding, and Responses origin rules.
+
+Microsoft's client source defines these signals. See the [HTTP error handling](https://github.com/microsoft/vscode/blob/3bf9306bd0df5c518f4bd35e0c7e6097dfa44c3c/extensions/copilot/src/extension/prompt/node/chatMLFetcher.ts) and [quota error types](https://github.com/microsoft/vscode/blob/3bf9306bd0df5c518f4bd35e0c7e6097dfa44c3c/extensions/copilot/src/platform/chat/common/commonTypes.ts), pinned at commit `3bf9306bd0df5c518f4bd35e0c7e6097dfa44c3c`. This is first-party source evidence. The HTTP contract can change. Tests use fixtures; they do not prove how a live account handles quota or when it resets.
+
+HTTP `429` alone is a transient failure. The structured `extension_blocked` code means policy denial. It stops failover, even with `429`. Other known policy codes also override quota signals. An unknown `403` can mean an access or policy denial, so it stops the request. Oceans does not use error message text to classify quota.
+
+Failover never borrows another user's Copilot token. A fallback route must pass the same caller access rules. A new stored token creates a new credential generation. Routine refresh of the short-lived provider token does not change it.
+
 ## GitHub App authentication
 
 Prepare a GitHub App and installation as described in [GitHub's server-to-server authentication guide](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/server-to-server-tokens):

@@ -24,7 +24,10 @@ use tokio::sync::OnceCell;
 use url::Url;
 use uuid::Uuid;
 
-use crate::http::{TracedResponse, execute_request, join_base_url, map_reqwest_error};
+use crate::http::{
+    TracedResponse, execute_request, join_base_url, map_reqwest_error, partial_usage_error,
+    retry_after,
+};
 use crate::streaming::{
     done_sse_chunk, normalize_openai_compat_responses_stream, normalize_openai_compat_stream,
     openai_sse_error_chunk, render_sse_event_chunk,
@@ -596,11 +599,13 @@ impl BedrockProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
+        let retry_after = retry_after(response.headers());
         if !status.is_success() {
-            let body = response.text().await.map_err(map_reqwest_error)?;
+            let body = response.inference_text().await?;
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body,
+                retry_after,
             });
         }
 
@@ -648,17 +653,21 @@ impl ProviderClient for BedrockProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
-        let text = response.text().await.map_err(map_reqwest_error)?;
+        let retry_after = retry_after(response.headers());
+        let text = response.inference_text().await?;
 
         if !status.is_success() {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                retry_after,
             });
         }
 
         let value: Value = serde_json::from_str(&text).map_err(|error| {
-            ProviderError::Transport(format!("invalid JSON from aws_bedrock chat: {error}"))
+            partial_usage_error(ProviderError::Transport(format!(
+                "invalid JSON from aws_bedrock chat: {error}"
+            )))
         })?;
         match api_style {
             AwsBedrockApiStyle::RuntimeConverse => Ok(normalize_converse_response(&value, context)),
@@ -733,17 +742,21 @@ impl ProviderClient for BedrockProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
-        let text = response.text().await.map_err(map_reqwest_error)?;
+        let retry_after = retry_after(response.headers());
+        let text = response.inference_text().await?;
 
         if !status.is_success() {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                retry_after,
             });
         }
 
         serde_json::from_str(&text).map_err(|error| {
-            ProviderError::Transport(format!("invalid JSON from aws_bedrock responses: {error}"))
+            partial_usage_error(ProviderError::Transport(format!(
+                "invalid JSON from aws_bedrock responses: {error}"
+            )))
         })
     }
 

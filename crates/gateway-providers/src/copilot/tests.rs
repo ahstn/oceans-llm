@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use axum::Router;
@@ -9,7 +10,8 @@ use gateway_core::{
     CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
     GitHubCopilotChatApi, GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports,
     OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatRouteCompatibility,
-    ProviderClient, ProviderError, ProviderRequestContext, ProviderUserTokenResolver,
+    ProviderClient, ProviderError, ProviderFailureKind, ProviderRequestContext,
+    ProviderUserTokenResolver,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -580,6 +582,166 @@ async fn builds_chat_completions_with_copilot_headers() {
     assert_eq!(profile_headers[2], "conversation-agent");
     assert_eq!(profile_headers[3], "user");
     assert_eq!(body["model"], "gpt-4o");
+}
+
+async fn copilot_http_error(
+    status: axum::http::StatusCode,
+    body: Value,
+    retry_after: Option<&'static str>,
+    stream: bool,
+) -> ProviderError {
+    let mut headers = axum::http::HeaderMap::new();
+    if let Some(retry_after) = retry_after {
+        headers.insert(
+            axum::http::header::RETRY_AFTER,
+            axum::http::HeaderValue::from_static(retry_after),
+        );
+    }
+    let app = Router::new().route(
+        "/chat/completions",
+        post(move || {
+            let body = body.clone();
+            let headers = headers.clone();
+            async move { (status, headers, Json(body)) }
+        }),
+    );
+    let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let mut config = CopilotProviderConfig::new(
+        "github_copilot".to_string(),
+        CopilotAuthConfig::Bearer {
+            token: "test-token".to_string(),
+        },
+    );
+    config.base_url = format!("http://{addr}");
+    let provider = CopilotProvider::new(config).unwrap();
+    let request = CoreChatRequest {
+        model: "gpt-4o".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!("Hello"),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream,
+        extra: BTreeMap::new(),
+    };
+    let context = dummy_context("gpt-4o");
+    let error = if stream {
+        provider
+            .chat_completions_stream(&request, &context)
+            .await
+            .err()
+            .expect("upstream error must fail before streaming starts")
+    } else {
+        provider
+            .chat_completions(&request, &context)
+            .await
+            .expect_err("upstream error must fail the request")
+    };
+    server.abort();
+    error
+}
+
+#[tokio::test]
+async fn copilot_http_quota_failures_preserve_classification_and_retry_after() {
+    // Constructed fixtures from the error codes consumed by this pinned Copilot client:
+    // https://github.com/microsoft/vscode/blob/3bf9306bd0df5c518f4bd35e0c7e6097dfa44c3c/extensions/copilot/src/extension/prompt/node/chatMLFetcher.ts
+    // https://github.com/microsoft/vscode/blob/3bf9306bd0df5c518f4bd35e0c7e6097dfa44c3c/extensions/copilot/src/platform/chat/common/commonTypes.ts
+    for code in [
+        "quota_exceeded",
+        "free_quota_exceeded",
+        "overage_limit_reached",
+        "billing_not_configured",
+        "additional_spend_limit_reached",
+    ] {
+        let body = json!({"error": {"code": code, "message": "Mock Copilot quota failure"}});
+        for stream in [false, true] {
+            let error = copilot_http_error(
+                axum::http::StatusCode::PAYMENT_REQUIRED,
+                body.clone(),
+                Some("120"),
+                stream,
+            )
+            .await;
+            assert_eq!(
+                error.failure_kind("github_copilot"),
+                ProviderFailureKind::Quota,
+                "code={code}, stream={stream}"
+            );
+            assert_eq!(error.retry_after(), Some(Duration::from_secs(120)));
+            let ProviderError::UpstreamHttp {
+                status,
+                body: actual_body,
+                ..
+            } = error
+            else {
+                panic!("quota failure must preserve the upstream response");
+            };
+            assert_eq!(status, 402);
+            assert_eq!(serde_json::from_str::<Value>(&actual_body).unwrap(), body);
+        }
+    }
+}
+
+#[tokio::test]
+async fn copilot_http_failures_preserve_classification_and_retry_after() {
+    use axum::http::StatusCode;
+
+    let cases = [
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            json!({"error": {"code": "rate_limit_exceeded"}}),
+            Some("17"),
+            ProviderFailureKind::Transient,
+            Some(Duration::from_secs(17)),
+        ),
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            json!({"error": {"code": "extension_blocked", "type": "rate_limit_error"}}),
+            None,
+            ProviderFailureKind::Terminal,
+            None,
+        ),
+        (
+            StatusCode::FORBIDDEN,
+            json!({"error": {"code": "forbidden"}}),
+            None,
+            ProviderFailureKind::Terminal,
+            None,
+        ),
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({"error": {"code": "service_unavailable"}}),
+            Some("23"),
+            ProviderFailureKind::Transient,
+            Some(Duration::from_secs(23)),
+        ),
+    ];
+    for (status, body, header, expected_kind, expected_retry_after) in cases {
+        for stream in [false, true] {
+            let error = copilot_http_error(status, body.clone(), header, stream).await;
+            assert_eq!(
+                error.failure_kind("github_copilot"),
+                expected_kind,
+                "status={status}, stream={stream}"
+            );
+            assert_eq!(error.retry_after(), expected_retry_after);
+            let ProviderError::UpstreamHttp {
+                status: actual_status,
+                body: actual_body,
+                ..
+            } = error
+            else {
+                panic!("HTTP failure must preserve the upstream response");
+            };
+            assert_eq!(actual_status, status.as_u16());
+            assert_eq!(serde_json::from_str::<Value>(&actual_body).unwrap(), body);
+        }
+    }
 }
 
 #[tokio::test]

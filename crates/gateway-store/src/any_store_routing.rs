@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use gateway_core::{
-    ResponseRouteOrigin, RouteBindingReceipt, RouteSelection, RouteSelectionRequest,
-    RoutingRepository, StoreError,
+    ResponseRouteOrigin, RouteBindingReceipt, RouteFailureRecord, RouteSelection,
+    RouteSelectionRequest, RoutingRepository, StoreError,
 };
 use time::OffsetDateTime;
 
@@ -12,10 +12,17 @@ impl RoutingRepository for AnyStore {
     async fn select_route(
         &self,
         request: &RouteSelectionRequest,
-    ) -> Result<RouteSelection, StoreError> {
+    ) -> Result<Option<RouteSelection>, StoreError> {
         match self {
             Self::Libsql(store) => store.select_route(request).await,
             Self::Postgres(store) => store.select_route(request).await,
+        }
+    }
+
+    async fn record_route_failure(&self, failure: &RouteFailureRecord) -> Result<(), StoreError> {
+        match self {
+            Self::Libsql(store) => store.record_route_failure(failure).await,
+            Self::Postgres(store) => store.record_route_failure(failure).await,
         }
     }
 

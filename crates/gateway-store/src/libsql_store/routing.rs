@@ -1,14 +1,16 @@
+use std::collections::HashSet;
+
 use async_trait::async_trait;
 use gateway_core::{
-    ResponseRouteOrigin, RouteBindingReceipt, RouteSelection, RouteSelectionMode,
-    RouteSelectionRequest, RoutingCandidate, RoutingRepository, StoreError,
+    ResponseRouteOrigin, RouteBindingReceipt, RouteFailureRecord, RouteSelection,
+    RouteSelectionMode, RouteSelectionRequest, RoutingCandidate, RoutingRepository, StoreError,
 };
 use time::OffsetDateTime;
 
 use super::{LibsqlStore, support::to_query_error};
 use crate::routing::{
     RESPONSE_ORIGIN_RETENTION_SECONDS, StoredRouteBinding, binding_expiry, choose_route,
-    new_selection, reuse_binding, routing_pool_key,
+    cooldown_keys, new_selection, reuse_binding, routing_pool_key,
 };
 use crate::shared::parse_uuid;
 
@@ -128,39 +130,103 @@ async fn save_binding(
     Ok(())
 }
 
+async fn exclude_cooling_routes(
+    connection: &libsql::Connection,
+    request: &mut RouteSelectionRequest,
+) -> Result<(), StoreError> {
+    let keys = cooldown_keys(request);
+    if keys.is_empty() {
+        return Ok(());
+    }
+    let placeholders = (0..keys.len())
+        .map(|index| format!("?{}", index + 2))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let query = format!(
+        "SELECT cooldown_key FROM model_route_cooldowns
+         WHERE expires_at > ?1 AND cooldown_key IN ({placeholders})"
+    );
+    let mut params = vec![libsql::Value::Integer(request.now.unix_timestamp())];
+    params.extend(
+        keys.into_iter()
+            .map(|key| libsql::Value::Text(key.to_string())),
+    );
+    let mut rows = connection
+        .query(&query, params)
+        .await
+        .map_err(to_query_error)?;
+    let mut active = HashSet::<String>::new();
+    while let Some(row) = rows.next().await.map_err(to_query_error)? {
+        active.insert(row.get(0).map_err(to_query_error)?);
+    }
+    request.candidates.retain(|candidate| {
+        !candidate
+            .cooldown_key
+            .as_ref()
+            .is_some_and(|key| active.contains(key))
+    });
+    connection
+        .execute(
+            "DELETE FROM model_route_cooldowns WHERE cooldown_key IN (
+                SELECT cooldown_key FROM model_route_cooldowns
+                WHERE expires_at <= ?1 ORDER BY expires_at LIMIT 64
+            )",
+            [request.now.unix_timestamp()],
+        )
+        .await
+        .map_err(to_query_error)?;
+    Ok(())
+}
+
 #[async_trait]
 impl RoutingRepository for LibsqlStore {
     async fn select_route(
         &self,
         request: &RouteSelectionRequest,
-    ) -> Result<RouteSelection, StoreError> {
+    ) -> Result<Option<RouteSelection>, StoreError> {
         let expires_at = binding_expiry(request.now, request.idle_timeout_seconds)?;
         let (candidate, _) = choose_route(request, 0)?;
-        if request.affinity_key.is_none() && request.mode == RouteSelectionMode::First {
-            return Ok(new_selection(request, candidate));
+        let checks_cooldowns = !cooldown_keys(request).is_empty();
+        if !checks_cooldowns
+            && request.affinity_key.is_none()
+            && request.mode == RouteSelectionMode::First
+        {
+            return Ok(Some(new_selection(request, candidate)));
         }
-        let request = request.clone();
+        let mut request = request.clone();
         self.run_routing_operation(move |connection| async move {
-            if let Some(selection) = load_binding(&connection, &request).await? {
-                return Ok(selection);
+            if !checks_cooldowns
+                && let Some(selection) = load_binding(&connection, &request).await?
+            {
+                return Ok(Some(selection));
             }
 
             let transaction = connection
                 .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
                 .await
                 .map_err(to_query_error)?;
+            exclude_cooling_routes(&transaction, &mut request).await?;
+            if request.candidates.is_empty() {
+                transaction.commit().await.map_err(to_query_error)?;
+                return Ok(None);
+            }
             // Recheck after acquiring the writer lock: another replica may have
             // assigned this session while this request waited for the transaction.
             if let Some(selection) = load_binding(&transaction, &request).await? {
                 transaction.commit().await.map_err(to_query_error)?;
-                return Ok(selection);
+                return Ok(Some(selection));
             }
-            let pool_key = routing_pool_key(&request)?.to_string();
-            let cursor = load_cursor(&transaction, &pool_key).await?;
+            let (pool_key, cursor) = if request.mode == RouteSelectionMode::RoundRobin {
+                let pool_key = routing_pool_key(&request)?.to_string();
+                let cursor = load_cursor(&transaction, &pool_key).await?;
+                (Some(pool_key), cursor)
+            } else {
+                (None, 0)
+            };
             let (candidate, next_index) = choose_route(&request, cursor)?;
             let selection = new_selection(&request, candidate);
             save_binding(&transaction, &selection, candidate, expires_at).await?;
-            if request.mode == RouteSelectionMode::RoundRobin {
+            if let Some(pool_key) = pool_key {
                 transaction
                     .execute(
                         "UPDATE model_routing_cursors SET next_index = ?1 WHERE pool_key = ?2",
@@ -180,7 +246,46 @@ impl RoutingRepository for LibsqlStore {
                 .await
                 .map_err(to_query_error)?;
             transaction.commit().await.map_err(to_query_error)?;
-            Ok(selection)
+            Ok(Some(selection))
+        })
+        .await
+    }
+
+    async fn record_route_failure(&self, failure: &RouteFailureRecord) -> Result<(), StoreError> {
+        let failure = failure.clone();
+        self.run_routing_operation(move |connection| async move {
+            let transaction = connection
+                .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+                .await
+                .map_err(to_query_error)?;
+            if let Some(key) = &failure.cooldown_key {
+                transaction
+                    .execute(
+                        "INSERT INTO model_route_cooldowns (cooldown_key, expires_at)
+                         VALUES (?1, ?2) ON CONFLICT(cooldown_key) DO UPDATE SET
+                            expires_at = MAX(model_route_cooldowns.expires_at, excluded.expires_at)",
+                        libsql::params![key.as_str(), failure.cooldown_until.unix_timestamp()],
+                    )
+                    .await
+                    .map_err(to_query_error)?;
+            }
+            if let Some(binding) = &failure.binding {
+                transaction
+                    .execute(
+                        "DELETE FROM model_route_bindings WHERE model_id = ?1 AND affinity_key = ?2
+                         AND binding_token = ?3 AND route_id = ?4",
+                        libsql::params![
+                            binding.model_id.to_string(),
+                            binding.affinity_key.as_str(),
+                            binding.token.to_string(),
+                            binding.route_id.to_string()
+                        ],
+                    )
+                    .await
+                    .map_err(to_query_error)?;
+            }
+            transaction.commit().await.map_err(to_query_error)?;
+            Ok(())
         })
         .await
     }
