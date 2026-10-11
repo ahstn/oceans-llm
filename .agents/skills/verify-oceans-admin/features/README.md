@@ -32,6 +32,7 @@ When you add a recipe or a UI route, add its routing entry in the same change. `
 - Use `control-oceans-admin drive observability` for the combined Leaderboard and Agent Harnesses proof.
 - Use `control-oceans-admin drive backend-gateway` for the bounded OpenRouter, deterministic guardrail, generated-tool decision, and request-log proof.
 - Use `control-oceans-admin drive mcp` for the MCP registry, Tool Sets workbench, grant checks, bounded live tool calls, and invocation proof. Read its credential preconditions before launch.
+- Use `control-oceans-admin drive profile` for the Profile landing page, budget meter, heatmap, and create-key links.
 - Use `control-oceans-admin drive skills` for browser uploads, immutable versions, archive digests, and owner access against native RustFS. Read its launch preconditions first.
 - Extend the harness before reporting another path as automated. Manual Playwright steps in this map remain the contract for that extension.
 - Read-only control-plane verification does not call upstream services. Use the live LLM recipe when changed model-request behavior warrants paid integration proof. Use the MCP recipe for authorized, reviewed read-only tool calls; these can consume upstream service quota. Neither recipe permits unrelated upstream mutations.
@@ -77,3 +78,5 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Workspace connections](./workspace-connections.md) covers the personal OAuth MCP connections page and its default empty state.
 - [MCP](./mcp.md) covers registry discovery, Tool Sets, generated client configuration, explicit grants, direct and aggregate tool calls, upstream authentication failure, invocation records, and cleanup.
 - [Skills](./skills.md) covers namespace claims, ZIP uploads, previews, immutable versions, browser downloads, shared reads, owner-only updates, service-account access, and scoped RustFS cleanup.
+- [Profile](./profile.md) covers the post-sign-in landing page, budget meter API parity, usage heatmap, personal keys, and the prefilled create-key link.
+- [Agent plugins](./agent-plugins.md) covers the placeholder Agent Plugins page and its empty catalog.

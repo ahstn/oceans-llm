@@ -15,7 +15,8 @@
         "crates/admin-ui/web/e2e/**",
         "crates/admin-ui/web/src/test/**",
         "crates/gateway-store/src/agent_analysis_tests.rs",
-        "crates/gateway-store/src/budget_reconciliation_tests.rs"
+        "crates/gateway-store/src/budget_reconciliation_tests.rs",
+        "**/test_*.py"
       ]
     },
     {
@@ -63,6 +64,30 @@
         ".gitignore",
         ".gitattributes"
       ]
+    },
+    {
+      "reason": "oceans CLI and self-host packaging; no admin or gateway runtime surface in the local stack",
+      "paths": [
+        "crates/oceans-cli/Cargo.toml",
+        "crates/oceans-cli/src/{cli,client,install,main,providers}.rs",
+        "crates/gateway/Dockerfile",
+        "crates/gateway/src/bin/export_admin_openapi.rs",
+        "gateway.prod.yaml",
+        "compose.local.yaml",
+        "mise.selfhost*.toml",
+        "LICENSE",
+        ".dockerignore",
+        ".worktreeinclude",
+        ".vale.ini",
+        ".pre-commit-config.yaml",
+        ".mcp.json",
+        ".impeccable/**",
+        "scripts/check-*.sh",
+        "scripts/*sync-model-metadata.py",
+        "scripts/copilot-*",
+        "scripts/mock-openai-upstream.mjs",
+        "scripts/start-e2e-stack.sh"
+      ]
     }
   ],
   "shared": [
@@ -108,7 +133,15 @@
         "mise.toml",
         "Cargo.toml",
         "Cargo.lock",
-        ".agents/skills/verify-oceans-admin/scripts/control-oceans-admin"
+        ".agents/skills/verify-oceans-admin/scripts/control-oceans-admin",
+        "crates/admin-ui/web/src/start.ts",
+        "crates/admin-ui/web/src/assets/**",
+        "crates/*/Cargo.toml",
+        "crates/gateway-service/src/lib.rs",
+        "crates/gateway-store/src/libsql_store/seed.rs",
+        "crates/gateway-store/mise.toml",
+        "mise.lock",
+        "scripts/local-provider-credential-key.sh"
       ]
     },
     {
@@ -124,7 +157,19 @@
         "crates/gateway/src/http/handlers/inference.rs",
         "crates/gateway/src/http/request_body.rs",
         "crates/gateway/src/http/request_tracing.rs",
-        "crates/gateway/src/http/response_cache.rs"
+        "crates/gateway/src/http/response_cache.rs",
+        "crates/gateway/src/observability.rs"
+      ]
+    },
+    {
+      "reason": "gateway.yaml grants, budgets, and guardrail policy drive these pages",
+      "features": [
+        "agent-sessions",
+        "guardrails",
+        "spend-controls"
+      ],
+      "paths": [
+        "gateway.yaml"
       ]
     }
   ],
@@ -149,7 +194,12 @@
         "crates/gateway-store/src/pricing_sync.rs",
         "crates/gateway-client-config/**",
         "crates/gateway/src/local_demo_seed/models.rs",
-        ".agents/skills/verify-oceans-admin/scripts/drive-models.mjs"
+        ".agents/skills/verify-oceans-admin/scripts/drive-models.mjs",
+        "crates/admin-ui/web/src/routes/-model-*.{ts,tsx}",
+        "crates/gateway-service/src/admin_models/**",
+        "crates/gateway-service/src/benchmark_catalog.rs",
+        "crates/gateway-service/data/{model_benchmarks,model_metadata_supplement,pricing_catalog_fallback}.json",
+        "crates/gateway/src/bin/{sync_model_benchmarks,sync_pricing_catalog}.rs"
       ]
     },
     {
@@ -257,7 +307,10 @@
         "crates/gateway-service/src/mcp_token_overhead.rs",
         "crates/gateway-store/src/libsql_store/request_logs.rs",
         "crates/gateway-store/src/libsql_store/mcp_token_overhead.rs",
-        "crates/gateway-store/src/any_store_mcp_token_overhead.rs"
+        "crates/gateway-store/src/any_store_mcp_token_overhead.rs",
+        "crates/admin-ui/web/src/routes/observability/-request-log-filters.tsx",
+        "crates/gateway/src/http/observability/**",
+        "crates/gateway/src/local_demo_seed/history.rs"
       ]
     },
     {
@@ -274,7 +327,12 @@
         "crates/gateway/src/http/provider_credentials.rs",
         "crates/gateway-service/src/provider_credentials.rs",
         "crates/gateway-store/src/libsql_store/provider_user_credentials.rs",
-        "crates/gateway-store/src/any_store_provider_user_credentials.rs"
+        "crates/gateway-store/src/any_store_provider_user_credentials.rs",
+        "crates/gateway/src/http/handlers/routing.rs",
+        "crates/gateway-service/src/{routing,client_session}.rs",
+        "crates/gateway-store/src/{routing,any_store_routing}.rs",
+        "crates/gateway-store/src/libsql_store/routing.rs",
+        "crates/gateway/src/provider_routing_identity.rs"
       ]
     },
     {
@@ -310,7 +368,8 @@
         "crates/gateway-store/src/libsql_store/mcp_*.rs",
         "crates/gateway-store/src/any_store_mcp_*.rs",
         ".agents/skills/verify-oceans-admin/scripts/{drive-mcp,mcp-browser,mcp-canary}.mjs",
-        ".agents/skills/verify-oceans-admin/examples/**"
+        ".agents/skills/verify-oceans-admin/examples/**",
+        "crates/gateway-service/data/recommended_mcp_servers.json"
       ]
     },
     {
@@ -400,7 +459,8 @@
         "crates/admin-ui/web/src/routes/identity/{users.tsx,-user-form.ts}",
         "crates/admin-ui/web/src/components/layout/auth-layout.tsx",
         "crates/gateway/src/http/{identity,identity_lifecycle}.rs",
-        "crates/gateway-store/src/libsql_store/identity.rs"
+        "crates/gateway-store/src/libsql_store/identity.rs",
+        "crates/gateway/src/email.rs"
       ]
     },
     {
@@ -428,6 +488,50 @@
         "crates/gateway/src/http/mcp_oauth.rs",
         "crates/gateway/src/http/mcp_oauth/**",
         "crates/gateway-service/src/mcp_oauth.rs"
+      ]
+    },
+    {
+      "id": "profile",
+      "file": "profile.md",
+      "proof": {
+        "drive": "profile"
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/profile/**",
+        "crates/gateway/src/http/profile.rs",
+        ".agents/skills/verify-oceans-admin/scripts/drive-profile.mjs"
+      ]
+    },
+    {
+      "id": "skills",
+      "file": "skills.md",
+      "proof": {
+        "drive": "skills"
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/skills/**",
+        "crates/gateway-skills/**",
+        "crates/gateway-service/src/skills.rs",
+        "crates/gateway-store/src/{any_store_skills,skill_objects}.rs",
+        "crates/gateway-store/src/libsql_store/skills.rs",
+        "crates/gateway/src/http/skills.rs",
+        "crates/gateway/src/http/skills/**",
+        "crates/oceans-cli/src/skills.rs",
+        "bundled-skills/**",
+        "scripts/import-bundled-skills.mjs",
+        "scripts/rustfs-*.sh",
+        "mise.rustfs.{toml,lock}",
+        ".agents/skills/verify-oceans-admin/scripts/drive-skills.mjs"
+      ]
+    },
+    {
+      "id": "agent-plugins",
+      "file": "agent-plugins.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/agent-plugins.tsx"
       ]
     }
   ]
