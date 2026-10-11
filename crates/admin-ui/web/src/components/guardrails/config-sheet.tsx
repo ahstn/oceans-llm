@@ -162,7 +162,9 @@ function ScopeDraft({ scope, policies }: { scope: PolicyScope; policies: Guardra
             <FieldContent>
               <FieldLabel htmlFor="guardrail-config-redaction">Enabled</FieldLabel>
               <FieldDescription>
-                Replace secrets in prompts before they reach a provider.
+                {scope.kind === 'mcp'
+                  ? 'Redacts captured request-log payloads only; MCP arguments are forwarded unchanged.'
+                  : 'Replace secrets in prompts before they reach a provider.'}
               </FieldDescription>
             </FieldContent>
             <Switch

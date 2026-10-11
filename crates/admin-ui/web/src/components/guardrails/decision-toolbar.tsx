@@ -24,7 +24,7 @@ import type {
   GuardrailPoliciesView,
 } from '@/types/api'
 
-import { ACTIONS, PHASES } from './decision-meta'
+import { ACTIONS, PHASES, formatTimestamp } from './decision-meta'
 
 export type DashboardProps = {
   policies: GuardrailPoliciesView
@@ -49,7 +49,10 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
     }
     onSearch(next)
   }
-  const hasFilters = Boolean(search.action || search.phase || search.request_id || search.evaluator)
+  const hasDates = Boolean(search.occurred_at_start || search.occurred_at_end)
+  const hasFilters = Boolean(
+    search.action || search.phase || search.request_id || search.evaluator || hasDates,
+  )
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -122,6 +125,12 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
         </Select>
       ) : null}
       {search.evaluator ? <Badge variant="outline">Evaluator: {search.evaluator}</Badge> : null}
+      {hasDates ? (
+        <Badge variant="outline">
+          {boundLabel(search.occurred_at_start, 'Any time')} to{' '}
+          {boundLabel(search.occurred_at_end, 'now')}
+        </Badge>
+      ) : null}
       {hasFilters ? (
         <Button variant="ghost" size="sm" disabled={pending} onClick={() => onSearch({})}>
           Clear
@@ -129,6 +138,12 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
       ) : null}
     </div>
   )
+}
+
+/** URL-supplied bounds may not parse; show them as written rather than throwing. */
+function boundLabel(value: string | null | undefined, fallback: string) {
+  if (!value) return fallback
+  return Number.isNaN(Date.parse(value)) ? value : formatTimestamp(value)
 }
 
 /** Previous/next paging for server pages; hidden when everything fits on one page. */

@@ -95,12 +95,14 @@ const ALL_FIELDS = new Set<string>(FIELDS.map((field) => field.id))
 
 /**
  * Renders the `guardrails:` YAML for one scope. The default block is written in full; an override
- * lists only what differs from the default, because the gateway inherits every unset field.
+ * lists what differs from the default, plus anything edited here so that setting a field back to
+ * the inherited value still replaces the old explicit value when the excerpt is merged.
  */
 export function scopeYaml(scope: PolicyScope, draft: PolicyDraft, base: PolicyDraft) {
-  return configYaml([scope], { [scope.key]: draft }, (item) =>
-    item.kind === 'global' ? ALL_FIELDS : differingFields(draft, base),
-  )
+  if (scope.kind === 'global') return configYaml([scope], { [scope.key]: draft }, () => ALL_FIELDS)
+  const fields = differingFields(draft, base)
+  for (const field of differingFields(draft, draftFrom(scope.policy))) fields.add(field)
+  return configYaml([scope], { [scope.key]: draft }, () => fields)
 }
 
 /**
@@ -146,5 +148,9 @@ function list(items: string[]) {
 
 /** Plain names (including `/` in route keys) stay bare; anything YAML could misread is quoted. */
 function scalar(name: string) {
-  return /^[\w./-]+$/.test(name) ? name : JSON.stringify(name)
+  const plain = /^[\w./-]+$/.test(name) && !IMPLICIT.test(name)
+  return plain ? name : JSON.stringify(name)
 }
+
+/** Plain words YAML 1.1/1.2 would load as booleans, nulls, or numbers instead of strings. */
+const IMPLICIT = /^(?:true|false|yes|no|on|off|y|n|null|~|[-+]?(?:\.?\d[\w.]*|\.inf|\.nan))$/i

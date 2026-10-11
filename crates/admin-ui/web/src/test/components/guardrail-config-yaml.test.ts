@@ -88,4 +88,26 @@ describe('scopeYaml', () => {
       'guardrails:\n  mcp_servers:\n    github:\n      managed_checks: ["armor, prod", bedrock]\n',
     )
   })
+
+  it('quotes names YAML would load as booleans, nulls, or numbers', () => {
+    const policy = { ...base, scope: 'mcp_server:true' }
+    const scope: PolicyScope = { key: policy.scope, kind: 'mcp', name: 'true', policy }
+    const draft = draftFrom(policy)
+    draft.managed_checks = ['null', '123', 'armor']
+
+    expect(scopeYaml(scope, draft, draftFrom(base))).toBe(
+      'guardrails:\n  mcp_servers:\n    "true":\n      managed_checks: ["null", "123", armor]\n',
+    )
+  })
+
+  it('keeps a field set back to the inherited value so the merge replaces it', () => {
+    const policy = { ...base, mode: 'deny' as const, scope: 'mcp_server:github' }
+    const scope: PolicyScope = { key: policy.scope, kind: 'mcp', name: 'github', policy }
+    const draft = draftFrom(policy)
+    draft.mode = 'audit'
+
+    expect(scopeYaml(scope, draft, draftFrom(base))).toBe(
+      'guardrails:\n  mcp_servers:\n    github:\n      mode: audit\n',
+    )
+  })
 })
