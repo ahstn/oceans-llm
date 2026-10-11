@@ -89,7 +89,7 @@ try {
     for (const failed of canaries.failures ?? []) {
       const required = config.candidates.find((candidate) => candidate.key === failed.candidate)?.required !== false;
       failures.push({ ...failed, required });
-      recorder.add({ id: `tool-call-${failed.candidate}`, status: "fail", required, note: failed.reason });
+      recorder.add({ id: `tool-call-${failed.candidate}`, status: "fail", required, note: failed.reasonClass });
     }
     if (!canaries.failures?.length) recorder.pass("tool-calls-and-invocations", { observed: ready.length });
   } else if (!proof.candidates.some((result) => result.discovery === "blocked")) {

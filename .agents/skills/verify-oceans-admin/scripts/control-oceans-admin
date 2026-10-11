@@ -520,6 +520,10 @@ proof_cli() {
       esac
     done
     if ((${#legacy[@]})); then
+      if [[ " ${rest[*]} " == *" --require-current "* ]]; then
+        echo "FAIL ${legacy[*]}: legacy proofs record no source hash, so --require-current cannot check them; drop the flag for these targets." >&2
+        exit 1
+      fi
       for arg in "${legacy[@]}"; do
         (legacy_evidence "$arg") || exit 1
         echo "PASS $arg (legacy proof)"

@@ -31,7 +31,7 @@ Preconditions:
 - **API parity.** Fetch the invitation again. Its state is `consumed`, and reopening the URL shows `Invitation consumed`. The user's Status reads `active`.
 - **Sign in.** Sign in as the new user. The browser lands on `/admin/profile`.
 - **Invalid token.** Open `/admin/invite/not-a-token`. The page shows `Invitation invalid` and no `Set password` button.
-- **Change password.** In a new browser context, sign in as `ben@platform.local` with `localdemo123`. Choose `Change password`, fill `Current password`, `New password`, and `Confirm new password`, then choose `Update password`. The page reloads to the session's default page (`/admin/observability/usage-costs` for Ben), and the next sign-in with the new password succeeds.
+- **Change password.** In a new browser context, sign in as `ben@platform.local` with `localdemo123`. Choose `Change password`, fill `Current password`, `New password`, and `Confirm new password`, then choose `Update password`. The page reloads to `/admin/profile`, and the next sign-in with the new password succeeds.
 - **Cleanup.** Change Ben's password back to `localdemo123`. As admin, open the created user's `Manage` → `Auth & onboarding` and choose `Deactivate`. The toast reads `User deactivated` and Status reads `disabled`.
 - **Proof.** Capture the invite result with the URL masked, the accept form, `Account ready`, the `consumed` state, and the deactivated row. Redact tokens and passwords.
 
