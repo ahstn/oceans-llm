@@ -34,10 +34,8 @@ export function ProviderConfiguration({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h3 className="text-sm font-semibold text-[var(--color-text)]">
-          GitHub Copilot user tokens
-        </h3>
-        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+        <h3 className="text-foreground text-sm font-semibold">GitHub Copilot user tokens</h3>
+        <p className="text-subtle-foreground mt-1 text-sm">
           Each token is encrypted at rest and used only for requests made with this user&apos;s
           gateway API keys.
         </p>
@@ -50,7 +48,7 @@ export function ProviderConfiguration({
             Direct Copilot authentication needs no extra GitHub OAuth scope. If GitHub CLI asks you
             to refresh its authorization, run:
           </p>
-          <code className="block overflow-x-auto rounded bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-text)]">
+          <code className="bg-surface-muted text-foreground block overflow-x-auto rounded px-3 py-2 text-xs">
             gh auth refresh --hostname github.com
           </code>
           <p>
@@ -75,7 +73,7 @@ export function ProviderConfiguration({
           return (
             <form
               key={provider.provider_key}
-              className="flex flex-col gap-4 border-t border-[color:var(--color-border)] pt-5 first:border-t-0 first:pt-0"
+              className="border-border flex flex-col gap-4 border-t pt-5 first:border-t-0 first:pt-0"
               onSubmit={(event) => {
                 event.preventDefault()
                 if (!isPending && token.trim().length > 0) {
@@ -85,10 +83,10 @@ export function ProviderConfiguration({
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h4 className="font-mono text-sm font-semibold text-[var(--color-text)]">
+                  <h4 className="text-foreground font-mono text-sm font-semibold">
                     {provider.provider_key}
                   </h4>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  <p className="text-subtle-foreground mt-1 text-xs">
                     {status?.updated_at
                       ? `Updated ${formatDateTime(status.updated_at)}`
                       : 'No token has been stored.'}

@@ -632,6 +632,7 @@ mod tests {
                     provider_key: "openai".to_string(),
                     upstream_model: "gpt-test".to_string(),
                     owner_user_id: None,
+                    expected_provider_credential_id: None,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     request_headers: BTreeMap::new(),

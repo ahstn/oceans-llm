@@ -152,6 +152,13 @@ app.kubernetes.io/component: {{ .component }}
 {{- if and (not .Values.gateway.allowLiteralSecretsInConfig) (contains "literal." $configJson) -}}
 {{- fail "gateway.config contains literal.* references; use env.* references backed by secrets, or set gateway.allowLiteralSecretsInConfig=true to opt in" -}}
 {{- end -}}
+{{- $skillStorage := dig "skills" "storage" (dict) .Values.gateway.config -}}
+{{- range $field := list "access_key_id" "secret_access_key" "session_token" -}}
+{{- $reference := get $skillStorage $field | default "" -}}
+{{- if and $reference (not (or (hasPrefix "env." $reference) (hasPrefix "file." $reference) (and $.Values.gateway.allowLiteralSecretsInConfig (hasPrefix "literal." $reference)))) -}}
+{{- fail (printf "gateway.config.skills.storage.%s must use an env.* or file.* secret reference" $field) -}}
+{{- end -}}
+{{- end -}}
 {{- $hasPostgresExtraEnv := false -}}
 {{- range .Values.gateway.extraEnv -}}
 {{- if eq .name "POSTGRES_URL" -}}

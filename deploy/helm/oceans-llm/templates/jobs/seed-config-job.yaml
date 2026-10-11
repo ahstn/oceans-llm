@@ -61,6 +61,9 @@ spec:
               mountPath: {{ .Values.gateway.configMountPath | quote }}
               subPath: gateway.yaml
               readOnly: true
+            {{- with .Values.gateway.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- with .Values.seedConfigJob.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -72,4 +75,7 @@ spec:
             items:
               - key: gateway.yaml
                 path: gateway.yaml
+        {{- with .Values.gateway.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
 {{- end }}

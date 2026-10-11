@@ -151,6 +151,8 @@ Use the docs site instead of treating this file as the full admin and maintainer
 - Kubernetes and Helm:
   - [Kubernetes and Helm](docs/setup/kubernetes-and-helm.md)
   - [Helm Chart](deploy/helm/oceans-llm/README.md)
+- self-hosting (mise daemons + Tailscale):
+  - [Self-Hosting with mise Daemons](docs/setup/self-hosting-mise-daemons.md)
 
 ## Same-Origin Runtime Model
 

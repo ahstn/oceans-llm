@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-ARG BUN_VERSION=1.3.10
+# Pinned in mise.toml; pass with --build-arg BUN_VERSION="$(mise tool bun --requested)".
+ARG BUN_VERSION
 
 FROM oven/bun:${BUN_VERSION} AS deps
 

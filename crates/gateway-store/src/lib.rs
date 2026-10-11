@@ -13,14 +13,18 @@ mod any_store_mcp_registry;
 mod any_store_mcp_token_overhead;
 mod any_store_provider_user_credentials;
 mod any_store_review_agent;
+mod any_store_routing;
+mod any_store_skills;
 mod budget_batch;
 mod libsql_store;
 mod migrate;
 mod migration_registry;
 mod postgres_store;
 mod pricing_sync;
+mod routing;
 mod seed;
 mod shared;
+mod skill_objects;
 mod store;
 
 pub use libsql_store::LibsqlStore;
@@ -30,6 +34,7 @@ pub use migrate::{
 };
 pub use postgres_store::PostgresStore;
 pub use seed::seed_local_demo_batches;
+pub use skill_objects::{S3SkillObjectStore, S3SkillStorageConfig};
 pub use store::{AnyStore, GatewayStore, StoreConnectionOptions};
 
 #[cfg(test)]
@@ -42,8 +47,15 @@ mod agent_analysis_tests;
 mod budget_reconciliation_tests;
 
 #[cfg(test)]
+mod skills_tests;
+
+#[cfg(test)]
 pub(crate) mod tests {
+    mod model_routing;
+    mod request_log_list;
     mod request_log_purge;
+    mod route_identity;
+    mod routing;
 
     use std::collections::BTreeMap;
     use std::env;
@@ -77,7 +89,7 @@ pub(crate) mod tests {
         RoutePricingOverride, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
         SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
         SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
-        ServiceAccountStatus, SessionLifecycleState, StoreError, StoreHealth,
+        ServiceAccountStatus, SessionLifecycleState, StoreError, StoreHealth, TokenUsageBuckets,
         UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
         UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
         UpsertReviewAgentPullRequestRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
@@ -262,6 +274,7 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: Vec::new(),
             rank: 10,
@@ -1012,6 +1025,82 @@ pub(crate) mod tests {
         assert_eq!(replacement.status, ReviewAgentRepositoryStatus::Active);
     }
 
+    async fn assert_token_series_aggregates<S>(
+        store: &S,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        user_id: Uuid,
+        service_account_id: Uuid,
+    ) where
+        S: BudgetRepository,
+    {
+        // Every fixture event reports 100 prompt (10 uncached / 80 read / 10 write) and 50
+        // completion tokens. The usage-missing events add requests but no tokens, except the
+        // service-account one that keeps prompt tokens without a cache split.
+        let user_day = TokenUsageBuckets {
+            request_count: 3,
+            input_tokens: 200,
+            output_tokens: 100,
+            uncached_input_tokens: 20,
+            cache_read_tokens: 160,
+            cache_write_tokens: 20,
+        };
+        let service_account_day = TokenUsageBuckets {
+            request_count: 3,
+            input_tokens: 300,
+            output_tokens: 150,
+            ..user_day
+        };
+
+        let owners = store
+            .list_usage_owner_token_daily_aggregates(window_start, window_end, None, None)
+            .await
+            .expect("owner token series");
+        assert_eq!(owners.len(), 2);
+        assert!(owners[0].day_start < owners[1].day_start);
+        assert_eq!(owners[0].owner_kind, ApiKeyOwnerKind::User);
+        assert_eq!(owners[0].owner_id, user_id);
+        assert_eq!(owners[0].owner_name, "Member");
+        assert_eq!(owners[0].tokens, user_day);
+        assert_eq!(owners[1].owner_kind, ApiKeyOwnerKind::ServiceAccount);
+        assert_eq!(owners[1].owner_id, service_account_id);
+        assert_eq!(owners[1].tokens, service_account_day);
+
+        let user_owners = store
+            .list_usage_owner_token_daily_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user_id),
+            )
+            .await
+            .expect("user owner token series");
+        assert_eq!(user_owners.len(), 1);
+        assert_eq!(user_owners[0].owner_id, user_id);
+
+        let models = store
+            .list_usage_model_token_daily_aggregates(window_start, window_end, None, None)
+            .await
+            .expect("model token series");
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].model_key, "fast");
+        assert_eq!(models[0].tokens, user_day);
+        assert_eq!(models[1].model_key, "claude-3-5-sonnet");
+        assert_eq!(models[1].tokens, service_account_day);
+
+        let service_account_models = store
+            .list_usage_model_token_daily_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::ServiceAccount),
+                None,
+            )
+            .await
+            .expect("service account model token series");
+        assert_eq!(service_account_models.len(), 1);
+        assert_eq!(service_account_models[0].model_key, "claude-3-5-sonnet");
+    }
+
     async fn assert_focus_export_aggregates<S>(
         store: &S,
         window_start: OffsetDateTime,
@@ -1083,7 +1172,7 @@ pub(crate) mod tests {
             .await
             .expect("focus diagnostics");
         assert_eq!(diagnostics.unpriced_request_count, 2);
-        assert_eq!(diagnostics.usage_missing_request_count, 1);
+        assert_eq!(diagnostics.usage_missing_request_count, 2);
 
         let user_rows = store
             .list_focus_export_aggregates(
@@ -1163,10 +1252,12 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: vec![],
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: None,
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -2165,10 +2256,12 @@ pub(crate) mod tests {
                 model_key: "fast".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: Some("fast tier".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
                 routes: vec![SeedModelRoute {
+                    route_key: None,
                     provider_key: "openai-prod".to_string(),
                     upstream_model: "gpt-4o-mini".to_string(),
                     priority: 10,
@@ -2187,10 +2280,12 @@ pub(crate) mod tests {
                 model_key: "reasoning".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: Some("reasoning tier".to_string()),
                 tags: vec!["reasoning".to_string()],
                 rank: 20,
                 routes: vec![SeedModelRoute {
+                    route_key: None,
                     provider_key: "openai-prod".to_string(),
                     upstream_model: "gpt-5".to_string(),
                     priority: 10,
@@ -2453,6 +2548,8 @@ pub(crate) mod tests {
                     exposed_tool_count: Some(0),
                     invoked_tool_count: Some(0),
                     filtered_tool_count: None,
+                    request_tool_count: None,
+                    invoked_distinct_tool_count: None,
                 },
                 user_agent_raw: Some("opencode/1.2.3".to_string()),
                 agent_harness_key: "opencode".to_string(),
@@ -2485,6 +2582,8 @@ pub(crate) mod tests {
                     exposed_tool_count: Some(3),
                     invoked_tool_count: Some(1),
                     filtered_tool_count: None,
+                    request_tool_count: None,
+                    invoked_distinct_tool_count: None,
                 },
                 user_agent_raw: Some("opencode/1.2.4".to_string()),
                 agent_harness_key: "opencode".to_string(),
@@ -3828,14 +3927,16 @@ pub(crate) mod tests {
             secrets: Some(json!({"token": "env.OPENAI_API_KEY"})),
         }];
 
-        let models = vec![SeedModel {
+        let mut models = vec![SeedModel {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: Some("primary".to_string()),
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -3950,6 +4051,7 @@ pub(crate) mod tests {
                         provider_key: seeded_route.provider_key.clone(),
                         upstream_model: seeded_route.upstream_model.clone(),
                         owner_user_id: None,
+                        expected_provider_credential_id: None,
                         extra_headers: seeded_route.extra_headers.clone(),
                         extra_body: seeded_route.extra_body.clone(),
                         request_headers: BTreeMap::new(),
@@ -3966,6 +4068,7 @@ pub(crate) mod tests {
             .await
             .expect("insert batch before reseed");
 
+        models[0].routes[0].priority = 20;
         store
             .seed_from_inputs(
                 &providers,
@@ -4014,11 +4117,33 @@ pub(crate) mod tests {
         assert_eq!(accessible_models.len(), 1);
         assert_eq!(accessible_models[0].model_key, "fast");
 
+        // Unknown ids first put the real key in the second parameter chunk.
+        let mut key_ids: Vec<Uuid> = (0..600).map(|_| Uuid::new_v4()).collect();
+        key_ids.push(api_key.id);
+        let mut batched = store
+            .list_models_for_api_keys(&key_ids)
+            .await
+            .expect("models by keys");
+        let batched_ids = batched
+            .remove(&api_key.id)
+            .map(|models| models.iter().map(|model| model.id).collect::<Vec<_>>());
+        assert_eq!(batched_ids, Some(vec![accessible_models[0].id]));
+        assert!(batched.is_empty(), "keys without grants are absent");
+        assert!(
+            store
+                .list_models_for_api_keys(&[])
+                .await
+                .expect("models for no keys")
+                .is_empty()
+        );
+
         let routes = store
             .list_routes_for_model(accessible_models[0].id)
             .await
             .expect("model routes");
         assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].id, seeded_route.id);
+        assert_eq!(routes[0].priority, 20);
         assert_eq!(routes[0].provider_key, "openai-prod");
         assert!(!routes[0].capabilities.stream);
         assert!(!routes[0].capabilities.tools);
@@ -4080,6 +4205,8 @@ pub(crate) mod tests {
                 exposed_tool_count: Some(0),
                 invoked_tool_count: Some(0),
                 filtered_tool_count: None,
+                request_tool_count: None,
+                invoked_distinct_tool_count: None,
             },
             user_agent_raw: Some("opencode/1.2.3".to_string()),
             agent_harness_key: "opencode".to_string(),
@@ -4131,6 +4258,7 @@ pub(crate) mod tests {
                 env: None,
                 tag_key: None,
                 tag_value: None,
+                q: None,
             })
             .await
             .expect("list request logs");
@@ -4189,6 +4317,74 @@ pub(crate) mod tests {
         assert_eq!(harness_buckets.len(), 1);
         assert_eq!(harness_buckets[0].agent_harness_key, "opencode");
         assert_eq!(harness_buckets[0].request_count, 3);
+
+        let profile_user_id = store
+            .create_identity_user(
+                "Profile",
+                "profile@example.com",
+                "profile@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("create profile user")
+            .user_id;
+        // Same harness on two UTC days: rows must stay split by day, not merged per harness.
+        for (request_id, logged_at, total_tokens) in [
+            ("req-user-harness-day", occurred_at, 40),
+            (
+                "req-user-harness-next-day",
+                occurred_at + Duration::days(1),
+                60,
+            ),
+        ] {
+            store
+                .insert_request_log(
+                    &RequestLogRecord {
+                        request_log_id: Uuid::new_v4(),
+                        request_id: request_id.to_string(),
+                        user_id: Some(profile_user_id),
+                        agent_harness_key: "codex".to_string(),
+                        agent_harness_label: "Codex".to_string(),
+                        total_tokens: Some(total_tokens),
+                        occurred_at: logged_at,
+                        ..zero_counts_log.clone()
+                    },
+                    None,
+                )
+                .await
+                .expect("insert user-scoped request log");
+        }
+        let user_harness_days = store
+            .list_user_harness_daily_usage(
+                occurred_at - Duration::days(1),
+                occurred_at + Duration::days(2),
+                profile_user_id,
+            )
+            .await
+            .expect("user harness daily usage");
+        let first_day = occurred_at.replace_time(time::Time::MIDNIGHT);
+        let days: Vec<_> = user_harness_days
+            .iter()
+            .map(|row| {
+                (
+                    row.day_start,
+                    row.agent_harness_key.as_str(),
+                    row.agent_harness_label.as_str(),
+                    row.request_count,
+                    row.total_tokens,
+                )
+            })
+            .collect();
+        assert_eq!(
+            days,
+            vec![
+                (first_day, "codex", "Codex", 1, 40),
+                (first_day + Duration::days(1), "codex", "Codex", 1, 60),
+            ],
+            "harness usage is bucketed by UTC day"
+        );
     }
 
     #[tokio::test]
@@ -4350,6 +4546,7 @@ pub(crate) mod tests {
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -4622,6 +4819,7 @@ pub(crate) mod tests {
                 }], &[SeedModel { model_key: "fast".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
@@ -4878,6 +5076,7 @@ pub(crate) mod tests {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
                 max_reasoning_effort: Some(ReasoningEffort::Low),
+                routing: None,
                 description: Some("alias".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
@@ -4888,10 +5087,12 @@ pub(crate) mod tests {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: Some(ReasoningEffort::High),
+                routing: None,
                 description: Some("replacement".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 5,
                 routes: vec![SeedModelRoute {
+                    route_key: None,
                     provider_key: "openai-prod".to_string(),
                     upstream_model: "gpt-5".to_string(),
                     priority: 10,
@@ -5011,6 +5212,7 @@ pub(crate) mod tests {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
                 max_reasoning_effort: Some(ReasoningEffort::High),
+                routing: None,
                 description: Some("alias".to_string()),
                 tags: Vec::new(),
                 rank: 10,
@@ -5024,6 +5226,7 @@ pub(crate) mod tests {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: Some("target".to_string()),
                 tags: Vec::new(),
                 rank: 20,
@@ -5077,6 +5280,7 @@ pub(crate) mod tests {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
                 max_reasoning_effort: Some(ReasoningEffort::Low),
+                routing: None,
                 description: Some("alias".to_string()),
                 tags: Vec::new(),
                 rank: 10,
@@ -5090,6 +5294,7 @@ pub(crate) mod tests {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: Some("target".to_string()),
                 tags: Vec::new(),
                 rank: 20,
@@ -5140,6 +5345,7 @@ pub(crate) mod tests {
             model_key: "restricted".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: Some("restricted tier".to_string()),
             tags: Vec::new(),
             rank: 10,
@@ -6678,10 +6884,12 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: Vec::new(),
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: None,
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -7874,10 +8082,12 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string()],
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: None,
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -8023,6 +8233,29 @@ pub(crate) mod tests {
                 day_two,
             ),
             {
+                // No usage at all: nothing to split, so it must not hide the day's cache buckets.
+                let mut event = build_usage_ledger_record(
+                    "req-user-usage-missing",
+                    format!("user:{}", user.user_id),
+                    api_key.id,
+                    Some(user.user_id),
+                    None,
+                    None,
+                    Some(model.id),
+                    "gpt-4o-mini",
+                    UsagePricingStatus::UsageMissing,
+                    0,
+                    day_one,
+                );
+                event.prompt_tokens = None;
+                event.uncached_input_tokens = None;
+                event.cache_read_tokens = None;
+                event.cache_write_tokens = None;
+                event.completion_tokens = None;
+                event.total_tokens = None;
+                event
+            },
+            {
                 let mut event = build_usage_ledger_record(
                     "req-service-account-usage-missing",
                     format!("service_account:{service_account_id}"),
@@ -8125,7 +8358,7 @@ pub(crate) mod tests {
         assert_eq!(first.priced_cost_usd, Money4::from_scaled(11_000));
         assert_eq!(first.priced_request_count, 1);
         assert_eq!(first.unpriced_request_count, 1);
-        assert_eq!(first.usage_missing_request_count, 0);
+        assert_eq!(first.usage_missing_request_count, 1);
         let second = daily
             .iter()
             .find(|row| row.day_start.unix_timestamp() == day_two_bucket)
@@ -8148,7 +8381,7 @@ pub(crate) mod tests {
         assert_eq!(user_owner.priced_cost_usd, Money4::from_scaled(11_000));
         assert_eq!(user_owner.priced_request_count, 1);
         assert_eq!(user_owner.unpriced_request_count, 1);
-        assert_eq!(user_owner.usage_missing_request_count, 0);
+        assert_eq!(user_owner.usage_missing_request_count, 1);
         let service_account_owner = owners
             .iter()
             .find(|row| row.owner_kind == ApiKeyOwnerKind::ServiceAccount)
@@ -8174,7 +8407,7 @@ pub(crate) mod tests {
         assert_eq!(gateway_model.priced_cost_usd, Money4::from_scaled(11_000));
         assert_eq!(gateway_model.priced_request_count, 1);
         assert_eq!(gateway_model.unpriced_request_count, 1);
-        assert_eq!(gateway_model.usage_missing_request_count, 0);
+        assert_eq!(gateway_model.usage_missing_request_count, 1);
         let upstream_model = models
             .iter()
             .find(|row| row.model_key == "claude-3-5-sonnet")
@@ -8219,6 +8452,14 @@ pub(crate) mod tests {
         assert_eq!(user_models[0].model_key, "fast");
 
         assert_focus_export_aggregates(
+            &store,
+            window_start,
+            window_end,
+            user.user_id,
+            service_account_id,
+        )
+        .await;
+        assert_token_series_aggregates(
             &store,
             window_start,
             window_end,
@@ -8276,10 +8517,12 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: None,
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -8348,6 +8591,25 @@ pub(crate) mod tests {
                 .any(|model| model.model_key == "fast")
         );
 
+        let per_key = store
+            .list_models_for_api_key(key.id)
+            .await
+            .expect("list models");
+        // Unknown ids first put the real key in the second parameter chunk.
+        let mut key_ids: Vec<Uuid> = (0..600).map(|_| Uuid::new_v4()).collect();
+        key_ids.push(key.id);
+        let mut batched = store
+            .list_models_for_api_keys(&key_ids)
+            .await
+            .expect("list models for keys");
+        let batched_ids = batched
+            .remove(&key.id)
+            .map(|models| models.iter().map(|model| model.id).collect::<Vec<_>>());
+        assert_eq!(
+            batched_ids,
+            Some(per_key.iter().map(|model| model.id).collect())
+        );
+        assert!(batched.is_empty(), "keys without grants are absent");
         let model_id = store
             .list_models_for_api_key(key.id)
             .await
@@ -8934,10 +9196,12 @@ pub(crate) mod tests {
             model_key: "fast".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string()],
             rank: 10,
             routes: vec![SeedModelRoute {
+                route_key: None,
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-4o-mini".to_string(),
                 priority: 10,
@@ -9083,6 +9347,29 @@ pub(crate) mod tests {
                 day_two,
             ),
             {
+                // No usage at all: nothing to split, so it must not hide the day's cache buckets.
+                let mut event = build_usage_ledger_record(
+                    "req-user-usage-missing",
+                    format!("user:{}", user.user_id),
+                    api_key.id,
+                    Some(user.user_id),
+                    None,
+                    None,
+                    Some(model.id),
+                    "gpt-4o-mini",
+                    UsagePricingStatus::UsageMissing,
+                    0,
+                    day_one,
+                );
+                event.prompt_tokens = None;
+                event.uncached_input_tokens = None;
+                event.cache_read_tokens = None;
+                event.cache_write_tokens = None;
+                event.completion_tokens = None;
+                event.total_tokens = None;
+                event
+            },
+            {
                 let mut event = build_usage_ledger_record(
                     "req-service-account-usage-missing",
                     format!("service_account:{service_account_id}"),
@@ -9185,7 +9472,7 @@ pub(crate) mod tests {
         assert_eq!(first.priced_cost_usd, Money4::from_scaled(11_000));
         assert_eq!(first.priced_request_count, 1);
         assert_eq!(first.unpriced_request_count, 1);
-        assert_eq!(first.usage_missing_request_count, 0);
+        assert_eq!(first.usage_missing_request_count, 1);
         let second = daily
             .iter()
             .find(|row| row.day_start.unix_timestamp() == day_two_bucket)
@@ -9208,7 +9495,7 @@ pub(crate) mod tests {
         assert_eq!(user_owner.priced_cost_usd, Money4::from_scaled(11_000));
         assert_eq!(user_owner.priced_request_count, 1);
         assert_eq!(user_owner.unpriced_request_count, 1);
-        assert_eq!(user_owner.usage_missing_request_count, 0);
+        assert_eq!(user_owner.usage_missing_request_count, 1);
         let service_account_owner = owners
             .iter()
             .find(|row| row.owner_kind == ApiKeyOwnerKind::ServiceAccount)
@@ -9234,7 +9521,7 @@ pub(crate) mod tests {
         assert_eq!(gateway_model.priced_cost_usd, Money4::from_scaled(11_000));
         assert_eq!(gateway_model.priced_request_count, 1);
         assert_eq!(gateway_model.unpriced_request_count, 1);
-        assert_eq!(gateway_model.usage_missing_request_count, 0);
+        assert_eq!(gateway_model.usage_missing_request_count, 1);
         let upstream_model = models
             .iter()
             .find(|row| row.model_key == "claude-3-5-sonnet")
@@ -9279,6 +9566,14 @@ pub(crate) mod tests {
         assert_eq!(user_models[0].model_key, "fast");
 
         assert_focus_export_aggregates(
+            &store,
+            window_start,
+            window_end,
+            user.user_id,
+            service_account_id,
+        )
+        .await;
+        assert_token_series_aggregates(
             &store,
             window_start,
             window_end,
@@ -9380,6 +9675,7 @@ pub(crate) mod tests {
                 model_key: "fast".to_string(),
                 alias_target_model_key: Some("fast-v2".to_string()),
                 max_reasoning_effort: Some(ReasoningEffort::Low),
+                routing: None,
                 description: Some("alias".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 10,
@@ -9390,10 +9686,12 @@ pub(crate) mod tests {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: Some(ReasoningEffort::High),
+                routing: None,
                 description: Some("replacement".to_string()),
                 tags: vec!["fast".to_string()],
                 rank: 5,
                 routes: vec![SeedModelRoute {
+                    route_key: None,
                     provider_key: "openai-prod".to_string(),
                     upstream_model: "gpt-5".to_string(),
                     priority: 10,

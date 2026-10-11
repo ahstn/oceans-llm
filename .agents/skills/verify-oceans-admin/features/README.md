@@ -9,7 +9,7 @@ This directory is the maintained source for verification of the user-facing Ocea
 - Require `control-oceans-admin doctor` to report the recorded gateway PID, ready state, and gateway version.
 - Use the seeded `admin@local` / `admin` platform-admin account unless a feature requires a narrower role.
 - Verify Agent Sessions with the seeded platform administrator. The current `gateway.yaml` grants `agent_sessions` directly to platform administrators.
-- Expect `dev-stack` to refresh the demo data in this checkout's `gateway.db`.
+- Expect `dev-stack` to refresh the demo data in this checkout's `gateway.db`. Skills verification is an explicit exception: `OCEANS_VERIFY_SKILLS=true` uses a private run-local database and native RustFS.
 - Do not run a second stack from this checkout. It would share `gateway.db` even if its ports differ.
 
 ## Driving conventions
@@ -21,6 +21,7 @@ This directory is the maintained source for verification of the user-facing Ocea
 - Use `control-oceans-admin drive observability` for the combined Leaderboard and Agent Harnesses proof.
 - Use `control-oceans-admin drive backend-gateway` for the bounded OpenRouter, deterministic guardrail, generated-tool decision, and request-log proof.
 - Use `control-oceans-admin drive mcp` for the MCP registry, Tool Sets workbench, grant checks, bounded live tool calls, and invocation proof. Read its credential preconditions before launch.
+- Use `control-oceans-admin drive skills` for browser uploads, immutable versions, archive digests, and owner access against native RustFS. Read its launch preconditions first.
 - Extend the harness before reporting another path as automated. Manual Playwright steps in this map remain the contract for that extension.
 - Read-only control-plane verification does not call upstream services. Use the live LLM recipe when changed model-request behavior warrants paid integration proof. Use the MCP recipe for authorized, reviewed read-only tool calls; these can consume upstream service quota. Neither recipe permits unrelated upstream mutations.
 
@@ -56,3 +57,4 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Live LLM requests](./live-llm-requests.md) covers bounded paid canaries through OpenRouter or Bedrock and their request-log evidence.
 - [Backend gateway](./backend-gateway.md) covers the OpenRouter route for `deepseek-v4-flash-0731`, deterministic and generated-tool guardrails, request-log evidence, and temporary key cleanup.
 - [MCP](./mcp.md) covers registry discovery, Tool Sets, generated client configuration, explicit grants, direct and aggregate tool calls, upstream authentication failure, invocation records, and cleanup.
+- [Skills](./skills.md) covers namespace claims, ZIP uploads, previews, immutable versions, browser downloads, shared reads, owner-only updates, service-account access, and scoped RustFS cleanup.

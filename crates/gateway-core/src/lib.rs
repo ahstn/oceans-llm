@@ -7,6 +7,8 @@ pub mod error;
 pub mod gateway_keys;
 pub mod protocol;
 pub mod reasoning_policy;
+pub mod routing;
+pub mod skills;
 pub mod streaming;
 pub mod traits;
 
@@ -56,11 +58,12 @@ pub use domain::{
     FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
     GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, GlobalRole,
     GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
-    HarnessUsageBucketRecord, HarnessUsageLeaderRecord, IdentityUserRecord, MAX_ENTITY_TAGS,
-    MAX_GUARDRAIL_DECISION_PAGE_SIZE, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, MAX_REQUEST_LOG_PAGE_SIZE,
-    MAX_TAG_KEY_LEN, MAX_TAG_VALUE_LEN, ManagedApiKeySource, McpAccessResolution,
-    McpAggregateSessionRecord, McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject,
-    McpOauthStateRecord, McpTokenEstimateConfidence, McpTokenEstimateSource, McpToolGrantRecord,
+    HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
+    IdentityUserRecord, MAX_ENTITY_TAGS, MAX_GUARDRAIL_DECISION_PAGE_SIZE,
+    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, MAX_REQUEST_LOG_PAGE_SIZE, MAX_TAG_KEY_LEN,
+    MAX_TAG_VALUE_LEN, ManagedApiKeySource, McpAccessResolution, McpAggregateSessionRecord,
+    McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject, McpOauthStateRecord,
+    McpTokenEstimateConfidence, McpTokenEstimateSource, McpToolGrantRecord,
     McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
     McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
     McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
@@ -92,7 +95,8 @@ pub use domain::{
     SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
     SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
     ServiceAccountRecord, ServiceAccountStatus, SpendDailyAggregateRecord,
-    SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord,
+    SpendModelAggregateRecord, SpendModelTokenDailyRecord, SpendOwnerAggregateRecord,
+    SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord, TokenUsageBuckets,
     UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
     UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
     UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
@@ -123,9 +127,8 @@ pub use protocol::core::{
 };
 pub use protocol::openai::{
     ChatCompletionsRequest, DecisionAnswer, DecisionQuestion, DecisionsRequest, DecisionsResponse,
-    DecisionsUsage, EmbeddingsRequest, ModelsListResponse, NoulCriteria, OpenAiErrorBody,
-    OpenAiErrorEnvelope, ResponseOutputItem, ResponseUsage, ResponsesRequest, ResponsesResponse,
-    ResponsesStreamEvent,
+    DecisionsUsage, EmbeddingsRequest, NoulCriteria, OpenAiErrorBody, OpenAiErrorEnvelope,
+    ResponseOutputItem, ResponseUsage, ResponsesRequest, ResponsesResponse, ResponsesStreamEvent,
 };
 pub use protocol::translate::{
     anthropic_messages_request_to_core, core_chat_request_to_openai,
@@ -137,6 +140,16 @@ pub use protocol::translate::{
 pub use reasoning_policy::{
     enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
     enforce_responses_reasoning_effort,
+};
+pub use routing::{
+    ModelRoutingPolicy, ResponseRouteOrigin, RouteBindingReceipt, RouteSelection,
+    RouteSelectionMode, RouteSelectionRequest, RoutingCandidate, RoutingRepository,
+    RoutingStrategy, SessionAffinityPolicy,
+};
+pub use skills::{
+    SkillDetail, SkillListQuery, SkillNamespaceRecord, SkillObjectStore, SkillRecord,
+    SkillRepository, SkillUploadResponse, SkillVersionMetadata, SkillVersionRecord,
+    SkillVersionSummary,
 };
 pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};
 pub use traits::{

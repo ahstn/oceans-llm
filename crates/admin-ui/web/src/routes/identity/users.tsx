@@ -811,18 +811,14 @@ export function UsersPage() {
                 {users.map((user) => (
                   <article
                     key={user.id}
-                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+                    className="border-border bg-surface-muted rounded-lg border p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-3">
                         <GeneratedAvatar kind="user" name={user.name || user.email} size={40} />
                         <div className="min-w-0">
-                          <p className="truncate font-semibold text-[var(--color-text)]">
-                            {user.name}
-                          </p>
-                          <p className="truncate text-sm text-[var(--color-text-muted)]">
-                            {user.email}
-                          </p>
+                          <p className="text-foreground truncate font-semibold">{user.name}</p>
+                          <p className="text-subtle-foreground truncate text-sm">{user.email}</p>
                         </div>
                       </div>
                       <Badge
@@ -840,18 +836,16 @@ export function UsersPage() {
 
                     <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                       <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                           Global role
                         </dt>
-                        <dd className="text-[var(--color-text-muted)]">{user.global_role}</dd>
+                        <dd className="text-subtle-foreground">{user.global_role}</dd>
                       </div>
                       <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                           Team
                         </dt>
-                        <dd className="text-[var(--color-text-muted)]">
-                          {user.team_name ?? 'No team'}
-                        </dd>
+                        <dd className="text-subtle-foreground">{user.team_name ?? 'No team'}</dd>
                       </div>
                     </dl>
 
@@ -869,26 +863,26 @@ export function UsersPage() {
                 ))}
               </div>
 
-              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+              <div className="border-border hidden overflow-hidden rounded-md border md:block">
                 <Table className="text-left">
-                  <TableHeader className="bg-[color:var(--color-surface-muted)]">
+                  <TableHeader className="bg-surface-muted">
                     <TableRow>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Name
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Email
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Global role
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Team
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Status
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Actions
                       </TableHead>
                     </TableRow>
@@ -896,19 +890,19 @@ export function UsersPage() {
                   <TableBody>
                     {users.map((user) => (
                       <TableRow key={user.id}>
-                        <TableCell className="px-3 py-3 text-[var(--color-text)]">
+                        <TableCell className="text-foreground px-3 py-3">
                           <div className="flex min-w-0 items-center gap-3">
                             <GeneratedAvatar kind="user" name={user.name || user.email} size={32} />
                             <span className="truncate">{user.name}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <TableCell className="text-subtle-foreground px-3 py-3">
                           {user.email}
                         </TableCell>
-                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <TableCell className="text-subtle-foreground px-3 py-3">
                           {user.global_role}
                         </TableCell>
-                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <TableCell className="text-subtle-foreground px-3 py-3">
                           {user.team_name ?? '—'}
                         </TableCell>
                         <TableCell className="px-3 py-3">
@@ -966,10 +960,7 @@ export function UsersPage() {
               className="min-h-0 items-start"
               style={{ '--sidebar-width': '14rem' } as CSSProperties}
             >
-              <Sidebar
-                collapsible="none"
-                className="hidden border-r border-[color:var(--color-border)] md:flex"
-              >
+              <Sidebar collapsible="none" className="border-border hidden border-r md:flex">
                 <SidebarContent className="p-3">
                   <SidebarGroup className="px-0 py-0">
                     <SidebarGroupContent>
@@ -994,7 +985,7 @@ export function UsersPage() {
               </Sidebar>
 
               <main className="flex max-h-[680px] min-h-[520px] flex-1 flex-col overflow-hidden">
-                <header className="flex shrink-0 flex-col gap-4 border-b border-[color:var(--color-border)] px-6 py-5">
+                <header className="border-border flex shrink-0 flex-col gap-4 border-b px-6 py-5">
                   <div className="flex items-start gap-3">
                     <GeneratedAvatar
                       kind="user"
@@ -1002,10 +993,10 @@ export function UsersPage() {
                       size={44}
                     />
                     <div className="min-w-0 flex-1 pt-0.5">
-                      <h2 className="truncate text-lg leading-tight font-semibold text-[var(--color-text)]">
+                      <h2 className="text-foreground truncate text-lg leading-tight font-semibold">
                         {selectedUser.name}
                       </h2>
-                      <p className="mt-1 truncate text-sm text-[var(--color-text-muted)]">
+                      <p className="text-subtle-foreground mt-1 truncate text-sm">
                         {selectedUser.email}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-2">
@@ -1068,7 +1059,7 @@ export function UsersPage() {
                         onRemove={handleRemoveProviderCredential}
                       />
                     </div>
-                    <DialogFooter className="mx-0 mb-0 rounded-none border-t border-[color:var(--color-border)] px-6 py-4">
+                    <DialogFooter className="border-border mx-0 mb-0 rounded-none border-t px-6 py-4">
                       <Button type="button" variant="secondary" onClick={resetUserDialog}>
                         Close
                       </Button>
@@ -1084,7 +1075,7 @@ export function UsersPage() {
                   <div className="flex-1 overflow-y-auto p-6">
                     {selectedUserSection === 'overview' ? (
                       <div>
-                        <h3 className="text-sm font-semibold text-[var(--color-text)]">Profile</h3>
+                        <h3 className="text-foreground text-sm font-semibold">Profile</h3>
                         <dl className="mt-5 grid gap-x-8 gap-y-6 text-sm sm:grid-cols-2 lg:grid-cols-3">
                           <UserDetailRow
                             label="Global role"
@@ -1325,12 +1316,12 @@ export function UsersPage() {
                           ) : null}
                         </FieldGroup>
 
-                        <section className="flex flex-col gap-3 rounded-lg border border-[color:var(--color-border)] p-4">
+                        <section className="border-border flex flex-col gap-3 rounded-lg border p-4">
                           <div className="flex flex-col gap-1">
-                            <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                            <h3 className="text-foreground text-sm font-semibold">
                               Lifecycle actions
                             </h3>
-                            <p className="text-sm text-[var(--color-text-muted)]">
+                            <p className="text-subtle-foreground text-sm">
                               These operations take effect immediately and the list will refresh
                               from the gateway after each action.
                             </p>
@@ -1425,37 +1416,33 @@ export function UsersPage() {
 
                     {selectedUserSection === 'usage' ? (
                       <div className="grid gap-4 md:grid-cols-3">
-                        <section className="rounded-lg border border-[color:var(--color-border)] p-4">
-                          <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        <section className="border-border rounded-lg border p-4">
+                          <p className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                             Favourite model
                           </p>
-                          <p className="mt-2 text-lg font-semibold text-[var(--color-text)]">
+                          <p className="text-foreground mt-2 text-lg font-semibold">
                             Not enough data
                           </p>
-                          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                          <p className="text-subtle-foreground mt-1 text-sm">
                             Wire this to model-level usage once the backend exposes per-user
                             aggregates.
                           </p>
                         </section>
-                        <section className="rounded-lg border border-[color:var(--color-border)] p-4">
-                          <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        <section className="border-border rounded-lg border p-4">
+                          <p className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                             Weekly usage
                           </p>
-                          <p className="mt-2 text-lg font-semibold text-[var(--color-text)]">
-                            Pending
-                          </p>
-                          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                          <p className="text-foreground mt-2 text-lg font-semibold">Pending</p>
+                          <p className="text-subtle-foreground mt-1 text-sm">
                             Planned: spend, tokens, and request counts over the last seven days.
                           </p>
                         </section>
-                        <section className="rounded-lg border border-[color:var(--color-border)] p-4">
-                          <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        <section className="border-border rounded-lg border p-4">
+                          <p className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                             Recent activity
                           </p>
-                          <p className="mt-2 text-lg font-semibold text-[var(--color-text)]">
-                            Pending
-                          </p>
-                          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                          <p className="text-foreground mt-2 text-lg font-semibold">Pending</p>
+                          <p className="text-subtle-foreground mt-1 text-sm">
                             Planned: latest requests and policy outcomes for this user.
                           </p>
                         </section>
@@ -1463,7 +1450,7 @@ export function UsersPage() {
                     ) : null}
                   </div>
 
-                  <DialogFooter className="mx-0 mb-0 rounded-none border-t border-[color:var(--color-border)] px-6 py-4">
+                  <DialogFooter className="border-border mx-0 mb-0 rounded-none border-t px-6 py-4">
                     <Button type="button" variant="secondary" onClick={resetUserDialog}>
                       Close
                     </Button>
@@ -1495,10 +1482,10 @@ export function UsersPage() {
 function UserDetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
         {label}
       </dt>
-      <dd className="mt-1 text-[var(--color-text-muted)]">{value}</dd>
+      <dd className="text-subtle-foreground mt-1">{value}</dd>
     </div>
   )
 }

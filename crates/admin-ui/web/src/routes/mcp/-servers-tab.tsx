@@ -548,10 +548,7 @@ function ServerDetailDialog({
             className="min-h-0 max-w-full min-w-0 items-start overflow-hidden"
             style={{ '--sidebar-width': '14rem' } as CSSProperties}
           >
-            <Sidebar
-              collapsible="none"
-              className="hidden border-r border-[color:var(--color-border)] md:flex"
-            >
+            <Sidebar collapsible="none" className="border-border hidden border-r md:flex">
               <SidebarContent className="p-3">
                 <SidebarGroup className="px-0 py-0">
                   <SidebarGroupContent>
@@ -576,20 +573,20 @@ function ServerDetailDialog({
             </Sidebar>
 
             <main className="flex max-h-[720px] min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden">
-              <header className="flex shrink-0 flex-col gap-4 border-b border-[color:var(--color-border)] px-6 py-5">
+              <header className="border-border flex shrink-0 flex-col gap-4 border-b px-6 py-5">
                 <div className="flex items-start gap-3">
                   <div className="bg-primary text-primary-foreground flex size-11 shrink-0 items-center justify-center rounded-full">
                     <McpServerIconMark server={server} size={22} bare />
                   </div>
                   <div className="min-w-0 flex-1 pt-0.5">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <h2 className="truncate text-lg leading-tight font-semibold text-[var(--color-text)]">
+                      <h2 className="text-foreground truncate text-lg leading-tight font-semibold">
                         {server.display_name}
                       </h2>
                       <ServerStatusBadge status={server.status} />
                       <DiscoveryStatusBadge status={server.last_discovery_status} />
                     </div>
-                    <p className="mt-1 truncate font-mono text-sm text-[var(--color-text-muted)]">
+                    <p className="text-subtle-foreground mt-1 truncate font-mono text-sm">
                       /mcp/{server.server_key}
                     </p>
                   </div>
@@ -666,15 +663,13 @@ function ServerDetailDialog({
                 {section === 'configuration' ? (
                   <form className="flex min-h-full flex-col gap-6" onSubmit={onSubmit}>
                     <div className="flex flex-col gap-2">
-                      <h3 className="text-sm font-semibold text-[var(--color-text)]">
-                        Configuration
-                      </h3>
-                      <p className="text-sm text-[var(--color-text-muted)]">
+                      <h3 className="text-foreground text-sm font-semibold">Configuration</h3>
+                      <p className="text-subtle-foreground text-sm">
                         Update endpoint, auth mode, timeout, and gateway auth configuration.
                       </p>
                     </div>
                     <ServerFormFields mode="edit" form={form} onFormChange={onFormChange} />
-                    <DialogFooter className="mt-auto border-t border-[color:var(--color-border)] pt-4">
+                    <DialogFooter className="border-border mt-auto border-t pt-4">
                       <Button
                         type="button"
                         variant="secondary"
@@ -762,7 +757,7 @@ export function RecommendedCatalog({
                 <McpServerIconMark server={server} />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium">{server.display_name}</div>
-                  <div className="truncate text-xs text-[var(--color-text-muted)]">
+                  <div className="text-subtle-foreground truncate text-xs">
                     {server.catalog_key}
                   </div>
                 </div>

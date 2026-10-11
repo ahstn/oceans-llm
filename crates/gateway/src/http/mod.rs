@@ -17,12 +17,14 @@ pub mod mcp_oauth;
 pub mod mcp_registry;
 pub mod models;
 pub mod observability;
+pub mod profile;
 pub mod provider_credentials;
 mod request_body;
 pub mod request_tags;
 mod request_tracing;
 pub mod response_cache;
 pub mod review_agent;
+pub mod skills;
 pub mod spend;
 mod spend_budget_listing;
 pub mod state;
@@ -44,11 +46,16 @@ use tower_http::{
 
 use self::{
     api_keys::*, batches::*, guardrails::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*,
-    mcp_registry::*, models::*, observability::*, provider_credentials::*, review_agent::*,
-    spend::*, state::AppState,
+    mcp_registry::*, models::*, observability::*, profile::*, provider_credentials::*,
+    review_agent::*, spend::*, state::AppState,
 };
 
-pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
+pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
+    if let Some(skills) = &state.skills {
+        admin_ui.max_multipart_body_bytes = usize::try_from(skills.limits().max_archive_bytes)
+            .expect("configured archive limit fits usize")
+            .saturating_add(64 * 1024);
+    }
     let request_id_header = HeaderName::from_static("x-request-id");
     let identity_guard_state = state.clone();
 
@@ -210,6 +217,16 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         )
         .route("/api/v1/admin/spend/focus.csv", get(get_admin_focus_export))
         .route("/api/v1/me/spend/focus.csv", get(get_my_focus_export))
+        .route("/api/v1/me/profile", get(get_my_profile))
+        .route(
+            "/api/v1/me/provider-credentials",
+            get(list_my_provider_credentials),
+        )
+        .route(
+            "/api/v1/me/provider-credentials/{provider_key}",
+            axum::routing::put(set_my_provider_credential)
+                .layer(DefaultBodyLimit::max(PROVIDER_CREDENTIAL_BODY_LIMIT)),
+        )
         .route(
             "/api/v1/admin/spend/budgets",
             get(list_spend_budgets).put(upsert_budget),
@@ -370,6 +387,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/v1/models", get(v1_models))
         .route("/v1/model-metadata", get(v1_model_metadata))
         .merge(inference_router)
+        .merge(skills::router())
         .route(
             "/mcp",
             post(mcp_aggregate_streamable_http)

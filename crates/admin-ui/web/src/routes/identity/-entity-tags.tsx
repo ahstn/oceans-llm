@@ -62,7 +62,7 @@ export function EntityTagsField({
 
 export function EntityTagBadges({ tags }: { tags: EntityTag[] }) {
   if (tags.length === 0) {
-    return <span className="text-xs text-[var(--color-text-soft)]">No tags</span>
+    return <span className="text-muted-foreground text-xs">No tags</span>
   }
 
   return (

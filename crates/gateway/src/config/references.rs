@@ -7,10 +7,15 @@ fn resolve_env_reference(value: &str) -> anyhow::Result<String> {
         .strip_prefix("env.")
         .ok_or_else(|| anyhow::anyhow!("expected env.* secret reference, got `{value}`"))?;
 
-    let resolved = env::var(env_var_name)
-        .with_context(|| format!("required environment variable `{env_var_name}` is not set"))?;
-
-    Ok(resolved)
+    match env::var(env_var_name) {
+        Ok(value) => Ok(value),
+        Err(env::VarError::NotPresent) => Err(env::VarError::NotPresent)
+            .with_context(|| format!("required environment variable `{env_var_name}` is not set")),
+        Err(env::VarError::NotUnicode(_)) => {
+            // NotUnicode contains the raw value; never retain it in the error chain.
+            bail!("environment variable `{env_var_name}` is not valid UTF-8")
+        }
+    }
 }
 
 pub(crate) fn resolve_secret_reference(value: &str) -> anyhow::Result<String> {

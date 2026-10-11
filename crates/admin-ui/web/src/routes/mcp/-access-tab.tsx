@@ -217,7 +217,7 @@ export function AccessTab({
         <section className="flex min-w-0 flex-col gap-4 rounded-md border p-4">
           <div className="flex flex-col gap-1">
             <h3 className="font-medium">New grant</h3>
-            <p className="text-sm text-[var(--color-text-muted)]">
+            <p className="text-subtle-foreground text-sm">
               Assign a tool or toolset to a subject — pick from real entities, no UUIDs.
             </p>
           </div>
@@ -283,7 +283,7 @@ export function AccessTab({
         <section className="flex min-w-0 flex-col gap-4 rounded-md border p-4">
           <div className="flex flex-col gap-1">
             <h3 className="font-medium">Effective access</h3>
-            <p className="text-sm text-[var(--color-text-muted)]">
+            <p className="text-subtle-foreground text-sm">
               Resolve the callable tools a subject actually sees.
             </p>
           </div>
@@ -344,7 +344,7 @@ export function AccessTab({
       <section className="flex min-w-0 flex-col gap-3 rounded-md border p-4">
         <div className="flex flex-col gap-1">
           <h3 className="font-medium">Grants</h3>
-          <p className="text-sm text-[var(--color-text-muted)]">
+          <p className="text-subtle-foreground text-sm">
             Explicit active grants for tools and toolsets.
           </p>
         </div>
@@ -445,21 +445,19 @@ function EffectivePreview({
         <Metric label="Filtered" value={preview.filtered_tool_count} />
       </div>
       {preview.tools.length === 0 ? (
-        <p className="text-sm text-[var(--color-text-muted)]">
-          No callable tools for this subject.
-        </p>
+        <p className="text-subtle-foreground text-sm">No callable tools for this subject.</p>
       ) : (
         <div className="flex flex-col gap-3">
           {groups.map(([serverId, tools]) => (
             <div key={serverId} className="flex flex-col gap-1">
-              <div className="text-xs font-medium text-[var(--color-text-soft)]">
+              <div className="text-muted-foreground text-xs font-medium">
                 {serverNameById.get(serverId) ?? serverId}
               </div>
               <div className="grid gap-2">
                 {tools.map((tool) => (
                   <div key={tool.id} className="rounded-md border p-2">
                     <div className="font-medium">{tool.display_name}</div>
-                    <div className="font-mono text-xs text-[var(--color-text-muted)]">
+                    <div className="text-subtle-foreground font-mono text-xs">
                       {tool.upstream_name}
                     </div>
                   </div>
@@ -475,8 +473,8 @@ function EffectivePreview({
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md bg-[var(--color-muted)] p-2">
-      <div className="text-xs text-[var(--color-text-muted)]">{label}</div>
+    <div className="bg-muted rounded-md p-2">
+      <div className="text-subtle-foreground text-xs">{label}</div>
       <div className="font-mono text-lg">{value}</div>
     </div>
   )
@@ -489,7 +487,7 @@ function GrantCell({ kind, label, id }: { kind: string; label: string; id: strin
         <Badge variant="secondary">{kind}</Badge>
         <span className="truncate font-medium">{label}</span>
       </div>
-      <div className="truncate font-mono text-xs text-[var(--color-text-muted)]">{id}</div>
+      <div className="text-subtle-foreground truncate font-mono text-xs">{id}</div>
     </div>
   )
 }

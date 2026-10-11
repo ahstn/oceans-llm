@@ -11,9 +11,9 @@ use gateway_core::{
     OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord,
     PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository,
     ProviderUserCredentialRepository, RequestLogRepository, RequestTag, ReviewAgentRepository,
-    SeedApiKey, SeedHumanBudgetDefaults, SeedModel, SeedOauthProvider, SeedOidcProvider,
-    SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, StoreError, StoreHealth,
-    TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
+    RoutingRepository, SeedApiKey, SeedHumanBudgetDefaults, SeedModel, SeedOauthProvider,
+    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, StoreError,
+    StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
     UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
@@ -47,6 +47,7 @@ pub trait GatewayStore:
     + AdminApiKeyRepository
     + BatchRepository
     + ModelRepository
+    + RoutingRepository
     + ProviderRepository
     + ProviderUserCredentialRepository
     + IdentityRepository
@@ -595,6 +596,13 @@ impl ModelRepository for AnyStore {
         dispatch_store!(self, list_models_for_api_key(api_key_id))
     }
 
+    async fn list_models_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, Vec<gateway_core::GatewayModel>>, StoreError> {
+        dispatch_store!(self, list_models_for_api_keys(api_key_ids))
+    }
+
     async fn list_model_allowlists_for_models(
         &self,
         model_ids: &[Uuid],
@@ -875,6 +883,13 @@ impl BudgetRepository for AnyStore {
         )
     }
 
+    async fn get_request_log_usage_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<Vec<gateway_core::UsageLedgerRecord>, StoreError> {
+        dispatch_store!(self, get_request_log_usage_by_request_ids(request_ids))
+    }
+
     async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
         scope: &gateway_core::BudgetScope,
@@ -933,6 +948,42 @@ impl BudgetRepository for AnyStore {
         dispatch_store!(
             self,
             list_usage_model_aggregates(window_start, window_end, owner_kind, owner_user_id)
+        )
+    }
+
+    async fn list_usage_owner_token_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<gateway_core::SpendOwnerTokenDailyRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_usage_owner_token_daily_aggregates(
+                window_start,
+                window_end,
+                owner_kind,
+                owner_user_id
+            )
+        )
+    }
+
+    async fn list_usage_model_token_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<gateway_core::SpendModelTokenDailyRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_usage_model_token_daily_aggregates(
+                window_start,
+                window_end,
+                owner_kind,
+                owner_user_id
+            )
         )
     }
 
@@ -1131,6 +1182,18 @@ impl RequestLogRepository for AnyStore {
                 bucket_hours,
                 agent_harness_keys
             )
+        )
+    }
+
+    async fn list_user_harness_daily_usage(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        user_id: Uuid,
+    ) -> Result<Vec<gateway_core::HarnessUsageDailyRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_user_harness_daily_usage(window_start, window_end, user_id)
         )
     }
 

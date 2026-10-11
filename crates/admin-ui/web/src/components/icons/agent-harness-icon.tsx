@@ -40,7 +40,7 @@ export function AgentHarnessIcon({
         {...props}
       >
         <svg viewBox="0 0 64 64" width="100%" height="100%">
-          <path fill="#fff" d="M10 14h44v9H43v33h-9V23h-9v22h-9V23H10z" />
+          <path fill="var(--color-white)" d="M10 14h44v9H43v33h-9V23h-9v22h-9V23H10z" />
         </svg>
       </span>
     )

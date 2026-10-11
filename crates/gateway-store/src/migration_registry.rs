@@ -282,6 +282,38 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V51__budget_service_account_source.sql"),
         postgres_sql: include_str!("../migrations/postgres/V51__budget_service_account_source.sql"),
     },
+    MigrationManifest {
+        version: 52,
+        name: "skills",
+        checksum: "V52__skills.sql",
+        libsql_sql: include_str!("../migrations/V52__skills.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V52__skills.sql"),
+    },
+    MigrationManifest {
+        version: 53,
+        name: "model_routing_policy",
+        checksum: "V53__model_routing_policy.sql",
+        libsql_sql: include_str!("../migrations/V53__model_routing_policy.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V53__model_routing_policy.sql"),
+    },
+    MigrationManifest {
+        version: 54,
+        name: "request_log_request_tool_count",
+        checksum: "V54__request_log_request_tool_count.sql",
+        libsql_sql: include_str!("../migrations/V54__request_log_request_tool_count.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V54__request_log_request_tool_count.sql"
+        ),
+    },
+    MigrationManifest {
+        version: 55,
+        name: "request_log_invoked_distinct_tool_count",
+        checksum: "V55__request_log_invoked_distinct_tool_count.sql",
+        libsql_sql: include_str!("../migrations/V55__request_log_invoked_distinct_tool_count.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V55__request_log_invoked_distinct_tool_count.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

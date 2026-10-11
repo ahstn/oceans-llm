@@ -205,13 +205,6 @@ a {
   text-decoration: none;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
 ::selection {
   background: color-mix(in oklch, var(--color-primary) 38%, transparent);
   color: var(--color-text);
@@ -267,9 +260,30 @@ textarea {
   --color-success-foreground: var(--success-foreground);
   --color-success: var(--success);
   --color-destructive-foreground: var(--destructive-foreground);
+  /* Admin surfaces: a text step between foreground and muted-foreground, and table header fills. */
+  --color-subtle-foreground: color-mix(in oklch, var(--foreground) 72%, var(--muted-foreground) 28%);
+  --color-surface-muted: var(--surface-muted);
+  /* Uppercase eyebrow labels. */
+  --tracking-label: 0.08em;
+  --tracking-eyebrow: 0.18em;
+  /* Compact axis labels (heatmaps) and fluid hero headings (error page). */
+  --text-2xs: 0.625rem;
+  --text-display: clamp(2.8rem, 5vw, 4.6rem);
+  --text-display--line-height: 0.94;
+  --text-display-sm: clamp(1.9rem, 2vw, 2.6rem);
+  /* Edge of a horizontally sticky table column. */
+  --shadow-sticky-edge: 8px 0 12px -12px rgb(0 0 0 / 0.8);
 }
 
 @layer base {
+  /* Layered so component text-size and weight utilities still win. */
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
   * {
     @apply border-border outline-ring/50;
 

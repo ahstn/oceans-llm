@@ -1,0 +1,130 @@
+import { formatDistanceToNowStrict } from 'date-fns'
+import { BadgeInfoIcon } from '@hugeicons/core-free-icons'
+
+import { AppIcon } from '@/components/icons/app-icon'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import type { ModelView } from '@/types/api'
+
+const SCORE_FORMAT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
+
+type BenchmarkScore = ModelView['benchmark_scores'][number]
+
+const INTELLIGENCE_INDEX_METRIC_KEY: BenchmarkScore['metric_key'] =
+  'artificial_analysis_intelligence_index'
+
+function intelligenceIndexScore(model: ModelView) {
+  return model.benchmark_scores.find((score) => score.metric_key === INTELLIGENCE_INDEX_METRIC_KEY)
+}
+
+function formatBenchmarkScore(score: BenchmarkScore) {
+  return SCORE_FORMAT.format(score.value)
+}
+
+export function ModelIntelligenceScore({ model }: { model: ModelView }) {
+  const score = intelligenceIndexScore(model)
+  return <>{score ? formatBenchmarkScore(score) : '—'}</>
+}
+
+export function IntelligenceIndexLabel() {
+  return (
+    <span className="inline-flex items-center gap-1">
+      Intelligence Index
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="About Intelligence Index"
+          >
+            <AppIcon icon={BadgeInfoIcon} aria-hidden />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          Artificial Analysis Intelligence Index, retrieved via OpenRouter.
+        </TooltipContent>
+      </Tooltip>
+    </span>
+  )
+}
+
+export function BenchmarkAttribution() {
+  return (
+    <>
+      Benchmark scores by{' '}
+      <a
+        className="underline underline-offset-4"
+        href="https://artificialanalysis.ai/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Artificial Analysis
+      </a>
+      , retrieved via{' '}
+      <a
+        className="underline underline-offset-4"
+        href="https://openrouter.ai/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        OpenRouter
+      </a>
+      .
+    </>
+  )
+}
+
+export function ModelBenchmarks({ model }: { model: ModelView }) {
+  if (model.benchmark_scores.length === 0) {
+    return (
+      <p className="text-subtle-foreground text-sm">
+        No benchmark data is available for this model.
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <dl className="divide-y">
+        {model.benchmark_scores.map((score) => (
+          <div
+            key={`${score.source}:${score.metric_key}`}
+            className="grid min-w-0 gap-2 py-3 text-sm sm:grid-cols-[9rem_minmax(0,1fr)]"
+          >
+            <dt className="text-muted-foreground">{score.label}</dt>
+            <dd className="text-subtle-foreground flex min-w-0 flex-col gap-1">
+              <span className="text-foreground font-medium">{formatBenchmarkScore(score)}</span>
+              <span className="text-xs">
+                {matchKindLabel(score.match_kind)} · Updated {formatDataAge(score.updated_at)}
+              </span>
+              <a
+                className="max-w-full text-xs break-words underline underline-offset-4"
+                href={score.source_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {score.source_model_id} on OpenRouter
+              </a>
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="text-muted-foreground text-xs">
+        <BenchmarkAttribution />
+      </p>
+    </div>
+  )
+}
+
+function matchKindLabel(matchKind: BenchmarkScore['match_kind']) {
+  return matchKind === 'explicit' ? 'Bound in config' : 'Matched from upstream model'
+}
+
+function formatDataAge(timestamp: string) {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) {
+    return 'at an unknown time'
+  }
+  return formatDistanceToNowStrict(date, { addSuffix: true })
+}

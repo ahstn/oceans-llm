@@ -1284,6 +1284,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_my_profile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/provider-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_my_provider_credentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/provider-credentials/{provider_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_my_provider_credential"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/spend/focus.csv": {
         parameters: {
             query?: never;
@@ -1374,6 +1422,166 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["heartbeat_review_agent_action_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_skills"];
+        put?: never;
+        post: operations["create_skill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/by-name/{namespace}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill_by_name"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill_limits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/namespace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill_namespace"];
+        put?: never;
+        post: operations["claim_skill_namespace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}/default-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_skill_default_version"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_skill_versions"];
+        put?: never;
+        post: operations["append_skill_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill_version"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}/versions/{version}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["download_skill_archive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_id}/versions/{version}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_skill_file"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1567,6 +1775,21 @@ export interface components {
             teams: string[];
             users: string[];
         };
+        /** @enum {string} */
+        AdminModelBenchmarkMatchKindView: "explicit" | "derived";
+        /** @enum {string} */
+        AdminModelBenchmarkMetricKeyView: "artificial_analysis_intelligence_index" | "artificial_analysis_coding_index" | "artificial_analysis_agentic_index";
+        AdminModelBenchmarkScoreView: {
+            label: string;
+            match_kind: components["schemas"]["AdminModelBenchmarkMatchKindView"];
+            metric_key: components["schemas"]["AdminModelBenchmarkMetricKeyView"];
+            source: string;
+            source_model_id: string;
+            source_url: string;
+            updated_at: string;
+            /** Format: double */
+            value: number;
+        };
         AdminModelClientConfigBlockView: {
             content: string;
             filename: string;
@@ -1594,11 +1817,37 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        AdminModelRouteView: {
+            enabled: boolean;
+            id: string;
+            /** Format: int32 */
+            priority: number;
+            provider_configured: boolean;
+            provider_icon_key: components["schemas"]["ProviderIconKeyView"];
+            provider_key: string;
+            provider_label: string;
+            upstream_model: string;
+            /** Format: double */
+            weight: number;
+        };
+        AdminModelRoutingPolicyView: {
+            affinity?: null | components["schemas"]["AdminModelSessionAffinityView"];
+            strategy: components["schemas"]["AdminModelRoutingStrategyView"];
+        };
+        /** @enum {string} */
+        AdminModelRoutingStrategyView: "preferred" | "weighted_random" | "round_robin";
+        AdminModelSessionAffinityView: {
+            /** Format: int32 */
+            idle_timeout_seconds: number;
+        };
         /** @enum {string} */
         AdminModelStatusView: "healthy" | "degraded";
         AdminModelView: {
             alias_of?: string | null;
+            /** @description Other model IDs resolving to the same execution model, excluding this model ID. */
+            aliases: string[];
             allowlist?: null | components["schemas"]["AdminModelAllowlistView"];
+            benchmark_scores: components["schemas"]["AdminModelBenchmarkScoreView"][];
             /** Format: int64 */
             cache_read_cost_per_million_tokens_usd_10000?: number | null;
             /** Format: int64 */
@@ -1625,6 +1874,9 @@ export interface components {
             provider_key?: string | null;
             provider_label?: string | null;
             resolved_model_key: string;
+            /** @description Configured routes, including disabled routes. Only visible to platform admins. */
+            routes?: components["schemas"]["AdminModelRouteView"][] | null;
+            routing?: null | components["schemas"]["AdminModelRoutingPolicyView"];
             status: components["schemas"]["AdminModelStatusView"];
             supports_attachments?: boolean | null;
             supports_decisions?: boolean | null;
@@ -2445,9 +2697,29 @@ export interface components {
             id: string;
             version: string;
         };
+        BundleLimits: {
+            /**
+             * Format: int64
+             * @default 10485760
+             */
+            max_archive_bytes: number;
+            /**
+             * Format: int64
+             * @default 26214400
+             */
+            max_expanded_bytes: number;
+            /**
+             * Format: int32
+             * @default 1000
+             */
+            max_files: number;
+        };
         ChangePasswordRequest: {
             current_password: string;
             new_password: string;
+        };
+        ClaimNamespaceRequest: {
+            handle: string;
         };
         CompleteInvitationRequest: {
             password: string;
@@ -2954,6 +3226,19 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_MyProfileView: {
+            data: {
+                /** @description API keys the user owns personally. Team and service-account keys are excluded. */
+                api_keys: components["schemas"]["MyProfileApiKeyView"][];
+                budget?: null | components["schemas"]["MyProfileBudgetView"];
+                days: components["schemas"]["MyProfileDayView"][];
+                harness_days: components["schemas"]["MyProfileHarnessDayView"][];
+                model_days: components["schemas"]["MyProfileModelDayView"][];
+                window_end: string;
+                window_start: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_Option_AuthSessionView: {
             data: null | {
                 capabilities: components["schemas"]["AuthSessionCapabilitiesView"];
@@ -3070,8 +3355,12 @@ export interface components {
         Envelope_SpendReportView: {
             data: {
                 daily: components["schemas"]["SpendDailyPointView"][];
+                /** @description Daily token volumes for the heaviest models; the remainder is folded into one `is_other` series. */
+                model_token_series: components["schemas"]["SpendModelTokenSeriesView"][];
                 models: components["schemas"]["SpendModelBreakdownView"][];
                 owner_kind: string;
+                /** @description Daily token volumes for the heaviest owners by total tokens, zero-filled across the window. */
+                owner_token_series: components["schemas"]["SpendOwnerTokenSeriesView"][];
                 owners: components["schemas"]["SpendOwnerBreakdownView"][];
                 totals: components["schemas"]["SpendTotalsView"];
                 /** Format: int32 */
@@ -3496,6 +3785,97 @@ export interface components {
         };
         /** @enum {string} */
         ModelIconKeyView: "anthropic" | "claude" | "deepseek" | "gemini" | "openai" | "openrouter" | "qwen" | "typesafe" | "vertexai";
+        /**
+         * @description A personal key as listed on the profile. Owner details are implied, so unlike the API keys
+         *     page's view they are left out.
+         */
+        MyProfileApiKeyView: {
+            created_at: string;
+            id: string;
+            last_used_at?: string | null;
+            model_grant_mode: components["schemas"]["ApiKeyModelGrantModeView"];
+            /** @description Granted model keys; empty when `model_grant_mode` is `all`. */
+            model_keys: string[];
+            name: string;
+            prefix: string;
+            status: string;
+        };
+        MyProfileBudgetView: {
+            period_end: string;
+            /** @description Current budget period; spend resets at `period_end`. */
+            period_start: string;
+            settings: components["schemas"]["BudgetSettingsView"];
+            source: components["schemas"]["BudgetSourceView"];
+            /** Format: int64 */
+            spent_usd_10000: number;
+        };
+        /** @description Usage for one UTC day. `day` is an ISO date (`YYYY-MM-DD`). */
+        MyProfileDayView: {
+            /** Format: int64 */
+            cache_read_tokens: number;
+            /** Format: int64 */
+            cache_write_tokens: number;
+            /**
+             * Format: int64
+             * @description Cost of priced requests only; incomplete when either gap count below is non-zero.
+             */
+            cost_usd_10000: number;
+            day: string;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            request_count: number;
+            /** Format: int64 */
+            total_tokens: number;
+            /**
+             * Format: int64
+             * @description Input with a provider cache split that missed the cache; with the two cache buckets this
+             *     forms the cache hit-rate denominator.
+             */
+            uncached_input_tokens: number;
+            /**
+             * Format: int64
+             * @description Requests with no pricing for their model, so they add nothing to the cost.
+             */
+            unpriced_request_count: number;
+            /**
+             * Format: int64
+             * @description Requests whose provider reported no usage, so they could not be priced.
+             */
+            usage_missing_request_count: number;
+        };
+        MyProfileHarnessDayView: {
+            day: string;
+            harness_key: string;
+            harness_label: string;
+            /** Format: int64 */
+            request_count: number;
+            /** Format: int64 */
+            total_tokens: number;
+        };
+        MyProfileModelDayView: {
+            day: string;
+            /** @description Sums the day's models that no profile chart range ranks highly enough to show. */
+            is_other: boolean;
+            /** @description Empty on `is_other` rows. */
+            model_key: string;
+            /** Format: int64 */
+            request_count: number;
+            /** Format: int64 */
+            total_tokens: number;
+        };
+        MyProfileView: {
+            /** @description API keys the user owns personally. Team and service-account keys are excluded. */
+            api_keys: components["schemas"]["MyProfileApiKeyView"][];
+            budget?: null | components["schemas"]["MyProfileBudgetView"];
+            days: components["schemas"]["MyProfileDayView"][];
+            harness_days: components["schemas"]["MyProfileHarnessDayView"][];
+            model_days: components["schemas"]["MyProfileModelDayView"][];
+            window_end: string;
+            window_start: string;
+        };
         /** @enum {string} */
         ObservabilityRangeQueryValue: "7d" | "31d";
         OpenAiErrorBodyView: {
@@ -3618,8 +3998,19 @@ export interface components {
             agent_harness_label: string;
             api_key_id: string;
             api_key_name?: string | null;
+            /**
+             * Format: int64
+             * @description Prompt tokens served from the provider cache, from the usage ledger.
+             */
+            cache_read_tokens?: number | null;
             /** Format: int64 */
             completion_tokens?: number | null;
+            /**
+             * Format: int64
+             * @description Computed request cost in USD scaled by 10,000. Null when no usage was recorded or the
+             *     request could not be priced.
+             */
+            cost_usd_10000?: number | null;
             error_code?: string | null;
             has_payload: boolean;
             /** Format: int64 */
@@ -3701,10 +4092,22 @@ export interface components {
             exposed_tool_count?: number | null;
             /** Format: int64 */
             filtered_tool_count?: number | null;
+            /**
+             * Format: int64
+             * @description Distinct tool names the model called; `invoked_tool_count` counts every call. Null for
+             *     requests logged before this was recorded.
+             */
+            invoked_distinct_tool_count?: number | null;
             /** Format: int64 */
             invoked_tool_count?: number | null;
             /** Format: int64 */
             referenced_mcp_server_count?: number | null;
+            /**
+             * Format: int64
+             * @description Tools declared in the request body's `tools` array: native client tools plus any MCP
+             *     tools the client loaded. Null for requests logged before this was recorded.
+             */
+            request_tool_count?: number | null;
         };
         ResponseMeta: {
             generated_at: string;
@@ -3811,6 +4214,97 @@ export interface components {
             enabled: boolean;
             tiers: string[];
         };
+        SelfProviderCredentialView: {
+            configured: boolean;
+            last_used_at?: string | null;
+            provider_key: string;
+            updated_at?: string | null;
+        };
+        SetDefaultVersionRequest: {
+            /** Format: int32 */
+            version: number;
+        };
+        SetMyProviderCredentialRequest: {
+            token: string;
+        };
+        /**
+         * Format: binary
+         * @description Raw ZIP bytes used by skill upload and download operations.
+         */
+        SkillArchiveBody: string;
+        SkillDetail: {
+            skill: components["schemas"]["SkillSummary"];
+            versions: components["schemas"]["SkillVersionSummary"][];
+        };
+        SkillFile: {
+            /** @description Slash-separated path relative to the skill root. */
+            path: string;
+            /** Format: int64 */
+            size: number;
+        };
+        SkillFileContent: {
+            content: string;
+            path: string;
+        };
+        /** @description Agent Skills frontmatter. Unknown fields are retained for client extensions. */
+        SkillManifest: {
+            "allowed-tools"?: string | null;
+            compatibility?: string | null;
+            description: string;
+            license?: string | null;
+            metadata?: {
+                [key: string]: string;
+            };
+            name: string;
+        } & {
+            [key: string]: unknown;
+        };
+        SkillNamespace: {
+            handle: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        SkillSummary: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int32 */
+            default_version: number;
+            description: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: int32 */
+            latest_version: number;
+            name: string;
+            namespace: string;
+            /** Format: uuid */
+            owner_user_id: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        SkillUploadResponse: components["schemas"]["SkillDetail"] & {
+            /** Format: int32 */
+            uploaded_version: number;
+        };
+        SkillVersionDetail: {
+            files: components["schemas"]["SkillFile"][];
+            /** @description Complete UTF-8 SKILL.md, including frontmatter, for preview and download. */
+            instructions: string;
+            manifest: components["schemas"]["SkillManifest"];
+            version: components["schemas"]["SkillVersionSummary"];
+        };
+        SkillVersionSummary: {
+            /** Format: int64 */
+            archive_bytes: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            extracted_bytes: number;
+            /** Format: int32 */
+            file_count: number;
+            sha256: string;
+            /** Format: int32 */
+            version: number;
+        };
         SpendBudgetServiceAccountView: {
             alert_email_ready: boolean;
             alert_recipient_summary: string;
@@ -3878,6 +4372,11 @@ export interface components {
             /** Format: int64 */
             usage_missing_request_count: number;
         };
+        SpendModelTokenSeriesView: {
+            is_other: boolean;
+            model_key: string;
+            points: components["schemas"]["SpendTokenPointView"][];
+        };
         SpendOwnerBreakdownView: {
             owner_id: string;
             owner_kind: string;
@@ -3891,16 +4390,45 @@ export interface components {
             /** Format: int64 */
             usage_missing_request_count: number;
         };
+        SpendOwnerTokenSeriesView: {
+            owner_id: string;
+            owner_kind: string;
+            owner_name: string;
+            points: components["schemas"]["SpendTokenPointView"][];
+        };
         SpendReportView: {
             daily: components["schemas"]["SpendDailyPointView"][];
+            /** @description Daily token volumes for the heaviest models; the remainder is folded into one `is_other` series. */
+            model_token_series: components["schemas"]["SpendModelTokenSeriesView"][];
             models: components["schemas"]["SpendModelBreakdownView"][];
             owner_kind: string;
+            /** @description Daily token volumes for the heaviest owners by total tokens, zero-filled across the window. */
+            owner_token_series: components["schemas"]["SpendOwnerTokenSeriesView"][];
             owners: components["schemas"]["SpendOwnerBreakdownView"][];
             totals: components["schemas"]["SpendTotalsView"];
             /** Format: int32 */
             window_days: number;
             window_end: string;
             window_start: string;
+        };
+        /**
+         * @description One day of token volume. Cache buckets only cover events whose provider reported a cache split,
+         *     so `input_tokens` can exceed `uncached_input_tokens + cache_read_tokens + cache_write_tokens`.
+         */
+        SpendTokenPointView: {
+            /** Format: int64 */
+            cache_read_tokens: number;
+            /** Format: int64 */
+            cache_write_tokens: number;
+            day_start: string;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            request_count: number;
+            /** Format: int64 */
+            uncached_input_tokens: number;
         };
         SpendTotalsView: {
             /** Format: int64 */
@@ -5218,6 +5746,10 @@ export interface operations {
             query?: {
                 page?: number | null;
                 page_size?: number | null;
+                /** @description Include alias models in the list. Defaults to true; alias metadata is always retained. */
+                include_aliases?: boolean | null;
+                /** @description Trimmed, case-insensitive substring search across model IDs, aliases, visible providers, upstream IDs, and tags. */
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -5511,6 +6043,11 @@ export interface operations {
                 env?: string | null;
                 tag_key?: string | null;
                 tag_value?: string | null;
+                /**
+                 * @description Trimmed, case-insensitive substring search across the requested or resolved model key and
+                 *     the caller's user name or email.
+                 */
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -6513,6 +7050,111 @@ export interface operations {
             };
         };
     };
+    get_my_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_MyProfileView"];
+                };
+            };
+        };
+    };
+    list_my_provider_credentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfProviderCredentialView"][];
+                };
+            };
+            /** @description Missing or invalid gateway API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An active user-owned gateway API key is required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_my_provider_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMyProviderCredentialRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfProviderCredentialView"];
+                };
+            };
+            /** @description Invalid token or provider is not configured for GitHub user authentication */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid gateway API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An active user-owned gateway API key is required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request body exceeds 8 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_my_focus_export: {
         parameters: {
             query?: {
@@ -6661,6 +7303,300 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_ActionRunResponse"];
+                };
+            };
+        };
+    };
+    list_skills: {
+        parameters: {
+            query?: {
+                namespace?: string | null;
+                /**
+                 * @description Literal search in name, description, and owner namespace, ignoring ASCII letter case.
+                 *     Other characters match exactly. Blank input is ignored.
+                 */
+                q?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSummary"][];
+                };
+            };
+        };
+    };
+    create_skill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/zip": components["schemas"]["SkillArchiveBody"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillUploadResponse"];
+                };
+            };
+        };
+    };
+    get_skill_by_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                namespace: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+        };
+    };
+    get_skill_limits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BundleLimits"];
+                };
+            };
+        };
+    };
+    get_skill_namespace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": null | components["schemas"]["SkillNamespace"];
+                };
+            };
+        };
+    };
+    claim_skill_namespace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimNamespaceRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillNamespace"];
+                };
+            };
+        };
+    };
+    get_skill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+        };
+    };
+    set_skill_default_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDefaultVersionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+        };
+    };
+    list_skill_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillVersionSummary"][];
+                };
+            };
+        };
+    };
+    append_skill_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/zip": components["schemas"]["SkillArchiveBody"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillUploadResponse"];
+                };
+            };
+        };
+    };
+    get_skill_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillVersionDetail"];
+                };
+            };
+        };
+    };
+    download_skill_archive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": components["schemas"]["SkillArchiveBody"];
+                };
+            };
+        };
+    };
+    get_skill_file: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillFileContent"];
                 };
             };
         };

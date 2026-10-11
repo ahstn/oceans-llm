@@ -8,16 +8,27 @@ pub(super) enum ToolCallIdentity {
     Anonymous,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ObservedToolCall {
+    pub(super) identity: ToolCallIdentity,
+    /// Present on the item that opens a call; streamed argument deltas carry no name.
+    pub(super) name: Option<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub(super) struct ToolCallCounter {
     known_ids: HashSet<String>,
     anonymous: i64,
+    names: HashSet<String>,
 }
 
 impl ToolCallCounter {
     pub(super) fn observe_value(&mut self, value: &Value) {
-        for identity in tool_call_identities_from_value(value) {
-            match identity {
+        for call in tool_call_identities_from_value(value) {
+            if let Some(name) = call.name {
+                self.names.insert(name);
+            }
+            match call.identity {
                 ToolCallIdentity::Known(id) => {
                     self.known_ids.insert(id);
                 }
@@ -32,6 +43,10 @@ impl ToolCallCounter {
         i64::try_from(self.known_ids.len())
             .unwrap_or(i64::MAX)
             .saturating_add(self.anonymous)
+    }
+
+    pub(super) fn distinct_tool_count(&self) -> i64 {
+        i64::try_from(self.names.len()).unwrap_or(i64::MAX)
     }
 }
 
@@ -56,7 +71,14 @@ pub fn invoked_tool_count_from_response_body(value: &Value) -> i64 {
     counter.count()
 }
 
-pub(super) fn tool_call_identities_from_value(value: &Value) -> Vec<ToolCallIdentity> {
+#[must_use]
+pub fn invoked_distinct_tool_count_from_response_body(value: &Value) -> i64 {
+    let mut counter = ToolCallCounter::default();
+    counter.observe_value(value);
+    counter.distinct_tool_count()
+}
+
+pub(super) fn tool_call_identities_from_value(value: &Value) -> Vec<ObservedToolCall> {
     let mut identities = Vec::new();
     collect_chat_tool_call_identities(value, &mut identities);
     collect_responses_tool_call_identities(value, &mut identities);
@@ -64,7 +86,7 @@ pub(super) fn tool_call_identities_from_value(value: &Value) -> Vec<ToolCallIden
     identities
 }
 
-fn collect_chat_tool_call_identities(value: &Value, identities: &mut Vec<ToolCallIdentity>) {
+fn collect_chat_tool_call_identities(value: &Value, identities: &mut Vec<ObservedToolCall>) {
     let Some(choices) = value.get("choices").and_then(Value::as_array) else {
         return;
     };
@@ -88,7 +110,7 @@ fn collect_chat_tool_call_identities(value: &Value, identities: &mut Vec<ToolCal
     }
 }
 
-fn collect_responses_tool_call_identities(value: &Value, identities: &mut Vec<ToolCallIdentity>) {
+fn collect_responses_tool_call_identities(value: &Value, identities: &mut Vec<ObservedToolCall>) {
     if let Some(output) = value.get("output").and_then(Value::as_array) {
         for item in output {
             collect_tool_call_item_identity(item, identities, true);
@@ -108,7 +130,7 @@ fn collect_responses_tool_call_identities(value: &Value, identities: &mut Vec<To
 
 fn collect_anthropic_messages_tool_call_identities(
     value: &Value,
-    identities: &mut Vec<ToolCallIdentity>,
+    identities: &mut Vec<ObservedToolCall>,
 ) {
     if value.get("type").and_then(Value::as_str) == Some("content_block_start")
         && let Some(content_block) = value.get("content_block")
@@ -128,7 +150,7 @@ fn collect_anthropic_messages_tool_call_identities(
 
 fn collect_tool_call_array_identities(
     items: &[Value],
-    identities: &mut Vec<ToolCallIdentity>,
+    identities: &mut Vec<ObservedToolCall>,
     allow_anonymous: bool,
 ) {
     for item in items {
@@ -138,7 +160,7 @@ fn collect_tool_call_array_identities(
 
 fn collect_tool_call_item_identity(
     item: &Value,
-    identities: &mut Vec<ToolCallIdentity>,
+    identities: &mut Vec<ObservedToolCall>,
     allow_anonymous: bool,
 ) {
     let object = match item.as_object() {
@@ -168,7 +190,7 @@ fn collect_tool_call_item_identity(
 
 fn push_tool_call_identity(
     item: &Value,
-    identities: &mut Vec<ToolCallIdentity>,
+    identities: &mut Vec<ObservedToolCall>,
     allow_anonymous: bool,
 ) {
     let Some(object) = item.as_object() else {
@@ -181,9 +203,19 @@ fn push_tool_call_identity(
         .or_else(|| object.get("tool_call_id"))
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty());
-    identities.push(match id {
+    let identity = match id {
         Some(id) => ToolCallIdentity::Known(id.to_string()),
         None if allow_anonymous => ToolCallIdentity::Anonymous,
         None => return,
-    });
+    };
+    // Chat Completions nests the name under `function`; Responses and Messages put it inline.
+    let name = object
+        .get("function")
+        .and_then(|function| function.get("name"))
+        .or_else(|| object.get("name"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string);
+    identities.push(ObservedToolCall { identity, name });
 }

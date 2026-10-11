@@ -14,25 +14,23 @@ export function ReadOnlyUsersDirectory({ users }: { users: IdentityDirectoryUser
       </CardHeader>
       <CardContent>
         {users.length === 0 ? (
-          <p className="text-sm text-[var(--color-text-muted)]">No users are available.</p>
+          <p className="text-subtle-foreground text-sm">No users are available.</p>
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">
             {users.map((user) => (
               <article
                 key={user.id}
-                className="flex flex-col gap-4 rounded-lg border border-[color:var(--color-border)] p-4"
+                className="border-border flex flex-col gap-4 rounded-lg border p-4"
               >
                 <div className="flex min-w-0 items-start gap-3">
                   <GeneratedAvatar kind="user" name={user.name} size={40} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="truncate font-semibold text-[var(--color-text)]">
-                        {user.name}
-                      </h2>
+                      <h2 className="text-foreground truncate font-semibold">{user.name}</h2>
                       <Badge variant="outline">{formatRole(user.global_role)}</Badge>
                       <Badge>{user.status}</Badge>
                     </div>
-                    <p className="truncate text-sm text-[var(--color-text-muted)]">{user.email}</p>
+                    <p className="text-subtle-foreground truncate text-sm">{user.email}</p>
                   </div>
                 </div>
                 <dl className="grid gap-3 text-sm sm:grid-cols-2">
@@ -59,46 +57,44 @@ export function ReadOnlyTeamsDirectory({ teams }: { teams: IdentityDirectoryTeam
       </CardHeader>
       <CardContent>
         {teams.length === 0 ? (
-          <p className="text-sm text-[var(--color-text-muted)]">No teams are available.</p>
+          <p className="text-subtle-foreground text-sm">No teams are available.</p>
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">
             {teams.map((team) => (
               <article
                 key={team.id}
-                className="flex flex-col gap-4 rounded-lg border border-[color:var(--color-border)] p-4"
+                className="border-border flex flex-col gap-4 rounded-lg border p-4"
               >
                 <div className="flex min-w-0 items-start gap-3">
                   <GeneratedAvatar kind="team" name={team.name} size={40} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="truncate font-semibold text-[var(--color-text)]">
-                        {team.name}
-                      </h2>
+                      <h2 className="text-foreground truncate font-semibold">{team.name}</h2>
                       <Badge>{team.status}</Badge>
                     </div>
                   </div>
-                  <span className="text-sm text-[var(--color-text-muted)]">
+                  <span className="text-subtle-foreground text-sm">
                     {formatMemberCount(team.member_count)}
                   </span>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <h3 className="text-xs font-medium tracking-wide text-[var(--color-text-soft)] uppercase">
+                  <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
                     Members
                   </h3>
                   {team.members.length === 0 ? (
-                    <p className="text-sm text-[var(--color-text-muted)]">No members</p>
+                    <p className="text-subtle-foreground text-sm">No members</p>
                   ) : (
-                    <ul className="flex flex-col divide-y divide-[color:var(--color-border)]">
+                    <ul className="divide-border flex flex-col divide-y">
                       {team.members.map((member) => (
                         <li
                           key={member.id}
                           className="flex items-center justify-between gap-3 py-2"
                         >
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-[var(--color-text)]">
+                            <p className="text-foreground truncate text-sm font-medium">
                               {member.name}
                             </p>
-                            <p className="truncate text-xs text-[var(--color-text-muted)]">
+                            <p className="text-subtle-foreground truncate text-xs">
                               {member.email}
                             </p>
                           </div>
@@ -120,8 +116,8 @@ export function ReadOnlyTeamsDirectory({ teams }: { teams: IdentityDirectoryTeam
 function DirectoryDetail({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs text-[var(--color-text-soft)]">{label}</dt>
-      <dd className="text-[var(--color-text)]">{value}</dd>
+      <dt className="text-muted-foreground text-xs">{label}</dt>
+      <dd className="text-foreground">{value}</dd>
     </div>
   )
 }

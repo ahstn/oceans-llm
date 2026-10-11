@@ -380,6 +380,45 @@ impl BudgetRepository for PostgresStore {
         rows.iter().map(decode_usage_ledger_record).collect()
     }
 
+    async fn get_request_log_usage_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<Vec<UsageLedgerRecord>, StoreError> {
+        if request_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                usage_event_id, request_id, ownership_scope_key, api_key_id, user_id,
+                team_id, service_account_id, actor_user_id, model_id, model_route_id,
+                provider_key, upstream_model, prompt_tokens, completion_tokens, total_tokens,
+                provider_usage_json, pricing_status, unpriced_reason, pricing_row_id,
+                pricing_provider_id, pricing_model_id, pricing_source, pricing_source_etag,
+                pricing_source_fetched_at, pricing_last_updated,
+                input_cost_per_million_tokens_10000,
+                output_cost_per_million_tokens_10000,
+                cache_read_cost_per_million_tokens_10000,
+                cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
+                uncached_input_tokens, cache_read_tokens, cache_write_tokens
+            FROM usage_cost_events AS ledger
+            WHERE ledger.request_id = ANY($1)
+              AND (
+                SELECT COUNT(*)
+                FROM request_logs AS log
+                WHERE log.request_id = ledger.request_id
+                  AND log.api_key_id = ledger.api_key_id
+              ) = 1
+            ORDER BY ledger.request_id, ledger.usage_event_id
+            "#,
+        )
+        .bind(request_ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.iter().map(decode_usage_ledger_record).collect()
+    }
+
     async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
         scope: &BudgetScope,
@@ -431,17 +470,20 @@ impl BudgetRepository for PostgresStore {
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)::BIGINT
                         AS usage_missing_request_count,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(uncached_input_tokens), 0)::BIGINT END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_read_tokens), 0)::BIGINT END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_write_tokens), 0)::BIGINT END
                 FROM usage_cost_events
                 WHERE occurred_at >= $1
@@ -464,17 +506,20 @@ impl BudgetRepository for PostgresStore {
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)::BIGINT
                         AS usage_missing_request_count,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(uncached_input_tokens), 0)::BIGINT END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_read_tokens), 0)::BIGINT END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_write_tokens), 0)::BIGINT END
                 FROM usage_cost_events
                 WHERE occurred_at >= $1
@@ -497,17 +542,20 @@ impl BudgetRepository for PostgresStore {
                         AS unpriced_request_count,
                     SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)::BIGINT
                         AS usage_missing_request_count,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(uncached_input_tokens), 0)::BIGINT END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_read_tokens), 0)::BIGINT END,
-                    CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                           AND COUNT(*) = COUNT(cache_read_tokens)
-                           AND COUNT(*) = COUNT(cache_write_tokens)
+                    CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                           AND (uncached_input_tokens IS NULL
+                                OR cache_read_tokens IS NULL
+                                OR cache_write_tokens IS NULL) THEN 1 END) = 0
                         THEN COALESCE(SUM(cache_write_tokens), 0)::BIGINT END
                 FROM usage_cost_events
                 WHERE occurred_at >= $1
@@ -779,6 +827,140 @@ impl BudgetRepository for PostgresStore {
         Ok(output)
     }
 
+    async fn list_usage_owner_token_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<SpendOwnerTokenDailyRecord>, StoreError> {
+        let owner_kind_filter = owner_kind.map(|kind| kind.as_str().to_string());
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
+        let rows = sqlx::query(
+            r#"
+            SELECT * FROM (
+                SELECT
+                    ((u.occurred_at / 86400) * 86400)::BIGINT AS day_start,
+                    'user' AS owner_kind,
+                    u.user_id::TEXT AS owner_id,
+                    users.name AS owner_name,
+                    COUNT(*)::BIGINT,
+                    COALESCE(SUM(u.prompt_tokens), 0)::BIGINT,
+                    COALESCE(SUM(u.completion_tokens), 0)::BIGINT,
+                    COALESCE(SUM(u.uncached_input_tokens), 0)::BIGINT,
+                    COALESCE(SUM(u.cache_read_tokens), 0)::BIGINT,
+                    COALESCE(SUM(u.cache_write_tokens), 0)::BIGINT
+                FROM usage_cost_events u
+                INNER JOIN users ON users.user_id = u.user_id
+                WHERE u.occurred_at >= $1
+                  AND u.occurred_at < $2
+                  AND ($3::TEXT IS NULL OR $3::TEXT = 'user')
+                  AND ($4::TEXT IS NULL OR u.user_id = $4)
+                GROUP BY day_start, u.user_id, users.name
+                UNION ALL
+                SELECT
+                    ((u.occurred_at / 86400) * 86400)::BIGINT AS day_start,
+                    'service_account' AS owner_kind,
+                    u.service_account_id::TEXT AS owner_id,
+                    service_accounts.service_account_name AS owner_name,
+                    COUNT(*)::BIGINT,
+                    COALESCE(SUM(u.prompt_tokens), 0)::BIGINT,
+                    COALESCE(SUM(u.completion_tokens), 0)::BIGINT,
+                    COALESCE(SUM(u.uncached_input_tokens), 0)::BIGINT,
+                    COALESCE(SUM(u.cache_read_tokens), 0)::BIGINT,
+                    COALESCE(SUM(u.cache_write_tokens), 0)::BIGINT
+                FROM usage_cost_events u
+                INNER JOIN service_accounts
+                    ON service_accounts.service_account_id = u.service_account_id
+                WHERE u.occurred_at >= $1
+                  AND u.occurred_at < $2
+                  AND ($3::TEXT IS NULL OR $3::TEXT = 'service_account')
+                  AND ($4::TEXT IS NULL OR u.user_id = $4)
+                GROUP BY day_start, u.service_account_id, service_accounts.service_account_name
+            ) owner_token_rollup
+            ORDER BY day_start ASC, owner_kind ASC, owner_id ASC
+            "#,
+        )
+        .bind(window_start.unix_timestamp())
+        .bind(window_end.unix_timestamp())
+        .bind(owner_kind_filter)
+        .bind(owner_user_filter)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        let mut output = Vec::with_capacity(rows.len());
+        for row in rows {
+            let day_start: i64 = row.try_get(0).map_err(to_query_error)?;
+            let owner_kind: String = row.try_get(1).map_err(to_query_error)?;
+            let owner_id: String = row.try_get(2).map_err(to_query_error)?;
+            output.push(SpendOwnerTokenDailyRecord {
+                day_start: unix_to_datetime(day_start)?,
+                owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
+                    StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
+                })?,
+                owner_id: parse_uuid(&owner_id)?,
+                owner_name: row.try_get(3).map_err(to_query_error)?,
+                tokens: token_usage_buckets_from_row(&row, 4)?,
+            });
+        }
+        Ok(output)
+    }
+
+    async fn list_usage_model_token_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<SpendModelTokenDailyRecord>, StoreError> {
+        let owner_kind_filter = owner_kind.map(|kind| kind.as_str().to_string());
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                ((u.occurred_at / 86400) * 86400)::BIGINT AS day_start,
+                COALESCE(g.model_key, u.upstream_model) AS model_key,
+                COUNT(*)::BIGINT,
+                COALESCE(SUM(u.prompt_tokens), 0)::BIGINT,
+                COALESCE(SUM(u.completion_tokens), 0)::BIGINT,
+                COALESCE(SUM(u.uncached_input_tokens), 0)::BIGINT,
+                COALESCE(SUM(u.cache_read_tokens), 0)::BIGINT,
+                COALESCE(SUM(u.cache_write_tokens), 0)::BIGINT
+            FROM usage_cost_events u
+            LEFT JOIN gateway_models g ON g.id = u.model_id
+            WHERE u.occurred_at >= $1
+              AND u.occurred_at < $2
+              AND (
+                $3::TEXT IS NULL
+                OR ($3::TEXT = 'user' AND u.user_id IS NOT NULL)
+                OR ($3::TEXT = 'service_account' AND u.service_account_id IS NOT NULL)
+              )
+              AND ($4::TEXT IS NULL OR u.user_id = $4)
+            GROUP BY day_start, COALESCE(g.model_key, u.upstream_model)
+            ORDER BY day_start ASC, model_key ASC
+            "#,
+        )
+        .bind(window_start.unix_timestamp())
+        .bind(window_end.unix_timestamp())
+        .bind(owner_kind_filter)
+        .bind(owner_user_filter)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        let mut output = Vec::with_capacity(rows.len());
+        for row in rows {
+            let day_start: i64 = row.try_get(0).map_err(to_query_error)?;
+            output.push(SpendModelTokenDailyRecord {
+                day_start: unix_to_datetime(day_start)?,
+                model_key: row.try_get(1).map_err(to_query_error)?,
+                tokens: token_usage_buckets_from_row(&row, 2)?,
+            });
+        }
+        Ok(output)
+    }
+
     async fn get_cache_usage_aggregate(
         &self,
         window_start: OffsetDateTime,
@@ -791,17 +973,20 @@ impl BudgetRepository for PostgresStore {
         let row = sqlx::query(
             r#"
             SELECT
-                CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                       AND COUNT(*) = COUNT(cache_read_tokens)
-                       AND COUNT(*) = COUNT(cache_write_tokens)
+                CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                       AND (uncached_input_tokens IS NULL
+                            OR cache_read_tokens IS NULL
+                            OR cache_write_tokens IS NULL) THEN 1 END) = 0
                     THEN COALESCE(SUM(uncached_input_tokens), 0)::BIGINT END,
-                CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                       AND COUNT(*) = COUNT(cache_read_tokens)
-                       AND COUNT(*) = COUNT(cache_write_tokens)
+                CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                       AND (uncached_input_tokens IS NULL
+                            OR cache_read_tokens IS NULL
+                            OR cache_write_tokens IS NULL) THEN 1 END) = 0
                     THEN COALESCE(SUM(cache_read_tokens), 0)::BIGINT END,
-                CASE WHEN COUNT(*) = COUNT(uncached_input_tokens)
-                       AND COUNT(*) = COUNT(cache_read_tokens)
-                       AND COUNT(*) = COUNT(cache_write_tokens)
+                CASE WHEN COUNT(CASE WHEN prompt_tokens IS NOT NULL
+                       AND (uncached_input_tokens IS NULL
+                            OR cache_read_tokens IS NULL
+                            OR cache_write_tokens IS NULL) THEN 1 END) = 0
                     THEN COALESCE(SUM(cache_write_tokens), 0)::BIGINT END
             FROM usage_cost_events
             WHERE occurred_at >= $1
@@ -1390,4 +1575,19 @@ async fn sum_usage_cost_for_budget_scope(
     Ok(Money4::from_scaled(
         row.try_get::<i64, _>(0).map_err(to_query_error)?,
     ))
+}
+
+/// Reads the six token columns emitted by the spend token-series queries, starting at `offset`.
+fn token_usage_buckets_from_row(
+    row: &PgRow,
+    offset: usize,
+) -> Result<TokenUsageBuckets, StoreError> {
+    Ok(TokenUsageBuckets {
+        request_count: row.try_get(offset).map_err(to_query_error)?,
+        input_tokens: row.try_get(offset + 1).map_err(to_query_error)?,
+        output_tokens: row.try_get(offset + 2).map_err(to_query_error)?,
+        uncached_input_tokens: row.try_get(offset + 3).map_err(to_query_error)?,
+        cache_read_tokens: row.try_get(offset + 4).map_err(to_query_error)?,
+        cache_write_tokens: row.try_get(offset + 5).map_err(to_query_error)?,
+    })
 }

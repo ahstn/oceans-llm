@@ -118,14 +118,6 @@ const STATUS_BADGE_VARIANT: Record<
   over: 'destructive',
 }
 
-const STATUS_BAR_CLASS: Record<UsageStatus, string> = {
-  no_budget: '',
-  low: '[&>[data-slot=progress-indicator]]:bg-muted-foreground/60',
-  on_track: '',
-  warning: '[&>[data-slot=progress-indicator]]:bg-[var(--color-warning)]',
-  over: '[&>[data-slot=progress-indicator]]:bg-destructive',
-}
-
 export function UsageStatusBadge({ status }: { status: UsageStatus }) {
   return <Badge variant={STATUS_BADGE_VARIANT[status]}>{STATUS_LABEL[status]}</Badge>
 }
@@ -151,7 +143,12 @@ export function UsageBar({ usage }: { usage: BudgetUsage }) {
       <Progress
         value={Math.min(100, usage.ratio * 100)}
         aria-label={`${PERCENT_FORMATTER.format(usage.ratio)} of budget used`}
-        className={cn('h-1.5', STATUS_BAR_CLASS[usage.status])}
+        className={cn(
+          'h-1.5',
+          usage.status === 'low' && '[&>[data-slot=progress-indicator]]:bg-muted-foreground/60',
+          usage.status === 'warning' && '[&>[data-slot=progress-indicator]]:bg-warning',
+          usage.status === 'over' && '[&>[data-slot=progress-indicator]]:bg-destructive',
+        )}
       />
     </div>
   )

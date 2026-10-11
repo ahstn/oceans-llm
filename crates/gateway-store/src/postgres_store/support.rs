@@ -1,5 +1,7 @@
 use super::*;
-use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
+use crate::shared::{
+    json_object_from_str, parse_model_routing_policy, parse_uuid, unix_to_datetime,
+};
 
 pub(super) async fn list_allowed_model_keys(
     pool: &PgPool,
@@ -83,6 +85,7 @@ pub(super) fn decode_api_key_secret_material(
 }
 
 pub(super) fn decode_gateway_model(row: &PgRow) -> Result<GatewayModel, StoreError> {
+    let routing_policy_json: Option<String> = row.try_get(7).map_err(to_query_error)?;
     let max_reasoning_effort: Option<String> = row.try_get(3).map_err(to_query_error)?;
     let max_reasoning_effort = max_reasoning_effort
         .as_deref()
@@ -102,6 +105,7 @@ pub(super) fn decode_gateway_model(row: &PgRow) -> Result<GatewayModel, StoreErr
         tags: serde_json::from_str(&tags_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         rank: row.try_get(6).map_err(to_query_error)?,
+        routing: parse_model_routing_policy(routing_policy_json.as_deref())?,
     })
 }
 

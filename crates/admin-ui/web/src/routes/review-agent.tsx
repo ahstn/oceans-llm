@@ -564,16 +564,16 @@ export function ReviewAgentPage() {
                   return (
                     <article
                       key={repository.id}
-                      className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+                      className="border-border bg-surface-muted rounded-lg border p-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-3">
                           <GeneratedAvatar kind="team" name={repository.full_name} size={40} />
                           <div className="min-w-0">
-                            <p className="truncate font-semibold text-[var(--color-text)]">
+                            <p className="text-foreground truncate font-semibold">
                               {repository.full_name}
                             </p>
-                            <p className="truncate text-sm text-[var(--color-text-muted)]">
+                            <p className="text-subtle-foreground truncate text-sm">
                               {formatProvider(repository.provider)}
                             </p>
                           </div>
@@ -585,18 +585,18 @@ export function ReviewAgentPage() {
 
                       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                         <div>
-                          <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                             Features
                           </dt>
-                          <dd className="text-[var(--color-text-muted)]">
+                          <dd className="text-subtle-foreground">
                             {formatFeatureSummary(repository.settings)}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                             Last review
                           </dt>
-                          <dd className="text-[var(--color-text-muted)]">
+                          <dd className="text-subtle-foreground">
                             {lastRun ? formatTimestamp(runTimestamp(lastRun)) : 'Never'}
                           </dd>
                         </div>
@@ -617,26 +617,26 @@ export function ReviewAgentPage() {
                 })}
               </div>
 
-              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+              <div className="border-border hidden overflow-hidden rounded-md border md:block">
                 <Table className="text-left">
-                  <TableHeader className="bg-[color:var(--color-surface-muted)]">
+                  <TableHeader className="bg-surface-muted">
                     <TableRow>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Repository
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Service account
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Features
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Last review
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Status
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Actions
                       </TableHead>
                     </TableRow>
@@ -648,24 +648,24 @@ export function ReviewAgentPage() {
 
                       return (
                         <TableRow key={repository.id}>
-                          <TableCell className="px-3 py-3 text-[var(--color-text)]">
+                          <TableCell className="text-foreground px-3 py-3">
                             <div className="flex min-w-0 items-center gap-3">
                               <GeneratedAvatar kind="team" name={repository.full_name} size={32} />
                               <div className="min-w-0">
                                 <p className="truncate">{repository.full_name}</p>
-                                <p className="truncate text-xs text-[var(--color-text-muted)]">
+                                <p className="text-subtle-foreground truncate text-xs">
                                   {formatProvider(repository.provider)}
                                 </p>
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                          <TableCell className="text-subtle-foreground px-3 py-3">
                             {serviceAccount?.name ?? '—'}
                           </TableCell>
-                          <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                          <TableCell className="text-subtle-foreground px-3 py-3">
                             {formatFeatureSummary(repository.settings)}
                           </TableCell>
-                          <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                          <TableCell className="text-subtle-foreground px-3 py-3">
                             {lastRun ? (
                               <div className="flex items-center gap-2">
                                 <Badge variant={runStatusVariant(lastRun.status)}>
@@ -735,40 +735,40 @@ export function ReviewAgentPage() {
 
         <CardContent>
           {visibleRuns.length === 0 ? (
-            <p className="text-sm text-[var(--color-text-muted)]">
+            <p className="text-subtle-foreground text-sm">
               No review runs recorded yet. Runs appear here after the workflow executes on a pull
               request.
             </p>
           ) : (
-            <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
+            <div className="border-border overflow-hidden rounded-md border">
               <Table className="text-left">
-                <TableHeader className="bg-[color:var(--color-surface-muted)]">
+                <TableHeader className="bg-surface-muted">
                   <TableRow>
-                    <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                       Repository
                     </TableHead>
-                    <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                       Status
                     </TableHead>
-                    <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                       Commit
                     </TableHead>
-                    <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                       Model
                     </TableHead>
-                    <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                       Files
                     </TableHead>
-                    <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                       Lines
                     </TableHead>
-                    <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                       Comments
                     </TableHead>
-                    <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                       Duration
                     </TableHead>
-                    <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                       When
                     </TableHead>
                   </TableRow>
@@ -781,31 +781,31 @@ export function ReviewAgentPage() {
 
                     return (
                       <TableRow key={run.id}>
-                        <TableCell className="px-3 py-3 text-[var(--color-text)]">
+                        <TableCell className="text-foreground px-3 py-3">
                           {repository?.full_name ?? '—'}
                         </TableCell>
                         <TableCell className="px-3 py-3">
                           <Badge variant={runStatusVariant(run.status)}>{run.status}</Badge>
                         </TableCell>
-                        <TableCell className="px-3 py-3 font-mono text-xs text-[var(--color-text-muted)]">
+                        <TableCell className="text-subtle-foreground px-3 py-3 font-mono text-xs">
                           {run.head_sha ? run.head_sha.slice(0, 7) : '—'}
                         </TableCell>
-                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <TableCell className="text-subtle-foreground px-3 py-3">
                           {run.model_key ?? '—'}
                         </TableCell>
-                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <TableCell className="text-subtle-foreground px-3 py-3">
                           {run.files_changed ?? '—'}
                         </TableCell>
-                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <TableCell className="text-subtle-foreground px-3 py-3">
                           {formatLineDelta(run)}
                         </TableCell>
-                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <TableCell className="text-subtle-foreground px-3 py-3">
                           {run.inline_comments_created ?? '—'}
                         </TableCell>
-                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <TableCell className="text-subtle-foreground px-3 py-3">
                           {formatDuration(run.duration_ms)}
                         </TableCell>
-                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                        <TableCell className="text-subtle-foreground px-3 py-3">
                           {formatTimestamp(runTimestamp(run))}
                         </TableCell>
                       </TableRow>
@@ -840,10 +840,7 @@ export function ReviewAgentPage() {
               className="min-h-0 min-w-0 items-start overflow-hidden"
               style={{ '--sidebar-width': '14rem' } as CSSProperties}
             >
-              <Sidebar
-                collapsible="none"
-                className="hidden border-r border-[color:var(--color-border)] md:flex"
-              >
+              <Sidebar collapsible="none" className="border-border hidden border-r md:flex">
                 <SidebarContent className="p-3">
                   <SidebarGroup className="px-0 py-0">
                     <SidebarGroupContent>
@@ -868,14 +865,14 @@ export function ReviewAgentPage() {
               </Sidebar>
 
               <main className="flex max-h-[680px] min-h-[520px] min-w-0 flex-1 flex-col overflow-hidden">
-                <header className="flex shrink-0 flex-col gap-4 border-b border-[color:var(--color-border)] px-6 py-5">
+                <header className="border-border flex shrink-0 flex-col gap-4 border-b px-6 py-5">
                   <div className="flex items-start gap-3">
                     <GeneratedAvatar kind="team" name={selectedRepo.full_name} size={44} />
                     <div className="min-w-0 flex-1 pt-0.5">
-                      <h2 className="truncate text-lg leading-tight font-semibold text-[var(--color-text)]">
+                      <h2 className="text-foreground truncate text-lg leading-tight font-semibold">
                         {selectedRepo.full_name}
                       </h2>
-                      <p className="mt-1 truncate text-sm text-[var(--color-text-muted)]">
+                      <p className="text-subtle-foreground mt-1 truncate text-sm">
                         {formatProvider(selectedRepo.provider)} ·{' '}
                         {serviceAccountById.get(selectedRepo.service_account_id)?.name ??
                           'Unknown service account'}
@@ -959,7 +956,7 @@ export function ReviewAgentPage() {
                           </Field>
                         </FieldGroup>
 
-                        <div className="flex flex-col divide-y divide-[color:var(--color-border)] border-y border-[color:var(--color-border)]">
+                        <div className="divide-border border-border flex flex-col divide-y border-y">
                           {featureToggles.map((toggle) => (
                             <SettingToggleRow
                               key={toggle.key}
@@ -1061,12 +1058,12 @@ export function ReviewAgentPage() {
                           </Field>
                         </FieldGroup>
 
-                        <section className="flex flex-col gap-3 rounded-lg border border-[color:var(--color-border)] p-4">
+                        <section className="border-border flex flex-col gap-3 rounded-lg border p-4">
                           <div className="flex flex-col gap-1">
-                            <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                            <h3 className="text-foreground text-sm font-semibold">
                               Lifecycle actions
                             </h3>
-                            <p className="text-sm text-[var(--color-text-muted)]">
+                            <p className="text-subtle-foreground text-sm">
                               Disabling stops new review runs immediately without deleting run
                               history. Historical runs stay visible.
                             </p>
@@ -1179,7 +1176,7 @@ export function ReviewAgentPage() {
                           <div className="flex min-w-0 flex-col gap-3 overflow-hidden">
                             <div className="flex min-w-0 flex-col gap-2">
                               <div className="flex min-w-0 items-center justify-between gap-3">
-                                <p className="min-w-0 truncate text-sm font-semibold text-[var(--color-text)]">
+                                <p className="text-foreground min-w-0 truncate text-sm font-semibold">
                                   Generated workflow
                                 </p>
                                 <Button
@@ -1191,12 +1188,12 @@ export function ReviewAgentPage() {
                                   Copy YAML
                                 </Button>
                               </div>
-                              <pre className="max-h-72 max-w-full min-w-0 overflow-auto rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 font-mono text-xs leading-relaxed whitespace-pre text-[var(--color-text)]">
+                              <pre className="border-border bg-surface-muted text-foreground max-h-72 max-w-full min-w-0 overflow-auto rounded-lg border p-4 font-mono text-xs leading-relaxed whitespace-pre">
                                 {workflow.yaml}
                               </pre>
                             </div>
 
-                            <ol className="flex list-decimal flex-col gap-1 pl-5 text-sm text-[var(--color-text-muted)]">
+                            <ol className="text-subtle-foreground flex list-decimal flex-col gap-1 pl-5 text-sm">
                               <li>
                                 Create an API key for the bound service account under API Keys.
                               </li>
@@ -1216,7 +1213,7 @@ export function ReviewAgentPage() {
                     ) : null}
                   </div>
 
-                  <DialogFooter className="mx-0 mb-0 rounded-none border-t border-[color:var(--color-border)] px-6 py-4">
+                  <DialogFooter className="border-border mx-0 mb-0 rounded-none border-t px-6 py-4">
                     <Button type="button" variant="secondary" onClick={closeRepoDialog}>
                       Close
                     </Button>
@@ -1250,7 +1247,7 @@ function RepoOverviewSection({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h3 className="text-sm font-semibold text-[var(--color-text)]">Repository</h3>
+        <h3 className="text-foreground text-sm font-semibold">Repository</h3>
         <dl className="mt-5 grid gap-x-8 gap-y-6 text-sm sm:grid-cols-2 lg:grid-cols-3">
           <RepoDetailRow label="Provider" value={formatProvider(repository.provider)} />
           <RepoDetailRow label="Owner" value={repository.owner} />
@@ -1265,36 +1262,36 @@ function RepoOverviewSection({
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-[var(--color-text)]">Recent activity</h3>
+        <h3 className="text-foreground text-sm font-semibold">Recent activity</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <section className="rounded-lg border border-[color:var(--color-border)] p-4">
-            <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+          <section className="border-border rounded-lg border p-4">
+            <p className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
               Last review
             </p>
-            <p className="mt-2 text-lg font-semibold text-[var(--color-text)]">
+            <p className="text-foreground mt-2 text-lg font-semibold">
               {lastRun ? lastRun.status : 'Never'}
             </p>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            <p className="text-subtle-foreground mt-1 text-sm">
               {lastRun ? formatTimestamp(runTimestamp(lastRun)) : 'No runs reported yet.'}
             </p>
           </section>
-          <section className="rounded-lg border border-[color:var(--color-border)] p-4">
-            <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+          <section className="border-border rounded-lg border p-4">
+            <p className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
               Recent runs
             </p>
-            <p className="mt-2 text-lg font-semibold text-[var(--color-text)]">{runs.length}</p>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            <p className="text-foreground mt-2 text-lg font-semibold">{runs.length}</p>
+            <p className="text-subtle-foreground mt-1 text-sm">
               {commentsPosted} inline comments posted across recent runs.
             </p>
           </section>
-          <section className="rounded-lg border border-[color:var(--color-border)] p-4">
-            <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+          <section className="border-border rounded-lg border p-4">
+            <p className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
               Lines reviewed
             </p>
-            <p className="mt-2 text-lg font-semibold text-[var(--color-text)]">
+            <p className="text-foreground mt-2 text-lg font-semibold">
               {linesReviewed.toLocaleString()}
             </p>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            <p className="text-subtle-foreground mt-1 text-sm">
               Changed lines covered by recent review runs.
             </p>
           </section>
@@ -1318,8 +1315,8 @@ function SettingToggleRow({
   return (
     <div className="flex items-start justify-between gap-4 py-4">
       <div className="flex min-w-0 flex-col gap-1">
-        <p className="text-sm font-semibold text-[var(--color-text)]">{label}</p>
-        <p className="text-sm text-[var(--color-text-muted)]">{description}</p>
+        <p className="text-foreground text-sm font-semibold">{label}</p>
+        <p className="text-subtle-foreground text-sm">{description}</p>
       </div>
       <ToggleGroup
         type="single"
@@ -1330,13 +1327,9 @@ function SettingToggleRow({
           }
         }}
         aria-label={label}
-        className="shrink-0 overflow-hidden rounded-lg border border-[color:var(--color-border)]"
+        className="border-border shrink-0 overflow-hidden rounded-lg border"
       >
-        <ToggleGroupItem
-          value="on"
-          aria-label={`${label} on`}
-          className="border-r border-[color:var(--color-border)]"
-        >
+        <ToggleGroupItem value="on" aria-label={`${label} on`} className="border-border border-r">
           On
         </ToggleGroupItem>
         <ToggleGroupItem value="off" aria-label={`${label} off`}>
@@ -1350,10 +1343,10 @@ function SettingToggleRow({
 function RepoDetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
         {label}
       </dt>
-      <dd className="mt-1 text-[var(--color-text-muted)]">{value}</dd>
+      <dd className="text-subtle-foreground mt-1">{value}</dd>
     </div>
   )
 }

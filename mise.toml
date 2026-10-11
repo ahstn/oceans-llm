@@ -13,7 +13,7 @@ config_roots = ["docs", "crates/gateway-store"]
 rust = { version = "1.98.1", components = ["rustfmt", "clippy", "llvm-tools-preview"] }
 "cargo:cargo-llvm-cov" = "0.8.7"
 node = "lts"
-bun = "1.4.0"
+bun = "1.4.2"
 postgres = { version = "18", os = ["macos"] }
 gh = "latest"
 helm = "latest"
@@ -26,6 +26,16 @@ prek = "latest"
 CARGO_TARGET_DIR = "$HOME/.cache/cargo/target/"
 CARGO_BUILD_BUILD_DIR = "$HOME/.cache/cargo/build/{workspace-path-hash}"
 
+# Local Postgres for development and Postgres-backed tests. Supervised by pitchfork
+# through `mise daemons`; manage it with the `postgres:*` tasks in crates/gateway-store.
+# Exports DATABASE_URL. `port = "auto"` keeps the default port in the primary checkout
+# and offsets it in linked git worktrees.
+[daemons.db]
+preset = "postgres"
+version = "18"
+port = "auto"
+options.database = "oceans_llm"
+
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
 run = "mise install"
@@ -34,12 +44,29 @@ run = "mise install"
 description = "Update Helm chart dependencies"
 run = "helm dependency update deploy/helm/oceans-llm"
 
+[tasks.helm-dependency-build]
+description = "Build Helm dependencies from the checked-in lock"
+run = """
+set -eu
+
+helm_temp_dir="$(mktemp -d)"
+trap 'rm -rf "$helm_temp_dir"' EXIT
+
+# Use a private repository list so this task does not change local Helm settings.
+helm repo add oceans-rustfs https://charts.rustfs.com \
+  --repository-config "$helm_temp_dir/repositories.yaml" --repository-cache "$helm_temp_dir"
+helm dependency build deploy/helm/oceans-llm --skip-refresh \
+  --repository-config "$helm_temp_dir/repositories.yaml" --repository-cache "$helm_temp_dir"
+"""
+
 [tasks.helm-lint]
 description = "Lint the Oceans LLM Helm chart"
+depends = ["helm-dependency-build"]
 run = "helm lint deploy/helm/oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres"
 
 [tasks.helm-template]
 description = "Render the Oceans LLM Helm chart examples"
+depends = ["helm-dependency-build"]
 run = """
 set -eu
 
@@ -51,9 +78,14 @@ for values_file in "$chart_dir"/examples/*.yaml; do
 done
 """
 
+[tasks.helm-skills-check]
+description = "Verify skill storage and optional RustFS Helm configuration"
+depends = ["helm-dependency-build"]
+run = "bash scripts/check-skills-helm.sh"
+
 [tasks.helm-check]
 description = "Lint and render the Helm chart"
-depends = ["helm-lint", "helm-template"]
+depends = ["helm-lint", "helm-template", "helm-skills-check"]
 
 [tasks.fmt]
 description = "Format Rust sources"
@@ -109,9 +141,11 @@ diff -u crates/admin-ui/web/src/generated/admin-api.ts "$tmpdir/admin-api.ts"
 """
 
 [tasks.lint]
-description = "Run repository linting and static checks"
+description = "Run repository formatting checks, linting, and static checks"
 depends = [
+  "rust-fmt-check",
   "rust-lint",
+  "ui-fmt-check",
   "ui-lint",
   "review-agent-action-typecheck",
   "review-agent-action-lint",
@@ -133,7 +167,12 @@ depends = [
   "ui-test",
   "review-agent-action-test",
   "copilot-installation-canary-test",
+  "e2e-stack-test",
 ]
+
+[tasks.e2e-stack-test]
+description = "Verify E2E cleanup failures retain retry state"
+run = "node --test scripts/start-e2e-stack.test.mjs"
 
 [tasks.gateway-serve]
 description = "Run local `gateway serve` against `gateway.yaml`"
@@ -181,6 +220,15 @@ run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-re
 [tasks.gateway-seed-local-demo]
 description = "Seed the local-only demo dataset (identity, budgets, API keys, request history, and agent session diagnostics) against `gateway.yaml`"
 run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo'
+
+[tasks."skills:cli-build"]
+description = "Build the Oceans CLI for local Skills workflows"
+run = "cargo build --locked -p oceans-cli --bin oceans"
+
+[tasks."skills:import-bundled"]
+description = "Import curated skills using a user-owned API key and the requested namespace"
+depends = ["skills:cli-build"]
+run = "node scripts/import-bundled-skills.mjs"
 
 [tasks.gateway-reset-local-demo]
 description = "Recreate local `gateway.db` with the local-only demo dataset"
@@ -241,6 +289,10 @@ PORT="$GATEWAY_PORT" ADMIN_UI_UPSTREAM="http://localhost:$UI_PORT" cargo run -p 
 [tasks.sync-pricing-catalog]
 description = "Refresh the vendored pricing catalog fallback snapshot"
 run = "cargo run -p gateway --bin sync_pricing_catalog"
+
+[tasks.sync-model-benchmarks]
+description = "Upsert vendored Artificial Analysis scores from OpenRouter's top 200 models, excluding :variant IDs"
+run = "cargo run -p gateway --bin sync_model_benchmarks"
 
 [tasks.ui-install]
 description = "Install admin UI dependencies"

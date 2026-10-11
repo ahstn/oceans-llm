@@ -10,10 +10,26 @@ import {
 } from '@/server/admin-data.functions'
 import type {
   ApiKeysPayload,
+  ApiKeyView,
   CreateApiKeyInput,
   CreateApiKeyResult,
   UpdateApiKeyInput,
 } from '@/types/api'
+
+export type ApiKeysSearch = { api_key_id?: string; create?: true }
+
+/**
+ * The router JSON-parses search values, so `?create=true` arrives as `true`. The string forms
+ * are accepted too, for links built by hand or by other search serializers.
+ */
+export function validateApiKeysSearch(search: Record<string, unknown>): ApiKeysSearch {
+  const create = search.create
+  return {
+    api_key_id: typeof search.api_key_id === 'string' ? search.api_key_id : undefined,
+    create:
+      create === true || create === 1 || create === '1' || create === 'true' ? true : undefined,
+  }
+}
 
 const initialForm: CreateApiKeyInput = {
   name: '',
@@ -30,6 +46,39 @@ const initialManageForm: UpdateApiKeyInput = {
   model_keys: [],
 }
 
+/** A blank create form, with the default owner preselected when they can own keys. */
+function createFormFor(
+  users: ApiKeysPayload['users'],
+  defaultOwnerUserId: string | undefined,
+): CreateApiKeyInput {
+  return {
+    ...initialForm,
+    owner_user_id: users.some((user) => user.id === defaultOwnerUserId)
+      ? (defaultOwnerUserId ?? null)
+      : null,
+  }
+}
+
+/** Whether the create form is missing a name, an owner, or an explicit model selection. */
+function isCreateFormIncomplete(form: CreateApiKeyInput) {
+  return (
+    form.name.trim().length === 0 ||
+    (form.model_grant_mode === 'explicit' && form.model_keys.length === 0) ||
+    (form.owner_kind === 'user' ? !form.owner_user_id : !form.owner_service_account_id)
+  )
+}
+
+/** Whether saving the manage form would be invalid or change nothing. */
+function isManageFormUnsaveable(target: ApiKeyView | null, manageForm: UpdateApiKeyInput) {
+  return (
+    !target ||
+    target.status !== 'active' ||
+    (manageForm.model_grant_mode === 'explicit' && manageForm.model_keys.length === 0) ||
+    (target.model_grant_mode === manageForm.model_grant_mode &&
+      sameModelSelection(target.model_keys, manageForm.model_keys))
+  )
+}
+
 export type ManageDialogState = { mode: 'closed' } | { mode: 'open'; apiKeyId: string }
 
 // Create and manage flows share route focus, refresh, owner options, and clipboard behavior.
@@ -40,13 +89,20 @@ export function useApiKeysPageState({
   service_accounts,
   defaultOwnerUserId,
   focusedApiKeyId,
+  openCreateOnLoad = false,
 }: Pick<ApiKeysPayload, 'items' | 'users' | 'service_accounts'> & {
   defaultOwnerUserId?: string
   focusedApiKeyId?: string
+  /** Open the create dialog once on mount, e.g. when linked from the profile page. */
+  openCreateOnLoad?: boolean
 }) {
   const router = useRouter()
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [form, setForm] = useState<CreateApiKeyInput>(initialForm)
+  // The profile page links here with `?create=true`, which mounts this page, so the dialog's
+  // opening state can be set up front instead of in an effect.
+  const [isCreateOpen, setIsCreateOpen] = useState(openCreateOnLoad)
+  const [form, setForm] = useState<CreateApiKeyInput>(() =>
+    openCreateOnLoad ? createFormFor(users, defaultOwnerUserId) : initialForm,
+  )
   const [manageForm, setManageForm] = useState<UpdateApiKeyInput>(initialManageForm)
   const [createdResult, setCreatedResult] = useState<CreateApiKeyResult | null>(null)
   const [manageDialog, setManageDialog] = useState<ManageDialogState>({ mode: 'closed' })
@@ -65,31 +121,15 @@ export function useApiKeysPageState({
       ? (items.find((item) => item.id === manageDialog.apiKeyId) ?? null)
       : null
 
-  const isCreateDisabled =
-    isMutating ||
-    form.name.trim().length === 0 ||
-    (form.model_grant_mode === 'explicit' && form.model_keys.length === 0) ||
-    (form.owner_kind === 'user' ? !form.owner_user_id : !form.owner_service_account_id)
-
-  const isManageDisabled =
-    isMutating ||
-    !manageTarget ||
-    manageTarget.status !== 'active' ||
-    (manageForm.model_grant_mode === 'explicit' && manageForm.model_keys.length === 0) ||
-    (manageTarget.model_grant_mode === manageForm.model_grant_mode &&
-      sameModelSelection(manageTarget.model_keys, manageForm.model_keys))
+  const isCreateDisabled = isMutating || isCreateFormIncomplete(form)
+  const isManageDisabled = isMutating || isManageFormUnsaveable(manageTarget, manageForm)
 
   async function refreshApiKeys() {
     await router.invalidate()
   }
 
   function openCreateDialog() {
-    setForm({
-      ...initialForm,
-      owner_user_id: users.some((user) => user.id === defaultOwnerUserId)
-        ? (defaultOwnerUserId ?? null)
-        : null,
-    })
+    setForm(createFormFor(users, defaultOwnerUserId))
     setIsCreateOpen(true)
   }
 

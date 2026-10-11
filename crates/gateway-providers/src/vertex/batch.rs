@@ -972,6 +972,7 @@ mod tests {
             provider_key: "vertex".to_string(),
             upstream_model: "google/gemini-test".to_string(),
             owner_user_id: None,
+            expected_provider_credential_id: None,
             extra_headers: Map::new(),
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
@@ -1002,6 +1003,7 @@ mod tests {
             upstream_model: "projects/p/locations/us/publishers/google/models/gemini-test"
                 .to_string(),
             owner_user_id: None,
+            expected_provider_credential_id: None,
             extra_headers: Map::new(),
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
@@ -1029,6 +1031,7 @@ mod tests {
             provider_key: "vertex".to_string(),
             upstream_model: "google/gemini-3.7-flash".to_string(),
             owner_user_id: None,
+            expected_provider_credential_id: None,
             extra_headers: Map::new(),
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),

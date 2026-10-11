@@ -61,6 +61,8 @@ pub(super) struct CatalogModel {
     pub pricing: Option<PricingCatalogCostDocument>,
     pub modalities: Option<PricingCatalogModalitiesDocument>,
     pub deprecated_date: Option<String>,
+    pub display_name: Option<String>,
+    pub release_date: Option<String>,
     pub merge_report: MergeReport,
 }
 
@@ -97,6 +99,8 @@ pub(super) fn resolve(
         pricing: has_rates(&pricing).then_some(pricing),
         modalities: primary.map(|model| model.modalities.clone()),
         deprecated_date: secondary.and_then(|model| model.deprecated_date.clone()),
+        display_name: primary.map(|model| model.display_name.clone()),
+        release_date: primary.map(|model| model.release_date.clone()),
         merge_report,
     }
 }

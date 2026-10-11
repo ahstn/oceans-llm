@@ -18,7 +18,9 @@ mod provider_user_credentials;
 mod providers;
 mod request_logs;
 mod review_agent;
+mod routing;
 mod seed;
+mod skills;
 mod support;
 
 use anyhow::Context;
@@ -64,8 +66,9 @@ use gateway_core::{
     ReviewAgentRepository, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
     ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
     SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountRecord, ServiceAccountStatus,
-    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
-    StoreHealth, TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
+    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendModelTokenDailyRecord,
+    SpendOwnerAggregateRecord, SpendOwnerTokenDailyRecord, StoreError, StoreHealth,
+    TeamMembershipRecord, TeamRecord, TokenUsageBuckets, UpdateExternalMcpServerRecord,
     UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
     UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
     UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,

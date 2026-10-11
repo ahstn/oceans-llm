@@ -18,7 +18,11 @@ mod provider_user_credentials;
 mod providers;
 mod request_logs;
 mod review_agent;
+mod routing;
 mod seed;
+mod skills;
+#[cfg(test)]
+mod skills_tests;
 mod support;
 
 use std::sync::Arc;
@@ -66,8 +70,9 @@ use gateway_core::{
     ReviewAgentRepository, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
     ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
     SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountRecord, ServiceAccountStatus,
-    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
-    StoreHealth, TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
+    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendModelTokenDailyRecord,
+    SpendOwnerAggregateRecord, SpendOwnerTokenDailyRecord, StoreError, StoreHealth,
+    TeamMembershipRecord, TeamRecord, TokenUsageBuckets, UpdateExternalMcpServerRecord,
     UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
     UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
     UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
@@ -88,24 +93,38 @@ use support::*;
 
 #[derive(Clone)]
 pub struct LibsqlStore {
+    database: Arc<libsql::Database>,
     connection: Arc<libsql::Connection>,
+    routing_workers: Arc<tokio::sync::Semaphore>,
 }
 
 impl LibsqlStore {
     pub async fn new_local(path: &str) -> anyhow::Result<Self> {
-        let db = libsql::Builder::new_local(path)
+        // Named memory databases share their schema across this store's connections.
+        let database_path = if path == ":memory:" {
+            format!("file:oceans-{}?mode=memory&cache=shared", Uuid::new_v4())
+        } else {
+            path.to_string()
+        };
+        let db = libsql::Builder::new_local(database_path)
             .build()
             .await
             .with_context(|| format!("failed building local libsql database at `{path}`"))?;
         let connection = db.connect().context("failed opening libsql connection")?;
-        connection
-            .execute("PRAGMA foreign_keys = ON", ())
+        Self::configure_connection(&connection)
             .await
-            .context("failed enabling LibSQL foreign key enforcement")?;
-
+            .context("failed configuring LibSQL connection")?;
         Ok(Self {
+            database: Arc::new(db),
             connection: Arc::new(connection),
+            routing_workers: Arc::new(tokio::sync::Semaphore::new(4)),
         })
+    }
+
+    async fn configure_connection(connection: &libsql::Connection) -> libsql::Result<()> {
+        connection.busy_timeout(std::time::Duration::from_secs(5))?;
+        connection.execute("PRAGMA foreign_keys = ON", ()).await?;
+        Ok(())
     }
 
     #[cfg(test)]

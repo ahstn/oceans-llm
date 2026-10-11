@@ -3,13 +3,13 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value, json};
 
 use crate::{
-    api_style::{ClientApiStyle, client_api_style, opencode_provider_package_for_style},
+    api_style::{ApiFormat, client_api_style, opencode_provider_package_for_style},
     cost::opencode_cost,
     format::to_pretty_json,
     templates::notes::{client_notes_for_inputs, thinking_notes},
     types::{
         ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
-        ClientConfigSetupItem, ClientConfigTemplate, ThinkingPolicy,
+        ClientConfigSetupItem, ClientConfigTemplate, ReasoningLevel, ThinkingPolicy,
     },
 };
 
@@ -101,19 +101,19 @@ fn opencode_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
     ]
 }
 
-fn opencode_base_url(input: &ClientConfigInput, style: ClientApiStyle) -> String {
+fn opencode_base_url(input: &ClientConfigInput, style: ApiFormat) -> String {
     match style {
-        ClientApiStyle::OpenAiCompatible | ClientApiStyle::OpenAiResponses => {
+        ApiFormat::OpenAiChatCompletions | ApiFormat::OpenAiResponses => {
             input.openai_compatible_client_base_url()
         }
-        ClientApiStyle::AnthropicMessages => input.client_base_url(),
+        ApiFormat::AnthropicMessages => input.client_base_url(),
     }
 }
 
 fn grouped_models(
     input_set: &ClientConfigInputSet,
-) -> BTreeMap<ClientApiStyle, Vec<&ClientConfigInput>> {
-    let mut groups: BTreeMap<ClientApiStyle, Vec<&ClientConfigInput>> = BTreeMap::new();
+) -> BTreeMap<ApiFormat, Vec<&ClientConfigInput>> {
+    let mut groups: BTreeMap<ApiFormat, Vec<&ClientConfigInput>> = BTreeMap::new();
     for input in &input_set.models {
         groups
             .entry(client_api_style(input))
@@ -154,14 +154,31 @@ fn opencode_model(input: &ClientConfigInput) -> Map<String, Value> {
     if input.capabilities.attachments || input.capabilities.vision {
         model.insert("attachment".to_string(), json!(true));
     }
-    if let Some(variants) = input.thinking_policy.and_then(opencode_variants) {
+    if let Some(variants) = opencode_variants(input) {
         model.insert("variants".to_string(), variants);
     }
 
     model
 }
 
-fn opencode_variants(policy: ThinkingPolicy) -> Option<Value> {
+/// Effort variants for the model's thinking policy, minus any above the gateway ceiling.
+pub(crate) fn opencode_variants(input: &ClientConfigInput) -> Option<Value> {
+    let Value::Object(mut variants) = policy_variants(input.thinking_policy?)? else {
+        return None;
+    };
+    if let Some(ceiling) = input.max_reasoning_effort {
+        variants.retain(|_, variant| {
+            variant
+                .get("reasoningEffort")
+                .and_then(Value::as_str)
+                .and_then(ReasoningLevel::parse)
+                .is_none_or(|level| level <= ceiling)
+        });
+    }
+    (!variants.is_empty()).then_some(Value::Object(variants))
+}
+
+fn policy_variants(policy: ThinkingPolicy) -> Option<Value> {
     match policy {
         ThinkingPolicy::AnthropicSafeEffort => Some(json!({
             "high": {
@@ -202,7 +219,7 @@ fn reasoning_effort_variants<'a>(levels: impl IntoIterator<Item = &'a str>) -> V
 
 fn provider_id_for_style(
     input: &ClientConfigInput,
-    style: ClientApiStyle,
+    style: ApiFormat,
     has_multiple_styles: bool,
 ) -> String {
     if !has_multiple_styles {
@@ -210,15 +227,15 @@ fn provider_id_for_style(
     }
 
     match style {
-        ClientApiStyle::OpenAiCompatible => format!("{}-openai-compatible", input.provider_id),
-        ClientApiStyle::OpenAiResponses => format!("{}-openai-responses", input.provider_id),
-        ClientApiStyle::AnthropicMessages => format!("{}-anthropic-messages", input.provider_id),
+        ApiFormat::OpenAiChatCompletions => format!("{}-openai-compatible", input.provider_id),
+        ApiFormat::OpenAiResponses => format!("{}-openai-responses", input.provider_id),
+        ApiFormat::AnthropicMessages => format!("{}-anthropic-messages", input.provider_id),
     }
 }
 
 fn provider_name_for_style(
     input: &ClientConfigInput,
-    style: ClientApiStyle,
+    style: ApiFormat,
     has_multiple_styles: bool,
 ) -> String {
     if !has_multiple_styles {
@@ -226,8 +243,8 @@ fn provider_name_for_style(
     }
 
     match style {
-        ClientApiStyle::OpenAiCompatible => format!("{} OpenAI-compatible", input.provider_name),
-        ClientApiStyle::OpenAiResponses => format!("{} Responses", input.provider_name),
-        ClientApiStyle::AnthropicMessages => format!("{} Anthropic Messages", input.provider_name),
+        ApiFormat::OpenAiChatCompletions => format!("{} OpenAI-compatible", input.provider_name),
+        ApiFormat::OpenAiResponses => format!("{} Responses", input.provider_name),
+        ApiFormat::AnthropicMessages => format!("{} Anthropic Messages", input.provider_name),
     }
 }

@@ -1,13 +1,23 @@
 //! API-key-scoped discovery. Reads stored catalogs only; no upstream requests.
 mod catalog;
+pub(crate) mod listing;
 pub use catalog::{FieldConflict, MergeReport, SupplementProvenance};
+pub use listing::{
+    CapabilitySupport, ContextManagementCapability, EffortCapability, ModelArchitecture,
+    ModelCapabilities as AnthropicModelCapabilities, ModelCard, ModelsListResponse,
+    ThinkingCapability, ThinkingTypes,
+};
 use std::collections::{BTreeSet, HashMap};
 
-use crate::model_resolution::{execution_model_from_snapshot, load_missing_alias_targets};
+use crate::model_resolution::{
+    alias_chain_reasoning_ceiling, execution_model_from_snapshot, load_missing_alias_targets,
+};
 use gateway_core::{
-    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderConnection, ProviderRepository,
+    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderConnection,
+    ProviderRepository, ReasoningEffort,
 };
 use serde::Serialize;
+use uuid::Uuid;
 
 use crate::pricing_catalog::{
     PricingCatalogCostDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
@@ -52,6 +62,10 @@ pub struct RouteMetadata {
     /// USD per million tokens. Null means unknown or unsupported billing conditions.
     pub pricing: Option<PricingCatalogCostDocument>,
     pub pricing_source: Option<&'static str>,
+    #[serde(skip)]
+    pub(crate) display_name: Option<String>,
+    #[serde(skip)]
+    pub(crate) release_date: Option<String>,
 }
 
 pub(crate) async fn list_metadata<R>(
@@ -62,7 +76,58 @@ pub(crate) async fn list_metadata<R>(
 where
     R: ModelRepository + ProviderRepository,
 {
-    let alias_targets = load_missing_alias_targets(repo, &models).await?;
+    let loaded = load_routes(repo, &models).await?;
+    let data = models
+        .iter()
+        .enumerate()
+        .map(|(index, model)| {
+            let details = loaded
+                .enabled_routes(index)
+                .map(|route| {
+                    route_metadata(route, loaded.providers.get(&route.provider_key), snapshot)
+                })
+                .collect::<Vec<_>>();
+            summarize(model.model_key.clone(), details)
+        })
+        .collect();
+    Ok(ModelMetadataResponse {
+        schema_version: 1,
+        catalog: snapshot.metadata.clone(),
+        supplement: catalog::snapshot().provenance.clone(),
+        data,
+    })
+}
+
+/// Routes and providers for the execution model behind each visible model, index-aligned
+/// with the input slice.
+struct LoadedRoutes {
+    executions: Vec<Option<GatewayModel>>,
+    /// The strictest reasoning ceiling along each model's alias chain.
+    reasoning_ceilings: Vec<Option<ReasoningEffort>>,
+    routes: HashMap<Uuid, Vec<ModelRoute>>,
+    providers: HashMap<String, ProviderConnection>,
+}
+
+impl LoadedRoutes {
+    fn execution(&self, index: usize) -> Option<&GatewayModel> {
+        self.executions[index].as_ref()
+    }
+
+    /// Enabled, weighted routes; the same set `/v1/model-metadata` reports.
+    fn enabled_routes(&self, index: usize) -> impl Iterator<Item = &ModelRoute> {
+        self.execution(index)
+            .and_then(|execution| self.routes.get(&execution.id))
+            .into_iter()
+            .flatten()
+            .filter(|route| route.enabled && route.weight > 0.0)
+    }
+}
+
+async fn load_routes<R>(repo: &R, models: &[GatewayModel]) -> Result<LoadedRoutes, GatewayError>
+where
+    R: ModelRepository + ProviderRepository,
+{
+    let alias_targets = load_missing_alias_targets(repo, models).await?;
     let by_key = models
         .iter()
         .chain(&alias_targets)
@@ -70,7 +135,11 @@ where
         .collect::<HashMap<_, _>>();
     let executions = models
         .iter()
-        .map(|model| execution_model_from_snapshot(&by_key, model))
+        .map(|model| execution_model_from_snapshot(&by_key, model).cloned())
+        .collect::<Vec<_>>();
+    let reasoning_ceilings = models
+        .iter()
+        .map(|model| alias_chain_reasoning_ceiling(|key| by_key.get(key).copied(), model))
         .collect::<Vec<_>>();
     let ids = executions
         .iter()
@@ -89,25 +158,11 @@ where
         .into_iter()
         .collect::<Vec<_>>();
     let providers = repo.list_providers_by_keys(&keys).await?;
-    let data = models
-        .iter()
-        .zip(executions)
-        .map(|(model, execution)| {
-            let details = execution
-                .and_then(|execution| routes.get(&execution.id))
-                .into_iter()
-                .flatten()
-                .filter(|route| route.enabled && route.weight > 0.0)
-                .map(|route| route_metadata(route, providers.get(&route.provider_key), snapshot))
-                .collect::<Vec<_>>();
-            summarize(model.model_key.clone(), details)
-        })
-        .collect();
-    Ok(ModelMetadataResponse {
-        schema_version: 1,
-        catalog: snapshot.metadata.clone(),
-        supplement: catalog::snapshot().provenance.clone(),
-        data,
+    Ok(LoadedRoutes {
+        executions,
+        reasoning_ceilings,
+        routes,
+        providers,
     })
 }
 
@@ -187,6 +242,8 @@ fn route_metadata(
         modalities: catalog.modalities,
         pricing,
         pricing_source,
+        display_name: catalog.display_name,
+        release_date: catalog.release_date,
     }
 }
 

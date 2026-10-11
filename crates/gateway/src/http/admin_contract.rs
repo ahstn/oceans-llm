@@ -1,9 +1,10 @@
 use std::{fs, path::Path};
 
 use anyhow::Context;
+use gateway_core::{ModelRoutingPolicy, RoutingStrategy};
 use gateway_service::{
-    AdminModelStatus as ServiceAdminModelStatus, ModelIconKey as ServiceModelIconKey,
-    ProviderIconKey as ServiceProviderIconKey,
+    AdminModelStatus as ServiceAdminModelStatus, BenchmarkMatchKind, BenchmarkMetric,
+    ModelIconKey as ServiceModelIconKey, ProviderIconKey as ServiceProviderIconKey,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
@@ -46,6 +47,12 @@ pub struct OpenAiErrorBodyView {
 pub struct OpenAiErrorEnvelopeView {
     pub error: OpenAiErrorBodyView,
 }
+
+/// Raw ZIP bytes used by skill upload and download operations.
+#[derive(ToSchema)]
+#[schema(value_type = String, format = Binary)]
+#[allow(dead_code)]
+pub struct SkillArchiveBody(Vec<u8>);
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AdminIdentityPayload {
@@ -324,6 +331,55 @@ pub struct AdminModelAllowlistView {
     pub teams: Vec<String>,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelRoutingPolicyView {
+    pub strategy: AdminModelRoutingStrategyView,
+    pub affinity: Option<AdminModelSessionAffinityView>,
+}
+
+impl From<ModelRoutingPolicy> for AdminModelRoutingPolicyView {
+    fn from(policy: ModelRoutingPolicy) -> Self {
+        Self {
+            strategy: match policy.strategy {
+                RoutingStrategy::Preferred => AdminModelRoutingStrategyView::Preferred,
+                RoutingStrategy::WeightedRandom => AdminModelRoutingStrategyView::WeightedRandom,
+                RoutingStrategy::RoundRobin => AdminModelRoutingStrategyView::RoundRobin,
+            },
+            affinity: policy
+                .affinity
+                .map(|affinity| AdminModelSessionAffinityView {
+                    idle_timeout_seconds: affinity.idle_timeout_seconds,
+                }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AdminModelRoutingStrategyView {
+    Preferred,
+    WeightedRandom,
+    RoundRobin,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelSessionAffinityView {
+    pub idle_timeout_seconds: u32,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelRouteView {
+    pub id: String,
+    pub provider_key: String,
+    pub provider_label: String,
+    pub provider_icon_key: ProviderIconKeyView,
+    pub upstream_model: String,
+    pub priority: i32,
+    pub weight: f64,
+    pub enabled: bool,
+    pub provider_configured: bool,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EffectiveMetadataSourceKindView {
@@ -346,9 +402,15 @@ pub struct AdminModelView {
     pub model_id: String,
     pub resolved_model_key: String,
     pub alias_of: Option<String>,
+    /// Other model IDs resolving to the same execution model, excluding this model ID.
+    pub aliases: Vec<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub allowlist: Option<AdminModelAllowlistView>,
+    /// Configured policy. Only visible to platform admins.
+    pub routing: Option<AdminModelRoutingPolicyView>,
+    /// Configured routes, including disabled routes. Only visible to platform admins.
+    pub routes: Option<Vec<AdminModelRouteView>>,
     pub status: AdminModelStatusView,
     pub provider_key: Option<String>,
     pub provider_label: Option<String>,
@@ -370,8 +432,55 @@ pub struct AdminModelView {
     pub supports_tool_calling: Option<bool>,
     pub supports_structured_output: Option<bool>,
     pub supports_attachments: Option<bool>,
+    pub benchmark_scores: Vec<AdminModelBenchmarkScoreView>,
     pub supports_decisions: Option<bool>,
     pub client_configurations: Vec<AdminModelClientConfigView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelBenchmarkScoreView {
+    pub metric_key: AdminModelBenchmarkMetricKeyView,
+    pub label: String,
+    pub value: f64,
+    pub source: String,
+    pub source_model_id: String,
+    pub source_url: String,
+    pub match_kind: AdminModelBenchmarkMatchKindView,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AdminModelBenchmarkMetricKeyView {
+    ArtificialAnalysisIntelligenceIndex,
+    ArtificialAnalysisCodingIndex,
+    ArtificialAnalysisAgenticIndex,
+}
+
+impl From<BenchmarkMetric> for AdminModelBenchmarkMetricKeyView {
+    fn from(value: BenchmarkMetric) -> Self {
+        match value {
+            BenchmarkMetric::IntelligenceIndex => Self::ArtificialAnalysisIntelligenceIndex,
+            BenchmarkMetric::CodingIndex => Self::ArtificialAnalysisCodingIndex,
+            BenchmarkMetric::AgenticIndex => Self::ArtificialAnalysisAgenticIndex,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AdminModelBenchmarkMatchKindView {
+    Explicit,
+    Derived,
+}
+
+impl From<BenchmarkMatchKind> for AdminModelBenchmarkMatchKindView {
+    fn from(value: BenchmarkMatchKind) -> Self {
+        match value {
+            BenchmarkMatchKind::Explicit => Self::Explicit,
+            BenchmarkMatchKind::Derived => Self::Derived,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -446,6 +555,11 @@ pub struct RefreshModelPricingCatalogResponse {
 pub struct AdminModelListQuery {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
+    /// Include alias models in the list. Defaults to true; alias metadata is always retained.
+    #[param(default = true)]
+    pub include_aliases: Option<bool>,
+    /// Trimmed, case-insensitive substring search across model IDs, aliases, visible providers, upstream IDs, and tags.
+    pub q: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -780,6 +894,38 @@ pub struct SpendReportView {
     pub daily: Vec<SpendDailyPointView>,
     pub owners: Vec<SpendOwnerBreakdownView>,
     pub models: Vec<SpendModelBreakdownView>,
+    /// Daily token volumes for the heaviest owners by total tokens, zero-filled across the window.
+    pub owner_token_series: Vec<SpendOwnerTokenSeriesView>,
+    /// Daily token volumes for the heaviest models; the remainder is folded into one `is_other` series.
+    pub model_token_series: Vec<SpendModelTokenSeriesView>,
+}
+
+/// One day of token volume. Cache buckets only cover events whose provider reported a cache split,
+/// so `input_tokens` can exceed `uncached_input_tokens + cache_read_tokens + cache_write_tokens`.
+#[derive(Debug, Clone, Default, Serialize, ToSchema)]
+pub struct SpendTokenPointView {
+    pub day_start: String,
+    pub request_count: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub uncached_input_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SpendOwnerTokenSeriesView {
+    pub owner_kind: String,
+    pub owner_id: String,
+    pub owner_name: String,
+    pub points: Vec<SpendTokenPointView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SpendModelTokenSeriesView {
+    pub model_key: String,
+    pub is_other: bool,
+    pub points: Vec<SpendTokenPointView>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -1107,6 +1253,9 @@ pub struct RequestLogListQuery {
     pub env: Option<String>,
     pub tag_key: Option<String>,
     pub tag_value: Option<String>,
+    /// Trimmed, case-insensitive substring search across the requested or resolved model key and
+    /// the caller's user name or email.
+    pub q: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]
@@ -1206,6 +1355,11 @@ pub struct RequestLogSummaryView {
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
+    /// Prompt tokens served from the provider cache, from the usage ledger.
+    pub cache_read_tokens: Option<i64>,
+    /// Computed request cost in USD scaled by 10,000. Null when no usage was recorded or the
+    /// request could not be priced.
+    pub cost_usd_10000: Option<i64>,
     pub error_code: Option<String>,
     pub has_payload: bool,
     pub request_payload_truncated: bool,
@@ -1226,6 +1380,12 @@ pub struct RequestToolCardinalityView {
     pub exposed_tool_count: Option<i64>,
     pub invoked_tool_count: Option<i64>,
     pub filtered_tool_count: Option<i64>,
+    /// Tools declared in the request body's `tools` array: native client tools plus any MCP
+    /// tools the client loaded. Null for requests logged before this was recorded.
+    pub request_tool_count: Option<i64>,
+    /// Distinct tool names the model called; `invoked_tool_count` counts every call. Null for
+    /// requests logged before this was recorded.
+    pub invoked_distinct_tool_count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -1806,6 +1966,8 @@ pub struct AgentSessionDetailView {
         crate::http::identity::update_identity_user,
         crate::http::provider_credentials::upsert_identity_user_provider_credential,
         crate::http::provider_credentials::delete_identity_user_provider_credential,
+        crate::http::provider_credentials::list_my_provider_credentials,
+        crate::http::provider_credentials::set_my_provider_credential,
         crate::http::identity::deactivate_identity_user,
         crate::http::identity::reactivate_identity_user,
         crate::http::identity::reset_identity_user_onboarding,
@@ -1834,6 +1996,7 @@ pub struct AgentSessionDetailView {
         crate::http::review_agent::fail_review_agent_action_run,
         crate::http::spend::get_admin_focus_export,
         crate::http::spend::get_my_focus_export,
+        crate::http::profile::get_my_profile,
         crate::http::spend::list_spend_budgets,
         crate::http::spend::list_budget_alert_history,
         crate::http::spend::upsert_budget,
@@ -1842,13 +2005,26 @@ pub struct AgentSessionDetailView {
         crate::http::observability::get_harness_usage,
         crate::http::observability::agent_sessions::list_agent_sessions,
         crate::http::observability::agent_sessions::get_agent_session_detail,
-        crate::http::observability::list_request_logs,
-        crate::http::observability::get_request_log_detail,
+        crate::http::observability::request_logs::list_request_logs,
+        crate::http::observability::request_logs::get_request_log_detail,
         crate::http::batches::create_batch,
         crate::http::batches::list_batches,
         crate::http::batches::get_batch,
         crate::http::batches::get_batch_results,
         crate::http::batches::cancel_batch,
+        crate::http::skills::get_skill_namespace,
+        crate::http::skills::get_skill_limits,
+        crate::http::skills::claim_skill_namespace,
+        crate::http::skills::list_skills,
+        crate::http::skills::create_skill,
+        crate::http::skills::get_skill_by_name,
+        crate::http::skills::get_skill,
+        crate::http::skills::list_skill_versions,
+        crate::http::skills::append_skill_version,
+        crate::http::skills::get_skill_version,
+        crate::http::skills::download_skill_archive,
+        crate::http::skills::get_skill_file,
+        crate::http::skills::set_skill_default_version,
         crate::http::observability::list_mcp_tool_invocations,
         crate::http::observability::get_mcp_tool_invocation_detail,
         crate::http::guardrails::evaluate_guardrail,
@@ -1962,6 +2138,55 @@ mod tests {
     }
 
     #[test]
+    fn models_query_documents_optional_case_insensitive_search() {
+        let document = serde_json::to_value(admin_openapi()).expect("serialize OpenAPI");
+        let parameters = document["paths"]["/api/v1/admin/models"]["get"]["parameters"]
+            .as_array()
+            .expect("models query parameters");
+        let query = parameters
+            .iter()
+            .find(|parameter| parameter["name"] == "q")
+            .expect("q query parameter");
+
+        assert_eq!(query["in"], "query");
+        assert_eq!(query["required"], false);
+        assert_eq!(query["schema"]["type"], json!(["string", "null"]));
+        let description = query["description"]
+            .as_str()
+            .expect("search query description")
+            .to_ascii_lowercase();
+        assert!(description.contains("case-insensitive"));
+        assert!(description.contains("trim"));
+    }
+
+    #[test]
+    fn models_query_documents_optional_alias_filter_enabled_by_default() {
+        let document = serde_json::to_value(admin_openapi()).expect("serialize OpenAPI");
+        let parameters = document["paths"]["/api/v1/admin/models"]["get"]["parameters"]
+            .as_array()
+            .expect("models query parameters");
+        let include_aliases = parameters
+            .iter()
+            .find(|parameter| parameter["name"] == "include_aliases")
+            .expect("include_aliases query parameter");
+
+        assert_eq!(include_aliases["in"], "query");
+        assert_eq!(include_aliases["required"], false);
+        assert_eq!(
+            include_aliases["schema"]["type"],
+            serde_json::json!(["boolean", "null"])
+        );
+        assert_eq!(include_aliases["schema"]["default"], true);
+        assert!(
+            include_aliases["description"]
+                .as_str()
+                .expect("alias filter description")
+                .to_ascii_lowercase()
+                .contains("alias")
+        );
+    }
+
+    #[test]
     fn openapi_document_includes_live_admin_paths_and_envelopes() {
         let openapi = admin_openapi();
         let paths = openapi.paths.paths;
@@ -2007,6 +2232,16 @@ mod tests {
         assert!(paths.contains_key("/api/v1/mcp/oauth/{provider_key}/callback"));
         assert!(paths.contains_key("/api/v1/auth/session"));
         assert!(paths.contains_key("/api/v1/auth/logout"));
+        assert!(paths.contains_key("/api/v1/skills"));
+        assert!(paths.contains_key("/api/v1/skills/namespace"));
+        assert!(paths.contains_key("/api/v1/skills/limits"));
+        assert!(paths.contains_key("/api/v1/skills/by-name/{namespace}/{name}"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}/versions"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}/versions/{version}"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}/versions/{version}/archive"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}/versions/{version}/files"));
+        assert!(paths.contains_key("/api/v1/skills/{skill_id}/default-version"));
 
         assert!(
             components
@@ -2026,7 +2261,37 @@ mod tests {
                 .contains_key("Envelope_McpToolInvocationDetailView")
         );
         assert!(components.schemas.contains_key("AdminModelAllowlistView"));
+        assert!(
+            components
+                .schemas
+                .contains_key("AdminModelRoutingPolicyView")
+        );
+        assert!(
+            components
+                .schemas
+                .contains_key("AdminModelRoutingStrategyView")
+        );
+        assert!(
+            components
+                .schemas
+                .contains_key("AdminModelSessionAffinityView")
+        );
+        assert!(components.schemas.contains_key("AdminModelRouteView"));
         assert!(components.schemas.contains_key("AdminModelView"));
+    }
+
+    #[test]
+    fn skill_archives_use_a_binary_schema() {
+        let document = serde_json::to_value(admin_openapi()).expect("OpenAPI JSON");
+        let archive = &document["components"]["schemas"]["SkillArchiveBody"];
+        assert_eq!(archive["type"], "string");
+        assert_eq!(archive["format"], "binary");
+
+        let upload = &document["paths"]["/api/v1/skills"]["post"]["requestBody"];
+        assert_eq!(
+            upload["content"]["application/zip"]["schema"]["$ref"],
+            "#/components/schemas/SkillArchiveBody"
+        );
     }
 
     #[test]

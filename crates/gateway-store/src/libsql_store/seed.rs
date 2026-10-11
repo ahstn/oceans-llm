@@ -258,20 +258,25 @@ impl LibsqlStore {
                 .get(&model.model_key)
                 .expect("model ids populated before insert");
             let tags_json = serialize_json(&model.tags)?;
+            if let Some(routing) = &model.routing {
+                routing.validate().map_err(StoreError::Serialization)?;
+            }
+            let routing_policy_json = serialize_optional_json(model.routing.as_ref())?;
 
             self.connection
                 .execute(
                     r#"
                     INSERT INTO gateway_models (
                         id, model_key, alias_target_model_id, max_reasoning_effort, description,
-                        tags_json, rank, created_at, updated_at
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
+                        tags_json, rank, created_at, updated_at, routing_policy_json
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9)
                     ON CONFLICT(model_key) DO UPDATE SET
                         alias_target_model_id = excluded.alias_target_model_id,
                         max_reasoning_effort = excluded.max_reasoning_effort,
                         description = excluded.description,
                         tags_json = excluded.tags_json,
                         rank = excluded.rank,
+                        routing_policy_json = excluded.routing_policy_json,
                         updated_at = excluded.updated_at
                     "#,
                     libsql::params![
@@ -282,7 +287,8 @@ impl LibsqlStore {
                         model.description.clone(),
                         tags_json,
                         model.rank,
-                        now_unix
+                        now_unix,
+                        routing_policy_json
                     ],
                 )
                 .await
@@ -346,6 +352,7 @@ impl LibsqlStore {
             for (route_index, route) in model.routes.iter().enumerate() {
                 let route_id = route_uuid(
                     &model.model_key,
+                    route.route_key.as_deref(),
                     &route.provider_key,
                     &route.upstream_model,
                     route.priority,
@@ -373,6 +380,7 @@ impl LibsqlStore {
                             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14
                         )
                         ON CONFLICT(id) DO UPDATE SET
+                            priority = excluded.priority,
                             weight = excluded.weight,
                             enabled = excluded.enabled,
                             context_window_tokens = excluded.context_window_tokens,

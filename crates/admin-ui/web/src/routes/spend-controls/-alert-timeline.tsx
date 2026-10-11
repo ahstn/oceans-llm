@@ -19,8 +19,8 @@ const DELIVERY_BADGE_VARIANT: Record<string, 'success' | 'warning' | 'destructiv
 }
 
 const DELIVERY_INDICATOR_CLASS: Record<string, string> = {
-  sent: 'border-[var(--color-success)] bg-[var(--color-success-soft)]',
-  pending: 'border-[var(--color-warning)] bg-[var(--color-warning-soft)]',
+  sent: 'border-success bg-success/24',
+  pending: 'border-warning bg-warning/24',
   failed: 'border-destructive bg-destructive/10',
 }
 

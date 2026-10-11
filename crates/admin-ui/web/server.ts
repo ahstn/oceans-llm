@@ -2,6 +2,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const PORT = Number(process.env.PORT ?? 3000)
+const HOSTNAME = process.env.HOST ?? '0.0.0.0'
 
 const rootDirectory = path.dirname(fileURLToPath(import.meta.url))
 const clientDirectory = path.join(rootDirectory, 'dist', 'client')
@@ -71,6 +72,7 @@ function resolveStaticAssetRequest(pathname: string): StaticAssetRequest | null 
 }
 
 const server = Bun.serve({
+  hostname: HOSTNAME,
   port: PORT,
   async fetch(request) {
     const url = new URL(request.url)

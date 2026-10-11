@@ -111,6 +111,9 @@ spec:
               mountPath: {{ .Values.gateway.configMountPath | quote }}
               subPath: gateway.yaml
               readOnly: true
+            {{- with .Values.gateway.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
       {{- end }}
       containers:
         - name: gateway
