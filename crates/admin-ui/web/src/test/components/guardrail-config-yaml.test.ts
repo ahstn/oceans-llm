@@ -26,7 +26,7 @@ describe('scopeYaml', () => {
       policy: base,
     }
 
-    expect(scopeYaml(scope, draftFrom(base), base)).toBe(
+    expect(scopeYaml(scope, draftFrom(base), draftFrom(base))).toBe(
       [
         'guardrails:',
         '  default:',
@@ -56,7 +56,7 @@ describe('scopeYaml', () => {
     draft.mode = 'deny'
     draft.redaction.tiers = ['provider_tokens', 'credentials', 'generic']
 
-    expect(scopeYaml(scope, draft, base)).toBe(
+    expect(scopeYaml(scope, draft, draftFrom(base))).toBe(
       [
         'guardrails:',
         '  model_routes:',
@@ -73,7 +73,7 @@ describe('scopeYaml', () => {
     const policy = { ...base, scope: 'mcp_server:github' }
     const scope: PolicyScope = { key: policy.scope, kind: 'mcp', name: 'github', policy }
 
-    expect(scopeYaml(scope, draftFrom(policy), base)).toBe(
+    expect(scopeYaml(scope, draftFrom(policy), draftFrom(base))).toBe(
       'guardrails:\n  mcp_servers:\n    github: {}\n',
     )
   })

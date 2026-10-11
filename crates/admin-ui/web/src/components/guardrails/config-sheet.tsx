@@ -93,7 +93,7 @@ export function GuardrailConfigSheet({
 
 function ScopeDraft({ scope, policies }: { scope: PolicyScope; policies: GuardrailPoliciesView }) {
   const [draft, setDraft] = useState<PolicyDraft>(() => draftFrom(scope.policy))
-  const yaml = scopeYaml(scope, draft, policies.default)
+  const yaml = scopeYaml(scope, draft, draftFrom(policies.default))
   const toggle = (items: string[], item: string, on: boolean) =>
     on ? [...items, item] : items.filter((value) => value !== item)
 
