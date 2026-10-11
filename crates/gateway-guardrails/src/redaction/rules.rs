@@ -36,10 +36,14 @@ macro_rules! bounded {
 /// environment files, capturing only the value.
 macro_rules! assigned {
     ($keyword:literal, $value:literal) => {
+        assigned!($keyword, r"[[:word:].-]{0,20}", $value)
+    };
+    ($keyword:literal, $suffix:literal, $value:literal) => {
         concat!(
             r#"(?i)"#,
             $keyword,
-            r#"[[:word:].-]{0,20}[\s'"]{0,3}(?:=|:{1,3}=|:|=>)[\x60'"\s=]{0,5}("#,
+            $suffix,
+            r#"[\s'"]{0,3}(?:=|:{1,3}=|:|=>)[\x60'"\s=]{0,5}("#,
             $value,
             r#")(?:[\x60'"\s;,]|\\[nrt]|$)"#
         )
@@ -285,6 +289,12 @@ pub(super) const RULES: &[Rule] = &[
         0.0,
     ),
     provider(
+        "slack-workflow-token",
+        &["xwfp"],
+        bounded!(r"(xwfp-[A-Za-z0-9-]{20,})"),
+        3.0,
+    ),
+    provider(
         "slack-webhook-url",
         &["hooks.slack.com"],
         r"(?i)(hooks\.slack\.com/(?:services|workflows|triggers)/[A-Za-z0-9+/]{43,56})",
@@ -368,6 +378,8 @@ pub(super) const RULES: &[Rule] = &[
     // headers. Narrower than `generic-api-key`: no `key`, `auth`, or `access`
     // keywords, and the value must end at a delimiter, so calls such as
     // `getPassword()` and references such as `process.env.TOKEN` do not match.
+    // The name may continue only after a separator or a camelCase capital, so
+    // `secret_key` and `tokenValue` match but `tokenizer` does not.
     Rule {
         reject_word_like: true,
         ..credential(
@@ -383,6 +395,7 @@ pub(super) const RULES: &[Rule] = &[
             ],
             assigned!(
                 r"(?:passw(?:or)?d|secret|token|api[_-]?key|private[_-]?key)",
+                r"(?:(?:[_.-]|(?-i:[A-Z]))[[:word:].-]{0,19})?",
                 r"[[:word:]./+=~!@#$%^&*?-]{8,128}"
             ),
             3.0,

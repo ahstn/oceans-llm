@@ -85,6 +85,15 @@ fn redacts_provider_tokens_with_rule_placeholders() {
             ),
         ),
         (
+            "slack-workflow-token",
+            format!(
+                "xwf{}-{}-{}",
+                'p',
+                random(DIGITS, 13, 54),
+                random(ALNUM, 32, 55)
+            ),
+        ),
+        (
             "jwt",
             format!(
                 "eyJ{}.eyJ{}.{}",
@@ -203,6 +212,10 @@ fn redacts_secret_assignments_and_bearer_tokens_by_default() {
             "{\"password\": \"[REDACTED:secret-assignment]\"}",
         ),
         (
+            format!("clientSecretValue: {}", random(ALNUM, 24, 53)),
+            "clientSecretValue: [REDACTED:secret-assignment]",
+        ),
+        (
             format!("Authorization: Bearer {}", random(ALNUM, 40, 46)),
             "Authorization: Bearer [REDACTED:bearer-token]",
         ),
@@ -221,6 +234,8 @@ fn secret_assignment_ignores_references_counts_and_calls() {
         "\"total_tokens\": 1234567890123",
         "api_key: ${SERVICE_API_KEY}",
         "token_type: \"Bearer\"",
+        "\"tokenizer\": \"cl100k_base\"",
+        "passwords: 12345678abc",
         "Authorization: Bearer <token>",
         "use the bearer authentication_scheme_name",
     ] {
