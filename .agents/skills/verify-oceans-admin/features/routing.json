@@ -166,7 +166,8 @@
       "features": [
         "agent-sessions",
         "guardrails",
-        "spend-controls"
+        "spend-controls",
+        "live-llm-requests"
       ],
       "paths": [
         "gateway.yaml"

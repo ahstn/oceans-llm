@@ -151,7 +151,7 @@ Record a manual recipe after you capture its screenshots:
   --artifact 01-usage-costs.png --artifact 02-usage-costs-30d.png
 ```
 
-`--check` is required and `--optional` is not. Each takes `id=pass|fail|blocked[:note]`. At least one `--artifact` that exists in the evidence directory is required. `--file name-proof.json` overrides the default `<feature>-proof.json`. Record before `cleanup`, which removes the recorded gateway version. Notes and details must never contain keys, cookies, tokens, prompts, or responses.
+`record` is for features whose `routing.json` proof is `manual`; it refuses a feature that has a driver. `--check` is required and `--optional` is not. Each takes `id=pass|fail|blocked[:note]`. At least one `--artifact` that exists in the evidence directory is required. `--file name-proof.json` overrides the default `<feature>-proof.json`. Record before `cleanup`, which removes the recorded gateway version. Notes and details must never contain keys, cookies, tokens, prompts, or responses.
 
 `evidence` reads the envelopes rather than checking for file names:
 

@@ -26,6 +26,10 @@ async function record(args, evidenceDir) {
   const [featureArg, ...rest] = args
   if (!featureArg || featureArg.startsWith('--')) throw new Error('Usage: record <feature-id>[,<id>] --check id=status[:note] ...')
   const featureIds = featureArg.split(',')
+  // A feature with a driver is proven by running it, not by a hand-recorded check.
+  const routing = loadRouting()
+  const driven = featureIds.filter((id) => routing.features.find((feature) => feature.id === id)?.proof?.drive)
+  if (driven.length) throw new Error(`${driven.join(', ')} has a driver; run control-oceans-admin drive instead of record`)
   const checks = []
   const artifacts = []
   let file = `${featureIds[0]}-proof.json`
