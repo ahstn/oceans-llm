@@ -66,10 +66,6 @@ export function ruleLabel(decision: GuardrailDecisionView) {
   return [decision.pack_id, decision.rule_id].filter(Boolean).join(' / ') || '—'
 }
 
-export function evaluatorLabel(decision: GuardrailDecisionView) {
-  return decision.managed_service ?? decision.evaluator
-}
-
 export function countBy<T>(items: T[], key: (item: T) => string) {
   const counts = new Map<string, number>()
   for (const item of items) counts.set(key(item), (counts.get(key(item)) ?? 0) + 1)

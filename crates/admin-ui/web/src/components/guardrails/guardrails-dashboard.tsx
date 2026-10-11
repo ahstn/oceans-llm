@@ -26,7 +26,6 @@ import {
   actionLabel,
   actionVariant,
   countBy,
-  evaluatorLabel,
   formatLatency,
   formatTimestamp,
   percentile,
@@ -249,7 +248,7 @@ function DecisionGrid({
               onEvaluator(row.original.evaluator)
             }}
           >
-            {evaluatorLabel(row.original)}
+            {row.original.evaluator}
           </button>
         ),
       },
