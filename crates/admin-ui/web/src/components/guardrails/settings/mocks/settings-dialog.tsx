@@ -69,7 +69,8 @@ export function SettingsDialogMock({
           <header className="flex flex-col gap-0.5 border-b p-4 pr-12">
             <DialogTitle>{area?.label ?? 'Review changes'}</DialogTitle>
             <DialogDescription>
-              {area?.description ?? 'Copy into gateway.yaml and redeploy. Nothing is saved here.'}
+              {area?.description ??
+                'Merge into gateway.yaml and redeploy; managed check definitions stay as they are. Nothing is saved here.'}
             </DialogDescription>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto p-4">

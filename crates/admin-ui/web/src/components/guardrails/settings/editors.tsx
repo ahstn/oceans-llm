@@ -332,7 +332,7 @@ export function YamlPreview({ yaml, maxLines }: { yaml: string; maxLines?: numbe
   return (
     <CodeBlock code={yaml} language="yaml" maxLines={maxLines}>
       <CodeBlockHeader>
-        <CodeBlockTitle>gateway.yaml</CodeBlockTitle>
+        <CodeBlockTitle>gateway.yaml excerpt</CodeBlockTitle>
         <CodeBlockCopyButton className="ml-auto" labels={{ copy: 'Copy YAML' }} />
       </CodeBlockHeader>
     </CodeBlock>

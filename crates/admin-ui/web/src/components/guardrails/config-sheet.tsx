@@ -63,7 +63,8 @@ export function GuardrailConfigSheet({
         <SheetHeader>
           <SheetTitle>Configure guardrails</SheetTitle>
           <SheetDescription>
-            Draft changes as gateway.yaml. Nothing is saved here; apply the YAML and redeploy.
+            Draft changes for one scope. Nothing is saved here; merge the excerpt into gateway.yaml
+            and redeploy. Other scopes and managed check definitions stay as they are.
           </SheetDescription>
         </SheetHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4">
@@ -189,7 +190,7 @@ function ScopeDraft({ scope, policies }: { scope: PolicyScope; policies: Guardra
 
       <CodeBlock code={yaml} language="yaml">
         <CodeBlockHeader>
-          <CodeBlockTitle>gateway.yaml</CodeBlockTitle>
+          <CodeBlockTitle>gateway.yaml excerpt</CodeBlockTitle>
           <CodeBlockCopyButton className="ml-auto" labels={{ copy: 'Copy YAML' }} />
         </CodeBlockHeader>
       </CodeBlock>

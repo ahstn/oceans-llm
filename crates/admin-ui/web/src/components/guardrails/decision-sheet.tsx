@@ -72,7 +72,8 @@ export function DecisionSheet({
               </Fact>
             </dl>
             <p className="text-muted-foreground px-4 text-xs">
-              Raw prompts, commands, arguments, and results are not stored.
+              This record keeps only a content hash, not raw prompts, commands, arguments, or
+              results. Request-log payload capture follows its own settings.
             </p>
           </>
         ) : null}

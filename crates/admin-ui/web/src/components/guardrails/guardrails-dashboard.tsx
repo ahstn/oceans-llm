@@ -65,7 +65,7 @@ export function GuardrailsDashboard(props: DashboardProps) {
         <Kpi
           label="p95 latency"
           value={formatLatency(percentile(latencies, 95))}
-          hint={`Median ${formatLatency(percentile(latencies, 50))}`}
+          hint={`Median ${formatLatency(percentile(latencies, 50))} on this page`}
         />
       </Frame>
 
@@ -74,7 +74,9 @@ export function GuardrailsDashboard(props: DashboardProps) {
           <FrameHeader className="flex-row flex-wrap items-center justify-between gap-2">
             <div className="flex flex-col gap-0.5">
               <FrameTitle>Action mix by phase</FrameTitle>
-              <FrameDescription>Select a phase to filter the grid.</FrameDescription>
+              <FrameDescription>
+                Decisions on this page. Select a phase to filter the grid.
+              </FrameDescription>
             </div>
             <ActionLegend />
           </FrameHeader>
