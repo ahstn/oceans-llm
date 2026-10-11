@@ -20,7 +20,7 @@ use gateway_core::{
     OpenAiErrorEnvelope, ProviderError, auth::extract_bearer_token,
 };
 use gateway_guardrails::EvaluationPayload;
-use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput, McpInvocationLogging};
+use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput};
 use guardrails::{
     enforce_direct_mcp_result, evaluate_mcp_call, evaluate_mcp_result, guardrail_decision_metadata,
     guardrail_denied_response,
@@ -108,7 +108,6 @@ pub async fn mcp_streamable_http_proxy(
 
     let rpc_request = parse_mcp_rpc_request(&body);
     let access = McpAccess::new(state.store.clone());
-    let invocation_logger = McpInvocationLogging::new(state.store.clone());
 
     let response_result = match rpc_request {
         Ok(McpRpcRequest::ToolsList { id }) => {
@@ -161,7 +160,10 @@ pub async fn mcp_streamable_http_proxy(
                 access_resolution.allowed_tools.len() as i64,
                 access_resolution.filtered_tool_count,
             );
-            let _ = invocation_logger.log_invocation(&auth, log_input).await;
+            let _ = state
+                .service
+                .log_mcp_tool_invocation(&auth, log_input)
+                .await;
             outcome
         }
         Ok(McpRpcRequest::ToolsCall {
@@ -183,8 +185,9 @@ pub async fn mcp_streamable_http_proxy(
             proxy_upstream(&state.mcp_http_client, &method, &headers, body, &upstream).await
         }
         Err(error) => {
-            let _ = invocation_logger
-                .log_invocation(
+            let _ = state
+                .service
+                .log_mcp_tool_invocation(
                     &auth,
                     McpInvocationLogInput {
                         mcp_tool_invocation_id: None,
@@ -252,7 +255,6 @@ async fn handle_tools_call(
     arguments: Option<serde_json::Value>,
 ) -> Response<Body> {
     let access = McpAccess::new(state.store.clone());
-    let invocation_logger = McpInvocationLogging::new(state.store.clone());
     let mcp_tool_invocation_id = Uuid::new_v4();
     let allowed_tool = match access
         .allowed_tool_for_call(auth, server.mcp_server_id, &tool_name)
@@ -262,8 +264,9 @@ async fn handle_tools_call(
         Err(error) => return mcp_error_response(error),
     };
     let Some(tool) = allowed_tool else {
-        let _ = invocation_logger
-            .log_invocation(
+        let _ = state
+            .service
+            .log_mcp_tool_invocation(
                 auth,
                 tool_invocation_log_input(
                     &server,
@@ -315,7 +318,7 @@ async fn handle_tools_call(
             started_at,
         );
         log_input.metadata = guardrail_decision_metadata(&guardrail_evaluation);
-        let _ = invocation_logger.log_invocation(auth, log_input).await;
+        let _ = state.service.log_mcp_tool_invocation(auth, log_input).await;
         return guardrail_denied_response(id.as_ref(), &guardrail_evaluation);
     }
 
@@ -345,8 +348,9 @@ async fn handle_tools_call(
     {
         Ok(upstream) => upstream,
         Err(error) => {
-            let _ = invocation_logger
-                .log_invocation(
+            let _ = state
+                .service
+                .log_mcp_tool_invocation(
                     auth,
                     tool_invocation_log_input(
                         &server,
@@ -428,7 +432,7 @@ async fn handle_tools_call(
             Value::Object(guardrail_decision_metadata(result_evaluation)),
         );
     }
-    let _ = invocation_logger.log_invocation(auth, log_input).await;
+    let _ = state.service.log_mcp_tool_invocation(auth, log_input).await;
     match outcome {
         Ok((response, _, _)) => response,
         Err(error) => mcp_error_response(error),
