@@ -42,14 +42,6 @@ const timeFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 })
 
-const clockFormatter = new Intl.DateTimeFormat('en-US', {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false,
-  timeZone: 'UTC',
-})
-
 export function actionVariant(action: string): ActionBadgeVariant {
   return ACTION_VARIANT[action] ?? 'outline'
 }
@@ -64,10 +56,6 @@ export function actionLabel(action: string) {
 
 export function formatTimestamp(value: string) {
   return `${timeFormatter.format(new Date(value))} UTC`
-}
-
-export function formatClock(value: string) {
-  return clockFormatter.format(new Date(value))
 }
 
 export function formatLatency(micros: number) {
@@ -124,22 +112,6 @@ export function policyScopes(policies: GuardrailPoliciesView): PolicyScope[] {
       policy,
     })),
   ]
-}
-
-/** Names the settings a scope changes relative to the global default. */
-export function policyOverrides(policy: GuardrailPolicy, base: GuardrailPolicy) {
-  const changed: string[] = []
-  if (policy.enabled !== base.enabled) changed.push('enabled')
-  if (policy.mode !== base.mode) changed.push('mode')
-  if (policy.packs.join() !== base.packs.join()) changed.push('packs')
-  if (policy.managed_checks.join() !== base.managed_checks.join()) changed.push('managed checks')
-  if (policy.stream_buffer_bytes !== base.stream_buffer_bytes) changed.push('stream buffer')
-  if (
-    policy.secret_redaction.enabled !== base.secret_redaction.enabled ||
-    policy.secret_redaction.tiers.join() !== base.secret_redaction.tiers.join()
-  )
-    changed.push('secret redaction')
-  return changed
 }
 
 export function redactionLabel(policy: GuardrailPolicy) {

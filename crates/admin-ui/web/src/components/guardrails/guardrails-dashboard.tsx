@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import type { GuardrailDecisionView } from '@/types/api'
 
-import { ActionLegend, ActionMeter } from '../action-meter'
+import { ActionLegend, ActionMeter } from './action-meter'
 import {
   PHASES,
   actionLabel,
@@ -35,12 +35,12 @@ import {
   policyScopes,
   redactionLabel,
   ruleLabel,
-} from '../decision-meta'
-import { DecisionSheet } from '../decision-sheet'
-import { DecisionPager, DecisionToolbar, type CandidateProps } from '../decision-toolbar'
+} from './decision-meta'
+import { DecisionSheet } from './decision-sheet'
+import { DecisionPager, DecisionToolbar, type DashboardProps } from './decision-toolbar'
 
 /** Dashboard grid: KPIs and an action-by-phase breakdown above a sortable data grid. */
-export function PulseCandidate(props: CandidateProps) {
+export function GuardrailsDashboard(props: DashboardProps) {
   const { decisions, policies, search, onSearch } = props
   const [selected, setSelected] = useState<GuardrailDecisionView | null>(null)
   const items = decisions.items
@@ -142,7 +142,11 @@ export function PulseCandidate(props: CandidateProps) {
           <DecisionToolbar {...props} showPhase={false} />
         </FrameHeader>
         <FramePanel className="min-w-0 p-0">
-          <DecisionGrid items={items} onSelect={setSelected} />
+          <DecisionGrid
+            items={items}
+            onSelect={setSelected}
+            onEvaluator={(evaluator) => onSearch({ ...search, evaluator, page: undefined })}
+          />
         </FramePanel>
         <FrameFooter>
           <DecisionPager {...props} />
@@ -183,9 +187,11 @@ function share(count = 0, total: number) {
 function DecisionGrid({
   items,
   onSelect,
+  onEvaluator,
 }: {
   items: GuardrailDecisionView[]
   onSelect: (decision: GuardrailDecisionView) => void
+  onEvaluator: (evaluator: string) => void
 }) {
   const [sorting, setSorting] = useState<SortingState>([])
   const columns = useMemo<ColumnDef<DataGridFeatures, GuardrailDecisionView>[]>(
@@ -233,7 +239,19 @@ function DecisionGrid({
         id: 'evaluator',
         header: 'Evaluator',
         size: 150,
-        cell: ({ row }) => evaluatorLabel(row.original),
+        cell: ({ row }) => (
+          <button
+            type="button"
+            title="Filter by this evaluator"
+            className="hover:underline"
+            onClick={(event) => {
+              event.stopPropagation()
+              onEvaluator(row.original.evaluator)
+            }}
+          >
+            {evaluatorLabel(row.original)}
+          </button>
+        ),
       },
       {
         accessorKey: 'latency_micros',
@@ -244,7 +262,7 @@ function DecisionGrid({
         ),
       },
     ],
-    [],
+    [onEvaluator],
   )
   const table = useTable({
     features: dataGridFeatures,

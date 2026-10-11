@@ -1,6 +1,7 @@
 import { Cancel01Icon, Search01Icon } from '@hugeicons/core-free-icons'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   InputGroup,
@@ -25,7 +26,7 @@ import type {
 
 import { ACTIONS, PHASES } from './decision-meta'
 
-export type CandidateProps = {
+export type DashboardProps = {
   policies: GuardrailPoliciesView
   decisions: GuardrailDecisionPageView
   search: GuardrailDecisionFiltersInput
@@ -35,7 +36,7 @@ export type CandidateProps = {
   onPage: (page: number) => void
 }
 
-type ToolbarProps = Pick<CandidateProps, 'search' | 'pending' | 'onSearch'> & {
+type ToolbarProps = Pick<DashboardProps, 'search' | 'pending' | 'onSearch'> & {
   showPhase?: boolean
 }
 
@@ -121,6 +122,7 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
           </SelectContent>
         </Select>
       ) : null}
+      {search.evaluator ? <Badge variant="outline">Evaluator: {search.evaluator}</Badge> : null}
       {hasFilters ? (
         <Button variant="ghost" size="sm" disabled={pending} onClick={() => onSearch({})}>
           Clear
@@ -135,7 +137,7 @@ export function DecisionPager({
   decisions,
   pending,
   onPage,
-}: Pick<CandidateProps, 'decisions' | 'pending' | 'onPage'>) {
+}: Pick<DashboardProps, 'decisions' | 'pending' | 'onPage'>) {
   const { page, page_size: pageSize, total, items } = decisions
   const first = total === 0 ? 0 : (page - 1) * pageSize + 1
   return (
