@@ -47,9 +47,9 @@ export const FIELDS = [
 
 /** Fields whose values differ between two drafts. */
 export function differingFields(a: PolicyDraft, b: PolicyDraft): Set<FieldId> {
-  return new Set(
-    FIELDS.filter((field) => !same(field.get(a), field.get(b))).map((field) => field.id),
-  )
+  const fields = new Set<FieldId>()
+  for (const field of FIELDS) if (!same(field.get(a), field.get(b))) fields.add(field.id)
+  return fields
 }
 
 /** Copies `fields` from `source` onto `target`, leaving the rest of `target` alone. */
@@ -78,9 +78,10 @@ function policyLines(draft: PolicyDraft, fields: Set<string>, bufferBytes?: numb
   for (const field of FIELDS.slice(0, 4))
     if (fields.has(field.id)) lines.push(`${field.id}: ${value(field.get(draft))}`)
   if (bufferBytes !== undefined) lines.push(`stream_buffer_bytes: ${bufferBytes}`)
-  const redaction = FIELDS.slice(4)
-    .filter((field) => fields.has(field.id))
-    .map((field) => `  ${field.id.replace('redaction.', '')}: ${value(field.get(draft))}`)
+  const redaction: string[] = []
+  for (const field of FIELDS.slice(4))
+    if (fields.has(field.id))
+      redaction.push(`  ${field.id.replace('redaction.', '')}: ${value(field.get(draft))}`)
   if (redaction.length) lines.push('secret_redaction:', ...redaction)
   return lines
 }
@@ -135,7 +136,8 @@ function same(a: boolean | string | readonly string[], b: boolean | string | rea
 }
 
 function sameSet(a: readonly string[], b: readonly string[]) {
-  return a.length === b.length && a.every((item) => b.includes(item))
+  const items = new Set(b)
+  return a.length === b.length && a.every((item) => items.has(item))
 }
 
 function list(items: string[]) {

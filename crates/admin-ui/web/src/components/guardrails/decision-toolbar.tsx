@@ -56,9 +56,8 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
       <form
         key={search.request_id ?? ''}
         className="w-full sm:w-64"
-        onSubmit={(event) => {
-          event.preventDefault()
-          const value = new FormData(event.currentTarget).get('request_id')
+        action={(formData) => {
+          const value = formData.get('request_id')
           update({ request_id: typeof value === 'string' ? value.trim() : '' })
         }}
       >

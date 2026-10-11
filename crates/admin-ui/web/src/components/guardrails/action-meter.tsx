@@ -11,9 +11,12 @@ export function ActionMeter({
   className?: string
 }) {
   const total = [...counts.values()].reduce((sum, count) => sum + count, 0)
-  const summary = ACTIONS.filter(({ id }) => counts.get(id))
-    .map(({ id }) => `${counts.get(id)} ${actionLabel(id).toLowerCase()}`)
-    .join(', ')
+  const parts: string[] = []
+  for (const { id } of ACTIONS) {
+    const count = counts.get(id)
+    if (count) parts.push(`${count} ${actionLabel(id).toLowerCase()}`)
+  }
+  const summary = parts.join(', ')
   return (
     <div
       role="img"

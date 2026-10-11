@@ -59,6 +59,7 @@ export function AreaEditor({ area, ...props }: EditorProps & { area: AreaId }) {
 }
 
 export function DestructiveActionsEditor({ draft, policies, onChange }: EditorProps) {
+  const enabledPacks = new Set(draft.packs)
   return (
     <FieldGroup>
       <Field orientation="horizontal">
@@ -110,7 +111,7 @@ export function DestructiveActionsEditor({ draft, policies, onChange }: EditorPr
                   <Switch
                     id={id}
                     disabled={!draft.enabled}
-                    checked={draft.packs.includes(pack.id)}
+                    checked={enabledPacks.has(pack.id)}
                     onCheckedChange={(on) =>
                       onChange({ ...draft, packs: toggle(draft.packs, pack.id, on) })
                     }
@@ -228,6 +229,7 @@ export function SecretRedactionEditor({ draft, onChange }: EditorProps) {
 
 export function IntegrationsEditor({ draft, policies, onChange }: EditorProps) {
   const configured = new Set(policies.managed_checks.map((check) => check.kind))
+  const enabledChecks = new Set(draft.managed_checks)
   return (
     <FieldGroup>
       <FieldSet>
@@ -255,7 +257,7 @@ export function IntegrationsEditor({ draft, policies, onChange }: EditorProps) {
                   <Switch
                     id={id}
                     disabled={!draft.enabled}
-                    checked={draft.managed_checks.includes(check.name)}
+                    checked={enabledChecks.has(check.name)}
                     onCheckedChange={(on) =>
                       onChange({
                         ...draft,

@@ -91,12 +91,12 @@ export function GuardrailConfigSheet({
   )
 }
 
+const toggle = (items: string[], item: string, on: boolean) =>
+  on ? [...items, item] : items.filter((value) => value !== item)
+
 function ScopeDraft({ scope, policies }: { scope: PolicyScope; policies: GuardrailPoliciesView }) {
   const [draft, setDraft] = useState<PolicyDraft>(() => draftFrom(scope.policy))
   const yaml = scopeYaml(scope, draft, draftFrom(policies.default))
-  const toggle = (items: string[], item: string, on: boolean) =>
-    on ? [...items, item] : items.filter((value) => value !== item)
-
   return (
     <>
       <FieldSet>
@@ -217,6 +217,7 @@ function CheckList({
   onChange: (id: string, on: boolean) => void
   empty?: string
 }) {
+  const chosen = new Set(selected)
   return (
     <FieldSet>
       <FieldLegend variant="label">{legend}</FieldLegend>
@@ -230,7 +231,7 @@ function CheckList({
               <Field key={option.id} orientation="horizontal">
                 <Checkbox
                   id={id}
-                  checked={selected.includes(option.id)}
+                  checked={chosen.has(option.id)}
                   onCheckedChange={(checked) => onChange(option.id, checked === true)}
                 />
                 <FieldContent>
