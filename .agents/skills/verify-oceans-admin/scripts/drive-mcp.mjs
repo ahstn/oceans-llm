@@ -21,13 +21,14 @@ if (!["127.0.0.1", "localhost", "[::1]"].includes(gateway.hostname) ||
 }
 const evidenceDir = requiredEnv("OCEANS_VERIFY_EVIDENCE_DIR");
 const runId = requiredEnv("OCEANS_VERIFY_RUN_ID");
+// Replaces any earlier proof with a failing placeholder before any fallible setup.
+const recorder = createProofRecorder({ evidenceDir, file: "mcp-proof.json", featureIds: ["mcp"] });
 const config = JSON.parse(await fs.readFile(requiredEnv("OCEANS_VERIFY_MCP_CANDIDATES_FILE"), "utf8"));
 validateConfig(config);
 const actions = [];
 const failures = [];
 const owned = { servers: [], toolsets: [], grants: [], apiKeyId: null, apiKeyName: null, rawKey: null };
 requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION"); // recorded in the proof envelope
-const recorder = createProofRecorder({ evidenceDir, file: "mcp-proof.json", featureIds: ["mcp"] });
 const proof = {
   entryPoint: `${baseURL}/admin/mcp`, candidates: [], actions, failures,
   authenticationScope: "Configured gateway static header or bearer token; OAuth consent is not exercised.",

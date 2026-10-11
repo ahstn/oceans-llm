@@ -185,7 +185,9 @@ export function assessProof(proof, { requireCurrent = false, runId, evidenceDir,
     if (sourceHash !== proof.sourceHash) {
       problems.push(`stale: files routed to ${proof.featureIds.join(', ')} changed since ${String(proof.gitSha).slice(0, 8)}`)
     }
-    if (proof.launchSourceHash && proof.launchSourceHash !== proof.sourceHash) {
+    if (!proof.launchSourceHash) {
+      problems.push('not tied to a launched stack: record it after control-oceans-admin launch for this run')
+    } else if (proof.launchSourceHash !== proof.sourceHash) {
       problems.push(`stale: files routed to ${proof.featureIds.join(', ')} changed after launch, so the stack ran older code; relaunch and re-run`)
     }
   }

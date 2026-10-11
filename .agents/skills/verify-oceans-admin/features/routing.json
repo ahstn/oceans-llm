@@ -516,12 +516,21 @@
         "crates/gateway-store/src/libsql_store/skills.rs",
         "crates/gateway/src/http/skills.rs",
         "crates/gateway/src/http/skills/**",
-        "crates/oceans-cli/src/skills.rs",
         "bundled-skills/**",
         "scripts/import-bundled-skills.mjs",
         "scripts/rustfs-*.sh",
         "mise.rustfs.{toml,lock}",
         ".agents/skills/verify-oceans-admin/scripts/drive-skills.mjs"
+      ]
+    },
+    {
+      "id": "skills-cli",
+      "file": "skills.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/oceans-cli/src/skills.rs"
       ]
     },
     {

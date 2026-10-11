@@ -59,6 +59,8 @@ export function latestFor(featureId, proofs) {
 }
 
 async function evidence(args, evidenceDir, runId) {
+  const unknown = args.filter((arg) => arg.startsWith('--') && arg !== '--require-current')
+  if (unknown.length) throw new Error(`Unknown evidence option ${unknown.join(', ')}; only --require-current is supported`)
   const requireCurrent = args.includes('--require-current')
   const targets = args.filter((arg) => !arg.startsWith('--')).flatMap((arg) => ALIASES[arg] ?? [arg])
   if (!existsSync(evidenceDir)) {

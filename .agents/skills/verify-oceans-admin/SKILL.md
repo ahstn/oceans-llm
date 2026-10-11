@@ -131,7 +131,7 @@ Every proof is a `*-proof.json` file in the run's evidence directory with one sh
 | `runId`, `harness`, `gatewayVersion` | Which run, which agent harness (`OCEANS_VERIFY_HARNESS`, else `claude` under Claude Code, `ci` under CI, or `unknown`), and which gateway build. |
 | `gitSha`, `dirty` | `HEAD` and whether the working tree had changes when the proof ran. Informational. |
 | `sourceHash`, `sourceFiles` | Hash of the path, Git file mode, and content of every file that `routing.json` sends to these features. This is what `--require-current` compares, so a proof survives a commit or an unrelated edit and goes stale only when its own code changes. |
-| `launchSourceHash` | The same hash over the snapshot `launch` saved, or `null` without one. When it differs from `sourceHash`, the stack ran older code than the proof claims, and `--require-current` marks the proof stale. Relaunch after editing routed files. |
+| `launchSourceHash` | The same hash over the snapshot `launch` saved, or `null` without one. When it differs from `sourceHash`, the stack ran older code than the proof claims, and `--require-current` marks the proof stale. `--require-current` also rejects a proof with no launch snapshot, so record manual proofs under a launched run ID. Relaunch after editing routed files. |
 | `featureIds` | IDs from `features/routing.json`. |
 | `method` | `driver` or `manual`. |
 | `verdict` | `pass`, `fail`, or `blocked`, derived from `checks`. A required `fail` wins over a required `blocked`; optional checks never decide it; no required checks means `fail`. |
@@ -159,7 +159,7 @@ Record a manual recipe after you capture its screenshots:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin evidence models mcp --require-current
 ```
 
-It prints one `PASS` or `FAIL` line per feature and exits non-zero unless every named feature's newest proof is from this run, has `verdict: pass`, and still has all its artifacts. With `--require-current`, it also fails a proof whose `sourceHash` no longer matches the working tree or whose stack was launched from different source. With no feature names, it checks every proof in the run. `observability` and `live-llm` remain aliases for `leaderboard agent-harnesses` and `live-llm-requests`.
+It prints one `PASS` or `FAIL` line per feature and exits non-zero unless every named feature's newest proof is from this run, has `verdict: pass`, and still has all its artifacts. With `--require-current`, it also fails a proof whose `sourceHash` no longer matches the working tree, whose stack was launched from different source, or that has no launch snapshot. Any other option is rejected, so a misspelled flag fails instead of skipping the freshness check. With no feature names, it checks every proof in the run. `observability` and `live-llm` remain aliases for `leaderboard agent-harnesses` and `live-llm-requests`.
 
 `report` writes the run as Markdown for the pull request:
 

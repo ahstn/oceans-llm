@@ -11,7 +11,7 @@ import { verifyNoMcpGrant } from "./mcp-canary.mjs";
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = process.env.OCEANS_VERIFY_REPO_ROOT ?? path.resolve(scripts, "../../../..");
 
-test("all-optional candidates fail before browser launch or evidence creation", async () => {
+test("all-optional candidates fail before browser launch and leave a failing proof", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "oceans-mcp-config-"));
   try {
     const configPath = path.join(directory, "candidates.json");
@@ -31,7 +31,9 @@ test("all-optional candidates fail before browser launch or evidence creation", 
     });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /At least one MCP candidate must be required/);
-    await assert.rejects(fs.access(path.join(directory, "evidence")), { code: "ENOENT" });
+    const proof = JSON.parse(await fs.readFile(path.join(directory, "evidence", "mcp-proof.json"), "utf8"));
+    assert.equal(proof.verdict, "fail");
+    assert.deepEqual((await fs.readdir(path.join(directory, "evidence"))), ["mcp-proof.json"]);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

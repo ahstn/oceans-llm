@@ -48,6 +48,8 @@ test('fingerprints are stable per feature and differ between features', () => {
 test('assessment rejects legacy, failing, forged, foreign, and stale proofs', () => {
   const good = buildEnvelope({ featureIds: ['models'], checks: [{ id: 'a', status: 'pass' }] })
   good.runId = 'run-a'
+  good.launchSourceHash = good.sourceHash
+  assert.match(assessProof({ ...good, launchSourceHash: null }, { requireCurrent: true }).join(), /not tied to a launched stack/)
   assert.deepEqual(assessProof(good, { requireCurrent: true, runId: 'run-a' }), [])
   assert.match(assessProof({ feature: 'models' })[0], /schemaVersion missing/)
   const failing = { ...good, verdict: 'fail', checks: [{ id: 'a', status: 'fail', note: 'count 3 != 4' }] }
@@ -71,6 +73,7 @@ test('assessment rejects missing artifacts and proofs whose stack ran older sour
     const proof = buildEnvelope({ featureIds: ['models'], checks: [{ id: 'a', status: 'pass' }], artifacts: ['01.png'] })
     assert.match(assessProof(proof, { evidenceDir }).join(), /missing artifacts: 01.png/)
     await fs.writeFile(path.join(evidenceDir, '01.png'), '')
+    proof.launchSourceHash = proof.sourceHash
     assert.deepEqual(assessProof(proof, { evidenceDir, requireCurrent: true }), [])
     assert.match(assessProof({ ...proof, artifacts: ['../01.png'] }, { evidenceDir }).join(), /missing artifacts/)
     const relaunchNeeded = { ...proof, launchSourceHash: '0'.repeat(64) }
@@ -138,9 +141,12 @@ test('report uses the newest proof per feature and marks invalid proofs', () => 
 
 test('record writes a manual proof that evidence accepts, and evidence fails on a missing feature', async () => {
   const evidenceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'oceans-proof-'))
+  const launchSources = path.join(evidenceDir, 'launch-sources.json')
   const env = { ...process.env, OCEANS_VERIFY_RUN_ID: 'proof-test', OCEANS_VERIFY_EVIDENCE_DIR: evidenceDir }
   const run = (...args) => spawnSync(process.execPath, [cli, ...args], { env, encoding: 'utf8' })
   try {
+    assert.equal(run('snapshot-sources', launchSources).status, 0)
+    env.OCEANS_VERIFY_LAUNCH_SOURCES = launchSources
     assert.equal(run('record', 'usage-costs', '--check', 'kpis=pass').status, 2, 'artifacts are required')
     await fs.writeFile(path.join(evidenceDir, '01-usage.png'), '')
     const recorded = run('record', 'usage-costs', '--check', 'kpis-match-api=pass:4 of 4', '--artifact', '01-usage.png')
@@ -151,6 +157,9 @@ test('record writes a manual proof that evidence accepts, and evidence fails on 
     const current = run('evidence', 'usage-costs', '--require-current')
     assert.equal(current.status, 0, current.stdout)
     assert.match(current.stdout, /PASS usage-costs \(usage-costs-proof.json\)/)
+    const misspelled = run('evidence', 'usage-costs', '--require-curent')
+    assert.equal(misspelled.status, 2)
+    assert.match(misspelled.stderr, /Unknown evidence option --require-curent/)
     const missing = run('evidence', 'usage-costs', 'models')
     assert.equal(missing.status, 1)
     assert.match(missing.stdout, /FAIL models: no proof recorded/)

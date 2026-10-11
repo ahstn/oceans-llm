@@ -194,6 +194,7 @@ skills_cleanup_check() {
   local check="storage-cleanup=pass:object prefix empty and private database removed"
   [[ "$1" == 0 ]] || check="storage-cleanup=fail:object prefix or private database retained for retry"
   [[ -f "$evidence_dir/skills-proof.json" ]] || return 0
+  activate_mise
   (cd "$repo_root" && OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" mise exec -- node "$proof_script" add-check skills-proof.json "$check") ||
     echo "Could not record Skills storage cleanup in skills-proof.json." >&2
 }
@@ -289,6 +290,7 @@ cleanup() {
         cleanup_status=1
       fi
     done
+    [[ "$cleanup_status" == 0 ]] || skills_cleanup_check "$cleanup_status"
   fi
   if [[ "$cleanup_status" == 0 ]]; then
     cleanup_skills || cleanup_status=$?

@@ -60,6 +60,7 @@ export OCEANS_VERIFY_SKILLS=true
 - The Skills launch uses a run-local database because Skills has no deletion API. Ordinary verification launch still uses this checkout's `gateway.db`.
 - The RustFS bucket, local credentials, and data directory persist. Other object prefixes are outside this run's cleanup scope. A RustFS daemon that was already running stays running after cleanup.
 - Always run cleanup after a failed launch or driver. A storage cleanup failure retains its recorded scope for a retry and returns a failure status.
-- This proof uses real gateway, database, UI, and RustFS processes. It does not prove AWS S3 account permissions, Kubernetes/CSI deployment, Git import, or installed CLI behavior. The separate `mise -E rustfs run rustfs:e2e` task covers the CLI round trip.
+- This proof uses real gateway, database, UI, and RustFS processes. It does not prove AWS S3 account permissions, Kubernetes/CSI deployment, Git import, or installed CLI behavior.
+- A change to `crates/oceans-cli/src/skills.rs` plans the separate `skills-cli` proof. Run `mise -E rustfs run rustfs:e2e 2>&1 | tee "/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/evidence/skills-cli-e2e.log"` for the CLI round trip, then `control-oceans-admin record skills-cli --check cli-round-trip=pass --artifact skills-cli-e2e.log`.
 - The service-account check uses the production configuration seed boundary. This proof does not create a provider request or change real user credentials.
 - Preserve the run ID and evidence directory in the report. A health check or final screenshot alone is not proof of saved Skills behavior.
