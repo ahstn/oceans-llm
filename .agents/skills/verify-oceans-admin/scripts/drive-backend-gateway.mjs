@@ -5,13 +5,15 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
+import { createProofRecorder, safeMessage } from "./proof.mjs";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const requireFromAdminUi = createRequire(path.join(repoRoot, "crates/admin-ui/web/package.json"));
 const { chromium } = requireFromAdminUi("playwright");
 
 const baseURL = requiredEnv("OCEANS_VERIFY_BASE_URL");
 const evidenceDir = requiredEnv("OCEANS_VERIFY_EVIDENCE_DIR");
-const gatewayVersion = requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION");
+requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION"); // recorded in the proof envelope
 const email = requiredEnv("OCEANS_VERIFY_ADMIN_EMAIL");
 const password = requiredEnv("OCEANS_VERIFY_ADMIN_PASSWORD");
 const model = "deepseek-v4-flash-0731";
@@ -21,11 +23,18 @@ const gatewayRequestTimeoutMs = 30_000;
 const actions = [];
 
 await fs.mkdir(evidenceDir, { recursive: true });
+// Replaces any earlier proof with a failing placeholder before the browser starts.
+const proof = createProofRecorder({
+  evidenceDir,
+  file: "backend-gateway-canary-proof.json",
+  featureIds: ["backend-gateway"],
+});
 const browser = await chromium.launch({ headless: true });
 let apiKeyId;
 let rawKey;
 let page;
-let proof;
+let details;
+let failure;
 
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -65,6 +74,7 @@ try {
   rawKey = created.raw_key;
   assert(typeof rawKey === "string" && rawKey.startsWith("gwk_"), "temporary raw key is missing");
   actions.push({ action: "create temporary model-scoped key", result: model });
+  proof.pass("temporary-key-created", { observed: model });
 
   const evaluationResponse = await fetch(`${baseURL}/api/v1/guardrails/evaluate`, {
     method: "POST",
@@ -86,6 +96,7 @@ try {
     "filesystem.recursive_force_remove",
     "direct evaluation reason",
   );
+  proof.pass("direct-guardrail-audit", { observed: "core.filesystem/recursive-force-remove" });
   actions.push({
     action: "evaluate synthetic destructive command without execution",
     result: "core.filesystem/recursive-force-remove audited",
@@ -126,7 +137,8 @@ try {
         },
       ],
       tool_choice: { type: "function", function: { name: "bash" } },
-      max_tokens: 32,
+      // deepseek-v4-flash reasons before the tool call; 32 tokens truncated the arguments to {}.
+      max_tokens: 128,
     }),
   });
   const requestId = liveResponse.headers.get("x-request-id");
@@ -143,6 +155,7 @@ try {
   }
   assertEqual(bashArguments.command, syntheticCommand, "generated bash command");
   actions.push({ action: "send bounded OpenRouter tool-call canary", result: "HTTP 200" });
+  proof.pass("openrouter-tool-call", { observed: "bash arguments matched" });
 
   const decisionPage = await poll(async () => {
     const value = await adminJson(
@@ -154,6 +167,7 @@ try {
   const generatedDecision = decisionPage.items.find((item) => item.pack_id === "core.filesystem");
   assertEqual(generatedDecision.rule_id, "recursive-force-remove", "generated-tool rule");
   assertEqual(generatedDecision.action, "audit", "generated-tool action");
+  proof.pass("request-linked-guardrail-decision", { observed: generatedDecision.rule_id });
 
   const requestPage = await poll(async () => {
     const value = await adminJson(
@@ -181,14 +195,13 @@ try {
   assertEqual(attempt.status, "success", "provider-attempt status");
   const usageRecorded = detail.log.total_tokens == null || detail.log.total_tokens > 0;
   assert(usageRecorded, "provider supplied a non-positive total token count");
+  proof.pass("request-log-attempt-and-usage", { observed: attempt.upstream_model });
   actions.push({
     action: "confirm request, attempt, usage, tool, and decision records",
     result: "sanitized backend evidence matched",
   });
 
-  proof = {
-    feature: "backend-gateway",
-    gatewayVersion,
+  details = {
     gatewayModel: model,
     provider: "openrouter",
     upstreamModel,
@@ -205,8 +218,9 @@ try {
     },
     payloadCaptureMode: detail.log.payload_policy.capture_mode,
     actions,
-    generatedAt: new Date().toISOString(),
   };
+} catch (error) {
+  failure = error;
 } finally {
   try {
     if (page && apiKeyId) {
@@ -228,17 +242,18 @@ try {
         });
         assertEqual(rejected.status, 401, "revoked key authentication");
       }
+      proof.pass("temporary-key-revoked-and-rejected");
     }
+  } catch (error) {
+    proof.add({ id: "temporary-key-revoked-and-rejected", status: "fail", note: safeMessage(error) });
+    failure ??= error;
   } finally {
     rawKey = undefined;
     await browser.close();
   }
 }
-assert(proof, "backend gateway proof was not produced");
-await fs.writeFile(
-  path.join(evidenceDir, "backend-gateway-canary-proof.json"),
-  `${JSON.stringify(proof, null, 2)}\n`,
-);
+await proof.write({ details: details ?? { actions }, error: details ? undefined : failure });
+if (failure) throw failure;
 console.log(`backend gateway proof passed for ${model} through OpenRouter`);
 console.log(`evidence: ${evidenceDir}`);
 
@@ -289,6 +304,7 @@ async function capture(currentPage, name) {
     path.join(evidenceDir, `${name}.aria.txt`),
     `${await currentPage.locator("body").ariaSnapshot()}\n`,
   );
+  proof.artifact(`${name}.png`);
 }
 
 function gatewayHeaders(key) {
