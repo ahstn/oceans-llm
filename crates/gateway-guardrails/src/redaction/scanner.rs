@@ -180,17 +180,21 @@ fn is_secret(rule: &Rule, value: &str) -> bool {
     {
         return false;
     }
-    shannon_entropy(value) >= rule.min_entropy && !is_placeholder(value)
+    shannon_entropy(value) >= rule.min_entropy
+        && !(rule.id.starts_with("aws-") && is_aws_example(value))
+        && !is_placeholder(value)
+}
+
+/// The AWS documentation keys (`AKIAIOSFODNN7EXAMPLE`,
+/// `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`), uppercase only. Checked only
+/// for AWS rules, so a password that ends in `EXAMPLE` is still a secret.
+fn is_aws_example(value: &str) -> bool {
+    value.ends_with("EXAMPLE") || value.ends_with("EXAMPLEKEY")
 }
 
 /// Rejects documentation values and template references that match a rule's
 /// shape but cannot be live credentials.
 fn is_placeholder(value: &str) -> bool {
-    // The AWS documentation keys (`AKIAIOSFODNN7EXAMPLE`,
-    // `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`), uppercase only.
-    if value.ends_with("EXAMPLE") || value.contains("EXAMPLEKEY") {
-        return true;
-    }
     // Keeps a second pass from redacting an earlier placeholder.
     if value.to_ascii_lowercase().contains("[redacted:") {
         return true;
@@ -269,7 +273,6 @@ mod tests {
     #[test]
     fn placeholders_are_rejected() {
         for value in [
-            "AKIAIOSFODNN7EXAMPLE",
             "sk-your_key_here",
             "your-api-token",
             "<OPENAI_API_KEY>",
@@ -288,6 +291,7 @@ mod tests {
             "x9{{Kp2mT4!zQ",
             "a${b7Kp2mT4zQ",
             "EXAMPLEq7pK9mT4zQ2",
+            "Tr0ub4dorEXAMPLE",
         ] {
             assert!(!is_placeholder(value), "{value} should be a secret");
         }

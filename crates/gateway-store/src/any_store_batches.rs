@@ -74,6 +74,13 @@ impl BatchRepository for AnyStore {
         )
     }
 
+    async fn list_stale_batch_submissions(
+        &self,
+        now: OffsetDateTime,
+    ) -> Result<Vec<BatchJobRecord>, StoreError> {
+        dispatch_store!(self, list_stale_batch_submissions(now))
+    }
+
     async fn mark_stale_batch_submissions_unknown(
         &self,
         now: OffsetDateTime,

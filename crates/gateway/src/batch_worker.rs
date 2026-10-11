@@ -48,6 +48,11 @@ pub fn spawn(state: AppState) {
 async fn run_once(state: &AppState, worker_id: &str) -> Result<(), gateway_core::GatewayError> {
     let service = &state.service;
     let now = OffsetDateTime::now_utc();
+    // A worker that died mid-submission may not have stored the redacted
+    // requests, and the transition below makes the job terminal.
+    for job in service.store().list_stale_batch_submissions(now).await? {
+        redact_unsubmitted_batch(state, &job).await?;
+    }
     let stale = service
         .store()
         .mark_stale_batch_submissions_unknown(now)
@@ -766,7 +771,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        prepare_submitted_state, process_job, redact_unsubmitted_batch, submit_job,
+        prepare_submitted_state, process_job, redact_unsubmitted_batch, run_once, submit_job,
         validate_result_custom_ids,
     };
     use crate::http::{
@@ -1100,6 +1105,31 @@ mod tests {
             .expect("missing provider is recorded");
 
         assert_failed_with_redacted_items(&state, job.batch_id, api_key_id, &key).await;
+    }
+
+    #[tokio::test]
+    async fn stale_submission_stores_redacted_requests() {
+        let (_directory, state) = redacting_state().await;
+        let key = secret_key();
+        let (job, api_key_id) = queued_batch(&state, &key).await;
+        // A worker claimed the job and died before its lease ran out.
+        let now = OffsetDateTime::now_utc();
+        state
+            .store
+            .claim_batch_jobs("dead-worker", now, now - time::Duration::seconds(1), 1)
+            .await
+            .expect("claim batch");
+
+        run_once(&state, "worker").await.expect("worker iteration");
+
+        assert_redacted_items(
+            &state,
+            job.batch_id,
+            api_key_id,
+            &key,
+            BatchStatus::SubmissionUnknown,
+        )
+        .await;
     }
 
     #[tokio::test]

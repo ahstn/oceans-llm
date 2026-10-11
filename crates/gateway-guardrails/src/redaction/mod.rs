@@ -249,11 +249,30 @@ fn is_base64_data_uri(text: &str) -> bool {
 
 fn has_inline_media_data(object: &Map<String, Value>) -> bool {
     object.get("type").and_then(Value::as_str) == Some("base64")
-        || MEDIA_TYPE_KEYS.iter().any(|key| object.contains_key(*key))
+        || MEDIA_TYPE_KEYS.iter().any(|key| {
+            object
+                .get(*key)
+                .and_then(Value::as_str)
+                .is_some_and(is_mime_type)
+        })
         || object
             .get("format")
             .and_then(Value::as_str)
             .is_some_and(|format| AUDIO_FORMATS.contains(&format))
+}
+
+/// A `type/subtype` media type, optionally with parameters, such as `image/png`.
+fn is_mime_type(text: &str) -> bool {
+    let essence = text.split(';').next().unwrap_or_default().trim();
+    essence.split_once('/').is_some_and(|(kind, subtype)| {
+        let token = |part: &str| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"!#$&^_.+-".contains(&byte))
+        };
+        token(kind) && token(subtype)
+    })
 }
 
 fn is_base64(text: &str) -> bool {

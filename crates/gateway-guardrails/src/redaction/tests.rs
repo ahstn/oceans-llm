@@ -445,6 +445,27 @@ fn skips_base64_data_uris_whatever_their_case() {
 }
 
 #[test]
+fn media_data_needs_a_media_type_descriptor() {
+    let key = format!("AKIA{}", random(UPPER_BASE32, 16, 69));
+    for descriptor in [json!(null), json!("not a type"), json!(7)] {
+        let mut request = json!({"mime_type": descriptor, "data": key.clone()});
+        let fields = redact_json_secrets(&mut request, &default_config());
+        assert_eq!(fields.len(), 1, "{descriptor} exempted the data field");
+        assert_eq!(request["data"], "[REDACTED:aws-access-key-id]");
+    }
+    let mut request = json!({"mime_type": "image/png; q=1", "data": key.clone()});
+    assert!(redact_json_secrets(&mut request, &default_config()).is_empty());
+}
+
+#[test]
+fn only_aws_rules_treat_example_suffixes_as_placeholders() {
+    assert_eq!(
+        redact("PASSWORD=\"Tr0ub4dorEXAMPLE\"", &default_config()),
+        "PASSWORD=\"[REDACTED:secret-assignment]\""
+    );
+}
+
+#[test]
 fn redacts_secrets_in_object_keys() {
     let github = format!("ghp_{}", random(ALNUM, 36, 51));
     let other = format!("ghp_{}", random(ALNUM, 36, 52));
