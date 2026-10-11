@@ -22,6 +22,10 @@ const REASON_CODE: &str = "secret_redaction.redacted";
 /// base64-alphabet rule matches (`aws-bedrock-api-key` tops out under 300
 /// characters), and far shorter than any real image.
 const MIN_B64_JSON_LEN: usize = 1024;
+/// Base64 of the file signatures of the image formats the images APIs return:
+/// PNG, JPEG, WebP (RIFF), and GIF. A `b64_json` value that starts any other
+/// way is scanned, so a long base64-alphabet string is not taken for an image.
+const B64_IMAGE_PREFIXES: &[&str] = &["iVBORw0KGgo", "/9j/", "UklGR", "R0lGOD"];
 /// Sibling keys that mark an object's `data` string as inline media: Anthropic
 /// sources and Gemini `inline_data`.
 const MEDIA_TYPE_KEYS: &[&str] = &["media_type", "mime_type", "mimeType"];
@@ -169,12 +173,9 @@ fn redact_json_at(
             redact_object_keys(object, pointer, config, output);
             let data_is_media = has_inline_media_data(object);
             for (key, child) in object.iter_mut() {
-                // An image payload is far longer than any credential, so a short
-                // `b64_json` value is scanned like any other string.
-                let is_media_key = (key == "b64_json"
-                    && child
-                        .as_str()
-                        .is_some_and(|text| text.len() >= MIN_B64_JSON_LEN))
+                // A `b64_json` value is skipped only when it is long enough and
+                // starts with an image file signature.
+                let is_media_key = (key == "b64_json" && child.as_str().is_some_and(is_b64_image))
                     || (key == "data" && data_is_media);
                 if is_media_key && child.as_str().is_some_and(is_base64) {
                     continue;
@@ -281,6 +282,13 @@ fn is_mime_type(text: &str) -> bool {
         };
         token(kind) && token(subtype)
     })
+}
+
+fn is_b64_image(text: &str) -> bool {
+    text.len() >= MIN_B64_JSON_LEN
+        && B64_IMAGE_PREFIXES
+            .iter()
+            .any(|prefix| text.starts_with(prefix))
 }
 
 fn is_base64(text: &str) -> bool {

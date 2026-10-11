@@ -479,9 +479,17 @@ fn short_b64_json_values_are_scanned() {
     );
     assert_eq!(request["b64_json"], "[REDACTED:aws-access-key-id]");
 
-    let image = format!("{}{key}", random(ALNUM, 1100, 71));
+    let image = format!("iVBORw0KGgo{}{key}", random(ALNUM, 1100, 71));
     let mut request = json!({"b64_json": image.clone()});
     assert!(redact_json_secrets(&mut request, &default_config()).is_empty());
+
+    // Long base64-alphabet padding without an image signature is still scanned.
+    let padded = format!("{key}+{}", random(ALNUM, 1100, 71));
+    let mut request = json!({"b64_json": padded});
+    assert_eq!(
+        redact_json_secrets(&mut request, &default_config()).len(),
+        1
+    );
 }
 
 #[test]
@@ -510,6 +518,31 @@ fn assignments_end_at_collection_closers_and_match_every_private_key_spelling() 
         ),
     ] {
         assert_eq!(redact(&text, &default_config()), expected, "{text}");
+    }
+}
+
+#[test]
+fn assignment_names_need_a_left_boundary() {
+    let value = random(ALNUM, 16, 73);
+    for name in ["dbPassword", "DATABASE_PASSWORD", "x.secret", "myApiKey"] {
+        let text = format!("{name}={value}");
+        assert_eq!(
+            redact(&text, &default_config()),
+            format!("{name}=[REDACTED:secret-assignment]"),
+            "{text}"
+        );
+    }
+    let escaped = format!(r#"{{\"a\":1,\npassword={value}}}"#);
+    assert!(!redact(&escaped, &default_config()).contains(&value));
+
+    for name in ["mysecretvalue", "bitoken", "nopassword"] {
+        let text = format!("{name}={value}");
+        assert_eq!(redact(&text, &default_config()), text);
+        let mut request = json!({ name: value.clone() });
+        assert!(
+            redact_json_secrets(&mut request, &default_config()).is_empty(),
+            "{name}"
+        );
     }
 }
 

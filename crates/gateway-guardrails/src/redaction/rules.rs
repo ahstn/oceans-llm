@@ -32,13 +32,28 @@ macro_rules! bounded {
     };
 }
 
+/// The strong secret names of the assignment rules. A name must start the
+/// field, follow a non-alphanumeric character or a JSON escape, or start a
+/// camelCase word, so `dbPassword` and `DATABASE_PASSWORD` match but
+/// `mysecretvalue` and `bitoken` do not.
+macro_rules! secret_name {
+    () => {
+        concat!(
+            r"(?:(?:^|[^A-Za-z0-9]|\\[nrtbf]|\\u[0-9A-Fa-f]{4})",
+            r"(?:passw(?:or)?d|secret|token|api[_-]?key|private[_-]?key)",
+            r"|(?-i:[a-z0-9])(?:(?-i:P)(?:assw(?:or)?d|rivate[_-]?key)",
+            r"|(?-i:S)ecret|(?-i:T)oken|(?-i:A)pi[_-]?key))"
+        )
+    };
+}
+
 /// Matches `<keyword>... = <value>` style assignments in code, config, and
 /// environment files, capturing only the value.
 macro_rules! assigned {
-    ($keyword:literal, $value:literal) => {
+    ($keyword:expr, $value:literal) => {
         assigned!($keyword, r"[[:word:].-]{0,20}", $value)
     };
-    ($keyword:literal, $suffix:literal, $value:literal) => {
+    ($keyword:expr, $suffix:literal, $value:literal) => {
         concat!(
             r#"(?i)"#,
             $keyword,
@@ -417,7 +432,7 @@ pub(super) const RULES: &[Rule] = &[
                 "privatekey",
             ],
             assigned!(
-                r"(?:passw(?:or)?d|secret|token|api[_-]?key|private[_-]?key)",
+                secret_name!(),
                 r"(?:(?:[_.-]|(?-i:[A-Z]))[[:word:].-]{0,19})?",
                 r"[[:word:]./+=~!@#$%^&*?-]{8,128}"
             ),
@@ -443,7 +458,8 @@ pub(super) const RULES: &[Rule] = &[
                 "privatekey",
             ],
             concat!(
-                r#"(?i)(?:passw(?:or)?d|secret|token|api[_-]?key|private[_-]?key)"#,
+                r#"(?i)"#,
+                secret_name!(),
                 r#"(?:(?:[_.-]|(?-i:[A-Z]))[[:word:].-]{0,19})?"#,
                 r#"\\?['"]?\s{0,3}(?:=|:{1,3}=|:|=>)\s{0,3}\\?['"]"#,
                 r#"([^'"\\\s]{8,128})\\?['"]"#
