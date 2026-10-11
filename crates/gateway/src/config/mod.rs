@@ -194,11 +194,13 @@ impl GatewayConfig {
         let Some(secret_redaction) = self.guardrails.request_log_secret_redaction() else {
             return Ok(policy);
         };
-        Ok(
-            policy.with_secret_redactor(PayloadSecretRedactor::new(move |value| {
+        let metadata = serde_json::to_value(&secret_redaction)?;
+        Ok(policy.with_secret_redactor(
+            PayloadSecretRedactor::new(move |value| {
                 redact_json_secrets(value, &secret_redaction);
-            })),
-        )
+            })
+            .with_metadata(metadata),
+        ))
     }
 
     /// Gateway model key to explicitly bound OpenRouter benchmark model ID.

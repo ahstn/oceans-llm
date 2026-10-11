@@ -296,3 +296,21 @@ fn request_log_payloads_redact_secrets_when_a_policy_redacts() {
     let untouched = redact("guardrails:\n  default:\n    enabled: true\n");
     assert_eq!(untouched["messages"][0]["content"], key);
 }
+
+#[test]
+fn request_log_payload_policy_metadata_records_secret_redaction() {
+    let config: GatewayConfig = serde_yaml::from_str(
+        "guardrails:\n  default:\n    enabled: true\n    secret_redaction:\n      enabled: true\n      tiers: [credentials]\n",
+    )
+    .expect("config");
+    let metadata = config
+        .request_log_payload_policy()
+        .expect("payload policy")
+        .metadata_value();
+
+    assert_eq!(metadata["secret_redaction"]["enabled"], true);
+    assert_eq!(
+        metadata["secret_redaction"]["tiers"],
+        serde_json::json!(["credentials"])
+    );
+}

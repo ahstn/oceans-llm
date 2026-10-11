@@ -16,7 +16,7 @@ Detection uses a static rule table adapted from gitleaks and Betterleaks, both M
 
 Each redacted request records one `transformed` decision per matched rule, with evaluator `secret_redaction`. Decision content hashes cover only the redacted text.
 
-The batch worker writes the guarded item requests back to `batch_items` before it calls the provider or fails the batch. A guardrail rejection redacts the remaining unchecked items too. Stored batch requests then match what the provider received, and failed batches do not keep or return the redacted credentials.
+The batch worker writes the guarded item requests back to `batch_items` before it calls the provider or fails the batch. A guardrail rejection redacts the remaining unchecked items too. Stored batch requests then match what the provider received, and failed batches do not keep or return the unredacted credentials.
 
 The same detection redacts captured request-log payloads when any enabled policy redacts secrets. The log redactor uses the union of the enabled tiers across the default, model-route and MCP-server policies, and disables a rule only if every redacting policy disables it.
 

@@ -104,8 +104,10 @@ fn redacts_provider_tokens_with_rule_placeholders() {
         (
             "jwt",
             format!(
-                "eyJ{}.eyJ{}.{}",
-                random(ALNUM, 30, 11),
+                // base64url `-` and `_` can appear in any segment, the header included.
+                "eyJ{}-{}_.eyJ{}.{}",
+                random(ALNUM, 15, 11),
+                random(ALNUM, 15, 63),
                 random(ALNUM, 40, 12),
                 random(ALNUM, 43, 13)
             ),
@@ -398,6 +400,18 @@ fn redacts_json_strings_and_skips_inline_media() {
         format!("data:image/png;base64,{media}")
     );
     assert_eq!(content[4]["input_audio"]["data"], media);
+}
+
+#[test]
+fn skips_base64_data_uris_whatever_their_case() {
+    let media = format!(
+        "{}+AKIA{}/==",
+        random(ALNUM, 40, 64),
+        random(UPPER_BASE32, 16, 65)
+    );
+    let mut request = json!({"url": format!("DATA:image/png;BASE64,{media}")});
+
+    assert!(redact_json_secrets(&mut request, &default_config()).is_empty());
 }
 
 #[test]

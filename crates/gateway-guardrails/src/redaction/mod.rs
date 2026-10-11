@@ -238,10 +238,13 @@ fn push_pointer_token(pointer: &mut String, key: &str) {
     pointer.push_str(&key.replace('~', "~0").replace('/', "~1"));
 }
 
+/// The scheme and the `;base64` marker are case-insensitive (RFC 2397).
 fn is_base64_data_uri(text: &str) -> bool {
-    text.strip_prefix("data:")
-        .and_then(|uri| uri.split_once(','))
-        .is_some_and(|(header, payload)| header.ends_with(";base64") && is_base64(payload))
+    let Some((header, payload)) = text.split_once(',') else {
+        return false;
+    };
+    let header = header.to_ascii_lowercase();
+    header.starts_with("data:") && header.ends_with(";base64") && is_base64(payload)
 }
 
 fn has_inline_media_data(object: &Map<String, Value>) -> bool {

@@ -178,11 +178,25 @@ impl RequestLogPayloadCaptureMode {
 /// Redacts secrets embedded in captured payload values. Supplied by the
 /// gateway so this crate stays independent of secret detection rules.
 #[derive(Clone)]
-pub struct PayloadSecretRedactor(Arc<dyn Fn(&mut Value) + Send + Sync>);
+pub struct PayloadSecretRedactor {
+    redact: Arc<dyn Fn(&mut Value) + Send + Sync>,
+    /// Recorded under `secret_redaction` in each row's payload-policy metadata,
+    /// so rows written with different scanning settings stay distinguishable.
+    metadata: Value,
+}
 
 impl PayloadSecretRedactor {
     pub fn new(redact: impl Fn(&mut Value) + Send + Sync + 'static) -> Self {
-        Self(Arc::new(redact))
+        Self {
+            redact: Arc::new(redact),
+            metadata: json!({"enabled": true}),
+        }
+    }
+
+    #[must_use]
+    pub fn with_metadata(mut self, metadata: Value) -> Self {
+        self.metadata = metadata;
+        self
     }
 }
 
@@ -242,13 +256,17 @@ impl RequestLogPayloadPolicy {
 
     #[must_use]
     pub fn metadata_value(&self) -> Value {
-        json!({
+        let mut metadata = json!({
             "capture_mode": self.capture_mode.as_str(),
             "request_max_bytes": self.request_max_bytes,
             "response_max_bytes": self.response_max_bytes,
             "stream_max_events": self.stream_max_events,
             "version": PAYLOAD_POLICY_VERSION,
-        })
+        });
+        if let Some(redactor) = &self.secret_redactor {
+            metadata["secret_redaction"] = redactor.metadata.clone();
+        }
+        metadata
     }
 
     #[must_use]
@@ -448,8 +466,8 @@ pub fn redact_json_value(value: &Value) -> Value {
 #[must_use]
 pub fn redact_json_value_with_policy(value: &Value, policy: &RequestLogPayloadPolicy) -> Value {
     let mut redacted = redact_json_value_at_path(value, policy, &mut Vec::new());
-    if let Some(PayloadSecretRedactor(redact)) = &policy.secret_redactor {
-        redact(&mut redacted);
+    if let Some(redactor) = &policy.secret_redactor {
+        (redactor.redact)(&mut redacted);
     }
     redacted
 }

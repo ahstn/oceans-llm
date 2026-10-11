@@ -528,3 +528,17 @@ fn truncates_vertex_anthropic_base64_source_data_fields() {
         "image/jpeg"
     );
 }
+
+#[test]
+fn policy_metadata_records_secret_redaction_settings() {
+    let plain = RequestLogPayloadPolicy::default();
+    let scanning = RequestLogPayloadPolicy::default().with_secret_redactor(
+        PayloadSecretRedactor::new(|_| {}).with_metadata(json!({"tiers": ["credentials"]})),
+    );
+
+    assert!(plain.metadata_value().get("secret_redaction").is_none());
+    assert_eq!(
+        scanning.metadata_value()["secret_redaction"],
+        json!({"tiers": ["credentials"]})
+    );
+}

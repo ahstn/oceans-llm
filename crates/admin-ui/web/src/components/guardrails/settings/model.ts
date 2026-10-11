@@ -123,7 +123,8 @@ export function areaSummary(area: AreaId, draft: PolicyDraft) {
   return { text: draft.managed_checks.join(', '), tone: 'success' as const }
 }
 
-type Override = { values: PolicyDraft; explicit: Set<string> }
+/** `original` holds the fields `gateway.yaml` already sets, which an edit never unsets. */
+type Override = { values: PolicyDraft; explicit: Set<string>; original: Set<string> }
 type DraftState = { base: PolicyDraft; overrides: Record<string, Override> }
 
 function effective(state: DraftState, key: string) {
@@ -144,7 +145,7 @@ export function useGuardrailDrafts(policies: GuardrailPoliciesView) {
     for (const scope of scopes.filter((item) => item.kind !== 'global')) {
       const values = draftFrom(scope.policy)
       const explicit = new Set([...overrideFields(scope.policy), ...differingFields(values, base)])
-      overrides[scope.key] = { values, explicit }
+      overrides[scope.key] = { values, explicit, original: explicit }
     }
     return { base, overrides }
   }
@@ -157,13 +158,17 @@ export function useGuardrailDrafts(policies: GuardrailPoliciesView) {
       const override = current.overrides[key]
       if (!override) return { ...current, base: next }
       const edited = differingFields(next, effective(current, key))
-      const explicit = new Set([...override.explicit, ...edited])
+      const values = withFields(override.values, next, edited)
+      // A field this page made explicit goes back to inheriting once it matches the default again.
+      const pinned = new Set<string>(differingFields(values, current.base))
+      const explicit = new Set(
+        [...override.explicit, ...edited].filter(
+          (field) => override.original.has(field) || pinned.has(field),
+        ),
+      )
       return {
         ...current,
-        overrides: {
-          ...current.overrides,
-          [key]: { values: withFields(override.values, next, edited), explicit },
-        },
+        overrides: { ...current.overrides, [key]: { ...override, values, explicit } },
       }
     })
 
