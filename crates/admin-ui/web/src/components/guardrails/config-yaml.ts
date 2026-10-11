@@ -124,8 +124,8 @@ export function configYaml(
     out.push(`  ${sections[kind]}:`)
     for (const scope of entries) {
       const lines = policyLines(drafts[scope.key], explicit(scope))
-      if (!lines.length) out.push(`    ${key(scope.name)}: {}`)
-      else out.push(`    ${key(scope.name)}:`, ...lines.map((line) => `      ${line}`))
+      if (!lines.length) out.push(`    ${scalar(scope.name)}: {}`)
+      else out.push(`    ${scalar(scope.name)}:`, ...lines.map((line) => `      ${line}`))
     }
   }
   return `${out.join('\n')}\n`
@@ -141,10 +141,10 @@ function sameSet(a: readonly string[], b: readonly string[]) {
 }
 
 function list(items: string[]) {
-  return `[${items.join(', ')}]`
+  return `[${items.map(scalar).join(', ')}]`
 }
 
-/** Model-route keys contain `/`, which YAML accepts unquoted; anything else odd gets quoted. */
-function key(name: string) {
+/** Plain names (including `/` in route keys) stay bare; anything YAML could misread is quoted. */
+function scalar(name: string) {
   return /^[\w./-]+$/.test(name) ? name : JSON.stringify(name)
 }

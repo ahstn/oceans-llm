@@ -77,4 +77,15 @@ describe('scopeYaml', () => {
       'guardrails:\n  mcp_servers:\n    github: {}\n',
     )
   })
+
+  it('quotes list values YAML would misread', () => {
+    const policy = { ...base, scope: 'mcp_server:github' }
+    const scope: PolicyScope = { key: policy.scope, kind: 'mcp', name: 'github', policy }
+    const draft = draftFrom(policy)
+    draft.managed_checks = ['armor, prod', 'bedrock']
+
+    expect(scopeYaml(scope, draft, draftFrom(base))).toBe(
+      'guardrails:\n  mcp_servers:\n    github:\n      managed_checks: ["armor, prod", bedrock]\n',
+    )
+  })
 })
