@@ -445,6 +445,31 @@ fn skips_base64_data_uris_whatever_their_case() {
 }
 
 #[test]
+fn tokens_after_json_unicode_escapes_are_redacted() {
+    let key = anthropic_key();
+    for escape in ["\\u000a", "\\u000A", "\\b", "\\f"] {
+        let text = format!("{{\"note\":\"line{escape}{key}{escape}\"}}");
+        let expected = format!("{{\"note\":\"line{escape}[REDACTED:anthropic-api-key]{escape}\"}}");
+        assert_eq!(redact(&text, &default_config()), expected);
+    }
+    let password = "{\"cmd\":\"PASSWORD=Kp2mT4zQ9x\\u000a\"}";
+    assert_eq!(
+        redact(password, &default_config()),
+        "{\"cmd\":\"PASSWORD=[REDACTED:secret-assignment]\\u000a\"}"
+    );
+}
+
+#[test]
+fn percent_wrapped_values_are_placeholders_only_as_variable_names() {
+    assert_eq!(
+        redact("PASSWORD=\"%A7x9!K2mN5%\"", &default_config()),
+        "PASSWORD=\"[REDACTED:secret-assignment]\""
+    );
+    let reference = "PASSWORD=\"%DB_PASSWORD%\"";
+    assert_eq!(redact(reference, &default_config()), reference);
+}
+
+#[test]
 fn media_data_needs_a_media_type_descriptor() {
     let key = format!("AKIA{}", random(UPPER_BASE32, 16, 69));
     for descriptor in [json!(null), json!("not a type"), json!(7)] {

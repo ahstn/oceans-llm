@@ -10,6 +10,7 @@ const base: GuardrailPolicy = {
   packs: ['core.shell'],
   managed_checks: [],
   stream_buffer_bytes: 4_194_304,
+  stream_buffer_timeout_ms: 1_000,
   secret_redaction: { enabled: true, tiers: ['credentials'], disabled_rules: [] },
   scope: 'global',
   overridden_fields: [],

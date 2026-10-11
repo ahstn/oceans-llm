@@ -85,12 +85,25 @@ export function withFields(target: PolicyDraft, source: PolicyDraft, fields: Set
   }
 }
 
-function policyLines(draft: PolicyDraft, fields: Set<string>, bufferBytes?: number) {
+const BUFFER_FIELDS = ['stream_buffer_bytes', 'stream_buffer_timeout_ms'] as const
+
+/**
+ * The stream-buffer settings to carry into a scope's YAML unchanged: all of them for the default,
+ * and only the ones an override sets itself. The settings page does not edit them.
+ */
+function bufferLines(scope: PolicyScope) {
+  const set = new Set(scope.policy.overridden_fields)
+  return BUFFER_FIELDS.filter((field) => scope.kind === 'global' || set.has(field)).map(
+    (field) => `${field}: ${scope.policy[field]}`,
+  )
+}
+
+function policyLines(draft: PolicyDraft, fields: Set<string>, buffer: string[]) {
   const lines: string[] = []
   const value = (v: boolean | string | string[]) => (Array.isArray(v) ? list(v) : String(v))
   for (const field of FIELDS.slice(0, 4))
     if (fields.has(field.id)) lines.push(`${field.id}: ${value(field.get(draft))}`)
-  if (bufferBytes !== undefined) lines.push(`stream_buffer_bytes: ${bufferBytes}`)
+  lines.push(...buffer)
   const redaction: string[] = []
   for (const field of FIELDS.slice(4))
     if (fields.has(field.id))
@@ -131,7 +144,7 @@ export function configYaml(
   const out = ['guardrails:']
   const sections = { model: 'model_routes', mcp: 'mcp_servers' } as const
   for (const scope of scopes.filter((item) => item.kind === 'global' && drafts[item.key])) {
-    const lines = policyLines(drafts[scope.key], ALL_FIELDS, scope.policy.stream_buffer_bytes)
+    const lines = policyLines(drafts[scope.key], ALL_FIELDS, bufferLines(scope))
     out.push('  default:', ...lines.map((line) => `    ${line}`))
   }
   for (const kind of ['model', 'mcp'] as const) {
@@ -139,7 +152,7 @@ export function configYaml(
     if (!entries.length) continue
     out.push(`  ${sections[kind]}:`)
     for (const scope of entries) {
-      const lines = policyLines(drafts[scope.key], explicit(scope))
+      const lines = policyLines(drafts[scope.key], explicit(scope), bufferLines(scope))
       if (!lines.length) out.push(`    ${scalar(scope.name)}: {}`)
       else out.push(`    ${scalar(scope.name)}:`, ...lines.map((line) => `      ${line}`))
     }

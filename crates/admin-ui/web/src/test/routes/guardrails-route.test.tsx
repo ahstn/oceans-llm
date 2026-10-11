@@ -34,6 +34,7 @@ const loaderData = {
       packs: ['core.shell'],
       managed_checks: ['bedrock-primary'],
       stream_buffer_bytes: 4_194_304,
+      stream_buffer_timeout_ms: 1_000,
       secret_redaction: {
         enabled: true,
         tiers: ['credentials', 'provider_tokens'],

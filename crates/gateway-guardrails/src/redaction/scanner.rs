@@ -24,7 +24,7 @@ struct Scanner {
 
 static SCANNER: LazyLock<Scanner> = LazyLock::new(Scanner::build);
 /// Whole placeholder shapes. Each must match in full (a `<NAME>` slot, a
-/// `${NAME}` or `{{ name }}` template reference, or a `your_key_here` phrase
+/// `${NAME}`, `{{ name }}` or `%NAME%` reference, or a `your_key_here` phrase
 /// made only of words), so a real password that merely contains `<`, `{{` or
 /// `your_` is still a secret.
 static PLACEHOLDER_SHAPES: LazyLock<Regex> = LazyLock::new(|| {
@@ -32,6 +32,7 @@ static PLACEHOLDER_SHAPES: LazyLock<Regex> = LazyLock::new(|| {
         r"<[A-Za-z][A-Za-z0-9 _.-]*>",
         r"|\$\{[A-Za-z_][A-Za-z0-9_.:-]*\}",
         r"|\{\{\s*[A-Za-z_][A-Za-z0-9_. -]*\}\}",
+        r"|^%[A-Za-z_][A-Za-z0-9_]*%$",
         r"|(?i)^[a-z0-9-]{0,12}your[_-][a-z_.-]+$",
     ))
     .expect("placeholder pattern")
@@ -202,9 +203,6 @@ fn is_placeholder(value: &str) -> bool {
     if PLACEHOLDER_SHAPES.is_match(value) {
         return true;
     }
-    if value.len() > 2 && value.starts_with('%') && value.ends_with('%') {
-        return true;
-    }
     most_common_byte_count(value) * 2 > value.len()
 }
 
@@ -292,6 +290,7 @@ mod tests {
             "a${b7Kp2mT4zQ",
             "EXAMPLEq7pK9mT4zQ2",
             "Tr0ub4dorEXAMPLE",
+            "%A7x9!K2mN5%",
         ] {
             assert!(!is_placeholder(value), "{value} should be a secret");
         }

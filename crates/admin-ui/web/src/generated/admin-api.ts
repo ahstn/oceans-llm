@@ -2840,6 +2840,8 @@ export interface components {
             scope: string;
             secret_redaction: components["schemas"]["SecretRedactionView"];
             stream_buffer_bytes: number;
+            /** Format: int64 */
+            stream_buffer_timeout_ms: number;
         };
         /** @enum {string} */
         EffectiveMetadataSourceKindView: "configured_override" | "catalog" | "mixed";

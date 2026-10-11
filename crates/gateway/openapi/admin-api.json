@@ -10773,6 +10773,7 @@
           "packs",
           "managed_checks",
           "stream_buffer_bytes",
+          "stream_buffer_timeout_ms",
           "secret_redaction",
           "scope",
           "overridden_fields"
@@ -10811,6 +10812,11 @@
           },
           "stream_buffer_bytes": {
             "type": "integer",
+            "minimum": 0
+          },
+          "stream_buffer_timeout_ms": {
+            "type": "integer",
+            "format": "int64",
             "minimum": 0
           }
         }

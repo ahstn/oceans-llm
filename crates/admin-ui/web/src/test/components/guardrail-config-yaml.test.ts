@@ -9,6 +9,7 @@ const base: GuardrailPolicy = {
   packs: ['core.shell', 'core.git'],
   managed_checks: [],
   stream_buffer_bytes: 4_194_304,
+  stream_buffer_timeout_ms: 1_000,
   secret_redaction: {
     enabled: true,
     tiers: ['provider_tokens', 'credentials'],
@@ -36,6 +37,7 @@ describe('scopeYaml', () => {
         '    packs: [core.shell, core.git]',
         '    managed_checks: []',
         '    stream_buffer_bytes: 4194304',
+        '    stream_buffer_timeout_ms: 1000',
         '    secret_redaction:',
         '      enabled: true',
         '      tiers: [provider_tokens, credentials]',
@@ -109,6 +111,25 @@ describe('scopeYaml', () => {
 
     expect(scopeYaml(scope, draft, draftFrom(base))).toBe(
       'guardrails:\n  mcp_servers:\n    github:\n      mode: audit\n',
+    )
+  })
+
+  it("carries an override's stream-buffer settings through unchanged", () => {
+    const policy = {
+      ...base,
+      stream_buffer_timeout_ms: 2_500,
+      scope: 'model_route:fast/openai/gpt-5',
+      overridden_fields: ['stream_buffer_timeout_ms'],
+    }
+    const scope: PolicyScope = {
+      key: policy.scope,
+      kind: 'model',
+      name: 'fast/openai/gpt-5',
+      policy,
+    }
+
+    expect(scopeYaml(scope, draftFrom(policy), draftFrom(base))).toBe(
+      'guardrails:\n  model_routes:\n    fast/openai/gpt-5:\n      stream_buffer_timeout_ms: 2500\n',
     )
   })
 

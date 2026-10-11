@@ -23,12 +23,12 @@ pub(super) struct Rule {
 }
 
 /// Prefixes a token pattern with a word boundary that also holds after a JSON
-/// escape such as `\n`. Tool-call arguments arrive as JSON-encoded strings, where
-/// a line break is the two characters `\` and `n`, and `\b` cannot match between
-/// that `n` and a token. Rules redact capture group 1, so the escape stays.
+/// escape such as `\n` or `\u000a`. Tool-call arguments arrive as JSON-encoded
+/// strings, where a line break is the two characters `\` and `n`, and `\b`
+/// cannot match between that `n` and a token. Rules redact capture group 1, so the escape stays.
 macro_rules! bounded {
     ($pattern:literal) => {
-        concat!(r"(?:\b|\\[nrt])", $pattern)
+        concat!(r"(?:\b|\\[nrtbf]|\\u[0-9A-Fa-f]{4})", $pattern)
     };
 }
 
@@ -45,7 +45,7 @@ macro_rules! assigned {
             $suffix,
             r#"[\s'"]{0,3}(?:=|:{1,3}=|:|=>)[\x60'"\s=]{0,5}("#,
             $value,
-            r#")(?:[\x60'"\s;,]|\\[nrt]|$)"#
+            r#")(?:[\x60'"\s;,]|\\[nrtbf]|\\u[0-9A-Fa-f]{4}|$)"#
         )
     };
 }
@@ -471,7 +471,7 @@ pub(super) const RULES: &[Rule] = &[
             "secret",
             "token",
         ],
-        pattern: r#"(?i)[[:word:].-]{0,50}?(?:access|auth|(?-i:[Aa]pi|API)|credential|creds|key|passw(?:or)?d|secret|token)(?:[ \t[:word:].-]{0,20})[\s'"]{0,3}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)[\x60'"\s=]{0,5}([[:word:].=-]{10,150}|[a-z0-9][a-z0-9+/]{11,}={0,3})(?:[\x60'"\s;]|\\[nrt]|$)"#,
+        pattern: r#"(?i)[[:word:].-]{0,50}?(?:access|auth|(?-i:[Aa]pi|API)|credential|creds|key|passw(?:or)?d|secret|token)(?:[ \t[:word:].-]{0,20})[\s'"]{0,3}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)[\x60'"\s=]{0,5}([[:word:].=-]{10,150}|[a-z0-9][a-z0-9+/]{11,}={0,3})(?:[\x60'"\s;]|\\[nrtbf]|\\u[0-9A-Fa-f]{4}|$)"#,
         min_entropy: 3.5,
         reject_word_like: true,
     },

@@ -166,6 +166,7 @@ pub struct EffectiveGuardrailPolicyView {
     pub packs: Vec<String>,
     pub managed_checks: Vec<String>,
     pub stream_buffer_bytes: usize,
+    pub stream_buffer_timeout_ms: u64,
     pub secret_redaction: SecretRedactionView,
     pub scope: String,
     /// Settings this scope's override sets itself, named as in `gateway.yaml`
@@ -400,6 +401,7 @@ fn policy_view(
             .collect(),
         managed_checks: policy.managed_checks,
         stream_buffer_bytes: policy.stream_buffer_bytes,
+        stream_buffer_timeout_ms: policy.stream_buffer_timeout_ms,
         secret_redaction: SecretRedactionView {
             enabled: policy.secret_redaction.enabled,
             tiers: policy
