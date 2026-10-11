@@ -12,8 +12,7 @@ Workspace connections lets any signed-in user link or unlink their own account o
 
 ## How to get to it (user POV)
 
-- Under `Control Plane`, choose `Connections`. It is a personal page and needs no page permission.
-- Open `/admin/account/connections` directly. The OAuth callback also returns here.
+- Open `/admin/account/connections` directly; it has no sidebar link. It is a personal page and needs no page permission, and the OAuth callback also returns here.
 
 ## Driving it with control-oceans-admin
 
@@ -22,10 +21,10 @@ Preconditions:
 - `control-oceans-admin doctor` passes, and you are signed in as `admin@local`.
 - The default `gateway.yaml` has no `mcp.oauth` block and no oauth_obo MCP server, so only the empty state can be reached.
 
-- **Open.** Choose `Connections`. The URL is `/admin/account/connections` and the `Workspace connections` card is visible.
+- **Open.** Open `/admin/account/connections`. The URL is `/admin/account/connections` and the `Workspace connections` card is visible.
 - **Empty state.** The `No OAuth servers are available` alert is visible, and no `Connect` button renders.
 - **API parity.** From the browser context, fetch `/api/v1/mcp/oauth/connections`. It returns an empty list, which matches the empty state.
-- **Non-admin reach.** In a new browser context, sign in as `ben@platform.local` with `localdemo123` and choose `Connections`. The same empty state renders, so the page is not gated by permissions.
+- **Non-admin reach.** In a new browser context, sign in as `ben@platform.local` with `localdemo123` and open `/admin/account/connections`. The same empty state renders, so the page is not gated by permissions.
 - **Error callback.** Open `/admin/account/connections?oauth_error=access_denied`. An error toast appears and the page stays on the empty state.
 - **Connect and disconnect (unreachable by default).** These need `mcp.oauth.public_base_url`, a Google entry under `mcp.oauth.providers`, a registered oauth_obo server, and interactive Google consent. Report them as skipped and name that unmet precondition.
 - **Proof.** Capture the card, the alert, and the API response.

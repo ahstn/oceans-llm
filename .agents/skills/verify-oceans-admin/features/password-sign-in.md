@@ -9,7 +9,7 @@ Password sign-in lets a local user enter Oceans credentials, return to the reque
 - `auth-session` shows the signed-in identity in the application sidebar.
 - `auth-sign-out` clears the session and returns to sign-in.
 - `auth-forced-rotation` sends a user with `must_change_password` to `/admin/change-password` (heading `Change password`, alert `Rotation required`, fields `Current password`, `New password`, `Confirm new password`, button `Update password`); every protected route redirects there until it is done.
-- `auth-default-page` sends a sign-in without a `redirect` target to the session's default page: `/admin/api-keys` for a platform admin, `/admin/observability/usage-costs` for the users group.
+- `auth-default-page` sends a sign-in without a `redirect` target to `/admin/profile` for any session with page permissions; a session with none falls back to its default page or `/admin/no-access`.
 - `auth-no-access` shows `No console pages available` at `/admin/no-access`, but only when the session has no pages. The default `gateway.yaml` cannot reach it.
 
 ## How to get to it (user POV)
@@ -29,7 +29,7 @@ Preconditions:
 - **Protected entry.** Open `/admin/models`. The URL becomes `/admin/login?redirect=%2Fmodels` and the heading `Sign in` is visible.
 - **Credentials.** Fill the `Email` field with `admin@local`, fill the exact `Password` field with `admin`, and choose the `Sign in` button.
 - **Redirect result.** The browser returns to `/admin/models`. The `Oceans Gateway` sidebar identity and `Models` heading are visible.
-- **Default page.** In a fresh context, sign in from `/admin/login` with no `redirect`. The browser lands on `/admin/api-keys` and the `API keys` heading appears. Report `auth-no-access` as skipped; it needs `permissions.users.pages: []`.
+- **Default page.** In a fresh context, sign in from `/admin/login` with no `redirect`. The browser lands on `/admin/profile` and the `Welcome back, <first name>` heading appears. Report `auth-no-access` as skipped; it needs `permissions.users.pages: []`.
 - **Session confirmation.** Fetch `/api/v1/auth/session` from the browser context. The response reports `admin@local`, `platform_admin`, and `must_change_password: false`.
 - **Sign out.** Open the button whose accessible name contains `admin@local`, then choose the `Sign out` menu item. The browser returns to `/admin/login`, and `/api/v1/auth/session` returns `data: null`.
 - **Failure path (optional).** A wrong password shows an error toast and stays on `/admin/login`.

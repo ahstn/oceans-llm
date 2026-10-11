@@ -29,7 +29,7 @@ Preconditions:
 - **Accept.** In the same context, open the URL. The heading reads `Finish your account setup` and `Invitation is valid` is shown. Fill `Password` and `Confirm password`, then choose `Set password`. The toast reads `Password set`.
 - **Ready.** The URL is `/admin/account-ready?mode=password&email=...` and the heading reads `Account ready`. Choose `Open control plane`; the sign-in page appears.
 - **API parity.** Fetch the invitation again. Its state is `consumed`, and reopening the URL shows `Invitation consumed`. The user's Status reads `active`.
-- **Sign in.** Sign in as the new user. The browser lands on `/admin/observability/usage-costs`.
+- **Sign in.** Sign in as the new user. The browser lands on `/admin/profile`.
 - **Invalid token.** Open `/admin/invite/not-a-token`. The page shows `Invitation invalid` and no `Set password` button.
 - **Change password.** In a new browser context, sign in as `ben@platform.local` with `localdemo123`. Choose `Change password`, fill `Current password`, `New password`, and `Confirm new password`, then choose `Update password`. The page reloads to the session's default page (`/admin/observability/usage-costs` for Ben), and the next sign-in with the new password succeeds.
 - **Cleanup.** Change Ben's password back to `localdemo123`. As admin, open the created user's `Manage` → `Auth & onboarding` and choose `Deactivate`. The toast reads `User deactivated` and Status reads `disabled`.
