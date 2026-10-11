@@ -1,9 +1,9 @@
 # Guardrail Secret Redaction For Outbound Prompts
 
-`See also`: [Gateway Guardrails](../operations/gateway-guardrails.md), [ADR: Gateway Guardrails Domain and Composition](../adr/2026-08-22-gateway-guardrails-domain-and-composition.md), [PR #305](https://github.com/ahstn/oceans-llm/pull/305)
+`See also`: [Gateway Guardrails](../../operations/gateway-guardrails.md), [ADR: Gateway Guardrails Domain and Composition](../../adr/2026-08-22-gateway-guardrails-domain-and-composition.md), [PR #305](https://github.com/ahstn/oceans-llm/pull/305)
 
 - Date: 2026-09-22
-- Status: Implemented. See [ADR: Guardrail Secret Redaction](../adr/2026-09-22-guardrail-secret-redaction.md) and [Gateway Guardrails](../operations/gateway-guardrails.md#secret-redaction).
+- Status: Implemented. See [ADR: Guardrail Secret Redaction](../../adr/2026-09-22-guardrail-secret-redaction.md) and [Gateway Guardrails](../../operations/gateway-guardrails.md#secret-redaction).
 - Primary target: detect API keys and credentials in inference requests and replace them with `[REDACTED:<rule_id>]` before the request leaves Oceans LLM for a provider or a managed guardrail service
 
 ## Final decisions

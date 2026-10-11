@@ -41,7 +41,7 @@ macro_rules! assigned {
             $keyword,
             r#"[[:word:].-]{0,20}[\s'"]{0,3}(?:=|:{1,3}=|:|=>)[\x60'"\s=]{0,5}("#,
             $value,
-            r#")(?:[\x60'"\s;,]|\\[nr]|$)"#
+            r#")(?:[\x60'"\s;,]|\\[nrt]|$)"#
         )
     };
 }
@@ -176,7 +176,9 @@ pub(super) const RULES: &[Rule] = &[
     provider(
         "github-token",
         &["ghp_", "gho_", "ghu_", "ghs_", "ghr_"],
-        bounded!(r"((?:ghp|gho|ghu|ghs|ghr)_[0-9a-zA-Z]{36})"),
+        bounded!(
+            r"((?:ghp|gho|ghu|ghs|ghr)_[0-9a-zA-Z]{36}|ghs_[0-9]{1,20}_ey[[:word:]-]{10,}\.[[:word:]-]{10,}\.[[:word:]-]{10,})"
+        ),
         0.0,
     ),
     provider(
@@ -410,7 +412,7 @@ pub(super) const RULES: &[Rule] = &[
             "secret",
             "token",
         ],
-        pattern: r#"(?i)[[:word:].-]{0,50}?(?:access|auth|(?-i:[Aa]pi|API)|credential|creds|key|passw(?:or)?d|secret|token)(?:[ \t[:word:].-]{0,20})[\s'"]{0,3}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)[\x60'"\s=]{0,5}([[:word:].=-]{10,150}|[a-z0-9][a-z0-9+/]{11,}={0,3})(?:[\x60'"\s;]|\\[nr]|$)"#,
+        pattern: r#"(?i)[[:word:].-]{0,50}?(?:access|auth|(?-i:[Aa]pi|API)|credential|creds|key|passw(?:or)?d|secret|token)(?:[ \t[:word:].-]{0,20})[\s'"]{0,3}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)[\x60'"\s=]{0,5}([[:word:].=-]{10,150}|[a-z0-9][a-z0-9+/]{11,}={0,3})(?:[\x60'"\s;]|\\[nrt]|$)"#,
         min_entropy: 3.5,
         reject_word_like: true,
     },

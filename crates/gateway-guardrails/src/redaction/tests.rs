@@ -161,6 +161,33 @@ fn redacts_tokens_after_json_escapes() {
 }
 
 #[test]
+fn redacts_assignments_followed_by_escaped_tabs() {
+    let arguments = json!({
+        "content": format!("PASSWORD={}\tNEXT=1", random(ALNUM, 20, 47)),
+    })
+    .to_string();
+    assert_eq!(
+        redact(&arguments, &default_config()),
+        r#"{"content":"PASSWORD=[REDACTED:secret-assignment]\tNEXT=1"}"#
+    );
+}
+
+#[test]
+fn redacts_stateless_github_installation_tokens() {
+    // GitHub App installation tokens now use `ghs_<app id>_<jwt>`.
+    let token = format!(
+        "ghs_123456_eyJ{}.eyJ{}.{}",
+        random(ALNUM, 30, 48),
+        random(ALNUM, 200, 49),
+        random(ALNUM, 86, 50)
+    );
+    assert_eq!(
+        redact(&format!("GH_TOKEN {token} expires soon"), &default_config()),
+        "GH_TOKEN [REDACTED:github-token] expires soon"
+    );
+}
+
+#[test]
 fn redacts_secret_assignments_and_bearer_tokens_by_default() {
     let cases = [
         (
