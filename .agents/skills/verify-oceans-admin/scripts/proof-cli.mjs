@@ -167,6 +167,8 @@ export function renderReport({ runId, rows, plan }) {
 
 async function report(args, evidenceDir, runId) {
   const planIndex = args.indexOf('--plan')
+  const extra = args.filter((arg, index) => !(index === planIndex || (index === planIndex + 1 && !arg.startsWith('--'))))
+  if (extra.length) throw new Error(`Unknown report arguments ${extra.join(' ')}; use report [--plan [base-ref]]`)
   const routing = loadRouting()
   let plan
   if (planIndex >= 0) {

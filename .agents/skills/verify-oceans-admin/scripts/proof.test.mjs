@@ -157,6 +157,7 @@ test('record writes a manual proof that evidence accepts, and evidence fails on 
     const current = run('evidence', 'usage-costs', '--require-current')
     assert.equal(current.status, 0, current.stdout)
     assert.match(current.stdout, /PASS usage-costs \(usage-costs-proof.json\)/)
+    assert.equal(run('report', '--plna').status, 2)
     const misspelled = run('evidence', 'usage-costs', '--require-curent')
     assert.equal(misspelled.status, 2)
     assert.match(misspelled.stderr, /Unknown evidence option --require-curent/)

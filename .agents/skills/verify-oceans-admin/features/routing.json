@@ -500,7 +500,8 @@
       "paths": [
         "crates/admin-ui/web/src/routes/profile/**",
         "crates/gateway/src/http/profile.rs",
-        ".agents/skills/verify-oceans-admin/scripts/drive-profile.mjs"
+        ".agents/skills/verify-oceans-admin/scripts/drive-profile.mjs",
+        "crates/gateway/src/local_demo_seed/history.rs"
       ]
     },
     {
@@ -521,7 +522,8 @@
         "scripts/import-bundled-skills.mjs",
         "scripts/rustfs-*.sh",
         "mise.rustfs.{toml,lock}",
-        ".agents/skills/verify-oceans-admin/scripts/drive-skills.mjs"
+        ".agents/skills/verify-oceans-admin/scripts/drive-skills.mjs",
+        ".agents/skills/verify-oceans-admin/scripts/control-oceans-admin"
       ]
     },
     {
