@@ -248,17 +248,15 @@ fn is_base64_data_uri(text: &str) -> bool {
 }
 
 fn has_inline_media_data(object: &Map<String, Value>) -> bool {
-    object.get("type").and_then(Value::as_str) == Some("base64")
-        || MEDIA_TYPE_KEYS.iter().any(|key| {
-            object
-                .get(*key)
-                .and_then(Value::as_str)
-                .is_some_and(is_mime_type)
-        })
-        || object
-            .get("format")
+    MEDIA_TYPE_KEYS.iter().any(|key| {
+        object
+            .get(*key)
             .and_then(Value::as_str)
-            .is_some_and(|format| AUDIO_FORMATS.contains(&format))
+            .is_some_and(is_mime_type)
+    }) || object
+        .get("format")
+        .and_then(Value::as_str)
+        .is_some_and(|format| AUDIO_FORMATS.contains(&format))
 }
 
 /// A `type/subtype` media type, optionally with parameters, such as `image/png`.

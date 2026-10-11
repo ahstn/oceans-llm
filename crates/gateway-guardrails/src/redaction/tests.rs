@@ -374,7 +374,7 @@ fn redacts_json_strings_and_skips_inline_media() {
                 "arguments": format!("{{\"token\":\"{key}\"}}"),
             }}]},
             {"role": "user", "content": [
-                {"type": "image", "source": {"type": "base64", "data": media.clone()}},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": media.clone()}},
                 {"type": "image_url", "image_url": {"url": format!("data:text/plain,{key}")}},
                 {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{media}")}},
                 {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{key}")}},
@@ -478,6 +478,11 @@ fn media_data_needs_a_media_type_descriptor() {
         assert_eq!(fields.len(), 1, "{descriptor} exempted the data field");
         assert_eq!(request["data"], "[REDACTED:aws-access-key-id]");
     }
+    let mut request = json!({"type": "base64", "data": key.clone()});
+    assert_eq!(
+        redact_json_secrets(&mut request, &default_config()).len(),
+        1
+    );
     let mut request = json!({"mime_type": "image/png; q=1", "data": key.clone()});
     assert!(redact_json_secrets(&mut request, &default_config()).is_empty());
 }

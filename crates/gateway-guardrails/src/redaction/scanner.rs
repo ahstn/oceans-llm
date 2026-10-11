@@ -23,17 +23,17 @@ struct Scanner {
 }
 
 static SCANNER: LazyLock<Scanner> = LazyLock::new(Scanner::build);
-/// Whole placeholder shapes. Each must match in full (a `<NAME>` slot, a
+/// Placeholder shapes, matched against the whole value (a `<NAME>` slot, a
 /// `${NAME}`, `{{ name }}` or `%NAME%` reference, or a `your_key_here` phrase
-/// made only of words), so a real password that merely contains `<`, `{{` or
-/// `your_` is still a secret.
+/// made only of words), so a real password that merely contains one is still
+/// a secret.
 static PLACEHOLDER_SHAPES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
-        r"<[A-Za-z][A-Za-z0-9 _.-]*>",
+        r"^(?:<[A-Za-z][A-Za-z0-9 _.-]*>",
         r"|\$\{[A-Za-z_][A-Za-z0-9_.:-]*\}",
         r"|\{\{\s*[A-Za-z_][A-Za-z0-9_. -]*\}\}",
-        r"|^%[A-Za-z_][A-Za-z0-9_]*%$",
-        r"|(?i)^[a-z0-9-]{0,12}your[_-][a-z_.-]+$",
+        r"|%[A-Za-z_][A-Za-z0-9_]*%",
+        r"|(?i:[a-z0-9-]{0,12}your[_-][a-z_.-]+))$",
     ))
     .expect("placeholder pattern")
 });
@@ -290,6 +290,7 @@ mod tests {
             "a${b7Kp2mT4zQ",
             "EXAMPLEq7pK9mT4zQ2",
             "Tr0ub4dorEXAMPLE",
+            "aB3<OPENAI_API_KEY>z9!",
             "%A7x9!K2mN5%",
         ] {
             assert!(!is_placeholder(value), "{value} should be a secret");
