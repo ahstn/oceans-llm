@@ -123,19 +123,20 @@ A request to verify a request-path or provider change permits one bounded canary
 
 ## Proofs
 
-Every proof is a `*-proof.json` file in the run's evidence directory with one shared envelope. Drivers write it through [scripts/proof.mjs](./scripts/proof.mjs), including when they fail, so a failed run leaves a failed proof rather than no file.
+Every proof is a `*-proof.json` file in the run's evidence directory with one shared envelope. Drivers write it through [scripts/proof.mjs](./scripts/proof.mjs). A driver replaces its proof file with a failing placeholder before it starts the browser and writes the real envelope when it finishes or fails, so a crashed attempt never leaves an older passing proof behind.
 
 | Field | Meaning |
 |---|---|
 | `schemaVersion` | Envelope version, currently `1`. |
 | `runId`, `harness`, `gatewayVersion` | Which run, which agent harness (`OCEANS_VERIFY_HARNESS`, else `claude` under Claude Code, `ci` under CI, or `unknown`), and which gateway build. |
 | `gitSha`, `dirty` | `HEAD` and whether the working tree had changes when the proof ran. Informational. |
-| `sourceHash`, `sourceFiles` | Content hash of every file that `routing.json` sends to these features. This is what `--require-current` compares, so a proof survives a commit or an unrelated edit and goes stale only when its own code changes. |
+| `sourceHash`, `sourceFiles` | Hash of the path, Git file mode, and content of every file that `routing.json` sends to these features. This is what `--require-current` compares, so a proof survives a commit or an unrelated edit and goes stale only when its own code changes. |
+| `launchSourceHash` | The same hash over the snapshot `launch` saved, or `null` without one. When it differs from `sourceHash`, the stack ran older code than the proof claims, and `--require-current` marks the proof stale. Relaunch after editing routed files. |
 | `featureIds` | IDs from `features/routing.json`. |
 | `method` | `driver` or `manual`. |
 | `verdict` | `pass`, `fail`, or `blocked`, derived from `checks`. A required `fail` wins over a required `blocked`; optional checks never decide it; no required checks means `fail`. |
 | `checks[]` | `{ id, status, required?, observed?, expected?, note? }`, one per assertion. |
-| `artifacts[]` | Screenshots in the evidence directory that back the checks. |
+| `artifacts[]` | Screenshots and ARIA snapshots in the evidence directory that back the checks. A proof whose artifacts are missing does not count. |
 | `details` | The driver's own sanitized payload: counts, IDs, and the action log. |
 
 Use `blocked` only for a named missing prerequisite, such as an unset credential alias, and put the prerequisite in the check's `note`. A product or harness defect is `fail`.
@@ -158,7 +159,7 @@ Record a manual recipe after you capture its screenshots:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin evidence models mcp --require-current
 ```
 
-It prints one `PASS` or `FAIL` line per feature and exits non-zero unless every named feature has a proof from this run with `verdict: pass`. With `--require-current`, it also fails a proof whose `sourceHash` no longer matches the working tree. With no feature names, it checks every proof in the run. `observability` and `live-llm` remain aliases for `leaderboard agent-harnesses` and `live-llm-requests`.
+It prints one `PASS` or `FAIL` line per feature and exits non-zero unless every named feature's newest proof is from this run, has `verdict: pass`, and still has all its artifacts. With `--require-current`, it also fails a proof whose `sourceHash` no longer matches the working tree or whose stack was launched from different source. With no feature names, it checks every proof in the run. `observability` and `live-llm` remain aliases for `leaderboard agent-harnesses` and `live-llm-requests`.
 
 `report` writes the run as Markdown for the pull request:
 
@@ -166,7 +167,7 @@ It prints one `PASS` or `FAIL` line per feature and exits non-zero unless every 
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin report --plan
 ```
 
-It produces one table row per proof with its verdict, check counts, failing or blocked notes, a `⚠ stale` marker, and evidence files. With `--plan [base-ref]`, it adds `Planned but not verified` for every feature that `plan` selected without a current passing proof, plus unmapped paths and skip reasons. Paste the output under the PR description instead of writing a free-form summary.
+It produces one table row per feature from its newest proof, as `evidence` reads it, with the verdict, check counts, failing or blocked notes, a `⚠ stale` marker, and evidence files. A proof that cannot count for another reason (another run, missing artifacts, or a verdict that disagrees with its checks) shows as `❌ invalid` with the reason. With `--plan [base-ref]`, it adds `Planned but not verified` for every feature that `plan` selected without a current passing proof, plus unmapped paths and skip reasons. Paste the output under the PR description instead of writing a free-form summary.
 
 ## Evidence
 
@@ -208,8 +209,8 @@ An optional candidate failure does not change the verdict but remains a reported
 The Skills proof produces:
 
 - `01-skills-login.*`, `01b-skills-bundled.*`, `02-skills-before.*`, `03-skills-file-preview.*`, `04-skills-new-version.*`, `05-skills-owner-default.*`, `06-skills-other-owner.*`, and `07-skills-catalog-after.*` screenshots and ARIA snapshots.
-- `skills-proof.json` with the run, storage scope, saved IDs, version digests, caller checks, and action log. It must report `passed: true`.
-- `skills-storage-cleanup.json` after stack teardown confirms that the run's object prefix is empty and its database was removed. `evidence skills` checks this file after teardown.
+- `skills-proof.json` with one check per step plus `user-cleanup`; `details` holds the storage scope, saved IDs, version digests, caller checks, and action log.
+- After stack teardown, cleanup adds a `storage-cleanup` check to `skills-proof.json` confirming that the run's object prefix is empty and its database was removed. A failed storage cleanup turns the verdict to `fail`.
 - No gateway key, RustFS credential, password, or authorization header in proof artifacts.
 
 Mocks are valid only when the production boundary already isolates an external system. This Models proof uses no mock. Do not interpret a rendered configured provider as proof that its credentials or live upstream service work.

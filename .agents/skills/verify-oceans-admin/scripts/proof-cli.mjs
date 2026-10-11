@@ -2,11 +2,12 @@
 // record | evidence | report over the proof envelopes in one run's evidence directory.
 // Called by control-oceans-admin, which supplies OCEANS_VERIFY_RUN_ID and OCEANS_VERIFY_EVIDENCE_DIR.
 import { existsSync, readdirSync } from 'node:fs'
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { changedPaths, defaultBase, planFor } from './plan-verification.mjs'
-import { assessProof, buildEnvelope, loadRouting, readProofs, STATUSES, writeProof } from './proof.mjs'
+import { assessProof, buildEnvelope, currentSources, loadRouting, readProofs, STATUSES, verdictFor, writeProof } from './proof.mjs'
 
 // Older evidence names map onto routing.json feature IDs.
 const ALIASES = { observability: ['leaderboard', 'agent-harnesses'], 'live-llm': ['live-llm-requests'] }
@@ -34,9 +35,13 @@ async function record(args, evidenceDir) {
     if (flag === '--check') checks.push(parseCheck(value, true))
     else if (flag === '--optional') checks.push(parseCheck(value, false))
     else if (flag === '--artifact') {
+      if (path.basename(value) !== value) throw new Error(`--artifact must be a file name in the evidence directory, got ${value}`)
       if (!existsSync(path.join(evidenceDir, value))) throw new Error(`Artifact ${value} is not in ${evidenceDir}`)
       artifacts.push(value)
-    } else if (flag === '--file') file = value
+    } else if (flag === '--file') {
+      if (path.basename(value) !== value) throw new Error(`--file must be a file name in the evidence directory, got ${value}`)
+      file = value
+    }
     else throw new Error(`Unknown flag ${flag}`)
   }
   if (checks.length === 0) throw new Error('Record at least one --check')
@@ -47,7 +52,7 @@ async function record(args, evidenceDir) {
   return envelope.verdict === 'pass' ? 0 : 1
 }
 
-function latestFor(featureId, proofs) {
+export function latestFor(featureId, proofs) {
   return proofs
     .filter(({ proof }) => proof?.featureIds?.includes(featureId))
     .sort((a, b) => String(b.proof.generatedAt).localeCompare(String(a.proof.generatedAt)))[0]
@@ -72,7 +77,7 @@ async function evidence(args, evidenceDir, runId) {
   }
   let failed = 0
   for (const { id, entry } of rows) {
-    const problems = entry ? assessProof(entry.proof, { requireCurrent, runId, routing }) : ['no proof recorded']
+    const problems = entry ? assessProof(entry.proof, { requireCurrent, runId, evidenceDir, routing }) : ['no proof recorded']
     if (problems.length) failed += 1
     const where = entry ? ` (${entry.file})` : ''
     console.log(`${problems.length ? 'FAIL' : 'PASS'} ${id}${where}${problems.length ? `: ${problems.join('; ')}` : ''}`)
@@ -90,37 +95,58 @@ function summariseChecks(checks = []) {
 
 const ICONS = { pass: '✅ pass', fail: '❌ fail', blocked: '⛔ blocked' }
 
-export function renderReport({ runId, proofs, assessments, plan }) {
-  const head = proofs.find(({ proof }) => proof?.schemaVersion)?.proof
+// A proof's own verdict shows only when nothing stops it from counting: stale
+// proofs keep their verdict with a warning, any other problem marks it invalid.
+function verdictCell(proof, problems) {
+  const manual = proof.method === 'manual' ? ' (manual)' : ''
+  const invalid = problems.filter((problem) => !problem.startsWith('stale') && !problem.startsWith('verdict='))
+  if (invalid.length) return `❌ invalid${manual}: ${invalid.join('; ')}`
+  const stale = problems.filter((problem) => problem.startsWith('stale'))
+  return `${ICONS[proof.verdict] ?? proof.verdict}${manual}${stale.length ? ` ⚠ ${stale.join('; ')}` : ''}`
+}
+
+// One row per feature, from its newest proof (as `evidence` reads it), then any
+// unreadable proof files so they stay visible.
+export function reportRows(proofs, assess) {
+  const ids = [...new Set(proofs.flatMap(({ proof }) => proof?.featureIds ?? []))]
+  const latest = new Map()
+  for (const id of ids) {
+    const entry = latestFor(id, proofs)
+    const row = latest.get(entry.file) ?? { ...entry, problems: assess(entry.proof), ids: [] }
+    row.ids.push(id)
+    latest.set(entry.file, row)
+  }
+  const unreadable = proofs
+    .filter(({ proof }) => !proof?.featureIds)
+    .map((entry) => ({ ...entry, problems: assess(entry.proof), ids: [] }))
+  return [...latest.values(), ...unreadable]
+}
+
+export function renderReport({ runId, rows, plan }) {
+  const head = rows.find(({ proof }) => proof?.schemaVersion)?.proof
   const lines = [
     `### Runtime verification: run ${runId}${head ? ` @ ${head.gitSha.slice(0, 8)}${head.dirty ? '+dirty' : ''} (${head.harness}, gateway ${head.gatewayVersion ?? 'unknown'})` : ''}`,
     '',
   ]
-  if (proofs.length) {
+  if (rows.length) {
     lines.push('| Feature | Verdict | Checks | Evidence |', '|---|---|---|---|')
-    proofs.forEach(({ file, proof }, index) => {
-      const problems = assessments[index]
-      if (!proof?.schemaVersion) {
-        lines.push(`| ${file} | ❌ unreadable | ${problems.join('; ')} | ${file} |`)
-        return
+    for (const { file, proof, problems, ids } of rows) {
+      if (!proof?.schemaVersion || !proof.featureIds) {
+        lines.push(`| ${file} | ❌ unreadable | ${problems.join('; ').replaceAll('|', '/')} | ${file} |`)
+        continue
       }
-      const stale = problems.find((problem) => problem.startsWith('stale'))
-      const verdict = `${ICONS[proof.verdict] ?? proof.verdict}${proof.method === 'manual' ? ' (manual)' : ''}${stale ? ' ⚠ stale' : ''}`
       const artifacts = proof.artifacts ?? []
       const shown = artifacts.slice(0, 3).join(', ')
       const more = artifacts.length > 3 ? ` +${artifacts.length - 3} more` : ''
       const evidenceCell = [file, shown].filter(Boolean).join(', ') + more
-      lines.push(`| ${proof.featureIds.join(', ')} | ${verdict} | ${summariseChecks(proof.checks).replaceAll('|', '/')} | ${evidenceCell} |`)
-    })
+      const cells = [ids.join(', '), verdictCell(proof, problems), summariseChecks(proof.checks), evidenceCell]
+      lines.push(`| ${cells.map((cell) => cell.replaceAll('|', '/')).join(' | ')} |`)
+    }
   } else {
     lines.push('No proofs were recorded in this run.')
   }
   if (plan) {
-    const passing = new Set(
-      proofs
-        .filter((_, index) => assessments[index].length === 0)
-        .flatMap(({ proof }) => proof.featureIds),
-    )
+    const passing = new Set(rows.filter((row) => row.problems.length === 0).flatMap((row) => row.ids))
     const missing = plan.proofs.filter((proof) => !passing.has(proof.id)).map((proof) => proof.id)
     lines.push('')
     if (plan.noRuntimeSurface) lines.push('**Plan:** SKIP, no runtime surface.')
@@ -143,8 +169,29 @@ async function report(args, evidenceDir, runId) {
     plan = planFor(changedPaths(base).paths, routing)
   }
   const proofs = await readProofs(evidenceDir)
-  const assessments = proofs.map(({ proof }) => assessProof(proof, { requireCurrent: true, runId, routing }))
-  console.log(renderReport({ runId, proofs, assessments, plan }))
+  const rows = reportRows(proofs, (proof) => assessProof(proof, { requireCurrent: true, runId, evidenceDir, routing }))
+  console.log(renderReport({ runId, rows, plan }))
+  return 0
+}
+
+// `launch` saves the routed source snapshot that later proofs compare against.
+async function snapshotSources([file]) {
+  if (!file) throw new Error('Usage: snapshot-sources <file>')
+  await fs.writeFile(file, `${JSON.stringify(currentSources(), null, 2)}\n`)
+  return 0
+}
+
+// Adds one check to an existing proof and recomputes its verdict; stack cleanup
+// uses it to attach the Skills storage result to skills-proof.json.
+async function addCheck([file, spec], evidenceDir) {
+  if (!file || path.basename(file) !== file || !spec) throw new Error('Usage: add-check <name>-proof.json id=status[:note]')
+  const target = path.join(evidenceDir, file)
+  if (!existsSync(target)) throw new Error(`${file} is not in ${evidenceDir}`)
+  const proof = JSON.parse(await fs.readFile(target, 'utf8'))
+  const check = parseCheck(spec, true)
+  proof.checks = [...(proof.checks ?? []).filter((existing) => existing.id !== check.id), check]
+  proof.verdict = verdictFor(proof.checks)
+  await writeProof(evidenceDir, file, proof)
   return 0
 }
 
@@ -152,6 +199,8 @@ async function main([command, ...args]) {
   const runId = process.env.OCEANS_VERIFY_RUN_ID
   const evidenceDir = process.env.OCEANS_VERIFY_EVIDENCE_DIR
   if (!runId || !evidenceDir) throw new Error('Run through control-oceans-admin so the run ID and evidence directory are set.')
+  if (command === 'snapshot-sources') return snapshotSources(args)
+  if (command === 'add-check') return addCheck(args, evidenceDir)
   if (command === 'record') return record(args, evidenceDir)
   if (command === 'evidence') return evidence(args, evidenceDir, runId)
   if (command === 'report') return report(args, evidenceDir, runId)

@@ -23,17 +23,18 @@ const gatewayRequestTimeoutMs = 30_000;
 const actions = [];
 
 await fs.mkdir(evidenceDir, { recursive: true });
+// Replaces any earlier proof with a failing placeholder before the browser starts.
+const proof = createProofRecorder({
+  evidenceDir,
+  file: "backend-gateway-canary-proof.json",
+  featureIds: ["backend-gateway"],
+});
 const browser = await chromium.launch({ headless: true });
 let apiKeyId;
 let rawKey;
 let page;
 let details;
 let failure;
-const proof = createProofRecorder({
-  evidenceDir,
-  file: "backend-gateway-canary-proof.json",
-  featureIds: ["backend-gateway"],
-});
 
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });

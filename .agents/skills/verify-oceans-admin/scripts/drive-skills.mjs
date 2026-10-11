@@ -7,6 +7,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { importBundledSkills } from "../../../../scripts/import-bundled-skills.mjs";
+import { createProofRecorder } from "./proof.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const requireFromAdminUi = createRequire(path.join(repoRoot, "crates/admin-ui/web/package.json"));
@@ -15,7 +16,7 @@ const { expect: baseExpect } = requireFromAdminUi("playwright/test");
 const expect = baseExpect.configure({ timeout: 30_000 });
 const baseURL = requiredEnv("OCEANS_VERIFY_BASE_URL");
 const evidenceDir = requiredEnv("OCEANS_VERIFY_EVIDENCE_DIR");
-const gatewayVersion = requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION");
+requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION");
 const adminEmail = requiredEnv("OCEANS_VERIFY_ADMIN_EMAIL");
 const adminPassword = requiredEnv("OCEANS_VERIFY_ADMIN_PASSWORD");
 const serviceAccountKey = requiredEnv("OCEANS_VERIFY_SKILLS_SERVICE_ACCOUNT_KEY");
@@ -24,11 +25,8 @@ const fixturePath = (version) =>
   path.join(repoRoot, `crates/admin-ui/web/e2e/fixtures/skills/review-code-v${version}.zip`);
 const actions = [];
 const createdUsers = [];
-const proof = {
-  feature: "skills",
-  runId: process.env.OCEANS_VERIFY_RUN_ID,
+const details = {
   entryUrl: `${baseURL}/admin/skills`,
-  gatewayVersion,
   storage: {
     endpoint: requiredEnv("OCEANS_VERIFY_SKILLS_ENDPOINT"),
     bucket: requiredEnv("OCEANS_VERIFY_SKILLS_BUCKET"),
@@ -41,18 +39,20 @@ const proof = {
     skills: "Stored in the run-local database; control-oceans-admin cleanup removes that database.",
     objects: "Run prefix is removed by control-oceans-admin cleanup.",
   },
-  passed: false,
 };
-
-await fs.mkdir(evidenceDir, { recursive: true });
-const browser = await chromium.launch({ headless: true });
-const adminContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
-const adminPage = await adminContext.newPage();
-let currentPage = adminPage;
+// Stack cleanup adds a storage-cleanup check to this proof after teardown.
+const proof = createProofRecorder({ evidenceDir, file: "skills-proof.json", featureIds: ["skills"] });
+let browser;
+let adminContext;
+let currentPage;
 let failure;
 
 try {
-  await adminPage.goto(proof.entryUrl, { waitUntil: "domcontentloaded" });
+  browser = await chromium.launch({ headless: true });
+  adminContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const adminPage = await adminContext.newPage();
+  currentPage = adminPage;
+  await adminPage.goto(details.entryUrl, { waitUntil: "domcontentloaded" });
   await expect(adminPage.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
   await capture(adminPage, "01-skills-login");
   await fillSignIn(adminPage, adminEmail, adminPassword);
@@ -61,8 +61,10 @@ try {
     action: "open protected Skills page and sign in as platform admin",
     result: "Skills catalog visible",
   });
+  proof.pass("protected-route-sign-in");
 
-  proof.bundled = await verifyBundledSkills(adminPage);
+  details.bundled = await verifyBundledSkills(adminPage);
+  proof.pass("bundled-import-idempotent", { observed: details.bundled.skills.length });
 
   const owner = await createUser(adminContext.request, "owner");
   const peer = await createUser(adminContext.request, "reader");
@@ -72,19 +74,21 @@ try {
   await signIn(ownerPage, owner);
   await ownerPage.getByRole("link", { name: "Skills", exact: true }).first().click();
   await expect(ownerPage.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
-  proof.catalog = { before: await searchCatalog(ownerPage, owner.namespace) };
-  assert.equal(proof.catalog.before.apiCount, 0, "New namespace starts with an empty catalog");
+  details.catalog = { before: await searchCatalog(ownerPage, owner.namespace) };
+  assert.equal(details.catalog.before.apiCount, 0, "New namespace starts with an empty catalog");
   await capture(ownerPage, "02-skills-before");
   actions.push({
     action: "regular user follows Skills sidebar and searches own namespace",
     result: "Empty catalog before upload",
   });
+  proof.pass("empty-catalog-before-upload");
 
   const initial = await uploadFirstThroughUi(ownerPage, owner);
   const saved = await verifyOwnerVersions(ownerPage, initial);
-  proof.owner = { userId: owner.id, namespace: owner.namespace, skillId: saved.skill.id };
-  proof.versions = saved.versions.map(({ version, sha256 }) => ({ version, sha256 }));
-  proof.defaultVersion = saved.skill.default_version;
+  details.owner = { userId: owner.id, namespace: owner.namespace, skillId: saved.skill.id };
+  details.versions = saved.versions.map(({ version, sha256 }) => ({ version, sha256 }));
+  details.defaultVersion = saved.skill.default_version;
+  proof.pass("owner-versions-immutable", { observed: details.versions.length });
 
   const peerContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const peerPage = await peerContext.newPage();
@@ -103,41 +107,47 @@ try {
     null,
     "Failed namespace claim leaves the user without a namespace",
   );
+  proof.pass("namespace-claim-conflict", { observed: duplicateNamespace.status() });
   const duplicate = await uploadFirstThroughUi(peerPage, peer);
   assert.notEqual(duplicate.skill.id, initial.skill.id);
   assert.equal(duplicate.skill.name, initial.skill.name);
   assert.equal(duplicate.skill.owner_user_id, peer.id);
-  proof.peer = { userId: peer.id, namespace: peer.namespace, skillId: duplicate.skill.id };
+  details.peer = { userId: peer.id, namespace: peer.namespace, skillId: duplicate.skill.id };
   actions.push({
     action: "second user uploads the same skill name",
     result: "Separate owner namespace and skill ID",
   });
+  proof.pass("duplicate-name-separate-owner");
 
   await verifySharedAccess(peerPage, adminContext.request, saved, owner);
-  proof.authentication = await verifyAuthentication(saved.skill.id);
+  proof.pass("shared-read-owner-only-write");
+  details.authentication = await verifyAuthentication(saved.skill.id);
+  proof.pass("caller-authentication");
   await verifyNamespaceRules(ownerContext.request, peerContext.request, owner, peer);
+  proof.pass("namespace-rules");
   currentPage = ownerPage;
   await ownerPage.goto(`${baseURL}/admin/skills`, {
     waitUntil: "domcontentloaded",
   });
-  proof.catalog.search = await verifyCatalogSearch(ownerPage, saved.skill, duplicate.skill);
-  proof.catalog.after = proof.catalog.search.owner;
-  assert.deepEqual(proof.catalog.after.skillIds, [saved.skill.id]);
+  details.catalog.search = await verifyCatalogSearch(ownerPage, saved.skill, duplicate.skill);
+  details.catalog.after = details.catalog.search.owner;
+  assert.deepEqual(details.catalog.after.skillIds, [saved.skill.id]);
   await expectCatalogSkill(ownerPage, saved.skill);
   await capture(ownerPage, "07-skills-catalog-after");
-  proof.passed = true;
+  proof.pass("catalog-search", { observed: details.catalog.after.skillIds.length });
 } catch (error) {
   failure = error;
   // A failed sign-in can still contain a password. Capture only the authenticated Skills surface.
-  if (/\/admin\/skills(?:[/?]|$)/.test(currentPage.url())) {
+  if (currentPage && /\/admin\/skills(?:[/?]|$)/.test(currentPage.url())) {
     await capture(currentPage, "99-skills-failure").catch(() => {});
   }
 } finally {
+  let cleanupFailed = false;
   for (const user of createdUsers) {
     // The last ordinary admin is protected by the normal lifecycle. The private database
     // is removed by stack cleanup; its temporary API key was already revoked.
     if (user.globalRole === "platform_admin") {
-      proof.cleanup.usersRetainedForDatabaseCleanup.push(user.id);
+      details.cleanup.usersRetainedForDatabaseCleanup.push(user.id);
       continue;
     }
     try {
@@ -145,18 +155,15 @@ try {
         `${baseURL}/api/v1/admin/identity/users/${user.id}/deactivate`,
       );
       assert.equal(response.status(), 200, "Deactivate temporary verification user");
-      proof.cleanup.usersDeactivated.push(user.id);
+      details.cleanup.usersDeactivated.push(user.id);
     } catch (error) {
+      cleanupFailed = true;
       failure ??= error;
     }
   }
-  proof.passed = proof.passed && !failure;
-  proof.generatedAt = new Date().toISOString();
-  await fs.writeFile(
-    path.join(evidenceDir, "skills-proof.json"),
-    `${JSON.stringify(proof, null, 2)}\n`,
-  );
-  await browser.close();
+  proof.add({ id: "user-cleanup", status: cleanupFailed ? "fail" : "pass", observed: details.cleanup.usersDeactivated.length });
+  await proof.write({ details, error: failure && sanitizedFailure(failure) });
+  await browser?.close();
 }
 if (failure) throw sanitizedFailure(failure);
 console.log(
@@ -346,7 +353,7 @@ async function verifyCatalogSearch(page, ownerSkill, peerSkill) {
   const missing = await searchCatalog(page, `missing-${suffix}`);
   assert.equal(missing.apiCount, 0, "An unmatched search shows the empty state");
   const cleared = await searchCatalog(page, "");
-  for (const id of [...expectedIds, ...proof.bundled.skills.map((skill) => skill.id)]) {
+  for (const id of [...expectedIds, ...details.bundled.skills.map((skill) => skill.id)]) {
     assert(cleared.skillIds.includes(id), "Clearing search restores each uploaded skill");
   }
   const owner = await searchCatalog(page, ownerSkill.namespace);
@@ -582,6 +589,8 @@ async function capture(page, name) {
     path.join(evidenceDir, `${name}.aria.txt`),
     `${await page.locator("body").ariaSnapshot()}\n`,
   );
+  proof.artifact(`${name}.png`);
+  proof.artifact(`${name}.aria.txt`);
 }
 
 function requiredEnv(name) {

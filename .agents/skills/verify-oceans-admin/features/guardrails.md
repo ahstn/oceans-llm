@@ -36,6 +36,6 @@ Preconditions:
 - The phase and action selects have no programmatic label; their accessible name is the displayed value (`All phases`, `All actions`). Find them by that text inside `Decision events`.
 - Filters apply only through `Apply filters`. Editing a field on its own changes neither the URL nor the table.
 - `No guardrail decisions` is the correct fresh-seed state, not a routing or permission fault.
-- The seed does not clear decisions, so a reused `gateway.db` carries totals from earlier runs. Filter by request ID or decision ID for exact proof.
+- The seed does not clear decisions, so a reused `gateway.db` carries totals from earlier runs. There is no decision-ID filter, so find the proof's recorded `decision_id` in the returned rows. When you need request-ID filtering, use a request-linked decision from the [Backend gateway](./backend-gateway.md) recipe.
 - Direct `/api/v1/guardrails/evaluate` decisions have no request ID. A request-linked `generated_tool_call` decision needs the paid [Backend gateway](./backend-gateway.md) recipe.
 - Team admins and users hold `mcp_invocations`, but the sidebar link is still hidden from them.

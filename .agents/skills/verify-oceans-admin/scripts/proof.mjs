@@ -2,7 +2,7 @@
 // `evidence` and `report` read it. See SKILL.md "Proofs" for the contract.
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,23 +29,45 @@ export function verdictFor(checks) {
 
 // Content hash of every file that routing.json sends to these features, so a
 // proof survives commits and unrelated edits but goes stale when its code changes.
-export function sourceFingerprint(featureIds, routing = loadRouting()) {
-  const files = git(['ls-files', '--cached', '--others', '--exclude-standard'])
-    .split('\n')
-    .filter(Boolean)
+// Each entry is path, Git file mode, and blob, so a mode-only change also counts.
+export function sourceFingerprint(featureIds, routing = loadRouting(), sources = currentSources(routing)) {
   const wanted = new Set(featureIds)
   const routed = new Set(
-    planFor(files, routing)
+    planFor(Object.keys(sources), routing)
       .proofs.filter((proof) => wanted.has(proof.id))
       .flatMap((proof) => proof.because),
   )
+  const present = [...routed].sort()
+  const hash = createHash('sha256')
+  present.forEach((file) => hash.update(`${file}\0${sources[file]}\n`))
+  return { sourceHash: hash.digest('hex'), sourceFiles: present.length }
+}
+
+// `<mode> <blob>` for every present file routed to any feature. `launch` saves
+// this snapshot so proofs can show which source the running stack was built from.
+export function currentSources(routing = loadRouting()) {
+  const files = git(['ls-files', '--cached', '--others', '--exclude-standard'])
+    .split('\n')
+    .filter(Boolean)
+  const routed = new Set(planFor(files, routing).proofs.flatMap((proof) => proof.because))
   const present = [...routed].filter((file) => existsSync(path.join(repoRoot, file))).sort()
   const blobs = present.length
     ? git(['hash-object', '--stdin-paths'], present.join('\n')).split('\n')
     : []
-  const hash = createHash('sha256')
-  present.forEach((file, index) => hash.update(`${file}\0${blobs[index]}\n`))
-  return { sourceHash: hash.digest('hex'), sourceFiles: present.length }
+  return Object.fromEntries(present.map((file, index) => [file, `${fileMode(file)} ${blobs[index]}`]))
+}
+
+function fileMode(file) {
+  const stat = lstatSync(path.join(repoRoot, file))
+  if (stat.isSymbolicLink()) return '120000'
+  return stat.mode & 0o111 ? '100755' : '100644'
+}
+
+// The snapshot `launch` wrote for this run, or null when the run has none.
+export function launchSources() {
+  const file = process.env.OCEANS_VERIFY_LAUNCH_SOURCES
+  if (!file || !existsSync(file)) return null
+  return JSON.parse(readFileSync(file, 'utf8'))
 }
 
 export function buildEnvelope({ featureIds, checks, details = {}, artifacts = [], method = 'driver', routing = loadRouting() }) {
@@ -57,12 +79,14 @@ export function buildEnvelope({ featureIds, checks, details = {}, artifacts = []
   for (const check of checks) {
     if (!check.id || !STATUSES.includes(check.status)) throw new Error(`Invalid check ${JSON.stringify(check)}`)
   }
+  const launched = launchSources()
   return {
     schemaVersion: SCHEMA_VERSION,
     runId: process.env.OCEANS_VERIFY_RUN_ID ?? null,
     gitSha: git(['rev-parse', 'HEAD']),
     dirty: git(['status', '--porcelain']).length > 0,
     ...sourceFingerprint(featureIds, routing),
+    launchSourceHash: launched ? sourceFingerprint(featureIds, routing, launched).sourceHash : null,
     harness: detectHarness(),
     gatewayVersion: process.env.OCEANS_VERIFY_GATEWAY_VERSION ?? null,
     featureIds,
@@ -84,7 +108,11 @@ export async function writeProof(evidenceDir, file, envelope) {
 
 // Driver helper: record checks as assertions pass, then write once at the end,
 // including when the driver throws, so a failed run leaves a failed proof.
+// Creating the recorder replaces any earlier proof in this file with a failing
+// placeholder, so a crash before write() (browser launch included) cannot leave
+// an older passing attempt in place.
 export function createProofRecorder({ evidenceDir, file, featureIds }) {
+  writePlaceholder(evidenceDir, file, featureIds)
   const checks = []
   const artifacts = []
   return {
@@ -105,6 +133,13 @@ export function createProofRecorder({ evidenceDir, file, featureIds }) {
       return writeProof(evidenceDir, file, envelope)
     },
   }
+}
+
+function writePlaceholder(evidenceDir, file, featureIds) {
+  if (!file.endsWith('-proof.json')) throw new Error(`Proof files must end in -proof.json: ${file}`)
+  const checks = [{ id: 'driver-completed', status: 'fail', note: 'driver started but did not finish' }]
+  mkdirSync(evidenceDir, { recursive: true })
+  writeFileSync(path.join(evidenceDir, file), `${JSON.stringify(buildEnvelope({ featureIds, checks }), null, 2)}\n`)
 }
 
 // Error text can echo upstream response bodies; keep the label, drop payloads.
@@ -128,7 +163,7 @@ export async function readProofs(evidenceDir) {
 }
 
 // Returns the problems that stop a proof from counting; an empty list means it counts.
-export function assessProof(proof, { requireCurrent = false, runId, routing = loadRouting() } = {}) {
+export function assessProof(proof, { requireCurrent = false, runId, evidenceDir, routing = loadRouting() } = {}) {
   if (!proof) return ['proof JSON is unreadable']
   if (proof.schemaVersion !== SCHEMA_VERSION) {
     return [`schemaVersion ${proof.schemaVersion ?? 'missing'} is not ${SCHEMA_VERSION}; re-run the proof`]
@@ -141,10 +176,17 @@ export function assessProof(proof, { requireCurrent = false, runId, routing = lo
     problems.push(`verdict=${proof.verdict}${reasons ? ` (${reasons})` : ''}`)
   }
   if (runId && proof.runId !== runId) problems.push(`proof belongs to run ${proof.runId}, not ${runId}`)
+  if (evidenceDir) {
+    const missing = (proof.artifacts ?? []).filter((name) => path.basename(name) !== name || !existsSync(path.join(evidenceDir, name)))
+    if (missing.length) problems.push(`missing artifacts: ${missing.join(', ')}`)
+  }
   if (requireCurrent && proof.featureIds?.length) {
     const { sourceHash } = sourceFingerprint(proof.featureIds, routing)
     if (sourceHash !== proof.sourceHash) {
       problems.push(`stale: files routed to ${proof.featureIds.join(', ')} changed since ${String(proof.gitSha).slice(0, 8)}`)
+    }
+    if (proof.launchSourceHash && proof.launchSourceHash !== proof.sourceHash) {
+      problems.push(`stale: files routed to ${proof.featureIds.join(', ')} changed after launch, so the stack ran older code; relaunch and re-run`)
     }
   }
   return problems

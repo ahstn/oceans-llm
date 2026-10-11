@@ -54,6 +54,8 @@ ui_pid_file="$run_dir/ui.pid"
 log_file="$run_dir/stack.log"
 base_url="http://127.0.0.1:$gateway_port"
 stack_start_file="$run_dir/stack.start-time"
+launch_sources_file="$run_dir/launch-sources.json"
+proof_script="$repo_root/.agents/skills/verify-oceans-admin/scripts/proof-cli.mjs"
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -186,6 +188,16 @@ prepare_skills() {
   export GATEWAY_CONFIG="$run_dir/gateway-skills.yaml"
 }
 
+# Attach the storage result to the Skills proof, so `evidence skills` after
+# teardown fails when the run's object prefix or database was left behind.
+skills_cleanup_check() {
+  local check="storage-cleanup=pass:object prefix empty and private database removed"
+  [[ "$1" == 0 ]] || check="storage-cleanup=fail:object prefix or private database retained for retry"
+  [[ -f "$evidence_dir/skills-proof.json" ]] || return 0
+  (cd "$repo_root" && OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" mise exec -- node "$proof_script" add-check skills-proof.json "$check") ||
+    echo "Could not record Skills storage cleanup in skills-proof.json." >&2
+}
+
 cleanup_skills() {
   local cleanup_status=0 daemon_status daemon_pid daemon_port stored_pid stored_start
   [[ -f "$run_dir/skills-prefix" || -f "$run_dir/rustfs-owned" ]] || return 0
@@ -216,7 +228,10 @@ cleanup_skills() {
       rm -f "$run_dir/skills-prefix"
     fi
   fi
-  [[ "$cleanup_status" == 0 ]] || return "$cleanup_status"
+  [[ "$cleanup_status" == 0 ]] || {
+    skills_cleanup_check "$cleanup_status"
+    return "$cleanup_status"
+  }
   if [[ -f "$run_dir/rustfs.pid" && -f "$run_dir/rustfs.start-time" ]]; then
     stored_pid="$(<"$run_dir/rustfs.pid")"
     stored_start="$(<"$run_dir/rustfs.start-time")"
@@ -229,8 +244,8 @@ cleanup_skills() {
     rm -f "$run_dir/rustfs-owned" "$run_dir/rustfs.pid" "$run_dir/rustfs.start-time" "$run_dir/rustfs-port" "$run_dir/rustfs-listener.pid" \
       "$run_dir/skills-endpoint" "$run_dir/skills-bucket" "$run_dir/skills-region" "$run_dir/gateway-skills.yaml" \
       "$run_dir/skills-prefix" "$run_dir/skills-service-account-key" "$run_dir/skills.db" "$run_dir/skills.db-wal" "$run_dir/skills.db-shm" "$run_dir/skills.db-journal"
-    printf '{"passed":true,"objects_remaining":0,"database_removed":true}\n' >"$evidence_dir/skills-storage-cleanup.json"
   fi
+  skills_cleanup_check "$cleanup_status"
   return "$cleanup_status"
 }
 
@@ -336,6 +351,8 @@ launch() {
   printf '%s\n' "$ui_port" >"$run_dir/ui-port"
 
   activate_mise
+  # Proofs compare against this snapshot, so edits after launch mark them stale.
+  (cd "$repo_root" && OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" mise exec -- node "$proof_script" snapshot-sources "$launch_sources_file")
   if [[ "${OCEANS_VERIFY_SKILLS:-false}" == "true" ]]; then
     prepare_skills
   fi
@@ -469,74 +486,19 @@ drive() {
   fi
   OCEANS_VERIFY_BASE_URL="$base_url" \
     OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" \
+    OCEANS_VERIFY_LAUNCH_SOURCES="$launch_sources_file" \
     OCEANS_VERIFY_GATEWAY_VERSION="$(<"$run_dir/gateway-version")" \
     OCEANS_VERIFY_ADMIN_EMAIL="${OCEANS_VERIFY_ADMIN_EMAIL:-admin@local}" \
     OCEANS_VERIFY_ADMIN_PASSWORD="${OCEANS_VERIFY_ADMIN_PASSWORD:-admin}" \
     mise exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/$driver"
 }
 
-# Skills and Profile drivers still write their own proof shape, not the shared
-# envelope, so `evidence skills|profile` keeps their checks until they are converted.
-legacy_evidence() {
-  local target="$1"
-  [[ -d "$evidence_dir" ]] || {
-    echo "No evidence directory exists for run $run_id." >&2
-    exit 1
-  }
-  find "$evidence_dir" -maxdepth 1 -type f -print | sort
-  case "$target" in
-    skills)
-      [[ -f "$evidence_dir/skills-proof.json" ]] || {
-        echo "Skills proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      activate_mise
-      mise exec -- bun -e '
-        const proof = await Bun.file(process.argv[1]).json();
-        if (proof.passed !== true) throw new Error("Skills proof did not pass");
-        if (!await Bun.file(process.argv[2]).exists()) {
-          const cleanup = await Bun.file(process.argv[3]).json();
-          if (cleanup.passed !== true) throw new Error("Skills storage cleanup did not pass");
-        }
-      ' "$evidence_dir/skills-proof.json" "$gateway_pid_file" "$evidence_dir/skills-storage-cleanup.json"
-      ;;
-    profile)
-      [[ -f "$evidence_dir/profile-proof.json" ]] || {
-        echo "Profile proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-  esac
-}
-
 proof_cli() {
-  if [[ "${1:-}" == "evidence" ]]; then
-    local arg legacy=() rest=() named=0
-    for arg in "${@:2}"; do
-      case "$arg" in
-        skills | profile) legacy+=("$arg") ;;
-        --*) rest+=("$arg") ;;
-        *) rest+=("$arg"); named=1 ;;
-      esac
-    done
-    if ((${#legacy[@]})); then
-      if [[ " ${rest[*]} " == *" --require-current "* ]]; then
-        echo "FAIL ${legacy[*]}: legacy proofs record no source hash, so --require-current cannot check them; drop the flag for these targets." >&2
-        exit 1
-      fi
-      for arg in "${legacy[@]}"; do
-        (legacy_evidence "$arg") || exit 1
-        echo "PASS $arg (legacy proof)"
-      done
-      ((named)) || return 0
-      set -- evidence "${rest[@]}"
-    fi
-  fi
   cd "$repo_root"
   # Cleanup removes gateway-version, so record manual proofs before cleanup.
   [[ ! -f "$run_dir/gateway-version" ]] || export OCEANS_VERIFY_GATEWAY_VERSION="$(<"$run_dir/gateway-version")"
-  OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" \
-    exec "$(resolve_mise)" exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/proof-cli.mjs" "$@"
+  OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" OCEANS_VERIFY_LAUNCH_SOURCES="$launch_sources_file" \
+    exec "$(resolve_mise)" exec -- node "$proof_script" "$@"
 }
 
 case "${1:-}" in
