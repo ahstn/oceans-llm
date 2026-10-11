@@ -196,6 +196,40 @@ async fn process_job(
     }
 }
 
+/// Redacts the stored requests of a batch that ended before submission, such as
+/// one cancelled while queued, so its results never return the original secrets.
+pub(crate) async fn redact_unsubmitted_batch(
+    state: &AppState,
+    job: &gateway_core::BatchJobRecord,
+) -> Result<(), gateway_core::GatewayError> {
+    let items = state
+        .service
+        .store()
+        .get_batch_items_for_worker(job.batch_id)
+        .await?;
+    let route_key = model_route_key(
+        &job.resolved_model_key,
+        &job.provider_key,
+        &job.upstream_model,
+    );
+    let mut redacted = Vec::with_capacity(items.len());
+    for item in items {
+        let mut body = item.request_body;
+        let request_id = format!("batch:{}:{}", job.batch_id, item.custom_id);
+        redact_prompt(state, &request_id, &route_key, &mut body).await;
+        redacted.push(ProviderBatchRequestItem {
+            custom_id: item.custom_id,
+            body,
+        });
+    }
+    state
+        .service
+        .store()
+        .replace_batch_item_requests(job.batch_id, &redacted)
+        .await?;
+    Ok(())
+}
+
 async fn submit_job(
     state: &AppState,
     provider: &dyn gateway_core::ProviderClient,
@@ -704,7 +738,9 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{prepare_submitted_state, submit_job, validate_result_custom_ids};
+    use super::{
+        prepare_submitted_state, redact_unsubmitted_batch, submit_job, validate_result_custom_ids,
+    };
     use crate::http::{
         state::AppState,
         test_support::{app_state, seed_stream_cancellation_test},
@@ -862,6 +898,18 @@ mod tests {
     /// Stores a two-item batch whose prompts both carry `key`, then claims it
     /// for submission.
     async fn claimed_batch(state: &AppState, key: &str) -> (BatchJobRecord, Uuid) {
+        let (_, api_key_id) = queued_batch(state, key).await;
+        let now = OffsetDateTime::now_utc();
+        let mut claimed = state
+            .store
+            .claim_batch_jobs("worker", now, now + time::Duration::minutes(2), 1)
+            .await
+            .expect("claim batch");
+        (claimed.remove(0), api_key_id)
+    }
+
+    /// Stores a queued two-item batch whose prompts both carry `key`.
+    async fn queued_batch(state: &AppState, key: &str) -> (BatchJobRecord, Uuid) {
         let auth = state
             .service
             .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
@@ -933,15 +981,13 @@ mod tests {
         };
         state
             .store
-            .insert_batch(&NewBatchJob { job, items })
+            .insert_batch(&NewBatchJob {
+                job: job.clone(),
+                items,
+            })
             .await
             .expect("insert batch");
-        let mut claimed = state
-            .store
-            .claim_batch_jobs("worker", now, now + time::Duration::minutes(2), 1)
-            .await
-            .expect("claim batch");
-        (claimed.remove(0), auth.id)
+        (job, auth.id)
     }
 
     async fn assert_failed_with_redacted_items(
@@ -950,12 +996,22 @@ mod tests {
         api_key_id: Uuid,
         key: &str,
     ) {
+        assert_redacted_items(state, batch_id, api_key_id, key, BatchStatus::Failed).await;
+    }
+
+    async fn assert_redacted_items(
+        state: &AppState,
+        batch_id: Uuid,
+        api_key_id: Uuid,
+        key: &str,
+        status: BatchStatus,
+    ) {
         let batch = state
             .store
             .get_batch(batch_id, BatchAccessScope::ApiKey(api_key_id))
             .await
             .expect("batch");
-        assert_eq!(batch.status, BatchStatus::Failed);
+        assert_eq!(batch.status, status);
         let items = state
             .store
             .get_batch_items_for_worker(batch_id)
@@ -971,6 +1027,35 @@ mod tests {
             );
             assert!(!item.request_body.to_string().contains(key));
         }
+    }
+
+    #[tokio::test]
+    async fn batch_cancelled_while_queued_stores_redacted_requests() {
+        let (_directory, state) = redacting_state().await;
+        let key = secret_key();
+        let (job, api_key_id) = queued_batch(&state, &key).await;
+        let cancelled = state
+            .store
+            .request_batch_cancel(
+                job.batch_id,
+                BatchAccessScope::ApiKey(api_key_id),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("cancel batch");
+
+        redact_unsubmitted_batch(&state, &cancelled)
+            .await
+            .expect("redact batch");
+
+        assert_redacted_items(
+            &state,
+            job.batch_id,
+            api_key_id,
+            &key,
+            BatchStatus::Cancelled,
+        )
+        .await;
     }
 
     #[tokio::test]

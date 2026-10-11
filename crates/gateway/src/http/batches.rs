@@ -401,6 +401,10 @@ pub async fn cancel_batch(
         .store
         .request_batch_cancel(batch_id, scope, OffsetDateTime::now_utc())
         .await?;
+    // Cancelled while queued: the worker never ran, so redact the stored requests here.
+    if current.status == BatchStatus::Queued && job.status == BatchStatus::Cancelled {
+        crate::batch_worker::redact_unsubmitted_batch(&state, &job).await?;
+    }
     let caller_names = load_caller_names(&state, std::slice::from_ref(&job)).await?;
     Ok(Json(batch_response(job, &caller_names)))
 }
