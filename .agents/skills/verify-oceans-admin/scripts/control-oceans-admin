@@ -510,9 +510,23 @@ legacy_evidence() {
 }
 
 proof_cli() {
-  if [[ "${1:-}" == "evidence" && ( "${2:-}" == "skills" || "${2:-}" == "profile" ) ]]; then
-    legacy_evidence "$2"
-    return
+  if [[ "${1:-}" == "evidence" ]]; then
+    local arg legacy=() rest=() named=0
+    for arg in "${@:2}"; do
+      case "$arg" in
+        skills | profile) legacy+=("$arg") ;;
+        --*) rest+=("$arg") ;;
+        *) rest+=("$arg"); named=1 ;;
+      esac
+    done
+    if ((${#legacy[@]})); then
+      for arg in "${legacy[@]}"; do
+        (legacy_evidence "$arg") || exit 1
+        echo "PASS $arg (legacy proof)"
+      done
+      ((named)) || return 0
+      set -- evidence "${rest[@]}"
+    fi
   fi
   cd "$repo_root"
   # Cleanup removes gateway-version, so record manual proofs before cleanup.
