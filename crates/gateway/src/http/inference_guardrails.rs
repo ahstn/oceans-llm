@@ -4,8 +4,8 @@ use axum::body::Bytes;
 use futures_util::{StreamExt, stream};
 use gateway_core::{GatewayError, ProviderStream};
 use gateway_guardrails::{
-    DecisionAction, EvaluationInput, EvaluationPayload, GuardPhase, GuardrailEvaluation,
-    PolicyResolver, PolicyTarget, redact_prompt_secrets,
+    DecisionAction, DecisionRecord, EvaluationInput, EvaluationPayload, GuardPhase,
+    GuardrailEvaluation, PolicyResolver, PolicyTarget, redact_prompt_secrets,
 };
 use serde_json::{Map, Value};
 
@@ -91,10 +91,20 @@ pub async fn redact_prompt(
     route_key: &str,
     request: &mut Value,
 ) {
+    let redactions = redact_prompt_body(state, route_key, request);
+    record_guardrail_decisions(state, Some(request_id), None, &redactions).await;
+}
+
+/// Redacts secrets in `request` in place and returns the decisions, leaving
+/// persistence to the caller.
+pub fn redact_prompt_body(
+    state: &AppState,
+    route_key: &str,
+    request: &mut Value,
+) -> Vec<DecisionRecord> {
     let policy =
         PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::ModelRoute(route_key));
-    let redactions = redact_prompt_secrets(&policy, request);
-    record_guardrail_decisions(state, Some(request_id), None, &redactions).await;
+    redact_prompt_secrets(&policy, request)
 }
 
 pub fn batch_guard_context(

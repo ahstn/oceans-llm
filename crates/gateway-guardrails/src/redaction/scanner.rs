@@ -23,8 +23,19 @@ struct Scanner {
 }
 
 static SCANNER: LazyLock<Scanner> = LazyLock::new(Scanner::build);
-static ANGLE_PLACEHOLDER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<[A-Za-z][A-Za-z0-9 _.-]*>").expect("placeholder pattern"));
+/// Whole placeholder shapes. Each must match in full (a `<NAME>` slot, a
+/// `${NAME}` or `{{ name }}` template reference, or a `your_key_here` phrase
+/// made only of words), so a real password that merely contains `<`, `{{` or
+/// `your_` is still a secret.
+static PLACEHOLDER_SHAPES: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"<[A-Za-z][A-Za-z0-9 _.-]*>",
+        r"|\$\{[A-Za-z_][A-Za-z0-9_.:-]*\}",
+        r"|\{\{\s*[A-Za-z_][A-Za-z0-9_. -]*\}\}",
+        r"|(?i)^[a-z0-9-]{0,12}your[_-][a-z_.-]+$",
+    ))
+    .expect("placeholder pattern")
+});
 
 impl Scanner {
     fn build() -> Self {
@@ -175,19 +186,16 @@ fn is_secret(rule: &Rule, value: &str) -> bool {
 /// Rejects documentation values and template references that match a rule's
 /// shape but cannot be live credentials.
 fn is_placeholder(value: &str) -> bool {
-    // Uppercase only, as in AWS documentation keys: a mixed-case password such
-    // as `Example7pK9...` is still a secret.
-    if value.contains("EXAMPLE") {
+    // The AWS documentation keys (`AKIAIOSFODNN7EXAMPLE`,
+    // `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`), uppercase only.
+    if value.ends_with("EXAMPLE") || value.contains("EXAMPLEKEY") {
         return true;
     }
-    let lowered = value.to_ascii_lowercase();
-    // `[redacted:` keeps a second pass from redacting an earlier placeholder.
-    const MARKERS: &[&str] = &["your_", "your-", "${", "{{", "}}", "[redacted:"];
-    if MARKERS.iter().any(|marker| lowered.contains(marker)) {
+    // Keeps a second pass from redacting an earlier placeholder.
+    if value.to_ascii_lowercase().contains("[redacted:") {
         return true;
     }
-    // Only a `<NAME>` slot is a placeholder: a real password may contain `<` or `>`.
-    if ANGLE_PLACEHOLDER.is_match(value) {
+    if PLACEHOLDER_SHAPES.is_match(value) {
         return true;
     }
     if value.len() > 2 && value.starts_with('%') && value.ends_with('%') {
@@ -263,6 +271,7 @@ mod tests {
         for value in [
             "AKIAIOSFODNN7EXAMPLE",
             "sk-your_key_here",
+            "your-api-token",
             "<OPENAI_API_KEY>",
             "${OPENAI_API_KEY}",
             "{{ secrets.token }}",
@@ -273,5 +282,14 @@ mod tests {
         }
         assert!(!is_placeholder("aB3dE6gH9jK2mN5pQ8sT"));
         assert!(!is_placeholder("Example7pK9mT4zQ2"));
+        // Real passwords that only contain a placeholder marker.
+        for value in [
+            "Keep_your_data7Safe!",
+            "x9{{Kp2mT4!zQ",
+            "a${b7Kp2mT4zQ",
+            "EXAMPLEq7pK9mT4zQ2",
+        ] {
+            assert!(!is_placeholder(value), "{value} should be a secret");
+        }
     }
 }

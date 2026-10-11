@@ -17,8 +17,10 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::http::{
+    guardrail_events::record_guardrail_decisions,
     inference_guardrails::{
         batch_guard_context, guard_model_response, guard_prompt, model_route_key, redact_prompt,
+        redact_prompt_body,
     },
     state::{AppGatewayService, AppState},
 };
@@ -218,21 +220,40 @@ pub(crate) async fn redact_unsubmitted_batch(
         &job.provider_key,
         &job.upstream_model,
     );
-    let mut redacted = Vec::with_capacity(items.len());
+    // Only rewrite the items that held a secret, so a large batch with few
+    // findings costs few updates.
+    let mut redacted = Vec::new();
+    let mut decisions = Vec::new();
     for item in items {
         let mut body = item.request_body;
-        let request_id = format!("batch:{}:{}", job.batch_id, item.custom_id);
-        redact_prompt(state, &request_id, &route_key, &mut body).await;
+        let redactions = redact_prompt_body(state, &route_key, &mut body);
+        if redactions.is_empty() {
+            continue;
+        }
+        decisions.push((
+            format!("batch:{}:{}", job.batch_id, item.custom_id),
+            redactions,
+        ));
         redacted.push(ProviderBatchRequestItem {
             custom_id: item.custom_id,
             body,
         });
+    }
+    if redacted.is_empty() {
+        return Ok(());
     }
     state
         .service
         .store()
         .replace_batch_item_requests(job.batch_id, &redacted)
         .await?;
+    // Decision logging is best effort, so it must not hold up a cancellation.
+    let state = state.clone();
+    tokio::spawn(async move {
+        for (request_id, redactions) in decisions {
+            record_guardrail_decisions(&state, Some(&request_id), None, &redactions).await;
+        }
+    });
     Ok(())
 }
 

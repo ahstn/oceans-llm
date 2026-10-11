@@ -252,6 +252,28 @@ fn redacts_secret_assignments_and_bearer_tokens_by_default() {
 }
 
 #[test]
+fn secrets_containing_placeholder_markers_are_still_redacted() {
+    for (text, expected) in [
+        (
+            "PASSWORD=\"Keep_your_data7Safe!\"",
+            "PASSWORD=\"[REDACTED:secret-assignment]\"",
+        ),
+        (
+            "password: \"x9{{Kp2mT4!zQ\"",
+            "password: \"[REDACTED:secret-assignment-quoted]\"",
+        ),
+    ] {
+        assert_eq!(redact(text, &default_config()), expected);
+    }
+    for text in [
+        "api_key = \"your_api_key_here\"",
+        "token: \"{{ secrets.token }}\"",
+    ] {
+        assert_eq!(redact(text, &default_config()), text);
+    }
+}
+
+#[test]
 fn secret_assignment_ignores_references_counts_and_calls() {
     for text in [
         "password = getPassword()",
