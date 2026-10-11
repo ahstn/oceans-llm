@@ -22,6 +22,7 @@ use crate::token::AccessTokenSource;
 
 struct TestUserTokenResolver {
     tokens: HashMap<uuid::Uuid, String>,
+    expected_credential_id: Option<uuid::Uuid>,
 }
 
 #[async_trait]
@@ -30,7 +31,9 @@ impl ProviderUserTokenResolver for TestUserTokenResolver {
         &self,
         _provider_key: &str,
         user_id: uuid::Uuid,
+        expected_credential_id: Option<uuid::Uuid>,
     ) -> Result<String, ProviderError> {
+        assert_eq!(expected_credential_id, self.expected_credential_id);
         self.tokens
             .get(&user_id)
             .cloned()
@@ -76,6 +79,7 @@ fn dummy_context(upstream_model: &str) -> ProviderRequestContext {
         provider_key: "github_copilot".to_string(),
         upstream_model: upstream_model.to_string(),
         owner_user_id: None,
+        expected_provider_credential_id: None,
         extra_headers: Map::new(),
         extra_body: Map::new(),
         request_headers: BTreeMap::new(),
@@ -115,6 +119,7 @@ async fn github_user_tokens_are_selected_by_trusted_user_id() {
             (user_a, "token-a".to_string()),
             (user_b, "token-b".to_string()),
         ]),
+        expected_credential_id: None,
     });
     let provider = CopilotProvider::new_with_user_token_resolver(
         CopilotProviderConfig::new(
@@ -175,10 +180,37 @@ async fn github_user_tokens_are_selected_by_trusted_user_id() {
 }
 
 #[tokio::test]
+async fn github_user_token_resolution_receives_selected_credential_generation() {
+    let user_id = uuid::Uuid::new_v4();
+    let credential_id = uuid::Uuid::new_v4();
+    let resolver = Arc::new(TestUserTokenResolver {
+        tokens: HashMap::from([(user_id, "resolved-user-token".to_string())]),
+        expected_credential_id: Some(credential_id),
+    });
+    let provider = CopilotProvider::new_with_user_token_resolver(
+        CopilotProviderConfig::new(
+            "github-copilot-user".to_string(),
+            CopilotAuthConfig::GitHubUser,
+        ),
+        resolver,
+    )
+    .expect("user-token provider");
+    let mut context = dummy_context("gpt-5.6-luna");
+    context.owner_user_id = Some(user_id);
+    context.expected_provider_credential_id = Some(credential_id);
+
+    assert_eq!(
+        provider.token(&context).await.expect("user token"),
+        "resolved-user-token"
+    );
+}
+
+#[tokio::test]
 async fn resolved_user_token_replaces_configured_authorization_headers() {
     let user_id = uuid::Uuid::new_v4();
     let resolver = Arc::new(TestUserTokenResolver {
         tokens: HashMap::from([(user_id, "resolved-user-token".to_string())]),
+        expected_credential_id: None,
     });
     let mut config = CopilotProviderConfig::new(
         "github-copilot-user".to_string(),
@@ -233,6 +265,7 @@ fn github_user_auth_requires_a_user_token_resolver() {
 fn shared_auth_rejects_a_user_token_resolver() {
     let resolver = Arc::new(TestUserTokenResolver {
         tokens: HashMap::new(),
+        expected_credential_id: None,
     });
     let error = CopilotProvider::new_with_user_token_resolver(
         CopilotProviderConfig::new(

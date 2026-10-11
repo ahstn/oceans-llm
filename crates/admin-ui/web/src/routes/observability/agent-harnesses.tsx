@@ -244,19 +244,17 @@ function HarnessRankings({ leaders }: { leaders: HarnessUsageLeaderView[] }) {
         {leaders.map((leader, index) => (
           <article
             key={leader.agent_harness_key}
-            className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+            className="border-border bg-surface-muted rounded-lg border p-4"
           >
             <div className="flex items-start gap-3">
-              <span className="text-xs font-semibold text-[var(--color-text-soft)]">
-                Rank {index + 1}
-              </span>
+              <span className="text-muted-foreground text-xs font-semibold">Rank {index + 1}</span>
               <div className="min-w-0">
-                <p className="font-semibold text-[var(--color-text)]">
+                <p className="text-foreground font-semibold">
                   <AgentHarnessLabel harnessKey={leader.agent_harness_key}>
                     {leader.agent_harness_label}
                   </AgentHarnessLabel>
                 </p>
-                <p className="truncate font-mono text-xs text-[var(--color-text-soft)]">
+                <p className="text-muted-foreground truncate font-mono text-xs">
                   {leader.agent_harness_key}
                 </p>
               </div>
@@ -264,7 +262,7 @@ function HarnessRankings({ leaders }: { leaders: HarnessUsageLeaderView[] }) {
 
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <div>
-                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                   Requests
                 </dt>
                 <dd className="mt-1 tabular-nums">
@@ -272,19 +270,19 @@ function HarnessRankings({ leaders }: { leaders: HarnessUsageLeaderView[] }) {
                 </dd>
               </div>
               <div>
-                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                   Input tokens
                 </dt>
                 <dd className="mt-1 tabular-nums">{formatTokenCount(leader.prompt_tokens)}</dd>
               </div>
               <div>
-                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                   Output tokens
                 </dt>
                 <dd className="mt-1 tabular-nums">{formatTokenCount(leader.completion_tokens)}</dd>
               </div>
               <div>
-                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                   Total tokens
                 </dt>
                 <dd className="mt-1 tabular-nums">{formatTokenCount(leader.total_tokens)}</dd>
@@ -294,37 +292,35 @@ function HarnessRankings({ leaders }: { leaders: HarnessUsageLeaderView[] }) {
         ))}
       </div>
 
-      <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+      <div className="border-border hidden overflow-hidden rounded-md border md:block">
         <Table data-testid="harness-usage-table" className="min-w-[64rem] text-left">
-          <TableHeader className="bg-[color:var(--color-surface-muted)]">
+          <TableHeader className="bg-surface-muted">
             <TableRow>
-              <TableHead className="w-16 px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground w-16 px-3 py-2 font-semibold">
                 Rank
               </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                 Harness
               </TableHead>
-              <TableHead className="px-3 py-2 text-right font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
                 Requests
               </TableHead>
-              <TableHead className="px-3 py-2 text-right font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
                 Input tokens
               </TableHead>
-              <TableHead className="px-3 py-2 text-right font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
                 Output tokens
               </TableHead>
-              <TableHead className="px-3 py-2 text-right font-semibold text-[var(--color-text-soft)]">
+              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
                 Total tokens
               </TableHead>
-              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                Key
-              </TableHead>
+              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Key</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {leaders.map((leader, index) => (
               <TableRow key={leader.agent_harness_key}>
-                <TableCell className="px-3 py-3 font-medium text-[var(--color-text-soft)]">
+                <TableCell className="text-muted-foreground px-3 py-3 font-medium">
                   {index + 1}
                 </TableCell>
                 <TableCell className="px-3 py-3 font-medium">
@@ -344,7 +340,7 @@ function HarnessRankings({ leaders }: { leaders: HarnessUsageLeaderView[] }) {
                 <TableCell className="px-3 py-3 text-right tabular-nums">
                   {formatTokenCount(leader.total_tokens)}
                 </TableCell>
-                <TableCell className="px-3 py-3 font-mono text-xs text-[var(--color-text-muted)]">
+                <TableCell className="text-subtle-foreground px-3 py-3 font-mono text-xs">
                   {leader.agent_harness_key}
                 </TableCell>
               </TableRow>

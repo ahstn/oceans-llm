@@ -11,7 +11,7 @@ use crate::{
     },
 };
 
-const CODEX_WIRE_API_RESPONSES: &str = "responses";
+pub(crate) const CODEX_WIRE_API_RESPONSES: &str = "responses";
 const CODEX_CONFIG_DOCS_URL: &str = "https://developers.openai.com/codex/config-reference";
 
 #[derive(Debug, Default, Clone, Copy)]

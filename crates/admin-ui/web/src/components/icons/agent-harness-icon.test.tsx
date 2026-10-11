@@ -36,7 +36,7 @@ describe('AgentHarnessLabel', () => {
     expect(icon).toBeInTheDocument()
     expect(icon).toHaveStyle({ height: '16px', width: '16px' })
     expect(icon?.querySelector('linearGradient')).not.toBeInTheDocument()
-    expect(path).toHaveAttribute('fill', '#fff')
+    expect(path).toHaveAttribute('fill', 'var(--color-white)')
   })
 
   it('keeps unknown harness labels text-only', () => {

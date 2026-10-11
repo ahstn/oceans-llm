@@ -465,18 +465,14 @@ export function TeamsPage() {
                   return (
                     <article
                       key={team.id}
-                      className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+                      className="border-border bg-surface-muted rounded-lg border p-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-3">
                           <GeneratedAvatar kind="team" name={team.name} size={40} />
                           <div className="min-w-0">
-                            <p className="truncate font-semibold text-[var(--color-text)]">
-                              {team.name}
-                            </p>
-                            <p className="truncate text-xs text-[var(--color-text-soft)]">
-                              {team.key}
-                            </p>
+                            <p className="text-foreground truncate font-semibold">{team.name}</p>
+                            <p className="text-muted-foreground truncate text-xs">{team.key}</p>
                           </div>
                         </div>
                         <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
@@ -490,16 +486,16 @@ export function TeamsPage() {
 
                       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                         <div>
-                          <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                             Members
                           </dt>
-                          <dd className="text-[var(--color-text-muted)]">{team.member_count}</dd>
+                          <dd className="text-subtle-foreground">{team.member_count}</dd>
                         </div>
                         <div>
-                          <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                             Admins
                           </dt>
-                          <dd className="text-[var(--color-text-muted)]">
+                          <dd className="text-subtle-foreground">
                             {team.admins.length > 0 ? team.admins.length : 'None'}
                           </dd>
                         </div>
@@ -509,9 +505,7 @@ export function TeamsPage() {
                         {team.admins.length > 0 ? (
                           team.admins.map((admin) => <UserEntityLink key={admin.id} user={admin} />)
                         ) : (
-                          <span className="text-xs text-[var(--color-text-soft)]">
-                            No admins assigned
-                          </span>
+                          <span className="text-muted-foreground text-xs">No admins assigned</span>
                         )}
                       </div>
 
@@ -562,23 +556,23 @@ export function TeamsPage() {
                 })}
               </div>
 
-              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+              <div className="border-border hidden overflow-hidden rounded-md border md:block">
                 <Table className="text-left">
-                  <TableHeader className="bg-[color:var(--color-surface-muted)]">
+                  <TableHeader className="bg-surface-muted">
                     <TableRow>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Team
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Admins
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Members
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Status
                       </TableHead>
-                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                         Actions
                       </TableHead>
                     </TableRow>
@@ -595,8 +589,8 @@ export function TeamsPage() {
                               <div className="flex min-w-0 items-center gap-3">
                                 <GeneratedAvatar kind="team" name={team.name} size={32} />
                                 <div className="flex min-w-0 flex-col gap-1">
-                                  <p className="truncate text-[var(--color-text)]">{team.name}</p>
-                                  <p className="truncate text-xs text-[var(--color-text-soft)]">
+                                  <p className="text-foreground truncate">{team.name}</p>
+                                  <p className="text-muted-foreground truncate text-xs">
                                     {team.key}
                                   </p>
                                   <EntityTagBadges tags={team.tags} />
@@ -611,9 +605,7 @@ export function TeamsPage() {
                                   ))}
                                 </div>
                               ) : (
-                                <span className="text-xs text-[var(--color-text-soft)]">
-                                  No admins
-                                </span>
+                                <span className="text-muted-foreground text-xs">No admins</span>
                               )}
                             </TableCell>
                             <TableCell className="px-3 py-3">
@@ -662,7 +654,7 @@ export function TeamsPage() {
                               <TableCell
                                 id={membersRegionId}
                                 colSpan={5}
-                                className="bg-[color:var(--color-surface-muted)] px-3 py-4 whitespace-normal"
+                                className="bg-surface-muted px-3 py-4 whitespace-normal"
                               >
                                 <TeamMemberRoster
                                   teamId={team.id}
@@ -767,12 +759,10 @@ export function TeamsPage() {
 
           {membersTeam ? (
             <div className="flex flex-col gap-6">
-              <section className="flex flex-col gap-4 rounded-lg border border-[color:var(--color-border)] p-5">
+              <section className="border-border flex flex-col gap-4 rounded-lg border p-5">
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-base font-semibold text-[var(--color-text)]">
-                    Existing users
-                  </h3>
-                  <p className="text-sm text-[var(--color-text-muted)]">
+                  <h3 className="text-foreground text-base font-semibold">Existing users</h3>
+                  <p className="text-subtle-foreground text-sm">
                     Only teamless users can be newly added. Users already on another team remain
                     unavailable in this flow.
                   </p>
@@ -802,12 +792,10 @@ export function TeamsPage() {
                 </form>
               </section>
 
-              <section className="flex flex-col gap-4 rounded-lg border border-[color:var(--color-border)] p-5">
+              <section className="border-border flex flex-col gap-4 rounded-lg border p-5">
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-base font-semibold text-[var(--color-text)]">
-                    Invite a new member
-                  </h3>
-                  <p className="text-sm text-[var(--color-text-muted)]">
+                  <h3 className="text-foreground text-base font-semibold">Invite a new member</h3>
+                  <p className="text-subtle-foreground text-sm">
                     This uses the same onboarding flow as the users page and preassigns the new user
                     to {membersTeam.name} as a member.
                   </p>
@@ -1215,7 +1203,7 @@ function UserEntityLink({
         <GeneratedAvatar kind="user" name={user.name || user.email} size={compact ? 20 : 24} />
         <span className="truncate">{user.name}</span>
         {!compact && user.status ? (
-          <span className="text-xs text-[var(--color-text-soft)]">{user.status}</span>
+          <span className="text-muted-foreground text-xs">{user.status}</span>
         ) : null}
       </Link>
     </Button>
@@ -1235,7 +1223,7 @@ function TeamMemberRoster({
 }) {
   if (members.length === 0) {
     return (
-      <div className="rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-bg)] p-4 text-sm text-[var(--color-text-soft)]">
+      <div className="border-border bg-background text-muted-foreground rounded-md border p-4 text-sm">
         No members assigned yet.
       </div>
     )
@@ -1244,19 +1232,19 @@ function TeamMemberRoster({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-[var(--color-text)]">Members</h3>
-        <span className="text-xs text-[var(--color-text-soft)]">{members.length} total</span>
+        <h3 className="text-foreground text-sm font-semibold">Members</h3>
+        <span className="text-muted-foreground text-xs">{members.length} total</span>
       </div>
       <div className="grid gap-2">
         {members.map((member) => (
           <div
             key={member.id}
-            className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-bg)] px-3 py-2"
+            className="border-border bg-background flex flex-wrap items-center gap-2 rounded-md border px-3 py-2"
           >
             <GeneratedAvatar kind="user" name={member.name || member.email} size={32} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-[var(--color-text)]">{member.name}</p>
-              <p className="truncate text-xs text-[var(--color-text-soft)]">{member.email}</p>
+              <p className="text-foreground truncate text-sm font-medium">{member.name}</p>
+              <p className="text-muted-foreground truncate text-xs">{member.email}</p>
             </div>
             <Badge variant={member.team_role === 'owner' ? 'warning' : 'default'}>
               {member.team_role ?? 'member'}
@@ -1280,7 +1268,7 @@ function TeamMemberRoster({
               Remove
             </Button>
             {member.team_role === 'owner' ? (
-              <p className="basis-full text-xs text-[var(--color-text-soft)]">
+              <p className="text-muted-foreground basis-full text-xs">
                 Owner memberships cannot be removed or transferred in this slice.
               </p>
             ) : null}
@@ -1343,7 +1331,7 @@ function UserMultiSelectField({
                   ? placeholder
                   : emptyTitle}
             </span>
-            <span className="text-xs text-[var(--color-text-soft)]">▼</span>
+            <span className="text-muted-foreground text-xs">▼</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent className="p-0">
@@ -1363,13 +1351,13 @@ function UserMultiSelectField({
                       }
                     }}
                   >
-                    <span className="w-4 text-[var(--color-text-soft)]">
+                    <span className="text-muted-foreground w-4">
                       {selectedUserIds.includes(user.id) ? '✓' : ''}
                     </span>
                     <GeneratedAvatar kind="user" name={user.name || user.email} size={28} />
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                       <span className="truncate">{user.name}</span>
-                      <span className="truncate text-xs text-[var(--color-text-soft)]">
+                      <span className="text-muted-foreground truncate text-xs">
                         {user.email}
                         {reason ? ` · ${reason}` : ''}
                       </span>

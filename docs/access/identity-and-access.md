@@ -69,7 +69,7 @@ The gateway selects one page permission group for each browser session:
 
 The gateway resolves the effective page and action sets from config. Team admins inherit all user grants. Platform admins inherit all team-admin and user grants. A repeated grant is safe and appears once. The session response includes the selected group, effective pages, effective actions, and default page. Membership changes affect the next session response.
 
-Page permissions control admin UI navigation, direct routes, and landing pages. They do not authorize API calls. API-key action permissions control both the API operation and its UI control. Each allowed action still checks the active session, ownership, team scope, and resource state. See the [`permissions` config reference](../configuration/configuration-reference.md#permissions) for syntax and validation.
+Page permissions control admin UI navigation and direct routes. Signed-in users with any page land on their personal `/admin/profile` page, which every active user can open. Page permissions do not authorize API calls. API-key action permissions control both the API operation and its UI control. Each allowed action still checks the active session, ownership, team scope, and resource state. See the [`permissions` config reference](../configuration/configuration-reference.md#permissions) for syntax and validation.
 
 The default UI policy is:
 

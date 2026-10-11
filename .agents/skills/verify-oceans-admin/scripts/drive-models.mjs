@@ -14,6 +14,7 @@ const evidenceDir = requiredEnv('OCEANS_VERIFY_EVIDENCE_DIR')
 requiredEnv('OCEANS_VERIFY_GATEWAY_VERSION') // recorded in the proof envelope
 const email = requiredEnv('OCEANS_VERIFY_ADMIN_EMAIL')
 const password = requiredEnv('OCEANS_VERIFY_ADMIN_PASSWORD')
+const targetModelId = 'gpt-6-astra'
 const actions = []
 const proof = createProofRecorder({ evidenceDir, file: 'models-proof.json', featureIds: ['models'] })
 
@@ -72,7 +73,9 @@ try {
   await page.getByRole('heading', { name: 'Models', exact: true }).waitFor()
   await page.getByRole('heading', { name: 'Model list' }).waitFor()
   await page.getByTestId('models-desktop-table').waitFor()
-  await page.getByTestId('models-desktop-cell-gpt-6-astra').waitFor()
+  await page.getByTestId(`models-desktop-cell-${targetModelId}`).waitFor()
+  await page.getByText(/^Benchmark scores by Artificial Analysis, retrieved via OpenRouter\.$/).waitFor()
+  proof.pass('benchmark-attribution-visible')
   const showingText = (await page.getByText(/^Showing \d+ of \d+ models$/).textContent())?.trim()
   if (!showingText) throw new Error('The Models page did not report a visible model count.')
   const match = /^Showing (\d+) of (\d+) models$/.exec(showingText)
@@ -97,19 +100,52 @@ try {
     throw new Error(`UI total model count ${totalCount} did not match admin API count ${apiCount}.`)
   }
   proof.pass('total-count-matches-admin-api', { observed: totalCount, expected: apiCount })
+  const apiModel = adminModels.data.items.find((model) => model.id === targetModelId)
+  if (!apiModel) throw new Error(`The admin models API omitted ${targetModelId}.`)
 
-  const modelCell = page.getByTestId('models-desktop-cell-gpt-6-astra')
+  const modelCell = page.getByTestId(`models-desktop-cell-${targetModelId}`)
   const modelRow = modelCell.locator('xpath=ancestor::tr')
+  const intelligenceHeader = page.getByRole('columnheader', { name: /^Intelligence Index/ })
+  await intelligenceHeader.waitFor()
+  const intelligenceColumn = await intelligenceHeader.evaluate((header) =>
+    Array.from(header.parentElement.children).indexOf(header),
+  )
+  const intelligenceScore = apiModel.benchmark_scores.find(
+    (score) => score.metric_key === 'artificial_analysis_intelligence_index',
+  )
+  const intelligenceValue = intelligenceScore
+    ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(intelligenceScore.value)
+    : '—'
+  await modelRow.getByRole('cell').nth(intelligenceColumn).getByText(intelligenceValue, { exact: true }).waitFor()
+  actions.push({ action: 'inspect always-visible Intelligence Index', result: intelligenceValue })
+  proof.pass('intelligence-index-matches-admin-api', { observed: intelligenceValue })
   await modelRow.getByRole('button', { name: 'Info' }).click()
   const infoDialog = page.getByRole('dialog', { name: 'Model info' })
-  await infoDialog.getByText('gpt-6-astra', { exact: true }).first().waitFor()
+  await infoDialog.getByText(targetModelId, { exact: true }).first().waitFor()
   const infoSections = infoDialog.getByRole('navigation', { name: 'Model info sections' })
-  for (const name of ['Overview', 'Routing', 'Economics', 'Access']) {
+  for (const name of ['Overview', 'Routing', 'Economics', 'Benchmarks', 'Access']) {
     await infoSections.getByRole('button', { name, exact: true }).click()
     await infoDialog.getByRole('heading', { name, exact: true }).waitFor()
+    if (name === 'Benchmarks') {
+      if (apiModel.benchmark_scores.length === 0) {
+        await infoDialog.getByText('No benchmark data is available for this model.').waitFor()
+      } else {
+        for (const score of apiModel.benchmark_scores) {
+          await infoDialog.getByText(score.label, { exact: true }).waitFor()
+          const sourceLink = infoDialog.locator(
+            `a[href="${score.source_url}"]`,
+            { hasText: `${score.source_model_id} on OpenRouter` },
+          )
+          await sourceLink.waitFor()
+        }
+        await infoDialog.getByRole('link', { name: 'Artificial Analysis', exact: true }).waitFor()
+      }
+      await capture(page, '03-model-benchmarks')
+    }
   }
-  actions.push({ action: 'inspect gpt-6-astra model info', result: 'All platform-admin sections visible' })
-  proof.pass('model-info-sections-visible', { observed: 4 })
+  actions.push({ action: `inspect ${targetModelId} model info`, result: 'All platform-admin sections visible' })
+  proof.pass('model-info-sections-visible', { observed: 5 })
+  proof.pass('benchmarks-match-admin-api', { observed: apiModel.benchmark_scores.length })
   await capture(page, '03-model-info')
   await page.keyboard.press('Escape')
   await infoDialog.waitFor({ state: 'hidden' })
@@ -120,32 +156,34 @@ try {
   await page.getByRole('checkbox', { name: /^Capabilities/ }).check()
   await page.getByRole('columnheader', { name: 'Capabilities', exact: true }).waitFor()
   await page.keyboard.press('Escape')
-  actions.push({ action: 'enable optional model columns', result: 'Context window and Capabilities visible' })
+  await intelligenceHeader.waitFor()
+  actions.push({ action: 'enable optional model columns', result: 'Context window and Capabilities visible; Intelligence Index remains visible' })
   proof.pass('optional-columns-render')
   await capture(page, '04-model-columns')
 
   const configRow = page
-    .getByTestId('models-desktop-cell-gpt-6-astra')
+    .getByTestId(`models-desktop-cell-${targetModelId}`)
     .locator('xpath=ancestor::tr')
   await configRow
-    .getByRole('button', { name: 'Generate client config for gpt-6-astra', exact: true })
+    .getByRole('button', { name: `Generate client config for ${targetModelId}`, exact: true })
     .click()
   const configDialog = page.getByRole('dialog', { name: 'Client config' })
   await configDialog.waitFor()
-  await configDialog.getByText(/^gpt-6-astra via /).waitFor()
+  await configDialog.getByText(`${targetModelId} via`, { exact: false }).waitFor()
   const clientConfigs = await verifyClientConfigs(page, configDialog)
-  actions.push({ action: 'generate gpt-6-astra client config', result: 'Client config dialog visible' })
+  actions.push({ action: `generate ${targetModelId} client config`, result: 'Client config dialog visible' })
   proof.pass('client-configs-match-api', { observed: clientConfigs.length })
   await capture(page, '05-model-client-config')
 
   await proof.write({ details: {
     entryUrl: `${baseURL}/admin/api-keys`,
     finalUrl: page.url(),
-    modelId: 'gpt-6-astra',
+    modelId: targetModelId,
     displayedCount,
     renderedCount,
     totalCount,
     apiCount,
+    benchmarkScoreCount: apiModel.benchmark_scores.length,
     clientConfigs,
     actions,
   } })
@@ -162,15 +200,15 @@ try {
 }
 
 async function verifyClientConfigs(page, dialog) {
-  const response = await page.evaluate(async () => {
+  const response = await page.evaluate(async (modelId) => {
     const result = await fetch('/api/v1/admin/models/client-configs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model_keys: ['gpt-6-astra'] }),
+      body: JSON.stringify({ model_keys: [modelId] }),
     })
     if (!result.ok) throw new Error(`Client configuration API returned ${result.status}`)
     return result.json()
-  })
+  }, targetModelId)
   const configs = response.data.client_configurations
   if (configs.length === 0) throw new Error('Client configuration API returned no configurations.')
   const choices = dialog.getByRole('radiogroup', { name: 'Client config', exact: true })

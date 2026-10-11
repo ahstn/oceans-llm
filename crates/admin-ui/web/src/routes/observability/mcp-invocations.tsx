@@ -301,7 +301,7 @@ export function McpInvocationsPage() {
             </Button>
           </div>
 
-          <div className="text-sm text-[var(--color-text-soft)]">
+          <div className="text-muted-foreground text-sm">
             {invocationPage.total} MCP invocation records loaded from gateway observability APIs.
           </div>
 
@@ -316,7 +316,7 @@ export function McpInvocationsPage() {
               </EmptyHeader>
             </Empty>
           ) : (
-            <div className="overflow-x-auto rounded-md border border-[color:var(--color-border)]">
+            <div className="border-border overflow-x-auto rounded-md border">
               <Table data-testid="mcp-invocations-table" className="min-w-[78rem]">
                 <TableHeader>
                   <TableRow>
@@ -337,7 +337,7 @@ export function McpInvocationsPage() {
                       <TableCell>
                         <div className="flex flex-col gap-1">
                           <span className="font-mono text-xs">{item.request_id ?? 'n/a'}</span>
-                          <span className="font-mono text-xs text-[var(--color-text-soft)]">
+                          <span className="text-muted-foreground font-mono text-xs">
                             {item.mcp_tool_invocation_id}
                           </span>
                         </div>
@@ -353,9 +353,7 @@ export function McpInvocationsPage() {
                             {formatStatus(item.status)}
                           </Badge>
                           {item.error_code ? (
-                            <span className="text-xs text-[var(--color-text-soft)]">
-                              {item.error_code}
-                            </span>
+                            <span className="text-muted-foreground text-xs">{item.error_code}</span>
                           ) : null}
                         </div>
                       </TableCell>
@@ -425,7 +423,7 @@ function InvocationDetail({ detail }: { detail: McpInvocationDetailView }) {
 
   return (
     <div className="grid gap-4">
-      <div className="grid gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="border-border bg-surface-muted grid gap-3 rounded-md border p-4 md:grid-cols-2 lg:grid-cols-3">
         <DetailRow label="Invocation ID" value={invocation.mcp_tool_invocation_id} mono />
         <DetailRow label="Request ID" value={invocation.request_id ?? 'n/a'} mono />
         <DetailRow label="Owner" value={<OwnerLabel item={invocation} />} />
@@ -509,14 +507,10 @@ function DetailRow({
 }) {
   return (
     <div>
-      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
         {label}
       </dt>
-      <dd
-        className={
-          mono ? 'font-mono text-sm text-[var(--color-text)]' : 'text-sm text-[var(--color-text)]'
-        }
-      >
+      <dd className={mono ? 'text-foreground font-mono text-sm' : 'text-foreground text-sm'}>
         {value}
       </dd>
     </div>
@@ -563,7 +557,7 @@ function PayloadCard({
       </CardHeader>
       <CardContent>
         {payload !== null && payload !== undefined ? (
-          <pre className="max-h-[360px] overflow-auto text-xs leading-6 text-[var(--color-text-muted)]">
+          <pre className="text-subtle-foreground max-h-[360px] overflow-auto text-xs leading-6">
             {JSON.stringify(payload, null, 2)}
           </pre>
         ) : (
@@ -587,7 +581,7 @@ function OwnerLabel({ item }: { item: McpInvocationView }) {
       <span className="font-medium">
         {item.owner_kind}: {item.team_id ?? item.user_id ?? item.api_key_id ?? 'n/a'}
       </span>
-      <span className="font-mono text-xs text-[var(--color-text-soft)]">
+      <span className="text-muted-foreground font-mono text-xs">
         api:{item.api_key_id ?? 'n/a'} user:{item.user_id ?? 'n/a'} team:{item.team_id ?? 'n/a'}
       </span>
     </div>

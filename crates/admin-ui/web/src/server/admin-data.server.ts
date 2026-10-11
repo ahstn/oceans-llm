@@ -25,6 +25,7 @@ import type {
   DeactivateBudgetResultView,
   DeactivateBudgetInput,
   IdentityActionResult,
+  MyProfileView,
   IdentityDirectoryTeamsPayload,
   IdentityDirectoryUsersPayload,
   IdentityTeamsPayload,
@@ -180,6 +181,8 @@ export async function updateApiKey(
 export async function listModels(params?: {
   page?: number
   page_size?: number
+  include_aliases?: boolean
+  q?: string
 }): Promise<ApiEnvelope<ModelPageView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
@@ -188,6 +191,8 @@ export async function listModels(params?: {
         query: {
           page: params?.page,
           page_size: params?.page_size,
+          include_aliases: params?.include_aliases,
+          q: params?.q,
         },
       },
     }),
@@ -227,6 +232,11 @@ export async function getSpendReport(params?: {
       },
     }),
   )
+}
+
+export async function getMyProfile(): Promise<ApiEnvelope<MyProfileView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/me/profile'))
 }
 
 export async function getUsageLeaderboard(params?: {

@@ -61,8 +61,69 @@ async fn model_metadata_requires_authentication_and_matches_visible_models() {
     assert!(metadata.data[0].routes[0].pricing.is_none());
     assert_eq!(
         serde_json::to_value(models).unwrap(),
-        json!({"object":"list","data":[{
-            "id":"fast","object":"model","created":0,"owned_by":"gateway"
-        }]})
+        json!({
+            "object": "list",
+            "has_more": false,
+            "first_id": "fast",
+            "last_id": "fast",
+            "data": [{
+                "id": "fast",
+                "object": "model",
+                "type": "model",
+                "created": 0,
+                "created_at": "1970-01-01T00:00:00Z",
+                "owned_by": "oceans-llm",
+                "display_name": "fast",
+                "name": "fast",
+                "context_length": null,
+                "max_input_tokens": null,
+                "max_tokens": null,
+                "architecture": {"input_modalities": null, "output_modalities": null},
+                "capabilities": {
+                    "batch": {"supported": false},
+                    "citations": {"supported": false},
+                    "code_execution": {"supported": false},
+                    "context_management": {
+                        "supported": false,
+                        "clear_thinking_20251015": null,
+                        "clear_tool_uses_20250919": null,
+                        "compact_20260112": null
+                    },
+                    "effort": {
+                        "supported": false,
+                        "low": {"supported": false},
+                        "medium": {"supported": false},
+                        "high": {"supported": false},
+                        "xhigh": {"supported": false},
+                        "max": {"supported": false}
+                    },
+                    "image_input": {"supported": false},
+                    "pdf_input": {"supported": false},
+                    "structured_outputs": {"supported": false},
+                    "thinking": {
+                        "supported": false,
+                        "types": {"adaptive": {"supported": false}, "enabled": {"supported": false}}
+                    }
+                },
+                "supported_endpoint_types": ["openai", "openai-response"],
+                "client_hints": {
+                    "api_formats": ["openai-chat-completions", "openai-responses", "anthropic-messages"],
+                    "preferred_api_format": "openai-chat-completions",
+                    "harnesses": {
+                        "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                        "pi": {
+                            "api": "openai-completions",
+                            "compat": {
+                                "supportsDeveloperRole": true,
+                                "supportsReasoningEffort": true,
+                                "supportsUsageInStreaming": true,
+                                "maxTokensField": "max_completion_tokens"
+                            }
+                        },
+                        "codex": {"wire_api": "responses"}
+                    }
+                }
+            }]
+        })
     );
 }

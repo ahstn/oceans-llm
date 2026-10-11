@@ -2,10 +2,10 @@ use serde_json::Value;
 use toml::Value as TomlValue;
 
 use crate::{
-    ClaudeCodeConfigTemplate, ClientConfig, ClientConfigInput, ClientConfigInputSet,
+    ApiFormat, ClaudeCodeConfigTemplate, ClientConfig, ClientConfigInput, ClientConfigInputSet,
     ClientConfigTemplate, ClientModelCapabilities, CodexConfigTemplate, CodexReasoningEffort,
-    OpenCodeConfigTemplate, PiConfigTemplate, ThinkingPolicy, infer_thinking_policy,
-    render_default_configs, render_default_configs_for_models,
+    OpenCodeConfigTemplate, PiConfigTemplate, ReasoningLevel, ThinkingPolicy, client_hints,
+    infer_thinking_policy, render_default_configs, render_default_configs_for_models,
 };
 
 fn input(policy: Option<ThinkingPolicy>) -> ClientConfigInput {
@@ -487,6 +487,8 @@ fn pi_fable_5_1_config_matches_expected_shape() {
         },
         thinking_policy: Some(ThinkingPolicy::AnthropicSafeEffort),
         codex_reasoning_effort: None,
+        native_api_format: None,
+        max_reasoning_effort: None,
     };
 
     let rendered = PiConfigTemplate.render(&input);
@@ -1209,4 +1211,118 @@ fn multi_model_configs_explain_codex_single_model_requirement() {
             .iter()
             .any(|note| note.contains("Codex config snippets require a single"))
     }));
+}
+
+#[test]
+fn client_hints_mirror_rendered_templates_without_endpoints() {
+    let hints = client_hints(&input(Some(ThinkingPolicy::AnthropicSafeEffort))).expect("hints");
+    let value = serde_json::to_value(&hints).expect("json");
+
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "api_formats": ["openai-chat-completions", "openai-responses", "anthropic-messages"],
+            "preferred_api_format": "anthropic-messages",
+            "harnesses": {
+                "opencode": {
+                    "npm": "@ai-sdk/anthropic",
+                    "variants": {
+                        "high": {"reasoningEffort": "high"},
+                        "max": {"reasoningEffort": "xhigh"}
+                    }
+                },
+                "pi": {
+                    "api": "anthropic-messages",
+                    "compat": {"forceAdaptiveThinking": true},
+                    "thinkingLevelMap": {
+                        "off": null, "minimal": null, "low": "low", "medium": "medium",
+                        "high": "high", "xhigh": "xhigh", "max": "max"
+                    }
+                },
+                "claude_code": {"model_env_var": "ANTHROPIC_DEFAULT_SONNET_MODEL"},
+                "codex": {"wire_api": "responses"}
+            }
+        })
+    );
+    let text = value.to_string();
+    assert!(!text.contains("baseURL") && !text.contains("baseUrl") && !text.contains("apiKey"));
+}
+
+#[test]
+fn client_hints_are_absent_for_models_without_chat_shaped_apis() {
+    let mut input = non_anthropic_input();
+    input.capabilities.chat_completions = false;
+    assert!(client_hints(&input).is_none());
+}
+
+#[test]
+fn native_api_format_overrides_model_name_matching() {
+    let mut aliased = non_anthropic_input();
+    aliased.native_api_format = Some(ApiFormat::AnthropicMessages);
+    let hints = client_hints(&aliased).expect("hints");
+    assert_eq!(hints.preferred_api_format, ApiFormat::AnthropicMessages);
+    assert_eq!(hints.harnesses.opencode.npm, "@ai-sdk/anthropic");
+    assert!(hints.harnesses.claude_code.is_some());
+
+    let mut named_claude = input(None);
+    named_claude.native_api_format = Some(ApiFormat::OpenAiChatCompletions);
+    let hints = client_hints(&named_claude).expect("hints");
+    assert_eq!(hints.preferred_api_format, ApiFormat::OpenAiChatCompletions);
+    assert_eq!(hints.harnesses.pi.api, "openai-completions");
+    assert!(hints.harnesses.claude_code.is_none());
+}
+
+#[test]
+fn effort_presets_respect_the_gateway_ceiling() {
+    let mut capped = input(Some(ThinkingPolicy::AnthropicSafeEffort));
+    capped.max_reasoning_effort = Some(ReasoningLevel::High);
+    let hints = client_hints(&capped).expect("hints");
+
+    // OpenCode's `max` preset sends `xhigh`, which the gateway would reject.
+    assert_eq!(
+        hints.harnesses.opencode.variants,
+        Some(serde_json::json!({"high": {"reasoningEffort": "high"}}))
+    );
+    assert_eq!(
+        hints.harnesses.pi.thinking_level_map,
+        Some(serde_json::json!({
+            "off": null, "minimal": null, "low": "low", "medium": "medium",
+            "high": "high", "xhigh": "high", "max": "high"
+        }))
+    );
+
+    let rendered = OpenCodeConfigTemplate.render(&capped);
+    let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+    assert_eq!(
+        value["provider"]["oceans-llm"]["models"]["claude-sonnet"]["variants"],
+        serde_json::json!({"high": {"reasoningEffort": "high"}})
+    );
+
+    capped.max_reasoning_effort = Some(ReasoningLevel::Low);
+    let hints = client_hints(&capped).expect("hints");
+    assert_eq!(hints.harnesses.opencode.variants, None);
+
+    // Claude rejects `minimal`, so a ceiling below `low` hides every level rather than
+    // clamping Pi onto an effort the Anthropic adapters refuse.
+    capped.max_reasoning_effort = Some(ReasoningLevel::Minimal);
+    let hints = client_hints(&capped).expect("hints");
+    assert_eq!(
+        hints.harnesses.pi.thinking_level_map,
+        Some(serde_json::json!({
+            "off": null, "minimal": null, "low": null, "medium": null,
+            "high": null, "xhigh": null, "max": null
+        }))
+    );
+}
+
+#[test]
+fn responses_native_routes_prefer_responses_when_chat_is_also_served() {
+    let mut input = non_anthropic_input();
+    input.capabilities.responses = true;
+    input.native_api_format = Some(ApiFormat::OpenAiResponses);
+    let hints = client_hints(&input).expect("hints");
+    assert_eq!(hints.preferred_api_format, ApiFormat::OpenAiResponses);
+    assert_eq!(hints.harnesses.opencode.npm, "@ai-sdk/openai");
+    assert_eq!(hints.harnesses.pi.api, "openai-responses");
+    assert_eq!(hints.harnesses.pi.compat, None);
 }

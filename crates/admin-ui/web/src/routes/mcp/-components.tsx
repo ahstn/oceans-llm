@@ -72,10 +72,10 @@ export function ServerOverviewPanel({
       ) : null}
 
       <div className="flex min-w-0 flex-col gap-2">
-        <div className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+        <div className="text-subtle-foreground text-xs font-medium tracking-wide uppercase">
           Endpoint
         </div>
-        <div className="min-w-0 truncate font-mono text-sm text-[var(--color-text)]">
+        <div className="text-foreground min-w-0 truncate font-mono text-sm">
           {server.server_url}
         </div>
       </div>
@@ -100,11 +100,11 @@ export function ServerOverviewPanel({
 
 function OverviewDetail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 border-t border-[color:var(--color-border)] py-3 sm:odd:pr-6 sm:even:pl-6">
-      <dt className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+    <div className="border-border min-w-0 border-t py-3 sm:odd:pr-6 sm:even:pl-6">
+      <dt className="text-subtle-foreground text-xs font-medium tracking-wide uppercase">
         {label}
       </dt>
-      <dd className="mt-1 truncate text-sm font-medium text-[var(--color-text)]">{value}</dd>
+      <dd className="text-foreground mt-1 truncate text-sm font-medium">{value}</dd>
     </div>
   )
 }
@@ -149,7 +149,7 @@ export function ServerToolsPanel({
       <div className="flex items-center justify-between gap-2 border-b p-4">
         <div>
           <h3 className="font-medium">Discovered tools</h3>
-          <p className="text-sm text-[var(--color-text-muted)]">
+          <p className="text-subtle-foreground text-sm">
             Select tools to bundle into a toolset — no UUID copy-paste required.
           </p>
         </div>
@@ -157,7 +157,7 @@ export function ServerToolsPanel({
       </div>
 
       {selectedToolIds.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-[var(--color-muted)] px-4 py-3">
+        <div className="bg-muted flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
           <span className="text-sm font-medium">
             {selectedToolIds.length} tool{selectedToolIds.length === 1 ? '' : 's'} selected
           </span>
@@ -232,15 +232,15 @@ function ToolDisclosureRow({
     <Collapsible className="max-w-full min-w-0" open={expanded} onOpenChange={onToggleExpanded}>
       <div
         className={cn(
-          'max-w-full min-w-0 overflow-hidden border-t transition-colors hover:bg-[var(--color-muted)]/40',
-          selected && 'bg-[var(--color-muted)]',
+          'hover:bg-muted/40 max-w-full min-w-0 overflow-hidden border-t transition-colors',
+          selected && 'bg-muted',
         )}
       >
         <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3">
           <input
             type="checkbox"
             aria-label={`Select ${tool.display_name}`}
-            className="size-4 cursor-pointer accent-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="accent-primary size-4 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
             checked={selected}
             disabled={!tool.is_active}
             onChange={onToggleTool}
@@ -248,7 +248,7 @@ function ToolDisclosureRow({
           <div className="min-w-0">
             <div className="truncate font-medium">{tool.display_name}</div>
             {description ? (
-              <div className="truncate text-sm text-[var(--color-text-muted)]">{description}</div>
+              <div className="text-subtle-foreground truncate text-sm">{description}</div>
             ) : null}
           </div>
           <Badge variant={tool.is_active ? 'default' : 'secondary'}>
@@ -271,33 +271,29 @@ function ToolDisclosureRow({
           </CollapsibleTrigger>
         </div>
         <CollapsibleContent className="max-w-full min-w-0 overflow-hidden">
-          <div className="max-w-full min-w-0 overflow-hidden border-t bg-[var(--color-background)] px-4 py-4">
+          <div className="bg-background max-w-full min-w-0 overflow-hidden border-t px-4 py-4">
             <dl className="grid gap-3 text-sm md:grid-cols-3">
               <div className="min-w-0">
-                <dt className="text-xs font-medium text-[var(--color-text-muted)]">Tool ID</dt>
+                <dt className="text-subtle-foreground text-xs font-medium">Tool ID</dt>
                 <dd className="mt-1 flex min-w-0 items-center gap-1">
                   <span className="truncate font-mono text-xs">{tool.id}</span>
                   <CopyButton value={tool.id} label={`Copy ${tool.display_name} ID`} />
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-xs font-medium text-[var(--color-text-muted)]">
-                  Upstream name
-                </dt>
+                <dt className="text-subtle-foreground text-xs font-medium">Upstream name</dt>
                 <dd className="mt-1 truncate font-mono text-xs">{tool.upstream_name}</dd>
               </div>
               <div>
-                <dt className="text-xs font-medium text-[var(--color-text-muted)]">Version</dt>
+                <dt className="text-subtle-foreground text-xs font-medium">Version</dt>
                 <dd className="mt-1">{tool.schema_version}</dd>
               </div>
             </dl>
             <div className="mt-4 max-w-full min-w-0">
-              <div className="mb-2 text-xs font-medium text-[var(--color-text-muted)]">
-                JSON schema
-              </div>
+              <div className="text-subtle-foreground mb-2 text-xs font-medium">JSON schema</div>
               {schema ? (
                 <div
-                  className="max-w-full min-w-0 overflow-hidden rounded-md border bg-[var(--color-muted)]"
+                  className="bg-muted max-w-full min-w-0 overflow-hidden rounded-md border"
                   data-testid="mcp-tool-schema-scroll"
                 >
                   <pre
@@ -308,7 +304,7 @@ function ToolDisclosureRow({
                   </pre>
                 </div>
               ) : (
-                <div className="rounded-md border bg-[var(--color-muted)] p-3 text-sm text-[var(--color-text-muted)]">
+                <div className="bg-muted text-subtle-foreground rounded-md border p-3 text-sm">
                   No JSON schema available.
                 </div>
               )}
@@ -386,13 +382,13 @@ export function CredentialBindingsPanel({
     <div className="min-w-0 rounded-md border">
       <div className="flex flex-col gap-1 border-b p-4">
         <h3 className="font-medium">Credential bindings</h3>
-        <p className="text-sm text-[var(--color-text-muted)]">
+        <p className="text-subtle-foreground text-sm">
           Principal-scoped upstream credentials for user passthrough and OAuth on-behalf-of modes.
         </p>
       </div>
 
       {error ? (
-        <div className="m-4 rounded-md border border-[var(--color-danger)] p-3 text-sm text-[var(--color-danger)]">
+        <div className="border-destructive text-destructive m-4 rounded-md border p-3 text-sm">
           {error}
         </div>
       ) : null}
@@ -588,7 +584,7 @@ export function CredentialBindingsPanel({
                   <TableCell>
                     <div className="flex min-w-0 flex-col gap-1">
                       <span>{binding.owner_scope_kind}</span>
-                      <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
+                      <span className="text-subtle-foreground truncate font-mono text-xs">
                         {binding.owner_scope_key}
                       </span>
                     </div>
@@ -620,7 +616,7 @@ export function CredentialBindingsPanel({
           </Table>
         </div>
       )}
-      <div className="border-t px-4 py-3 text-sm text-[var(--color-text-muted)]">
+      <div className="text-subtle-foreground border-t px-4 py-3 text-sm">
         {activeBindings.length} active binding{activeBindings.length === 1 ? '' : 's'}
       </div>
     </div>

@@ -7,20 +7,27 @@ use gateway::{
     cli::{Cli, Command, ConfigCommand, MigrateAction, ServeArgs},
     config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
     email::build_budget_alert_sender,
-    http::{build_router, response_cache::ResponseCache, state::AppState},
-    observability,
+    http::{
+        build_router,
+        response_cache::ResponseCache,
+        state::{AppSkillService, AppState},
+    },
+    observability, provider_routing_identity,
 };
-use gateway_core::{McpRegistryRepository, ProviderRegistry, SeedHumanBudgetDefaults};
+use gateway_core::{
+    McpRegistryRepository, ProviderClient, ProviderRegistry, SeedHumanBudgetDefaults,
+    SkillObjectStore,
+};
 use gateway_providers::{
     AnthropicCompatProvider, BedrockProvider, CopilotAuthConfig, CopilotProvider,
     OpenAiCompatProvider, TypeSafeProvider, VertexProvider,
 };
 use gateway_service::{
     AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
-    ProviderCredentialService, WeightedRoutePlanner, hash_gateway_key_secret,
+    ProviderCredentialService, SkillService, WeightedRoutePlanner, hash_gateway_key_secret,
 };
 use gateway_store::{
-    AnyStore, GatewayStore, MigrationStatus, check_migrations_with_options,
+    AnyStore, GatewayStore, MigrationStatus, S3SkillObjectStore, check_migrations_with_options,
     run_migrations_with_options, status_migrations_with_options,
 };
 use tokio::net::TcpListener;
@@ -268,6 +275,7 @@ async fn run_serve_with_store(
 
     let state = AppState {
         service: service.clone(),
+        skills: build_skill_service(config, service.store().clone()).await?,
         store: service.store().clone(),
         providers,
         copilot_user_provider_keys,
@@ -304,6 +312,7 @@ async fn run_serve_with_store(
             load_client_config_gateway_base_url()
                 .context("failed resolving client config gateway base URL")?,
         ),
+        benchmark_model_ids: Arc::new(config.benchmark_model_ids()),
         budget_defaults: human_budget_defaults,
         agent_analysis: agent_analysis.capabilities,
         admin_permissions,
@@ -324,6 +333,26 @@ async fn run_serve_with_store(
         .context("gateway server stopped unexpectedly")?;
 
     Ok(())
+}
+
+async fn build_skill_service(
+    config: &GatewayConfig,
+    store: Arc<AnyStore>,
+) -> anyhow::Result<Option<Arc<AppSkillService>>> {
+    if !config.skills.enabled {
+        return Ok(None);
+    }
+    let options = config.skills.storage_options()?;
+    let objects: Arc<dyn SkillObjectStore> = Arc::new(
+        S3SkillObjectStore::new(options)
+            .await
+            .context("failed to initialize skill object storage")?,
+    );
+    Ok(Some(Arc::new(SkillService::new(
+        store,
+        objects,
+        config.skills.limits,
+    ))))
 }
 
 async fn run_migrate(config: &GatewayConfig, action: MigrateAction) -> anyhow::Result<()> {
@@ -454,37 +483,52 @@ fn build_provider_registry(
 
     for provider_config in config.openai_compatible_provider_configs()? {
         let provider_type = provider_config.provider_type.clone();
+        let routing_identity = provider_routing_identity::with_account_scope(
+            &provider_routing_identity::openai_compat(&provider_config)?,
+            config.provider_routing_account_scope(&provider_config.provider_key),
+        );
         let provider = OpenAiCompatProvider::new(provider_config).map_err(|error| {
             anyhow::anyhow!("failed building {provider_type} provider: {error}")
         })?;
-        providers.register(Arc::new(provider));
+        register_runtime_provider(&mut providers, config, Arc::new(provider), routing_identity);
     }
     for provider_config in config.anthropic_compatible_provider_configs()? {
+        let routing_identity = provider_routing_identity::anthropic_compat(&provider_config);
         let provider = AnthropicCompatProvider::new(provider_config).map_err(|error| {
             anyhow::anyhow!("failed building anthropic_compat provider: {error}")
         })?;
-        providers.register(Arc::new(provider));
+        register_runtime_provider(&mut providers, config, Arc::new(provider), routing_identity);
     }
 
     for provider_config in config.typesafe_provider_configs()? {
+        let routing_identity = provider_routing_identity::typesafe(&provider_config);
         let provider = TypeSafeProvider::new(provider_config)
             .map_err(|error| anyhow::anyhow!("failed building typesafe provider: {error}"))?;
-        providers.register(Arc::new(provider));
+        register_runtime_provider(&mut providers, config, Arc::new(provider), routing_identity);
     }
 
     for provider_config in config.vertex_provider_configs()? {
+        let routing_identity = provider_routing_identity::with_account_scope(
+            &provider_routing_identity::vertex(&provider_config),
+            config.provider_routing_account_scope(&provider_config.provider_key),
+        );
         let provider = VertexProvider::new(provider_config)
             .map_err(|error| anyhow::anyhow!("failed building gcp_vertex provider: {error}"))?;
-        providers.register(Arc::new(provider));
+        register_runtime_provider(&mut providers, config, Arc::new(provider), routing_identity);
     }
 
     for provider_config in config.bedrock_provider_configs()? {
+        let routing_identity = provider_routing_identity::with_account_scope(
+            &provider_routing_identity::bedrock(&provider_config),
+            config.provider_routing_account_scope(&provider_config.provider_key),
+        );
         let provider = BedrockProvider::new(provider_config)
             .map_err(|error| anyhow::anyhow!("failed building aws_bedrock provider: {error}"))?;
-        providers.register(Arc::new(provider));
+        register_runtime_provider(&mut providers, config, Arc::new(provider), routing_identity);
     }
 
     for provider_config in config.copilot_provider_configs()? {
+        let routing_identity = provider_routing_identity::copilot(&provider_config);
         let provider = if matches!(provider_config.auth, CopilotAuthConfig::GitHubUser) {
             ProviderCredentialService::<AnyStore>::validate_runtime_configuration()
                 .context("invalid provider credential runtime configuration")?;
@@ -496,10 +540,23 @@ fn build_provider_registry(
             CopilotProvider::new(provider_config)
         }
         .map_err(|error| anyhow::anyhow!("failed building github_copilot provider: {error}"))?;
-        providers.register(Arc::new(provider));
+        register_runtime_provider(&mut providers, config, Arc::new(provider), routing_identity);
     }
 
     Ok(providers)
+}
+
+fn register_runtime_provider(
+    providers: &mut ProviderRegistry,
+    config: &GatewayConfig,
+    provider: Arc<dyn ProviderClient>,
+    routing_identity: String,
+) {
+    if config.provider_routing_identity_enabled(provider.provider_key()) {
+        providers.register_with_routing_identity(provider, routing_identity);
+    } else {
+        providers.register(provider);
+    }
 }
 
 fn load_admin_ui_config(upstream: String) -> AdminUiConfig {
@@ -508,6 +565,7 @@ fn load_admin_ui_config(upstream: String) -> AdminUiConfig {
         upstream,
         connect_timeout_ms: env_u64("ADMIN_UI_CONNECT_TIMEOUT_MS", 750),
         request_timeout_ms: env_u64("ADMIN_UI_REQUEST_TIMEOUT_MS", 10_000),
+        ..AdminUiConfig::default()
     }
 }
 
@@ -673,6 +731,37 @@ mod tests {
     use tempfile::tempdir;
 
     use super::validate_config_file;
+
+    #[test]
+    fn unscoped_ambient_provider_remains_available_only_to_legacy_routing() {
+        let config: super::GatewayConfig = serde_yaml::from_str(
+            r#"
+providers:
+  - id: cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://example.com/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+"#,
+        )
+        .unwrap();
+        let provider_config = config
+            .openai_compatible_provider_configs()
+            .unwrap()
+            .remove(0);
+        let identity = super::provider_routing_identity::openai_compat(&provider_config).unwrap();
+        let provider = super::OpenAiCompatProvider::new(provider_config).unwrap();
+        let mut registry = super::ProviderRegistry::new();
+        super::register_runtime_provider(
+            &mut registry,
+            &config,
+            std::sync::Arc::new(provider),
+            identity,
+        );
+        assert!(registry.get("cloud-run").is_some());
+        assert!(registry.routing_identity("cloud-run").is_none());
+    }
 
     #[test]
     fn config_validation_requires_an_existing_file() {

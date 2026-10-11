@@ -1,6 +1,0 @@
-namespace = "oceans_llm"
-
-[daemons.postgres]
-run = "./scripts/postgres-pitchfork.sh run"
-ready_cmd = "./scripts/postgres-pitchfork.sh ready"
-on_ready = "./scripts/postgres-pitchfork.sh ensure-db"

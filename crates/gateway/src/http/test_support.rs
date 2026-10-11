@@ -24,6 +24,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
             store.clone(),
             Arc::new(WeightedRoutePlanner::default()),
         )),
+        skills: None,
         store,
         providers: Default::default(),
         copilot_user_provider_keys: Arc::new(Vec::new()),
@@ -36,6 +37,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
         oidc_public_base_url: Arc::new(None),
         oauth_public_base_url: Arc::new(None),
         client_config_gateway_base_url: Arc::new(None),
+        benchmark_model_ids: Arc::default(),
         budget_defaults: Arc::new(Default::default()),
         agent_analysis: AgentAnalysisRuntimeCapabilities {
             passive_analysis_enabled: false,

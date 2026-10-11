@@ -1,0 +1,79 @@
+# Gateway config for the self-hosted (mise daemons) deployment.
+# Loopback bind only: put a reverse proxy or `tailscale serve` in front. Secrets
+# come from `mise.selfhost.local.toml` (see docs/setup/self-hosting-mise-daemons.md).
+server:
+  bind: "127.0.0.1:8080"
+  log_format: "json"
+
+database:
+  kind: postgres
+  url: env.POSTGRES_URL
+
+auth:
+  bootstrap_admin:
+    enabled: true
+    email: admin@local
+    password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
+    require_password_change: true
+
+request_logging:
+  payloads:
+    capture_mode: redacted_payloads
+    request_max_bytes: 131072
+    response_max_bytes: 65536
+    stream_max_events: 128
+    redaction_paths: []
+
+teams:
+  - id: platform
+    name: Platform
+
+service_accounts:
+  - id: default
+    name: Default
+    team: platform
+    budget:
+      cadence: monthly
+      amount_usd: "100.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: default
+        name: Default
+        value: env.GATEWAY_API_KEY
+        # A key can call only the models granted here. Keep in sync with `models` below.
+        allowed_models:
+          - gpt-sol-latest
+          - claude-sonnet-latest
+          - deepseek-flash-latest
+
+# Replace with the providers and models you actually use. Reference
+# docs/configuration/configuration-reference.md for every provider type.
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+    auth:
+      kind: bearer
+      token: env.OPENROUTER_API_KEY
+
+# OpenRouter "latest" aliases start with `~`. Keep the quotes: a bare `~` is YAML null.
+models:
+  - id: gpt-sol-latest
+    description: OpenAI GPT Sol, latest, via OpenRouter
+    routes:
+      - provider: openrouter
+        upstream_model: "~openai/gpt-sol-latest"
+
+  - id: claude-sonnet-latest
+    description: Anthropic Claude Sonnet, latest, via OpenRouter
+    routes:
+      - provider: openrouter
+        upstream_model: "~anthropic/claude-sonnet-latest"
+
+  - id: deepseek-flash-latest
+    description: DeepSeek Flash, latest, via OpenRouter
+    routes:
+      - provider: openrouter
+        upstream_model: "~deepseek/deepseek-flash-latest"

@@ -33,20 +33,6 @@ impl OpenAiErrorEnvelope {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelsListResponse {
-    pub object: String,
-    pub data: Vec<ModelCard>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelCard {
-    pub id: String,
-    pub object: String,
-    pub created: i64,
-    pub owned_by: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChatCompletionsRequest {
     pub model: String,

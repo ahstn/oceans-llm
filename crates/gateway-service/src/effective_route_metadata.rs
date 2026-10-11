@@ -1,6 +1,8 @@
+use gateway_client_config::ApiFormat;
 use gateway_core::{
-    GatewayError, ModelRoute, Money4, PricingCatalogRepository, PricingLimits, PricingModalities,
-    PricingProvenance, ProviderCapabilities, ProviderConnection, github_copilot_route_capabilities,
+    AwsBedrockApiStyle, GatewayError, GitHubCopilotChatApi, ModelRoute, Money4,
+    PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
+    ProviderCapabilities, ProviderConnection, github_copilot_route_capabilities,
     vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
@@ -255,6 +257,43 @@ pub(crate) fn provider_capabilities(
     }
 }
 
+/// The client-facing format a route's upstream speaks natively, when the provider type
+/// makes it knowable. Generic OpenAI-compatible providers and Bedrock Converse front many
+/// model families, so they return `None` and callers fall back to model-name matching.
+pub(crate) fn native_api_format(
+    provider: &ProviderConnection,
+    route: &ModelRoute,
+) -> Option<ApiFormat> {
+    match provider.provider_type.as_str() {
+        "anthropic_compat" => Some(ApiFormat::AnthropicMessages),
+        "gcp_vertex" if route.upstream_model.starts_with("anthropic/") => {
+            Some(ApiFormat::AnthropicMessages)
+        }
+        "gcp_vertex" => Some(ApiFormat::OpenAiChatCompletions),
+        "github_copilot" => {
+            let compatibility = route.compatibility.github_copilot.as_ref()?;
+            match compatibility.chat_api {
+                Some(GitHubCopilotChatApi::AnthropicMessages) => Some(ApiFormat::AnthropicMessages),
+                Some(GitHubCopilotChatApi::ChatCompletions) => {
+                    Some(ApiFormat::OpenAiChatCompletions)
+                }
+                None if compatibility.supports_responses => Some(ApiFormat::OpenAiResponses),
+                None => None,
+            }
+        }
+        "aws_bedrock" => match route.compatibility.aws_bedrock.as_ref()?.api_style {
+            AwsBedrockApiStyle::RuntimeAnthropicInvoke
+            | AwsBedrockApiStyle::MantleAnthropicMessages => Some(ApiFormat::AnthropicMessages),
+            AwsBedrockApiStyle::RuntimeOpenaiChat | AwsBedrockApiStyle::MantleOpenaiChat => {
+                Some(ApiFormat::OpenAiChatCompletions)
+            }
+            AwsBedrockApiStyle::MantleOpenaiResponses => Some(ApiFormat::OpenAiResponses),
+            AwsBedrockApiStyle::RuntimeConverse => None,
+        },
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{EffectiveMetadataSource, EffectiveMetadataSourceKind, effective_limits};
@@ -344,5 +383,68 @@ mod tests {
             source.map(|source| source.kind),
             Some(EffectiveMetadataSourceKind::Catalog)
         );
+    }
+
+    #[test]
+    fn bedrock_native_format_follows_the_route_api_style() {
+        use gateway_client_config::ApiFormat;
+        use gateway_core::{
+            AwsBedrockApiStyle, AwsBedrockRouteCompatibility, ModelRoute, ProviderCapabilities,
+            ProviderConnection,
+        };
+
+        let provider = ProviderConnection {
+            provider_key: "bedrock".into(),
+            provider_type: "aws_bedrock".into(),
+            config: serde_json::json!({}),
+            secrets: None,
+        };
+        let mut route = ModelRoute {
+            id: uuid::Uuid::new_v4(),
+            model_id: uuid::Uuid::new_v4(),
+            provider_key: "bedrock".into(),
+            upstream_model: "us.anthropic.claude-opus-4-7".into(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            context_window_tokens: None,
+            pricing_override: None,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities: ProviderCapabilities::all_enabled(),
+            compatibility: Default::default(),
+        };
+        assert_eq!(super::native_api_format(&provider, &route), None);
+
+        for (api_style, expected) in [
+            (
+                AwsBedrockApiStyle::RuntimeAnthropicInvoke,
+                Some(ApiFormat::AnthropicMessages),
+            ),
+            (
+                AwsBedrockApiStyle::MantleAnthropicMessages,
+                Some(ApiFormat::AnthropicMessages),
+            ),
+            (
+                AwsBedrockApiStyle::MantleOpenaiChat,
+                Some(ApiFormat::OpenAiChatCompletions),
+            ),
+            (
+                AwsBedrockApiStyle::MantleOpenaiResponses,
+                Some(ApiFormat::OpenAiResponses),
+            ),
+            (AwsBedrockApiStyle::RuntimeConverse, None),
+        ] {
+            route.compatibility.aws_bedrock = Some(AwsBedrockRouteCompatibility {
+                api_style,
+                openai_base_path: None,
+                supports_strict_tools: None,
+            });
+            assert_eq!(
+                super::native_api_format(&provider, &route),
+                expected,
+                "{api_style:?}"
+            );
+        }
     }
 }

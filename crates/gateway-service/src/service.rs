@@ -253,6 +253,16 @@ where
         crate::model_metadata::list_metadata(self.store.as_ref(), models, &snapshot).await
     }
 
+    /// The `/v1/models` listing: OpenAI and Anthropic list shapes plus harness hints.
+    pub async fn models_list_for_api_key(
+        &self,
+        auth: &AuthenticatedApiKey,
+    ) -> Result<crate::model_metadata::ModelsListResponse, GatewayError> {
+        let models = self.model_access.list_models_for_api_key(auth).await?;
+        let snapshot = self.pricing_catalog.metadata_snapshot().await?;
+        crate::model_metadata::listing::list_models(self.store.as_ref(), models, &snapshot).await
+    }
+
     pub async fn list_models_for_api_key(
         &self,
         auth: &AuthenticatedApiKey,
@@ -1951,6 +1961,7 @@ mod tests {
                 provider_key: "openai-prod".to_string(),
                 upstream_model: "gpt-5.6-sol".to_string(),
                 owner_user_id: None,
+                expected_provider_credential_id: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
                 request_headers: Default::default(),
@@ -2529,6 +2540,7 @@ mod tests {
             model_key: "embeddings".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: Vec::new(),
             rank: 0,

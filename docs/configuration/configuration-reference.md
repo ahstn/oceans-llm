@@ -26,6 +26,7 @@ Unknown top-level, model, user, and user-membership fields are rejected. Correct
 - `auth`
 - `permissions`
 - `mcp`
+- `skills`
 - `budgets`
 - `budget_alerts`
 - `request_logging`
@@ -36,6 +37,8 @@ Unknown top-level, model, user, and user-membership fields are rejected. Correct
 - `users`
 
 ## Value Sources
+
+For `skills` storage fields, upload limits, and AWS S3 or RustFS examples, see [Agent Skills](../setup/skills.md#enable-storage). Skills are disabled by default.
 
 The config supports literal values and env references.
 
@@ -78,6 +81,25 @@ models:
       - provider: openai
         upstream_model: gpt-4o-mini
 ```
+
+## Benchmark catalogue
+
+The admin Models page shows Artificial Analysis Intelligence, Coding, and Agentic indices from a vendored snapshot at `crates/gateway-service/data/model_benchmarks.json`. The gateway makes no benchmark network calls at runtime and needs no API key.
+
+By default, scores are matched from the primary route's `upstream_model`. The gateway normalizes provider-specific forms such as `us.anthropic.claude-sonnet-4-6-v1:0` or `claude-sonnet-4-6@20260101` to OpenRouter IDs such as `anthropic/claude-sonnet-4.6`, and uses only exact matches. Set `benchmark_model_id` to choose the OpenRouter model explicitly:
+
+```yaml
+models:
+  - id: scored-model
+    benchmark_model_id: anthropic/claude-sonnet-4.6
+    routes:
+      - provider: bedrock
+        upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
+```
+
+`benchmark_model_id` must look like `publisher/model`, with no whitespace and no `:variant` suffix. An explicit binding takes priority over the derived match, and an alias uses the nearest binding along its alias chain. If the ID is not in the snapshot, the model shows no scores.
+
+Scores change only when a release ships a refreshed snapshot; maintainers follow [Model Benchmark Snapshot](../contributing/reference/model-benchmark-snapshot.md). Attribution to Artificial Analysis, retrieved via OpenRouter, stays visible wherever scores are shown.
 
 ### Route metadata overrides
 
@@ -359,7 +381,7 @@ The first action catalog contains `create_api_key`, `update_api_key`, `revoke_ap
 
 The `users` and `team_admins` groups can receive only the 10 shared page names in the example. Only `platform_admins` can receive `mcp`, `review_agent`, or `spend_controls`. Users cannot receive `reveal_api_key` because personal key secrets are shown only at creation. Startup fails for an unknown field, unknown page or action, unsupported group grant, or `default_page` that is not in the final effective page set.
 
-If `default_page` is absent, the gateway uses the normal group default when that page is available. Otherwise, it uses the first effective page in a stable order. A group with no effective pages uses the signed-in `/admin/no-access` page.
+If `default_page` is absent, the gateway uses the normal group default when that page is available. Otherwise, it uses the first effective page in a stable order. The session returns this value, but the admin UI no longer uses it for landing: users with any effective page land on their personal `/admin/profile` page. A group with no effective pages uses the signed-in `/admin/no-access` page. See the [profile landing page ADR](../adr/2026-09-26-profile-landing-page.md).
 
 By default, a user can create, update, and revoke only keys owned by that user. A team owner or team admin can also create, update, revoke, and reveal service-account keys for that team. A platform admin keeps global key scope. Removing an action hides its UI control and makes the matching API return `403`.
 
@@ -781,6 +803,33 @@ Supported provider types in the checked-in configs:
 
 Provider auth config controls how the gateway authenticates to upstream providers. It is separate from gateway API keys, which authenticate callers to the gateway.
 
+### Routing Account Scope
+
+`providers[*].routing_account_scope` is available on `aws_bedrock`, `gcp_vertex`, and `gcp_cloud_run_openai_compat`. It is required when a model with a `routing` policy references one of these authentication modes:
+
+| Provider type | Auth mode requiring a scope |
+| --- | --- |
+| `aws_bedrock` | `default_chain` |
+| `gcp_vertex` | `adc`, `service_account` |
+| `gcp_cloud_run_openai_compat` | `adc`, `service_account` |
+
+The label identifies the account or principal behind credentials that can change outside YAML. Use a stable account and principal reference, such as an AWS role ARN or Google service-account email. It must contain 1–256 UTF-8 bytes, with no control characters or leading or trailing whitespace. The label is not a secret and does not select or verify the provider identity.
+
+```yaml
+providers:
+  - id: bedrock-runtime
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+    routing_account_scope: arn:aws:iam::123456789012:role/oceans-gateway
+    auth:
+      mode: default_chain
+```
+
+Change the label and restart the gateway when the underlying account or principal changes. This invalidates session bindings and response origins tied to the old identity. Temporary token refresh for the same principal does not require a change. The gateway trusts the label and cannot detect an incorrect label or an unreported identity change.
+
+The field is optional for static or bearer authentication on these providers. If present, it is validated and included in the routing fingerprint. Models without `routing` do not require it.
+
 ### `openai_compat`
 
 Important fields:
@@ -1020,9 +1069,26 @@ Important fields:
 - `tags`
 - `rank`
 - `max_reasoning_effort`
+- `routing`
 - `routes`
 - `alias_of`
 - `allowlist`
+
+### Routing Policy and Session Affinity
+
+`models[*].routing` is optional and applies to provider-backed models. Aliases inherit the resolved target's policy and cannot define their own block.
+
+| Field | Default | Accepted values |
+| --- | --- | --- |
+| `routing.strategy` | `weighted_random` | `preferred`, `weighted_random`, `round_robin` |
+| `routing.affinity` | Absent; no session affinity | An object; `{}` enables the default timeout |
+| `routing.affinity.idle_timeout_seconds` | `3600` | Integer from `1` to `4294967295` |
+
+Every route needs an explicit `id` when `routing` is present, including `routing: {}`. Unknown routing fields and strategy names fail configuration loading. Omitting `routing` preserves existing weighted selection without affinity.
+
+Policies apply to online chat, messages, Responses, embeddings, and decisions. Session affinity applies to chat, messages, and Responses. Durable batches keep their existing route lifecycle. Policy configuration is YAML-only; reseed the deployment to apply changes.
+
+See [Model Routing and APIs](model-routing-and-api-behavior.md#control-route-selection) for examples, priority rules, caller-scoped session IDs, response-origin tracking, and cache limits.
 
 ### Reasoning Effort Ceilings
 
@@ -1082,6 +1148,7 @@ Rules that matter:
 
 Important fields:
 
+- `id`
 - `provider`
 - `upstream_model`
 - `priority`
@@ -1091,6 +1158,8 @@ Important fields:
 - `compatibility`
 - `extra_headers`
 - `extra_body`
+
+Route `id` is optional for models without a `routing` policy and required for every route in a configured routing pool. It must be unique within the model and contain 1–128 ASCII letters, digits, periods, underscores, or hyphens. Keep it stable when changing priority, weight, or YAML order. Provider or upstream model changes create a different internal route identity.
 
 When a model has `max_reasoning_effort`, startup also validates explicit effort values in each of its route `extra_body` objects. Known values above the ceiling, unknown strings, and malformed non-string values make configuration invalid. Omitted fields and `null` values pass. Startup does not clamp or mutate `extra_body`.
 

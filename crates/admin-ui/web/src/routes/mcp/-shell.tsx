@@ -135,8 +135,6 @@ function useWideLayout() {
 export function cnListButton(active: boolean) {
   return cn(
     'w-full rounded-md border px-3 py-3 text-left transition-colors',
-    active
-      ? 'border-[var(--color-text)] bg-[var(--color-muted)]'
-      : 'border-[var(--color-border)] hover:bg-[var(--color-muted)]',
+    active ? 'border-foreground bg-muted' : 'border-border hover:bg-muted',
   )
 }

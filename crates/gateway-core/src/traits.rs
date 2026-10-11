@@ -26,12 +26,12 @@ use crate::{
         CacheUsageAggregateRecord, ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord,
         ExternalMcpToolRecord, FocusExportAggregateRecord, FocusExportDiagnosticsRecord,
         GatewayModel, GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
-        HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
-        McpAggregateSessionRecord, McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord,
-        McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
-        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-        McpToolInvocationRecord, McpToolTokenEstimateRecord, McpToolsetRecord,
-        McpToolsetToolRecord, McpUpstreamCredentialBindingRecord,
+        HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
+        McpAccessResolution, McpAggregateSessionRecord, McpCatalogAccessResolution,
+        McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
+        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
+        McpToolInvocationQuery, McpToolInvocationRecord, McpToolTokenEstimateRecord,
+        McpToolsetRecord, McpToolsetToolRecord, McpUpstreamCredentialBindingRecord,
         McpUpstreamCredentialOwnerScopeKind, ModelAllowlistPolicy, ModelPricingRecord,
         ModelPricingSyncChanges, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
         NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
@@ -244,6 +244,22 @@ pub trait ModelRepository: Send + Sync {
         &self,
         api_key_id: Uuid,
     ) -> Result<Vec<GatewayModel>, StoreError>;
+
+    /// Granted models per key, in the same order as `list_models_for_api_key`. Keys without
+    /// grants are absent from the map.
+    async fn list_models_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, Vec<GatewayModel>>, StoreError> {
+        let mut grants = HashMap::with_capacity(api_key_ids.len());
+        for api_key_id in api_key_ids {
+            let models = self.list_models_for_api_key(*api_key_id).await?;
+            if !models.is_empty() {
+                grants.insert(*api_key_id, models);
+            }
+        }
+        Ok(grants)
+    }
 
     async fn list_model_allowlists_for_models(
         &self,
@@ -459,6 +475,20 @@ pub trait BudgetRepository: Send + Sync {
             }
         }
         Ok(records)
+    }
+    /// Usage ledger rows that join to exactly one request log on `(request_id, api_key_id)`, so
+    /// request log pages can show cost without an ownership scope. Clients may reuse request ids
+    /// and the ledger keeps one row per `(request_id, ownership_scope_key)`, so rows whose pair
+    /// matches several request logs are omitted rather than attributed to the wrong request.
+    async fn get_request_log_usage_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<Vec<UsageLedgerRecord>, StoreError> {
+        let _ = request_ids;
+        Err(StoreError::Unexpected(
+            "get_request_log_usage_by_request_ids is not implemented for this repository"
+                .to_string(),
+        ))
     }
     async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
@@ -724,6 +754,18 @@ pub trait RequestLogRepository: Send + Sync {
         Err(StoreError::Unexpected(
             "list_harness_usage_bucket_aggregates is not implemented for this repository"
                 .to_string(),
+        ))
+    }
+
+    async fn list_user_harness_daily_usage(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        user_id: Uuid,
+    ) -> Result<Vec<HarnessUsageDailyRecord>, StoreError> {
+        let _ = (window_start, window_end, user_id);
+        Err(StoreError::Unexpected(
+            "list_user_harness_daily_usage is not implemented for this repository".to_string(),
         ))
     }
 
@@ -1147,6 +1189,7 @@ pub trait ProviderUserTokenResolver: Send + Sync {
         &self,
         provider_key: &str,
         user_id: Uuid,
+        expected_credential_id: Option<Uuid>,
     ) -> Result<String, ProviderError>;
 }
 
@@ -1312,7 +1355,13 @@ pub trait ProviderClient: Send + Sync {
 
 #[derive(Default, Clone)]
 pub struct ProviderRegistry {
-    providers: HashMap<String, Arc<dyn ProviderClient>>,
+    providers: HashMap<String, RegisteredProvider>,
+}
+
+#[derive(Clone)]
+struct RegisteredProvider {
+    client: Arc<dyn ProviderClient>,
+    routing_identity: Option<String>,
 }
 
 impl ProviderRegistry {
@@ -1324,13 +1373,43 @@ impl ProviderRegistry {
     }
 
     pub fn register(&mut self, provider: Arc<dyn ProviderClient>) {
+        self.providers.insert(
+            provider.provider_key().to_string(),
+            RegisteredProvider {
+                client: provider,
+                routing_identity: None,
+            },
+        );
+    }
+
+    /// Registers the initialized adapter with an opaque account and endpoint identity.
+    /// The caller must hash sensitive credential material before registration.
+    pub fn register_with_routing_identity(
+        &mut self,
+        provider: Arc<dyn ProviderClient>,
+        routing_identity: String,
+    ) {
+        self.providers.insert(
+            provider.provider_key().to_string(),
+            RegisteredProvider {
+                client: provider,
+                routing_identity: Some(routing_identity),
+            },
+        );
+    }
+
+    #[must_use]
+    pub fn routing_identity(&self, provider_key: &str) -> Option<&str> {
         self.providers
-            .insert(provider.provider_key().to_string(), provider);
+            .get(provider_key)
+            .and_then(|provider| provider.routing_identity.as_deref())
     }
 
     #[must_use]
     pub fn get(&self, provider_key: &str) -> Option<Arc<dyn ProviderClient>> {
-        self.providers.get(provider_key).cloned()
+        self.providers
+            .get(provider_key)
+            .map(|provider| provider.client.clone())
     }
 
     #[must_use]

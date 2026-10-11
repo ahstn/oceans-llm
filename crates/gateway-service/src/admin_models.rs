@@ -5,20 +5,29 @@ use std::{
 
 use gateway_client_config::{
     ClientConfig, ClientConfigInput, ClientConfigInputSet, ClientModelCapabilities,
-    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, infer_thinking_policy,
-    render_default_configs, render_default_configs_for_models,
+    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, ReasoningLevel,
+    ThinkingPolicy, infer_thinking_policy, render_default_configs,
+    render_default_configs_for_models,
 };
 use gateway_core::{
     GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
-    PricingCatalogRepository, PricingLimits, PricingModalities, ProviderCapabilities,
-    ProviderConnection, ProviderRepository,
+    ModelRoutingPolicy, PricingCatalogRepository, PricingLimits, PricingModalities,
+    ProviderCapabilities, ProviderConnection, ProviderRepository, ReasoningEffort,
 };
 use time::OffsetDateTime;
 
-use crate::effective_route_metadata::effective_provider_route_capabilities;
+mod routing;
+pub use routing::AdminModelRouteSummary;
+use routing::summarize_routes;
+
 #[cfg(test)]
 use crate::effective_route_metadata::provider_capabilities;
+use crate::effective_route_metadata::{effective_provider_route_capabilities, native_api_format};
+use crate::model_resolution::alias_chain_reasoning_ceiling;
 
+use crate::benchmark_catalog::{
+    BenchmarkMatchKind, ModelBenchmarkScore, benchmark_scores_for, derive_benchmark_model_id,
+};
 use crate::{
     EffectiveMetadataSource, EffectiveRouteMetadata, ModelIconKey, ProviderIconKey,
     resolve_effective_route_metadata, resolve_model_icon_key, resolve_provider_display,
@@ -46,10 +55,13 @@ pub struct AdminModelSummary {
     pub model_id: String,
     pub resolved_model_key: String,
     pub alias_of: Option<String>,
+    pub aliases: Vec<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub allowlist: Option<ModelAllowlistPolicy>,
     pub status: AdminModelStatus,
+    pub routing: Option<ModelRoutingPolicy>,
+    pub routes: Vec<AdminModelRouteSummary>,
     pub provider_key: Option<String>,
     pub provider_label: Option<String>,
     pub provider_icon_key: Option<ProviderIconKey>,
@@ -70,6 +82,7 @@ pub struct AdminModelSummary {
     pub supports_tool_calling: Option<bool>,
     pub supports_structured_output: Option<bool>,
     pub supports_attachments: Option<bool>,
+    pub benchmark_scores: Vec<ModelBenchmarkScore>,
     pub supports_decisions: Option<bool>,
     pub client_configurations: Vec<ClientConfig>,
 }
@@ -78,6 +91,7 @@ pub struct AdminModelSummary {
 pub struct AdminModelsService<R> {
     repo: Arc<R>,
     client_config_gateway_base_url: String,
+    benchmark_model_ids: Arc<HashMap<String, String>>,
 }
 
 impl<R> AdminModelsService<R>
@@ -89,7 +103,18 @@ where
         Self {
             repo,
             client_config_gateway_base_url: DEFAULT_GATEWAY_BASE_URL.to_string(),
+            benchmark_model_ids: Arc::default(),
         }
+    }
+
+    /// Explicit gateway model key to OpenRouter model ID bindings from config.
+    #[must_use]
+    pub fn with_benchmark_model_ids(
+        mut self,
+        benchmark_model_ids: Arc<HashMap<String, String>>,
+    ) -> Self {
+        self.benchmark_model_ids = benchmark_model_ids;
+        self
     }
 
     #[must_use]
@@ -200,6 +225,44 @@ where
         ))
     }
 
+    /// The nearest explicit binding along the alias chain wins, even when it has no scores.
+    /// Otherwise the primary route's upstream model is normalized and matched exactly.
+    fn benchmark_scores(
+        &self,
+        by_key: &HashMap<String, GatewayModel>,
+        model: &GatewayModel,
+        primary_route: Option<&ModelRoute>,
+    ) -> Vec<ModelBenchmarkScore> {
+        if let Some(source_model_id) = self.explicit_benchmark_model_id(by_key, model) {
+            return benchmark_scores_for(source_model_id, BenchmarkMatchKind::Explicit);
+        }
+        primary_route
+            .and_then(|route| derive_benchmark_model_id(&route.upstream_model))
+            .map(|source_model_id| {
+                benchmark_scores_for(&source_model_id, BenchmarkMatchKind::Derived)
+            })
+            .unwrap_or_default()
+    }
+
+    fn explicit_benchmark_model_id(
+        &self,
+        by_key: &HashMap<String, GatewayModel>,
+        model: &GatewayModel,
+    ) -> Option<&String> {
+        let mut current = model;
+        let mut seen = std::collections::BTreeSet::from([current.model_key.as_str()]);
+        loop {
+            if let Some(source_model_id) = self.benchmark_model_ids.get(&current.model_key) {
+                return Some(source_model_id);
+            }
+            let next = by_key.get(current.alias_target_model_key.as_deref()?)?;
+            if !seen.insert(next.model_key.as_str()) {
+                return None;
+            }
+            current = next;
+        }
+    }
+
     async fn list_model_items(&self) -> Result<Vec<AdminModelItem>, GatewayError> {
         let pricing_time = OffsetDateTime::now_utc();
         let models = self.repo.list_models().await?;
@@ -222,6 +285,7 @@ where
                 )
             })
             .collect::<HashMap<_, _>>();
+        let model_keys_by_execution = group_model_keys_by_execution(&execution_models);
         let execution_model_ids = execution_models
             .values()
             .map(|model| model.id)
@@ -309,6 +373,10 @@ where
                     build_client_config_input(ClientConfigContext {
                         model: &model,
                         execution_model: &execution_model,
+                        reasoning_ceiling: alias_chain_reasoning_ceiling(
+                            |key| by_key.get(key),
+                            &model,
+                        ),
                         primary_route: Some(primary_route),
                         primary_provider,
                         provider_display: provider_display.as_ref(),
@@ -329,10 +397,19 @@ where
                     model_id: model.id.to_string(),
                     resolved_model_key: execution_model.model_key.clone(),
                     alias_of: model.alias_target_model_key.clone(),
+                    aliases: model_keys_by_execution
+                        .get(&execution_model.model_key)
+                        .into_iter()
+                        .flatten()
+                        .filter(|key| *key != &model.model_key)
+                        .cloned()
+                        .collect(),
                     description: model.description.clone(),
                     tags: model.tags.clone(),
                     allowlist: allowlists_by_model.get(&model.id).cloned(),
                     status,
+                    routing: execution_model.routing.clone(),
+                    routes: summarize_routes(routes, &providers_by_key),
                     provider_key: primary_route.map(|route| route.provider_key.clone()),
                     provider_label: provider_display
                         .as_ref()
@@ -366,6 +443,7 @@ where
                     supports_attachments: primary_metadata
                         .and_then(|metadata| metadata.modalities.as_ref())
                         .map(supports_attachments),
+                    benchmark_scores: self.benchmark_scores(&by_key, &model, primary_route),
                     supports_decisions: route_capabilities.map(|caps| caps.decisions),
                     client_configurations,
                 },
@@ -386,6 +464,7 @@ struct AdminModelItem {
 struct ClientConfigContext<'a> {
     model: &'a GatewayModel,
     execution_model: &'a GatewayModel,
+    reasoning_ceiling: Option<ReasoningEffort>,
     primary_route: Option<&'a ModelRoute>,
     primary_provider: Option<&'a ProviderConnection>,
     provider_display: Option<&'a crate::ProviderDisplayIdentity>,
@@ -397,32 +476,13 @@ struct ClientConfigContext<'a> {
 
 fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientConfigInput> {
     let primary_route = context.primary_route?;
-    context.primary_provider?;
-    // Most specific first: the upstream model, then the gateway model aliases, then provider
-    // metadata. A provider named after an older model generation must not outrank an alias
-    // that names the actual model.
-    let thinking_policy = infer_thinking_policy(
-        [
-            primary_route.upstream_model.as_str(),
-            context.execution_model.model_key.as_str(),
-            context.model.model_key.as_str(),
-        ]
-        .into_iter()
-        .chain(
-            context
-                .primary_provider
-                .map(|provider| provider.provider_key.as_str()),
-        )
-        .chain(
-            context
-                .primary_provider
-                .map(|provider| provider.provider_type.as_str()),
-        )
-        .chain(
-            context
-                .provider_display
-                .map(|display| display.label.as_str()),
-        ),
+    let primary_provider = context.primary_provider?;
+    let thinking_policy = route_thinking_policy(
+        context.model,
+        context.execution_model,
+        primary_route,
+        primary_provider,
+        context.provider_display,
     );
     let capabilities = effective_provider_route_capabilities(
         context.route_capabilities,
@@ -484,7 +544,43 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
         thinking_policy,
         // max_reasoning_effort is an enforcement ceiling, not a client default.
         codex_reasoning_effort: None,
+        native_api_format: native_api_format(primary_provider, primary_route),
+        max_reasoning_effort: context.reasoning_ceiling.map(reasoning_level),
     })
+}
+
+pub(crate) const fn reasoning_level(effort: ReasoningEffort) -> ReasoningLevel {
+    match effort {
+        ReasoningEffort::Minimal => ReasoningLevel::Minimal,
+        ReasoningEffort::Low => ReasoningLevel::Low,
+        ReasoningEffort::Medium => ReasoningLevel::Medium,
+        ReasoningEffort::High => ReasoningLevel::High,
+        ReasoningEffort::XHigh => ReasoningLevel::XHigh,
+        ReasoningEffort::Max => ReasoningLevel::Max,
+    }
+}
+
+/// Most specific first: the upstream model, then the gateway model aliases, then provider
+/// metadata. A provider named after an older model generation must not outrank an alias
+/// that names the actual model.
+pub(crate) fn route_thinking_policy(
+    model: &GatewayModel,
+    execution_model: &GatewayModel,
+    route: &ModelRoute,
+    provider: &ProviderConnection,
+    provider_display: Option<&crate::ProviderDisplayIdentity>,
+) -> Option<ThinkingPolicy> {
+    infer_thinking_policy(
+        [
+            route.upstream_model.as_str(),
+            execution_model.model_key.as_str(),
+            model.model_key.as_str(),
+            provider.provider_key.as_str(),
+            provider.provider_type.as_str(),
+        ]
+        .into_iter()
+        .chain(provider_display.map(|display| display.label.as_str())),
+    )
 }
 
 #[derive(Debug)]
@@ -555,7 +651,7 @@ fn supports_attachments(modalities: &PricingModalities) -> bool {
         .any(|value| matches!(value.as_str(), "audio" | "file" | "image" | "pdf" | "video"))
 }
 
-fn route_is_eligible(
+pub(crate) fn route_is_eligible(
     providers_by_key: &HashMap<String, ProviderConnection>,
     route: &ModelRoute,
 ) -> bool {
@@ -576,7 +672,7 @@ fn route_health(
     }
 }
 
-fn select_display_route<'a>(
+pub(crate) fn select_display_route<'a>(
     providers_by_key: &HashMap<String, ProviderConnection>,
     routes: &'a [gateway_core::ModelRoute],
 ) -> Option<&'a gateway_core::ModelRoute> {
@@ -590,6 +686,22 @@ fn select_display_route<'a>(
         })
         .or_else(|| routes.iter().find(|route| route.enabled))
         .or_else(|| routes.first())
+}
+
+fn group_model_keys_by_execution(
+    execution_models: &HashMap<String, GatewayModel>,
+) -> HashMap<String, Vec<String>> {
+    let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+    for (model_key, execution_model) in execution_models {
+        groups
+            .entry(execution_model.model_key.clone())
+            .or_default()
+            .push(model_key.clone());
+    }
+    for model_keys in groups.values_mut() {
+        model_keys.sort_unstable();
+    }
+    groups
 }
 
 fn resolve_execution_model(
@@ -1016,6 +1128,7 @@ mod tests {
             model_key: "jev".to_string(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: Vec::new(),
             rank: 1,
@@ -1049,6 +1162,7 @@ mod tests {
         let input = super::build_client_config_input(super::ClientConfigContext {
             model: &model,
             execution_model: &model,
+            reasoning_ceiling: None,
             primary_route: Some(&route),
             primary_provider: Some(&provider),
             provider_display: None,
@@ -1126,11 +1240,101 @@ mod tests {
         assert!(!capabilities.tools);
     }
 
+    fn plain_model(model_key: &str, alias_target_model_key: Option<&str>) -> GatewayModel {
+        GatewayModel {
+            id: Uuid::new_v4(),
+            model_key: model_key.to_string(),
+            alias_target_model_key: alias_target_model_key.map(str::to_string),
+            max_reasoning_effort: None,
+            routing: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 0,
+        }
+    }
+
+    #[test]
+    fn explicit_benchmark_binding_follows_the_alias_chain() {
+        let service = AdminModelsService::new(Arc::new(CountingRepo::default()))
+            .with_benchmark_model_ids(Arc::new(HashMap::from([(
+                "middle".to_string(),
+                "acme/middle".to_string(),
+            )])));
+        let by_key: HashMap<String, GatewayModel> = [
+            plain_model("outer", Some("middle")),
+            plain_model("middle", Some("base")),
+            plain_model("base", None),
+            plain_model("loop-a", Some("loop-b")),
+            plain_model("loop-b", Some("loop-a")),
+        ]
+        .into_iter()
+        .map(|model| (model.model_key.clone(), model))
+        .collect();
+
+        let binding = |key: &str| {
+            service
+                .explicit_benchmark_model_id(&by_key, &by_key[key])
+                .cloned()
+        };
+        assert_eq!(binding("outer").as_deref(), Some("acme/middle"));
+        assert_eq!(binding("base"), None);
+        assert_eq!(binding("loop-a"), None);
+    }
+
+    #[tokio::test]
+    async fn model_aliases_include_chains_and_canonical_ids_before_pagination() {
+        let repo = Arc::new(CountingRepo {
+            models: vec![
+                plain_model("z-alias", Some("base")),
+                plain_model("unrelated", None),
+                plain_model("base", None),
+                plain_model("a-chain", Some("z-alias")),
+                plain_model("broken", Some("missing")),
+                plain_model("cycle-a", Some("cycle-b")),
+                plain_model("cycle-b", Some("cycle-a")),
+            ],
+            ..Default::default()
+        });
+        let models = AdminModelsService::new(repo.clone())
+            .list_models()
+            .await
+            .unwrap();
+        let aliases = |key: &str| {
+            models
+                .iter()
+                .find(|model| model.id == key)
+                .unwrap()
+                .aliases
+                .clone()
+        };
+        assert_eq!(aliases("base"), ["a-chain", "z-alias"]);
+        assert_eq!(aliases("z-alias"), ["a-chain", "base"]);
+        assert_eq!(aliases("a-chain"), ["base", "z-alias"]);
+        for key in ["unrelated", "broken", "cycle-a", "cycle-b"] {
+            assert!(aliases(key).is_empty());
+        }
+        // The HTTP layer takes pages after this call; off-page aliases stay attached.
+        let first_page: Vec<_> = models.iter().take(1).collect();
+        assert_eq!(first_page[0].id, "z-alias");
+        assert_eq!(first_page[0].aliases, ["a-chain", "base"]);
+        assert_eq!(first_page[0].alias_of.as_deref(), Some("base"));
+        assert_eq!(repo.list_models_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.list_routes_for_models_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.list_routes_for_model_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(repo.list_providers_by_keys_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.get_provider_by_key_calls.load(Ordering::SeqCst), 0);
+    }
+
     #[tokio::test]
     async fn list_models_batches_route_and_provider_loading() {
         let execution_model_id = Uuid::new_v4();
         let alias_model_id = Uuid::new_v4();
         let route_id = Uuid::new_v4();
+        let disabled_route_id = Uuid::new_v4();
+        let routing = gateway_core::ModelRoutingPolicy {
+            strategy: gateway_core::RoutingStrategy::RoundRobin,
+            affinity: Some(gateway_core::SessionAffinityPolicy::default()),
+        };
 
         let repo = Arc::new(CountingRepo {
             models: vec![
@@ -1139,6 +1343,7 @@ mod tests {
                     model_key: "friendly-alias".to_string(),
                     alias_target_model_key: Some("gpt-4.1".to_string()),
                     max_reasoning_effort: None,
+                    routing: None,
                     description: Some("alias".to_string()),
                     tags: vec!["alias".to_string()],
                     rank: 1,
@@ -1148,6 +1353,7 @@ mod tests {
                     model_key: "gpt-4.1".to_string(),
                     alias_target_model_key: None,
                     max_reasoning_effort: None,
+                    routing: Some(routing.clone()),
                     description: Some("base".to_string()),
                     tags: vec!["base".to_string()],
                     rank: 2,
@@ -1155,21 +1361,33 @@ mod tests {
             ],
             routes_by_model: HashMap::from([(
                 execution_model_id,
-                vec![ModelRoute {
-                    id: route_id,
-                    model_id: execution_model_id,
-                    provider_key: "openai".to_string(),
-                    upstream_model: "gpt-4.1".to_string(),
-                    priority: 0,
-                    weight: 1.0,
-                    enabled: true,
-                    context_window_tokens: None,
-                    pricing_override: None,
-                    extra_headers: Default::default(),
-                    extra_body: Default::default(),
-                    capabilities: Default::default(),
-                    compatibility: Default::default(),
-                }],
+                vec![
+                    ModelRoute {
+                        id: route_id,
+                        model_id: execution_model_id,
+                        provider_key: "openai".to_string(),
+                        upstream_model: "gpt-4.1".to_string(),
+                        priority: 0,
+                        weight: 1.0,
+                        enabled: true,
+                        context_window_tokens: None,
+                        pricing_override: None,
+                        extra_headers: Default::default(),
+                        extra_body: Default::default(),
+                        capabilities: Default::default(),
+                        compatibility: Default::default(),
+                    },
+                    ModelRoute {
+                        id: disabled_route_id,
+                        model_id: execution_model_id,
+                        provider_key: "openai".to_string(),
+                        upstream_model: "gpt-4.1-disabled".to_string(),
+                        priority: 10,
+                        weight: 2.0,
+                        enabled: false,
+                        ..model_route("gpt-4.1-disabled", ProviderCapabilities::all_enabled())
+                    },
+                ],
             )]),
             providers_by_key: HashMap::from([(
                 "openai".to_string(),
@@ -1235,6 +1453,17 @@ mod tests {
         assert_eq!(alias.status, AdminModelStatus::Healthy);
         assert_eq!(alias.provider_key.as_deref(), Some("openai"));
         assert_eq!(alias.upstream_model.as_deref(), Some("gpt-4.1"));
+        assert_eq!(alias.routing, Some(routing));
+        assert_eq!(alias.routes.len(), 2);
+        assert_eq!(alias.routes[0].id, route_id.to_string());
+        assert_eq!(alias.routes[0].provider_label, "OpenAI");
+        assert!(alias.routes[0].enabled);
+        assert!(alias.routes[0].provider_configured);
+        assert_eq!(alias.routes[1].id, disabled_route_id.to_string());
+        assert!(!alias.routes[1].enabled);
+        assert!(alias.routes[1].provider_configured);
+        assert_eq!(alias.routes[1].priority, 10);
+        assert_eq!(alias.routes[1].weight, 2.0);
         assert_eq!(alias.input_cost_per_million_tokens_usd_10000, Some(12_500));
         assert_eq!(
             alias.output_cost_per_million_tokens_usd_10000,
@@ -1328,6 +1557,7 @@ mod tests {
                 model_key: "missing-provider-model".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
@@ -1358,6 +1588,11 @@ mod tests {
 
         assert_eq!(items[0].status, AdminModelStatus::Degraded);
         assert_eq!(items[0].provider_key.as_deref(), Some("missing"));
+        assert_eq!(items[0].routes.len(), 1);
+        assert_eq!(items[0].routes[0].id, route_id.to_string());
+        assert_eq!(items[0].routes[0].provider_key, "missing");
+        assert!(items[0].routes[0].enabled);
+        assert!(!items[0].routes[0].provider_configured);
         assert_eq!(items[0].input_cost_per_million_tokens_usd_10000, None);
         assert_eq!(items[0].cache_read_cost_per_million_tokens_usd_10000, None);
         assert_eq!(items[0].supports_streaming, Some(true));
@@ -1403,6 +1638,7 @@ mod tests {
                 model_key: "disabled-model".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
@@ -1443,6 +1679,7 @@ mod tests {
                 model_key: "fallback-model".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
@@ -1547,6 +1784,7 @@ mod tests {
                 model_key: "gpt-4.1".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
@@ -1573,6 +1811,7 @@ mod tests {
                 model_key: "unpriced-model".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
@@ -1659,6 +1898,7 @@ mod tests {
                     model_key: "claude-sonnet".to_string(),
                     alias_target_model_key: None,
                     max_reasoning_effort: Some(ReasoningEffort::Max),
+                    routing: None,
                     description: Some("Claude Sonnet".to_string()),
                     tags: vec!["anthropic".to_string()],
                     rank: 1,
@@ -1866,6 +2106,7 @@ mod tests {
             model_key: "mantle-gpt".into(),
             alias_target_model_key: None,
             max_reasoning_effort: None,
+            routing: None,
             description: None,
             tags: vec![],
             rank: 0,
@@ -1898,6 +2139,7 @@ mod tests {
         let input = super::build_client_config_input(super::ClientConfigContext {
             model: &model,
             execution_model: &model,
+            reasoning_ceiling: None,
             primary_route: Some(&route),
             primary_provider: Some(&provider),
             provider_display: None,
@@ -1983,6 +2225,7 @@ mod tests {
                 model_key: "claude-fable-5-1".to_string(),
                 alias_target_model_key: None,
                 max_reasoning_effort: None,
+                routing: None,
                 description: Some("Claude Fable 5.1".to_string()),
                 tags: vec!["anthropic".to_string()],
                 rank: 1,

@@ -18,7 +18,9 @@ mod provider_user_credentials;
 mod providers;
 mod request_logs;
 mod review_agent;
+mod routing;
 mod seed;
+mod skills;
 mod support;
 
 use anyhow::Context;

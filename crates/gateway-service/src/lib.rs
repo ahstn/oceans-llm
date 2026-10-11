@@ -3,9 +3,11 @@ pub mod admin_models;
 mod agent_analysis;
 pub mod authenticator;
 pub mod batches;
+pub mod benchmark_catalog;
 pub mod budget_alerts;
 pub mod budget_guard;
 pub mod budget_scopes;
+mod client_session;
 pub mod effective_route_metadata;
 pub mod icon_identity;
 pub mod mcp_access;
@@ -27,15 +29,19 @@ pub mod redaction;
 pub mod request_logging;
 pub mod review_agent;
 pub mod route_planner;
+pub mod routing;
 pub mod secret_storage;
 pub mod service;
+pub mod skills;
 
 pub use admin_api_keys::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
     AdminApiKeyUserOwner, AdminApiKeysPayload, CreateAdminApiKeyInput, CreateAdminApiKeyResult,
-    RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput,
+    PersonalApiKey, RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput, api_key_display_prefix,
 };
-pub use admin_models::{AdminModelStatus, AdminModelSummary, AdminModelsService};
+pub use admin_models::{
+    AdminModelRouteSummary, AdminModelStatus, AdminModelSummary, AdminModelsService,
+};
 pub use agent_analysis::{
     desired_versions, desired_versions_for_policy, enqueue_analysis as enqueue_agent_analysis,
     enqueue_analysis_with_versions as enqueue_agent_analysis_with_versions,
@@ -46,6 +52,11 @@ pub use agent_session_analysis::{
 pub use authenticator::{Authenticator, verify_gateway_key_secret};
 pub use batches::{
     BatchPricer, BatchPricingPolicy, CreateBatchInput, CreateBatchItemInput, create_batch,
+};
+pub use benchmark_catalog::{
+    BENCHMARK_ATTRIBUTION, BenchmarkMatchKind, BenchmarkMetric, BenchmarkSnapshot,
+    DEFAULT_BENCHMARK_SOURCE_URL, ModelBenchmarkScore, benchmark_snapshot_to_pretty_json,
+    empty_benchmark_snapshot, fetch_openrouter_benchmark_models, merge_benchmark_models,
 };
 pub use budget_alerts::{
     BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,
@@ -123,3 +134,5 @@ pub use secret_storage::{
     encrypt_gateway_api_key_secret,
 };
 pub use service::{BatchUsageInput, GatewayService, RecordedChatUsage};
+
+pub use skills::SkillService;

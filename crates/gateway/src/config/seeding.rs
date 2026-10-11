@@ -339,11 +339,13 @@ impl GatewayConfig {
                     description: model.description.clone(),
                     tags: model.tags.clone(),
                     rank: model.rank,
+                    routing: model.routing.clone(),
                     routes: model
                         .routes
                         .iter()
                         .map(|route| {
                             Ok(SeedModelRoute {
+                                route_key: route.id.clone(),
                                 provider_key: route.provider.clone(),
                                 upstream_model: route.upstream_model.clone(),
                                 priority: route.priority,

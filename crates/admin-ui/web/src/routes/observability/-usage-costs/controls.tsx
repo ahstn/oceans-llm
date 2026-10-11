@@ -79,7 +79,7 @@ export function ReportFilters({
           onValueChange={(value) => onOwnerKindChange(value as SpendOwnerKind)}
           disabled={isPending}
         >
-          <SelectTrigger size="sm" className="w-[150px] text-[0.8rem]" aria-label="Owner filter">
+          <SelectTrigger size="sm" className="w-[150px] text-xs" aria-label="Owner filter">
             <SelectValue placeholder="Owner" />
           </SelectTrigger>
           <SelectContent>

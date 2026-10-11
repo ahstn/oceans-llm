@@ -20,6 +20,8 @@ const primarySidebar = [
         link: "/setup/deploy-and-operations",
       },
       { text: "Kubernetes and Helm", link: "/setup/kubernetes-and-helm" },
+      { text: "Self-hosting (mise daemons)", link: "/setup/self-hosting-mise-daemons" },
+      { text: "Agent Skills", link: "/setup/skills" },
     ],
   },
   {
@@ -163,6 +165,10 @@ const contributingSidebar = [
         link: "/contributing/mcp/mcp-registry-and-discovery",
       },
       { text: "Screenshots", link: "/contributing/reference/screenshots" },
+      {
+        text: "Model Benchmark Snapshot",
+        link: "/contributing/reference/model-benchmark-snapshot",
+      },
     ],
   },
   {

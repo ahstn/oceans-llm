@@ -511,7 +511,7 @@ fn map_reveal_result(result: RevealAdminApiKeySecretResult) -> RevealApiKeySecre
     }
 }
 
-fn map_api_key_summary(api_key: AdminApiKeySummary) -> AdminApiKeyView {
+pub(crate) fn map_api_key_summary(api_key: AdminApiKeySummary) -> AdminApiKeyView {
     AdminApiKeyView {
         id: api_key.id.to_string(),
         name: api_key.name,
