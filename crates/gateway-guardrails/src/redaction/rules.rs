@@ -17,9 +17,19 @@ pub(super) struct Rule {
     pub keywords: &'static [&'static str],
     pub pattern: &'static str,
     pub min_entropy: f32,
-    /// Rejects values made only of letters, `_`, `.` and `-`, which are usually
-    /// identifiers rather than secrets.
+    /// Rejects values made only of letters, `_`, `.` and `-`, or only of digits,
+    /// which are usually identifiers or counts rather than secrets.
     pub reject_word_like: bool,
+}
+
+/// Prefixes a token pattern with a word boundary that also holds after a JSON
+/// escape such as `\n`. Tool-call arguments arrive as JSON-encoded strings, where
+/// a line break is the two characters `\` and `n`, and `\b` cannot match between
+/// that `n` and a token. Rules redact capture group 1, so the escape stays.
+macro_rules! bounded {
+    ($pattern:literal) => {
+        concat!(r"(?:\b|\\[nrt])", $pattern)
+    };
 }
 
 /// Matches `<keyword>... = <value>` style assignments in code, config, and
@@ -73,162 +83,179 @@ pub(super) const RULES: &[Rule] = &[
     provider(
         "openai-api-key",
         &["t3blbkfj"],
-        r"\b(sk-(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58}|[A-Za-z0-9_-]{20})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58}|[A-Za-z0-9_-]{20})\b|sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20})",
+        bounded!(
+            r"(sk-(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58}|[A-Za-z0-9_-]{20})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58}|[A-Za-z0-9_-]{20})\b|sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20})"
+        ),
         3.0,
     ),
     provider(
         "anthropic-api-key",
         &["sk-ant-api03"],
-        r"\b(sk-ant-api03-[a-zA-Z0-9_\-]{93}AA)",
+        bounded!(r"(sk-ant-api03-[a-zA-Z0-9_\-]{93}AA)"),
         0.0,
     ),
     provider(
         "anthropic-admin-api-key",
         &["sk-ant-admin01"],
-        r"\b(sk-ant-admin01-[a-zA-Z0-9_\-]{93}AA)",
+        bounded!(r"(sk-ant-admin01-[a-zA-Z0-9_\-]{93}AA)"),
         0.0,
     ),
-    provider("google-api-key", &["aiza"], r"\b(AIza[[:word:]-]{35})", 4.0),
-    provider("groq-api-key", &["gsk_"], r"(?i)\b(gsk_[A-Z0-9]{52})", 3.5),
+    provider(
+        "google-api-key",
+        &["aiza"],
+        bounded!(r"(AIza[[:word:]-]{35})"),
+        4.0,
+    ),
+    provider(
+        "groq-api-key",
+        &["gsk_"],
+        bounded!(r"(?i)(gsk_[A-Z0-9]{52})"),
+        3.5,
+    ),
     provider(
         "xai-api-key",
         &["xai-"],
-        r"(?i)\b(xai-[A-Za-z0-9_-]{70,120})",
+        bounded!(r"(?i)(xai-[A-Za-z0-9_-]{70,120})"),
         3.5,
     ),
     provider(
         "openrouter-api-key",
         &["sk-or-v1-"],
-        r"(?i)\b(sk-or-v1-[0-9a-f]{64})",
+        bounded!(r"(?i)(sk-or-v1-[0-9a-f]{64})"),
         0.0,
     ),
     provider(
         "huggingface-access-token",
         &["hf_"],
-        r"\b(hf_(?i:[a-z]{34}))",
+        bounded!(r"(hf_(?i:[a-z]{34}))"),
         2.0,
     ),
     provider(
         "huggingface-organization-token",
         &["api_org_"],
-        r"\b(api_org_(?i:[a-z]{34}))",
+        bounded!(r"(api_org_(?i:[a-z]{34}))"),
         2.0,
     ),
     provider(
         "replicate-api-token",
         &["r8_"],
-        r"(?i)\b(r8_[A-Za-z0-9]{37})",
+        bounded!(r"(?i)(r8_[A-Za-z0-9]{37})"),
         3.0,
     ),
     provider(
         "perplexity-api-key",
         &["pplx-"],
-        r"\b(pplx-[a-zA-Z0-9]{48})",
+        bounded!(r"(pplx-[a-zA-Z0-9]{48})"),
         4.0,
     ),
     provider(
         "cerebras-api-key",
         &["csk-"],
-        r"(?i)\b(csk-[a-z0-9]{48})",
+        bounded!(r"(?i)(csk-[a-z0-9]{48})"),
         0.0,
     ),
     provider(
         "together-api-key",
         &["tgp_v1_"],
-        r"(?i)\b(tgp_v1_[A-Za-z0-9_-]{43})",
+        bounded!(r"(?i)(tgp_v1_[A-Za-z0-9_-]{43})"),
         0.0,
     ),
     provider(
         "langsmith-api-key",
         &["lsv2_"],
-        r"\b(lsv2_(?:pt|sk)_[0-9a-fA-F]{32}_[0-9a-fA-F]{10})",
+        bounded!(r"(lsv2_(?:pt|sk)_[0-9a-fA-F]{32}_[0-9a-fA-F]{10})"),
         0.0,
     ),
     provider(
         "aws-bedrock-api-key",
         &["absk"],
-        r"\b(ABSK[A-Za-z0-9+/]{109,269}={0,2})",
+        bounded!(r"(ABSK[A-Za-z0-9+/]{109,269}={0,2})"),
         0.0,
     ),
     // Source control, package registries, and developer platforms.
     provider(
         "github-token",
         &["ghp_", "gho_", "ghu_", "ghs_", "ghr_"],
-        r"\b((?:ghp|gho|ghu|ghs|ghr)_[0-9a-zA-Z]{36})",
+        bounded!(r"((?:ghp|gho|ghu|ghs|ghr)_[0-9a-zA-Z]{36})"),
         0.0,
     ),
     provider(
         "github-fine-grained-pat",
         &["github_pat_"],
-        r"\b(github_pat_[[:word:]]{82})",
+        bounded!(r"(github_pat_[[:word:]]{82})"),
         0.0,
     ),
-    provider("gitlab-pat", &["glpat-"], r"\b(glpat-[[:word:]-]{20})", 0.0),
+    provider(
+        "gitlab-pat",
+        &["glpat-"],
+        bounded!(r"(glpat-[[:word:]-]{20})"),
+        0.0,
+    ),
     provider(
         "npm-access-token",
         &["npm_"],
-        r"(?i)\b(npm_[a-z0-9]{36})",
+        bounded!(r"(?i)(npm_[a-z0-9]{36})"),
         2.0,
     ),
     provider(
         "pypi-upload-token",
         &["pypi-ageichlwas5vcmc"],
-        r"\b(pypi-AgEIcHlwaS5vcmc[[:word:]-]{50,1000})",
+        bounded!(r"(pypi-AgEIcHlwaS5vcmc[[:word:]-]{50,1000})"),
         0.0,
     ),
     provider(
         "vercel-token",
         &["vck_", "vcp_"],
-        r"(?i)\b(vc[kp]_[A-Za-z0-9_-]{56})",
+        bounded!(r"(?i)(vc[kp]_[A-Za-z0-9_-]{56})"),
         0.0,
     ),
     provider(
         "databricks-api-token",
         &["dapi"],
-        r"\b(dapi[a-f0-9]{32}(?:-\d)?)",
+        bounded!(r"(dapi[a-f0-9]{32}(?:-\d)?)"),
         3.0,
     ),
     provider(
         "digitalocean-token",
         &["dop_v1_", "doo_v1_", "dor_v1_"],
-        r"\b(do[por]_v1_[a-f0-9]{64})",
+        bounded!(r"(do[por]_v1_[a-f0-9]{64})"),
         0.0,
     ),
     provider(
         "linear-api-key",
         &["lin_api_"],
-        r"\b(lin_api_(?i:[a-z0-9]{40}))",
+        bounded!(r"(lin_api_(?i:[a-z0-9]{40}))"),
         2.0,
     ),
     provider(
         "notion-api-token",
         &["ntn_"],
-        r"\b(ntn_[0-9]{11}[A-Za-z0-9]{32}[A-Za-z0-9]{3})",
+        bounded!(r"(ntn_[0-9]{11}[A-Za-z0-9]{32}[A-Za-z0-9]{3})"),
         0.0,
     ),
     provider(
         "doppler-token",
         &["dp.pt.", "dp.st."],
-        r"\b(dp\.(?:pt|st)\.(?i:[a-z0-9]{43}))",
+        bounded!(r"(dp\.(?:pt|st)\.(?i:[a-z0-9]{43}))"),
         2.0,
     ),
     provider(
         "shopify-token",
         &["shpat_", "shpca_", "shppa_", "shpss_"],
-        r"\b(shp(?:at|ca|pa|ss)_[a-fA-F0-9]{32})",
+        bounded!(r"(shp(?:at|ca|pa|ss)_[a-fA-F0-9]{32})"),
         0.0,
     ),
     provider(
         "onepassword-service-account-token",
         &["ops_eyj"],
-        r"\b(ops_eyJ[a-zA-Z0-9+/]{250,}={0,3})",
+        bounded!(r"(ops_eyJ[a-zA-Z0-9+/]{250,}={0,3})"),
         0.0,
     ),
     // Cloud, messaging, and payments.
     provider(
         "aws-access-key-id",
         &["a3t", "akia", "asia", "abia", "acca"],
-        r"\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\b",
+        bounded!(r"((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\b"),
         3.0,
     ),
     provider(
@@ -240,19 +267,19 @@ pub(super) const RULES: &[Rule] = &[
     provider(
         "slack-bot-token",
         &["xoxb"],
-        r"\b(xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*)",
+        bounded!(r"(xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*)"),
         0.0,
     ),
     provider(
         "slack-user-token",
         &["xoxp", "xoxe"],
-        r"\b(xox[pe](?:-[0-9]{10,13}){3}-[a-zA-Z0-9-]{28,34})",
+        bounded!(r"(xox[pe](?:-[0-9]{10,13}){3}-[a-zA-Z0-9-]{28,34})"),
         0.0,
     ),
     provider(
         "slack-app-token",
         &["xapp"],
-        r"(?i)\b(xapp-\d-[A-Z0-9]+-\d+-[a-z0-9]+)",
+        bounded!(r"(?i)(xapp-\d-[A-Z0-9]+-\d+-[a-z0-9]+)"),
         0.0,
     ),
     provider(
@@ -266,20 +293,22 @@ pub(super) const RULES: &[Rule] = &[
         &[
             "sk_test", "sk_live", "sk_prod", "rk_test", "rk_live", "rk_prod",
         ],
-        r"\b((?:sk|rk)_(?:test|live|prod)_[a-zA-Z0-9]{10,99})",
+        bounded!(r"((?:sk|rk)_(?:test|live|prod)_[a-zA-Z0-9]{10,99})"),
         2.0,
     ),
     provider(
         "sendgrid-api-token",
         &["sg."],
-        r"\b(SG\.(?i:[a-z0-9=_\-\.]{66}))",
+        bounded!(r"(SG\.(?i:[a-z0-9=_\-\.]{66}))"),
         2.0,
     ),
     // Structured credentials.
     provider(
         "jwt",
         &["ey"],
-        r"\b(ey[a-zA-Z0-9]{17,}\.ey[a-zA-Z0-9/\\_-]{17,}\.(?:[a-zA-Z0-9/\\_-]{10,}={0,2})?)",
+        bounded!(
+            r"(ey[a-zA-Z0-9]{17,}\.ey[a-zA-Z0-9/\\_-]{17,}\.(?:[a-zA-Z0-9/\\_-]{10,}={0,2})?)"
+        ),
         3.0,
     ),
     provider(
@@ -292,7 +321,9 @@ pub(super) const RULES: &[Rule] = &[
     credential(
         "credential-uri",
         &["://"],
-        r#"(?i)\b(?:https?|postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?|ldaps?|smtps?|ftps?|ssh)://[^:/@\s'"\x60]{0,128}:([^/@\s'"\x60]{1,256})@"#,
+        bounded!(
+            r#"(?i)(?:https?|postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?|ldaps?|smtps?|ftps?|ssh)://[^:/@\s'"\x60]{0,128}:([^/@\s'"\x60]{1,256})@"#
+        ),
         0.0,
     ),
     credential(
@@ -331,6 +362,39 @@ pub(super) const RULES: &[Rule] = &[
         assigned!("twilio", r"SK[0-9a-f]{32}"),
         3.0,
     ),
+    // Strong secret names bound to a value, as in `.env` files, JSON config, and
+    // headers. Narrower than `generic-api-key`: no `key`, `auth`, or `access`
+    // keywords, and the value must end at a delimiter, so calls such as
+    // `getPassword()` and references such as `process.env.TOKEN` do not match.
+    Rule {
+        reject_word_like: true,
+        ..credential(
+            "secret-assignment",
+            &[
+                "passw",
+                "secret",
+                "token",
+                "api_key",
+                "api-key",
+                "apikey",
+                "private_key",
+            ],
+            assigned!(
+                r"(?:passw(?:or)?d|secret|token|api[_-]?key|private[_-]?key)",
+                r"[[:word:]./+=~!@#$%^&*?-]{8,128}"
+            ),
+            3.0,
+        )
+    },
+    Rule {
+        reject_word_like: true,
+        ..credential(
+            "bearer-token",
+            &["bearer"],
+            bounded!(r"(?i)bearer\s+([A-Za-z0-9._~+/-]{16,}=*)"),
+            3.0,
+        )
+    },
     // Opt-in: gitleaks `generic-api-key`, which trades precision for recall.
     Rule {
         id: "generic-api-key",

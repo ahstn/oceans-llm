@@ -131,9 +131,10 @@ fn find_secrets(text: &str, config: &SecretRedactionConfig) -> Vec<Finding> {
 
 fn is_secret(rule: &Rule, value: &str) -> bool {
     if rule.reject_word_like
-        && value
+        && (value
             .chars()
             .all(|char| char.is_ascii_alphabetic() || matches!(char, '_' | '.' | '-'))
+            || value.chars().all(|char| char.is_ascii_digit()))
     {
         return false;
     }

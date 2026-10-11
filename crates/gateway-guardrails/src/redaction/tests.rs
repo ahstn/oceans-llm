@@ -144,6 +144,64 @@ fn redacts_keyword_bound_credentials() {
 }
 
 #[test]
+fn redacts_tokens_after_json_escapes() {
+    // Tool-call arguments are JSON-encoded strings, so a line break inside them
+    // is the two characters `\` and `n`.
+    let github = format!("ghp_{}", random(ALNUM, 36, 41));
+    let key = anthropic_key();
+    let arguments = json!({
+        "path": ".env",
+        "content": format!("GITHUB={github}\nANTHROPIC=x\n{key}\n\tpostgres://app:{}@db/app", random(ALNUM, 16, 42)),
+    })
+    .to_string();
+    assert_eq!(
+        redact(&arguments, &default_config()),
+        r#"{"content":"GITHUB=[REDACTED:github-token]\nANTHROPIC=x\n[REDACTED:anthropic-api-key]\n\tpostgres://app:[REDACTED:credential-uri]@db/app","path":".env"}"#
+    );
+}
+
+#[test]
+fn redacts_secret_assignments_and_bearer_tokens_by_default() {
+    let cases = [
+        (
+            format!("DATABASE_PASSWORD={}\n", random(ALNUM, 20, 43)),
+            "DATABASE_PASSWORD=[REDACTED:secret-assignment]\n",
+        ),
+        (
+            format!("export SERVICE_API_TOKEN='{}'", random(ALNUM, 32, 44)),
+            "export SERVICE_API_TOKEN='[REDACTED:secret-assignment]'",
+        ),
+        (
+            format!("{{\"password\": \"{}\"}}", random(ALNUM, 16, 45)),
+            "{\"password\": \"[REDACTED:secret-assignment]\"}",
+        ),
+        (
+            format!("Authorization: Bearer {}", random(ALNUM, 40, 46)),
+            "Authorization: Bearer [REDACTED:bearer-token]",
+        ),
+    ];
+    for (text, expected) in cases {
+        assert_eq!(redact(&text, &default_config()), expected);
+    }
+}
+
+#[test]
+fn secret_assignment_ignores_references_counts_and_calls() {
+    for text in [
+        "password = getPassword()",
+        "token: process.env.SERVICE_TOKEN",
+        "\"max_tokens\": 4096",
+        "\"total_tokens\": 1234567890123",
+        "api_key: ${SERVICE_API_KEY}",
+        "token_type: \"Bearer\"",
+        "Authorization: Bearer <token>",
+        "use the bearer authentication_scheme_name",
+    ] {
+        assert_eq!(redact(text, &default_config()), text);
+    }
+}
+
+#[test]
 fn leaves_placeholders_and_ordinary_text_alone() {
     for text in [
         "AKIAIOSFODNN7EXAMPLE",
@@ -165,11 +223,11 @@ fn tiers_and_disabled_rules_select_rules() {
     disabled.disabled_rules.insert("anthropic-api-key".into());
     assert_eq!(redact(&key, &disabled), key);
 
-    let generic = format!("app_token = \"{}\"", random(ALNUM, 32, 17));
+    let generic = format!("client_key = \"{}\"", random(ALNUM, 32, 17));
     assert_eq!(redact(&generic, &default_config()), generic);
     assert_eq!(
         redact(&generic, &config(&[SecretTier::Generic])),
-        "app_token = \"[REDACTED:generic-api-key]\""
+        "client_key = \"[REDACTED:generic-api-key]\""
     );
 }
 

@@ -105,10 +105,10 @@ Redaction needs both `enabled: true` on the policy and `secret_redaction.enabled
 | Tier | Default | Detects |
 | --- | --- | --- |
 | `provider_tokens` | On | Tokens with a distinctive prefix: AI providers (OpenAI, Anthropic, Google, Groq, xAI, OpenRouter, Hugging Face, and others), GitHub, GitLab, AWS access key IDs, Slack, Stripe, package registries, JWTs, and PEM private keys |
-| `credentials` | On | Values that need context: the password in a connection URI, and keyword-bound assignments such as `AWS_SECRET_ACCESS_KEY=...` or `MISTRAL_API_KEY=...` |
+| `credentials` | On | Values that need context: the password in a connection URI, `Authorization: Bearer` tokens, values assigned to names containing `password`, `secret`, `token`, `api_key`, or `private_key` (as in `DATABASE_PASSWORD=...` or `{"password": "..."}`), and provider-specific assignments such as `AWS_SECRET_ACCESS_KEY=...` or `MISTRAL_API_KEY=...` |
 | `generic` | Off | The gitleaks `generic-api-key` rule: any high-entropy value assigned to a name containing `key`, `token`, `secret`, `password`, and similar. Expect more false positives. |
 
-Candidates must pass a per-rule Shannon-entropy threshold. Documentation placeholders are left alone: values containing uppercase `EXAMPLE`, `your_`, `<...>`, `${...}`, <code v-pre>{{...}}</code>, or `%VAR%`, and values made mostly of one repeated character. List a rule ID under `disabled_rules` to turn off a rule that produces false positives. Startup rejects unknown rule IDs.
+Token patterns also match directly after a JSON escape such as `\n`, so secrets inside JSON-encoded tool-call arguments are caught. The `secret-assignment` rule skips values that are only letters and `_.-` (such as `process.env.TOKEN`), only digits, or followed by a non-delimiter (such as `getPassword()`). Candidates must pass a per-rule Shannon-entropy threshold. Documentation placeholders are left alone: values containing uppercase `EXAMPLE`, `your_`, `<...>`, `${...}`, <code v-pre>{{...}}</code>, or `%VAR%`, and values made mostly of one repeated character. List a rule ID under `disabled_rules` to turn off a rule that produces false positives. Startup rejects unknown rule IDs.
 
 Each redacted request records one `transformed` decision per matched rule, with evaluator `secret_redaction`, reason code `secret_redaction.redacted`, and the JSON pointer of the first matching field. The content hash covers the redacted text only.
 

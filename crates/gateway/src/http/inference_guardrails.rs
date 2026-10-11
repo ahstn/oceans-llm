@@ -1218,7 +1218,7 @@ mod tests {
                 {"role": "user", "content": format!("deploy with {key}")},
                 {"role": "assistant", "tool_calls": [{"function": {
                     "name": "deploy",
-                    "arguments": json!({"token": key}).to_string(),
+                    "arguments": json!({"value": key}).to_string(),
                 }}]},
             ],
         });
