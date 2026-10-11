@@ -10774,7 +10774,8 @@
           "managed_checks",
           "stream_buffer_bytes",
           "secret_redaction",
-          "scope"
+          "scope",
+          "overridden_fields"
         ],
         "properties": {
           "enabled": {
@@ -10788,6 +10789,13 @@
           },
           "mode": {
             "type": "string"
+          },
+          "overridden_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Settings this scope's override sets itself, named as in `gateway.yaml`\n(`mode`, `secret_redaction.enabled`). Empty for the default policy; the\nrest are inherited from it, even where the values happen to match."
           },
           "packs": {
             "type": "array",

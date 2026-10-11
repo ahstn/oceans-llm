@@ -22,12 +22,13 @@ const base = {
   stream_buffer_bytes: 4_194_304,
   secret_redaction: { enabled: true, tiers: ['credentials'], disabled_rules: [] },
   scope: 'global',
+  overridden_fields: [] as string[],
 }
 
 const policies = {
   default: base,
   model_routes: {
-    fast: { ...base, mode: 'deny', scope: 'model_route:fast' },
+    fast: { ...base, mode: 'deny', scope: 'model_route:fast', overridden_fields: ['mode'] },
     slow: { ...base, scope: 'model_route:slow' },
   },
   mcp_servers: {},
@@ -99,5 +100,58 @@ describe('GuardrailSettingsPage', () => {
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('company-bedrock')).toBeInTheDocument()
+  })
+
+  it('counts an integration as unused on a scope whose guardrails are off', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      policies: {
+        ...policies,
+        default: { ...base, enabled: false, managed_checks: ['company-bedrock'] },
+        model_routes: {},
+      },
+    })
+    await renderPage()
+
+    expect(screen.getByText('Unused')).toBeInTheDocument()
+  })
+
+  it('keeps an override that matches the default when the default changes', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      policies: {
+        ...policies,
+        model_routes: {
+          slow: {
+            ...base,
+            scope: 'model_route:slow',
+            overridden_fields: ['secret_redaction.enabled'],
+          },
+        },
+      },
+    })
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Manage secret redaction' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('switch', { name: 'Redact secrets' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }))
+
+    expect(screen.getByRole('region', { name: 'yaml code' })).toHaveTextContent(
+      'slow: secret_redaction: enabled: true',
+    )
+  })
+
+  it('says MCP redaction covers request logs only', async () => {
+    const { SecretRedactionEditor } = await import('@/components/guardrails/settings/editors')
+    const { draftFrom } = await import('@/components/guardrails/config-yaml')
+    render(
+      <SecretRedactionEditor
+        draft={draftFrom(base as never)}
+        scopeKind="mcp"
+        policies={policies as never}
+        onChange={() => {}}
+      />,
+    )
+
+    expect(screen.getByText(/forwarded to this MCP server unchanged/)).toBeInTheDocument()
   })
 })

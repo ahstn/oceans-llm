@@ -11,7 +11,8 @@ use gateway_core::{
 };
 use gateway_guardrails::{
     DecisionAction, DecisionId, EffectivePolicy, EvaluationInput, EvaluationPayload,
-    FailureDisposition, GuardPhase, ManagedCheckKind, PackRegistry, PolicyResolver, PolicyTarget,
+    FailureDisposition, GuardPhase, ManagedCheckKind, PackRegistry, PolicyOverride, PolicyResolver,
+    PolicyTarget,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -167,6 +168,10 @@ pub struct EffectiveGuardrailPolicyView {
     pub stream_buffer_bytes: usize,
     pub secret_redaction: SecretRedactionView,
     pub scope: String,
+    /// Settings this scope's override sets itself, named as in `gateway.yaml`
+    /// (`mode`, `secret_redaction.enabled`). Empty for the default policy; the
+    /// rest are inherited from it, even where the values happen to match.
+    pub overridden_fields: Vec<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -255,7 +260,10 @@ pub async fn get_guardrail_policies(
         .map(|route| {
             (
                 route.clone(),
-                policy_view(resolver.resolve(PolicyTarget::ModelRoute(route))),
+                policy_view(
+                    resolver.resolve(PolicyTarget::ModelRoute(route)),
+                    Some(&state.guardrail_config.model_routes[route]),
+                ),
             )
         })
         .collect();
@@ -266,7 +274,10 @@ pub async fn get_guardrail_policies(
         .map(|server| {
             (
                 server.clone(),
-                policy_view(resolver.resolve(PolicyTarget::McpServer(server))),
+                policy_view(
+                    resolver.resolve(PolicyTarget::McpServer(server)),
+                    Some(&state.guardrail_config.mcp_servers[server]),
+                ),
             )
         })
         .collect();
@@ -324,7 +335,7 @@ pub async fn get_guardrail_policies(
         })
         .collect();
     Ok(Json(envelope(GuardrailPoliciesView {
-        default: policy_view(resolver.resolve(PolicyTarget::Global)),
+        default: policy_view(resolver.resolve(PolicyTarget::Global), None),
         model_routes,
         mcp_servers,
         managed_checks,
@@ -370,8 +381,12 @@ pub async fn list_guardrail_decisions(
     })))
 }
 
-fn policy_view(policy: EffectivePolicy) -> EffectiveGuardrailPolicyView {
+fn policy_view(
+    policy: EffectivePolicy,
+    policy_override: Option<&PolicyOverride>,
+) -> EffectiveGuardrailPolicyView {
     EffectiveGuardrailPolicyView {
+        overridden_fields: policy_override.map(overridden_fields).unwrap_or_default(),
         enabled: policy.enabled,
         mode: match policy.mode {
             gateway_guardrails::PolicyMode::Audit => "audit",
@@ -412,6 +427,31 @@ fn policy_view(policy: EffectivePolicy) -> EffectiveGuardrailPolicyView {
             }
         },
     }
+}
+
+fn overridden_fields(policy: &PolicyOverride) -> Vec<String> {
+    let redaction = &policy.secret_redaction;
+    [
+        ("enabled", policy.enabled.is_some()),
+        ("mode", policy.mode.is_some()),
+        ("packs", policy.packs.is_some()),
+        ("managed_checks", policy.managed_checks.is_some()),
+        ("stream_buffer_bytes", policy.stream_buffer_bytes.is_some()),
+        (
+            "stream_buffer_timeout_ms",
+            policy.stream_buffer_timeout_ms.is_some(),
+        ),
+        ("secret_redaction.enabled", redaction.enabled.is_some()),
+        ("secret_redaction.tiers", redaction.tiers.is_some()),
+        (
+            "secret_redaction.disabled_rules",
+            redaction.disabled_rules.is_some(),
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, set)| *set)
+    .map(|(field, _)| field.to_string())
+    .collect()
 }
 
 fn decision_view(record: GuardrailDecisionEventRecord) -> GuardrailDecisionView {
@@ -479,5 +519,29 @@ fn failure_disposition_name(disposition: FailureDisposition) -> &'static str {
     match disposition {
         FailureDisposition::FailOpen => "fail_open",
         FailureDisposition::FailClosed => "fail_closed",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gateway_guardrails::{PolicyOverride, SecretRedactionOverride};
+
+    #[test]
+    fn overridden_fields_name_only_what_the_override_sets() {
+        // Values equal to the default still count: presence is what makes a field explicit.
+        let policy = PolicyOverride {
+            enabled: Some(true),
+            secret_redaction: SecretRedactionOverride {
+                enabled: Some(false),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            super::overridden_fields(&policy),
+            ["enabled", "secret_redaction.enabled"]
+        );
+        assert!(super::overridden_fields(&PolicyOverride::default()).is_empty());
     }
 }

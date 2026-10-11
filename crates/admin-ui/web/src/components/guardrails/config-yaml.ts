@@ -45,6 +45,19 @@ export const FIELDS = [
   { id: 'redaction.disabled_rules', get: (d: PolicyDraft) => d.redaction.disabled_rules },
 ] as const
 
+/**
+ * Fields an override sets in `gateway.yaml`, even where the value matches the default. The
+ * effective policy alone cannot tell those apart from inherited fields.
+ */
+export function overrideFields(policy: GuardrailPolicy): Set<FieldId> {
+  const fields = new Set<FieldId>()
+  for (const name of policy.overridden_fields) {
+    const id = name.replace(/^secret_redaction\./, 'redaction.')
+    if (ALL_FIELDS.has(id)) fields.add(id as FieldId)
+  }
+  return fields
+}
+
 /** Fields whose values differ between two drafts. */
 export function differingFields(a: PolicyDraft, b: PolicyDraft): Set<FieldId> {
   const fields = new Set<FieldId>()
@@ -102,6 +115,7 @@ export function scopeYaml(scope: PolicyScope, draft: PolicyDraft, base: PolicyDr
   if (scope.kind === 'global') return configYaml([scope], { [scope.key]: draft }, () => ALL_FIELDS)
   const fields = differingFields(draft, base)
   for (const field of differingFields(draft, draftFrom(scope.policy))) fields.add(field)
+  for (const field of overrideFields(scope.policy)) fields.add(field)
   return configYaml([scope], { [scope.key]: draft }, () => fields)
 }
 

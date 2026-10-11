@@ -8,6 +8,7 @@ import {
   differingFields,
   draftChanged,
   draftFrom,
+  overrideFields,
   REDACTION_TIERS,
   withFields,
   type PolicyDraft,
@@ -117,6 +118,7 @@ export function areaSummary(area: AreaId, draft: PolicyDraft) {
       tone: 'success' as const,
     }
   }
+  if (!draft.enabled) return { text: 'Off', tone: 'outline' as const }
   if (!draft.managed_checks.length) return { text: 'None', tone: 'outline' as const }
   return { text: draft.managed_checks.join(', '), tone: 'success' as const }
 }
@@ -141,7 +143,8 @@ export function useGuardrailDrafts(policies: GuardrailPoliciesView) {
     const overrides: Record<string, Override> = {}
     for (const scope of scopes.filter((item) => item.kind !== 'global')) {
       const values = draftFrom(scope.policy)
-      overrides[scope.key] = { values, explicit: differingFields(values, base) }
+      const explicit = new Set([...overrideFields(scope.policy), ...differingFields(values, base)])
+      overrides[scope.key] = { values, explicit }
     }
     return { base, overrides }
   }

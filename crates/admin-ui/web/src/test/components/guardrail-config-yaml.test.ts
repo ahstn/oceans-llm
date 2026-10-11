@@ -15,6 +15,7 @@ const base: GuardrailPolicy = {
     disabled_rules: [],
   },
   scope: 'global',
+  overridden_fields: [],
 }
 
 describe('scopeYaml', () => {
@@ -107,6 +108,15 @@ describe('scopeYaml', () => {
     draft.mode = 'audit'
 
     expect(scopeYaml(scope, draft, draftFrom(base))).toBe(
+      'guardrails:\n  mcp_servers:\n    github:\n      mode: audit\n',
+    )
+  })
+
+  it('keeps a field the override sets even when it matches the default', () => {
+    const policy = { ...base, scope: 'mcp_server:github', overridden_fields: ['mode'] }
+    const scope: PolicyScope = { key: policy.scope, kind: 'mcp', name: 'github', policy }
+
+    expect(scopeYaml(scope, draftFrom(policy), draftFrom(base))).toBe(
       'guardrails:\n  mcp_servers:\n    github:\n      mode: audit\n',
     )
   })

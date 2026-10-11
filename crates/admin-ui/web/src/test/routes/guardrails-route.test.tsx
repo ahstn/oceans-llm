@@ -40,6 +40,7 @@ const loaderData = {
         disabled_rules: [],
       },
       scope: 'global',
+      overridden_fields: [],
     },
     model_routes: {},
     mcp_servers: {},

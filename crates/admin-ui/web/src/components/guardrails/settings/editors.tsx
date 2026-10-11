@@ -45,6 +45,7 @@ import { groupPacks, kindLabel, MANAGED_KINDS, packInfo, scopeLabel, type AreaId
 
 type EditorProps = {
   draft: PolicyDraft
+  scopeKind: PolicyScope['kind']
   policies: GuardrailPoliciesView
   onChange: (draft: PolicyDraft) => void
 }
@@ -126,7 +127,7 @@ export function DestructiveActionsEditor({ draft, policies, onChange }: EditorPr
   )
 }
 
-export function SecretRedactionEditor({ draft, onChange }: EditorProps) {
+export function SecretRedactionEditor({ draft, scopeKind, onChange }: EditorProps) {
   const [rule, setRule] = useState('')
   const redaction = draft.redaction
   const set = (next: Partial<PolicyDraft['redaction']>) =>
@@ -144,7 +145,9 @@ export function SecretRedactionEditor({ draft, onChange }: EditorProps) {
         <FieldContent>
           <FieldLabel htmlFor="redaction-enabled">Redact secrets</FieldLabel>
           <FieldDescription>
-            Applies to model-route prompts and request-log payloads.
+            {scopeKind === 'mcp'
+              ? 'Redacts request-log payloads only. Tool arguments are still forwarded to this MCP server unchanged.'
+              : 'Applies to model-route prompts and request-log payloads.'}
           </FieldDescription>
         </FieldContent>
         <Switch

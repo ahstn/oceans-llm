@@ -48,6 +48,7 @@ export function AreaDialog({
               <AreaEditor
                 area={meta.id}
                 draft={drafts.drafts[scopeKey]}
+                scopeKind={drafts.scopes.find((scope) => scope.key === scopeKey)?.kind ?? 'global'}
                 policies={policies}
                 onChange={(next) => drafts.update(scopeKey, next)}
               />

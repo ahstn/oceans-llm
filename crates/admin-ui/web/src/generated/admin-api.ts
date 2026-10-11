@@ -2830,6 +2830,12 @@ export interface components {
             enabled: boolean;
             managed_checks: string[];
             mode: string;
+            /**
+             * @description Settings this scope's override sets itself, named as in `gateway.yaml`
+             *     (`mode`, `secret_redaction.enabled`). Empty for the default policy; the
+             *     rest are inherited from it, even where the values happen to match.
+             */
+            overridden_fields: string[];
             packs: string[];
             scope: string;
             secret_redaction: components["schemas"]["SecretRedactionView"];

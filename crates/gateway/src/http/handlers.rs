@@ -50,7 +50,7 @@ use crate::http::{
     error::AppError,
     inference_guardrails::{
         GuardStreamError, InferenceGuardContext, guard_model_response, guard_prompt, guard_stream,
-        model_route_key,
+        model_route_key, redact_prompt,
     },
     request_tags::extract_request_tags,
     request_tracing::{StreamTrace, provider_operation_span, trace_provider_operation},
@@ -81,6 +81,30 @@ where
         )))
     })?;
     Ok(context)
+}
+
+/// Redacts prompt secrets in a typed request without running the other prompt evaluators.
+async fn redact_typed_request<T>(
+    state: &AppState,
+    request_id: &str,
+    route_key: &str,
+    request: &mut T,
+) -> Result<(), AppError>
+where
+    T: Serialize + DeserializeOwned,
+{
+    let mut redacted = serde_json::to_value(&*request).map_err(|error| {
+        AppError(GatewayError::Internal(format!(
+            "failed to encode redaction request: {error}"
+        )))
+    })?;
+    redact_prompt(state, request_id, route_key, &mut redacted).await;
+    *request = serde_json::from_value(redacted).map_err(|error| {
+        AppError(GatewayError::Internal(format!(
+            "secret redaction produced an invalid request: {error}"
+        )))
+    })?;
+    Ok(())
 }
 
 pub async fn healthz() -> Json<serde_json::Value> {
@@ -1004,7 +1028,7 @@ pub async fn v1_decisions(
     let request_started_at = Instant::now();
     let request_span = Span::current();
     let request_id = canonical_request_id(request_id)?;
-    let core_request = openai_decisions_request_to_core(&request);
+    let mut core_request = openai_decisions_request_to_core(&request);
     if let Some(message) = core_request.validation_error() {
         return Err(AppError(GatewayError::InvalidRequest(message)));
     }
@@ -1081,8 +1105,15 @@ pub async fn v1_decisions(
         stream: false,
     };
 
-    // Decisions routes skip guardrails: `state` and `questions` carry no
-    // chat-shaped prompt/response text for the evaluators to inspect.
+    // Decisions routes skip the prompt and response evaluators: `state` and
+    // `questions` carry no chat-shaped text for them to inspect. Secrets are
+    // still redacted before the request leaves the gateway.
+    let route_key = model_route_key(
+        &resolved.selection.execution_model.model_key,
+        &route.provider_key,
+        &route.upstream_model,
+    );
+    redact_typed_request(&state, &request_id, &route_key, &mut core_request).await?;
 
     state
         .service
@@ -3169,5 +3200,34 @@ mod tests {
             value["error"]["message"],
             "invalid request: bad messages request"
         );
+    }
+
+    #[tokio::test]
+    async fn decisions_request_secrets_are_redacted_before_dispatch() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
+        policy.enabled = true;
+        policy.secret_redaction.enabled = true;
+        // Assembled at runtime so no literal credential lands in the repository.
+        let key = format!(
+            "sk-ant-api03-{}AA",
+            &"aZ3kQ9mB7xR2tW5nL8pJ4vC6yH1dF0gS".repeat(3)[..93]
+        );
+        let mut request: gateway_core::CoreDecisionsRequest = serde_json::from_value(json!({
+            "model": "gpt",
+            "state": {"notes": format!("deploy with {key}")},
+        }))
+        .expect("decisions request");
+
+        let redacted =
+            super::redact_typed_request(&state, "request-1", "openai/gpt", &mut request).await;
+
+        assert!(redacted.is_ok());
+
+        assert_eq!(
+            request.state["notes"],
+            "deploy with [REDACTED:anthropic-api-key]"
+        );
+        assert_eq!(request.model, "gpt");
     }
 }

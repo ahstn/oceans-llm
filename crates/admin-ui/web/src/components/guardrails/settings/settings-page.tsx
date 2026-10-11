@@ -105,9 +105,10 @@ function IntegrationRows({
     return <p className="text-muted-foreground py-2 text-sm">No managed checks configured.</p>
   }
   return policies.managed_checks.map((check) => {
-    const using = drafts.scopes.filter((scope) =>
-      drafts.drafts[scope.key].managed_checks.includes(check.name),
-    )
+    const using = drafts.scopes.filter((scope) => {
+      const draft = drafts.drafts[scope.key]
+      return draft.enabled && draft.managed_checks.includes(check.name)
+    })
     return (
       <div key={check.name} className="flex items-center justify-between gap-3 py-2 text-sm">
         <span className="flex min-w-0 flex-col">
