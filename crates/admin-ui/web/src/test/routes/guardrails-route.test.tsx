@@ -11,6 +11,9 @@ const routeMock = {
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
   useRouter: () => ({ navigate: navigateMock }),
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
+  ),
   useRouterState: ({
     select,
   }: {
@@ -188,16 +191,9 @@ describe('GuardrailsPage', () => {
     })
   })
 
-  it('drafts configuration changes as YAML without saving them', async () => {
+  it('links Configure to the guardrail settings page', async () => {
     await renderPage()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Configure' }))
-    fireEvent.click(await screen.findByRole('radio', { name: 'Deny' }))
-
-    const yaml = await screen.findByRole('region', { name: 'yaml code' })
-    expect(yaml).toHaveTextContent('mode: deny')
-    expect(yaml).toHaveTextContent('tiers: [credentials, provider_tokens]')
-    expect(screen.getByRole('button', { name: 'Copy YAML' })).toBeInTheDocument()
-    expect(navigateMock).not.toHaveBeenCalled()
+    expect(screen.getByRole('link', { name: 'Configure' })).toHaveAttribute('href', '/guardrails')
   })
 })

@@ -15,6 +15,7 @@ import { Route as AgentPluginsRouteImport } from './routes/agent-plugins'
 import { Route as ApiKeysRouteImport } from './routes/api-keys'
 import { Route as BatchesRouteImport } from './routes/batches'
 import { Route as ChangePasswordRouteImport } from './routes/change-password'
+import { Route as GuardrailsRouteImport } from './routes/guardrails'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as NoAccessRouteImport } from './routes/no-access'
@@ -32,7 +33,6 @@ import { Route as McpToolsetsRouteImport } from './routes/mcp/toolsets'
 import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
 import { Route as ObservabilityAgentSessionsRouteImport } from './routes/observability/agent-sessions'
 import { Route as ObservabilityGuardrailsRouteImport } from './routes/observability/guardrails'
-import { Route as ObservabilityGuardrailsSettingsRouteImport } from './routes/observability/guardrails-settings'
 import { Route as ObservabilityLeaderboardRouteImport } from './routes/observability/leaderboard'
 import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observability/mcp-invocations'
 import { Route as ObservabilityRequestLogsRouteImport } from './routes/observability/request-logs'
@@ -69,6 +69,11 @@ const BatchesRoute = BatchesRouteImport.update({
 const ChangePasswordRoute = ChangePasswordRouteImport.update({
   id: '/change-password',
   path: '/change-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuardrailsRoute = GuardrailsRouteImport.update({
+  id: '/guardrails',
+  path: '/guardrails',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -158,12 +163,6 @@ const ObservabilityGuardrailsRoute = ObservabilityGuardrailsRouteImport.update({
   path: '/observability/guardrails',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ObservabilityGuardrailsSettingsRoute =
-  ObservabilityGuardrailsSettingsRouteImport.update({
-    id: '/observability/guardrails-settings',
-    path: '/observability/guardrails-settings',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ObservabilityLeaderboardRoute =
   ObservabilityLeaderboardRouteImport.update({
     id: '/observability/leaderboard',
@@ -210,6 +209,7 @@ export interface FileRoutesByFullPath {
   '/api-keys': typeof ApiKeysRoute
   '/batches': typeof BatchesRoute
   '/change-password': typeof ChangePasswordRoute
+  '/guardrails': typeof GuardrailsRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/no-access': typeof NoAccessRoute
@@ -226,7 +226,6 @@ export interface FileRoutesByFullPath {
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
-  '/observability/guardrails-settings': typeof ObservabilityGuardrailsSettingsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
@@ -243,6 +242,7 @@ export interface FileRoutesByTo {
   '/api-keys': typeof ApiKeysRoute
   '/batches': typeof BatchesRoute
   '/change-password': typeof ChangePasswordRoute
+  '/guardrails': typeof GuardrailsRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/no-access': typeof NoAccessRoute
@@ -259,7 +259,6 @@ export interface FileRoutesByTo {
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
-  '/observability/guardrails-settings': typeof ObservabilityGuardrailsSettingsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
@@ -277,6 +276,7 @@ export interface FileRoutesById {
   '/api-keys': typeof ApiKeysRoute
   '/batches': typeof BatchesRoute
   '/change-password': typeof ChangePasswordRoute
+  '/guardrails': typeof GuardrailsRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/no-access': typeof NoAccessRoute
@@ -293,7 +293,6 @@ export interface FileRoutesById {
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
-  '/observability/guardrails-settings': typeof ObservabilityGuardrailsSettingsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
@@ -312,6 +311,7 @@ export interface FileRouteTypes {
     | '/api-keys'
     | '/batches'
     | '/change-password'
+    | '/guardrails'
     | '/login'
     | '/models'
     | '/no-access'
@@ -328,7 +328,6 @@ export interface FileRouteTypes {
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
     | '/observability/guardrails'
-    | '/observability/guardrails-settings'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
@@ -345,6 +344,7 @@ export interface FileRouteTypes {
     | '/api-keys'
     | '/batches'
     | '/change-password'
+    | '/guardrails'
     | '/login'
     | '/models'
     | '/no-access'
@@ -361,7 +361,6 @@ export interface FileRouteTypes {
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
     | '/observability/guardrails'
-    | '/observability/guardrails-settings'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
@@ -378,6 +377,7 @@ export interface FileRouteTypes {
     | '/api-keys'
     | '/batches'
     | '/change-password'
+    | '/guardrails'
     | '/login'
     | '/models'
     | '/no-access'
@@ -394,7 +394,6 @@ export interface FileRouteTypes {
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
     | '/observability/guardrails'
-    | '/observability/guardrails-settings'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
     | '/observability/request-logs'
@@ -412,6 +411,7 @@ export interface RootRouteChildren {
   ApiKeysRoute: typeof ApiKeysRoute
   BatchesRoute: typeof BatchesRoute
   ChangePasswordRoute: typeof ChangePasswordRoute
+  GuardrailsRoute: typeof GuardrailsRoute
   LoginRoute: typeof LoginRoute
   ModelsRoute: typeof ModelsRoute
   NoAccessRoute: typeof NoAccessRoute
@@ -428,7 +428,6 @@ export interface RootRouteChildren {
   ObservabilityAgentHarnessesRoute: typeof ObservabilityAgentHarnessesRoute
   ObservabilityAgentSessionsRoute: typeof ObservabilityAgentSessionsRoute
   ObservabilityGuardrailsRoute: typeof ObservabilityGuardrailsRoute
-  ObservabilityGuardrailsSettingsRoute: typeof ObservabilityGuardrailsSettingsRoute
   ObservabilityLeaderboardRoute: typeof ObservabilityLeaderboardRoute
   ObservabilityMcpInvocationsRoute: typeof ObservabilityMcpInvocationsRoute
   ObservabilityRequestLogsRoute: typeof ObservabilityRequestLogsRoute
@@ -481,6 +480,13 @@ declare module '@tanstack/react-router' {
       path: '/change-password'
       fullPath: '/change-password'
       preLoaderRoute: typeof ChangePasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guardrails': {
+      id: '/guardrails'
+      path: '/guardrails'
+      fullPath: '/guardrails'
+      preLoaderRoute: typeof GuardrailsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -602,13 +608,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ObservabilityGuardrailsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/observability/guardrails-settings': {
-      id: '/observability/guardrails-settings'
-      path: '/observability/guardrails-settings'
-      fullPath: '/observability/guardrails-settings'
-      preLoaderRoute: typeof ObservabilityGuardrailsSettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/observability/leaderboard': {
       id: '/observability/leaderboard'
       path: '/observability/leaderboard'
@@ -668,6 +667,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiKeysRoute: ApiKeysRoute,
   BatchesRoute: BatchesRoute,
   ChangePasswordRoute: ChangePasswordRoute,
+  GuardrailsRoute: GuardrailsRoute,
   LoginRoute: LoginRoute,
   ModelsRoute: ModelsRoute,
   NoAccessRoute: NoAccessRoute,
@@ -684,7 +684,6 @@ const rootRouteChildren: RootRouteChildren = {
   ObservabilityAgentHarnessesRoute: ObservabilityAgentHarnessesRoute,
   ObservabilityAgentSessionsRoute: ObservabilityAgentSessionsRoute,
   ObservabilityGuardrailsRoute: ObservabilityGuardrailsRoute,
-  ObservabilityGuardrailsSettingsRoute: ObservabilityGuardrailsSettingsRoute,
   ObservabilityLeaderboardRoute: ObservabilityLeaderboardRoute,
   ObservabilityMcpInvocationsRoute: ObservabilityMcpInvocationsRoute,
   ObservabilityRequestLogsRoute: ObservabilityRequestLogsRoute,

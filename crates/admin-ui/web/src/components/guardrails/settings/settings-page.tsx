@@ -14,22 +14,16 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { GuardrailPoliciesView } from '@/types/api'
 
-import { YamlPreview } from '../editors'
-import {
-  AREAS,
-  areaSummary,
-  kindLabel,
-  scopeLabel,
-  useGuardrailDrafts,
-  type AreaId,
-} from '../model'
 import { AreaDialog } from './area-dialog'
+import { YamlPreview } from './editors'
+import { AREAS, areaSummary, kindLabel, scopeLabel, useGuardrailDrafts, type AreaId } from './model'
 
 /**
- * Mock D: one card per area showing its state across every scope, each opening its own focused
- * dialog. Integrations reads like a connected-apps list; the YAML sits below for review.
+ * One card per area showing its state across every scope, each opening its own focused dialog.
+ * Integrations reads like a connected-apps list. Nothing is saved: edits only redraft the YAML
+ * below, because gateway.yaml stays the only policy authority.
  */
-export function AreaCardsPageMock({ policies }: { policies: GuardrailPoliciesView }) {
+export function GuardrailSettings({ policies }: { policies: GuardrailPoliciesView }) {
   const drafts = useGuardrailDrafts(policies)
   const [open, setOpen] = useState<AreaId | null>(null)
   const [scopeKey, setScopeKey] = useState(drafts.scopes[0].key)
@@ -121,7 +115,7 @@ function IntegrationRows({
           <span className="text-muted-foreground truncate text-xs">{kindLabel(check.kind)}</span>
         </span>
         <Badge variant={using.length ? 'success' : 'outline'}>
-          {using.length ? `${using.length} scopes` : 'Unused'}
+          {using.length ? `${using.length} ${using.length === 1 ? 'scope' : 'scopes'}` : 'Unused'}
         </Badge>
       </div>
     )

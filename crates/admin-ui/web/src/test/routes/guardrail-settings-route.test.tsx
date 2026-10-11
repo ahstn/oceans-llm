@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const navigateMock = vi.fn()
-const routeMock = { useLoaderData: vi.fn(), useSearch: vi.fn() }
+const routeMock = { useLoaderData: vi.fn() }
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -48,35 +48,41 @@ const policies = {
   ],
 }
 
-async function renderMock(mock: string) {
-  routeMock.useSearch.mockReturnValue({ mock })
-  const { GuardrailSettingsLabPage } = await import('@/routes/observability/guardrails-settings')
-  render(<GuardrailSettingsLabPage />)
+async function renderPage() {
+  const { GuardrailSettingsPage } = await import('@/routes/guardrails')
+  render(<GuardrailSettingsPage />)
 }
 
-describe('GuardrailSettingsLabPage', () => {
+describe('GuardrailSettingsPage', () => {
   afterEach(cleanup)
   beforeEach(() => {
     navigateMock.mockReset()
     routeMock.useLoaderData.mockReturnValue({ policies })
   })
 
-  it.each(['settings-dialog', 'scope-dialog', 'side-tabs', 'area-cards', 'scope-matrix'])(
-    'renders the %s mock with all three areas',
-    async (mock) => {
-      await renderMock(mock)
-      for (const label of ['Destructive actions', 'Secret redaction', 'Integrations']) {
-        expect(screen.getAllByText(new RegExp(label)).length).toBeGreaterThan(0)
-      }
-      expect(screen.queryByRole('button', { name: /^save/i })).not.toBeInTheDocument()
-    },
-  )
+  it('shows one card per area and links back to activity, with nothing to save', async () => {
+    await renderPage()
+
+    for (const label of ['Destructive actions', 'Secret redaction', 'Integrations']) {
+      expect(screen.getByRole('button', { name: `Manage ${label.toLowerCase()}` })).toBeVisible()
+    }
+    expect(screen.getByRole('link', { name: /Activity/ })).toHaveAttribute(
+      'href',
+      '/observability/guardrails',
+    )
+    expect(screen.getByText('company-bedrock')).toBeInTheDocument()
+    expect(screen.getByText('Unused')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^save/i })).not.toBeInTheDocument()
+  })
 
   it('lets inherited override fields follow the default while keeping explicit ones', async () => {
-    await renderMock('side-tabs')
+    await renderPage()
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Deny' }))
-    fireEvent.click(screen.getByRole('switch', { name: /core\.git/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Manage destructive actions' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Deny' }))
+    fireEvent.click(within(dialog).getByRole('switch', { name: /core\.git/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }))
 
     const yaml = screen.getByRole('region', { name: 'yaml code' })
     expect(yaml).toHaveTextContent('mode: deny')
@@ -86,10 +92,10 @@ describe('GuardrailSettingsLabPage', () => {
     expect(yaml).toHaveTextContent('slow: {}')
   })
 
-  it('opens an area dialog for a scope from the matrix', async () => {
-    await renderMock('scope-matrix')
+  it('opens the integrations dialog on the chosen scope', async () => {
+    await renderPage()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit integrations for fast' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Manage integrations' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('company-bedrock')).toBeInTheDocument()

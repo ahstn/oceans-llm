@@ -1,8 +1,7 @@
-import { useState, useTransition } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { useTransition } from 'react'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { Settings02Icon } from '@hugeicons/core-free-icons'
 
-import { GuardrailConfigSheet } from '@/components/guardrails/config-sheet'
 import { GuardrailsDashboard } from '@/components/guardrails/guardrails-dashboard'
 import { AppIcon } from '@/components/icons/app-icon'
 import { PageHeader } from '@/components/layout/page-header'
@@ -28,7 +27,6 @@ export function GuardrailsPage() {
   const search = Route.useSearch()
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  const [configOpen, setConfigOpen] = useState(false)
 
   const navigate = (next: GuardrailDecisionFiltersInput) =>
     startTransition(async () => {
@@ -42,9 +40,11 @@ export function GuardrailsPage() {
         title="Guardrails"
         description="Review effective policies and privacy-safe guardrail decisions."
         actions={
-          <Button variant="outline" size="sm" onClick={() => setConfigOpen(true)}>
-            <AppIcon icon={Settings02Icon} data-icon="inline-start" aria-hidden />
-            Configure
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/guardrails">
+              <AppIcon icon={Settings02Icon} data-icon="inline-start" aria-hidden />
+              Configure
+            </Link>
           </Button>
         }
       />
@@ -58,7 +58,6 @@ export function GuardrailsPage() {
           navigate({ ...normalizeFilterValues(search), page, page_size: decisions.page_size })
         }
       />
-      <GuardrailConfigSheet policies={policies} open={configOpen} onOpenChange={setConfigOpen} />
     </div>
   )
 }

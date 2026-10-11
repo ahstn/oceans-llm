@@ -9,10 +9,10 @@ import {
 } from '@/components/ui/dialog'
 import type { GuardrailPoliciesView } from '@/types/api'
 
-import { AreaEditor, ScopeSelect } from '../editors'
-import { AREAS, type AreaId, type GuardrailDrafts } from '../model'
+import { AreaEditor, ScopeSelect } from './editors'
+import { AREAS, type AreaId, type GuardrailDrafts } from './model'
 
-/** One focused dialog per area, used by the card and matrix pages. */
+/** One focused dialog per area, opened from that area's card on the settings page. */
 export function AreaDialog({
   area,
   scopeKey,

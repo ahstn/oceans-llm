@@ -57,6 +57,8 @@ describe('signed-in route selection', () => {
   it('reserves guardrail observability for platform admins', () => {
     expect(canAccessSignedInPath(userSession, '/observability/guardrails')).toBe(false)
     expect(canAccessSignedInPath(adminSession, '/observability/guardrails')).toBe(true)
+    expect(canAccessSignedInPath(userSession, '/guardrails')).toBe(false)
+    expect(canAccessSignedInPath(adminSession, '/guardrails')).toBe(true)
   })
 
   it('replaces a redirect to a page that is absent from the resolved set', () => {
