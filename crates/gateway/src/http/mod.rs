@@ -29,7 +29,7 @@ pub mod spend;
 mod spend_budget_listing;
 pub mod state;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 
 use admin_ui::{AdminUiConfig, mount_admin_ui};
 use axum::{

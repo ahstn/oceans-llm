@@ -83,6 +83,20 @@ pub async fn guard_prompt(
     })
 }
 
+/// Redacts prompt secrets and records their decisions without running the other
+/// prompt evaluators.
+pub async fn redact_prompt(
+    state: &AppState,
+    request_id: &str,
+    route_key: &str,
+    request: &mut Value,
+) {
+    let policy =
+        PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::ModelRoute(route_key));
+    let redactions = redact_prompt_secrets(&policy, request);
+    record_guardrail_decisions(state, Some(request_id), None, &redactions).await;
+}
+
 pub fn batch_guard_context(
     state: &AppState,
     request_id: String,

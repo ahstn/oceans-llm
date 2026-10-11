@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::http::{
     inference_guardrails::{
-        batch_guard_context, guard_model_response, guard_prompt, model_route_key,
+        batch_guard_context, guard_model_response, guard_prompt, model_route_key, redact_prompt,
     },
     state::{AppGatewayService, AppState},
 };
@@ -213,26 +213,39 @@ async fn submit_job(
         &job.upstream_model,
     );
     let mut guarded_items = Vec::with_capacity(items.len());
+    let mut rejection = None;
     for item in items {
         let mut body = item.request_body;
         let request_id = format!("batch:{}:{}", job.batch_id, item.custom_id);
-        if let Err(error) = guard_prompt(state, &request_id, route_key.clone(), &mut body).await {
-            return fail_claimed_job(
-                service,
-                worker_id,
-                job,
-                BatchStatus::Failed,
-                &format!(
-                    "batch prompt rejected by guardrails: {}",
-                    error.error_code()
-                ),
-            )
-            .await;
+        if rejection.is_some() {
+            // The batch is already rejected; only redact, so stored items keep no secrets.
+            redact_prompt(state, &request_id, &route_key, &mut body).await;
+        } else if let Err(error) =
+            guard_prompt(state, &request_id, route_key.clone(), &mut body).await
+        {
+            rejection = Some(error.error_code());
         }
         guarded_items.push(ProviderBatchRequestItem {
             custom_id: item.custom_id,
             body,
         });
+    }
+    // Persist the guarded bodies before any failure return or provider call. Failed,
+    // unknown and submitted batches then all return the redacted requests, and a
+    // failed write never leaves an untracked provider batch behind.
+    service
+        .store()
+        .replace_batch_item_requests(job.batch_id, &guarded_items)
+        .await?;
+    if let Some(error_code) = rejection {
+        return fail_claimed_job(
+            service,
+            worker_id,
+            job,
+            BatchStatus::Failed,
+            &format!("batch prompt rejected by guardrails: {error_code}"),
+        )
+        .await;
     }
     let request = ProviderBatchRequest {
         batch_id: job.batch_id,
@@ -243,10 +256,6 @@ async fn submit_job(
     };
     match provider.submit_batch(&request).await {
         ProviderBatchSubmission::Submitted(state) => {
-            service
-                .store()
-                .replace_batch_item_requests(job.batch_id, &request.items)
-                .await?;
             let state = prepare_submitted_state(state);
             service
                 .store()
@@ -673,12 +682,33 @@ async fn handle_provider_error(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        sync::Arc,
+    };
 
-    use gateway_core::{BatchStatus, ProviderBatchResult, ProviderBatchState};
+    use async_trait::async_trait;
+    use gateway_core::{
+        BatchAccessScope, BatchEndpoint, BatchJobRecord, BatchPricingStatus, BatchRepository,
+        BatchStatus, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, NewBatchItem,
+        NewBatchJob, ProviderBatchRequest, ProviderBatchResult, ProviderBatchState,
+        ProviderBatchSubmission, ProviderCapabilities, ProviderClient, ProviderError,
+        ProviderRequestContext, ProviderStream,
+    };
+    use gateway_guardrails::{
+        FailureDisposition, GuardPhase, GuardrailEngine, ManagedCheckConfig, ManagedCheckKind,
+        ManagedEvaluator, ManagedOutcome, ManagedService, PolicyMode, ReasonCode,
+        test_utils::StubManagedEvaluator,
+    };
+    use serde_json::{Value, json};
     use time::OffsetDateTime;
+    use uuid::Uuid;
 
-    use super::{prepare_submitted_state, validate_result_custom_ids};
+    use super::{prepare_submitted_state, submit_job, validate_result_custom_ids};
+    use crate::http::{
+        state::AppState,
+        test_support::{app_state, seed_stream_cancellation_test},
+    };
 
     fn result(custom_id: &str) -> ProviderBatchResult {
         ProviderBatchResult {
@@ -746,5 +776,267 @@ mod tests {
             assert_eq!(state.status, BatchStatus::Finalizing);
             assert!(state.completed_at.is_none());
         }
+    }
+
+    /// Fails every batch submission with a non-retryable error.
+    struct RejectingBatchProvider;
+
+    #[async_trait]
+    impl ProviderClient for RejectingBatchProvider {
+        fn provider_key(&self) -> &str {
+            "vertex"
+        }
+
+        fn provider_type(&self) -> &str {
+            "openai_compat"
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities::all_enabled()
+        }
+
+        async fn submit_batch(&self, _request: &ProviderBatchRequest) -> ProviderBatchSubmission {
+            ProviderBatchSubmission::NotSubmitted(ProviderError::InvalidRequest(
+                "rejected".to_string(),
+            ))
+        }
+
+        async fn chat_completions(
+            &self,
+            _request: &CoreChatRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            unreachable!("batch submission does not call chat completions")
+        }
+
+        async fn chat_completions_stream(
+            &self,
+            _request: &CoreChatRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<ProviderStream, ProviderError> {
+            unreachable!("batch submission does not stream")
+        }
+
+        async fn embeddings(
+            &self,
+            _request: &CoreEmbeddingsRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            unreachable!("batch submission does not call embeddings")
+        }
+
+        async fn responses(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            unreachable!("batch submission does not call responses")
+        }
+
+        async fn responses_stream(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<ProviderStream, ProviderError> {
+            unreachable!("batch submission does not stream")
+        }
+    }
+
+    fn secret_key() -> String {
+        // Assembled at runtime so no literal credential lands in the repository.
+        format!(
+            "sk-ant-api03-{}AA",
+            &"aZ3kQ9mB7xR2tW5nL8pJ4vC6yH1dF0gS".repeat(3)[..93]
+        )
+    }
+
+    async fn redacting_state() -> (tempfile::TempDir, AppState) {
+        let (directory, mut state) = app_state().await;
+        seed_stream_cancellation_test(&state.store).await;
+        let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
+        policy.enabled = true;
+        policy.secret_redaction.enabled = true;
+        (directory, state)
+    }
+
+    /// Stores a two-item batch whose prompts both carry `key`, then claims it
+    /// for submission.
+    async fn claimed_batch(state: &AppState, key: &str) -> (BatchJobRecord, Uuid) {
+        let auth = state
+            .service
+            .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
+            .await
+            .expect("authenticate");
+        let resolved = state
+            .service
+            .resolve_request(&auth, "fast")
+            .await
+            .expect("resolve model");
+        let route = &resolved.routes[0];
+        let now = OffsetDateTime::now_utc();
+        let batch_id = Uuid::new_v4();
+        let items = ["row-1", "row-2"]
+            .into_iter()
+            .map(|custom_id| NewBatchItem {
+                batch_item_id: Uuid::new_v4(),
+                custom_id: custom_id.to_string(),
+                request_body: json!({
+                    "model": "fast",
+                    "messages": [{"role": "user", "content": format!("deploy with {key}")}],
+                }),
+            })
+            .collect();
+        let job = BatchJobRecord {
+            batch_id,
+            idempotency_key: "redaction-test".to_string(),
+            request_hash: "redaction-test".to_string(),
+            api_key_id: auth.id,
+            user_id: auth.owner_user_id,
+            team_id: auth.owner_team_id,
+            service_account_id: auth.owner_service_account_id,
+            model_id: resolved.selection.execution_model.id,
+            model_key: "fast".to_string(),
+            resolved_model_key: resolved.selection.execution_model.model_key.clone(),
+            route_id: route.id,
+            provider_key: route.provider_key.clone(),
+            upstream_model: route.upstream_model.clone(),
+            endpoint: BatchEndpoint::ChatCompletions,
+            status: BatchStatus::Queued,
+            provider_batch_id: None,
+            request_count: 2,
+            completed_count: 0,
+            failed_count: 0,
+            cost_usd: None,
+            pricing_status: BatchPricingStatus::Pending,
+            provider_usage: None,
+            error: None,
+            created_at: now,
+            submitted_at: None,
+            completed_at: None,
+            updated_at: now,
+            next_poll_at: Some(now),
+            lease_owner: None,
+            lease_expires_at: None,
+            provider_context: ProviderRequestContext {
+                request_id: batch_id.to_string(),
+                model_key: "fast".to_string(),
+                provider_key: route.provider_key.clone(),
+                upstream_model: route.upstream_model.clone(),
+                owner_user_id: auth.owner_user_id,
+                expected_provider_credential_id: None,
+                extra_headers: Default::default(),
+                extra_body: Default::default(),
+                request_headers: BTreeMap::new(),
+                compatibility: route.compatibility.clone(),
+            },
+            pricing_snapshot: None,
+        };
+        state
+            .store
+            .insert_batch(&NewBatchJob { job, items })
+            .await
+            .expect("insert batch");
+        let mut claimed = state
+            .store
+            .claim_batch_jobs("worker", now, now + time::Duration::minutes(2), 1)
+            .await
+            .expect("claim batch");
+        (claimed.remove(0), auth.id)
+    }
+
+    async fn assert_failed_with_redacted_items(
+        state: &AppState,
+        batch_id: Uuid,
+        api_key_id: Uuid,
+        key: &str,
+    ) {
+        let batch = state
+            .store
+            .get_batch(batch_id, BatchAccessScope::ApiKey(api_key_id))
+            .await
+            .expect("batch");
+        assert_eq!(batch.status, BatchStatus::Failed);
+        let items = state
+            .store
+            .get_batch_items_for_worker(batch_id)
+            .await
+            .expect("batch items");
+        assert_eq!(items.len(), 2);
+        for item in items {
+            assert_eq!(
+                item.request_body["messages"][0]["content"],
+                "deploy with [REDACTED:anthropic-api-key]",
+                "{} kept its secret",
+                item.custom_id
+            );
+            assert!(!item.request_body.to_string().contains(key));
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_submission_stores_redacted_requests() {
+        let (_directory, state) = redacting_state().await;
+        let key = secret_key();
+        let (job, api_key_id) = claimed_batch(&state, &key).await;
+
+        submit_job(&state, &RejectingBatchProvider, "worker", &job)
+            .await
+            .expect("submission failure is recorded");
+
+        assert_failed_with_redacted_items(&state, job.batch_id, api_key_id, &key).await;
+    }
+
+    #[tokio::test]
+    async fn guardrail_rejection_stores_redacted_requests_for_every_item() {
+        let (_directory, mut state) = redacting_state().await;
+        let config = Arc::make_mut(&mut state.guardrail_config);
+        config.default.mode = PolicyMode::Deny;
+        config.default.managed_checks = vec!["deny".into()];
+        config.managed_checks.insert(
+            "deny".into(),
+            ManagedCheckConfig {
+                kind: ManagedCheckKind::GoogleModelArmor,
+                phases: BTreeSet::from([GuardPhase::Prompt]),
+                timeout_ms: 1_000,
+                failure_disposition: FailureDisposition::FailClosed,
+                max_content_bytes: 4_096,
+                bedrock: None,
+                model_armor: None,
+            },
+        );
+        // The first item is rejected, so the second is never evaluated.
+        state.guardrail_engine = Arc::new(GuardrailEngine::new(
+            Vec::new(),
+            BTreeMap::from([(
+                "deny".into(),
+                Arc::new(StubManagedEvaluator::new(
+                    "deny",
+                    ManagedService::GoogleModelArmor,
+                    [Ok(ManagedOutcome::Intervention {
+                        reason_code: ReasonCode::new("test.denied").unwrap(),
+                        metadata: Default::default(),
+                    })],
+                )) as Arc<dyn ManagedEvaluator>,
+            )]),
+        ));
+        let key = secret_key();
+        let (job, api_key_id) = claimed_batch(&state, &key).await;
+
+        submit_job(&state, &RejectingBatchProvider, "worker", &job)
+            .await
+            .expect("guardrail rejection is recorded");
+
+        assert_failed_with_redacted_items(&state, job.batch_id, api_key_id, &key).await;
+        let batch = state
+            .store
+            .get_batch(job.batch_id, BatchAccessScope::ApiKey(api_key_id))
+            .await
+            .expect("batch");
+        assert!(
+            batch.error.unwrap()["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("batch prompt rejected by guardrails")
+        );
     }
 }

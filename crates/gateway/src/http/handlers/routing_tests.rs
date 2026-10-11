@@ -18,8 +18,11 @@ use gateway_store::GatewayStore;
 use serde_json::{Value, json};
 use tower_http::request_id::RequestId;
 
-use super::{AppError, InferenceAuth, tests::seed_stream_cancellation_test};
-use crate::http::{state::AppState, test_support::app_state};
+use super::{AppError, InferenceAuth};
+use crate::http::{
+    state::AppState,
+    test_support::{app_state, seed_stream_cancellation_test},
+};
 
 #[derive(Clone, Debug)]
 struct ProviderCall {

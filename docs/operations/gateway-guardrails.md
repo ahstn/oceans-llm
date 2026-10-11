@@ -112,6 +112,8 @@ Token patterns also match directly after a JSON escape such as `\n`, so secrets 
 
 Each redacted request records one `transformed` decision per matched rule, with evaluator `secret_redaction`, reason code `secret_redaction.redacted`, and the JSON pointer of the first matching field. The content hash covers the redacted text only.
 
+Durable batches are redacted when the worker submits them. The worker stores the redacted item requests before it calls the provider, and before it marks a batch failed. Batch results therefore return the redacted requests, also for failed batches. If the prompt guard rejects one item, the worker still redacts the items it did not check. Until the worker picks up a batch, its stored items keep the original requests.
+
 When any enabled policy redacts secrets, the gateway applies the same detection to captured request-log payloads: requests, responses, stream events, provider attempts, and MCP invocations. It uses the union of the enabled tiers across the default, model-route, and MCP-server policies, and disables a rule only if every redacting policy disables it. Response secrets are therefore redacted in logs even though the caller still receives the response unchanged. Streamed responses are scanned one event at a time, so a secret the provider splits across stream deltas is not redacted in the logged events.
 
 Detection patterns are adapted from [gitleaks](https://github.com/gitleaks/gitleaks) and [Betterleaks](https://github.com/betterleaks/betterleaks) (both MIT).

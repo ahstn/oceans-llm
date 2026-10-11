@@ -2413,19 +2413,15 @@ mod tests {
     use futures_util::{StreamExt, stream};
     use gateway_core::protocol::openai::ChatMessage;
     use gateway_core::{
-        ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence,
-        BudgetRepository, ChatCompletionsRequest, CoreChatMessage, CoreChatRequest,
-        CoreEmbeddingsRequest, CoreRequestRequirements, CoreResponsesRequest, GatewayError,
-        GitHubCopilotChatApi, GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports,
-        ModelRoute, Money4, ProviderCapabilities, ProviderClient, ProviderError, ProviderRegistry,
+        ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthenticatedApiKey, BudgetRepository,
+        ChatCompletionsRequest, CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest,
+        CoreRequestRequirements, CoreResponsesRequest, GatewayError, GitHubCopilotChatApi,
+        GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, ModelRoute,
+        ProviderCapabilities, ProviderClient, ProviderError, ProviderRegistry,
         ProviderRequestContext, ProviderStream, RequestAttemptStatus, RequestTags,
-        RouteCompatibility, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider,
-        SeedServiceAccount, SeedTeam, hash_gateway_key_secret,
     };
     use gateway_service::{GatewayService, WeightedRoutePlanner};
-    use gateway_store::{
-        AnyStore, GatewayStore, StoreConnectionOptions, run_migrations_with_options,
-    };
+    use gateway_store::{AnyStore, StoreConnectionOptions, run_migrations_with_options};
     use serde_json::{Value, json};
     use tower_http::request_id::RequestId;
 
@@ -2439,6 +2435,7 @@ mod tests {
         split_partial_provider_error, wrap_stream_with_request_logging,
     };
     use crate::http::request_tracing::StreamTrace;
+    use crate::http::test_support::seed_stream_cancellation_test;
     use crate::observability::GatewayMetrics;
 
     #[tokio::test]
@@ -2802,72 +2799,6 @@ mod tests {
             .expect("usage billed before the transport failure is charged");
         assert_eq!(ledger.prompt_tokens, Some(5));
         assert_eq!(ledger.completion_tokens, Some(2));
-    }
-
-    pub(super) async fn seed_stream_cancellation_test(store: &AnyStore) {
-        store
-            .seed_from_inputs(
-                &[SeedProvider {
-                    provider_key: "vertex".to_string(),
-                    provider_type: "openai_compat".to_string(),
-                    config: json!({}),
-                    secrets: None,
-                }],
-                &[SeedModel {
-                    model_key: "fast".to_string(),
-                    alias_target_model_key: None,
-                    max_reasoning_effort: None,
-                    routing: None,
-                    description: None,
-                    tags: Vec::new(),
-                    rank: 0,
-                    routes: vec![SeedModelRoute {
-                        route_key: None,
-                        provider_key: "vertex".to_string(),
-                        upstream_model: "fast-upstream".to_string(),
-                        priority: 0,
-                        weight: 1.0,
-                        enabled: true,
-                        context_window_tokens: None,
-                        pricing_override: None,
-                        extra_headers: Default::default(),
-                        extra_body: Default::default(),
-                        capabilities: ProviderCapabilities::all_enabled(),
-                        compatibility: RouteCompatibility::default(),
-                    }],
-                    allowlist: None,
-                }],
-                &[SeedApiKey {
-                    name: "Stream Test Key".to_string(),
-                    public_id: "streamtest".to_string(),
-                    secret_hash: hash_gateway_key_secret("cancel-secret").expect("hash test key"),
-                    service_account_key: "stream-test".to_string(),
-                    allowed_models: vec!["fast".to_string()],
-                }],
-                &[SeedServiceAccount {
-                    service_account_key: "stream-test".to_string(),
-                    service_account_name: "Stream Test".to_string(),
-                    team_key: "stream-test".to_string(),
-                    tags: None,
-                    budget: SeedBudget {
-                        cadence: BudgetCadence::Daily,
-                        amount_usd: Money4::from_scaled(250_000),
-                        hard_limit: true,
-                        timezone: "UTC".to_string(),
-                    },
-                    managed_api_keys: Vec::new(),
-                }],
-                &[],
-                &[],
-                &[SeedTeam {
-                    team_key: "stream-test".to_string(),
-                    team_name: "Stream Test".to_string(),
-                    tags: None,
-                }],
-                &[],
-            )
-            .await
-            .expect("seed cancellation test");
     }
 
     fn route(upstream_model: &str, capabilities: ProviderCapabilities) -> ModelRoute {

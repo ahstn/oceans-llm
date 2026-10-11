@@ -1,8 +1,8 @@
 use axum::{extract::State, http::HeaderMap};
 use serde_json::json;
 
-use super::{tests::seed_stream_cancellation_test, v1_model_metadata, v1_models};
-use crate::http::test_support::app_state;
+use super::{v1_model_metadata, v1_models};
+use crate::http::test_support::{app_state, seed_stream_cancellation_test};
 
 #[tokio::test]
 async fn model_metadata_requires_authentication_and_matches_visible_models() {

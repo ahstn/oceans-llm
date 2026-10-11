@@ -11,8 +11,11 @@ use gateway_core::{
 use serde_json::{Value, json};
 use tower_http::request_id::RequestId;
 
-use super::{AppError, tests::seed_stream_cancellation_test, v1_chat_completions, v1_responses};
-use crate::http::{state::AppState, test_support::app_state};
+use super::{AppError, v1_chat_completions, v1_responses};
+use crate::http::{
+    state::AppState,
+    test_support::{app_state, seed_stream_cancellation_test},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Endpoint {
