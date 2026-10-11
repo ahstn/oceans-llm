@@ -15,7 +15,6 @@ Usage Costs is a read-only spend dashboard for the signed-in user over a 7- or 3
 
 - Sign in and choose `Usage Costs` under `Budget & Spending`.
 - Open `/admin/observability/usage-costs` directly.
-- Non-admin users land here after sign-in because `usage_costs` is their `default_page`.
 
 ## Driving it with control-oceans-admin
 

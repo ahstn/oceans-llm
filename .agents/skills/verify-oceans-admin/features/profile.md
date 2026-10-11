@@ -18,7 +18,7 @@ Profile is the landing page after sign-in for any session with page permissions.
 
 ## Driving it with control-oceans-admin
 
-Preconditions: a launched stack with the local demo seed. The default user is `alice@platform.local` / `localdemo123`; override with `OCEANS_VERIFY_PROFILE_EMAIL` and `OCEANS_VERIFY_PROFILE_PASSWORD`.
+Preconditions: a launched stack with the local demo seed. The default user is `alice@platform.local` / `localdemo123`; the checks expect Alice's seeded history and name, so only her password can be overridden, with `OCEANS_VERIFY_PROFILE_PASSWORD`.
 
 - **Automated proof.** Run `control-oceans-admin drive profile`. It writes `profile-proof.json` with one check per step below.
 - **Landing.** Sign in as Alice. The URL is `/admin/profile` and the heading reads `Welcome back, Alice`.

@@ -15,7 +15,8 @@ requiredEnv('OCEANS_VERIFY_GATEWAY_VERSION')
 const adminEmail = requiredEnv('OCEANS_VERIFY_ADMIN_EMAIL')
 const adminPassword = requiredEnv('OCEANS_VERIFY_ADMIN_PASSWORD')
 // Seeded local demo user with months of usage history, a weekly budget, and personal keys.
-const userEmail = process.env.OCEANS_VERIFY_PROFILE_EMAIL ?? 'alice@platform.local'
+// The checks below expect Alice's seed, so only her password can be overridden.
+const userEmail = 'alice@platform.local'
 const userPassword = process.env.OCEANS_VERIFY_PROFILE_PASSWORD ?? 'localdemo123'
 const actions = []
 const details = { user: userEmail, actions }

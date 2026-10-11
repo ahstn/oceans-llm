@@ -92,9 +92,10 @@ function git(args) {
   return execFileSync('git', args, { encoding: 'utf8' }).trim()
 }
 
+// --no-renames lists a moved file at both its old and new path, so both features are planned.
 export function changedPaths(base) {
   const mergeBase = git(['merge-base', base, 'HEAD'])
-  const tracked = git(['diff', '--name-only', mergeBase])
+  const tracked = git(['diff', '--name-only', '--no-renames', mergeBase])
   const untracked = git(['ls-files', '--others', '--exclude-standard'])
   return { mergeBase, paths: `${tracked}\n${untracked}`.split('\n').filter(Boolean) }
 }
