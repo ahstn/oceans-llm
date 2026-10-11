@@ -94,6 +94,14 @@ fn redacts_provider_tokens_with_rule_placeholders() {
             ),
         ),
         (
+            "slack-rotating-access-token",
+            format!("xoxe.xoxp-1-{}", random(ALNUM, 164, 56)),
+        ),
+        (
+            "slack-refresh-token",
+            format!("xoxe-1-{}", random(ALNUM, 146, 57)),
+        ),
+        (
             "jwt",
             format!(
                 "eyJ{}.eyJ{}.{}",
@@ -216,6 +224,14 @@ fn redacts_secret_assignments_and_bearer_tokens_by_default() {
             "clientSecretValue: [REDACTED:secret-assignment]",
         ),
         (
+            format!(
+                "PASSWORD=\"{}:{}\"",
+                random(ALNUM, 8, 58),
+                random(ALNUM, 8, 59)
+            ),
+            "PASSWORD=\"[REDACTED:secret-assignment-quoted]\"",
+        ),
+        (
             format!("Authorization: Bearer {}", random(ALNUM, 40, 46)),
             "Authorization: Bearer [REDACTED:bearer-token]",
         ),
@@ -236,6 +252,7 @@ fn secret_assignment_ignores_references_counts_and_calls() {
         "token_type: \"Bearer\"",
         "\"tokenizer\": \"cl100k_base\"",
         "passwords: 12345678abc",
+        "\"password\": \"must be at least 8 characters\"",
         "Authorization: Bearer <token>",
         "use the bearer authentication_scheme_name",
     ] {
@@ -434,6 +451,32 @@ fn redacts_secrets_in_object_keys() {
             ),
         ]
     );
+}
+
+#[test]
+fn redacts_string_values_of_credential_named_fields() {
+    let password = format!("{}:{}", random(ALNUM, 8, 60), random(ALNUM, 8, 61));
+    let notes = random(ALNUM, 16, 62);
+    let mut request = json!({
+        "state": {"password": password, "notes": notes, "secret_count": 3},
+    });
+
+    let fields = redact_json_secrets(&mut request, &default_config());
+
+    assert_eq!(
+        request,
+        json!({
+            "state": {
+                "password": "[REDACTED:secret-assignment-quoted]",
+                "notes": notes,
+                "secret_count": 3,
+            },
+        })
+    );
+    let [field] = fields.as_slice() else {
+        panic!("expected one redacted field, got {}", fields.len());
+    };
+    assert_eq!(field.pointer, "/state/password");
 }
 
 #[test]

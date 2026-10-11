@@ -82,7 +82,36 @@ pub(super) fn redact_text(
     text: &str,
     config: &SecretRedactionConfig,
 ) -> Option<(String, Vec<&'static str>)> {
-    let mut findings = find_secrets(text, config);
+    replace_findings(text, find_secrets(text, config))
+}
+
+/// Like [`redact_text`] for a JSON string value, also scanning it as the value
+/// of `key`, so `{"password": "..."}` matches the assignment rules even though
+/// the name and value are separate strings.
+pub(super) fn redact_field(
+    key: &str,
+    value: &str,
+    config: &SecretRedactionConfig,
+) -> Option<(String, Vec<&'static str>)> {
+    let mut findings = find_secrets(value, config);
+    let prefix = format!("{key}=\"");
+    let context = format!("{prefix}{value}\"");
+    let value_span = prefix.len()..prefix.len() + value.len();
+    findings.extend(
+        find_secrets(&context, config)
+            .into_iter()
+            .filter(|finding| {
+                value_span.start <= finding.span.start && finding.span.end <= value_span.end
+            })
+            .map(|finding| Finding {
+                span: finding.span.start - prefix.len()..finding.span.end - prefix.len(),
+                rule_id: finding.rule_id,
+            }),
+    );
+    replace_findings(value, findings)
+}
+
+fn replace_findings(text: &str, mut findings: Vec<Finding>) -> Option<(String, Vec<&'static str>)> {
     if findings.is_empty() {
         return None;
     }
@@ -150,7 +179,8 @@ fn is_placeholder(value: &str) -> bool {
         return true;
     }
     let lowered = value.to_ascii_lowercase();
-    const MARKERS: &[&str] = &["your_", "your-", "<", ">", "${", "{{", "}}"];
+    // `[redacted:` keeps a second pass from redacting an earlier placeholder.
+    const MARKERS: &[&str] = &["your_", "your-", "<", ">", "${", "{{", "}}", "[redacted:"];
     if MARKERS.iter().any(|marker| lowered.contains(marker)) {
         return true;
     }

@@ -282,6 +282,20 @@ pub(super) const RULES: &[Rule] = &[
         bounded!(r"(xox[pe](?:-[0-9]{10,13}){3}-[a-zA-Z0-9-]{28,34})"),
         0.0,
     ),
+    // Rotating access tokens and the refresh tokens that mint them, from Slack's
+    // token rotation.
+    provider(
+        "slack-rotating-access-token",
+        &["xoxe.xox"],
+        bounded!(r"(?i)(xoxe\.xox[bp]-\d-[A-Z0-9]{163,166})"),
+        0.0,
+    ),
+    provider(
+        "slack-refresh-token",
+        &["xoxe-"],
+        bounded!(r"(?i)(xoxe-\d-[A-Z0-9]{146})"),
+        0.0,
+    ),
     provider(
         "slack-app-token",
         &["xapp"],
@@ -397,6 +411,31 @@ pub(super) const RULES: &[Rule] = &[
                 r"(?:passw(?:or)?d|secret|token|api[_-]?key|private[_-]?key)",
                 r"(?:(?:[_.-]|(?-i:[A-Z]))[[:word:].-]{0,19})?",
                 r"[[:word:]./+=~!@#$%^&*?-]{8,128}"
+            ),
+            3.0,
+        )
+    },
+    // A quoted value may hold any character but a quote, a backslash, or
+    // whitespace, so passwords with colons or braces still match while prose
+    // such as `"password": "must be 8 characters"` does not.
+    Rule {
+        reject_word_like: true,
+        ..credential(
+            "secret-assignment-quoted",
+            &[
+                "passw",
+                "secret",
+                "token",
+                "api_key",
+                "api-key",
+                "apikey",
+                "private_key",
+            ],
+            concat!(
+                r#"(?i)(?:passw(?:or)?d|secret|token|api[_-]?key|private[_-]?key)"#,
+                r#"(?:(?:[_.-]|(?-i:[A-Z]))[[:word:].-]{0,19})?"#,
+                r#"\\?['"]?\s{0,3}(?:=|:{1,3}=|:|=>)\s{0,3}\\?['"]"#,
+                r#"([^'"\\\s]{8,128})\\?['"]"#
             ),
             3.0,
         )

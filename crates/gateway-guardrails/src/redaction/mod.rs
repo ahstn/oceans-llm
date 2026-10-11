@@ -120,13 +120,16 @@ pub fn redact_json_secrets(
 ) -> Vec<RedactedField> {
     let mut redacted = Vec::new();
     if config.enabled {
-        redact_json_at(value, &mut String::new(), config, &mut redacted);
+        redact_json_at(value, None, &mut String::new(), config, &mut redacted);
     }
     redacted
 }
 
+/// `key` names the object field holding `value`, if any, so a credential-named
+/// field's string value is scanned as an assignment.
 fn redact_json_at(
     value: &mut Value,
+    key: Option<&str>,
     pointer: &mut String,
     config: &SecretRedactionConfig,
     output: &mut Vec<RedactedField>,
@@ -137,7 +140,11 @@ fn redact_json_at(
             if is_base64_data_uri(text) {
                 return;
             }
-            if let Some((replacement, rule_ids)) = scanner::redact_text(text, config) {
+            let redacted = match key {
+                Some(key) => scanner::redact_field(key, text, config),
+                None => scanner::redact_text(text, config),
+            };
+            if let Some((replacement, rule_ids)) = redacted {
                 *text = replacement;
                 output.push(RedactedField {
                     pointer: pointer.clone(),
@@ -150,7 +157,7 @@ fn redact_json_at(
             for (index, item) in items.iter_mut().enumerate() {
                 pointer.push('/');
                 pointer.push_str(&index.to_string());
-                redact_json_at(item, pointer, config, output);
+                redact_json_at(item, None, pointer, config, output);
                 pointer.truncate(parent_len);
             }
         }
@@ -163,7 +170,7 @@ fn redact_json_at(
                     continue;
                 }
                 push_pointer_token(pointer, key);
-                redact_json_at(child, pointer, config, output);
+                redact_json_at(child, Some(key), pointer, config, output);
                 pointer.truncate(parent_len);
             }
         }
