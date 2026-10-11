@@ -87,11 +87,18 @@ echo "deployed $(git describe --tags --always)"
 '''
 
 [tasks.selfhost-expose]
-description = "Publish the gateway on the tailnet with `tailscale serve` (idempotent; tailnet-only, never funnel)"
+description = "Publish the gateway as the Tailscale Service svc:oceans-llm (idempotent; tailnet-only, never funnel)"
 run = '''
 set -euo pipefail
 # Serve config persists inside tailscaled, so no daemon is needed. Re-running replaces the same handler.
-tailscale serve --bg --https=443 --yes http://127.0.0.1:8080
+# The host must be tagged and auto-approved for svc:oceans-llm (tailnet policy, see the runbook).
+tailscale serve --service=svc:oceans-llm --https=443 --yes http://127.0.0.1:8080
+# Remove the pre-Services node handler, only while it still points at the gateway.
+host=$(tailscale status --self --json | jq -r '.Self.DNSName | rtrimstr(".")')
+legacy=$(tailscale serve status --json | jq -r --arg key "$host:443" '.Web[$key].Handlers["/"].Proxy // empty')
+if [ "$legacy" = "http://127.0.0.1:8080" ]; then
+  tailscale serve --https=443 --yes off
+fi
 tailscale serve status
 '''
 
