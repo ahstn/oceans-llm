@@ -20,6 +20,7 @@ const EVALUATOR_ID: &str = "secret_redaction";
 const REASON_CODE: &str = "secret_redaction.redacted";
 /// Sibling keys that mark an object's `data` string as inline media: Anthropic
 /// sources and Gemini `inline_data`.
+const MIN_B64_JSON_LEN: usize = 256;
 const MEDIA_TYPE_KEYS: &[&str] = &["media_type", "mime_type", "mimeType"];
 /// `format` values of OpenAI `input_audio`.
 const AUDIO_FORMATS: &[&str] = &[
@@ -165,7 +166,13 @@ fn redact_json_at(
             redact_object_keys(object, pointer, config, output);
             let data_is_media = has_inline_media_data(object);
             for (key, child) in object.iter_mut() {
-                let is_media_key = key == "b64_json" || (key == "data" && data_is_media);
+                // An image payload is far longer than any credential, so a short
+                // `b64_json` value is scanned like any other string.
+                let is_media_key = (key == "b64_json"
+                    && child
+                        .as_str()
+                        .is_some_and(|text| text.len() >= MIN_B64_JSON_LEN))
+                    || (key == "data" && data_is_media);
                 if is_media_key && child.as_str().is_some_and(is_base64) {
                     continue;
                 }

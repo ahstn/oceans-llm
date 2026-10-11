@@ -75,6 +75,7 @@ describe('GuardrailSettingsPage', () => {
     expect(screen.getByText('company-bedrock')).toBeInTheDocument()
     expect(screen.getByText('Unused')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/Merge this into the existing/)).toBeInTheDocument()
   })
 
   it('lets inherited override fields follow the default while keeping explicit ones', async () => {

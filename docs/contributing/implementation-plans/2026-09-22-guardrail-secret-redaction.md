@@ -181,7 +181,6 @@ guardrails:
     secret_redaction:
       enabled: true
       tiers: [provider_tokens, credentials]   # add `generic` to opt in
-      phases: [prompt]                        # default; also valid: generated_tool_call, mcp_call, mcp_result
       disabled_rules: []                      # stable rule IDs, validated at startup
   model_routes:
     local/ollama/llama3:
@@ -189,7 +188,7 @@ guardrails:
         enabled: false                        # route-scoped opt-out, config only
 ```
 
-- Validate unknown tiers, unknown or duplicate rule IDs, and an empty `phases` set, with new `GuardrailConfigError` variants.
+- Validate unknown tiers and unknown or duplicate rule IDs with new `GuardrailConfigError` variants. Redaction applies to model-route prompts only, so there is no `phases` setting.
 - Default stays `enabled: false` for backward compatibility. Docs recommend turning it on together with the policy.
 - `GatewayConfig::guardrail_engine()` builds one `SecretRedactor` per distinct tier and disabled-rule combination across the default and overrides, keyed by that combination.
 

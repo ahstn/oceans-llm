@@ -333,11 +333,18 @@ export function ScopeSelect({
 
 export function YamlPreview({ yaml, maxLines }: { yaml: string; maxLines?: number }) {
   return (
-    <CodeBlock code={yaml} language="yaml" maxLines={maxLines}>
-      <CodeBlockHeader>
-        <CodeBlockTitle>gateway.yaml excerpt</CodeBlockTitle>
-        <CodeBlockCopyButton className="ml-auto" labels={{ copy: 'Copy YAML' }} />
-      </CodeBlockHeader>
-    </CodeBlock>
+    <div className="flex flex-col gap-2">
+      <CodeBlock code={yaml} language="yaml" maxLines={maxLines}>
+        <CodeBlockHeader>
+          <CodeBlockTitle>gateway.yaml excerpt</CodeBlockTitle>
+          <CodeBlockCopyButton className="ml-auto" labels={{ copy: 'Copy YAML' }} />
+        </CodeBlockHeader>
+      </CodeBlock>
+      <p className="text-muted-foreground text-xs">
+        Merge this into the existing <code>guardrails:</code> block rather than replacing it. It
+        leaves out the <code>managed_checks</code> definitions, which the checks named here still
+        need.
+      </p>
+    </div>
   )
 }

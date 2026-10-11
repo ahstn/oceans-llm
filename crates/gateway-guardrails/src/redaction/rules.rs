@@ -45,7 +45,7 @@ macro_rules! assigned {
             $suffix,
             r#"[\s'"]{0,3}(?:=|:{1,3}=|:|=>)[\x60'"\s=]{0,5}("#,
             $value,
-            r#")(?:[\x60'"\s;,]|\\[nrtbf]|\\u[0-9A-Fa-f]{4}|$)"#
+            r#")(?:[\x60'"\s;,}\]]|\\[nrtbf]|\\u[0-9A-Fa-f]{4}|$)"#
         )
     };
 }
@@ -413,6 +413,8 @@ pub(super) const RULES: &[Rule] = &[
                 "api-key",
                 "apikey",
                 "private_key",
+                "private-key",
+                "privatekey",
             ],
             assigned!(
                 r"(?:passw(?:or)?d|secret|token|api[_-]?key|private[_-]?key)",
@@ -437,6 +439,8 @@ pub(super) const RULES: &[Rule] = &[
                 "api-key",
                 "apikey",
                 "private_key",
+                "private-key",
+                "privatekey",
             ],
             concat!(
                 r#"(?i)(?:passw(?:or)?d|secret|token|api[_-]?key|private[_-]?key)"#,

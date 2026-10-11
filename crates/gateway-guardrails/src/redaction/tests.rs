@@ -470,6 +470,46 @@ fn percent_wrapped_values_are_placeholders_only_as_variable_names() {
 }
 
 #[test]
+fn short_b64_json_values_are_scanned() {
+    let key = format!("AKIA{}", random(UPPER_BASE32, 16, 70));
+    let mut request = json!({"b64_json": key.clone()});
+    assert_eq!(
+        redact_json_secrets(&mut request, &default_config()).len(),
+        1
+    );
+    assert_eq!(request["b64_json"], "[REDACTED:aws-access-key-id]");
+
+    let image = format!("{}{key}", random(ALNUM, 300, 71));
+    let mut request = json!({"b64_json": image.clone()});
+    assert!(redact_json_secrets(&mut request, &default_config()).is_empty());
+}
+
+#[test]
+fn assignments_end_at_collection_closers_and_match_every_private_key_spelling() {
+    let value = random(ALNUM, 16, 72);
+    for (text, expected) in [
+        (
+            format!("{{password: {value}}}"),
+            "{password: [REDACTED:secret-assignment]}",
+        ),
+        (
+            format!("[token={value}]"),
+            "[token=[REDACTED:secret-assignment]]",
+        ),
+        (
+            format!("{{\"privateKey\":\"{value}\"}}"),
+            "{\"privateKey\":\"[REDACTED:secret-assignment]\"}",
+        ),
+        (
+            format!("private-key={value}"),
+            "private-key=[REDACTED:secret-assignment]",
+        ),
+    ] {
+        assert_eq!(redact(&text, &default_config()), expected, "{text}");
+    }
+}
+
+#[test]
 fn media_data_needs_a_media_type_descriptor() {
     let key = format!("AKIA{}", random(UPPER_BASE32, 16, 69));
     for descriptor in [json!(null), json!("not a type"), json!(7)] {
