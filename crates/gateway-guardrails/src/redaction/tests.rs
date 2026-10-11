@@ -369,6 +369,59 @@ fn redacts_json_strings_and_skips_inline_media() {
 }
 
 #[test]
+fn redacts_secrets_in_object_keys() {
+    let github = format!("ghp_{}", random(ALNUM, 36, 51));
+    let other = format!("ghp_{}", random(ALNUM, 36, 52));
+    let mut request = json!({
+        "tool_result": {
+            github.clone(): {"scopes": "repo"},
+            other.clone(): {"scopes": format!("admin {github}")},
+            "[REDACTED:github-token]": "existing entry",
+            "plain": 1,
+        }
+    });
+
+    let fields = redact_json_secrets(&mut request, &default_config());
+
+    assert!(!request.to_string().contains(&github));
+    assert!(!request.to_string().contains(&other));
+    // No entry is dropped: the literal key stays, and the redacted keys get suffixes.
+    assert_eq!(
+        request,
+        json!({
+            "tool_result": {
+                "[REDACTED:github-token]": "existing entry",
+                "[REDACTED:github-token] (2)": {"scopes": "repo"},
+                "[REDACTED:github-token] (3)": {"scopes": "admin [REDACTED:github-token]"},
+                "plain": 1,
+            }
+        })
+    );
+    let mut pointers: Vec<_> = fields
+        .iter()
+        .map(|field| (field.pointer.as_str(), field.text.as_str()))
+        .collect();
+    pointers.sort_unstable();
+    assert_eq!(
+        pointers,
+        [
+            (
+                "/tool_result/[REDACTED:github-token] (2)",
+                "[REDACTED:github-token] (2)"
+            ),
+            (
+                "/tool_result/[REDACTED:github-token] (3)",
+                "[REDACTED:github-token] (3)"
+            ),
+            (
+                "/tool_result/[REDACTED:github-token] (3)/scopes",
+                "admin [REDACTED:github-token]"
+            ),
+        ]
+    );
+}
+
+#[test]
 fn disabled_config_redacts_nothing() {
     let key = anthropic_key();
     let mut request = json!({"prompt": key});

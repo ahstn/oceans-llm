@@ -99,11 +99,14 @@ fn default_tiers() -> BTreeSet<SecretTier> {
     BTreeSet::from([SecretTier::ProviderTokens, SecretTier::Credentials])
 }
 
-/// A JSON string that had one or more secrets redacted.
+/// A JSON string or object key that had one or more secrets redacted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RedactedField {
-    /// RFC 6901 pointer to the redacted string.
+    /// RFC 6901 pointer to the redacted string, or to the entry whose key was
+    /// redacted.
     pub pointer: String,
+    /// The redacted string value or key.
+    pub text: String,
     pub rule_ids: Vec<&'static str>,
 }
 
@@ -138,6 +141,7 @@ fn redact_json_at(
                 *text = replacement;
                 output.push(RedactedField {
                     pointer: pointer.clone(),
+                    text: text.clone(),
                     rule_ids,
                 });
             }
@@ -151,20 +155,80 @@ fn redact_json_at(
             }
         }
         Value::Object(object) => {
+            redact_object_keys(object, pointer, config, output);
             let data_is_media = has_inline_media_data(object);
             for (key, child) in object.iter_mut() {
                 let is_media_key = key == "b64_json" || (key == "data" && data_is_media);
                 if is_media_key && child.as_str().is_some_and(is_base64) {
                     continue;
                 }
-                pointer.push('/');
-                pointer.push_str(&key.replace('~', "~0").replace('/', "~1"));
+                push_pointer_token(pointer, key);
                 redact_json_at(child, pointer, config, output);
                 pointer.truncate(parent_len);
             }
         }
         Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
+}
+
+/// Redacts secrets in object keys, as in a map keyed by credential. A redacted
+/// key that would replace another entry gets a ` (2)`, ` (3)`, ... suffix, so
+/// no entry is dropped.
+fn redact_object_keys(
+    object: &mut Map<String, Value>,
+    pointer: &str,
+    config: &SecretRedactionConfig,
+    output: &mut Vec<RedactedField>,
+) {
+    let redacted_keys: Vec<_> = object
+        .keys()
+        .map(|key| scanner::redact_text(key, config))
+        .collect();
+    if redacted_keys.iter().all(Option::is_none) {
+        return;
+    }
+    let entries = std::mem::take(object);
+    // Keys that keep their name are reserved first, so a redacted key can never
+    // replace one of them, whatever the iteration order.
+    let mut taken: BTreeSet<String> = entries
+        .keys()
+        .zip(&redacted_keys)
+        .filter(|(_, redacted)| redacted.is_none())
+        .map(|(key, _)| key.clone())
+        .collect();
+    for ((key, value), redacted) in entries.into_iter().zip(redacted_keys) {
+        let key = match redacted {
+            None => key,
+            Some((replacement, rule_ids)) => {
+                let key = unique_key(&taken, replacement);
+                taken.insert(key.clone());
+                let mut entry_pointer = pointer.to_string();
+                push_pointer_token(&mut entry_pointer, &key);
+                output.push(RedactedField {
+                    pointer: entry_pointer,
+                    text: key.clone(),
+                    rule_ids,
+                });
+                key
+            }
+        };
+        object.insert(key, value);
+    }
+}
+
+fn unique_key(taken: &BTreeSet<String>, key: String) -> String {
+    if !taken.contains(&key) {
+        return key;
+    }
+    (2..)
+        .map(|suffix| format!("{key} ({suffix})"))
+        .find(|candidate| !taken.contains(candidate))
+        .expect("an unused suffix exists")
+}
+
+fn push_pointer_token(pointer: &mut String, key: &str) {
+    pointer.push('/');
+    pointer.push_str(&key.replace('~', "~0").replace('/', "~1"));
 }
 
 fn is_base64_data_uri(text: &str) -> bool {
@@ -202,17 +266,13 @@ pub fn redact_prompt_secrets(policy: &EffectivePolicy, request: &mut Value) -> V
     let mut seen = BTreeSet::new();
     let mut decisions = Vec::new();
     for field in &fields {
-        let redacted_text = request
-            .pointer(&field.pointer)
-            .and_then(Value::as_str)
-            .unwrap_or_default();
         for rule_id in &field.rule_ids {
             if seen.insert(*rule_id) {
                 decisions.push(redaction_decision(
                     policy,
                     rule_id,
                     &field.pointer,
-                    redacted_text,
+                    &field.text,
                     latency_micros,
                 ));
             }
