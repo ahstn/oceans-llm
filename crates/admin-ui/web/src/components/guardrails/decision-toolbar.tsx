@@ -56,37 +56,16 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <form
-        key={search.request_id ?? ''}
-        className="w-full sm:w-64"
-        action={(formData) => {
-          const value = formData.get('request_id')
-          update({ request_id: typeof value === 'string' ? value.trim() : '' })
-        }}
-      >
-        <InputGroup>
-          <InputGroupInput
-            name="request_id"
-            aria-label="Request ID"
-            placeholder="Request ID…"
-            defaultValue={search.request_id ?? ''}
-          />
-          <InputGroupAddon>
-            <AppIcon icon={Search01Icon} aria-hidden />
-          </InputGroupAddon>
-          {search.request_id ? (
-            <InputGroupAddon align="inline-end">
-              <InputGroupButton
-                aria-label="Clear request ID"
-                size="icon-xs"
-                onClick={() => update({ request_id: '' })}
-              >
-                <AppIcon icon={Cancel01Icon} aria-hidden />
-              </InputGroupButton>
-            </InputGroupAddon>
-          ) : null}
-        </InputGroup>
-      </form>
+      <SearchField
+        label="Request ID"
+        value={search.request_id}
+        onSubmit={(request_id) => update({ request_id })}
+      />
+      <SearchField
+        label="Evaluator"
+        value={search.evaluator}
+        onSubmit={(evaluator) => update({ evaluator })}
+      />
       <ToggleGroup
         type="single"
         variant="outline"
@@ -124,7 +103,6 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
           </SelectContent>
         </Select>
       ) : null}
-      {search.evaluator ? <Badge variant="outline">Evaluator: {search.evaluator}</Badge> : null}
       {hasDates ? (
         <Badge variant="outline">
           {boundLabel(search.occurred_at_start, 'Any time')} to{' '}
@@ -137,6 +115,51 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
         </Button>
       ) : null}
     </div>
+  )
+}
+
+/** Free-text filter that applies on Enter; keyed by its value so URL changes reset the input. */
+function SearchField({
+  label,
+  value,
+  onSubmit,
+}: {
+  label: string
+  value: string | null | undefined
+  onSubmit: (value: string) => void
+}) {
+  return (
+    <form
+      key={value ?? ''}
+      className="w-full sm:w-56"
+      action={(formData) => {
+        const next = formData.get('value')
+        onSubmit(typeof next === 'string' ? next.trim() : '')
+      }}
+    >
+      <InputGroup>
+        <InputGroupInput
+          name="value"
+          aria-label={label}
+          placeholder={`${label}…`}
+          defaultValue={value ?? ''}
+        />
+        <InputGroupAddon>
+          <AppIcon icon={Search01Icon} aria-hidden />
+        </InputGroupAddon>
+        {value ? (
+          <InputGroupAddon align="inline-end">
+            <InputGroupButton
+              aria-label={`Clear ${label.toLowerCase()}`}
+              size="icon-xs"
+              onClick={() => onSubmit('')}
+            >
+              <AppIcon icon={Cancel01Icon} aria-hidden />
+            </InputGroupButton>
+          </InputGroupAddon>
+        ) : null}
+      </InputGroup>
+    </form>
   )
 }
 

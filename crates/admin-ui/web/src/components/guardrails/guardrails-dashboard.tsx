@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useTable, type ColumnDef, type SortingState } from '@tanstack/react-table'
+import { useTable, type ColumnDef } from '@tanstack/react-table'
 
 import {
   DataGrid,
@@ -7,7 +7,6 @@ import {
   dataGridFeatures,
   type DataGridFeatures,
 } from '@/components/reui/data-grid/data-grid'
-import { DataGridColumnHeader } from '@/components/reui/data-grid/data-grid-column-header'
 import { DataGridTable } from '@/components/reui/data-grid/data-grid-table'
 import {
   Frame,
@@ -195,12 +194,11 @@ function DecisionGrid({
   onSelect: (decision: GuardrailDecisionView) => void
   onEvaluator: (evaluator: string) => void
 }) {
-  const [sorting, setSorting] = useState<SortingState>([])
   const columns = useMemo<ColumnDef<DataGridFeatures, GuardrailDecisionView>[]>(
     () => [
       {
         accessorKey: 'occurred_at',
-        header: ({ column }) => <DataGridColumnHeader column={column} title="Time" />,
+        header: 'Time',
         size: 200,
         cell: ({ row }) => (
           <span className="text-muted-foreground tabular-nums">
@@ -257,7 +255,7 @@ function DecisionGrid({
       },
       {
         accessorKey: 'latency_micros',
-        header: ({ column }) => <DataGridColumnHeader column={column} title="Latency" />,
+        header: 'Latency',
         size: 110,
         cell: ({ row }) => (
           <span className="tabular-nums">{formatLatency(row.original.latency_micros)}</span>
@@ -271,8 +269,8 @@ function DecisionGrid({
     columns,
     data: items,
     getRowId: (decision: GuardrailDecisionView) => decision.decision_id,
-    state: { sorting },
-    onSortingChange: setSorting,
+    // Rows are one server page in server order; sorting here would only reorder that page.
+    enableSorting: false,
     manualPagination: true,
   })
 

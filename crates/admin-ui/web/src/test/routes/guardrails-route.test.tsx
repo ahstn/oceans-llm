@@ -114,6 +114,20 @@ describe('GuardrailsPage', () => {
     })
   })
 
+  it('filters by an evaluator typed into the toolbar', async () => {
+    await renderPage()
+
+    fireEvent.change(screen.getByLabelText('Evaluator'), { target: { value: 'bedrock' } })
+    fireEvent.submit(screen.getByLabelText('Evaluator').closest('form')!)
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/guardrails',
+        search: { evaluator: 'bedrock' },
+      })
+    })
+  })
+
   it('filters by action and by phase from the action mix', async () => {
     await renderPage()
 
