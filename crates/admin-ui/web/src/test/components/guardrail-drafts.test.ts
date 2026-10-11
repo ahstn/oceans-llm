@@ -41,4 +41,20 @@ describe('useGuardrailDrafts', () => {
     expect(result.current.yaml).toContain('slow: {}')
     expect(result.current.yaml).toMatch(/fast:\n\s+mode: audit/)
   })
+
+  it('lets a page-pinned field inherit again once the default changes to match it', () => {
+    const { result } = renderHook(() => useGuardrailDrafts(policies))
+
+    act(() =>
+      result.current.update('model_route:slow', {
+        ...result.current.drafts['model_route:slow'],
+        mode: 'deny',
+      }),
+    )
+    act(() => result.current.update('global', { ...result.current.drafts.global, mode: 'deny' }))
+
+    expect(result.current.yaml).toContain('slow: {}')
+    // Set in gateway.yaml, so it stays explicit even though it now matches.
+    expect(result.current.yaml).toMatch(/fast:\n\s+mode: audit/)
+  })
 })

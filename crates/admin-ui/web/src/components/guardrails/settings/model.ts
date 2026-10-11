@@ -127,6 +127,15 @@ export function areaSummary(area: AreaId, draft: PolicyDraft) {
 type Override = { values: PolicyDraft; explicit: Set<string>; original: Set<string> }
 type DraftState = { base: PolicyDraft; overrides: Record<string, Override> }
 
+/**
+ * Keeps the fields `gateway.yaml` sets and the ones this page pinned to a value that differs from
+ * `base`; a page-made field that matches the default again goes back to inheriting.
+ */
+function reconcile(override: Override, base: PolicyDraft, explicit: Iterable<string>) {
+  const pinned = new Set<string>(differingFields(override.values, base))
+  return new Set([...explicit].filter((field) => override.original.has(field) || pinned.has(field)))
+}
+
 function effective(state: DraftState, key: string) {
   const override = state.overrides[key]
   return override ? withFields(state.base, override.values, override.explicit) : state.base
@@ -156,16 +165,21 @@ export function useGuardrailDrafts(policies: GuardrailPoliciesView) {
   const update = (key: string, next: PolicyDraft) =>
     setState((current) => {
       const override = current.overrides[key]
-      if (!override) return { ...current, base: next }
+      if (!override) {
+        const overrides = Object.fromEntries(
+          Object.entries(current.overrides).map(([scope, item]) => [
+            scope,
+            { ...item, explicit: reconcile(item, next, item.explicit) },
+          ]),
+        )
+        return { base: next, overrides }
+      }
       const edited = differingFields(next, effective(current, key))
       const values = withFields(override.values, next, edited)
-      // A field this page made explicit goes back to inheriting once it matches the default again.
-      const pinned = new Set<string>(differingFields(values, current.base))
-      const explicit = new Set(
-        [...override.explicit, ...edited].filter(
-          (field) => override.original.has(field) || pinned.has(field),
-        ),
-      )
+      const explicit = reconcile({ ...override, values }, current.base, [
+        ...override.explicit,
+        ...edited,
+      ])
       return {
         ...current,
         overrides: { ...current.overrides, [key]: { ...override, values, explicit } },
