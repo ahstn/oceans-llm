@@ -479,7 +479,7 @@ fn short_b64_json_values_are_scanned() {
     );
     assert_eq!(request["b64_json"], "[REDACTED:aws-access-key-id]");
 
-    let image = format!("{}{key}", random(ALNUM, 300, 71));
+    let image = format!("{}{key}", random(ALNUM, 1100, 71));
     let mut request = json!({"b64_json": image.clone()});
     assert!(redact_json_secrets(&mut request, &default_config()).is_empty());
 }
@@ -495,6 +495,10 @@ fn assignments_end_at_collection_closers_and_match_every_private_key_spelling() 
         (
             format!("[token={value}]"),
             "[token=[REDACTED:secret-assignment]]",
+        ),
+        (
+            format!("connect(password={value})"),
+            "connect(password=[REDACTED:secret-assignment])",
         ),
         (
             format!("{{\"privateKey\":\"{value}\"}}"),

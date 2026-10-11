@@ -10,6 +10,7 @@ use gateway_core::{
     BatchRepository, BatchStatus, ModelRepository, Money4, ProviderBatchRequest,
     ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchSubmission, ProviderError,
 };
+use gateway_guardrails::DecisionRecord;
 use gateway_service::{BatchPricer, BatchPricingPolicy, BatchUsageInput};
 use serde_json::json;
 use time::OffsetDateTime;
@@ -19,7 +20,7 @@ use uuid::Uuid;
 use crate::http::{
     guardrail_events::record_guardrail_decisions,
     inference_guardrails::{
-        batch_guard_context, guard_model_response, guard_prompt, model_route_key, redact_prompt,
+        batch_guard_context, guard_batch_prompt, guard_model_response, model_route_key,
         redact_prompt_body,
     },
     state::{AppGatewayService, AppState},
@@ -252,14 +253,22 @@ pub(crate) async fn redact_unsubmitted_batch(
         .store()
         .replace_batch_item_requests(job.batch_id, &redacted)
         .await?;
-    // Decision logging is best effort, so it must not hold up a cancellation.
+    record_in_background(state, decisions);
+    Ok(())
+}
+
+/// Persists redaction decisions without holding up the batch: decision logging
+/// is best effort, and a large batch would otherwise wait on one write per item.
+fn record_in_background(state: &AppState, decisions: Vec<(String, Vec<DecisionRecord>)>) {
+    if decisions.is_empty() {
+        return;
+    }
     let state = state.clone();
     tokio::spawn(async move {
         for (request_id, redactions) in decisions {
             record_guardrail_decisions(&state, Some(&request_id), None, &redactions).await;
         }
     });
-    Ok(())
 }
 
 async fn submit_job(
@@ -279,15 +288,25 @@ async fn submit_job(
         &job.upstream_model,
     );
     let mut guarded_items = Vec::with_capacity(items.len());
+    let mut decisions = Vec::new();
     let mut rejection = None;
     for item in items {
         let mut body = item.request_body;
         let request_id = format!("batch:{}:{}", job.batch_id, item.custom_id);
         if rejection.is_some() {
             // The batch is already rejected; only redact, so stored items keep no secrets.
-            redact_prompt(state, &request_id, &route_key, &mut body).await;
-        } else if let Err(error) =
-            guard_prompt(state, &request_id, route_key.clone(), &mut body).await
+            let redactions = redact_prompt_body(state, &route_key, &mut body);
+            if !redactions.is_empty() {
+                decisions.push((request_id, redactions));
+            }
+        } else if let Err(error) = guard_batch_prompt(
+            state,
+            &request_id,
+            route_key.clone(),
+            &mut body,
+            &mut decisions,
+        )
+        .await
         {
             rejection = Some(error.error_code());
         }
@@ -303,6 +322,7 @@ async fn submit_job(
         .store()
         .replace_batch_item_requests(job.batch_id, &guarded_items)
         .await?;
+    record_in_background(state, decisions);
     if let Some(error_code) = rejection {
         return fail_claimed_job(
             service,

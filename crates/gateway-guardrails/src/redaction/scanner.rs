@@ -33,6 +33,9 @@ static PLACEHOLDER_SHAPES: LazyLock<Regex> = LazyLock::new(|| {
         r"|\$\{[A-Za-z_][A-Za-z0-9_.:-]*\}",
         r"|\{\{\s*[A-Za-z_][A-Za-z0-9_. -]*\}\}",
         r"|%[A-Za-z_][A-Za-z0-9_]*%",
+        // Our own output, so a second pass does not redact it again; a key
+        // placeholder may carry a ` (2)` collision suffix.
+        r"|\[REDACTED:[a-z0-9-]+\](?: \(\d+\))?",
         r"|(?i:[a-z0-9-]{0,12}your[_-][a-z_.-]+))$",
     ))
     .expect("placeholder pattern")
@@ -196,10 +199,6 @@ fn is_aws_example(value: &str) -> bool {
 /// Rejects documentation values and template references that match a rule's
 /// shape but cannot be live credentials.
 fn is_placeholder(value: &str) -> bool {
-    // Keeps a second pass from redacting an earlier placeholder.
-    if value.to_ascii_lowercase().contains("[redacted:") {
-        return true;
-    }
     if PLACEHOLDER_SHAPES.is_match(value) {
         return true;
     }
@@ -291,6 +290,7 @@ mod tests {
             "EXAMPLEq7pK9mT4zQ2",
             "Tr0ub4dorEXAMPLE",
             "aB3<OPENAI_API_KEY>z9!",
+            "aB3[REDACTED:x]K2mN5!",
             "%A7x9!K2mN5%",
         ] {
             assert!(!is_placeholder(value), "{value} should be a secret");

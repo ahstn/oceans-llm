@@ -18,9 +18,12 @@ mod scanner;
 
 const EVALUATOR_ID: &str = "secret_redaction";
 const REASON_CODE: &str = "secret_redaction.redacted";
+/// Shortest `b64_json` value treated as an image. Longer than any credential a
+/// base64-alphabet rule matches (`aws-bedrock-api-key` tops out under 300
+/// characters), and far shorter than any real image.
+const MIN_B64_JSON_LEN: usize = 1024;
 /// Sibling keys that mark an object's `data` string as inline media: Anthropic
 /// sources and Gemini `inline_data`.
-const MIN_B64_JSON_LEN: usize = 256;
 const MEDIA_TYPE_KEYS: &[&str] = &["media_type", "mime_type", "mimeType"];
 /// `format` values of OpenAI `input_audio`.
 const AUDIO_FORMATS: &[&str] = &[

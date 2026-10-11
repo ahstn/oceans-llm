@@ -50,6 +50,29 @@ pub async fn guard_prompt(
     route_key: String,
     request: &mut Value,
 ) -> Result<InferenceGuardContext, GatewayError> {
+    guard_prompt_with(state, request_id, route_key, request, None).await
+}
+
+/// Like [`guard_prompt`], but hands the redaction decisions to `deferred`
+/// instead of awaiting their persistence, so a batch of many items does not
+/// wait on one best-effort write per item.
+pub async fn guard_batch_prompt(
+    state: &AppState,
+    request_id: &str,
+    route_key: String,
+    request: &mut Value,
+    deferred: &mut Vec<(String, Vec<DecisionRecord>)>,
+) -> Result<InferenceGuardContext, GatewayError> {
+    guard_prompt_with(state, request_id, route_key, request, Some(deferred)).await
+}
+
+async fn guard_prompt_with(
+    state: &AppState,
+    request_id: &str,
+    route_key: String,
+    request: &mut Value,
+    deferred: Option<&mut Vec<(String, Vec<DecisionRecord>)>>,
+) -> Result<InferenceGuardContext, GatewayError> {
     let policy =
         PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::ModelRoute(&route_key));
     if !policy.enabled {
@@ -63,7 +86,13 @@ pub async fn guard_prompt(
     }
     // Redact before any other evaluator, so managed services never see the secrets either.
     let redactions = redact_prompt_secrets(&policy, request);
-    record_guardrail_decisions(state, Some(request_id), None, &redactions).await;
+    match deferred {
+        Some(deferred) if !redactions.is_empty() => {
+            deferred.push((request_id.to_string(), redactions));
+        }
+        Some(_) => {}
+        None => record_guardrail_decisions(state, Some(request_id), None, &redactions).await,
+    }
     let associated_prompt = inspect_text_fields(
         state,
         &route_key,
