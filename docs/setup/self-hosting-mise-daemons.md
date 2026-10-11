@@ -187,6 +187,8 @@ pitchfork boot status
 
 `boot enable` registers a user `systemd` service. `enable-linger` lets that service start at boot without a login. The three daemons carry `boot_start = true`, so the supervisor starts them in dependency order.
 
+A user service cannot wait for the system's `network-online.target`, so daemons can start before DNS works. Every daemon start runs through `mise`, which installs any tool it considers missing, so a tool that never reads as installed needs the network on each start. `deploy` installs the tools, so `mise x -- true` must then run without installing anything. Each daemon also sets `retry`, so a transient startup failure does not stop the stack. If a daemon still shows `errored` after a reboot, check `mise daemons logs <name>` and run `mise daemons start db gateway admin-ui`.
+
 Optional: stop CLI commands from starting a second, unmanaged supervisor.
 
 ```toml
