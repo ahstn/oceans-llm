@@ -353,6 +353,11 @@ launch() {
   printf '%s\n' "$ui_port" >"$run_dir/ui-port"
 
   activate_mise
+  # Proofs fingerprint the repository's gateway.yaml, so an external config would go unrecorded.
+  if [[ -n "${GATEWAY_CONFIG:-}" && "$(cd "$(dirname "$GATEWAY_CONFIG")" 2>/dev/null && pwd)/$(basename "$GATEWAY_CONFIG")" != "$repo_root/gateway.yaml" ]]; then
+    echo "Refusing to launch with GATEWAY_CONFIG=$GATEWAY_CONFIG; unset it so the stack uses the repository's gateway.yaml." >&2
+    exit 1
+  fi
   # Proofs compare against this snapshot, so edits after launch mark them stale.
   (cd "$repo_root" && OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" mise exec -- node "$proof_script" snapshot-sources "$launch_sources_file")
   if [[ "${OCEANS_VERIFY_SKILLS:-false}" == "true" ]]; then
