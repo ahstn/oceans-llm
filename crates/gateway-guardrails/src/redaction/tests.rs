@@ -234,6 +234,14 @@ fn redacts_secret_assignments_and_bearer_tokens_by_default() {
             "PASSWORD=\"[REDACTED:secret-assignment-quoted]\"",
         ),
         (
+            format!(
+                "PASSWORD=\"{}<{}\"",
+                random(ALNUM, 8, 66),
+                random(ALNUM, 8, 67)
+            ),
+            "PASSWORD=\"[REDACTED:secret-assignment-quoted]\"",
+        ),
+        (
             format!("Authorization: Bearer {}", random(ALNUM, 40, 46)),
             "Authorization: Bearer [REDACTED:bearer-token]",
         ),
@@ -491,6 +499,14 @@ fn redacts_string_values_of_credential_named_fields() {
         panic!("expected one redacted field, got {}", fields.len());
     };
     assert_eq!(field.pointer, "/state/password");
+}
+
+#[test]
+fn aws_secret_rule_ignores_fields_that_only_start_like_its_names() {
+    let id = random(ALNUM, 40, 68);
+    let mut request = json!({"accessibility_id": id});
+
+    assert!(redact_json_secrets(&mut request, &default_config()).is_empty());
 }
 
 #[test]

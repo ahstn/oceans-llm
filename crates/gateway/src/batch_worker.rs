@@ -120,6 +120,10 @@ async fn process_job(
 ) -> Result<(), gateway_core::GatewayError> {
     let service = &state.service;
     let Some(provider) = state.providers.get(&job.provider_key) else {
+        if job.status == BatchStatus::Submitting {
+            // Never submitted, so `submit_job` has not redacted the stored requests yet.
+            redact_unsubmitted_batch(state, job).await?;
+        }
         return fail_claimed_job(
             service,
             worker_id,
@@ -196,8 +200,10 @@ async fn process_job(
     }
 }
 
-/// Redacts the stored requests of a batch that ended before submission, such as
+/// Redacts the stored requests of a batch that ends before submission, such as
 /// one cancelled while queued, so its results never return the original secrets.
+/// Redaction is idempotent, so callers run it before the terminal transition and a
+/// failed attempt can simply be retried.
 pub(crate) async fn redact_unsubmitted_batch(
     state: &AppState,
     job: &gateway_core::BatchJobRecord,
@@ -739,7 +745,8 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        prepare_submitted_state, redact_unsubmitted_batch, submit_job, validate_result_custom_ids,
+        prepare_submitted_state, process_job, redact_unsubmitted_batch, submit_job,
+        validate_result_custom_ids,
     };
     use crate::http::{
         state::AppState,
@@ -1034,7 +1041,13 @@ mod tests {
         let (_directory, state) = redacting_state().await;
         let key = secret_key();
         let (job, api_key_id) = queued_batch(&state, &key).await;
-        let cancelled = state
+
+        // The cancel endpoint redacts first, so a failed redaction leaves the batch
+        // queued and the cancellation can be retried.
+        redact_unsubmitted_batch(&state, &job)
+            .await
+            .expect("redact batch");
+        state
             .store
             .request_batch_cancel(
                 job.batch_id,
@@ -1044,10 +1057,6 @@ mod tests {
             .await
             .expect("cancel batch");
 
-        redact_unsubmitted_batch(&state, &cancelled)
-            .await
-            .expect("redact batch");
-
         assert_redacted_items(
             &state,
             job.batch_id,
@@ -1056,6 +1065,20 @@ mod tests {
             BatchStatus::Cancelled,
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn batch_failed_for_a_missing_provider_stores_redacted_requests() {
+        let (_directory, mut state) = redacting_state().await;
+        let key = secret_key();
+        let (job, api_key_id) = claimed_batch(&state, &key).await;
+        state.providers = gateway_core::ProviderRegistry::new();
+
+        process_job(&state, "worker", &job)
+            .await
+            .expect("missing provider is recorded");
+
+        assert_failed_with_redacted_items(&state, job.batch_id, api_key_id, &key).await;
     }
 
     #[tokio::test]

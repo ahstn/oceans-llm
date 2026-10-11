@@ -397,14 +397,15 @@ pub async fn cancel_batch(
             )));
         }
     }
+    // A queued batch is cancelled without reaching the worker, so redact its stored
+    // requests here. Doing it before the transition keeps a failed redaction retryable.
+    if current.status == BatchStatus::Queued {
+        crate::batch_worker::redact_unsubmitted_batch(&state, &current).await?;
+    }
     let job = state
         .store
         .request_batch_cancel(batch_id, scope, OffsetDateTime::now_utc())
         .await?;
-    // Cancelled while queued: the worker never ran, so redact the stored requests here.
-    if current.status == BatchStatus::Queued && job.status == BatchStatus::Cancelled {
-        crate::batch_worker::redact_unsubmitted_batch(&state, &job).await?;
-    }
     let caller_names = load_caller_names(&state, std::slice::from_ref(&job)).await?;
     Ok(Json(batch_response(job, &caller_names)))
 }

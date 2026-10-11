@@ -23,6 +23,8 @@ struct Scanner {
 }
 
 static SCANNER: LazyLock<Scanner> = LazyLock::new(Scanner::build);
+static ANGLE_PLACEHOLDER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<[A-Za-z][A-Za-z0-9 _.-]*>").expect("placeholder pattern"));
 
 impl Scanner {
     fn build() -> Self {
@@ -180,8 +182,12 @@ fn is_placeholder(value: &str) -> bool {
     }
     let lowered = value.to_ascii_lowercase();
     // `[redacted:` keeps a second pass from redacting an earlier placeholder.
-    const MARKERS: &[&str] = &["your_", "your-", "<", ">", "${", "{{", "}}", "[redacted:"];
+    const MARKERS: &[&str] = &["your_", "your-", "${", "{{", "}}", "[redacted:"];
     if MARKERS.iter().any(|marker| lowered.contains(marker)) {
+        return true;
+    }
+    // Only a `<NAME>` slot is a placeholder: a real password may contain `<` or `>`.
+    if ANGLE_PLACEHOLDER.is_match(value) {
         return true;
     }
     if value.len() > 2 && value.starts_with('%') && value.ends_with('%') {

@@ -355,7 +355,14 @@ pub(super) const RULES: &[Rule] = &[
     credential(
         "aws-secret-access-key",
         &["aws", "secret", "access"],
-        assigned!(r"(?:aws|secret|access)", r"[A-Za-z0-9/+=]{40}"),
+        // As in `secret-assignment`, the name may continue only after a separator or
+        // a camelCase capital, so `aws_secret_access_key` matches but `accessibility_id`
+        // does not.
+        assigned!(
+            r"(?:aws|secret|access)",
+            r"(?:(?:[_.-]|(?-i:[A-Z]))[[:word:].-]{0,19})?",
+            r"[A-Za-z0-9/+=]{40}"
+        ),
         4.0,
     ),
     credential(
