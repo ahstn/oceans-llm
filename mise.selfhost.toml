@@ -26,6 +26,8 @@ version = "18"
 port = 5432
 options.database = "oceans_llm"
 boot_start = true
+# Boot starts can race the network and other host services; the gateway cannot start without Postgres.
+retry = 5
 
 [daemons.admin-ui]
 run = "cd crates/admin-ui/web && HOST=127.0.0.1 exec bun server.ts"
