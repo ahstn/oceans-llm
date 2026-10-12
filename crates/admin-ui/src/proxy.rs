@@ -28,7 +28,10 @@ impl ProxyState {
     fn new(config: &AdminUiConfig) -> Self {
         let base_path = normalize_base_path(&config.base_path);
         let upstream = config.upstream.trim_end_matches('/').to_string();
+        // SSR auth redirects must reach the browser. Following them here would serve the
+        // redirect target's HTML at the original URL and break client hydration.
         let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
             .timeout(Duration::from_millis(config.request_timeout_ms))
             .build()
@@ -306,6 +309,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn proxy_passes_upstream_redirects_through_to_the_client() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let upstream = start_upstream(captured.clone()).await;
+
+        let app = mount_admin_ui(
+            Router::new(),
+            AdminUiConfig {
+                upstream,
+                ..AdminUiConfig::default()
+            },
+        );
+
+        let request = Request::builder()
+            .uri("/admin/redirect-to-login")
+            .method("GET")
+            .body(Body::empty())
+            .expect("request must build");
+
+        let response = app
+            .oneshot(request)
+            .await
+            .expect("proxy request should succeed");
+        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(
+            response.headers().get("location"),
+            Some(&HeaderValue::from_static(
+                "/admin/login?redirect=%2Fapi-keys"
+            ))
+        );
+
+        let captured = captured.lock().expect("capture lock");
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].path_and_query, "/admin/redirect-to-login");
+    }
+
+    #[tokio::test]
     async fn proxy_bounds_multipart_before_forwarding_without_content_length() {
         let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
         let upstream = start_upstream(captured.clone()).await;
@@ -517,6 +556,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
+        let redirects_to_login = path_and_query == "/admin/redirect-to-login";
         captured
             .lock()
             .expect("capture lock")
@@ -524,6 +564,14 @@ mod tests {
                 path_and_query,
                 headers,
             });
+
+        if redirects_to_login {
+            return Response::builder()
+                .status(StatusCode::TEMPORARY_REDIRECT)
+                .header("location", "/admin/login?redirect=%2Fapi-keys")
+                .body(Body::empty())
+                .expect("redirect response should build");
+        }
 
         Response::builder()
             .status(StatusCode::OK)
