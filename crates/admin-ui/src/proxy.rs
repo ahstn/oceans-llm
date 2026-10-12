@@ -55,10 +55,14 @@ pub fn mount_admin_ui(router: Router, config: AdminUiConfig) -> Router {
     };
 
     let state = ProxyState::new(&config);
-    let admin_ui_router = Router::new()
+    let mut admin_ui_router = Router::new()
         .route(&base_path, any(proxy_request))
-        .route(&wildcard_path, any(proxy_request))
-        .with_state(state.clone());
+        .route(&wildcard_path, any(proxy_request));
+    if base_path != "/" {
+        // The wildcard needs at least one character, and the UI redirects `/admin` to `/admin/`.
+        admin_ui_router = admin_ui_router.route(&format!("{base_path}/"), any(proxy_request));
+    }
+    let admin_ui_router = admin_ui_router.with_state(state.clone());
 
     let router = if base_path == "/" {
         router
@@ -342,6 +346,36 @@ mod tests {
         let captured = captured.lock().expect("capture lock");
         assert_eq!(captured.len(), 1);
         assert_eq!(captured[0].path_and_query, "/admin/redirect-to-login");
+    }
+
+    #[tokio::test]
+    async fn proxy_forwards_base_path_with_trailing_slash() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let upstream = start_upstream(captured.clone()).await;
+
+        let app = mount_admin_ui(
+            Router::new(),
+            AdminUiConfig {
+                upstream,
+                ..AdminUiConfig::default()
+            },
+        );
+
+        let request = Request::builder()
+            .uri("/admin/")
+            .method("GET")
+            .body(Body::empty())
+            .expect("request must build");
+
+        let response = app
+            .oneshot(request)
+            .await
+            .expect("proxy request should succeed");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let captured = captured.lock().expect("capture lock");
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].path_and_query, "/admin/");
     }
 
     #[tokio::test]
