@@ -80,6 +80,26 @@ permissions:
       - spend_controls
     default_page: api_keys
 
+guardrails:
+  default:
+    enabled: true
+    mode: audit
+    packs:
+      - core.shell
+      - core.git
+      - core.filesystem
+      - database.postgresql
+      - secrets.aws_secrets
+      - secrets.onepassword
+      - cloud.aws
+      - cloud.gcp
+      - kubernetes.kubectl
+      - kubernetes.helm
+    managed_checks: []
+  managed_checks: {}
+  model_routes: {}
+  mcp_servers: {}
+
 request_logging:
   payloads:
     capture_mode: redacted_payloads
