@@ -198,11 +198,11 @@ test('keeps decision filters synchronized with browser navigation', async ({
 
   const evaluator = page.getByLabel('Evaluator')
   await evaluator.fill('deterministic')
-  await page.getByRole('button', { name: 'Apply filters' }).click()
+  await evaluator.press('Enter')
   await expect(page).toHaveURL(/evaluator=deterministic/)
 
   await evaluator.fill('managed')
-  await page.getByRole('button', { name: 'Apply filters' }).click()
+  await evaluator.press('Enter')
   await expect(page).toHaveURL(/evaluator=managed/)
 
   await page.goBack()
