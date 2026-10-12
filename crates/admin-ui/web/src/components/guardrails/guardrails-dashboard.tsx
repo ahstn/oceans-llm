@@ -40,7 +40,7 @@ import { INNER_PANEL } from './inner-panel'
 
 /** Dashboard grid: KPI cards and an action-by-phase breakdown above the decision grid. */
 export function GuardrailsDashboard(props: DashboardProps) {
-  const { decisions, search, onSearch } = props
+  const { decisions, search, pending, onSearch } = props
   const [selected, setSelected] = useState<GuardrailDecisionView | null>(null)
   const items = decisions.items
   const byAction = countBy(items, (item) => item.action)
@@ -87,10 +87,11 @@ export function GuardrailsDashboard(props: DashboardProps) {
                 key={id}
                 type="button"
                 aria-pressed={active}
+                disabled={pending}
                 onClick={() =>
                   onSearch({ ...search, phase: active ? undefined : id, page: undefined })
                 }
-                className="hover:bg-muted aria-pressed:bg-muted dark:hover:bg-muted/50 grid grid-cols-[9rem_minmax(0,1fr)_2.5rem] items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors"
+                className="hover:bg-muted aria-pressed:bg-muted dark:hover:bg-muted/50 grid grid-cols-[9rem_minmax(0,1fr)_2.5rem] items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors disabled:pointer-events-none disabled:opacity-50"
               >
                 <span className="truncate">{label}</span>
                 <ActionMeter counts={countBy(phaseItems, (item) => item.action)} />
@@ -117,7 +118,9 @@ export function GuardrailsDashboard(props: DashboardProps) {
           <DecisionGrid
             items={items}
             onSelect={setSelected}
-            onEvaluator={(evaluator) => onSearch({ ...search, evaluator, page: undefined })}
+            onEvaluator={(evaluator) => {
+              if (!pending) onSearch({ ...search, evaluator, page: undefined })
+            }}
           />
         </FramePanel>
         <FrameFooter>

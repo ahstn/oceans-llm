@@ -110,22 +110,41 @@ describe('GuardrailsPage', () => {
     })
   })
 
-  it('filters by action and by phase from the action mix', async () => {
+  it('filters by action from the toolbar', async () => {
     await renderPage()
 
     fireEvent.click(screen.getByRole('radio', { name: 'Deny' }))
-    fireEvent.click(screen.getByRole('button', { name: /Prompt/ }))
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
         to: '/observability/guardrails',
         search: { action: 'deny' },
       })
+    })
+  })
+
+  it('filters by phase from the action mix', async () => {
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /Prompt/ }))
+
+    await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
         to: '/observability/guardrails',
         search: { phase: 'prompt' },
       })
     })
+  })
+
+  it('locks phase and evaluator filters while a navigation is pending', async () => {
+    navigateMock.mockReturnValue(new Promise(() => {}))
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Deny' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Prompt/ })).toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: 'deterministic' }))
+    expect(navigateMock).toHaveBeenCalledTimes(1)
   })
 
   it('filters by evaluator from a decision row', async () => {
