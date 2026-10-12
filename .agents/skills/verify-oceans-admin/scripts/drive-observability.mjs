@@ -306,9 +306,15 @@ async function assertHarnessIcons(page, view) {
   const ompGradientCount = await ompIcon.locator("linearGradient").count();
   assertEqual(mastraIconCount, 1, "Mastra icon count");
   assertEqual(ompIconCount, 1, "Oh My Pi icon count");
-  assertEqual(ompFill, "#fff", "Oh My Pi icon fill");
+  if (!["#fff", "#ffffff", "white", "var(--color-white)"].includes(ompFill?.trim().toLowerCase())) {
+    throw new Error(`Oh My Pi icon fill: expected white, got ${JSON.stringify(ompFill)}`);
+  }
+  const ompRenderedFill = await ompIcon
+    .locator("path")
+    .evaluate((path) => getComputedStyle(path).fill);
+  assertEqual(ompRenderedFill, "rgb(255, 255, 255)", "Oh My Pi icon rendered fill");
   assertEqual(ompGradientCount, 0, "Oh My Pi gradient count");
-  return { mastraIconCount, ompIconCount, ompFill };
+  return { mastraIconCount, ompIconCount, ompFill, ompRenderedFill };
 }
 
 async function selectRange(page, tableTestId, keyHeader, leaders, projectLeader) {

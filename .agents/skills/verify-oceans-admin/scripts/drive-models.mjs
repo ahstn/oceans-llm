@@ -76,12 +76,18 @@ try {
   await page.getByTestId(`models-desktop-cell-${targetModelId}`).waitFor()
   await page.getByText(/^Benchmark scores by Artificial Analysis, retrieved via OpenRouter\.$/).waitFor()
   proof.pass('benchmark-attribution-visible')
-  const showingText = (await page.getByText(/^Showing \d+ of \d+ models$/).textContent())?.trim()
+  const pagination = page.getByRole('navigation', { name: 'Model pagination' })
+  await pagination.getByRole('combobox', { name: 'Rows per page' }).waitFor()
+  const rangeStatus = pagination.getByRole('status')
+  await rangeStatus.filter({ hasText: /^\d+–\d+ of \d+$/ }).waitFor()
+  const showingText = (await rangeStatus.textContent())?.trim()
   if (!showingText) throw new Error('The Models page did not report a visible model count.')
-  const match = /^Showing (\d+) of (\d+) models$/.exec(showingText)
-  if (!match) throw new Error(`Unexpected Models count text: ${showingText}`)
-  const displayedCount = Number(match[1])
-  const totalCount = Number(match[2])
+  const match = /^(\d+)–(\d+) of (\d+)$/.exec(showingText)
+  if (!match) throw new Error(`Unexpected Models pager text: ${showingText}`)
+  const firstShown = Number(match[1])
+  const lastShown = Number(match[2])
+  const displayedCount = lastShown === 0 ? 0 : lastShown - firstShown + 1
+  const totalCount = Number(match[3])
   const renderedCount = await page.locator('[data-testid^="models-desktop-cell-"]').count()
   if (displayedCount !== renderedCount) {
     throw new Error(`UI reported ${displayedCount} displayed models but rendered ${renderedCount} model rows.`)
@@ -91,7 +97,7 @@ try {
   await capture(page, '02-models')
 
   const adminModels = await page.evaluate(async () => {
-    const response = await fetch('/api/v1/admin/models?page=1&page_size=100')
+    const response = await fetch('/api/v1/admin/models?page=1&page_size=100&include_aliases=false')
     if (!response.ok) throw new Error(`admin models request returned ${response.status}`)
     return response.json()
   })
@@ -123,16 +129,22 @@ try {
   const infoDialog = page.getByRole('dialog', { name: 'Model info' })
   await infoDialog.getByText(targetModelId, { exact: true }).first().waitFor()
   const infoSections = infoDialog.getByRole('navigation', { name: 'Model info sections' })
-  for (const name of ['Overview', 'Routing', 'Economics', 'Benchmarks', 'Access']) {
+  const infoSectionNames = ['Overview', 'Routing', 'Benchmarks', 'Access']
+  for (const name of infoSectionNames) {
     await infoSections.getByRole('button', { name, exact: true }).click()
     await infoDialog.getByRole('heading', { name, exact: true }).waitFor()
+    if (name === 'Overview') {
+      await infoDialog.getByRole('heading', { name: 'Pricing and limits', exact: true }).waitFor()
+      await infoDialog.getByTestId('model-pricing-costs').waitFor()
+    }
     if (name === 'Benchmarks') {
       if (apiModel.benchmark_scores.length === 0) {
         await infoDialog.getByText('No benchmark data is available for this model.').waitFor()
       } else {
         for (const score of apiModel.benchmark_scores) {
-          await infoDialog.getByText(score.label, { exact: true }).waitFor()
-          const sourceLink = infoDialog.locator(
+          const scoreLabel = infoDialog.getByText(score.label, { exact: true })
+          await scoreLabel.waitFor()
+          const sourceLink = scoreLabel.locator('xpath=..').locator(
             `a[href="${score.source_url}"]`,
             { hasText: `${score.source_model_id} on OpenRouter` },
           )
@@ -144,7 +156,7 @@ try {
     }
   }
   actions.push({ action: `inspect ${targetModelId} model info`, result: 'All platform-admin sections visible' })
-  proof.pass('model-info-sections-visible', { observed: 5 })
+  proof.pass('model-info-sections-visible', { observed: infoSectionNames.length })
   proof.pass('benchmarks-match-admin-api', { observed: apiModel.benchmark_scores.length })
   await capture(page, '03-model-info')
   await page.keyboard.press('Escape')
