@@ -3,9 +3,10 @@ use crate::{
     GatewayStore, LibsqlStore, PostgresStore, StoreConnectionOptions, run_migrations,
     run_migrations_with_options,
 };
+use futures_util::future::join_all;
 use gateway_core::{
-    AuthMode, BudgetCadence, BudgetIncreaseRecord, BudgetScope, BudgetSettings, GlobalRole, Money4,
-    UserStatus,
+    AuthMode, BudgetCadence, BudgetIncreaseRecord, BudgetRecord, BudgetRepository, BudgetScope,
+    BudgetSettings, GlobalRole, Money4, UserStatus,
 };
 use serial_test::serial;
 use tempfile::tempdir;
@@ -45,7 +46,64 @@ async fn postgres_budget_increases_supersede_and_expire() {
     drop_postgres_test_database(&test_db).await;
 }
 
-async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
+#[tokio::test]
+#[serial]
+async fn postgres_concurrent_budget_increases_leave_one_active() {
+    let Some(test_db) = create_postgres_test_database().await else {
+        eprintln!("skipping postgres budget increase test: TEST_POSTGRES_URL is not set");
+        return;
+    };
+    run_migrations_with_options(&StoreConnectionOptions::Postgres {
+        url: test_db.database_url.clone(),
+        max_connections: 8,
+    })
+    .await
+    .expect("migrations");
+    let store = PostgresStore::connect(&test_db.database_url, 8)
+        .await
+        .expect("store");
+    let (user_id, budget, at) = create_user_budget(&store).await;
+
+    // Each request supersedes whatever is active, so racing creates must still leave
+    // exactly one unsuperseded increase rather than one per request.
+    let increases = (1..=8)
+        .map(|n| BudgetIncreaseRecord {
+            budget_increase_id: Uuid::new_v4(),
+            budget_id: budget.budget_id,
+            scope_key: budget.scope_key.clone(),
+            amount_usd: Money4::from_scaled(n * 10_000),
+            starts_at: at,
+            expires_at: at + Duration::days(7),
+            created_by_user_id: Some(user_id),
+            created_at: at,
+        })
+        .collect::<Vec<_>>();
+    let results = join_all(
+        increases
+            .iter()
+            .map(|increase| store.create_budget_increase(increase)),
+    )
+    .await;
+    for result in results {
+        result.expect("create increase");
+    }
+
+    let active: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM budget_increases WHERE budget_id = $1 AND superseded_at IS NULL",
+    )
+    .bind(budget.budget_id.to_string())
+    .fetch_one(store.pool())
+    .await
+    .expect("count");
+    assert_eq!(active, 1);
+
+    drop(store);
+    drop_postgres_test_database(&test_db).await;
+}
+
+async fn create_user_budget<S: GatewayStore + ?Sized>(
+    store: &S,
+) -> (Uuid, BudgetRecord, OffsetDateTime) {
     let user = store
         .create_identity_user(
             "User",
@@ -73,6 +131,11 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
         )
         .await
         .expect("budget");
+    (user.user_id, budget, at)
+}
+
+async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
+    let (user_id, budget, at) = create_user_budget(store).await;
     let increase = |amount: i64, starts_at: OffsetDateTime, days: i64| BudgetIncreaseRecord {
         budget_increase_id: Uuid::new_v4(),
         budget_id: budget.budget_id,
@@ -80,7 +143,7 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
         amount_usd: Money4::from_scaled(amount),
         starts_at,
         expires_at: starts_at + Duration::days(days),
-        created_by_user_id: Some(user.user_id),
+        created_by_user_id: Some(user_id),
         created_at: starts_at,
     };
 

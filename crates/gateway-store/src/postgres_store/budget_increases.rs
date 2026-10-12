@@ -52,6 +52,13 @@ pub(super) async fn create_budget_increase(
     increase: &BudgetIncreaseRecord,
 ) -> Result<(), StoreError> {
     let mut tx = store.pool.begin().await.map_err(to_query_error)?;
+    // Serialize creates per budget. Under READ COMMITTED, two concurrent supersede
+    // UPDATEs cannot see each other's uncommitted insert, so both would stay active.
+    sqlx::query("SELECT budget_id FROM budgets WHERE budget_id = $1 FOR UPDATE")
+        .bind(increase.budget_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(to_query_error)?;
     let starts_at = increase.starts_at.unix_timestamp();
     sqlx::query(
         "UPDATE budget_increases SET superseded_at = $2
