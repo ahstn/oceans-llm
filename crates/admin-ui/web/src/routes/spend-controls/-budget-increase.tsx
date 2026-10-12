@@ -25,6 +25,7 @@ import type { BudgetIncreasePeriod, SpendBudgetUserView } from '@/types/api'
 import {
   amountInputValue,
   DEFAULT_INCREASE_PERIOD,
+  formatIncreaseLastDay,
   increaseExpiresAt,
   increasePresets,
   maxIncrease10000,
@@ -35,17 +36,6 @@ import { formatCadence } from './-budget-model'
 
 // The "Increase budget" row action and its dialog: a temporary top-up that lasts until
 // the end of the calendar month or for seven days.
-
-const EXPIRY_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  timeZone: 'UTC',
-})
-
-/** The last day an increase is in effect; expiry is the exclusive boundary. */
-export function formatIncreaseLastDay(expiresAt: Date | string) {
-  return EXPIRY_FORMATTER.format(new Date(new Date(expiresAt).getTime() - 1))
-}
 
 export function IncreaseBudgetButton({
   eligibility,

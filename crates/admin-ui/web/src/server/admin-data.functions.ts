@@ -399,11 +399,33 @@ export const saveBudget = createServerFn({ method: 'POST' }).handler(
   },
 )
 
-export const increaseBudget = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof createBudgetIncrease>[0] }) => {
+type BudgetIncreaseInput = Parameters<typeof createBudgetIncrease>[0]
+
+const budgetIncreasePeriods = new Set<string>(['end_of_month', 'seven_days'])
+
+// Shape checks only; the gateway owns the permission, threshold, and 3x cap rules.
+function validateBudgetIncreaseInput(data: unknown): BudgetIncreaseInput {
+  const input = requireObject(data, 'Budget increase input')
+  const amountUsd = requiredString(input, 'amount_usd').trim()
+  if (!/^\d+(\.\d{1,4})?$/.test(amountUsd)) {
+    throw new Error('amount_usd must be a decimal with at most four decimal places')
+  }
+  const period = requiredString(input, 'period')
+  if (!budgetIncreasePeriods.has(period)) {
+    throw new Error('period must be end_of_month or seven_days')
+  }
+  return {
+    user_id: requiredString(input, 'user_id').trim(),
+    amount_usd: amountUsd,
+    period: period as BudgetIncreaseInput['period'],
+  }
+}
+
+export const increaseBudget = createServerFn({ method: 'POST' })
+  .validator(validateBudgetIncreaseInput)
+  .handler(async ({ data }) => {
     return createBudgetIncrease(data)
-  },
-)
+  })
 
 export const removeBudget = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: Parameters<typeof deactivateBudget>[0] }) => {
