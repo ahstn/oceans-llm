@@ -9,7 +9,6 @@ import {
   draftChanged,
   draftFrom,
   overrideFields,
-  REDACTION_TIERS,
   withFields,
   type PolicyDraft,
 } from '../config-yaml'
@@ -93,34 +92,6 @@ export const MANAGED_KINDS = [
 
 export function kindLabel(kind: string) {
   return MANAGED_KINDS.find((item) => item.kind === kind)?.label ?? kind
-}
-
-const TIER_SHORT: Record<string, string> = {
-  provider_tokens: 'Tokens',
-  credentials: 'Credentials',
-  generic: 'Generic',
-}
-
-/** One-line state of an area for a scope, for rows, cards and nav badges. */
-export function areaSummary(area: AreaId, draft: PolicyDraft) {
-  if (area === 'destructive') {
-    if (!draft.enabled) return { text: 'Off', tone: 'outline' as const }
-    return {
-      text: `${draft.packs.length} ${draft.packs.length === 1 ? 'pack' : 'packs'}, ${draft.mode}`,
-      tone: draft.mode === 'deny' ? ('success' as const) : ('warning' as const),
-    }
-  }
-  if (area === 'redaction') {
-    if (!draft.redaction.enabled || !draft.enabled) return { text: 'Off', tone: 'outline' as const }
-    const labels = REDACTION_TIERS.filter((tier) => draft.redaction.tiers.includes(tier.id))
-    return {
-      text: labels.map((tier) => TIER_SHORT[tier.id]).join(', ') || 'No tiers',
-      tone: 'success' as const,
-    }
-  }
-  if (!draft.enabled) return { text: 'Off', tone: 'outline' as const }
-  if (!draft.managed_checks.length) return { text: 'None', tone: 'outline' as const }
-  return { text: draft.managed_checks.join(', '), tone: 'success' as const }
 }
 
 /** `original` holds the fields `gateway.yaml` already sets, which an edit never unsets. */

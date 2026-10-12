@@ -18,16 +18,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type {
-  GuardrailDecisionFiltersInput,
-  GuardrailDecisionPageView,
-  GuardrailPoliciesView,
-} from '@/types/api'
+import type { GuardrailDecisionFiltersInput, GuardrailDecisionPageView } from '@/types/api'
 
 import { ACTIONS, PHASES, formatTimestamp } from './decision-meta'
 
 export type DashboardProps = {
-  policies: GuardrailPoliciesView
   decisions: GuardrailDecisionPageView
   search: GuardrailDecisionFiltersInput
   pending: boolean

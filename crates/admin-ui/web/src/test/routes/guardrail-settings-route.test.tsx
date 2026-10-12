@@ -72,8 +72,7 @@ describe('GuardrailSettingsPage', () => {
       'href',
       '/observability/guardrails',
     )
-    expect(screen.getByText('company-bedrock')).toBeInTheDocument()
-    expect(screen.getByText('Unused')).toBeInTheDocument()
+    expect(screen.queryByText('Global default')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save/i })).not.toBeInTheDocument()
     expect(screen.getByText(/Merge this into the existing/)).toBeInTheDocument()
   })
@@ -102,19 +101,6 @@ describe('GuardrailSettingsPage', () => {
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('company-bedrock')).toBeInTheDocument()
-  })
-
-  it('counts an integration as unused on a scope whose guardrails are off', async () => {
-    routeMock.useLoaderData.mockReturnValue({
-      policies: {
-        ...policies,
-        default: { ...base, enabled: false, managed_checks: ['company-bedrock'] },
-        model_routes: {},
-      },
-    })
-    await renderPage()
-
-    expect(screen.getByText('Unused')).toBeInTheDocument()
   })
 
   it('keeps an override that matches the default when the default changes', async () => {

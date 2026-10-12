@@ -6,24 +6,20 @@ import { GuardrailsDashboard } from '@/components/guardrails/guardrails-dashboar
 import { AppIcon } from '@/components/icons/app-icon'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
-import { getGuardrailDecisionPage, getGuardrailPolicyView } from '@/server/admin-data.functions'
+import { getGuardrailDecisionPage } from '@/server/admin-data.functions'
 import type { GuardrailDecisionFiltersInput } from '@/types/api'
 
 export const Route = createFileRoute('/observability/guardrails')({
   validateSearch: (search: Record<string, unknown>) => normalizeSearch(search),
   loaderDeps: ({ search }) => search,
-  loader: async ({ deps }) => {
-    const [policies, decisions] = await Promise.all([
-      getGuardrailPolicyView(),
-      getGuardrailDecisionPage({ data: deps }),
-    ])
-    return { policies: policies.data, decisions: decisions.data }
-  },
+  loader: async ({ deps }) => ({
+    decisions: (await getGuardrailDecisionPage({ data: deps })).data,
+  }),
   component: GuardrailsPage,
 })
 
 export function GuardrailsPage() {
-  const { policies, decisions } = Route.useLoaderData()
+  const { decisions } = Route.useLoaderData()
   const search = Route.useSearch()
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -38,7 +34,7 @@ export function GuardrailsPage() {
       <PageHeader
         section="Observability"
         title="Guardrails"
-        description="Review effective policies and privacy-safe guardrail decisions."
+        description="Review privacy-safe guardrail decisions."
         actions={
           <Button variant="outline" size="sm" asChild>
             <Link to="/guardrails">
@@ -49,7 +45,6 @@ export function GuardrailsPage() {
         }
       />
       <GuardrailsDashboard
-        policies={policies}
         decisions={decisions}
         search={search}
         pending={pending}

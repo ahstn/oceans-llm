@@ -109,8 +109,3 @@ export function policyScopes(policies: GuardrailPoliciesView): PolicyScope[] {
     })),
   ]
 }
-
-export function redactionLabel(policy: GuardrailPolicy) {
-  const on = policy.enabled && policy.secret_redaction.enabled
-  return on ? policy.secret_redaction.tiers.join(', ') : 'Off'
-}

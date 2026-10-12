@@ -17,7 +17,9 @@ import {
   FrameTitle,
 } from '@/components/reui/frame'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { cn } from '@/lib/utils'
 import type { GuardrailDecisionView } from '@/types/api'
 
 import { ActionLegend, ActionMeter } from './action-meter'
@@ -30,16 +32,15 @@ import {
   formatTimestamp,
   percentile,
   phaseLabel,
-  policyScopes,
-  redactionLabel,
   ruleLabel,
 } from './decision-meta'
 import { DecisionSheet } from './decision-sheet'
 import { DecisionPager, DecisionToolbar, type DashboardProps } from './decision-toolbar'
+import { INNER_PANEL } from './inner-panel'
 
-/** Dashboard grid: KPIs and an action-by-phase breakdown above a sortable data grid. */
+/** Dashboard grid: KPI cards and an action-by-phase breakdown above the decision grid. */
 export function GuardrailsDashboard(props: DashboardProps) {
-  const { decisions, policies, search, onSearch } = props
+  const { decisions, search, onSearch } = props
   const [selected, setSelected] = useState<GuardrailDecisionView | null>(null)
   const items = decisions.items
   const byAction = countBy(items, (item) => item.action)
@@ -47,7 +48,7 @@ export function GuardrailsDashboard(props: DashboardProps) {
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <Frame spacing="default" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi label="Decisions" value={decisions.total.toLocaleString()} hint="Matching filters" />
         <Kpi
           label="Denied"
@@ -65,71 +66,42 @@ export function GuardrailsDashboard(props: DashboardProps) {
           value={formatLatency(percentile(latencies, 95))}
           hint={`Median ${formatLatency(percentile(latencies, 50))} on this page`}
         />
-      </Frame>
-
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <Frame spacing="default" className="min-w-0">
-          <FrameHeader className="flex-row flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-col gap-0.5">
-              <FrameTitle>Action mix by phase</FrameTitle>
-              <FrameDescription>
-                Decisions on this page. Select a phase to filter the grid.
-              </FrameDescription>
-            </div>
-            <ActionLegend />
-          </FrameHeader>
-          <FramePanel className="flex flex-col gap-1">
-            {PHASES.map(({ id, label }) => {
-              const phaseItems = items.filter((item) => item.phase === id)
-              const active = search.phase === id
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() =>
-                    onSearch({ ...search, phase: active ? undefined : id, page: undefined })
-                  }
-                  className="hover:bg-muted aria-pressed:bg-muted dark:hover:bg-muted/50 grid grid-cols-[9rem_minmax(0,1fr)_2.5rem] items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors"
-                >
-                  <span className="truncate">{label}</span>
-                  <ActionMeter counts={countBy(phaseItems, (item) => item.action)} />
-                  <span className="text-muted-foreground text-right text-xs tabular-nums">
-                    {phaseItems.length}
-                  </span>
-                </button>
-              )
-            })}
-          </FramePanel>
-        </Frame>
-
-        <Frame spacing="default" className="min-w-0">
-          <FrameHeader>
-            <FrameTitle>Effective policies</FrameTitle>
-            <FrameDescription>Read-only; configuration is authoritative.</FrameDescription>
-          </FrameHeader>
-          <FramePanel className="flex flex-col gap-3">
-            {policyScopes(policies).map((scope) => (
-              <div key={scope.key} className="flex min-w-0 flex-col gap-1">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="truncate font-medium">{scope.name}</span>
-                  <Badge variant={scope.policy.enabled ? 'success' : 'outline'}>
-                    {scope.policy.enabled ? scope.policy.mode : 'Disabled'}
-                  </Badge>
-                </div>
-                <p className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-                  <span className="truncate">{scope.policy.packs.join(', ') || 'No packs'}</span>
-                  <span
-                    aria-hidden
-                    className="bg-muted-foreground/40 size-1 shrink-0 rounded-full"
-                  />
-                  <span className="truncate">Redaction {redactionLabel(scope.policy)}</span>
-                </p>
-              </div>
-            ))}
-          </FramePanel>
-        </Frame>
       </div>
+
+      <Frame spacing="default" className="min-w-0">
+        <FrameHeader className="flex-row flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-col gap-0.5">
+            <FrameTitle>Action mix by phase</FrameTitle>
+            <FrameDescription>
+              Decisions on this page. Select a phase to filter the grid.
+            </FrameDescription>
+          </div>
+          <ActionLegend />
+        </FrameHeader>
+        <FramePanel className={cn(INNER_PANEL, 'flex flex-col gap-1')}>
+          {PHASES.map(({ id, label }) => {
+            const phaseItems = items.filter((item) => item.phase === id)
+            const active = search.phase === id
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={active}
+                onClick={() =>
+                  onSearch({ ...search, phase: active ? undefined : id, page: undefined })
+                }
+                className="hover:bg-muted aria-pressed:bg-muted dark:hover:bg-muted/50 grid grid-cols-[9rem_minmax(0,1fr)_2.5rem] items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors"
+              >
+                <span className="truncate">{label}</span>
+                <ActionMeter counts={countBy(phaseItems, (item) => item.action)} />
+                <span className="text-muted-foreground text-right text-xs tabular-nums">
+                  {phaseItems.length}
+                </span>
+              </button>
+            )
+          })}
+        </FramePanel>
+      </Frame>
 
       <Frame spacing="default" className="min-w-0">
         <FrameHeader className="flex flex-col gap-3">
@@ -141,7 +113,7 @@ export function GuardrailsDashboard(props: DashboardProps) {
           </div>
           <DecisionToolbar {...props} showPhase={false} />
         </FrameHeader>
-        <FramePanel className="min-w-0 p-0">
+        <FramePanel className={cn(INNER_PANEL, 'min-w-0 p-0')}>
           <DecisionGrid
             items={items}
             onSelect={setSelected}
@@ -169,14 +141,16 @@ function Kpi({
   badge?: 'destructive'
 }) {
   return (
-    <FramePanel className="flex flex-col gap-1">
-      <span className="text-muted-foreground text-xs">{label}</span>
-      <span className="flex items-center gap-2 text-2xl font-semibold tracking-tight tabular-nums">
-        {value}
-        {badge ? <Badge variant={badge}>Review</Badge> : null}
-      </span>
-      <span className="text-muted-foreground text-xs">{hint}</span>
-    </FramePanel>
+    <Card size="sm">
+      <CardHeader>
+        <CardDescription>{label}</CardDescription>
+        <CardTitle className="flex items-center gap-2 text-2xl tabular-nums">
+          {value}
+          {badge ? <Badge variant={badge}>Review</Badge> : null}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="text-muted-foreground text-xs">{hint}</CardContent>
+    </Card>
   )
 }
 
