@@ -1,0 +1,25 @@
+crates/gateway-store/src/budget_increase_tests.rs
+  s_59759a0c269480::t_3154d9535de60c 265-274
+crates/gateway-store/src/budget_increases.rs
+  s_59759a0c269480::t_c30abd31ba7967 22,37
+crates/gateway-store/src/libsql_store/budget_increases.rs
+  s_59759a0c269480::t_97c8b4ec4c456c 76,86-87
+crates/gateway-store/src/postgres_store/budget_increases.rs
+  s_59759a0c269480::t_05770bc914fbae 67,79-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16257fe49a4ea1487d7aa1e679ab4ecc4a609045",
+  "prompts": {},
+  "sessions": {
+    "s_59759a0c269480": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6967a834-972f-4dfe-99a6-760e1e3d2dc7",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
