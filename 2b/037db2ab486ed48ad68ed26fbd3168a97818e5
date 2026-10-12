@@ -1,0 +1,31 @@
+crates/admin-ui/web/src/components/guardrails/decision-toolbar.tsx
+  s_15d89292e7da86::t_5eb0d3f33efdde 57,63,122,127,145,155
+crates/admin-ui/web/src/test/routes/guardrails-route.test.tsx
+  s_15d89292e7da86::t_3e68e70e3d07ff 139,146-147
+crates/gateway-guardrails/src/redaction/mod.rs
+  s_15d89292e7da86::t_e2e760c00cbb8e 29-30,188,275-288
+crates/gateway-guardrails/src/redaction/tests.rs
+  s_15d89292e7da86::t_9e40030a3ce685 435-463,648
+crates/gateway/src/http/guardrail_events.rs
+  s_15d89292e7da86::t_b89fdc2cfaba96 40-42,56,142-143,153,155-157,161,164
+docs/adr/2026-09-22-guardrail-secret-redaction.md
+  s_15d89292e7da86::t_faa72979f0055d 15
+docs/operations/gateway-guardrails.md
+  s_15d89292e7da86::t_a9b5d743f4ec6c 100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2b037db2ab486ed48ad68ed26fbd3168a97818e5",
+  "prompts": {},
+  "sessions": {
+    "s_15d89292e7da86": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01b86f62-1b33-4891-8bbd-72bcfc98dfd9",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
