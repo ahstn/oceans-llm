@@ -5,6 +5,12 @@ use gateway_core::BudgetIncreaseRecord;
 
 const COLUMNS: &str = "budget_increase_id, budget_id, scope_key, amount_10000, starts_at, \
                        expires_at, created_by_user_id, created_at";
+// An increase applies from `starts_at` until it expires or is superseded. Supersession
+// is not retroactive: usage that occurred before it still sees the replaced increase.
+const APPLIES_AT_1: &str = "starts_at <= $1 AND expires_at > $1 \
+                            AND (superseded_at IS NULL OR superseded_at > $1)";
+const APPLIES_AT_2: &str = "starts_at <= $2 AND expires_at > $2 \
+                            AND (superseded_at IS NULL OR superseded_at > $2)";
 
 pub(super) async fn get_active_budget_increase(
     store: &PostgresStore,
@@ -13,7 +19,7 @@ pub(super) async fn get_active_budget_increase(
 ) -> Result<Option<BudgetIncreaseRecord>, StoreError> {
     let sql = format!(
         "SELECT {COLUMNS} FROM budget_increases
-         WHERE budget_id = $1 AND superseded_at IS NULL AND starts_at <= $2 AND expires_at > $2
+         WHERE budget_id = $1 AND {APPLIES_AT_2}
          ORDER BY created_at DESC, budget_increase_id DESC
          LIMIT 1"
     );
@@ -32,7 +38,7 @@ pub(super) async fn list_active_budget_increases(
 ) -> Result<Vec<BudgetIncreaseRecord>, StoreError> {
     let sql = format!(
         "SELECT {COLUMNS} FROM budget_increases
-         WHERE superseded_at IS NULL AND starts_at <= $1 AND expires_at > $1
+         WHERE {APPLIES_AT_1}
          ORDER BY created_at DESC, budget_increase_id DESC"
     );
     let rows = sqlx::query(&sql)
@@ -50,6 +56,7 @@ pub(super) async fn list_active_budget_increases(
 pub(super) async fn create_budget_increase(
     store: &PostgresStore,
     increase: &BudgetIncreaseRecord,
+    expected_active: Option<Uuid>,
 ) -> Result<(), StoreError> {
     let mut tx = store.pool.begin().await.map_err(to_query_error)?;
     // Serialize creates per budget. Under READ COMMITTED, two concurrent supersede
@@ -60,6 +67,21 @@ pub(super) async fn create_budget_increase(
         .await
         .map_err(to_query_error)?;
     let starts_at = increase.starts_at.unix_timestamp();
+    let active: Option<String> = sqlx::query_scalar(&format!(
+        "SELECT budget_increase_id FROM budget_increases
+         WHERE budget_id = $1 AND {APPLIES_AT_2}
+         ORDER BY created_at DESC, budget_increase_id DESC
+         LIMIT 1"
+    ))
+    .bind(increase.budget_id.to_string())
+    .bind(starts_at)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(to_query_error)?;
+    let active = active.as_deref().map(parse_uuid).transpose()?;
+    if active != expected_active {
+        return Err(crate::budget_increases::active_increase_changed());
+    }
     sqlx::query(
         "UPDATE budget_increases SET superseded_at = $2
          WHERE budget_id = $1 AND superseded_at IS NULL AND expires_at > $2",

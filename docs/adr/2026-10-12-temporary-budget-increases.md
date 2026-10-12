@@ -27,6 +27,10 @@ Migration `V56__budget_increases` (libSQL and Postgres) adds `budget_increases`,
 
 Each budget has at most one active increase. Creating an increase marks any unexpired one as superseded in the same transaction, and lookups also take the newest row as a guard against races. Increases replace each other; they do not stack.
 
+Supersession is not retroactive. `superseded_at` is the moment the replacement starts, and lookups treat an increase as applying from `starts_at` until it expires or is superseded. Enforcement and alerts evaluate a request at its `occurred_at`, so a request that started under the old increase is still checked against it, even if its usage is recorded after the replacement.
+
+Creates are serialized per budget: Postgres locks the parent `budgets` row with `FOR UPDATE`, and libSQL uses an `IMMEDIATE` transaction. The API checks the 85% threshold against the active increase it read. It passes that increase's id to the store, which returns a conflict (HTTP 409) if a different increase is active once the lock is held. Two admins who act at the same moment therefore cannot both pass the threshold check against the same stale limit.
+
 ### 2. The effective limit is the base plus the active increase
 
 `gateway_service::budget_scopes::effective_budget_limit` returns the base budget plus the active increase, if one exists. It is used by:

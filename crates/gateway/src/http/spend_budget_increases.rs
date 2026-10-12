@@ -9,7 +9,7 @@ use gateway_core::{
     AuthError, BudgetIncreaseRecord, BudgetRecord, BudgetRepository, BudgetScope, GatewayError,
     IdentityRepository, Money4,
 };
-use gateway_service::budget_scopes::effective_budget_limit;
+use gateway_service::budget_scopes::limit_with_increase;
 use time::{Date, Duration, Month, OffsetDateTime, Time};
 use uuid::Uuid;
 
@@ -61,7 +61,11 @@ pub async fn create_budget_increase(
 
     let now = OffsetDateTime::now_utc();
     let spent = current_window_spend(&state, &budget, now).await?;
-    let limit = effective_budget_limit(state.store.as_ref(), &budget, now).await?;
+    let active = state
+        .store
+        .get_active_budget_increase(budget.budget_id, now)
+        .await?;
+    let limit = limit_with_increase(&budget, active.as_ref());
     if !within_increase_threshold(spent, limit) {
         return Err(invalid(format!(
             "budget increases are available once spend reaches {INCREASE_THRESHOLD_PERCENT}% of the limit"
@@ -78,7 +82,13 @@ pub async fn create_budget_increase(
         created_by_user_id: Some(actor.user_id),
         created_at: now,
     };
-    state.store.create_budget_increase(&increase).await?;
+    // The store rejects the create if another increase landed since `active` was read,
+    // which would have changed the limit this threshold check used.
+    let expected_active = active.map(|active| active.budget_increase_id);
+    state
+        .store
+        .create_budget_increase(&increase, expected_active)
+        .await?;
 
     Ok(Json(envelope(CreateBudgetIncreaseResultView {
         user_id: user_id.to_string(),

@@ -52,8 +52,9 @@ impl BudgetRepository for LibsqlStore {
     async fn create_budget_increase(
         &self,
         increase: &gateway_core::BudgetIncreaseRecord,
+        expected_active: Option<Uuid>,
     ) -> Result<(), StoreError> {
-        super::budget_increases::create_budget_increase(self, increase).await
+        super::budget_increases::create_budget_increase(self, increase, expected_active).await
     }
 
     async fn get_active_budget_by_scope(

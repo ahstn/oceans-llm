@@ -1,6 +1,6 @@
 use gateway_core::{
-    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetModelSelector, BudgetRecord,
-    BudgetRepository, BudgetScope, Money4, StoreError,
+    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetIncreaseRecord, BudgetModelSelector,
+    BudgetRecord, BudgetRepository, BudgetScope, Money4, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -17,12 +17,20 @@ where
     let increase = repo
         .get_active_budget_increase(budget.budget_id, at)
         .await?;
-    Ok(increase.map_or(budget.settings.amount_usd, |increase| {
+    Ok(limit_with_increase(budget, increase.as_ref()))
+}
+
+/// The base budget plus `increase`, when one applies.
+pub fn limit_with_increase(
+    budget: &BudgetRecord,
+    increase: Option<&BudgetIncreaseRecord>,
+) -> Money4 {
+    increase.map_or(budget.settings.amount_usd, |increase| {
         budget
             .settings
             .amount_usd
             .saturating_add(increase.amount_usd)
-    }))
+    })
 }
 
 /// Budget scopes to check for one request, in evaluation order.

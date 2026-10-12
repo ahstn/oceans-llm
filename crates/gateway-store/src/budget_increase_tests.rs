@@ -6,7 +6,7 @@ use crate::{
 use futures_util::future::join_all;
 use gateway_core::{
     AuthMode, BudgetCadence, BudgetIncreaseRecord, BudgetRecord, BudgetRepository, BudgetScope,
-    BudgetSettings, GlobalRole, Money4, UserStatus,
+    BudgetSettings, GlobalRole, Money4, StoreError, UserStatus,
 };
 use serial_test::serial;
 use tempfile::tempdir;
@@ -48,7 +48,7 @@ async fn postgres_budget_increases_supersede_and_expire() {
 
 #[tokio::test]
 #[serial]
-async fn postgres_concurrent_budget_increases_leave_one_active() {
+async fn postgres_concurrent_budget_increases_admit_one_create() {
     let Some(test_db) = create_postgres_test_database().await else {
         eprintln!("skipping postgres budget increase test: TEST_POSTGRES_URL is not set");
         return;
@@ -64,8 +64,8 @@ async fn postgres_concurrent_budget_increases_leave_one_active() {
         .expect("store");
     let (user_id, budget, at) = create_user_budget(&store).await;
 
-    // Each request supersedes whatever is active, so racing creates must still leave
-    // exactly one unsuperseded increase rather than one per request.
+    // Every request checked eligibility with no increase active. Creates are serialized
+    // per budget, so the first wins and the rest see a changed active increase.
     let increases = (1..=8)
         .map(|n| BudgetIncreaseRecord {
             budget_increase_id: Uuid::new_v4(),
@@ -81,12 +81,16 @@ async fn postgres_concurrent_budget_increases_leave_one_active() {
     let results = join_all(
         increases
             .iter()
-            .map(|increase| store.create_budget_increase(increase)),
+            .map(|increase| store.create_budget_increase(increase, None)),
     )
     .await;
-    for result in results {
-        result.expect("create increase");
-    }
+    let created = results.iter().filter(|result| result.is_ok()).count();
+    assert_eq!(created, 1);
+    assert!(
+        results
+            .iter()
+            .all(|result| matches!(result, Ok(()) | Err(StoreError::Conflict(_))))
+    );
 
     let active: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM budget_increases WHERE budget_id = $1 AND superseded_at IS NULL",
@@ -156,7 +160,10 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
     );
 
     let first = increase(750_000, at, 7);
-    store.create_budget_increase(&first).await.expect("first");
+    store
+        .create_budget_increase(&first, None)
+        .await
+        .expect("first");
     let active = store
         .get_active_budget_increase(budget.budget_id, at + Duration::hours(1))
         .await
@@ -166,19 +173,44 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
 
     // A later increase replaces the earlier one rather than stacking on it.
     let second = increase(1_500_000, at + Duration::days(1), 3);
-    store.create_budget_increase(&second).await.expect("second");
+    store
+        .create_budget_increase(&second, Some(first.budget_increase_id))
+        .await
+        .expect("second");
     let listed = store
         .list_active_budget_increases(at + Duration::days(2))
         .await
         .expect("list");
     assert_eq!(listed, vec![second.clone()]);
-    // The superseded increase no longer applies, even inside its original window.
-    assert!(
+    // Supersession is not retroactive: usage that occurred before the second increase
+    // started is still evaluated against the first.
+    assert_eq!(
         store
             .list_active_budget_increases(at + Duration::hours(1))
             .await
-            .expect("list before second")
-            .is_empty()
+            .expect("list before second"),
+        vec![first.clone()]
+    );
+    assert_eq!(
+        store
+            .get_active_budget_increase(budget.budget_id, second.starts_at)
+            .await
+            .expect("active at second start"),
+        Some(second.clone())
+    );
+
+    // A caller that checked eligibility against a stale active increase is rejected.
+    let stale = increase(250_000, at + Duration::days(2), 3);
+    assert!(matches!(
+        store.create_budget_increase(&stale, None).await,
+        Err(StoreError::Conflict(_))
+    ));
+    assert_eq!(
+        store
+            .list_active_budget_increases(at + Duration::days(2))
+            .await
+            .expect("list after stale"),
+        vec![second.clone()]
     );
 
     // Expiry is exclusive.
@@ -194,5 +226,5 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
         amount_usd: Money4::ZERO,
         ..increase(0, at + Duration::days(10), 1)
     };
-    assert!(store.create_budget_increase(&invalid).await.is_err());
+    assert!(store.create_budget_increase(&invalid, None).await.is_err());
 }

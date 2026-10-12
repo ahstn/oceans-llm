@@ -458,7 +458,8 @@ pub trait BudgetRepository: Send + Sync {
         source: &BudgetSource,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
-    /// The increase applied to `budget_id` at `at`, if any. Repositories without
+    /// The increase applied to `budget_id` at `at`, if any. Supersession takes effect
+    /// from its own timestamp, so an earlier `at` still sees the increase it replaced. Repositories without
     /// increase storage report none so enforcement falls back to the base limit.
     async fn get_active_budget_increase(
         &self,
@@ -478,12 +479,17 @@ pub trait BudgetRepository: Send + Sync {
         ))
     }
     /// Supersede any increase still active for the budget at `increase.starts_at`,
-    /// then insert `increase`, in one transaction.
+    /// then insert `increase`, in one transaction serialized per budget.
+    ///
+    /// `expected_active` is the increase the caller checked eligibility against. If a
+    /// different increase is active by the time the budget is locked, nothing is written
+    /// and `StoreError::Conflict` is returned.
     async fn create_budget_increase(
         &self,
         increase: &BudgetIncreaseRecord,
+        expected_active: Option<Uuid>,
     ) -> Result<(), StoreError> {
-        let _ = increase;
+        let _ = (increase, expected_active);
         Err(StoreError::Unexpected(
             "create_budget_increase is not implemented for this repository".to_string(),
         ))
