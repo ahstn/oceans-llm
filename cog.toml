@@ -13,8 +13,8 @@ tag_prefix = "v"
 
 post_bump_hooks = []
 pre_bump_hooks = [
-  "cargo release version {{version}} --execute --no-confirm",
-  "git-cliff -t {{version_tag}}",
+  "cargo release version {{version}} --workspace --execute --no-confirm",
+  "git-cliff --tag {{version_tag}} --output CHANGELOG.md",
 ]
 # Hooks to execute
 pre_package_bump_hooks = []
