@@ -433,6 +433,35 @@ fn redacts_json_strings_and_skips_inline_media() {
 }
 
 #[test]
+fn scans_data_beside_a_media_type_outside_a_provider_envelope() {
+    let access_key = format!("AKIA{}", random(UPPER_BASE32, 16, 66));
+    let media = format!("{}+{access_key}/==", random(ALNUM, 40, 67));
+    let mut request = json!({
+        "state": {"media_type": "application/json", "data": access_key.clone()},
+        "tool": {"mime_type": "image/png", "data": access_key.clone()},
+        "source": {"type": "text", "media_type": "image/png", "data": access_key.clone()},
+        "audio": {"format": "wav", "data": access_key.clone()},
+        "parts": [
+            {"inlineData": {"mimeType": "image/png", "data": media.clone()}},
+            {"inline_data": {"mime_type": "image/png", "data": media.clone()}},
+        ],
+    });
+
+    let fields = redact_json_secrets(&mut request, &default_config());
+
+    let pointers = fields
+        .iter()
+        .map(|field| field.pointer.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        pointers,
+        ["/audio/data", "/source/data", "/state/data", "/tool/data"]
+    );
+    assert_eq!(request["parts"][0]["inlineData"]["data"], media);
+    assert_eq!(request["parts"][1]["inline_data"]["data"], media);
+}
+
+#[test]
 fn skips_base64_data_uris_whatever_their_case() {
     let media = format!(
         "{}+AKIA{}/==",
@@ -616,7 +645,7 @@ fn media_data_needs_a_media_type_descriptor() {
         redact_json_secrets(&mut request, &default_config()).len(),
         1
     );
-    let mut request = json!({"mime_type": "image/png; q=1", "data": key.clone()});
+    let mut request = json!({"inline_data": {"mime_type": "image/png; q=1", "data": key.clone()}});
     assert!(redact_json_secrets(&mut request, &default_config()).is_empty());
 }
 

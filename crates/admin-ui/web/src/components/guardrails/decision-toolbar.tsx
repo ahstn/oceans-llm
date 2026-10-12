@@ -54,11 +54,13 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
       <SearchField
         label="Request ID"
         value={search.request_id}
+        disabled={pending}
         onSubmit={(request_id) => update({ request_id })}
       />
       <SearchField
         label="Evaluator"
         value={search.evaluator}
+        disabled={pending}
         onSubmit={(evaluator) => update({ evaluator })}
       />
       <ToggleGroup
@@ -117,10 +119,12 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
 function SearchField({
   label,
   value,
+  disabled,
   onSubmit,
 }: {
   label: string
   value: string | null | undefined
+  disabled: boolean
   onSubmit: (value: string) => void
 }) {
   return (
@@ -138,6 +142,7 @@ function SearchField({
           aria-label={label}
           placeholder={`${label}…`}
           defaultValue={value ?? ''}
+          disabled={disabled}
         />
         <InputGroupAddon>
           <AppIcon icon={Search01Icon} aria-hidden />
@@ -147,6 +152,7 @@ function SearchField({
             <InputGroupButton
               aria-label={`Clear ${label.toLowerCase()}`}
               size="icon-xs"
+              disabled={disabled}
               onClick={() => onSubmit('')}
             >
               <AppIcon icon={Cancel01Icon} aria-hidden />

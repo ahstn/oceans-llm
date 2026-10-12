@@ -37,8 +37,9 @@ pub fn record_guardrail_decisions_in_background(
     }
     let state = state.clone();
     tokio::spawn(async move {
-        // Once one write misses its deadline the store is treated as stalled for the rest of
-        // this task, so a large batch cannot hold a task open for one timeout per item.
+        // Once one write misses its deadline, or every write in a call fails, the store is
+        // treated as unavailable for the rest of this task, so a large batch cannot issue one
+        // doomed write per item.
         let mut store_available = true;
         let mut skipped = 0;
         for (request_id, records) in decisions {
@@ -52,7 +53,7 @@ pub fn record_guardrail_decisions_in_background(
         if skipped > 0 {
             tracing::warn!(
                 skipped_decision_count = skipped,
-                "skipped guardrail decision persistence after the deadline was exceeded"
+                "skipped guardrail decision persistence after the store failed or timed out"
             );
         }
     });
@@ -138,7 +139,8 @@ fn observe_decisions(
     records
 }
 
-/// Writes the rows under one shared deadline. Returns false when the deadline was exceeded.
+/// Writes the rows under one shared deadline. Returns false when the deadline was exceeded or
+/// every write failed, either of which means the store is unavailable.
 async fn persist_decision_rows(state: &AppState, records: &[GuardrailDecisionEventRecord]) -> bool {
     if records.is_empty() {
         return true;
@@ -148,16 +150,18 @@ async fn persist_decision_rows(state: &AppState, records: &[GuardrailDecisionEve
         .map(|record| state.store.insert_guardrail_decision(record));
     match tokio::time::timeout(Duration::from_millis(250), join_all(writes)).await {
         Ok(results) => {
+            let mut persisted = false;
             for (record, result) in records.iter().zip(results) {
-                if let Err(error) = result {
-                    tracing::warn!(
+                match result {
+                    Ok(_) => persisted = true,
+                    Err(error) => tracing::warn!(
                         decision_id = %record.decision_id,
                         error = %error,
                         "failed to persist guardrail decision"
-                    );
+                    ),
                 }
             }
-            true
+            persisted
         }
         Err(_) => {
             tracing::warn!(

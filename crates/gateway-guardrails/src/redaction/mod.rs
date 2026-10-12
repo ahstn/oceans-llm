@@ -26,9 +26,8 @@ const MIN_B64_JSON_LEN: usize = 1024;
 /// PNG, JPEG, WebP (RIFF), and GIF. A `b64_json` value that starts any other
 /// way is scanned, so a long base64-alphabet string is not taken for an image.
 const B64_IMAGE_PREFIXES: &[&str] = &["iVBORw0KGgo", "/9j/", "UklGR", "R0lGOD"];
-/// Sibling keys that mark an object's `data` string as inline media: Anthropic
-/// sources and Gemini `inline_data`.
-const MEDIA_TYPE_KEYS: &[&str] = &["media_type", "mime_type", "mimeType"];
+/// Media-type keys of Gemini `inline_data`, whichever casing the request uses.
+const GEMINI_MIME_KEYS: &[&str] = &["mime_type", "mimeType"];
 /// `format` values of OpenAI `input_audio`.
 const AUDIO_FORMATS: &[&str] = &[
     "aac", "flac", "m4a", "mp3", "ogg", "opus", "pcm16", "wav", "webm",
@@ -186,7 +185,7 @@ fn redact_json_at(
         }
         Value::Object(object) => {
             redact_object_keys(object, pointer, config, output);
-            let data_is_media = has_inline_media_data(object);
+            let data_is_media = has_inline_media_data(object, key);
             for (key, child) in object.iter_mut() {
                 // A `b64_json` value is skipped only when it is long enough and
                 // starts with an image file signature.
@@ -273,16 +272,20 @@ fn base64_data_uri_header_end(text: &str) -> Option<usize> {
         .then_some(comma)
 }
 
-fn has_inline_media_data(object: &Map<String, Value>) -> bool {
-    MEDIA_TYPE_KEYS.iter().any(|key| {
-        object
-            .get(*key)
-            .and_then(Value::as_str)
-            .is_some_and(is_mime_type)
-    }) || object
-        .get("format")
-        .and_then(Value::as_str)
-        .is_some_and(|format| AUDIO_FORMATS.contains(&format))
+/// Whether `object` is an inline-media envelope whose `data` string is the
+/// payload. `key` names the field holding `object`. Only the provider shapes
+/// are recognized, so an arbitrary object with a MIME-looking sibling is still
+/// scanned: Anthropic `{"type": "base64", "media_type": ...}` sources, Gemini
+/// `inline_data` / `inlineData` parts, and OpenAI `input_audio` parts.
+fn has_inline_media_data(object: &Map<String, Value>, key: Option<&str>) -> bool {
+    let text = |name: &str| object.get(name).and_then(Value::as_str);
+    match key {
+        Some("inline_data" | "inlineData") => GEMINI_MIME_KEYS
+            .iter()
+            .any(|name| text(name).is_some_and(is_mime_type)),
+        Some("input_audio") => text("format").is_some_and(|format| AUDIO_FORMATS.contains(&format)),
+        _ => text("type") == Some("base64") && text("media_type").is_some_and(is_mime_type),
+    }
 }
 
 /// A `type/subtype` media type, optionally with parameters, such as `image/png`.

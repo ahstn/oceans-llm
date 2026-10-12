@@ -136,13 +136,15 @@ describe('GuardrailsPage', () => {
     })
   })
 
-  it('locks phase and evaluator filters while a navigation is pending', async () => {
+  it('locks phase, evaluator, and text filters while a navigation is pending', async () => {
     navigateMock.mockReturnValue(new Promise(() => {}))
     await renderPage()
 
     fireEvent.click(screen.getByRole('radio', { name: 'Deny' }))
 
     await waitFor(() => expect(screen.getByRole('button', { name: /Prompt/ })).toBeDisabled())
+    expect(screen.getByLabelText('Request ID')).toBeDisabled()
+    expect(screen.getByLabelText('Evaluator')).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'deterministic' }))
     expect(navigateMock).toHaveBeenCalledTimes(1)
   })
