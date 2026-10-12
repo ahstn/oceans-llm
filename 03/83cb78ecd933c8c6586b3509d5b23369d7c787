@@ -1,0 +1,31 @@
+crates/admin-ui/web/src/components/guardrails/decision-toolbar.tsx
+  s_15d89292e7da86::t_a45f75cb323d91 21
+crates/admin-ui/web/src/components/guardrails/guardrails-dashboard.tsx
+  s_15d89292e7da86::t_bba9615590b657 20,22,39,41,43,51,71-105,116,144-153
+crates/admin-ui/web/src/components/guardrails/inner-panel.ts
+  s_15d89292e7da86::t_be402d09eedb13 1-5
+crates/admin-ui/web/src/components/guardrails/settings/settings-page.tsx
+  s_15d89292e7da86::t_3f3b86be31dd3e 17,20-21,27-28
+crates/admin-ui/web/src/routes/observability/guardrails.tsx
+  s_15d89292e7da86::t_eef12d0a97a286 9,15-17,22,37
+crates/admin-ui/web/src/test/routes/guardrail-settings-route.test.tsx
+  s_15d89292e7da86::t_1da1ccec137e99 75
+crates/admin-ui/web/src/test/routes/guardrails-route.test.tsx
+  s_15d89292e7da86::t_fa071223aaed40 71,75-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0383cb78ecd933c8c6586b3509d5b23369d7c787",
+  "prompts": {},
+  "sessions": {
+    "s_15d89292e7da86": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01b86f62-1b33-4891-8bbd-72bcfc98dfd9",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
