@@ -49,9 +49,7 @@ export function AreaDialog({
                 area={meta.id}
                 draft={drafts.drafts[scopeKey]}
                 scopeKind={drafts.scopes.find((scope) => scope.key === scopeKey)?.kind ?? 'global'}
-                savedChecks={
-                  drafts.scopes.find((scope) => scope.key === scopeKey)?.policy.managed_checks
-                }
+                saved={drafts.scopes.find((scope) => scope.key === scopeKey)?.policy}
                 policies={policies}
                 onChange={(next) => drafts.update(scopeKey, next)}
               />

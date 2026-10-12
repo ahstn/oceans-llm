@@ -47,15 +47,15 @@ type EditorProps = {
   draft: PolicyDraft
   scopeKind: PolicyScope['kind']
   policies: GuardrailPoliciesView
-  /** The scope's configured check order, which the engine runs checks in. */
-  savedChecks?: string[]
+  /** The scope's configured packs and checks, in the order the engine evaluates them. */
+  saved?: { packs: string[]; managed_checks: string[] }
   onChange: (draft: PolicyDraft) => void
 }
 
 const toggle = (items: string[], item: string, on: boolean) =>
   on ? [...items, item] : items.filter((value) => value !== item)
 
-/** Re-enables a check at its place in `order`, so switching it off and on keeps the run order. */
+/** Re-enables an item at its place in `order`, so switching it off and on keeps the run order. */
 function toggleOrdered(items: string[], item: string, on: boolean, order: string[]) {
   const rank = (value: string) => {
     const index = order.indexOf(value)
@@ -70,7 +70,7 @@ export function AreaEditor({ area, ...props }: EditorProps & { area: AreaId }) {
   return <IntegrationsEditor {...props} />
 }
 
-export function DestructiveActionsEditor({ draft, policies, onChange }: EditorProps) {
+export function DestructiveActionsEditor({ draft, policies, saved, onChange }: EditorProps) {
   const enabledPacks = new Set(draft.packs)
   return (
     <FieldGroup>
@@ -125,7 +125,13 @@ export function DestructiveActionsEditor({ draft, policies, onChange }: EditorPr
                     disabled={!draft.enabled}
                     checked={enabledPacks.has(pack.id)}
                     onCheckedChange={(on) =>
-                      onChange({ ...draft, packs: toggle(draft.packs, pack.id, on) })
+                      onChange({
+                        ...draft,
+                        packs: toggleOrdered(draft.packs, pack.id, on, [
+                          ...(saved?.packs ?? []),
+                          ...policies.built_in_packs.map((item) => item.id),
+                        ]),
+                      })
                     }
                   />
                 </Field>
@@ -241,7 +247,7 @@ export function SecretRedactionEditor({ draft, scopeKind, onChange }: EditorProp
   )
 }
 
-export function IntegrationsEditor({ draft, policies, savedChecks, onChange }: EditorProps) {
+export function IntegrationsEditor({ draft, policies, saved, onChange }: EditorProps) {
   const configured = new Set(policies.managed_checks.map((check) => check.kind))
   const enabledChecks = new Set(draft.managed_checks)
   return (
@@ -276,7 +282,7 @@ export function IntegrationsEditor({ draft, policies, savedChecks, onChange }: E
                       onChange({
                         ...draft,
                         managed_checks: toggleOrdered(draft.managed_checks, check.name, on, [
-                          ...(savedChecks ?? []),
+                          ...(saved?.managed_checks ?? []),
                           ...policies.managed_checks.map((item) => item.name),
                         ]),
                       })

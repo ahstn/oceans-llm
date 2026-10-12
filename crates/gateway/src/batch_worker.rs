@@ -310,6 +310,12 @@ async fn submit_job(
         .store()
         .replace_batch_item_requests(job.batch_id, &redacted_items)
         .await?;
+    let transformed = guarded_items
+        .iter()
+        .zip(&redacted_items)
+        .any(|(guarded, redacted)| guarded.body != redacted.body);
+    // Release the redacted copy before the provider call, which can be long.
+    drop(redacted_items);
     record_guardrail_decisions_in_background(state, decisions);
     if let Some(error_code) = rejection {
         return fail_claimed_job(
@@ -330,11 +336,6 @@ async fn submit_job(
     };
     match provider.submit_batch(&request).await {
         ProviderBatchSubmission::Submitted(state) => {
-            let transformed = request
-                .items
-                .iter()
-                .zip(&redacted_items)
-                .any(|(guarded, redacted)| guarded.body != redacted.body);
             if transformed {
                 service
                     .store()

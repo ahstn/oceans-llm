@@ -594,6 +594,15 @@ fn data_uri_headers_are_scanned_but_payloads_are_not() {
 }
 
 #[test]
+fn connection_uris_with_escaped_slashes_are_redacted() {
+    let password = random(ALNUM, 16, 79);
+    let text = format!(r#"{{"dsn":"postgres:\/\/app:{password}@db:5432\/main"}}"#);
+    let redacted = redact(&text, &default_config());
+    assert!(!redacted.contains(&password), "{redacted}");
+    assert!(redacted.contains("[REDACTED:credential-uri]"), "{redacted}");
+}
+
+#[test]
 fn media_data_needs_a_media_type_descriptor() {
     let key = format!("AKIA{}", random(UPPER_BASE32, 16, 69));
     for descriptor in [json!(null), json!("not a type"), json!(7)] {

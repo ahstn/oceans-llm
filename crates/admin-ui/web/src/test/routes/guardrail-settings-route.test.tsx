@@ -175,7 +175,7 @@ describe('GuardrailSettingsPage', () => {
         draft={draft}
         scopeKind="global"
         policies={catalog as never}
-        savedChecks={['check-b', 'check-a']}
+        saved={{ packs: [], managed_checks: ['check-b', 'check-a'] }}
         onChange={(next) => {
           draft = next
         }}
@@ -188,5 +188,31 @@ describe('GuardrailSettingsPage', () => {
     expect(draft.managed_checks).toEqual(['check-a'])
     fireEvent.click(screen.getByRole('switch', { name: /check-b/ }))
     expect(draft.managed_checks).toEqual(['check-b', 'check-a'])
+  })
+
+  it('keeps the configured pack order when a pack is switched off and on', async () => {
+    const { DestructiveActionsEditor } = await import('@/components/guardrails/settings/editors')
+    const { draftFrom } = await import('@/components/guardrails/config-yaml')
+    // Configured in the reverse of catalog order.
+    const order = ['core.git', 'core.shell']
+    let draft = draftFrom({ ...base, packs: order } as never)
+    const view = () => (
+      <DestructiveActionsEditor
+        draft={draft}
+        scopeKind="global"
+        policies={policies as never}
+        saved={{ packs: order, managed_checks: [] }}
+        onChange={(next) => {
+          draft = next
+        }}
+      />
+    )
+    const { rerender } = render(view())
+
+    fireEvent.click(screen.getByRole('switch', { name: /core\.git/ }))
+    rerender(view())
+    expect(draft.packs).toEqual(['core.shell'])
+    fireEvent.click(screen.getByRole('switch', { name: /core\.git/ }))
+    expect(draft.packs).toEqual(order)
   })
 })

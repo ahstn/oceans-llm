@@ -363,9 +363,10 @@ pub(super) const RULES: &[Rule] = &[
     // Credentials that need surrounding context to identify.
     credential(
         "credential-uri",
-        &["://"],
+        // `:\/\/` covers JSON encoders that escape slashes, such as PHP's.
+        &["://", r":\/\/"],
         bounded!(
-            r#"(?i)(?:https?|postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?|ldaps?|smtps?|ftps?|ssh)://[^:/@\s'"\x60]{0,128}:([^/@\s'"\x60]{1,256})@"#
+            r#"(?i)(?:https?|postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?|ldaps?|smtps?|ftps?|ssh):\\?/\\?/[^:/@\s'"\x60]{0,128}:([^/@\s'"\x60]{1,256})@"#
         ),
         0.0,
     ),
