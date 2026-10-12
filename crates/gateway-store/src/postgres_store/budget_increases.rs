@@ -1,7 +1,8 @@
 //! Temporary budget increases. A new increase supersedes the one still active for its budget.
 use super::*;
+use crate::budget_increases::{LockedBudget, check_increase_basis};
 use crate::shared::{parse_uuid, unix_to_datetime};
-use gateway_core::BudgetIncreaseRecord;
+use gateway_core::{BudgetIncreaseBasis, BudgetIncreaseRecord};
 
 const COLUMNS: &str = "budget_increase_id, budget_id, scope_key, amount_10000, starts_at, \
                        expires_at, created_by_user_id, created_at";
@@ -56,16 +57,29 @@ pub(super) async fn list_active_budget_increases(
 pub(super) async fn create_budget_increase(
     store: &PostgresStore,
     increase: &BudgetIncreaseRecord,
-    expected_active: Option<Uuid>,
+    basis: &BudgetIncreaseBasis,
 ) -> Result<(), StoreError> {
     let mut tx = store.pool.begin().await.map_err(to_query_error)?;
-    // Serialize creates per budget. Under READ COMMITTED, two concurrent supersede
-    // UPDATEs cannot see each other's uncommitted insert, so both would stay active.
-    sqlx::query("SELECT budget_id FROM budgets WHERE budget_id = $1 FOR UPDATE")
-        .bind(increase.budget_id.to_string())
-        .execute(&mut *tx)
-        .await
-        .map_err(to_query_error)?;
+    // Serialize creates per budget, and against budget edits. Under READ COMMITTED, two
+    // concurrent supersede UPDATEs cannot see each other's uncommitted insert, so both
+    // would stay active.
+    let locked = sqlx::query(
+        "SELECT is_active, cadence, amount_10000, timezone FROM budgets
+         WHERE budget_id = $1 FOR UPDATE",
+    )
+    .bind(increase.budget_id.to_string())
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(to_query_error)?
+    .map(|row| {
+        Ok::<_, StoreError>(LockedBudget {
+            is_active: row.try_get::<i64, _>(0).map_err(to_query_error)? == 1,
+            cadence: row.try_get(1).map_err(to_query_error)?,
+            amount_10000: row.try_get(2).map_err(to_query_error)?,
+            timezone: row.try_get(3).map_err(to_query_error)?,
+        })
+    })
+    .transpose()?;
     let starts_at = increase.starts_at.unix_timestamp();
     let active: Option<String> = sqlx::query_scalar(&format!(
         "SELECT budget_increase_id FROM budget_increases
@@ -79,9 +93,7 @@ pub(super) async fn create_budget_increase(
     .await
     .map_err(to_query_error)?;
     let active = active.as_deref().map(parse_uuid).transpose()?;
-    if active != expected_active {
-        return Err(crate::budget_increases::active_increase_changed());
-    }
+    check_increase_basis(locked, active, basis)?;
     sqlx::query(
         "UPDATE budget_increases SET superseded_at = $2
          WHERE budget_id = $1 AND superseded_at IS NULL AND expires_at > $2",

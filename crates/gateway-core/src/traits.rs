@@ -20,8 +20,8 @@ use crate::{
         ProviderBatchSubmission,
     },
     budgets::{
-        BudgetIncreaseRecord, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings,
-        BudgetSource,
+        BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetRecord, BudgetScope, BudgetScopeKind,
+        BudgetSettings, BudgetSource,
     },
     domain::{
         ApiKeyModelGrantMode, ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
@@ -481,15 +481,15 @@ pub trait BudgetRepository: Send + Sync {
     /// Supersede any increase still active for the budget at `increase.starts_at`,
     /// then insert `increase`, in one transaction serialized per budget.
     ///
-    /// `expected_active` is the increase the caller checked eligibility against. If a
-    /// different increase is active by the time the budget is locked, nothing is written
-    /// and `StoreError::Conflict` is returned.
+    /// `basis` is what the caller checked eligibility against. If the budget is no longer
+    /// active, its settings changed, or a different increase is active by the time the
+    /// budget is locked, nothing is written and `StoreError::Conflict` is returned.
     async fn create_budget_increase(
         &self,
         increase: &BudgetIncreaseRecord,
-        expected_active: Option<Uuid>,
+        basis: &BudgetIncreaseBasis,
     ) -> Result<(), StoreError> {
-        let _ = (increase, expected_active);
+        let _ = (increase, basis);
         Err(StoreError::Unexpected(
             "create_budget_increase is not implemented for this repository".to_string(),
         ))

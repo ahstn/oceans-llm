@@ -1,7 +1,8 @@
 //! Temporary budget increases. A new increase supersedes the one still active for its budget.
 use super::*;
+use crate::budget_increases::{LockedBudget, check_increase_basis};
 use crate::shared::{parse_uuid, unix_to_datetime};
-use gateway_core::BudgetIncreaseRecord;
+use gateway_core::{BudgetIncreaseBasis, BudgetIncreaseRecord};
 
 const COLUMNS: &str = "budget_increase_id, budget_id, scope_key, amount_10000, starts_at, \
                        expires_at, created_by_user_id, created_at";
@@ -61,15 +62,32 @@ pub(super) async fn list_active_budget_increases(
 pub(super) async fn create_budget_increase(
     store: &LibsqlStore,
     increase: &BudgetIncreaseRecord,
-    expected_active: Option<Uuid>,
+    basis: &BudgetIncreaseBasis,
 ) -> Result<(), StoreError> {
-    // IMMEDIATE takes the write lock up front, so the active-increase check below and
-    // the supersede-and-insert see the same state.
+    // IMMEDIATE takes the write lock up front, so the basis check below and the
+    // supersede-and-insert see the same state.
     let tx = store
         .connection
         .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
         .await
         .map_err(to_query_error)?;
+    let mut rows = tx
+        .query(
+            "SELECT is_active, cadence, amount_10000, timezone FROM budgets WHERE budget_id = ?1",
+            [increase.budget_id.to_string()],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let locked = match rows.next().await.map_err(to_query_error)? {
+        Some(row) => Some(LockedBudget {
+            is_active: row.get::<i64>(0).map_err(to_query_error)? == 1,
+            cadence: row.get(1).map_err(to_query_error)?,
+            amount_10000: row.get(2).map_err(to_query_error)?,
+            timezone: row.get(3).map_err(to_query_error)?,
+        }),
+        None => None,
+    };
+    drop(rows);
     let starts_at = increase.starts_at.unix_timestamp();
     let mut rows = tx
         .query(
@@ -88,9 +106,7 @@ pub(super) async fn create_budget_increase(
         None => None,
     };
     drop(rows);
-    if active != expected_active {
-        return Err(crate::budget_increases::active_increase_changed());
-    }
+    check_increase_basis(locked, active, basis)?;
     tx.execute(
         "UPDATE budget_increases SET superseded_at = ?2
          WHERE budget_id = ?1 AND superseded_at IS NULL AND expires_at > ?2",

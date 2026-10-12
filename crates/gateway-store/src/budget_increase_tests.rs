@@ -5,8 +5,8 @@ use crate::{
 };
 use futures_util::future::join_all;
 use gateway_core::{
-    AuthMode, BudgetCadence, BudgetIncreaseRecord, BudgetRecord, BudgetRepository, BudgetScope,
-    BudgetSettings, GlobalRole, Money4, StoreError, UserStatus,
+    AuthMode, BudgetCadence, BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetRecord,
+    BudgetRepository, BudgetScope, BudgetSettings, GlobalRole, Money4, StoreError, UserStatus,
 };
 use serial_test::serial;
 use tempfile::tempdir;
@@ -78,10 +78,14 @@ async fn postgres_concurrent_budget_increases_admit_one_create() {
             created_at: at,
         })
         .collect::<Vec<_>>();
+    let no_increase = BudgetIncreaseBasis {
+        settings: budget.settings.clone(),
+        active_increase_id: None,
+    };
     let results = join_all(
         increases
             .iter()
-            .map(|increase| store.create_budget_increase(increase, None)),
+            .map(|increase| store.create_budget_increase(increase, &no_increase)),
     )
     .await;
     let created = results.iter().filter(|result| result.is_ok()).count();
@@ -150,6 +154,12 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
         created_by_user_id: Some(user_id),
         created_at: starts_at,
     };
+    let basis =
+        |settings: &BudgetSettings, active: Option<&BudgetIncreaseRecord>| BudgetIncreaseBasis {
+            settings: settings.clone(),
+            active_increase_id: active.map(|increase| increase.budget_increase_id),
+        };
+    let settings = budget.settings.clone();
 
     assert!(
         store
@@ -161,7 +171,7 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
 
     let first = increase(750_000, at, 7);
     store
-        .create_budget_increase(&first, None)
+        .create_budget_increase(&first, &basis(&settings, None))
         .await
         .expect("first");
     let active = store
@@ -174,7 +184,7 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
     // A later increase replaces the earlier one rather than stacking on it.
     let second = increase(1_500_000, at + Duration::days(1), 3);
     store
-        .create_budget_increase(&second, Some(first.budget_increase_id))
+        .create_budget_increase(&second, &basis(&settings, Some(&first)))
         .await
         .expect("second");
     let listed = store
@@ -202,7 +212,9 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
     // A caller that checked eligibility against a stale active increase is rejected.
     let stale = increase(250_000, at + Duration::days(2), 3);
     assert!(matches!(
-        store.create_budget_increase(&stale, None).await,
+        store
+            .create_budget_increase(&stale, &basis(&settings, None))
+            .await,
         Err(StoreError::Conflict(_))
     ));
     assert_eq!(
@@ -226,5 +238,45 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
         amount_usd: Money4::ZERO,
         ..increase(0, at + Duration::days(10), 1)
     };
-    assert!(store.create_budget_increase(&invalid, None).await.is_err());
+    assert!(
+        store
+            .create_budget_increase(&invalid, &basis(&settings, None))
+            .await
+            .is_err()
+    );
+
+    // A budget edited after the caller read it invalidates the cap and threshold checks.
+    let edited_at = at + Duration::days(11);
+    let edited = BudgetSettings {
+        amount_usd: Money4::from_scaled(500_000),
+        ..settings.clone()
+    };
+    store
+        .upsert_active_budget(&budget.scope, &edited, edited_at)
+        .await
+        .expect("edit budget");
+    let after_edit = increase(250_000, edited_at, 3);
+    assert!(matches!(
+        store
+            .create_budget_increase(&after_edit, &basis(&settings, None))
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+    store
+        .create_budget_increase(&after_edit, &basis(&edited, None))
+        .await
+        .expect("increase against edited budget");
+
+    // A deactivated budget cannot receive an increase.
+    store
+        .deactivate_active_budget(&budget.scope, edited_at)
+        .await
+        .expect("deactivate budget");
+    let after_deactivate = increase(250_000, edited_at + Duration::hours(1), 3);
+    assert!(matches!(
+        store
+            .create_budget_increase(&after_deactivate, &basis(&edited, Some(&after_edit)))
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
 }

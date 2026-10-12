@@ -327,7 +327,7 @@ A user budget can be raised for a limited time, without editing the budget, once
 - How much: more than `0` and at most 3× the base budget. The UI offers prefills at 50%, 100%, 150%, and 200% of the base budget.
 - How long: until the end of the calendar month in UTC (the default), or for 7 days.
 
-The increase adds to the base budget for both hard-limit enforcement and threshold alerts. Each budget has at most one active increase. A new increase supersedes the current one; it does not stack on top of it. If another admin increases the same budget while your dialog is open, your request is rejected so you can reload and check the new limit. Increases cannot be revoked. Each increase stays in effect until it expires or a newer increase supersedes it.
+The increase adds to the base budget for both hard-limit enforcement and threshold alerts. Each budget has at most one active increase. A new increase supersedes the current one; it does not stack on top of it. If another admin increases, edits or removes the same budget while your dialog is open, your request is rejected so you can reload and check the new limit. Increases cannot be revoked. Each increase stays in effect until it expires or a newer increase supersedes it.
 
 In `/admin/spend-controls`, every user row has an `Increase budget` button. It is enabled only when both the threshold and the permission rules are met. Otherwise it stays disabled, and a tooltip explains why. The button opens a dialog where the admin picks the period and the amount:
 

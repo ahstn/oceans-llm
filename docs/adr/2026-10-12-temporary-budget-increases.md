@@ -29,7 +29,7 @@ Each budget has at most one active increase. Creating an increase marks any unex
 
 Supersession is not retroactive. `superseded_at` is the moment the replacement starts, and lookups treat an increase as applying from `starts_at` until it expires or is superseded. Enforcement and alerts evaluate a request at its `occurred_at`, so a request that started under the old increase is still checked against it, even if its usage is recorded after the replacement.
 
-Creates are serialized per budget: Postgres locks the parent `budgets` row with `FOR UPDATE`, and libSQL uses an `IMMEDIATE` transaction. The API checks the 85% threshold against the active increase it read. It passes that increase's id to the store, which returns a conflict (HTTP 409) if a different increase is active once the lock is held. Two admins who act at the same moment can both pass the threshold check, but only one create succeeds. The other gets a 409 and must reload to check the limit again.
+Creates are serialized per budget: Postgres locks the parent `budgets` row with `FOR UPDATE`, and libSQL uses an `IMMEDIATE` transaction. The API checks the 85% threshold and the 3× cap against the budget and active increase it read. It passes both to the store. Once the lock is held, the store returns a conflict (HTTP 409) if the budget was deactivated, its cadence, amount or timezone changed, or a different increase is active. Two admins who act at the same moment can both pass the threshold check, but only one create succeeds. The other gets a 409 and must reload to check the limit again.
 
 ### 2. The effective limit is the base plus the active increase
 

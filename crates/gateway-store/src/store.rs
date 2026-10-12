@@ -879,9 +879,9 @@ impl BudgetRepository for AnyStore {
     async fn create_budget_increase(
         &self,
         increase: &gateway_core::BudgetIncreaseRecord,
-        expected_active: Option<uuid::Uuid>,
+        basis: &gateway_core::BudgetIncreaseBasis,
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, create_budget_increase(increase, expected_active))
+        dispatch_store!(self, create_budget_increase(increase, basis))
     }
 
     async fn get_usage_ledger_by_request_and_scope(

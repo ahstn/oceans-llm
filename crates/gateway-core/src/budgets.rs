@@ -337,6 +337,15 @@ pub struct BudgetRecord {
     pub updated_at: OffsetDateTime,
 }
 
+/// The budget state an increase was validated against. Creating the increase fails
+/// with `StoreError::Conflict` if the budget or its active increase has changed by the
+/// time the store holds the budget's lock.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BudgetIncreaseBasis {
+    pub settings: BudgetSettings,
+    pub active_increase_id: Option<Uuid>,
+}
+
 /// A temporary amount added to one budget's limit until `expires_at`.
 /// At most one increase is active per budget; a new increase supersedes the old one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

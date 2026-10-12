@@ -6,8 +6,8 @@
 //! and is capped at `MAX_INCREASE_MULTIPLIER` times the base budget.
 use axum::{Json, extract::State, http::HeaderMap};
 use gateway_core::{
-    AuthError, BudgetIncreaseRecord, BudgetRecord, BudgetRepository, BudgetScope, GatewayError,
-    IdentityRepository, Money4,
+    AuthError, BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetRecord, BudgetRepository,
+    BudgetScope, GatewayError, IdentityRepository, Money4,
 };
 use gateway_service::budget_scopes::limit_with_increase;
 use time::{Date, Duration, Month, OffsetDateTime, Time};
@@ -82,12 +82,15 @@ pub async fn create_budget_increase(
         created_by_user_id: Some(actor.user_id),
         created_at: now,
     };
-    // The store rejects the create if another increase landed since `active` was read,
-    // which would have changed the limit this threshold check used.
-    let expected_active = active.map(|active| active.budget_increase_id);
+    // The store rejects the create if the budget or its active increase changed since
+    // they were read, since either would invalidate the cap and threshold checks above.
+    let basis = BudgetIncreaseBasis {
+        settings: budget.settings.clone(),
+        active_increase_id: active.map(|active| active.budget_increase_id),
+    };
     state
         .store
-        .create_budget_increase(&increase, expected_active)
+        .create_budget_increase(&increase, &basis)
         .await?;
 
     Ok(Json(envelope(CreateBudgetIncreaseResultView {
