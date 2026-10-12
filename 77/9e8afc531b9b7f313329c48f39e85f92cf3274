@@ -1,0 +1,21 @@
+docs/access/budgets.md
+  s_59759a0c269480::t_1dd4da9b776c48 330
+docs/adr/2026-10-12-temporary-budget-increases.md
+  s_59759a0c269480::t_3b9ad84f14b83f 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "779e8afc531b9b7f313329c48f39e85f92cf3274",
+  "prompts": {},
+  "sessions": {
+    "s_59759a0c269480": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6967a834-972f-4dfe-99a6-760e1e3d2dc7",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
