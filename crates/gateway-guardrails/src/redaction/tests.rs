@@ -598,8 +598,8 @@ fn connection_uris_with_escaped_slashes_are_redacted() {
     let password = random(ALNUM, 16, 79);
     let text = format!(r#"{{"dsn":"postgres:\/\/app:{password}@db:5432\/main"}}"#);
     let redacted = redact(&text, &default_config());
-    assert!(!redacted.contains(&password), "{redacted}");
-    assert!(redacted.contains("[REDACTED:credential-uri]"), "{redacted}");
+    assert!(!redacted.contains(&password));
+    assert!(redacted.contains("[REDACTED:credential-uri]"));
 }
 
 #[test]
