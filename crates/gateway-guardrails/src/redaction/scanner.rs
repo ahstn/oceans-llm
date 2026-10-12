@@ -160,16 +160,29 @@ fn replace_findings(text: &str, mut findings: Vec<Finding>) -> Option<(String, V
 fn find_secrets(text: &str, config: &SecretRedactionConfig) -> Vec<Finding> {
     let mut findings = Vec::new();
     for compiled in SCANNER.candidates(text, config) {
-        for captures in compiled.regex.captures_iter(text) {
-            let Some(secret) = captures.get(1).or_else(|| captures.get(0)) else {
-                continue;
-            };
+        // Resume each search where the captured secret ends rather than where the
+        // whole match ends, so a delimiter that ends one assignment can still be
+        // the left boundary of the next, as in `PASSWORD=...\nTOKEN=...`.
+        let mut start = 0;
+        while let Some(captures) = compiled.regex.captures_at(text, start) {
+            let whole = captures.get(0).expect("group 0 always participates");
+            let secret = captures.get(1).unwrap_or(whole);
             if is_secret(compiled.rule, secret.as_str()) {
                 findings.push(Finding {
                     span: secret.range(),
                     rule_id: compiled.rule.id,
                 });
             }
+            start = if secret.end() > start {
+                secret.end()
+            } else if whole.end() > start {
+                whole.end()
+            } else {
+                match text[start..].chars().next() {
+                    Some(char) => start + char.len_utf8(),
+                    None => break,
+                }
+            };
         }
     }
     findings

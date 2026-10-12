@@ -547,6 +547,30 @@ fn assignment_names_need_a_left_boundary() {
 }
 
 #[test]
+fn adjacent_assignments_share_a_delimiter() {
+    let first = random(ALNUM, 16, 74);
+    let second = random(ALNUM, 16, 75);
+    for separator in ["\n", ";", r"\n"] {
+        let text = format!("PASSWORD={first}{separator}TOKEN={second}");
+        let redacted = redact(&text, &default_config());
+        assert!(
+            !redacted.contains(&first) && !redacted.contains(&second),
+            "{redacted}"
+        );
+    }
+}
+
+#[test]
+fn credential_named_arrays_scan_their_strings_as_assignments() {
+    let value = random(ALNUM, 16, 76);
+    let mut request = json!({"password": [value.clone(), {"note": value.clone()}]});
+    let fields = redact_json_secrets(&mut request, &default_config());
+    assert_eq!(fields.len(), 1);
+    assert_eq!(request["password"][0], "[REDACTED:secret-assignment]");
+    assert_eq!(request["password"][1]["note"], value);
+}
+
+#[test]
 fn media_data_needs_a_media_type_descriptor() {
     let key = format!("AKIA{}", random(UPPER_BASE32, 16, 69));
     for descriptor in [json!(null), json!("not a type"), json!(7)] {

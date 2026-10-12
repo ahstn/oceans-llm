@@ -47,11 +47,22 @@ type EditorProps = {
   draft: PolicyDraft
   scopeKind: PolicyScope['kind']
   policies: GuardrailPoliciesView
+  /** The scope's configured check order, which the engine runs checks in. */
+  savedChecks?: string[]
   onChange: (draft: PolicyDraft) => void
 }
 
 const toggle = (items: string[], item: string, on: boolean) =>
   on ? [...items, item] : items.filter((value) => value !== item)
+
+/** Re-enables a check at its place in `order`, so switching it off and on keeps the run order. */
+function toggleOrdered(items: string[], item: string, on: boolean, order: string[]) {
+  const rank = (value: string) => {
+    const index = order.indexOf(value)
+    return index === -1 ? order.length : index
+  }
+  return on ? [...items, item].sort((a, b) => rank(a) - rank(b)) : toggle(items, item, false)
+}
 
 export function AreaEditor({ area, ...props }: EditorProps & { area: AreaId }) {
   if (area === 'destructive') return <DestructiveActionsEditor {...props} />
@@ -230,7 +241,7 @@ export function SecretRedactionEditor({ draft, scopeKind, onChange }: EditorProp
   )
 }
 
-export function IntegrationsEditor({ draft, policies, onChange }: EditorProps) {
+export function IntegrationsEditor({ draft, policies, savedChecks, onChange }: EditorProps) {
   const configured = new Set(policies.managed_checks.map((check) => check.kind))
   const enabledChecks = new Set(draft.managed_checks)
   return (
@@ -264,7 +275,10 @@ export function IntegrationsEditor({ draft, policies, onChange }: EditorProps) {
                     onCheckedChange={(on) =>
                       onChange({
                         ...draft,
-                        managed_checks: toggle(draft.managed_checks, check.name, on),
+                        managed_checks: toggleOrdered(draft.managed_checks, check.name, on, [
+                          ...(savedChecks ?? []),
+                          ...policies.managed_checks.map((item) => item.name),
+                        ]),
                       })
                     }
                   />

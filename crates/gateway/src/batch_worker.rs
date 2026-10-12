@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::http::{
     guardrail_events::record_guardrail_decisions,
     inference_guardrails::{
-        batch_guard_context, guard_batch_prompt, guard_model_response, model_route_key,
+        batch_guard_context, guard_model_response, guard_prompt, model_route_key,
         redact_prompt_body,
     },
     state::{AppGatewayService, AppState},
@@ -287,26 +287,25 @@ async fn submit_job(
         &job.provider_key,
         &job.upstream_model,
     );
+    let mut redacted_items = Vec::with_capacity(items.len());
     let mut guarded_items = Vec::with_capacity(items.len());
     let mut decisions = Vec::new();
     let mut rejection = None;
     for item in items {
         let mut body = item.request_body;
         let request_id = format!("batch:{}:{}", job.batch_id, item.custom_id);
-        if rejection.is_some() {
-            // The batch is already rejected; only redact, so stored items keep no secrets.
-            let redactions = redact_prompt_body(state, &route_key, &mut body);
-            if !redactions.is_empty() {
-                decisions.push((request_id, redactions));
-            }
-        } else if let Err(error) = guard_batch_prompt(
-            state,
-            &request_id,
-            route_key.clone(),
-            &mut body,
-            &mut decisions,
-        )
-        .await
+        // Redact every item first, so stored items keep no secrets even when the
+        // guard rejects the batch part way through.
+        let redactions = redact_prompt_body(state, &route_key, &mut body);
+        if !redactions.is_empty() {
+            decisions.push((request_id.clone(), redactions));
+        }
+        redacted_items.push(ProviderBatchRequestItem {
+            custom_id: item.custom_id.clone(),
+            body: body.clone(),
+        });
+        if rejection.is_none()
+            && let Err(error) = guard_prompt(state, &request_id, route_key.clone(), &mut body).await
         {
             rejection = Some(error.error_code());
         }
@@ -315,12 +314,14 @@ async fn submit_job(
             body,
         });
     }
-    // Persist the guarded bodies before any failure return or provider call. Failed,
-    // unknown and submitted batches then all return the redacted requests, and a
-    // failed write never leaves an untracked provider batch behind.
+    // Persist the redacted bodies before any failure return or provider call, so
+    // failed, unknown and submitted batches all return redacted requests. Managed
+    // transformations are stored only once the provider accepts the batch: a
+    // retried submission then guards the redacted bodies again rather than
+    // transforming its own earlier output.
     service
         .store()
-        .replace_batch_item_requests(job.batch_id, &guarded_items)
+        .replace_batch_item_requests(job.batch_id, &redacted_items)
         .await?;
     record_in_background(state, decisions);
     if let Some(error_code) = rejection {
@@ -342,6 +343,17 @@ async fn submit_job(
     };
     match provider.submit_batch(&request).await {
         ProviderBatchSubmission::Submitted(state) => {
+            let transformed = request
+                .items
+                .iter()
+                .zip(&redacted_items)
+                .any(|(guarded, redacted)| guarded.body != redacted.body);
+            if transformed {
+                service
+                    .store()
+                    .replace_batch_item_requests(job.batch_id, &request.items)
+                    .await?;
+            }
             let state = prepare_submitted_state(state);
             service
                 .store()

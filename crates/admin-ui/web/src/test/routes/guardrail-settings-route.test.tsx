@@ -156,4 +156,37 @@ describe('GuardrailSettingsPage', () => {
 
     expect(screen.getByText(/forwarded to this MCP server unchanged/)).toBeInTheDocument()
   })
+
+  it('keeps the configured check order when a check is switched off and on', async () => {
+    const { IntegrationsEditor } = await import('@/components/guardrails/settings/editors')
+    const { draftFrom } = await import('@/components/guardrails/config-yaml')
+    const check = policies.managed_checks[0]
+    const catalog = {
+      ...policies,
+      managed_checks: [
+        { ...check, name: 'check-a' },
+        { ...check, name: 'check-b' },
+      ],
+    }
+    // Configured in the reverse of catalog order.
+    let draft = draftFrom({ ...base, managed_checks: ['check-b', 'check-a'] } as never)
+    const view = () => (
+      <IntegrationsEditor
+        draft={draft}
+        scopeKind="global"
+        policies={catalog as never}
+        savedChecks={['check-b', 'check-a']}
+        onChange={(next) => {
+          draft = next
+        }}
+      />
+    )
+    const { rerender } = render(view())
+
+    fireEvent.click(screen.getByRole('switch', { name: /check-b/ }))
+    rerender(view())
+    expect(draft.managed_checks).toEqual(['check-a'])
+    fireEvent.click(screen.getByRole('switch', { name: /check-b/ }))
+    expect(draft.managed_checks).toEqual(['check-b', 'check-a'])
+  })
 })

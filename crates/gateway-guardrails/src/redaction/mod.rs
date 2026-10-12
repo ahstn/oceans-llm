@@ -165,7 +165,10 @@ fn redact_json_at(
             for (index, item) in items.iter_mut().enumerate() {
                 pointer.push('/');
                 pointer.push_str(&index.to_string());
-                redact_json_at(item, None, pointer, config, output);
+                // A string element keeps the field name, so `{"password": ["..."]}`
+                // is checked as an assignment too.
+                let item_key = if item.is_string() { key } else { None };
+                redact_json_at(item, item_key, pointer, config, output);
                 pointer.truncate(parent_len);
             }
         }
