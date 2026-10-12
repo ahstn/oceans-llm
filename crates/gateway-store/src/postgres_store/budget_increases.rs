@@ -64,7 +64,7 @@ pub(super) async fn create_budget_increase(
     // concurrent supersede UPDATEs cannot see each other's uncommitted insert, so both
     // would stay active.
     let locked = sqlx::query(
-        "SELECT is_active, cadence, amount_10000, timezone FROM budgets
+        "SELECT is_active, cadence, amount_10000, hard_limit, timezone FROM budgets
          WHERE budget_id = $1 FOR UPDATE",
     )
     .bind(increase.budget_id.to_string())
@@ -76,7 +76,8 @@ pub(super) async fn create_budget_increase(
             is_active: row.try_get::<i64, _>(0).map_err(to_query_error)? == 1,
             cadence: row.try_get(1).map_err(to_query_error)?,
             amount_10000: row.try_get(2).map_err(to_query_error)?,
-            timezone: row.try_get(3).map_err(to_query_error)?,
+            hard_limit: row.try_get::<i64, _>(3).map_err(to_query_error)? == 1,
+            timezone: row.try_get(4).map_err(to_query_error)?,
         })
     })
     .transpose()?;

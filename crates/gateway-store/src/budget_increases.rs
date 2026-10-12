@@ -19,6 +19,7 @@ pub(crate) struct LockedBudget {
     pub is_active: bool,
     pub cadence: String,
     pub amount_10000: i64,
+    pub hard_limit: bool,
     pub timezone: String,
 }
 
@@ -33,6 +34,7 @@ pub(crate) fn check_increase_basis(
         budget.is_active
             && BudgetCadence::from_db(&budget.cadence) == Some(basis.settings.cadence)
             && Money4::from_scaled(budget.amount_10000) == basis.settings.amount_usd
+            && budget.hard_limit == basis.settings.hard_limit
             && budget.timezone == basis.settings.timezone
     });
     if budget_unchanged && active_increase_id == basis.active_increase_id {

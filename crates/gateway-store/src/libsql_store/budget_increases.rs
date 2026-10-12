@@ -73,7 +73,7 @@ pub(super) async fn create_budget_increase(
         .map_err(to_query_error)?;
     let mut rows = tx
         .query(
-            "SELECT is_active, cadence, amount_10000, timezone FROM budgets WHERE budget_id = ?1",
+            "SELECT is_active, cadence, amount_10000, hard_limit, timezone FROM budgets WHERE budget_id = ?1",
             [increase.budget_id.to_string()],
         )
         .await
@@ -83,7 +83,8 @@ pub(super) async fn create_budget_increase(
             is_active: row.get::<i64>(0).map_err(to_query_error)? == 1,
             cadence: row.get(1).map_err(to_query_error)?,
             amount_10000: row.get(2).map_err(to_query_error)?,
-            timezone: row.get(3).map_err(to_query_error)?,
+            hard_limit: row.get::<i64>(3).map_err(to_query_error)? == 1,
+            timezone: row.get(4).map_err(to_query_error)?,
         }),
         None => None,
     };

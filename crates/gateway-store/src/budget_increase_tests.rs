@@ -262,6 +262,16 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
             .await,
         Err(StoreError::Conflict(_))
     ));
+    let soft_limit = BudgetSettings {
+        hard_limit: false,
+        ..edited.clone()
+    };
+    assert!(matches!(
+        store
+            .create_budget_increase(&after_edit, &basis(&soft_limit, None))
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
     store
         .create_budget_increase(&after_edit, &basis(&edited, None))
         .await
