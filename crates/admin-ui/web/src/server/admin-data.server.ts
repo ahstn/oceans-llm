@@ -22,6 +22,8 @@ import type {
   CreateTeamInput,
   CreateUserInput,
   CreateUserResult,
+  CreateBudgetIncreaseInput,
+  CreateBudgetIncreaseResultView,
   DeactivateBudgetResultView,
   DeactivateBudgetInput,
   IdentityActionResult,
@@ -314,6 +316,17 @@ export async function deactivateBudget(
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.POST('/api/v1/admin/spend/budgets/deactivate', {
+      body: input,
+    }),
+  )
+}
+
+export async function createBudgetIncrease(
+  input: CreateBudgetIncreaseInput,
+): Promise<ApiEnvelope<CreateBudgetIncreaseResultView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/spend/budgets/increases', {
       body: input,
     }),
   )

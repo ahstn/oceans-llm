@@ -19,7 +19,10 @@ use crate::{
         ProviderBatchRequest, ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchState,
         ProviderBatchSubmission,
     },
-    budgets::{BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource},
+    budgets::{
+        BudgetIncreaseRecord, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings,
+        BudgetSource,
+    },
     domain::{
         ApiKeyModelGrantMode, ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
         BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord,
@@ -455,6 +458,36 @@ pub trait BudgetRepository: Send + Sync {
         source: &BudgetSource,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
+    /// The increase applied to `budget_id` at `at`, if any. Repositories without
+    /// increase storage report none so enforcement falls back to the base limit.
+    async fn get_active_budget_increase(
+        &self,
+        budget_id: Uuid,
+        at: OffsetDateTime,
+    ) -> Result<Option<BudgetIncreaseRecord>, StoreError> {
+        let _ = (budget_id, at);
+        Ok(None)
+    }
+    async fn list_active_budget_increases(
+        &self,
+        at: OffsetDateTime,
+    ) -> Result<Vec<BudgetIncreaseRecord>, StoreError> {
+        let _ = at;
+        Err(StoreError::Unexpected(
+            "list_active_budget_increases is not implemented for this repository".to_string(),
+        ))
+    }
+    /// Supersede any increase still active for the budget at `increase.starts_at`,
+    /// then insert `increase`, in one transaction.
+    async fn create_budget_increase(
+        &self,
+        increase: &BudgetIncreaseRecord,
+    ) -> Result<(), StoreError> {
+        let _ = increase;
+        Err(StoreError::Unexpected(
+            "create_budget_increase is not implemented for this repository".to_string(),
+        ))
+    }
     async fn get_usage_ledger_by_request_and_scope(
         &self,
         request_id: &str,

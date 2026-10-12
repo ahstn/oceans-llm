@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { CURRENCY_FORMATTER } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import type { BudgetIncreaseView } from '@/types/api'
 
 import {
   budgetSourceLabel,
@@ -24,6 +25,8 @@ export const PERCENT_FORMATTER = new Intl.NumberFormat('en-US', {
 export type BudgetOwner = {
   budget?: BudgetSettings | null
   current_window_spend_usd_10000: number
+  /** A temporary top-up; only user budgets carry one. */
+  active_increase?: Pick<BudgetIncreaseView, 'amount_usd_10000'> | null
 }
 
 /**
@@ -33,10 +36,11 @@ export type BudgetOwner = {
 export type UsageStatus = 'no_budget' | 'low' | 'on_track' | 'warning' | 'over'
 
 export type BudgetUsage = {
-  /** Spend divided by budget. `null` when no budget is set. */
+  /** Spend divided by the effective limit. `null` when no budget is set. */
   ratio: number | null
   status: UsageStatus
   spendUsd: number
+  /** The effective limit: the budget plus any active increase. */
   budgetUsd: number | null
   remainingUsd: number | null
 }
@@ -52,7 +56,8 @@ export function budgetUsage(owner: BudgetOwner): BudgetUsage {
       remainingUsd: null,
     }
   }
-  const budgetUsd = owner.budget.amount_usd_10000 / 10_000
+  const increase10000 = owner.active_increase?.amount_usd_10000 ?? 0
+  const budgetUsd = (owner.budget.amount_usd_10000 + increase10000) / 10_000
   const ratio = spendUsd / budgetUsd
   return {
     ratio,

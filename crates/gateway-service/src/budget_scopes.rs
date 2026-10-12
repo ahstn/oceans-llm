@@ -1,7 +1,29 @@
 use gateway_core::{
-    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetModelSelector, BudgetScope,
+    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetModelSelector, BudgetRecord,
+    BudgetRepository, BudgetScope, Money4, StoreError,
 };
+use time::OffsetDateTime;
 use uuid::Uuid;
+
+/// The budget's base amount plus any temporary increase active at `at`.
+pub async fn effective_budget_limit<R>(
+    repo: &R,
+    budget: &BudgetRecord,
+    at: OffsetDateTime,
+) -> Result<Money4, StoreError>
+where
+    R: BudgetRepository + ?Sized,
+{
+    let increase = repo
+        .get_active_budget_increase(budget.budget_id, at)
+        .await?;
+    Ok(increase.map_or(budget.settings.amount_usd, |increase| {
+        budget
+            .settings
+            .amount_usd
+            .saturating_add(increase.amount_usd)
+    }))
+}
 
 /// Budget scopes to check for one request, in evaluation order.
 ///

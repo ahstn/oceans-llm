@@ -3560,6 +3560,41 @@
         ]
       }
     },
+    "/api/v1/admin/spend/budgets/increases": {
+      "post": {
+        "tags": [
+          "crate::http::spend_budget_increases"
+        ],
+        "operationId": "create_budget_increase",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBudgetIncreaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_CreateBudgetIncreaseResultView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/spend/focus.csv": {
       "get": {
         "tags": [
@@ -10016,6 +10051,42 @@
           }
         }
       },
+      "BudgetIncreasePeriod": {
+        "type": "string",
+        "description": "How long a budget increase lasts from the moment it is created.",
+        "enum": [
+          "end_of_month",
+          "seven_days"
+        ]
+      },
+      "BudgetIncreaseView": {
+        "type": "object",
+        "required": [
+          "budget_increase_id",
+          "amount_usd",
+          "amount_usd_10000",
+          "starts_at",
+          "expires_at"
+        ],
+        "properties": {
+          "amount_usd": {
+            "type": "string"
+          },
+          "amount_usd_10000": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "budget_increase_id": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "starts_at": {
+            "type": "string"
+          }
+        }
+      },
       "BudgetScopeRequest": {
         "oneOf": [
           {
@@ -10428,6 +10499,59 @@
         "properties": {
           "body": {},
           "custom_id": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateBudgetIncreaseRequest": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "amount_usd",
+          "period"
+        ],
+        "properties": {
+          "amount_usd": {
+            "type": "string",
+            "description": "Amount added to the base budget, at most three times the base amount."
+          },
+          "period": {
+            "$ref": "#/components/schemas/BudgetIncreasePeriod"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateBudgetIncreaseResultView": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "budget_id",
+          "budget",
+          "increase",
+          "effective_amount_usd_10000",
+          "current_window_spend_usd_10000"
+        ],
+        "properties": {
+          "budget": {
+            "$ref": "#/components/schemas/BudgetSettingsView"
+          },
+          "budget_id": {
+            "type": "string"
+          },
+          "current_window_spend_usd_10000": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "effective_amount_usd_10000": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "increase": {
+            "$ref": "#/components/schemas/BudgetIncreaseView"
+          },
+          "user_id": {
             "type": "string"
           }
         }
@@ -11538,6 +11662,51 @@
                 "$ref": "#/components/schemas/AdminApiKeyView"
               },
               "raw_key": {
+                "type": "string"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_CreateBudgetIncreaseResultView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "user_id",
+              "budget_id",
+              "budget",
+              "increase",
+              "effective_amount_usd_10000",
+              "current_window_spend_usd_10000"
+            ],
+            "properties": {
+              "budget": {
+                "$ref": "#/components/schemas/BudgetSettingsView"
+              },
+              "budget_id": {
+                "type": "string"
+              },
+              "current_window_spend_usd_10000": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "effective_amount_usd_10000": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "increase": {
+                "$ref": "#/components/schemas/BudgetIncreaseView"
+              },
+              "user_id": {
                 "type": "string"
               }
             }
@@ -16772,6 +16941,17 @@
           "alert_recipient_summary"
         ],
         "properties": {
+          "active_increase": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BudgetIncreaseView",
+                "description": "Temporary amount added to `budget` until `expires_at`. Enforcement uses\n`budget.amount_usd_10000 + active_increase.amount_usd_10000`."
+              }
+            ]
+          },
           "alert_email_ready": {
             "type": "boolean"
           },

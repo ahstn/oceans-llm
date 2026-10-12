@@ -252,6 +252,7 @@ const TEAM_ADMIN_PAGES: &[AdminPage] = &[
     AdminPage::ApiKeys,
     AdminPage::Models,
     AdminPage::UsageCosts,
+    AdminPage::SpendControls,
     AdminPage::Leaderboard,
     AdminPage::AgentHarnesses,
     AdminPage::AgentSessions,
@@ -263,7 +264,9 @@ const TEAM_ADMIN_PAGES: &[AdminPage] = &[
 ];
 
 const DEFAULT_USER_PAGES: &[AdminPage] = SHARED_PAGES;
-const DEFAULT_TEAM_ADMIN_PAGES: &[AdminPage] = &[AdminPage::AgentSessions];
+// Team admins see Spend Controls limited to their own team's users and service accounts.
+const DEFAULT_TEAM_ADMIN_PAGES: &[AdminPage] =
+    &[AdminPage::SpendControls, AdminPage::AgentSessions];
 const DEFAULT_PLATFORM_ADMIN_PAGES: &[AdminPage] = &[
     AdminPage::Mcp,
     AdminPage::ReviewAgent,

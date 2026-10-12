@@ -94,16 +94,16 @@ pub(super) const HISTORY_PROFILES: &[HistoryProfile] = &[
 ];
 
 /// One synthetic request in the history.
-struct HistoryRequest {
-    request_id: String,
-    occurred_at: OffsetDateTime,
-    model: (&'static str, &'static str, &'static str),
-    harness: (&'static str, &'static str, &'static str),
-    prompt_tokens: i64,
-    completion_tokens: i64,
-    cache_read_tokens: i64,
-    cache_write_tokens: i64,
-    cost_scaled: i64,
+pub(super) struct HistoryRequest {
+    pub request_id: String,
+    pub occurred_at: OffsetDateTime,
+    pub model: (&'static str, &'static str, &'static str),
+    pub harness: (&'static str, &'static str, &'static str),
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+    pub cost_scaled: i64,
 }
 
 /// Every request id the history can produce, for deleting prior runs.
@@ -214,7 +214,7 @@ pub(super) async fn seed_demo_usage_history(
     Ok(())
 }
 
-async fn insert_history_request(
+pub(super) async fn insert_history_request(
     store: &AnyStore,
     api_key: &ApiKeyRecord,
     team_id: Option<Uuid>,

@@ -13,6 +13,7 @@ import {
   createMcpServer,
   createTeam,
   createUser,
+  createBudgetIncrease,
   deactivateBudget,
   disableMcpServer,
   listBudgetAlertHistory,
@@ -395,6 +396,12 @@ export const getBudgetAlertHistory = createServerFn({ method: 'POST' }).handler(
 export const saveBudget = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: Parameters<typeof upsertBudget>[0] }) => {
     return upsertBudget(data)
+  },
+)
+
+export const increaseBudget = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof createBudgetIncrease>[0] }) => {
+    return createBudgetIncrease(data)
   },
 )
 

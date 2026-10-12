@@ -316,7 +316,7 @@ Important defaults from config parsing and domain deserialization:
 - `budgets.users.default` is absent by default; when present, it creates inherited user budgets for all human users
 - `budgets.users.model_defaults` is empty by default; entries create inherited user model budgets for all human users for selected gateway models
 - `permissions.users.pages` defaults to the 10 shared console pages
-- `permissions.team_admins.pages` has no direct default grants and inherits the user pages
+- `permissions.team_admins.pages` defaults to `spend_controls` and `agent_sessions`, then inherits the user pages; team admins see Spend Controls only for their own team
 - `permissions.platform_admins.pages` defaults to `mcp`, `review_agent`, and `spend_controls`, then inherits both lower groups
 - `permissions.users.actions` defaults to create, update, and revoke for personal API keys
 - `permissions.team_admins.actions` defaults to reveal for team service-account keys, then inherits the user actions

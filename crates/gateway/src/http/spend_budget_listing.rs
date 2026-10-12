@@ -1,31 +1,53 @@
-//! Budget page loading uses six store calls, independent of directory size.
-use std::collections::HashMap;
+//! Budget page loading uses seven store calls, independent of directory size.
+use std::collections::{HashMap, HashSet};
 
 use gateway_core::{
-    BudgetContact, BudgetRecord, BudgetScope, BudgetScopeWindow, IdentityUserRecord, Money4,
-    ServiceAccountRecord, TeamRecord,
+    BudgetContact, BudgetIncreaseRecord, BudgetRecord, BudgetScope, BudgetScopeWindow,
+    IdentityUserRecord, Money4, ServiceAccountRecord, TeamRecord,
 };
 use gateway_store::GatewayStore;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use super::admin_auth::AdminDataScope;
 use super::admin_contract::{
     SpendBudgetServiceAccountView, SpendBudgetUserModelView, SpendBudgetUserView, SpendBudgetsView,
 };
 use super::error::AppError;
 use super::spend::{budget_source_to_view, budget_to_settings_view, budget_window_bounds_utc};
+use super::spend_budget_increases::budget_increase_to_view;
 
+/// Team scope lists only the team's users, its service accounts, and model
+/// budgets owned by its users.
 pub(super) async fn load_budget_listing<S: GatewayStore + ?Sized>(
     store: &S,
+    scope: AdminDataScope,
     now: OffsetDateTime,
 ) -> Result<SpendBudgetsView, AppError> {
-    let (users, accounts, teams, budgets, contacts) = tokio::try_join!(
+    let (mut users, mut accounts, teams, mut budgets, contacts, increases) = tokio::try_join!(
         store.list_identity_users(),
         store.list_active_service_accounts(),
         store.list_teams(),
         store.list_active_budgets(None),
         store.list_budget_contacts(),
+        store.list_active_budget_increases(now),
     )?;
+    if let AdminDataScope::Team(team_id) = scope {
+        users.retain(|user| user.team_id == Some(team_id));
+        accounts.retain(|account| account.team_id == team_id);
+        let team_users = users
+            .iter()
+            .map(|user| user.user.user_id)
+            .collect::<HashSet<_>>();
+        budgets.retain(|budget| match &budget.scope {
+            BudgetScope::User { user_id } | BudgetScope::UserModel { user_id, .. } => {
+                team_users.contains(user_id)
+            }
+            BudgetScope::ServiceAccount { service_account_id } => accounts
+                .iter()
+                .any(|account| account.service_account_id == *service_account_id),
+        });
+    }
     let windows = budgets
         .iter()
         .map(|budget| {
@@ -38,7 +60,7 @@ pub(super) async fn load_budget_listing<S: GatewayStore + ?Sized>(
         })
         .collect::<Vec<_>>();
     let spend = store.sum_usage_cost_by_budget_scope(&windows).await?;
-    let index = BudgetListingIndex::new(&budgets, &contacts, &spend);
+    let index = BudgetListingIndex::new(&budgets, &contacts, &spend, &increases);
     let team_map = teams
         .iter()
         .map(|team| (team.team_id, team))
@@ -73,6 +95,7 @@ struct BudgetListingIndex<'a> {
     emails: HashMap<Uuid, &'a str>,
     recipients: HashMap<Uuid, Vec<&'a str>>,
     spend: &'a HashMap<String, Money4>,
+    increases: HashMap<Uuid, &'a BudgetIncreaseRecord>,
 }
 
 impl<'a> BudgetListingIndex<'a> {
@@ -80,6 +103,7 @@ impl<'a> BudgetListingIndex<'a> {
         budgets: &'a [BudgetRecord],
         contacts: &'a [BudgetContact],
         spend: &'a HashMap<String, Money4>,
+        increases: &'a [BudgetIncreaseRecord],
     ) -> Self {
         let mut recipients: HashMap<Uuid, Vec<&str>> = HashMap::new();
         for contact in contacts {
@@ -102,6 +126,10 @@ impl<'a> BudgetListingIndex<'a> {
                 .collect(),
             recipients,
             spend,
+            increases: increases
+                .iter()
+                .map(|increase| (increase.budget_id, increase))
+                .collect(),
         }
     }
 
@@ -128,6 +156,9 @@ impl<'a> BudgetListingIndex<'a> {
             budget: budget.map(|budget| budget_to_settings_view(budget)),
             budget_source: budget.map(|budget| budget_source_to_view(&budget.source)),
             current_window_spend_usd_10000: self.spend(&key),
+            active_increase: budget
+                .and_then(|budget| self.increases.get(&budget.budget_id))
+                .map(|increase| budget_increase_to_view(increase)),
             alert_email_ready: true,
             alert_recipient_summary: user.user.email,
         }
@@ -272,7 +303,7 @@ mod tests {
                 now,
             )
             .await?;
-        let listing = load_budget_listing(&store, now)
+        let listing = load_budget_listing(&store, AdminDataScope::Platform, now)
             .await
             .map_err(|error| error.0)?;
         assert_eq!(listing.users.len(), 4);

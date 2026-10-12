@@ -1044,8 +1044,20 @@ pub struct SpendBudgetUserView {
     pub budget: Option<BudgetSettingsView>,
     pub budget_source: Option<BudgetSourceView>,
     pub current_window_spend_usd_10000: i64,
+    /// Temporary amount added to `budget` until `expires_at`. Enforcement uses
+    /// `budget.amount_usd_10000 + active_increase.amount_usd_10000`.
+    pub active_increase: Option<BudgetIncreaseView>,
     pub alert_email_ready: bool,
     pub alert_recipient_summary: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BudgetIncreaseView {
+    pub budget_increase_id: String,
+    pub amount_usd: String,
+    pub amount_usd_10000: i64,
+    pub starts_at: String,
+    pub expires_at: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1230,6 +1242,33 @@ pub struct UpsertBudgetRequest {
     pub amount_usd: String,
     pub hard_limit: bool,
     pub timezone: Option<String>,
+}
+
+/// How long a budget increase lasts from the moment it is created.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetIncreasePeriod {
+    /// Until the first instant of the next calendar month (UTC).
+    EndOfMonth,
+    SevenDays,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateBudgetIncreaseRequest {
+    pub user_id: String,
+    /// Amount added to the base budget, at most three times the base amount.
+    pub amount_usd: String,
+    pub period: BudgetIncreasePeriod,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CreateBudgetIncreaseResultView {
+    pub user_id: String,
+    pub budget_id: String,
+    pub budget: BudgetSettingsView,
+    pub increase: BudgetIncreaseView,
+    pub effective_amount_usd_10000: i64,
+    pub current_window_spend_usd_10000: i64,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -2001,6 +2040,7 @@ pub struct AgentSessionDetailView {
         crate::http::spend::list_budget_alert_history,
         crate::http::spend::upsert_budget,
         crate::http::spend::deactivate_budget,
+        crate::http::spend_budget_increases::create_budget_increase,
         crate::http::observability::get_usage_leaderboard,
         crate::http::observability::get_harness_usage,
         crate::http::observability::agent_sessions::list_agent_sessions,

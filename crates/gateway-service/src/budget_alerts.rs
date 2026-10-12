@@ -11,7 +11,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::budget_scopes::applicable_budget_scopes;
+use crate::budget_scopes::{applicable_budget_scopes, effective_budget_limit};
 
 pub const BUDGET_ALERT_THRESHOLD_BPS: i32 = 2_000;
 
@@ -120,11 +120,13 @@ where
                     )
                 })?;
             let owner = self.resolve_budget_owner(&budget).await?;
+            let budget_amount =
+                effective_budget_limit(self.repo.as_ref(), &budget, ledger.occurred_at).await?;
             self.create_alert_if_needed(AlertEvaluation {
                 owner,
                 budget_id: budget.budget_id,
                 cadence: budget.settings.cadence,
-                budget_amount: budget.settings.amount_usd,
+                budget_amount,
                 occurred_at: ledger.occurred_at,
                 spent_before,
                 spent_after,
@@ -142,11 +144,12 @@ where
         occurred_at: OffsetDateTime,
     ) -> Result<(), GatewayError> {
         let owner = self.resolve_budget_owner(budget).await?;
+        let budget_amount = effective_budget_limit(self.repo.as_ref(), budget, occurred_at).await?;
         self.create_alert_if_needed(AlertEvaluation {
             owner,
             budget_id: budget.budget_id,
             cadence: budget.settings.cadence,
-            budget_amount: budget.settings.amount_usd,
+            budget_amount,
             occurred_at,
             spent_before: current_spend,
             spent_after: current_spend,

@@ -7,7 +7,9 @@ use gateway_core::{
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::budget_scopes::{applicable_budget_scopes, usage_ownership_scope_key};
+use crate::budget_scopes::{
+    applicable_budget_scopes, effective_budget_limit, usage_ownership_scope_key,
+};
 
 /// A hard budget whose window was pushed past its cap by spend that had already
 /// been incurred upstream. The ledger row is still recorded; the pre-provider
@@ -134,11 +136,12 @@ where
             .repo
             .sum_usage_cost_for_budget_scope_in_window(scope, window_start, window_end)
             .await?;
-        if spent >= budget.settings.amount_usd {
+        let limit = effective_budget_limit(self.repo.as_ref(), budget, occurred_at).await?;
+        if spent >= limit {
             return Err(GatewayError::BudgetExceeded {
                 ownership_scope: budget.scope_key.clone(),
                 projected_cost_usd: spent,
-                limit_usd: budget.settings.amount_usd,
+                limit_usd: limit,
             });
         }
         Ok(())
@@ -161,11 +164,12 @@ where
             .sum_usage_cost_for_budget_scope_in_window(scope, window_start, window_end)
             .await?;
         let projected = spent.saturating_add(cost_usd);
-        if projected > budget.settings.amount_usd {
+        let limit = effective_budget_limit(self.repo.as_ref(), budget, occurred_at).await?;
+        if projected > limit {
             return Ok(Some(BudgetOverrun {
                 scope_key: budget.scope_key.clone(),
                 spent_usd: projected,
-                limit_usd: budget.settings.amount_usd,
+                limit_usd: limit,
             }));
         }
         Ok(None)
@@ -194,8 +198,9 @@ mod tests {
     use async_trait::async_trait;
     use gateway_core::{
         ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence,
-        BudgetModelSelector, BudgetRecord, BudgetRepository, BudgetScope, BudgetSettings,
-        BudgetSource, GatewayError, Money4, StoreError, UsageLedgerRecord, UsagePricingStatus,
+        BudgetIncreaseRecord, BudgetModelSelector, BudgetRecord, BudgetRepository, BudgetScope,
+        BudgetSettings, BudgetSource, GatewayError, Money4, StoreError, UsageLedgerRecord,
+        UsagePricingStatus,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -210,6 +215,7 @@ mod tests {
     struct InMemoryBudgetRepo {
         budgets: HashMap<String, BudgetRecord>,
         prior_spend: HashMap<String, Money4>,
+        increases: HashMap<Uuid, BudgetIncreaseRecord>,
         inserted_events: Mutex<Vec<UsageLedgerRecord>>,
     }
 
@@ -218,6 +224,25 @@ mod tests {
             self.prior_spend
                 .insert(budget.scope_key.clone(), prior_spend);
             self.budgets.insert(budget.scope_key.clone(), budget);
+            self
+        }
+
+        fn with_increase(mut self, scope: &BudgetScope, amount_usd: Money4) -> Self {
+            let budget_id = self.budgets[&scope.scope_key()].budget_id;
+            let now = OffsetDateTime::now_utc();
+            self.increases.insert(
+                budget_id,
+                BudgetIncreaseRecord {
+                    budget_increase_id: Uuid::new_v4(),
+                    budget_id,
+                    scope_key: scope.scope_key(),
+                    amount_usd,
+                    starts_at: now - time::Duration::hours(1),
+                    expires_at: now + time::Duration::days(7),
+                    created_by_user_id: None,
+                    created_at: now,
+                },
+            );
             self
         }
 
@@ -277,6 +302,18 @@ mod tests {
             _windows: &[gateway_core::BudgetScopeWindow<'_>],
         ) -> Result<std::collections::HashMap<String, Money4>, StoreError> {
             unreachable!("batch operations are not used by this fixture")
+        }
+
+        async fn get_active_budget_increase(
+            &self,
+            budget_id: Uuid,
+            at: OffsetDateTime,
+        ) -> Result<Option<BudgetIncreaseRecord>, StoreError> {
+            Ok(self
+                .increases
+                .get(&budget_id)
+                .filter(|increase| increase.is_active_at(at))
+                .cloned())
         }
 
         async fn get_active_budget_by_scope(
@@ -581,6 +618,40 @@ mod tests {
             .await
             .expect_err("user cap should block");
         assert_budget_exceeded(&error, &user_scope.scope_key());
+    }
+
+    #[tokio::test]
+    async fn active_increase_raises_the_hard_limit() {
+        // Base cap $80 is exhausted; a $40 increase leaves $20 of headroom.
+        let user_id = Uuid::new_v4();
+        let user_scope = BudgetScope::User { user_id };
+        let repo = Arc::new(
+            InMemoryBudgetRepo::default()
+                .with_budget(budget(user_scope.clone(), usd(80), true), usd(100))
+                .with_increase(&user_scope, usd(40)),
+        );
+        let guard = BudgetGuard::new(repo);
+        let auth = user_auth(user_id);
+
+        precheck(&guard, &auth, "req_increased", Uuid::new_v4())
+            .await
+            .expect("increase leaves headroom");
+
+        let overruns = guard
+            .record_incurred_usage(
+                &auth,
+                &ledger(
+                    &auth,
+                    "req_increased",
+                    None,
+                    UsagePricingStatus::Priced,
+                    usd(30),
+                ),
+            )
+            .await
+            .expect("usage recorded");
+        assert_eq!(overruns.len(), 1);
+        assert_eq!(overruns[0].limit_usd, usd(120));
     }
 
     #[tokio::test]

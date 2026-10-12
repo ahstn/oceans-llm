@@ -19,7 +19,8 @@ export type BudgetSettingsForm = Omit<UpsertBudgetInput, 'scope'>
 
 export type SpendControlsLoaderData = {
   budgets: { data: SpendBudgetsView }
-  alerts: { data: BudgetAlertHistoryView }
+  /** `null` for team admins: alert history is platform-wide. */
+  alerts: { data: BudgetAlertHistoryView } | null
   models: ModelView[]
 }
 
@@ -42,18 +43,24 @@ async function loadAllModels(): Promise<ModelView[]> {
   return [first, ...rest].flatMap((page) => page.data.items)
 }
 
-export async function loadSpendControls(): Promise<SpendControlsLoaderData> {
+/**
+ * Team admins see their own team's budgets read-only, so they skip the platform-wide
+ * alert history.
+ */
+export async function loadSpendControls(includeAlerts: boolean): Promise<SpendControlsLoaderData> {
   const [budgets, alerts, models] = await Promise.all([
     getSpendBudgets(),
-    getBudgetAlertHistory({
-      data: {
-        page: 1,
-        page_size: 10,
-        owner_kind: 'all',
-        status: 'all',
-        channel: 'all',
-      },
-    }),
+    includeAlerts
+      ? getBudgetAlertHistory({
+          data: {
+            page: 1,
+            page_size: 10,
+            owner_kind: 'all',
+            status: 'all',
+            channel: 'all',
+          },
+        })
+      : null,
     loadAllModels(),
   ])
   return { budgets, alerts, models } as SpendControlsLoaderData

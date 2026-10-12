@@ -61,6 +61,10 @@ export type UpsertBudgetInput = components['schemas']['UpsertBudgetRequest']
 export type DeactivateBudgetInput = components['schemas']['DeactivateBudgetRequest']
 export type UpsertBudgetResultView = components['schemas']['UpsertBudgetResultView']
 export type DeactivateBudgetResultView = components['schemas']['DeactivateBudgetResultView']
+export type BudgetIncreaseView = components['schemas']['BudgetIncreaseView']
+export type BudgetIncreasePeriod = components['schemas']['BudgetIncreasePeriod']
+export type CreateBudgetIncreaseInput = components['schemas']['CreateBudgetIncreaseRequest']
+export type CreateBudgetIncreaseResultView = components['schemas']['CreateBudgetIncreaseResultView']
 
 export type ModelAllowlistView = NonNullable<components['schemas']['AdminModelView']['allowlist']>
 export type ModelView = components['schemas']['AdminModelView'] & {

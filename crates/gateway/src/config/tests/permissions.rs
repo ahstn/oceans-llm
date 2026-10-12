@@ -10,6 +10,12 @@ fn defaults_resolve_in_stable_order() {
 
     assert_eq!(resolved.users.pages, SHARED_PAGES);
     assert_eq!(resolved.team_admins.pages, TEAM_ADMIN_PAGES);
+    assert!(
+        resolved
+            .team_admins
+            .pages
+            .contains(&AdminPage::SpendControls)
+    );
     assert_eq!(resolved.platform_admins.pages, ADMIN_PAGE_ORDER);
     assert_eq!(resolved.users.actions, USER_ACTIONS);
     assert_eq!(resolved.team_admins.actions, ADMIN_ACTION_ORDER);
@@ -135,6 +141,14 @@ users:
 "#,
     );
     assert!(unsupported_page.resolve().is_err());
+
+    let platform_only_page = parse(
+        r#"
+team_admins:
+  pages: [mcp]
+"#,
+    );
+    assert!(platform_only_page.resolve().is_err());
 
     let unsupported_action = parse(
         r#"

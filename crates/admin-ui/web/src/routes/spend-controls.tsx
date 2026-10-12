@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Alert02Icon,
@@ -38,14 +38,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CURRENCY_FORMATTER, formatUsd10000 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type {
+  AuthSessionView,
   ModelView,
   SpendBudgetServiceAccountView,
   SpendBudgetUserModelView,
   SpendBudgetUserView,
 } from '@/types/api'
 
+import { isPlatformAdminSession } from './-auth-routing'
 import { AlertTimeline } from './spend-controls/-alert-timeline'
 import { BudgetDialog, useBudgetEditor, type BudgetEditor } from './spend-controls/-budget-editor'
+import {
+  BudgetIncreaseDialog,
+  formatIncreaseLastDay,
+  IncreaseBudgetButton,
+} from './spend-controls/-budget-increase'
+import { increaseEligibility } from './spend-controls/-budget-increase-model'
 import {
   formatCadence,
   formatUserModelSelector,
@@ -76,21 +84,25 @@ import {
 import { UserModelBudgetForm } from './spend-controls/-user-model-form'
 
 export const Route = createFileRoute('/spend-controls')({
-  loader: loadSpendControls,
+  loader: ({ context }) => loadSpendControls(isPlatformAdminSession(context.session)),
   component: SpendControlsPage,
 })
 
 // One tabbed card of dense tables sharing a single editor; the page wires the
-// loader data into the summary strip, the three tabs, and the alert history.
+// loader data into the summary strip, the three tabs, and the alert history. Team
+// admins get a read-only view of their own team, plus budget increases.
 // oxlint-disable-next-line eslint/max-lines-per-function
 export function SpendControlsPage() {
   const { budgets, alerts, models } = Route.useLoaderData() as SpendControlsLoaderData
+  const { session } = Route.useRouteContext()
+  const canConfigure = isPlatformAdminSession(session)
   const {
     users,
     service_accounts: serviceAccounts,
     user_model_budgets: userModelBudgets,
   } = budgets.data
   const editor = useBudgetEditor()
+  const [increaseTarget, setIncreaseTarget] = useState<SpendBudgetUserView | null>(null)
   const list = useUserBudgetList(users)
   // Users and service accounts are both budget owners; the strip covers both.
   const owners = useMemo(() => [...users, ...serviceAccounts], [users, serviceAccounts])
@@ -102,7 +114,11 @@ export function SpendControlsPage() {
       <PageHeader
         section="Budget & Spending"
         title="Spend controls"
-        description="Set spending limits for users, automated accounts, and each user's model use. Review recent alerts."
+        description={
+          canConfigure
+            ? "Set spending limits for users, automated accounts, and each user's model use. Review recent alerts."
+            : "Review your team's spending limits and temporarily increase budgets that are close to their limit."
+        }
       />
 
       <SummaryStrip summary={summary} totalOwners={owners.length} />
@@ -111,7 +127,8 @@ export function SpendControlsPage() {
         <CardHeader>
           <CardTitle>Budgets</CardTitle>
           <CardDescription>
-            Current window spend against each configured limit. Configure or remove budgets inline.
+            Current window spend against each configured limit, including any active increase.
+            {canConfigure ? ' Configure or remove budgets inline.' : null}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
@@ -133,12 +150,20 @@ export function SpendControlsPage() {
 
             <TabsContent value="users" className="flex min-w-0 flex-col gap-4">
               <UserListToolbar list={list} />
-              <UsersTable list={list} editor={editor} />
+              <UsersTable
+                list={list}
+                editor={canConfigure ? editor : null}
+                session={session}
+                onIncrease={setIncreaseTarget}
+              />
               <UserListPager list={list} />
             </TabsContent>
 
             <TabsContent value="service-accounts" className="min-w-0">
-              <ServiceAccountsTable serviceAccounts={serviceAccounts} editor={editor} />
+              <ServiceAccountsTable
+                serviceAccounts={serviceAccounts}
+                editor={canConfigure ? editor : null}
+              />
             </TabsContent>
 
             <TabsContent value="model-budgets" className="flex min-w-0 flex-col gap-4">
@@ -146,35 +171,40 @@ export function SpendControlsPage() {
                 budgets={userModelBudgets}
                 usersById={usersById}
                 models={models}
-                editor={editor}
+                editor={canConfigure ? editor : null}
               />
-              <section className="flex flex-col gap-3 rounded-md border p-4">
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-sm font-medium">Add model budget</h3>
-                  <p className="text-muted-foreground text-sm">
-                    Model-specific budgets are evaluated before the user's general budget.
-                  </p>
-                </div>
-                <UserModelBudgetForm users={users} models={models} editor={editor} />
-              </section>
+              {canConfigure ? (
+                <section className="flex flex-col gap-3 rounded-md border p-4">
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-sm font-medium">Add model budget</h3>
+                    <p className="text-muted-foreground text-sm">
+                      Model-specific budgets are evaluated before the user's general budget.
+                    </p>
+                  </div>
+                  <UserModelBudgetForm users={users} models={models} editor={editor} />
+                </section>
+              ) : null}
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Alert history</CardTitle>
-          <CardDescription>
-            The latest threshold alerts and delivery outcomes for audit review.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AlertTimeline items={alerts.data.items} />
-        </CardContent>
-      </Card>
+      {alerts ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Alert history</CardTitle>
+            <CardDescription>
+              The latest threshold alerts and delivery outcomes for audit review.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AlertTimeline items={alerts.data.items} />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <BudgetDialog editor={editor} />
+      <BudgetIncreaseDialog user={increaseTarget} onClose={() => setIncreaseTarget(null)} />
     </div>
   )
 }
@@ -248,7 +278,18 @@ function StatTile({
 // Users tab
 // ---------------------------------------------------------------------------
 
-function UsersTable({ list, editor }: { list: UserBudgetList; editor: BudgetEditor }) {
+function UsersTable({
+  list,
+  editor,
+  session,
+  onIncrease,
+}: {
+  list: UserBudgetList
+  /** `null` renders the table read-only. */
+  editor: BudgetEditor | null
+  session: AuthSessionView | null | undefined
+  onIncrease: (user: SpendBudgetUserView) => void
+}) {
   if (list.pageRows.length === 0) {
     return <UsersEmpty list={list} />
   }
@@ -280,7 +321,11 @@ function UsersTable({ list, editor }: { list: UserBudgetList; editor: BudgetEdit
                   </div>
                 </div>
               </TableCell>
-              <BudgetCell budget={user.budget} source={user.budget_source} />
+              <BudgetCell
+                budget={user.budget}
+                source={user.budget_source}
+                increase={user.active_increase}
+              />
               <TableCell className="min-w-[12rem]">
                 <UsageBar usage={usage} />
               </TableCell>
@@ -293,14 +338,19 @@ function UsersTable({ list, editor }: { list: UserBudgetList; editor: BudgetEdit
                 </p>
               </TableCell>
               <ActionsCell
-                disabled={editor.isPending}
-                onConfigure={() => editor.open(userTarget(user))}
+                editor={editor}
+                onConfigure={(active) => active.open(userTarget(user))}
                 onRemove={
                   user.budget
-                    ? () => editor.remove(userScope(user), 'User budget removed')
+                    ? (active) => active.remove(userScope(user), 'User budget removed')
                     : undefined
                 }
-              />
+              >
+                <IncreaseBudgetButton
+                  eligibility={increaseEligibility(session, user, usage)}
+                  onClick={() => onIncrease(user)}
+                />
+              </ActionsCell>
             </TableRow>
           ))}
         </TableBody>
@@ -346,7 +396,7 @@ function ServiceAccountsTable({
   editor,
 }: {
   serviceAccounts: SpendBudgetServiceAccountView[]
-  editor: BudgetEditor
+  editor: BudgetEditor | null
 }) {
   if (serviceAccounts.length === 0) {
     return (
@@ -411,12 +461,12 @@ function ServiceAccountsTable({
                   </p>
                 </TableCell>
                 <ActionsCell
-                  disabled={editor.isPending}
-                  onConfigure={() => editor.open(serviceAccountTarget(serviceAccount))}
+                  editor={editor}
+                  onConfigure={(active) => active.open(serviceAccountTarget(serviceAccount))}
                   onRemove={
                     serviceAccount.budget
-                      ? () =>
-                          editor.remove(
+                      ? (active) =>
+                          active.remove(
                             serviceAccountScope(serviceAccount),
                             'Service account budget removed',
                           )
@@ -445,7 +495,7 @@ function UserModelBudgetsTable({
   budgets: SpendBudgetUserModelView[]
   usersById: Map<string, SpendBudgetUserView>
   models: ModelView[]
-  editor: BudgetEditor
+  editor: BudgetEditor | null
 }) {
   if (budgets.length === 0) {
     return (
@@ -495,12 +545,12 @@ function UserModelBudgetsTable({
                   <UsageBar usage={budgetUsage(budget)} />
                 </TableCell>
                 <ActionsCell
-                  disabled={editor.isPending}
-                  onConfigure={() =>
-                    editor.open(userModelTarget(budget, `${ownerName} / ${selector}`))
+                  editor={editor}
+                  onConfigure={(active) =>
+                    active.open(userModelTarget(budget, `${ownerName} / ${selector}`))
                   }
-                  onRemove={() =>
-                    editor.remove(userModelScope(budget), 'User model budget removed')
+                  onRemove={(active) =>
+                    active.remove(userModelScope(budget), 'User model budget removed')
                   }
                 />
               </TableRow>
@@ -519,9 +569,11 @@ function UserModelBudgetsTable({
 function BudgetCell({
   budget,
   source,
+  increase,
 }: {
   budget: SpendBudgetUserView['budget']
   source: BudgetSource | null | undefined
+  increase?: SpendBudgetUserView['active_increase']
 }) {
   if (!budget) {
     return (
@@ -537,30 +589,56 @@ function BudgetCell({
         <Badge variant="secondary">{formatCadence(budget.cadence)}</Badge>
         {budget.hard_limit ? <Badge variant="outline">Hard</Badge> : null}
         <BudgetSourceBadge source={source} />
+        {increase ? (
+          <Badge variant="warning" title={`Temporary increase until ${increase.expires_at}`}>
+            +{formatUsd10000(increase.amount_usd_10000)} until{' '}
+            {formatIncreaseLastDay(increase.expires_at)}
+          </Badge>
+        ) : null}
       </div>
     </TableCell>
   )
 }
 
 function ActionsCell({
-  disabled,
+  editor,
   onConfigure,
   onRemove,
+  children,
 }: {
-  disabled: boolean
-  onConfigure: () => void
+  /** `null` hides Configure and Remove for read-only viewers. */
+  editor: BudgetEditor | null
+  onConfigure: (editor: BudgetEditor) => void
   /** Omitted when the row has no budget to remove. */
-  onRemove?: () => void
+  onRemove?: (editor: BudgetEditor) => void
+  /** Row-specific actions shown before Configure. */
+  children?: ReactNode
 }) {
+  if (!editor && !children) {
+    return (
+      <TableCell>
+        <span className="text-muted-foreground text-xs">View only</span>
+      </TableCell>
+    )
+  }
   return (
     <TableCell>
       <div className="flex items-center gap-1">
-        <Button type="button" size="sm" variant="outline" onClick={onConfigure}>
-          <AppIcon icon={Settings02Icon} size={14} stroke={1.5} data-icon="inline-start" />
-          Configure
-        </Button>
-        {onRemove ? (
-          <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={onRemove}>
+        {children}
+        {editor ? (
+          <Button type="button" size="sm" variant="outline" onClick={() => onConfigure(editor)}>
+            <AppIcon icon={Settings02Icon} size={14} stroke={1.5} data-icon="inline-start" />
+            Configure
+          </Button>
+        ) : null}
+        {editor && onRemove ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={editor.isPending}
+            onClick={() => onRemove(editor)}
+          >
             Remove
           </Button>
         ) : null}

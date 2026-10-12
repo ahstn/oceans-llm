@@ -15,7 +15,9 @@ use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
 use crate::http::{
-    admin_auth::{require_authenticated_session, require_platform_admin},
+    admin_auth::{
+        require_authenticated_session, require_platform_admin, require_spend_controls_scope,
+    },
     admin_contract::{
         BudgetAlertHistoryItemView, BudgetAlertHistoryRequestQuery, BudgetAlertHistoryView,
         BudgetScopeRequest, BudgetScopeView, BudgetServiceAccountScopeKind,
@@ -422,9 +424,10 @@ pub async fn list_spend_budgets(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<SpendBudgetsView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let (_, scope) = require_spend_controls_scope(&state, &headers).await?;
     let view = super::spend_budget_listing::load_budget_listing(
         state.store.as_ref(),
+        scope,
         OffsetDateTime::now_utc(),
     )
     .await?;
@@ -663,7 +666,7 @@ async fn validate_budget_scope_exists(
     Ok(())
 }
 
-async fn current_window_spend(
+pub(super) async fn current_window_spend(
     state: &AppState,
     budget: &BudgetRecord,
     now: OffsetDateTime,
@@ -949,7 +952,7 @@ fn parse_budget_alert_status(
     }
 }
 
-fn parse_budget_amount(value: &str) -> Result<Money4, AppError> {
+pub(super) fn parse_budget_amount(value: &str) -> Result<Money4, AppError> {
     let amount = Money4::from_decimal_str(value).map_err(|error| {
         AppError(GatewayError::InvalidRequest(format!(
             "amount_usd is invalid: {error}"
@@ -973,7 +976,7 @@ fn parse_timezone(raw: Option<&str>) -> Result<String, AppError> {
     Ok(timezone.to_string())
 }
 
-fn parse_uuid(raw: &str) -> Result<Uuid, AppError> {
+pub(super) fn parse_uuid(raw: &str) -> Result<Uuid, AppError> {
     Uuid::parse_str(raw).map_err(|error| {
         AppError(GatewayError::InvalidRequest(format!(
             "invalid uuid `{raw}`: {error}"
