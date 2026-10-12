@@ -40,6 +40,7 @@ Use the primary docs for admin, user, caller, and client workflows. Use this sur
 - Active implementation plans:
   - [Configurable Admin Page Permissions](implementation-plans/2026-08-05-configurable-admin-page-permissions.md)
   - [Issue 206: Top-Level Service Account Config](implementation-plans/issue-206-service-account-config.md)
+  - [Guardrail Secret Redaction](implementation-plans/2026-09-22-guardrail-secret-redaction.md)
 - Discovery interviews:
   - [Request ID and Request Attempt Observability Interview](interviews/2026-04-24-request-id-and-request-attempt-observability.md)
   - [Budget Hierarchy and Owner Taxonomy Interview](interviews/2026-05-11-budget-hierarchy-owner-taxonomy.md)

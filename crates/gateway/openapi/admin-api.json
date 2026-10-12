@@ -10773,7 +10773,10 @@
           "packs",
           "managed_checks",
           "stream_buffer_bytes",
-          "scope"
+          "stream_buffer_timeout_ms",
+          "secret_redaction",
+          "scope",
+          "overridden_fields"
         ],
         "properties": {
           "enabled": {
@@ -10788,6 +10791,13 @@
           "mode": {
             "type": "string"
           },
+          "overridden_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Settings this scope's override sets itself, named as in `gateway.yaml`\n(`mode`, `secret_redaction.enabled`). Empty for the default policy; the\nrest are inherited from it, even where the values happen to match."
+          },
           "packs": {
             "type": "array",
             "items": {
@@ -10797,8 +10807,16 @@
           "scope": {
             "type": "string"
           },
+          "secret_redaction": {
+            "$ref": "#/components/schemas/SecretRedactionView"
+          },
           "stream_buffer_bytes": {
             "type": "integer",
+            "minimum": 0
+          },
+          "stream_buffer_timeout_ms": {
+            "type": "integer",
+            "format": "int64",
             "minimum": 0
           }
         }
@@ -16336,6 +16354,31 @@
         "properties": {
           "api_key": {
             "$ref": "#/components/schemas/AdminApiKeyView"
+          }
+        }
+      },
+      "SecretRedactionView": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "tiers",
+          "disabled_rules"
+        ],
+        "properties": {
+          "disabled_rules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "tiers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

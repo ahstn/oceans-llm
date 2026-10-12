@@ -4,12 +4,15 @@ use axum::body::Bytes;
 use futures_util::{StreamExt, stream};
 use gateway_core::{GatewayError, ProviderStream};
 use gateway_guardrails::{
-    DecisionAction, EvaluationInput, EvaluationPayload, GuardPhase, GuardrailEvaluation,
-    PolicyResolver, PolicyTarget,
+    DecisionAction, DecisionRecord, EvaluationInput, EvaluationPayload, GuardPhase,
+    GuardrailEvaluation, PolicyResolver, PolicyTarget, redact_prompt_secrets,
 };
 use serde_json::{Map, Value};
 
-use crate::http::{guardrail_events::record_guardrail_evaluation, state::AppState};
+use crate::http::{
+    guardrail_events::{record_guardrail_decisions_in_background, record_guardrail_evaluation},
+    state::AppState,
+};
 const PROMPT_TEXT_FIELDS: &[&str] = &[
     "content",
     "description",
@@ -58,6 +61,9 @@ pub async fn guard_prompt(
             stream_buffer_bytes: policy.stream_buffer_bytes,
         });
     }
+    // Redact before any other evaluator, so managed services never see the secrets either.
+    let redactions = redact_prompt_secrets(&policy, request);
+    record_guardrail_decisions_in_background(state, vec![(request_id.to_string(), redactions)]);
     let associated_prompt = inspect_text_fields(
         state,
         &route_key,
@@ -75,6 +81,30 @@ pub async fn guard_prompt(
         enabled: true,
         stream_buffer_bytes: policy.stream_buffer_bytes,
     })
+}
+
+/// Redacts prompt secrets and records their decisions without running the other
+/// prompt evaluators.
+pub async fn redact_prompt(
+    state: &AppState,
+    request_id: &str,
+    route_key: &str,
+    request: &mut Value,
+) {
+    let redactions = redact_prompt_body(state, route_key, request);
+    record_guardrail_decisions_in_background(state, vec![(request_id.to_string(), redactions)]);
+}
+
+/// Redacts secrets in `request` in place and returns the decisions, leaving
+/// persistence to the caller.
+pub fn redact_prompt_body(
+    state: &AppState,
+    route_key: &str,
+    request: &mut Value,
+) -> Vec<DecisionRecord> {
+    let policy =
+        PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::ModelRoute(route_key));
+    redact_prompt_secrets(&policy, request)
 }
 
 pub fn batch_guard_context(
@@ -1190,7 +1220,68 @@ fn escape_pointer(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use gateway_core::{GuardrailDecisionQuery, GuardrailDecisionRepository};
     use serde_json::json;
+
+    #[tokio::test]
+    async fn prompt_guard_redacts_secrets_and_records_decisions() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
+        policy.enabled = true;
+        policy.secret_redaction.enabled = true;
+        // Assembled at runtime so no literal credential lands in the repository.
+        let key = format!(
+            "sk-ant-api03-{}AA",
+            &"aZ3kQ9mB7xR2tW5nL8pJ4vC6yH1dF0gS".repeat(3)[..93]
+        );
+        let mut request = json!({
+            "model": "gpt",
+            "messages": [
+                {"role": "user", "content": format!("deploy with {key}")},
+                {"role": "assistant", "tool_calls": [{"function": {
+                    "name": "deploy",
+                    "arguments": json!({"value": key}).to_string(),
+                }}]},
+            ],
+        });
+
+        super::guard_prompt(&state, "request-1", "openai/gpt".into(), &mut request)
+            .await
+            .expect("redaction never denies");
+
+        assert!(!request.to_string().contains(&key));
+        assert_eq!(
+            request["messages"][0]["content"],
+            "deploy with [REDACTED:anthropic-api-key]"
+        );
+        // Decisions are written in the background, so wait for the write.
+        let mut items = Vec::new();
+        for _ in 0..100 {
+            items = state
+                .store
+                .list_guardrail_decisions(&GuardrailDecisionQuery {
+                    page: 1,
+                    page_size: 10,
+                    request_id: Some("request-1".into()),
+                    evaluator: Some("secret_redaction".into()),
+                    ..Default::default()
+                })
+                .await
+                .expect("decisions")
+                .items;
+            if !items.is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let [decision] = items.as_slice() else {
+            panic!("expected one decision per rule, got {items:?}");
+        };
+        assert_eq!(decision.rule_id.as_deref(), Some("anthropic-api-key"));
+        assert!(decision.transformed);
+    }
 
     #[test]
     fn extracts_batch_prompt_without_request_identifiers() {

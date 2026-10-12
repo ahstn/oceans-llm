@@ -372,6 +372,25 @@ impl BatchRepository for LibsqlStore {
         Ok(claimed)
     }
 
+    async fn list_stale_batch_submissions(
+        &self,
+        now: OffsetDateTime,
+    ) -> Result<Vec<BatchJobRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {JOB_COLUMNS} FROM batch_jobs WHERE status = 'submitting' AND lease_expires_at <= ?1"
+        );
+        let mut rows = self
+            .connection
+            .query(&sql, [now.unix_timestamp()])
+            .await
+            .map_err(to_query_error)?;
+        let mut jobs = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            jobs.push(decode_job(&row)?);
+        }
+        Ok(jobs)
+    }
+
     async fn mark_stale_batch_submissions_unknown(
         &self,
         now: OffsetDateTime,

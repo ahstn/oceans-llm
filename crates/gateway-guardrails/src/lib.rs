@@ -9,6 +9,7 @@ mod managed;
 mod model;
 mod packs;
 mod policy;
+mod redaction;
 mod selectors;
 
 pub use evaluation::{
@@ -29,6 +30,10 @@ pub use policy::{
     BedrockManagedAuthConfig, BedrockManagedConfig, EffectivePolicy, GuardrailConfig,
     GuardrailConfigError, ManagedCheckConfig, ManagedCheckKind, ModelArmorAuthConfig,
     ModelArmorManagedConfig, PolicyConfig, PolicyOverride, PolicyResolver, PolicyTarget,
+};
+pub use redaction::{
+    RedactedField, SecretRedactionConfig, SecretRedactionOverride, SecretTier, redact_json_secrets,
+    redact_prompt_secrets,
 };
 pub use selectors::{
     JsonPath, JsonPathError, JsonPredicate, JsonPredicateOp, McpCall, McpSelector,

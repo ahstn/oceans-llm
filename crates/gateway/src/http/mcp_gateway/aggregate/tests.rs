@@ -144,6 +144,49 @@ async fn upstream_success_preserves_result_and_records_one_invocation() {
 }
 
 #[tokio::test]
+async fn invocation_payload_uses_the_configured_secret_redactor() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    let payload_policy = gateway_service::RequestLogPayloadPolicy::default().with_secret_redactor(
+        gateway_service::PayloadSecretRedactor::new(|value| replace_string(value, "oceans")),
+    );
+    state.service = Arc::new(
+        gateway_service::GatewayService::new_with_budget_alert_sender_and_payload_policy(
+            state.store.clone(),
+            Arc::new(gateway_service::WeightedRoutePlanner::default()),
+            Arc::new(gateway_service::SinkBudgetAlertSender),
+            payload_policy,
+        ),
+    );
+    let (_, invocation) = call_with_upstream_reply(
+        &state,
+        "result",
+        json!({"content": [{"type": "text", "text": "oceans"}], "isError": true}),
+    )
+    .await;
+    let detail = state
+        .store
+        .get_mcp_tool_invocation_detail(invocation.mcp_tool_invocation_id)
+        .await
+        .expect("invocation detail");
+    let payload = detail.payload.expect("captured payload");
+    assert_eq!(payload.arguments_json, json!({"query": "[REDACTED:test]"}));
+    assert!(!payload.result_json.to_string().contains("oceans"));
+}
+
+fn replace_string(value: &mut Value, secret: &str) {
+    match value {
+        Value::String(text) if text == secret => *text = "[REDACTED:test]".to_string(),
+        Value::Array(items) => items
+            .iter_mut()
+            .for_each(|item| replace_string(item, secret)),
+        Value::Object(map) => map
+            .values_mut()
+            .for_each(|item| replace_string(item, secret)),
+        _ => {}
+    }
+}
+
+#[tokio::test]
 async fn allowed_json_rpc_error_preserves_the_existing_tool_error_response() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
     configure_result_guardrail(

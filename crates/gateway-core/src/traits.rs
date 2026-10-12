@@ -831,6 +831,13 @@ pub trait BatchRepository: Send + Sync {
         limit: u32,
     ) -> Result<Vec<BatchJobRecord>, StoreError>;
 
+    /// Jobs still `submitting` whose lease expired, which
+    /// `mark_stale_batch_submissions_unknown` would make terminal.
+    async fn list_stale_batch_submissions(
+        &self,
+        now: OffsetDateTime,
+    ) -> Result<Vec<BatchJobRecord>, StoreError>;
+
     async fn mark_stale_batch_submissions_unknown(
         &self,
         now: OffsetDateTime,

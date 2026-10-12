@@ -213,6 +213,10 @@ const contributingSidebar = [
         link: "/contributing/implementation-plans/issue-206-service-account-config",
       },
       {
+        text: "Guardrail Secret Redaction",
+        link: "/contributing/implementation-plans/2026-09-22-guardrail-secret-redaction",
+      },
+      {
         text: "Request Attempt Observability Interview",
         link: "/contributing/interviews/2026-04-24-request-id-and-request-attempt-observability",
       },

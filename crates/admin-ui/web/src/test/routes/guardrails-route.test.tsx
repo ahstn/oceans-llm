@@ -11,6 +11,9 @@ const routeMock = {
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
   useRouter: () => ({ navigate: navigateMock }),
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
+  ),
   useRouterState: ({
     select,
   }: {
@@ -20,24 +23,9 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/server/admin-data.functions', () => ({
   getGuardrailDecisionPage: vi.fn(),
-  getGuardrailPolicyView: vi.fn(),
 }))
 
 const loaderData = {
-  policies: {
-    default: {
-      enabled: true,
-      mode: 'audit',
-      packs: ['core.shell'],
-      managed_checks: ['bedrock-primary'],
-      stream_buffer_bytes: 4_194_304,
-      scope: 'global',
-    },
-    model_routes: {},
-    mcp_servers: {},
-    managed_checks: [],
-    built_in_packs: [{ id: 'core.shell', version: '1.0.0' }],
-  },
   decisions: {
     items: [
       {
@@ -75,13 +63,17 @@ describe('GuardrailsPage', () => {
     routeMock.useSearch.mockReturnValue({})
   })
 
-  it('renders effective policy and privacy-safe decisions without mutation controls', async () => {
+  async function renderPage() {
     const { GuardrailsPage } = await import('@/routes/observability/guardrails')
     render(<GuardrailsPage />)
+  }
+
+  it('renders privacy-safe decisions without policies or mutation controls', async () => {
+    await renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Guardrails' })).toBeInTheDocument()
-    expect(screen.getByText('Global default')).toBeInTheDocument()
-    expect(screen.getByText('core.shell')).toBeInTheDocument()
+    expect(screen.queryByText('Effective policies')).not.toBeInTheDocument()
+    expect(screen.getByText('Denied')).toBeInTheDocument()
     expect(screen.getByText(/shell\.recursive-delete/)).toBeInTheDocument()
     expect(screen.getByText('destructive_operation')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /save|edit|update/i })).not.toBeInTheDocument()
@@ -91,17 +83,81 @@ describe('GuardrailsPage', () => {
   })
 
   it('applies privacy-safe decision filters through route search', async () => {
-    const { GuardrailsPage } = await import('@/routes/observability/guardrails')
-    render(<GuardrailsPage />)
+    await renderPage()
 
     fireEvent.change(screen.getByLabelText('Request ID'), { target: { value: 'request-1' } })
-    fireEvent.change(screen.getByLabelText('Evaluator'), { target: { value: 'deterministic' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }))
+    fireEvent.submit(screen.getByLabelText('Request ID').closest('form')!)
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
         to: '/observability/guardrails',
-        search: { request_id: 'request-1', evaluator: 'deterministic' },
+        search: { request_id: 'request-1' },
+      })
+    })
+  })
+
+  it('filters by an evaluator typed into the toolbar', async () => {
+    await renderPage()
+
+    fireEvent.change(screen.getByLabelText('Evaluator'), { target: { value: 'bedrock' } })
+    fireEvent.submit(screen.getByLabelText('Evaluator').closest('form')!)
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/guardrails',
+        search: { evaluator: 'bedrock' },
+      })
+    })
+  })
+
+  it('filters by action from the toolbar', async () => {
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Deny' }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/guardrails',
+        search: { action: 'deny' },
+      })
+    })
+  })
+
+  it('filters by phase from the action mix', async () => {
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /Prompt/ }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/guardrails',
+        search: { phase: 'prompt' },
+      })
+    })
+  })
+
+  it('locks phase, evaluator, and text filters while a navigation is pending', async () => {
+    navigateMock.mockReturnValue(new Promise(() => {}))
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Deny' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Prompt/ })).toBeDisabled())
+    expect(screen.getByLabelText('Request ID')).toBeDisabled()
+    expect(screen.getByLabelText('Evaluator')).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'deterministic' }))
+    expect(navigateMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('filters by evaluator from a decision row', async () => {
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'deterministic' }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/guardrails',
+        search: { evaluator: 'deterministic' },
       })
     })
   })
@@ -111,8 +167,7 @@ describe('GuardrailsPage', () => {
       ...loaderData,
       decisions: { items: [], page: 1, page_size: 25, total: 0 },
     })
-    const { GuardrailsPage } = await import('@/routes/observability/guardrails')
-    render(<GuardrailsPage />)
+    await renderPage()
 
     expect(screen.getByText('No guardrail decisions')).toBeInTheDocument()
     expect(screen.getByText('No events match the current filters.')).toBeInTheDocument()
@@ -124,10 +179,9 @@ describe('GuardrailsPage', () => {
       decisions: { ...loaderData.decisions, page: 2, page_size: 25, total: 60 },
     })
     routeMock.useSearch.mockReturnValue({ evaluator: 'deterministic', page: 2, page_size: 25 })
-    const { GuardrailsPage } = await import('@/routes/observability/guardrails')
-    render(<GuardrailsPage />)
+    await renderPage()
 
-    fireEvent.click(screen.getByRole('link', { name: 'Go to next page' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
@@ -135,5 +189,11 @@ describe('GuardrailsPage', () => {
         search: { evaluator: 'deterministic', page: 3, page_size: 25 },
       })
     })
+  })
+
+  it('links Configure to the guardrail settings page', async () => {
+    await renderPage()
+
+    expect(screen.getByRole('link', { name: 'Configure' })).toHaveAttribute('href', '/guardrails')
   })
 })

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     FailureDisposition, GuardPhase, PolicyMode,
     packs::{BUILT_IN_PACK_IDS, PackId},
+    redaction::{SecretRedactionConfig, SecretRedactionOverride, is_known_rule},
 };
 
 const DEFAULT_TIMEOUT_MS: u64 = 2_000;
@@ -98,6 +99,8 @@ pub struct PolicyConfig {
     pub stream_buffer_bytes: usize,
     #[serde(default = "default_stream_buffer_timeout_ms")]
     pub stream_buffer_timeout_ms: u64,
+    #[serde(default)]
+    pub secret_redaction: SecretRedactionConfig,
 }
 
 impl Default for PolicyConfig {
@@ -109,6 +112,7 @@ impl Default for PolicyConfig {
             managed_checks: Vec::new(),
             stream_buffer_bytes: default_stream_buffer_bytes(),
             stream_buffer_timeout_ms: default_stream_buffer_timeout_ms(),
+            secret_redaction: SecretRedactionConfig::default(),
         }
     }
 }
@@ -128,6 +132,8 @@ pub struct PolicyOverride {
     pub stream_buffer_bytes: Option<usize>,
     #[serde(default)]
     pub stream_buffer_timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub secret_redaction: SecretRedactionOverride,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -194,6 +200,34 @@ impl GuardrailConfig {
         }
         Ok(())
     }
+
+    /// Secret redaction settings for request logs, which are written before a
+    /// route is chosen. Combines every model-route and MCP-server policy that
+    /// redacts, so a log is redacted at least as strictly as any policy asks:
+    /// tiers are unioned and only rules disabled everywhere stay disabled.
+    pub fn request_log_secret_redaction(&self) -> Option<SecretRedactionConfig> {
+        let resolver = PolicyResolver::new(self);
+        let targets = std::iter::once(PolicyTarget::Global)
+            .chain(
+                self.model_routes
+                    .keys()
+                    .map(|route| PolicyTarget::ModelRoute(route)),
+            )
+            .chain(
+                self.mcp_servers
+                    .keys()
+                    .map(|server| PolicyTarget::McpServer(server)),
+            );
+        targets
+            .map(|target| resolver.resolve(target))
+            .filter(|policy| policy.enabled && policy.secret_redaction.enabled)
+            .map(|policy| policy.secret_redaction)
+            .reduce(|combined, next| SecretRedactionConfig {
+                enabled: true,
+                tiers: &combined.tiers | &next.tiers,
+                disabled_rules: &combined.disabled_rules & &next.disabled_rules,
+            })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -204,6 +238,7 @@ pub struct EffectivePolicy {
     pub managed_checks: Vec<String>,
     pub stream_buffer_bytes: usize,
     pub stream_buffer_timeout_ms: u64,
+    pub secret_redaction: SecretRedactionConfig,
     pub scope: crate::EffectiveScope,
 }
 
@@ -255,6 +290,10 @@ impl<'a> PolicyResolver<'a> {
             stream_buffer_timeout_ms: policy_override
                 .and_then(|policy| policy.stream_buffer_timeout_ms)
                 .unwrap_or(default.stream_buffer_timeout_ms),
+            secret_redaction: policy_override.map_or_else(
+                || default.secret_redaction.clone(),
+                |policy| policy.secret_redaction.apply_to(&default.secret_redaction),
+            ),
             scope,
         }
     }
@@ -267,6 +306,7 @@ fn validate_policy(
 ) -> Result<(), GuardrailConfigError> {
     validate_pack_ids(label, &policy.packs)?;
     validate_managed_references(label, &policy.managed_checks, managed)?;
+    validate_secret_rules(label, &policy.secret_redaction.disabled_rules)?;
     validate_stream_buffer(label, policy.stream_buffer_bytes)?;
     validate_stream_buffer_timeout(label, policy.stream_buffer_timeout_ms)
 }
@@ -282,6 +322,9 @@ fn validate_override(
     }
     if let Some(checks) = &policy.managed_checks {
         validate_managed_references(label, checks, managed)?;
+    }
+    if let Some(disabled_rules) = &policy.secret_redaction.disabled_rules {
+        validate_secret_rules(label, disabled_rules)?;
     }
     validate_stream_buffer(
         label,
@@ -311,6 +354,19 @@ fn validate_pack_ids(label: &str, packs: &[PackId]) -> Result<(), GuardrailConfi
         }
     }
     Ok(())
+}
+
+fn validate_secret_rules(
+    label: &str,
+    disabled_rules: &BTreeSet<String>,
+) -> Result<(), GuardrailConfigError> {
+    match disabled_rules.iter().find(|rule| !is_known_rule(rule)) {
+        Some(rule) => Err(GuardrailConfigError::UnknownSecretRule {
+            policy: label.to_string(),
+            rule: rule.clone(),
+        }),
+        None => Ok(()),
+    }
 }
 
 fn validate_managed_references(
@@ -494,11 +550,14 @@ pub enum GuardrailConfigError {
     InvalidStreamBufferTimeout { policy: String, timeout_ms: u64 },
     #[error("managed guardrail check `{check}` is invalid: {message}")]
     InvalidManagedSettings { check: String, message: String },
+    #[error("guardrail policy `{policy}` disables unknown secret redaction rule `{rule}`")]
+    UnknownSecretRule { policy: String, rule: String },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SecretTier;
 
     fn pack(value: &str) -> PackId {
         PackId::new(value).unwrap()
@@ -514,6 +573,7 @@ mod tests {
                 managed_checks: Vec::new(),
                 stream_buffer_bytes: 100,
                 stream_buffer_timeout_ms: 1_000,
+                secret_redaction: SecretRedactionConfig::default(),
             },
             model_routes: BTreeMap::from([(
                 "openai/gpt".into(),
@@ -539,6 +599,166 @@ mod tests {
         let server = resolver.resolve(PolicyTarget::McpServer("notion"));
         assert_eq!(server.mode, PolicyMode::Audit);
         assert_eq!(server.packs, vec![pack("saas.notion")]);
+    }
+
+    fn redaction(tiers: &[SecretTier], disabled_rules: &[&str]) -> SecretRedactionConfig {
+        SecretRedactionConfig {
+            enabled: true,
+            tiers: tiers.iter().copied().collect(),
+            disabled_rules: disabled_rules.iter().map(|rule| rule.to_string()).collect(),
+        }
+    }
+
+    fn rules(ids: &[&str]) -> BTreeSet<String> {
+        ids.iter().map(|rule| rule.to_string()).collect()
+    }
+
+    #[test]
+    fn secret_redaction_overrides_inherit_unset_fields() {
+        let config = GuardrailConfig {
+            default: PolicyConfig {
+                enabled: true,
+                secret_redaction: redaction(&[SecretTier::ProviderTokens], &[]),
+                ..PolicyConfig::default()
+            },
+            model_routes: BTreeMap::from([(
+                "openai/gpt".into(),
+                PolicyOverride {
+                    secret_redaction: SecretRedactionOverride {
+                        disabled_rules: Some(rules(&["jwt"])),
+                        ..SecretRedactionOverride::default()
+                    },
+                    ..PolicyOverride::default()
+                },
+            )]),
+            ..GuardrailConfig::default()
+        };
+
+        let route = PolicyResolver::new(&config).resolve(PolicyTarget::ModelRoute("openai/gpt"));
+
+        assert_eq!(
+            route.secret_redaction,
+            redaction(&[SecretTier::ProviderTokens], &["jwt"])
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_secret_rules_in_default_and_overrides() {
+        let config = GuardrailConfig {
+            default: PolicyConfig {
+                secret_redaction: redaction(&[SecretTier::ProviderTokens], &["not-a-rule"]),
+                ..PolicyConfig::default()
+            },
+            ..GuardrailConfig::default()
+        };
+        assert_eq!(
+            config.validate(&BTreeSet::new(), &BTreeSet::new()),
+            Err(GuardrailConfigError::UnknownSecretRule {
+                policy: "default".into(),
+                rule: "not-a-rule".into(),
+            })
+        );
+
+        let config = GuardrailConfig {
+            model_routes: BTreeMap::from([(
+                "openai/gpt".into(),
+                PolicyOverride {
+                    secret_redaction: SecretRedactionOverride {
+                        disabled_rules: Some(rules(&["jwt", "missing"])),
+                        ..SecretRedactionOverride::default()
+                    },
+                    ..PolicyOverride::default()
+                },
+            )]),
+            ..GuardrailConfig::default()
+        };
+        assert!(matches!(
+            config.validate(&BTreeSet::from(["openai/gpt".into()]), &BTreeSet::new()),
+            Err(GuardrailConfigError::UnknownSecretRule { rule, .. }) if rule == "missing"
+        ));
+    }
+
+    #[test]
+    fn request_log_redaction_combines_every_redacting_policy() {
+        let disabled = GuardrailConfig::default();
+        assert_eq!(disabled.request_log_secret_redaction(), None);
+
+        let mcp_only = GuardrailConfig {
+            mcp_servers: BTreeMap::from([(
+                "notion".into(),
+                PolicyOverride {
+                    enabled: Some(true),
+                    secret_redaction: SecretRedactionOverride {
+                        enabled: Some(true),
+                        ..SecretRedactionOverride::default()
+                    },
+                    ..PolicyOverride::default()
+                },
+            )]),
+            ..GuardrailConfig::default()
+        };
+        assert_eq!(
+            mcp_only.request_log_secret_redaction(),
+            Some(SecretRedactionConfig {
+                enabled: true,
+                ..SecretRedactionConfig::default()
+            })
+        );
+
+        let config = GuardrailConfig {
+            default: PolicyConfig {
+                enabled: true,
+                secret_redaction: redaction(&[SecretTier::ProviderTokens], &["jwt", "private-key"]),
+                ..PolicyConfig::default()
+            },
+            model_routes: BTreeMap::from([
+                (
+                    "generic".into(),
+                    PolicyOverride {
+                        secret_redaction: SecretRedactionOverride {
+                            tiers: Some(BTreeSet::from([SecretTier::Generic])),
+                            disabled_rules: Some(rules(&["jwt"])),
+                            ..SecretRedactionOverride::default()
+                        },
+                        ..PolicyOverride::default()
+                    },
+                ),
+                (
+                    "off".into(),
+                    PolicyOverride {
+                        enabled: Some(false),
+                        secret_redaction: SecretRedactionOverride {
+                            tiers: Some(BTreeSet::from([SecretTier::Credentials])),
+                            disabled_rules: Some(BTreeSet::new()),
+                            ..SecretRedactionOverride::default()
+                        },
+                        ..PolicyOverride::default()
+                    },
+                ),
+            ]),
+            mcp_servers: BTreeMap::from([(
+                "notion".into(),
+                PolicyOverride {
+                    secret_redaction: SecretRedactionOverride {
+                        tiers: Some(BTreeSet::from([SecretTier::Credentials])),
+                        ..SecretRedactionOverride::default()
+                    },
+                    ..PolicyOverride::default()
+                },
+            )]),
+            ..GuardrailConfig::default()
+        };
+        assert_eq!(
+            config.request_log_secret_redaction(),
+            Some(redaction(
+                &[
+                    SecretTier::ProviderTokens,
+                    SecretTier::Credentials,
+                    SecretTier::Generic
+                ],
+                &["jwt"]
+            ))
+        );
     }
 
     #[test]

@@ -1,8 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
+use gateway_core::{
+    BudgetCadence, Money4, ProviderCapabilities, RouteCompatibility, SeedApiKey, SeedBudget,
+    SeedModel, SeedModelRoute, SeedProvider, SeedServiceAccount, SeedTeam, hash_gateway_key_secret,
+};
 use gateway_guardrails::{GuardrailConfig, GuardrailEngine};
 use gateway_service::{GatewayService, McpOauthRuntime, WeightedRoutePlanner};
-use gateway_store::{AnyStore, StoreConnectionOptions, run_migrations_with_options};
+use gateway_store::{AnyStore, GatewayStore, StoreConnectionOptions, run_migrations_with_options};
+use serde_json::json;
 
 use crate::{
     config::{AgentAnalysisRuntimeCapabilities, PermissionsConfig},
@@ -50,4 +55,72 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
         harness_usage_cache: Arc::new(ResponseCache::new(Duration::from_secs(1))),
     };
     (directory, state)
+}
+
+/// Seeds the `fast` model on a `vertex` route, reachable with the
+/// `gwk_streamtest.cancel-secret` API key.
+pub async fn seed_stream_cancellation_test(store: &AnyStore) {
+    store
+        .seed_from_inputs(
+            &[SeedProvider {
+                provider_key: "vertex".to_string(),
+                provider_type: "openai_compat".to_string(),
+                config: json!({}),
+                secrets: None,
+            }],
+            &[SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                max_reasoning_effort: None,
+                routing: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 0,
+                routes: vec![SeedModelRoute {
+                    route_key: None,
+                    provider_key: "vertex".to_string(),
+                    upstream_model: "fast-upstream".to_string(),
+                    priority: 0,
+                    weight: 1.0,
+                    enabled: true,
+                    context_window_tokens: None,
+                    pricing_override: None,
+                    extra_headers: Default::default(),
+                    extra_body: Default::default(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: RouteCompatibility::default(),
+                }],
+                allowlist: None,
+            }],
+            &[SeedApiKey {
+                name: "Stream Test Key".to_string(),
+                public_id: "streamtest".to_string(),
+                secret_hash: hash_gateway_key_secret("cancel-secret").expect("hash test key"),
+                service_account_key: "stream-test".to_string(),
+                allowed_models: vec!["fast".to_string()],
+            }],
+            &[SeedServiceAccount {
+                service_account_key: "stream-test".to_string(),
+                service_account_name: "Stream Test".to_string(),
+                team_key: "stream-test".to_string(),
+                tags: None,
+                budget: SeedBudget {
+                    cadence: BudgetCadence::Daily,
+                    amount_usd: Money4::from_scaled(250_000),
+                    hard_limit: true,
+                    timezone: "UTC".to_string(),
+                },
+                managed_api_keys: Vec::new(),
+            }],
+            &[],
+            &[],
+            &[SeedTeam {
+                team_key: "stream-test".to_string(),
+                team_name: "Stream Test".to_string(),
+                tags: None,
+            }],
+            &[],
+        )
+        .await
+        .expect("seed cancellation test");
 }

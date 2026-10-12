@@ -2830,9 +2830,18 @@ export interface components {
             enabled: boolean;
             managed_checks: string[];
             mode: string;
+            /**
+             * @description Settings this scope's override sets itself, named as in `gateway.yaml`
+             *     (`mode`, `secret_redaction.enabled`). Empty for the default policy; the
+             *     rest are inherited from it, even where the values happen to match.
+             */
+            overridden_fields: string[];
             packs: string[];
             scope: string;
+            secret_redaction: components["schemas"]["SecretRedactionView"];
             stream_buffer_bytes: number;
+            /** Format: int64 */
+            stream_buffer_timeout_ms: number;
         };
         /** @enum {string} */
         EffectiveMetadataSourceKindView: "configured_override" | "catalog" | "mixed";
@@ -4207,6 +4216,11 @@ export interface components {
         };
         RevokeApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
+        };
+        SecretRedactionView: {
+            disabled_rules: string[];
+            enabled: boolean;
+            tiers: string[];
         };
         SelfProviderCredentialView: {
             configured: boolean;

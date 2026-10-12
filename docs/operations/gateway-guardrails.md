@@ -45,15 +45,12 @@ guardrails:
       - core.git
       - core.filesystem
       - database.postgresql
-      - database.snowflake
       - secrets.aws_secrets
       - secrets.onepassword
       - cloud.aws
       - cloud.gcp
       - kubernetes.kubectl
       - kubernetes.helm
-      - saas.github
-      - saas.notion
     managed_checks: []
     stream_buffer_bytes: 4194304
     stream_buffer_timeout_ms: 120000
@@ -84,6 +81,39 @@ guardrails:
 ```
 
 Startup rejects unknown packs, managed checks, model routes, MCP servers, invalid phase combinations, and invalid managed resource names.
+
+## Secret redaction
+
+Secret redaction replaces API keys, tokens, and other credentials in prompts before the request leaves the gateway. Each secret becomes `[REDACTED:<rule_id>]`, for example `[REDACTED:anthropic-api-key]`. Redaction never denies a request, in either `audit` or `deny` mode. It runs before the packs and managed checks, so managed services never receive the secret either.
+
+```yaml
+guardrails:
+  default:
+    enabled: true
+    mode: audit
+    secret_redaction:
+      enabled: true
+      tiers: [provider_tokens, credentials]
+      disabled_rules: []
+```
+
+Redaction needs both `enabled: true` on the policy and `secret_redaction.enabled: true`. A model-route or MCP-server override can set any of `enabled`, `tiers`, and `disabled_rules`; unset fields inherit the default block. Redaction applies to model-route prompts only. It covers every string in the request body: messages, system prompts, tool definitions, tool-call arguments, and tool results. Object keys are scanned too; if a redacted key would collide with an existing key, it gets a ` (2)`, ` (3)`, ... suffix so no entry is dropped. It skips inline base64 media when the value contains only base64 characters: `b64_json` strings of at least 1024 characters that start with a PNG, JPEG, WebP, or GIF signature, the payload of base64 `data:` URIs (the header before the comma is still scanned), and the `data` string of a provider media envelope: an Anthropic source with `type: base64` and a `type/subtype` `media_type` such as `image/png`, a Gemini `inline_data` or `inlineData` part with a `type/subtype` `mime_type` or `mimeType`, or an OpenAI `input_audio` part with an audio `format` such as `wav` or `mp3`. Free text in these fields, and any other `data` field, is scanned, even beside a MIME-looking key.
+
+| Tier | Default | Detects |
+| --- | --- | --- |
+| `provider_tokens` | On | Tokens with a distinctive prefix: AI providers (OpenAI, Anthropic, Google, Groq, xAI, OpenRouter, Hugging Face, and others), GitHub, GitLab, AWS access key IDs, Slack, Stripe, package registries, JWTs, and PEM private keys |
+| `credentials` | On | Values that need context: the password in a connection URI, `Authorization: Bearer` tokens, values assigned to names containing `password`, `secret`, `token`, `api_key`, or `private_key` at a word boundary (as in `DATABASE_PASSWORD=...`, `dbPassword=...`, or `{"password": "..."}`, but not `mysecretvalue=...`), and provider-specific assignments such as `AWS_SECRET_ACCESS_KEY=...` or `MISTRAL_API_KEY=...` |
+| `generic` | Off | The gitleaks `generic-api-key` rule: any high-entropy value assigned to a name containing `key`, `token`, `secret`, `password`, and similar. Expect more false positives. |
+
+Token patterns also match directly after a JSON escape such as `\n` or `\u000a`, so secrets inside JSON-encoded tool-call arguments are caught. The `secret-assignment` rule skips values that are only letters and `_.-` (such as `process.env.TOKEN`), only digits, or followed by a non-delimiter (such as `getPassword()`). `secret-assignment-quoted` covers quoted values with punctuation such as `PASSWORD="aB3:dE6{gH9}"`, but not values with spaces. A JSON field named like a credential, such as `{"password": "..."}`, is checked as an assignment even when the name and value are separate strings. Candidates must pass a per-rule Shannon-entropy threshold. Documentation placeholders are left alone: the AWS example keys ending in uppercase `EXAMPLE` (for AWS rules only), values that are wholly a `<NAME>`, `${NAME}`, <code v-pre>{{ name }}</code>, or `%NAME%` reference, phrases made only of words such as `your_api_key_here`, and values made mostly of one repeated character. A real password that merely contains one of these markers, such as `Keep_your_data7Safe!`, is still redacted. List a rule ID under `disabled_rules` to turn off a rule that produces false positives. Startup rejects unknown rule IDs.
+
+Each redacted request records one `transformed` decision per matched rule, with evaluator `secret_redaction`, reason code `secret_redaction.redacted`, pack ID `secret_redaction`, and the rule ID. The decision history does not record which field matched. The content hash covers the redacted text only.
+
+Durable batches are redacted when the worker submits them. The worker stores the redacted item requests before it calls the provider, and before it marks a batch failed. Batch results therefore return the redacted requests, also for failed batches. If the prompt guard rejects one item, the worker still redacts the items it did not check. Managed-check transformations are stored only after the provider accepts the batch, so a retried submission does not transform its own earlier output again. Until the worker picks up a batch, its stored items keep the original requests.
+
+When any enabled policy redacts secrets, the gateway applies the same detection to captured request-log payloads: requests, responses, stream events, provider attempts, and MCP invocations. It uses the union of the enabled tiers across the default, model-route, and MCP-server policies, and disables a rule only if every redacting policy disables it. Response secrets are therefore redacted in logs even though the caller still receives the response unchanged. Streamed responses are scanned one event at a time, so a secret the provider splits across stream deltas is not redacted in the logged events.
+
+Detection patterns are adapted from [gitleaks](https://github.com/gitleaks/gitleaks) and [Betterleaks](https://github.com/betterleaks/betterleaks) (both MIT).
 
 ## Amazon Bedrock Guardrails
 

@@ -196,13 +196,13 @@ test('keeps decision filters synchronized with browser navigation', async ({
   await ensureAdminSession(page, request, root)
   await page.goto(`${root}/admin/observability/guardrails`)
 
-  const evaluator = page.getByLabel('Evaluator')
+  const evaluator = page.getByRole('textbox', { name: 'Evaluator' })
   await evaluator.fill('deterministic')
-  await page.getByRole('button', { name: 'Apply filters' }).click()
+  await evaluator.press('Enter')
   await expect(page).toHaveURL(/evaluator=deterministic/)
 
   await evaluator.fill('managed')
-  await page.getByRole('button', { name: 'Apply filters' }).click()
+  await evaluator.press('Enter')
   await expect(page).toHaveURL(/evaluator=managed/)
 
   await page.goBack()

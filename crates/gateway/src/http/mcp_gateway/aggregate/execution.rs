@@ -15,9 +15,7 @@ use gateway_mcp::server::{
 use gateway_mcp::{
     JsonRpcErrorObject, JsonRpcId, McpClientError, StreamableHttpClient, ToolsCallResponse,
 };
-use gateway_service::{
-    CallMcpToolInput, McpCatalog, McpGatewayService, McpInvocationLogInput, McpInvocationLogging,
-};
+use gateway_service::{CallMcpToolInput, McpCatalog, McpGatewayService, McpInvocationLogInput};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -317,8 +315,10 @@ impl CatalogInvocation<'_> {
         let mut metadata = self.metadata;
         metadata.insert("mcp_route".to_string(), json!("aggregate"));
         metadata.insert("aggregate_tool".to_string(), json!("call_tool"));
-        let _ = McpInvocationLogging::new(self.state.store.clone())
-            .log_invocation(
+        let _ = self
+            .state
+            .service
+            .log_mcp_tool_invocation(
                 self.auth,
                 McpInvocationLogInput {
                     mcp_tool_invocation_id: Some(self.mcp_tool_invocation_id),

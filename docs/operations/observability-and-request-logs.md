@@ -198,6 +198,8 @@ Capture modes:
 
 The policy is read from YAML only. The admin UI displays the policy used for each row, but does not edit it.
 
+When a guardrail policy enables `secret_redaction`, sanitized payloads also replace detected API keys and credentials with `[REDACTED:<rule_id>]` before truncation. See [Gateway Guardrails](gateway-guardrails.md#secret-redaction).
+
 Owner behavior also matters:
 
 - user-owned API keys honor `users.request_logging_enabled`

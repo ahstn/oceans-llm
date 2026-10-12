@@ -376,6 +376,21 @@ impl BatchRepository for PostgresStore {
         rows.iter().map(decode_job).collect()
     }
 
+    async fn list_stale_batch_submissions(
+        &self,
+        now: OffsetDateTime,
+    ) -> Result<Vec<BatchJobRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {JOB_COLUMNS} FROM batch_jobs WHERE status='submitting' AND lease_expires_at <= $1"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(now.unix_timestamp())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        rows.iter().map(decode_job).collect()
+    }
+
     async fn mark_stale_batch_submissions_unknown(
         &self,
         now: OffsetDateTime,

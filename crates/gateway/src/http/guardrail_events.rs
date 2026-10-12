@@ -3,8 +3,8 @@ use std::time::Duration;
 use futures_util::future::join_all;
 use gateway_core::{GuardrailDecisionEventRecord, GuardrailDecisionRepository};
 use gateway_guardrails::{
-    DecisionAction, EffectiveScope, FailureDisposition, GuardPhase, GuardrailEvaluation,
-    ManagedService,
+    DecisionAction, DecisionRecord, EffectiveScope, FailureDisposition, GuardPhase,
+    GuardrailEvaluation, ManagedService,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -17,8 +17,70 @@ pub async fn record_guardrail_evaluation(
     mcp_tool_invocation_id: Option<Uuid>,
     evaluation: &GuardrailEvaluation,
 ) {
-    let mut records = Vec::with_capacity(evaluation.decisions.len());
-    for decision in &evaluation.decisions {
+    record_guardrail_decisions(
+        state,
+        request_id,
+        mcp_tool_invocation_id,
+        &evaluation.decisions,
+    )
+    .await;
+}
+
+/// Persists decisions on a background task, so a slow or unavailable store adds
+/// no latency to the caller. Each entry pairs a request ID with its decisions.
+pub fn record_guardrail_decisions_in_background(
+    state: &AppState,
+    decisions: Vec<(String, Vec<DecisionRecord>)>,
+) {
+    if decisions.iter().all(|(_, records)| records.is_empty()) {
+        return;
+    }
+    let state = state.clone();
+    tokio::spawn(async move {
+        // Once one write misses its deadline, or every write in a call fails, the store is
+        // treated as unavailable for the rest of this task, so a large batch cannot issue one
+        // doomed write per item.
+        let mut store_available = true;
+        let mut skipped = 0;
+        for (request_id, records) in decisions {
+            let rows = observe_decisions(&state, Some(&request_id), None, &records);
+            if store_available {
+                store_available = persist_decision_rows(&state, &rows).await;
+            } else {
+                skipped += rows.len();
+            }
+        }
+        if skipped > 0 {
+            tracing::warn!(
+                skipped_decision_count = skipped,
+                "skipped guardrail decision persistence after the store failed or timed out"
+            );
+        }
+    });
+}
+
+pub async fn record_guardrail_decisions(
+    state: &AppState,
+    request_id: Option<&str>,
+    mcp_tool_invocation_id: Option<Uuid>,
+    decisions: &[DecisionRecord],
+) {
+    if decisions.is_empty() {
+        return;
+    }
+    let records = observe_decisions(state, request_id, mcp_tool_invocation_id, decisions);
+    persist_decision_rows(state, &records).await;
+}
+
+/// Records metrics and a trace event for each decision, returning the rows to persist.
+fn observe_decisions(
+    state: &AppState,
+    request_id: Option<&str>,
+    mcp_tool_invocation_id: Option<Uuid>,
+    decisions: &[DecisionRecord],
+) -> Vec<GuardrailDecisionEventRecord> {
+    let mut records = Vec::with_capacity(decisions.len());
+    for decision in decisions {
         let phase = phase_name(decision.phase);
         let action = action_name(decision.action);
         let failure_disposition = decision.failure_disposition.map(failure_disposition_name);
@@ -74,27 +136,41 @@ pub async fn record_guardrail_evaluation(
             occurred_at: OffsetDateTime::now_utc(),
         });
     }
+    records
+}
 
+/// Writes the rows under one shared deadline. Returns false when the deadline was exceeded or
+/// every write failed, either of which means the store is unavailable.
+async fn persist_decision_rows(state: &AppState, records: &[GuardrailDecisionEventRecord]) -> bool {
+    if records.is_empty() {
+        return true;
+    }
     let writes = records
         .iter()
         .map(|record| state.store.insert_guardrail_decision(record));
     match tokio::time::timeout(Duration::from_millis(250), join_all(writes)).await {
         Ok(results) => {
+            let mut persisted = false;
             for (record, result) in records.iter().zip(results) {
-                if let Err(error) = result {
-                    tracing::warn!(
+                match result {
+                    Ok(_) => persisted = true,
+                    Err(error) => tracing::warn!(
                         decision_id = %record.decision_id,
                         error = %error,
                         "failed to persist guardrail decision"
-                    );
+                    ),
                 }
             }
+            persisted
         }
-        Err(_) => tracing::warn!(
-            decision_count = records.len(),
-            persistence_deadline_ms = 250,
-            "guardrail decision persistence deadline exceeded"
-        ),
+        Err(_) => {
+            tracing::warn!(
+                decision_count = records.len(),
+                persistence_deadline_ms = 250,
+                "guardrail decision persistence deadline exceeded"
+            );
+            false
+        }
     }
 }
 

@@ -19,6 +19,7 @@ fn evaluate(pack: &str, payload: EvaluationPayload) -> Option<MatchedRule> {
                 managed_checks: Vec::new(),
                 stream_buffer_bytes: 1024,
                 stream_buffer_timeout_ms: 1_000,
+                secret_redaction: Default::default(),
                 scope: EffectiveScope::Global,
             },
         )
@@ -803,6 +804,7 @@ fn malformed_generated_tool_arguments_fail_closed() {
                 managed_checks: Vec::new(),
                 stream_buffer_bytes: 1024,
                 stream_buffer_timeout_ms: 1_000,
+                secret_redaction: Default::default(),
                 scope: EffectiveScope::Global,
             },
         )
