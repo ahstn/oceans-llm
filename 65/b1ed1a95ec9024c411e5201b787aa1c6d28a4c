@@ -1,0 +1,43 @@
+crates/gateway-core/src/budgets.rs
+  s_59759a0c269480::t_16e8e284710cb6 340-348
+crates/gateway-core/src/lib.rs
+  s_59759a0c269480::t_13a95084a82377 46-48
+crates/gateway-core/src/traits.rs
+  s_59759a0c269480::t_ca27c69cbe2488 23-24,484-486,490,492
+crates/gateway-store/src/budget_increase_tests.rs
+  s_59759a0c269480::t_bc658caba6aa73 8-9,81-84,88,157-162,174,187,215-217,241-281
+crates/gateway-store/src/budget_increases.rs
+  s_59759a0c269480::t_927ee8fe093e2d 4-5,17-42,44
+crates/gateway-store/src/libsql_store/budget_increases.rs
+  s_59759a0c269480::t_686c85b885fd1b 3,5,65,67-68,74-90,109
+crates/gateway-store/src/libsql_store/budgets.rs
+  s_59759a0c269480::t_711a0aa7f6a072 55,57
+crates/gateway-store/src/postgres_store/budget_increases.rs
+  s_59759a0c269480::t_6489b6dbdce2c2 3,5,60,63-82,96
+crates/gateway-store/src/postgres_store/budgets.rs
+  s_59759a0c269480::t_481d7fae40535e 55,57
+crates/gateway-store/src/store.rs
+  s_59759a0c269480::t_12fa13b9b03b2f 882,884
+crates/gateway/src/http/spend_budget_increases.rs
+  s_59759a0c269480::t_2a688e18612424 9-10,85-90,93
+docs/access/budgets.md
+  s_59759a0c269480::t_fe85e7fb29fe17 330
+docs/adr/2026-10-12-temporary-budget-increases.md
+  s_59759a0c269480::t_44595d1b928bb7 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "65b1ed1a95ec9024c411e5201b787aa1c6d28a4c",
+  "prompts": {},
+  "sessions": {
+    "s_59759a0c269480": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6967a834-972f-4dfe-99a6-760e1e3d2dc7",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
