@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountReadyRouteImport } from './routes/account-ready'
+import { Route as AgentPluginsRouteImport } from './routes/agent-plugins'
 import { Route as ApiKeysRouteImport } from './routes/api-keys'
 import { Route as BatchesRouteImport } from './routes/batches'
 import { Route as ChangePasswordRouteImport } from './routes/change-password'
@@ -47,6 +48,11 @@ const IndexRoute = IndexRouteImport.update({
 const AccountReadyRoute = AccountReadyRouteImport.update({
   id: '/account-ready',
   path: '/account-ready',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgentPluginsRoute = AgentPluginsRouteImport.update({
+  id: '/agent-plugins',
+  path: '/agent-plugins',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiKeysRoute = ApiKeysRouteImport.update({
@@ -193,6 +199,7 @@ const SkillsIdRoute = SkillsIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account-ready': typeof AccountReadyRoute
+  '/agent-plugins': typeof AgentPluginsRoute
   '/api-keys': typeof ApiKeysRoute
   '/batches': typeof BatchesRoute
   '/change-password': typeof ChangePasswordRoute
@@ -224,6 +231,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account-ready': typeof AccountReadyRoute
+  '/agent-plugins': typeof AgentPluginsRoute
   '/api-keys': typeof ApiKeysRoute
   '/batches': typeof BatchesRoute
   '/change-password': typeof ChangePasswordRoute
@@ -256,6 +264,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account-ready': typeof AccountReadyRoute
+  '/agent-plugins': typeof AgentPluginsRoute
   '/api-keys': typeof ApiKeysRoute
   '/batches': typeof BatchesRoute
   '/change-password': typeof ChangePasswordRoute
@@ -289,6 +298,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/account-ready'
+    | '/agent-plugins'
     | '/api-keys'
     | '/batches'
     | '/change-password'
@@ -320,6 +330,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/account-ready'
+    | '/agent-plugins'
     | '/api-keys'
     | '/batches'
     | '/change-password'
@@ -351,6 +362,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/account-ready'
+    | '/agent-plugins'
     | '/api-keys'
     | '/batches'
     | '/change-password'
@@ -383,6 +395,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountReadyRoute: typeof AccountReadyRoute
+  AgentPluginsRoute: typeof AgentPluginsRoute
   ApiKeysRoute: typeof ApiKeysRoute
   BatchesRoute: typeof BatchesRoute
   ChangePasswordRoute: typeof ChangePasswordRoute
@@ -426,6 +439,13 @@ declare module '@tanstack/react-router' {
       path: '/account-ready'
       fullPath: '/account-ready'
       preLoaderRoute: typeof AccountReadyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agent-plugins': {
+      id: '/agent-plugins'
+      path: '/agent-plugins'
+      fullPath: '/agent-plugins'
+      preLoaderRoute: typeof AgentPluginsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api-keys': {
@@ -623,6 +643,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountReadyRoute: AccountReadyRoute,
+  AgentPluginsRoute: AgentPluginsRoute,
   ApiKeysRoute: ApiKeysRoute,
   BatchesRoute: BatchesRoute,
   ChangePasswordRoute: ChangePasswordRoute,

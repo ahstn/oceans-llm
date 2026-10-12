@@ -128,7 +128,7 @@ jobs:
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
       - name: "Setup mise and the repository Rust toolchain"
-        uses: "jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5"
+        uses: "jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca"
         with:
           "cache": false
           "install_args": "rust"

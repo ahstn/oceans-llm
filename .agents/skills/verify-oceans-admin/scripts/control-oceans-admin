@@ -6,8 +6,35 @@ run_id="${OCEANS_VERIFY_RUN_ID:-}"
 gateway_port="${OCEANS_VERIFY_GATEWAY_PORT:-38090}"
 ui_port="${OCEANS_VERIFY_UI_PORT:-33010}"
 state_base="${OCEANS_VERIFY_STATE_BASE:-/tmp/oceans-admin-verification}"
-checkout_key="$(printf '%s' "$repo_root" | shasum -a 256 | cut -c1-16)"
+sha256_stdin() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum
+  else
+    echo "Required command 'shasum' or 'sha256sum' is not available." >&2
+    exit 1
+  fi
+}
+checkout_key="$(printf '%s' "$repo_root" | sha256_stdin | cut -c1-16)"
 lock_dir="$state_base/checkout-$checkout_key.lock"
+
+resolve_mise() {
+  local mise_bin
+  mise_bin="${MISE_BIN:-$(command -v mise 2>/dev/null || true)}"
+  [[ -n "$mise_bin" ]] || mise_bin="$HOME/.local/bin/mise"
+  [[ -x "$mise_bin" ]] || {
+    echo "mise is required. Install it (https://mise.jdx.dev) or set MISE_BIN to its path." >&2
+    exit 1
+  }
+  printf '%s\n' "$mise_bin"
+}
+
+if [[ "${1:-}" == "plan" ]]; then
+  shift
+  cd "$repo_root"
+  exec "$(resolve_mise)" exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/plan-verification.mjs" "$@"
+fi
 
 if [[ -z "$run_id" || "$run_id" == "." || "$run_id" == ".." || ! "$run_id" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "Set OCEANS_VERIFY_RUN_ID to a unique value containing letters, numbers, dots, underscores, or hyphens." >&2
@@ -27,6 +54,8 @@ ui_pid_file="$run_dir/ui.pid"
 log_file="$run_dir/stack.log"
 base_url="http://127.0.0.1:$gateway_port"
 stack_start_file="$run_dir/stack.start-time"
+launch_sources_file="$run_dir/launch-sources.json"
+proof_script="$repo_root/.agents/skills/verify-oceans-admin/scripts/proof-cli.mjs"
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -38,7 +67,9 @@ require_command() {
 require_command lsof
 
 activate_mise() {
-  eval "$(/Users/ahstn/.local/bin/mise activate bash)"
+  local mise_bin
+  mise_bin="$(resolve_mise)"
+  eval "$("$mise_bin" activate bash)"
 }
 
 listener_pid() {
@@ -157,6 +188,17 @@ prepare_skills() {
   export GATEWAY_CONFIG="$run_dir/gateway-skills.yaml"
 }
 
+# Attach the storage result to the Skills proof, so `evidence skills` after
+# teardown fails when the run's object prefix or database was left behind.
+skills_cleanup_check() {
+  local check="storage-cleanup=pass:object prefix empty and private database removed"
+  [[ "$1" == 0 ]] || check="storage-cleanup=fail:object prefix or private database retained for retry"
+  [[ -f "$evidence_dir/skills-proof.json" ]] || return 0
+  activate_mise
+  (cd "$repo_root" && OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" mise exec -- node "$proof_script" add-check skills-proof.json "$check") ||
+    echo "Could not record Skills storage cleanup in skills-proof.json." >&2
+}
+
 cleanup_skills() {
   local cleanup_status=0 daemon_status daemon_pid daemon_port stored_pid stored_start
   [[ -f "$run_dir/skills-prefix" || -f "$run_dir/rustfs-owned" ]] || return 0
@@ -187,7 +229,10 @@ cleanup_skills() {
       rm -f "$run_dir/skills-prefix"
     fi
   fi
-  [[ "$cleanup_status" == 0 ]] || return "$cleanup_status"
+  [[ "$cleanup_status" == 0 ]] || {
+    skills_cleanup_check "$cleanup_status"
+    return "$cleanup_status"
+  }
   if [[ -f "$run_dir/rustfs.pid" && -f "$run_dir/rustfs.start-time" ]]; then
     stored_pid="$(<"$run_dir/rustfs.pid")"
     stored_start="$(<"$run_dir/rustfs.start-time")"
@@ -200,8 +245,8 @@ cleanup_skills() {
     rm -f "$run_dir/rustfs-owned" "$run_dir/rustfs.pid" "$run_dir/rustfs.start-time" "$run_dir/rustfs-port" "$run_dir/rustfs-listener.pid" \
       "$run_dir/skills-endpoint" "$run_dir/skills-bucket" "$run_dir/skills-region" "$run_dir/gateway-skills.yaml" \
       "$run_dir/skills-prefix" "$run_dir/skills-service-account-key" "$run_dir/skills.db" "$run_dir/skills.db-wal" "$run_dir/skills.db-shm" "$run_dir/skills.db-journal"
-    printf '{"passed":true,"objects_remaining":0,"database_removed":true}\n' >"$evidence_dir/skills-storage-cleanup.json"
   fi
+  skills_cleanup_check "$cleanup_status"
   return "$cleanup_status"
 }
 
@@ -245,6 +290,7 @@ cleanup() {
         cleanup_status=1
       fi
     done
+    [[ "$cleanup_status" == 0 ]] || skills_cleanup_check "$cleanup_status"
   fi
   if [[ "$cleanup_status" == 0 ]]; then
     cleanup_skills || cleanup_status=$?
@@ -307,6 +353,13 @@ launch() {
   printf '%s\n' "$ui_port" >"$run_dir/ui-port"
 
   activate_mise
+  # Proofs fingerprint the repository's gateway.yaml, so an external config would go unrecorded.
+  if [[ -n "${GATEWAY_CONFIG:-}" && "$(cd "$(dirname "$GATEWAY_CONFIG")" 2>/dev/null && pwd)/$(basename "$GATEWAY_CONFIG")" != "$repo_root/gateway.yaml" ]]; then
+    echo "Refusing to launch with GATEWAY_CONFIG=$GATEWAY_CONFIG; unset it so the stack uses the repository's gateway.yaml." >&2
+    exit 1
+  fi
+  # Proofs compare against this snapshot, so edits after launch mark them stale.
+  (cd "$repo_root" && OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" mise exec -- node "$proof_script" snapshot-sources "$launch_sources_file")
   if [[ "${OCEANS_VERIFY_SKILLS:-false}" == "true" ]]; then
     prepare_skills
   fi
@@ -440,86 +493,29 @@ drive() {
   fi
   OCEANS_VERIFY_BASE_URL="$base_url" \
     OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" \
+    OCEANS_VERIFY_LAUNCH_SOURCES="$launch_sources_file" \
     OCEANS_VERIFY_GATEWAY_VERSION="$(<"$run_dir/gateway-version")" \
     OCEANS_VERIFY_ADMIN_EMAIL="${OCEANS_VERIFY_ADMIN_EMAIL:-admin@local}" \
     OCEANS_VERIFY_ADMIN_PASSWORD="${OCEANS_VERIFY_ADMIN_PASSWORD:-admin}" \
     mise exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/$driver"
 }
 
-evidence() {
-  local target="${1:-models}"
-  [[ -d "$evidence_dir" ]] || {
-    echo "No evidence directory exists for run $run_id." >&2
-    exit 1
-  }
-  find "$evidence_dir" -maxdepth 1 -type f -print | sort
-  case "$target" in
-    models)
-      [[ -f "$evidence_dir/models-proof.json" ]] || {
-        echo "Models proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-    observability)
-      [[ -f "$evidence_dir/observability-proof.json" ]] || {
-        echo "Observability proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-    live-llm)
-      find "$evidence_dir" -maxdepth 1 -type f -name '*-canary-proof.json' -print -quit | grep -q . || {
-        echo "Live LLM canary proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-    backend-gateway)
-      [[ -f "$evidence_dir/backend-gateway-canary-proof.json" ]] || {
-        echo "Backend gateway proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-    mcp)
-      [[ -f "$evidence_dir/mcp-proof.json" ]] || {
-        echo "MCP proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-    skills)
-      [[ -f "$evidence_dir/skills-proof.json" ]] || {
-        echo "Skills proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      activate_mise
-      mise exec -- bun -e '
-        const proof = await Bun.file(process.argv[1]).json();
-        if (proof.passed !== true) throw new Error("Skills proof did not pass");
-        if (!await Bun.file(process.argv[2]).exists()) {
-          const cleanup = await Bun.file(process.argv[3]).json();
-          if (cleanup.passed !== true) throw new Error("Skills storage cleanup did not pass");
-        }
-      ' "$evidence_dir/skills-proof.json" "$gateway_pid_file" "$evidence_dir/skills-storage-cleanup.json"
-      ;;
-    profile)
-      [[ -f "$evidence_dir/profile-proof.json" ]] || {
-        echo "Profile proof is missing from $evidence_dir." >&2
-        exit 1
-      }
-      ;;
-    *)
-      echo "Supported evidence targets: models, observability, live-llm, backend-gateway, mcp, profile, skills" >&2
-      exit 2
-      ;;
-  esac
+proof_cli() {
+  cd "$repo_root"
+  # Cleanup removes gateway-version, so record manual proofs before cleanup.
+  [[ ! -f "$run_dir/gateway-version" ]] || export OCEANS_VERIFY_GATEWAY_VERSION="$(<"$run_dir/gateway-version")"
+  OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" OCEANS_VERIFY_LAUNCH_SOURCES="$launch_sources_file" \
+    exec "$(resolve_mise)" exec -- node "$proof_script" "$@"
 }
 
 case "${1:-}" in
   launch) launch ;;
   doctor) doctor ;;
   drive) drive "${2:-}" ;;
-  evidence) evidence "${2:-models}" ;;
+  evidence | record | report) proof_cli "$@" ;;
   cleanup) cleanup ;;
   *)
-    echo "Usage: $0 {launch|doctor|drive {models|observability|backend-gateway|mcp|profile|skills}|evidence [models|observability|live-llm|backend-gateway|mcp|profile|skills]|cleanup}" >&2
+    echo "Usage: $0 {plan [base-ref] [--json]|launch|doctor|drive {models|observability|backend-gateway|mcp|profile|skills}|evidence [feature...] [--require-current]|record <feature> --check id=status[:note] --artifact file|report [--plan [base-ref]]|cleanup}" >&2
     exit 2
     ;;
 esac

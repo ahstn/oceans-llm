@@ -1,0 +1,14 @@
+Mode: built-in image_gen
+
+Use case: infographic-diagram
+Asset type: Oceans Gateway documentation image, a finished landscape diagram.
+Primary request: Create an original Oceans version of the supplied MCP workflow diagram. Use the attached Docker screenshot ONLY as a layout/concept reference, and account-ready.png ONLY as the Oceans brand and color reference. Do not reproduce the screenshot's prose or Docker branding.
+Style: crisp professional flat diagram, very legible sans-serif text, subtle rounded panels and thin cyan connectors; no perspective. Wide landscape canvas with ample spacing.
+Palette: near-black #050d11 background, deep navy #031a2e panels, ocean blue #006f98, muted blue #428fb0, pale cyan #b7e7ed, off-white text, muted blue-grey secondary text. Small restrained ocean-wave accent, like the account-ready reference.
+Top title verbatim: "Oceans MCP"
+Three columns, left to right, labeled verbatim "MCP Servers", "Personas", "Client Harnesses".
+LEFT: single unified Oceans surface, one card named "Oceans Gateway". Inside show a neat cluster of six server tiles named "GitHub", "Datadog", "Kubernetes", "Notion", "Atlassian", "Snowflake". No catalogs or custom catalogs or separate surfaces.
+MIDDLE: widest column. Two expanded persona cards followed by two compact collapsed persona rows. First expanded card heading "Engineer" and exactly three child server rows "GitHub", "Datadog", "Kubernetes". Second expanded card heading "Project Manager" and exactly three child server rows "Notion", "Atlassian", "Snowflake". Each of these SIX server rows has a horizontal series of four small square tool checkboxes, a mix of checked cyan and unchecked grey outline boxes; they represent individual tools enabled or disabled. Each server name is present once within its persona. Below these two cards are collapsed rows "Designer" and "Sales". A small bottom legend inside this column reads "Checked tools are enabled". Checkmarks must be clearly visible, unchecked boxes truly empty. No extra tool names.
+RIGHT: exactly six equal child cards stacked vertically with exact text "Claude Code", "Codex", "OpenCode", "GitHub Copilot", "Pi", "Hermes". All six names must be fully visible and legible.
+Connections: smooth thin cyan arrows run from the SINGLE Oceans Gateway surface to both expanded personas, and from the persona cards across to the client harness cards, showing the shared workflow. Connectors stay in the gutters and never obscure labels or checkbox rows.
+Constraints: all requested names spelled precisely; use only this short title, column headings, card labels and legend. No paragraphs above or below diagram. No Docker, no word Catalogs, no word Profiles, no other client harnesses, no ellipsis card, no invented product features. Create a balanced polished original image that remains readable at documentation size.

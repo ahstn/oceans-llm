@@ -17,6 +17,7 @@ export const PROFILE_PATH = '/profile'
 function isPersonalPath(pathname: string) {
   return (
     PERSONAL_ACCOUNT_PATHS.has(pathname) ||
+    pathname === '/agent-plugins' ||
     pathname === '/skills' ||
     pathname.startsWith('/skills/') ||
     pathname === PROFILE_PATH ||

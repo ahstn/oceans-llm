@@ -111,7 +111,7 @@ function SkillDetailPage() {
         </Button>
       </div>
       <PageHeader
-        section="Skills"
+        section="Agent Skills"
         title={`${skill.namespace}/${skill.name}`}
         description={version.manifest.description}
         actions={

@@ -52,7 +52,7 @@ test('regular users upload, inspect, and select their own skill versions', async
   await page.getByLabel('Email', { exact: true }).fill(owner.email)
   await page.getByLabel('Password', { exact: true }).fill('skills-browser-passw0rd')
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Skills', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Agent Skills', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Upload skill', exact: true }).click()
   const namespaceDialog = page.getByRole('dialog', { name: 'Choose your skill namespace' })
   await namespaceDialog.getByLabel('Namespace', { exact: true }).fill(namespace)

@@ -2,6 +2,17 @@
 
 `See also`: [MCP Client Setup](../mcp/mcp-client-setup.md), [MCP Tool Access](../mcp/mcp-tool-access.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md)
 
+## Servers, Personas, and Client Harnesses
+
+Oceans connects registered MCP servers to client harnesses through a single gateway. Use company personas to organise the tools each role needs.
+
+![Oceans MCP: one gateway connects MCP servers to Engineer and Project Manager personas, with tool checkboxes, and six client harnesses](../public/images/oceans-mcp-personas.webp)
+
+- **MCP Servers** provide tools from services such as GitHub, Datadog, Kubernetes, Notion, Atlassian, and Snowflake. Admins register these servers in Oceans and discover their available tools.
+- **Personas** describe tool selections for company roles, such as Engineer, Project Manager, Designer, and Sales. In Oceans, build these selections with [toolsets and access grants](../mcp/mcp-tool-access.md). The diagram shows example selections; checked boxes represent enabled tools. Effective access depends on the active grants for the client's API key and its owner.
+- **Client Harnesses** are the applications that use these tools, such as Claude Code, Codex, OpenCode, GitHub Copilot, Pi, and Hermes. Configure each harness to connect to Oceans with an API key. See [MCP Client Setup](../mcp/mcp-client-setup.md) for endpoint and authentication details.
+
+## Gateway Endpoints
 
 ![MCP Servers Page](../public/images/mcp-servers-page.png)
 

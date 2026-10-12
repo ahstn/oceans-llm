@@ -1,14 +1,16 @@
 # Models
 
-Models lets a signed-in user review configured model IDs, routing status, provider details, pricing, sourced benchmark scores, and generated client configuration choices. Platform administrators can also review access rules and refresh catalogues.
+Models lets a signed-in user review configured model IDs, routing status, provider details, pricing, sourced benchmark scores, capabilities, and generated client configuration choices, 30 models per page. Platform administrators also see the `Allow List` column and access rules, and can refresh catalogues.
 
 ## Sub-features
 
 - `models-open` opens Models from the Control Plane sidebar.
 - `models-list` shows the configured model count and desktop or mobile list, including the always-visible Intelligence Index.
-- `models-info` opens routing, economics, benchmarks, and access details for one model.
+- `models-info` opens overview, routing, economics, benchmarks, and (for platform admins) access details for one model.
 - `models-columns` toggles the optional context-window and capability columns.
-- `models-client-config` opens client configuration for a configurable model.
+- `models-client-config` opens client configuration for a configurable model via the row `Config` button.
+- `models-select-config` selects several configurable models with `Select model <id>` and opens one `Client config` dialog through `Generate config`.
+- `models-pagination` pages 30 models at a time with `Previous` and `Next`.
 
 ## How to get to it (user POV)
 
@@ -29,11 +31,13 @@ Preconditions:
 - **Model detail.** In the same table row, choose `Info`. A dialog headed `Model info` contains `gpt-6-astra` and navigation named `Model info sections`.
 - **Columns.** Intelligence Index is always visible. Choose `Columns`, then select `Context window` or `Capabilities`. The matching optional table header becomes visible without a route change.
 - **Client configuration.** Choose the button named `Generate client config for gpt-6-astra`. A dialog headed `Client config` appears. Do not treat generated configuration as live-provider proof.
-- **Proof.** Retain the Models screenshots and ARIA snapshots, including `03-model-benchmarks`, plus `models-proof.json` in the run evidence directory.
+- **Decisions-only model.** The `jev` row shows `—` in its Config cell, and `Select model jev` is disabled.
+- **Proof.** Retain the Models screenshots and ARIA snapshots, including `03-model-benchmarks` (plus one `05-model-client-config-<key>` pair per client config), and `models-proof.json` in the run evidence directory.
 
 ## Gotchas
 
 - The mobile list replaces `models-desktop-table` below the `md` breakpoint.
 - Startup requires `env.*` credential references to be configured and present, but it does not validate credential correctness or upstream connectivity. A healthy Models page does not prove upstream access.
 - `Refresh pricing` can call the pricing refresh boundary and is outside the read-only baseline.
-- Some aliases have no independent client configuration. Use `gpt-6-astra` for the baseline detail proof.
+- Some aliases and decisions-only models such as `jev` have no client configuration. Use `gpt-6-astra` for the baseline detail proof.
+- Demo model IDs follow `gateway.yaml`. When a proof times out waiting for a model cell, check whether the model was renamed there before suspecting the UI.

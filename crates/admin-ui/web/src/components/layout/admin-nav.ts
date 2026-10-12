@@ -3,6 +3,7 @@ import {
   HomeIcon,
   McpServerIcon,
   Notification03Icon,
+  PuzzleIcon,
   SaveMoneyDollarIcon,
   SearchIcon,
   RoboticIcon,
@@ -32,12 +33,6 @@ export interface AdminNavSection {
   items: AdminNavItem[]
 }
 
-export const connectionsNavItem: AdminNavItem = {
-  label: 'Connections',
-  to: '/account/connections',
-  icon: McpServerIcon,
-}
-
 export const adminNavSections: AdminNavSection[] = [
   {
     label: 'Control Plane',
@@ -53,9 +48,6 @@ export const adminNavSections: AdminNavSection[] = [
         icon: SearchIcon,
       },
       { page: 'models', requiredPage: 'models', label: 'Models', to: '/models', icon: HomeIcon },
-      connectionsNavItem,
-      { label: 'Skills', to: '/skills', icon: TaskDaily01Icon },
-      { page: 'mcp', requiredPage: 'mcp', label: 'MCP', to: '/mcp', icon: McpServerIcon },
       {
         page: 'review_agent',
         requiredPage: 'review_agent',
@@ -63,6 +55,15 @@ export const adminNavSections: AdminNavSection[] = [
         to: '/review-agent',
         icon: GitPullRequestIcon,
       },
+    ],
+  },
+  {
+    label: 'Agent Extensions',
+    icon: PuzzleIcon,
+    items: [
+      { page: 'mcp', requiredPage: 'mcp', label: 'MCP Servers', to: '/mcp', icon: McpServerIcon },
+      { label: 'Agent Skills', to: '/skills', icon: TaskDaily01Icon },
+      { label: 'Agent Plugins', to: '/agent-plugins', icon: PuzzleIcon },
     ],
   },
   {
