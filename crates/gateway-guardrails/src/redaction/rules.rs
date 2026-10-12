@@ -34,15 +34,17 @@ macro_rules! bounded {
 
 /// The strong secret names of the assignment rules. A name must start the
 /// field, follow a non-alphanumeric character or a JSON escape, or start a
-/// camelCase word, so `dbPassword` and `DATABASE_PASSWORD` match but
-/// `mysecretvalue` and `bitoken` do not.
+/// camelCase word, also after an acronym, so `dbPassword`, `openAIApiKey` and
+/// `DATABASE_PASSWORD` match but `mysecretvalue` and `bitoken` do not.
 macro_rules! secret_name {
     () => {
         concat!(
             r"(?:(?:^|[^A-Za-z0-9]|\\[nrtbf]|\\u[0-9A-Fa-f]{4})",
             r"(?:passw(?:or)?d|secret|token|api[_-]?key|private[_-]?key)",
             r"|(?-i:[a-z0-9])(?:(?-i:P)(?:assw(?:or)?d|rivate[_-]?key)",
-            r"|(?-i:S)ecret|(?-i:T)oken|(?-i:A)pi[_-]?key))"
+            r"|(?-i:S)ecret|(?-i:T)oken|(?-i:A)pi[_-]?key)",
+            r"|(?-i:[A-Z])(?:(?-i:Pa)ssw(?:or)?d|(?-i:Pr)ivate[_-]?key",
+            r"|(?-i:Se)cret|(?-i:To)ken|(?-i:Ap)i[_-]?key))"
         )
     };
 }

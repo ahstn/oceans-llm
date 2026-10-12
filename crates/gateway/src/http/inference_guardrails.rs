@@ -10,7 +10,7 @@ use gateway_guardrails::{
 use serde_json::{Map, Value};
 
 use crate::http::{
-    guardrail_events::{record_guardrail_decisions, record_guardrail_evaluation},
+    guardrail_events::{record_guardrail_decisions_in_background, record_guardrail_evaluation},
     state::AppState,
 };
 const PROMPT_TEXT_FIELDS: &[&str] = &[
@@ -63,7 +63,7 @@ pub async fn guard_prompt(
     }
     // Redact before any other evaluator, so managed services never see the secrets either.
     let redactions = redact_prompt_secrets(&policy, request);
-    record_guardrail_decisions(state, Some(request_id), None, &redactions).await;
+    record_guardrail_decisions_in_background(state, vec![(request_id.to_string(), redactions)]);
     let associated_prompt = inspect_text_fields(
         state,
         &route_key,
@@ -92,7 +92,7 @@ pub async fn redact_prompt(
     request: &mut Value,
 ) {
     let redactions = redact_prompt_body(state, route_key, request);
-    record_guardrail_decisions(state, Some(request_id), None, &redactions).await;
+    record_guardrail_decisions_in_background(state, vec![(request_id.to_string(), redactions)]);
 }
 
 /// Redacts secrets in `request` in place and returns the decisions, leaving
@@ -1256,19 +1256,28 @@ mod tests {
             request["messages"][0]["content"],
             "deploy with [REDACTED:anthropic-api-key]"
         );
-        let decisions = state
-            .store
-            .list_guardrail_decisions(&GuardrailDecisionQuery {
-                page: 1,
-                page_size: 10,
-                request_id: Some("request-1".into()),
-                evaluator: Some("secret_redaction".into()),
-                ..Default::default()
-            })
-            .await
-            .expect("decisions");
-        let [decision] = decisions.items.as_slice() else {
-            panic!("expected one decision per rule, got {:?}", decisions.items);
+        // Decisions are written in the background, so wait for the write.
+        let mut items = Vec::new();
+        for _ in 0..100 {
+            items = state
+                .store
+                .list_guardrail_decisions(&GuardrailDecisionQuery {
+                    page: 1,
+                    page_size: 10,
+                    request_id: Some("request-1".into()),
+                    evaluator: Some("secret_redaction".into()),
+                    ..Default::default()
+                })
+                .await
+                .expect("decisions")
+                .items;
+            if !items.is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let [decision] = items.as_slice() else {
+            panic!("expected one decision per rule, got {items:?}");
         };
         assert_eq!(decision.rule_id.as_deref(), Some("anthropic-api-key"));
         assert!(decision.transformed);

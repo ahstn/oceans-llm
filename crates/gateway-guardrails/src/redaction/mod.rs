@@ -145,7 +145,18 @@ fn redact_json_at(
     let parent_len = pointer.len();
     match value {
         Value::String(text) => {
-            if is_base64_data_uri(text) {
+            // A base64 data URI keeps its payload; only the header is scanned, since
+            // its media-type parameters are free text.
+            if let Some(comma) = base64_data_uri_header_end(text) {
+                let (header, payload) = text.split_at(comma);
+                if let Some((header, rule_ids)) = scanner::redact_text(header, config) {
+                    *text = format!("{header}{payload}");
+                    output.push(RedactedField {
+                        pointer: pointer.clone(),
+                        text: text.clone(),
+                        rule_ids,
+                    });
+                }
                 return;
             }
             let redacted = match key {
@@ -165,9 +176,10 @@ fn redact_json_at(
             for (index, item) in items.iter_mut().enumerate() {
                 pointer.push('/');
                 pointer.push_str(&index.to_string());
-                // A string element keeps the field name, so `{"password": ["..."]}`
-                // is checked as an assignment too.
-                let item_key = if item.is_string() { key } else { None };
+                // Strings and nested arrays keep the field name, so
+                // `{"password": [["..."]]}` is checked as an assignment too. An
+                // object brings its own field names.
+                let item_key = if item.is_object() { None } else { key };
                 redact_json_at(item, item_key, pointer, config, output);
                 pointer.truncate(parent_len);
             }
@@ -252,13 +264,13 @@ fn push_pointer_token(pointer: &mut String, key: &str) {
     pointer.push_str(&key.replace('~', "~0").replace('/', "~1"));
 }
 
-/// The scheme and the `;base64` marker are case-insensitive (RFC 2397).
-fn is_base64_data_uri(text: &str) -> bool {
-    let Some((header, payload)) = text.split_once(',') else {
-        return false;
-    };
-    let header = header.to_ascii_lowercase();
-    header.starts_with("data:") && header.ends_with(";base64") && is_base64(payload)
+/// The byte offset of the comma that ends a base64 data URI's header, if `text`
+/// is one. The scheme and the `;base64` marker are case-insensitive (RFC 2397).
+fn base64_data_uri_header_end(text: &str) -> Option<usize> {
+    let comma = text.find(',')?;
+    let header = text[..comma].to_ascii_lowercase();
+    (header.starts_with("data:") && header.ends_with(";base64") && is_base64(&text[comma + 1..]))
+        .then_some(comma)
 }
 
 fn has_inline_media_data(object: &Map<String, Value>) -> bool {

@@ -524,7 +524,15 @@ fn assignments_end_at_collection_closers_and_match_every_private_key_spelling() 
 #[test]
 fn assignment_names_need_a_left_boundary() {
     let value = random(ALNUM, 16, 73);
-    for name in ["dbPassword", "DATABASE_PASSWORD", "x.secret", "myApiKey"] {
+    for name in [
+        "dbPassword",
+        "DATABASE_PASSWORD",
+        "x.secret",
+        "myApiKey",
+        "dbAPIKey",
+        "openAIApiKey",
+        "awsIAMSecret",
+    ] {
         let text = format!("{name}={value}");
         assert_eq!(
             redact(&text, &default_config()),
@@ -563,11 +571,26 @@ fn adjacent_assignments_share_a_delimiter() {
 #[test]
 fn credential_named_arrays_scan_their_strings_as_assignments() {
     let value = random(ALNUM, 16, 76);
-    let mut request = json!({"password": [value.clone(), {"note": value.clone()}]});
+    let mut request =
+        json!({"password": [value.clone(), [value.clone()], {"note": value.clone()}]});
+    let fields = redact_json_secrets(&mut request, &default_config());
+    assert_eq!(fields.len(), 2);
+    assert_eq!(request["password"][0], "[REDACTED:secret-assignment]");
+    assert_eq!(request["password"][1][0], "[REDACTED:secret-assignment]");
+    assert_eq!(request["password"][2]["note"], value);
+}
+
+#[test]
+fn data_uri_headers_are_scanned_but_payloads_are_not() {
+    let key = format!("AKIA{}", random(UPPER_BASE32, 16, 77));
+    let payload = random(ALNUM, 64, 78);
+    let mut request = json!({"url": format!("data:image/png;name={key};base64,{payload}")});
     let fields = redact_json_secrets(&mut request, &default_config());
     assert_eq!(fields.len(), 1);
-    assert_eq!(request["password"][0], "[REDACTED:secret-assignment]");
-    assert_eq!(request["password"][1]["note"], value);
+    assert_eq!(
+        request["url"],
+        format!("data:image/png;name=[REDACTED:aws-access-key-id];base64,{payload}")
+    );
 }
 
 #[test]

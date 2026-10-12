@@ -26,6 +26,23 @@ pub async fn record_guardrail_evaluation(
     .await;
 }
 
+/// Persists decisions on a background task, so a slow or unavailable store adds
+/// no latency to the caller. Each entry pairs a request ID with its decisions.
+pub fn record_guardrail_decisions_in_background(
+    state: &AppState,
+    decisions: Vec<(String, Vec<DecisionRecord>)>,
+) {
+    if decisions.iter().all(|(_, records)| records.is_empty()) {
+        return;
+    }
+    let state = state.clone();
+    tokio::spawn(async move {
+        for (request_id, records) in decisions {
+            record_guardrail_decisions(&state, Some(&request_id), None, &records).await;
+        }
+    });
+}
+
 pub async fn record_guardrail_decisions(
     state: &AppState,
     request_id: Option<&str>,

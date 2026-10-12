@@ -10,7 +10,6 @@ use gateway_core::{
     BatchRepository, BatchStatus, ModelRepository, Money4, ProviderBatchRequest,
     ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchSubmission, ProviderError,
 };
-use gateway_guardrails::DecisionRecord;
 use gateway_service::{BatchPricer, BatchPricingPolicy, BatchUsageInput};
 use serde_json::json;
 use time::OffsetDateTime;
@@ -18,7 +17,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::http::{
-    guardrail_events::record_guardrail_decisions,
+    guardrail_events::record_guardrail_decisions_in_background,
     inference_guardrails::{
         batch_guard_context, guard_model_response, guard_prompt, model_route_key,
         redact_prompt_body,
@@ -253,24 +252,12 @@ pub(crate) async fn redact_unsubmitted_batch(
         .store()
         .replace_batch_item_requests(job.batch_id, &redacted)
         .await?;
-    record_in_background(state, decisions);
+    record_guardrail_decisions_in_background(state, decisions);
     Ok(())
 }
 
 /// Persists redaction decisions without holding up the batch: decision logging
 /// is best effort, and a large batch would otherwise wait on one write per item.
-fn record_in_background(state: &AppState, decisions: Vec<(String, Vec<DecisionRecord>)>) {
-    if decisions.is_empty() {
-        return;
-    }
-    let state = state.clone();
-    tokio::spawn(async move {
-        for (request_id, redactions) in decisions {
-            record_guardrail_decisions(&state, Some(&request_id), None, &redactions).await;
-        }
-    });
-}
-
 async fn submit_job(
     state: &AppState,
     provider: &dyn gateway_core::ProviderClient,
@@ -323,7 +310,7 @@ async fn submit_job(
         .store()
         .replace_batch_item_requests(job.batch_id, &redacted_items)
         .await?;
-    record_in_background(state, decisions);
+    record_guardrail_decisions_in_background(state, decisions);
     if let Some(error_code) = rejection {
         return fail_claimed_job(
             service,
