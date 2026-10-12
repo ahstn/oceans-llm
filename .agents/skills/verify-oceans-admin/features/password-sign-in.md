@@ -41,7 +41,7 @@ Preconditions:
 - Bootstrap only seeds `admin@local` when no platform admin exists, so a reused `gateway.db` keeps any changed password or rotation flag. `mise run dev-stack` refreshes demo data but does not delete `gateway.db`.
 - A signed-in visit to `/admin/login` redirects to the default page (`/admin/profile` for `admin@local`). Start each sign-in proof from a fresh browser context.
 - The admin UI proxy must not follow upstream redirects. If a protected route answers `200` with the sign-in page instead of `307`, the proxy is serving the redirect target at the original URL, and React logs `Hydration failed because the server rendered HTML didn't match the client`.
-- On the verification stack, `/admin` shows a Vite base-URL notice and `/admin/` returns 404, so prove the default page through sign-in instead of the index route.
+- On the verification stack, `/admin` shows a Vite base-URL notice (404) and `/admin/` redirects to `/admin/login?redirect=%2F`, so prove the default page through sign-in instead of the index route.
 - OIDC/OAuth buttons appear under `or continue with` only when providers are configured, and `?sso_error=` shows the alert `SSO sign in failed`. Neither is part of password sign-in.
 - `/admin/no-access` is allowed only when a session has zero pages. Page lists merge across groups, so every seeded user is redirected away from it. `/admin/account-ready` and voluntary password change belong to [account onboarding](./account-onboarding.md).
 - Do not record the session cookie or any raw API key in evidence.
