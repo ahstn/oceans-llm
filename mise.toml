@@ -2,7 +2,7 @@
 # Repository-wide tools and cross-cutting tasks. Project tasks live next to their code
 # (see config_roots); run them from anywhere with `mise run //<dir>:<task>`, or list
 # everything with `mise tasks ls --all`.
-min_version = "2026.8.2"
+min_version = "2026.9.16" # [monorepo.path_aliases]
 monorepo_root = true
 
 [settings]
