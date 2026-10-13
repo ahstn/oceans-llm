@@ -58,7 +58,7 @@ log="${TMPDIR:-/tmp}/gateway-postgres-smoke.log"
 "$gateway" serve --run-migrations false --bootstrap-admin false --seed-config false >"$log" 2>&1 &
 pid=$!
 # The gateway may already have exited; keep the original status and show its log on failure.
-trap 'status=$?; kill "$pid" 2>/dev/null || true; [ "$status" -eq 0 ] || cat "$log" >&2; exit "$status"' EXIT
+trap 'status=$?; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; [ "$status" -eq 0 ] || cat "$log" >&2; exit "$status"' EXIT
 
 curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/readyz >/dev/null
 curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null
