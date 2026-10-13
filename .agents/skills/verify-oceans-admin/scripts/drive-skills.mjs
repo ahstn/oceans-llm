@@ -56,10 +56,10 @@ try {
   await expect(adminPage.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
   await capture(adminPage, "01-skills-login");
   await fillSignIn(adminPage, adminEmail, adminPassword);
-  await expect(adminPage.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
+  await expect(adminPage.getByRole("heading", { name: "Agent Skills", exact: true })).toBeVisible();
   actions.push({
     action: "open protected Skills page and sign in as platform admin",
-    result: "Skills catalog visible",
+    result: "Agent Skills catalog visible",
   });
   proof.pass("protected-route-sign-in");
 
@@ -72,13 +72,13 @@ try {
   const ownerPage = await ownerContext.newPage();
   currentPage = ownerPage;
   await signIn(ownerPage, owner);
-  await ownerPage.getByRole("link", { name: "Skills", exact: true }).first().click();
-  await expect(ownerPage.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
+  await ownerPage.getByRole("link", { name: "Agent Skills", exact: true }).first().click();
+  await expect(ownerPage.getByRole("heading", { name: "Agent Skills", exact: true })).toBeVisible();
   details.catalog = { before: await searchCatalog(ownerPage, owner.namespace) };
   assert.equal(details.catalog.before.apiCount, 0, "New namespace starts with an empty catalog");
   await capture(ownerPage, "02-skills-before");
   actions.push({
-    action: "regular user follows Skills sidebar and searches own namespace",
+    action: "regular user follows Agent Skills sidebar and searches own namespace",
     result: "Empty catalog before upload",
   });
   proof.pass("empty-catalog-before-upload");
@@ -281,7 +281,7 @@ async function createUser(adminApi, label, globalRole = "user") {
 async function signIn(page, user) {
   await page.goto(`${baseURL}/admin/login?redirect=/skills`, { waitUntil: "domcontentloaded" });
   await fillSignIn(page, user.email, user.password);
-  await expect(page.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agent Skills", exact: true })).toBeVisible();
 }
 
 async function fillSignIn(page, email, password) {
