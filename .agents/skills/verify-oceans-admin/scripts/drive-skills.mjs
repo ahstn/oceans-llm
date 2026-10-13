@@ -366,8 +366,15 @@ async function verifyCatalogSearch(page, ownerSkill, peerSkill) {
 }
 
 async function uploadFirstThroughUi(page, owner) {
-  await page.getByRole("button", { name: "Upload skill", exact: true }).click();
   const namespace = page.getByRole("dialog", { name: "Choose your skill namespace", exact: true });
+  // Sign-in returns once the SSR heading is visible, so this click can land before
+  // hydration attaches the handler that opens the dialog. Retry until it opens.
+  await expect(async () => {
+    if (!(await namespace.isVisible())) {
+      await page.getByRole("button", { name: "Upload skill", exact: true }).click();
+    }
+    await expect(namespace).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000, intervals: [250, 500, 1_000] });
   await namespace.getByLabel("Namespace", { exact: true }).fill(owner.namespace);
   await namespace.getByRole("button", { name: "Claim namespace", exact: true }).click();
   await uploadDialog(page, "Upload a skill", 1);
