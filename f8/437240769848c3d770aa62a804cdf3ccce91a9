@@ -1,0 +1,41 @@
+.agents/skills/verify-oceans-admin/features/profile.md
+  s_59759a0c269480::t_01f2f1636c9405 8,25
+.agents/skills/verify-oceans-admin/scripts/drive-profile.mjs
+  s_59759a0c269480::t_a5094a0ea7738b 41-43,45,58-64
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_59759a0c269480::t_9cc20626b0da0b 3861
+crates/admin-ui/web/src/routes/profile/-components/profile-budget.tsx
+  s_59759a0c269480::t_9ca2c5cad22395 7,96-101
+crates/admin-ui/web/src/routes/profile/-components/profile-data.ts
+  s_59759a0c269480::t_1f73bb49c1de93 224-225
+crates/admin-ui/web/src/test/profile-data.test.ts
+  s_59759a0c269480::t_33c0fd3c98941f 146-166
+crates/gateway-store/src/budget_increase_tests.rs
+  s_59759a0c269480::t_00f2dd67aa3a70 212-228
+crates/gateway-store/src/libsql_store/budget_increases.rs
+  s_59759a0c269480::t_7603d7c9aa5526 93-94,97-100
+crates/gateway-store/src/postgres_store/budget_increases.rs
+  s_59759a0c269480::t_324538259daca3 85-87,89,91-92
+crates/gateway/openapi/admin-api.json
+  s_59759a0c269480::t_a2b0257bce9f56 15041-15051
+crates/gateway/src/http/profile.rs
+  s_59759a0c269480::t_245a355af6b0f1 19-22,26,53-55,179-182,189
+docs/access/budgets.md
+  s_59759a0c269480::t_5d5ef6d2448299 336
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f8437240769848c3d770aa62a804cdf3ccce91a9",
+  "prompts": {},
+  "sessions": {
+    "s_59759a0c269480": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6967a834-972f-4dfe-99a6-760e1e3d2dc7",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
