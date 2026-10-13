@@ -10,6 +10,15 @@ import type { EffectiveConfig, PullRequestContext, ReviewResult } from './types'
 
 const executeFile = promisify(execFile)
 export const actionRoot = fileURLToPath(new URL('../', import.meta.url))
+export const workerErrorMarker = 'oceans-review-worker-error: '
+
+// Extensions write their own diagnostics to the inherited stderr (for example
+// pi-subagents probing `npm root -g` in the sandbox). Report only the worker's
+// terminal error so that noise never masks or leaks into the failure message.
+export function workerError(stderr: string | undefined): string | undefined {
+  const index = stderr?.lastIndexOf(workerErrorMarker) ?? -1
+  return index < 0 ? undefined : stderr!.slice(index + workerErrorMarker.length).trim()
+}
 
 export interface PiReviewRequest {
   context: PullRequestContext
@@ -41,7 +50,6 @@ export function reviewEnvironment(tempDir: string, oceansApiKey: string): NodeJS
     HOME: tempDir,
     TMPDIR: tempDir,
     PI_CODING_AGENT_DIR: join(tempDir, 'agent'),
-    PI_MCP_CONFIG_MODE: 'exclusive',
     PI_SKIP_VERSION_CHECK: '1',
     PI_TELEMETRY: '0',
     OCEANS_REVIEW_API_KEY: oceansApiKey,
@@ -95,7 +103,7 @@ export async function invokePi(
     if (failure.killed)
       throw new Error(`Pi review exceeded ${timeoutMinutes} minutes`, { cause: error })
     // The worker emits only its terminal error, never prompts or response text.
-    throw new Error(`Pi review failed: ${failure.stderr?.trim() || failure.message}`, {
+    throw new Error(`Pi review failed: ${workerError(failure.stderr) || failure.message}`, {
       cause: error,
     })
   } finally {

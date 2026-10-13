@@ -19,6 +19,7 @@ import * as core from '@actions/core'
 const directory = join(required('RUNNER_TEMP'), 'oceans-review-gateway')
 const url = 'http://127.0.0.1:38490'
 const statePath = join(directory, 'state.json')
+const modelId = required('REVIEW_MODEL_ID')
 let cookie = ''
 
 interface State {
@@ -118,8 +119,8 @@ async function start(): Promise<void> {
       ],
       models: [
         {
-          id: 'openai/gpt-5.6-luna',
-          routes: [{ provider: 'openrouter', upstream_model: 'openai/gpt-5.6-luna' }],
+          id: modelId,
+          routes: [{ provider: 'openrouter', upstream_model: modelId }],
         },
       ],
     }),
@@ -169,7 +170,7 @@ async function start(): Promise<void> {
     owner_kind: 'service_account',
     owner_service_account_id: account.id,
     model_grant_mode: 'explicit',
-    model_keys: ['openai/gpt-5.6-luna'],
+    model_keys: [modelId],
   })
   core.setSecret(key.raw_key)
   const [owner, name] = required('GITHUB_REPOSITORY').split('/')
@@ -209,9 +210,7 @@ async function verify(): Promise<void> {
   )
   const successfulRequests = logs.items.filter(
     (item) =>
-      item.provider_key === 'openrouter' &&
-      item.model_key === 'openai/gpt-5.6-luna' &&
-      item.status_code === 200,
+      item.provider_key === 'openrouter' && item.model_key === modelId && item.status_code === 200,
   )
   const evidence = {
     run_id: run.id,
@@ -235,10 +234,16 @@ async function verify(): Promise<void> {
   }
   writeFileSync(join(directory, 'evidence.json'), JSON.stringify(evidence, null, 2))
   console.log(JSON.stringify(evidence))
-  assert.equal(run.status, 'succeeded')
   assert.equal(run.head_sha, required('REVIEW_HEAD_SHA'))
-  assert.equal(run.model_key, 'openai/gpt-5.6-luna')
+  assert.equal(run.model_key, modelId)
   assert.equal(run.model_execution_mode, 'oceans')
+  // A failed review step already fails the job; prove the failure was persisted
+  // instead of repeating it as a second, less specific assertion error.
+  if (process.env.REVIEW_OUTCOME !== 'success') {
+    assert.equal(run.status, 'failed')
+    return
+  }
+  assert.equal(run.status, 'succeeded')
   assert.equal(run.managed_comment_status, 'succeeded')
   assert(run.managed_comment_id, 'A real GitHub summary comment must be published')
   assert(successfulRequests.length > 0, 'The gateway must record successful OpenRouter requests')

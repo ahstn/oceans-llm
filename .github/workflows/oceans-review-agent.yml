@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
+  checks: write
   contents: read
   pull-requests: write
 
@@ -15,6 +16,7 @@ concurrency:
 env:
   MISE_EXPERIMENTAL: true
   MISE_TASK_RUN_AUTO_INSTALL: "false"
+  REVIEW_MODEL_ID: openai/gpt-5.6-luna
 
 jobs:
   review:
@@ -26,7 +28,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout PR as review data
@@ -37,39 +38,72 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # A failed review is advisory: it does not mean the PR is broken or
+      # unmergeable. Review steps continue on error and are gated on their
+      # predecessors; the final step reports a neutral "Oceans review" check.
+
+      # Validate the key before the Rust build so a revoked or deleted key fails
+      # in seconds. OpenRouter answers 401 "User not found." for unknown keys.
       - name: Check OpenRouter credential
+        id: credential
+        continue-on-error: true
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: test -n "$OPENROUTER_API_KEY"
+        run: |
+          if [[ -z "$OPENROUTER_API_KEY" ]]; then
+            echo "::warning::OPENROUTER_API_KEY secret is not set"
+            exit 1
+          fi
+          body="$(mktemp)"
+          status="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' \
+            --config - https://openrouter.ai/api/v1/key \
+            <<< "header = \"Authorization: Bearer ${OPENROUTER_API_KEY}\"")"
+          if [[ "$status" != "200" ]]; then
+            echo "::warning::OpenRouter rejected OPENROUTER_API_KEY (HTTP $status): $(jq -r '.error.message // "unknown error"' "$body")"
+            exit 1
+          fi
+          jq -r '.data | "OpenRouter key accepted; limit_remaining=\(.limit_remaining // "unlimited")"' "$body"
 
       - name: Setup mise, Rust, Bun, and Node.js
+        id: setup
+        if: steps.credential.outcome == 'success'
+        continue-on-error: true
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install_args: rust bun node
 
       - name: Cache Cargo artifacts
+        if: steps.setup.outcome == 'success'
         uses: ./.github/actions/rust-cache
 
       - name: Build temporary control plane and install action dependencies
+        id: build
+        if: steps.setup.outcome == 'success'
+        continue-on-error: true
         run: |
           mise exec -- cargo build -p gateway --bin gateway
           mise run review-agent-action-install
 
       - name: Start real Oceans control plane
         id: oceans
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
         working-directory: actions/review-agent
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: mise exec -- node --import tsx scripts/ci-gateway.ts start
 
       - name: Review pull request with Pi and OpenRouter
+        id: review
+        if: steps.oceans.outcome == 'success'
+        continue-on-error: true
         uses: ./actions/review-agent
         with:
           review-workspace: ${{ github.workspace }}/.review-source
           oceans-url: ${{ steps.oceans.outputs.url }}
           oceans-api-key: ${{ steps.oceans.outputs.api-key }}
           model-mode: oceans
-          model-id: openai/gpt-5.6-luna
+          model-id: ${{ env.REVIEW_MODEL_ID }}
           github-token: ${{ github.token }}
           timeout-minutes: "15"
           max-inline-comments: "10"
@@ -78,14 +112,18 @@ jobs:
           request-changes-on-high-severity: "false"
 
       - name: Verify persisted review result
-        if: always() && steps.oceans.outcome == 'success'
+        id: verify
+        if: ${{ !cancelled() && steps.oceans.outcome == 'success' }}
+        continue-on-error: true
         working-directory: actions/review-agent
         env:
           REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_OUTCOME: ${{ steps.review.outcome }}
         run: mise exec -- node --import tsx scripts/ci-gateway.ts verify
 
       - name: Stop temporary control plane
-        if: always()
+        if: always() && steps.oceans.outcome != 'skipped'
+        continue-on-error: true
         working-directory: actions/review-agent
         run: mise exec -- node --import tsx scripts/ci-gateway.ts stop
 
@@ -96,3 +134,33 @@ jobs:
           name: review-agent-evidence
           path: ${{ runner.temp }}/oceans-review-gateway/evidence.json
           if-no-files-found: ignore
+
+      - name: Report review status
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OUTCOMES: |
+            credential check=${{ steps.credential.outcome }}
+            setup=${{ steps.setup.outcome }}
+            build=${{ steps.build.outcome }}
+            control-plane start=${{ steps.oceans.outcome }}
+            review=${{ steps.review.outcome }}
+            result verification=${{ steps.verify.outcome }}
+        run: |
+          conclusion=success title="Review completed" summary="Pi reviewed this pull request."
+          while IFS='=' read -r step outcome; do
+            if [[ "$outcome" == failure ]]; then
+              conclusion=neutral
+              title="Review unavailable: ${step} failed"
+              summary="The automated review did not complete. This does not block merging; see the [workflow run](${RUN_URL}) for details."
+              echo "::warning::Oceans review skipped because ${step} failed"
+              break
+            fi
+          done <<< "$OUTCOMES"
+          gh api "repos/${GITHUB_REPOSITORY}/check-runs" --silent \
+            -f name="Oceans review" -f head_sha="$HEAD_SHA" \
+            -f status=completed -f conclusion="$conclusion" -f details_url="$RUN_URL" \
+            -f "output[title]=$title" -f "output[summary]=$summary"
+          echo "### ${title}" >> "$GITHUB_STEP_SUMMARY"

@@ -63,16 +63,16 @@ To keep gateway model routing without review reporting, also set `model-mode: oc
 
 ## Pi packages and credentials
 
-The SDK and the following packages are local, locked dependencies. The resource loader loads these three extensions explicitly and reports any load failure.
+The SDK and the following packages are local, locked dependencies. The resource loader loads these three packages and Pi's built-in MCP extension explicitly and reports any load failure.
 
 | Package | Version | Review configuration |
 | --- | --- | --- |
-| `@earendil-works/pi-coding-agent` | 0.85.1 | In-memory session with an action-owned prompt, skill, and result tool |
-| `pi-mcp-adapter` | 2.32.1 | Exclusive per-run MCP configuration; empty server registry by default |
-| `pi-subagents` | 0.66.0 | Foreground reviewer, scout, or oracle; read tools only; depth 1; four spawns per run |
-| `pi-web-access` | 0.28.0 | Free-first search routing from `config/web-search.json`; optional API keys from workflow environment |
+| `@earendil-works/pi-coding-agent` | 1.2.0 | In-memory session with an action-owned prompt, skill, and result tool; built-in MCP reads a per-run `mcp.json` with no servers |
+| `pi-intercom` | 0.17.0 | Per-run broker under the isolated agent directory; only replies to the review's own asks start a turn |
+| `pi-subagents` | 0.77.0 | Foreground reviewer, scout, or oracle; read tools only; depth 1; four spawns per run |
+| `pi-web-access` | 0.39.0 | Free-first search routing from `config/web-search.json`; optional API keys from workflow environment |
 
-No MCP server has been selected for this action. To add one, change the action-owned MCP configuration in `writeRuntimeConfig` after reviewing that server's access requirements. The action does not import MCP server commands from the reviewed repository or runner home directory.
+No MCP server has been selected for this action. To add one, change the action-owned `mcp.json` in `writeRuntimeConfig` after reviewing that server's access requirements, then add its `mcp__<server>__<tool>` names to `reviewTools`. Project MCP files are ignored because the review never trusts its working directory. The action does not import MCP server commands from the reviewed repository or runner home directory.
 
 Oceans mode uses the gateway's `/v1` OpenAI-compatible endpoint and the supplied Oceans key. It requires context and output limits from the gateway's resolved route metadata; unknown limits fail before the model request instead of using guessed capacities. Direct mode requires a Pi `provider/model` ID and its provider credential in the workflow environment. The `provider-key` input remains part of Oceans configuration resolution; it does not fetch a secret from Oceans. The worker forwards only the explicit credential names listed in `src/pi.ts`, including `EXA_API_KEY`, `BRAVE_API_KEY`, and `TAVILY_API_KEY` for search.
 

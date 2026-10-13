@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   createAgentSession,
+  createMcpExtension,
   DefaultResourceLoader,
   ModelRuntime,
   SessionManager,
@@ -17,13 +18,13 @@ import { loadReviewDiff, type ReviewDiff } from './review-diff'
 import { oceansModelLimits } from './model-limits'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-export const reviewPackages = ['pi-mcp-adapter', 'pi-subagents', 'pi-web-access'] as const
+export const reviewPackages = ['pi-intercom', 'pi-subagents', 'pi-web-access'] as const
 const readTools = ['read', 'grep', 'find', 'ls']
 const reviewTools = [
   ...readTools,
   'web_search',
   'get_search_content',
-  'mcp',
+  'intercom',
   'subagent',
   'submit_review',
 ]
@@ -117,7 +118,16 @@ function writeRuntimeConfig(request: PiReviewRequest, agentDir: string): string 
   mkdirSync(agentDir, { recursive: true })
   copyFileSync(join(root, 'config/web-search.json'), join(agentDir, 'web-search.json'))
   mkdirSync(join(agentDir, 'extensions/subagent'), { recursive: true })
+  // Built-in MCP reads this file; project MCP config is ignored because the
+  // review cwd is never a trusted project.
   writeFileSync(join(agentDir, 'mcp.json'), JSON.stringify({ mcpServers: {} }))
+  // Only replies to the review's own asks may start a turn; unsolicited
+  // broker messages are queued instead of steering the review.
+  mkdirSync(join(agentDir, 'intercom'), { recursive: true, mode: 0o700 })
+  writeFileSync(
+    join(agentDir, 'intercom/config.json'),
+    JSON.stringify({ inboundTrigger: 'replies', confirmSend: false }),
+  )
   writeFileSync(
     join(agentDir, 'extensions/subagent/config.json'),
     JSON.stringify({
@@ -187,7 +197,7 @@ export async function runPiSession(request: PiReviewRequest, resultPath: string)
       dirname(fileURLToPath(import.meta.resolve(name))),
     ),
     additionalSkillPaths: [join(root, 'skills')],
-    extensionFactories: [reviewPolicy],
+    extensionFactories: [createMcpExtension(), reviewPolicy],
     systemPrompt: readFileSync(join(root, 'prompts/review.md'), 'utf8'),
   })
   await loader.reload()
