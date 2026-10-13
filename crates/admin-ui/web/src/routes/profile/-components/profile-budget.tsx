@@ -2,9 +2,8 @@ import type { CSSProperties } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { formatUsd10000 } from '@/lib/format'
+import { formatIncreaseLastDay, formatUsd10000 } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { formatIncreaseLastDay } from '@/routes/spend-controls/-budget-increase-model'
 import type { MyProfileBudgetView } from '@/types/api'
 
 import { budgetStatus, PERCENT_FORMATTER, type BudgetStatus } from './profile-data'

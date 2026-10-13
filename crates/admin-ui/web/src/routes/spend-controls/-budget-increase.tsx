@@ -18,14 +18,13 @@ import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getErrorMessage } from '@/lib/errors'
-import { formatUsd10000 } from '@/lib/format'
+import { formatIncreaseLastDay, formatUsd10000 } from '@/lib/format'
 import { increaseBudget } from '@/server/admin-data.functions'
 import type { BudgetIncreasePeriod, SpendBudgetUserView } from '@/types/api'
 
 import {
   amountInputValue,
   DEFAULT_INCREASE_PERIOD,
-  formatIncreaseLastDay,
   increaseExpiresAt,
   increasePresets,
   maxIncrease10000,

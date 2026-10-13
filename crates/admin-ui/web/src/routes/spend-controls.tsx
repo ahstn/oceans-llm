@@ -35,7 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { CURRENCY_FORMATTER, formatUsd10000 } from '@/lib/format'
+import { CURRENCY_FORMATTER, formatIncreaseLastDay, formatUsd10000 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type {
   AuthSessionView,
@@ -49,7 +49,7 @@ import { isPlatformAdminSession } from './-auth-routing'
 import { AlertTimeline } from './spend-controls/-alert-timeline'
 import { BudgetDialog, useBudgetEditor, type BudgetEditor } from './spend-controls/-budget-editor'
 import { BudgetIncreaseDialog, IncreaseBudgetButton } from './spend-controls/-budget-increase'
-import { formatIncreaseLastDay, increaseEligibility } from './spend-controls/-budget-increase-model'
+import { increaseEligibility } from './spend-controls/-budget-increase-model'
 import {
   formatCadence,
   formatUserModelSelector,

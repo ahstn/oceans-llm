@@ -109,14 +109,3 @@ export function increaseExpiresAt(period: BudgetIncreasePeriod, now: Date) {
   }
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
 }
-
-const EXPIRY_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  timeZone: 'UTC',
-})
-
-/** The last day an increase is in effect; expiry is the exclusive boundary. */
-export function formatIncreaseLastDay(expiresAt: Date | string) {
-  return EXPIRY_FORMATTER.format(new Date(new Date(expiresAt).getTime() - 1))
-}
