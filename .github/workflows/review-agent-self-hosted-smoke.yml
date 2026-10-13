@@ -46,7 +46,7 @@ jobs:
           install_args: node bun
 
       - name: Install review agent action dependencies
-        run: mise run review-agent-action-install
+        run: mise run //review-agent:install
 
       - name: Run source action against a mock Oceans API
         working-directory: actions/review-agent

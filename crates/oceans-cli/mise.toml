@@ -1,0 +1,10 @@
+# Oceans CLI tasks. From the repo root: `mise run //crates/oceans-cli:<task>`.
+# Release packaging stays in the root `dist-*` tasks because cargo-dist owns the workspace.
+
+[tasks.test]
+description = "Test the CLI and the shared skill bundle"
+run = "cargo test --locked -p oceans-cli -p gateway-skills"
+
+[tasks.build]
+description = "Build the Oceans CLI debug binary"
+run = "cargo build --locked -p oceans-cli --bin oceans"

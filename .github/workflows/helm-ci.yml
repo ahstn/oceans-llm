@@ -3,19 +3,17 @@ name: helm-ci
 on:
   pull_request:
     paths:
-      - "deploy/helm/oceans-llm/**"
+      - "deploy/helm/**"
       - ".github/workflows/helm-ci.yml"
       - "mise.toml"
       - "mise.lock"
-      - "scripts/check-skills-helm.sh"
   push:
     branches: ["main"]
     paths:
-      - "deploy/helm/oceans-llm/**"
+      - "deploy/helm/**"
       - ".github/workflows/helm-ci.yml"
       - "mise.toml"
       - "mise.lock"
-      - "scripts/check-skills-helm.sh"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,4 +43,4 @@ jobs:
           install_args: helm
 
       - name: Run Helm checks
-        run: mise run helm-check
+        run: mise run //helm:check

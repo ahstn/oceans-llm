@@ -1,0 +1,51 @@
+# Admin UI tasks. From the repo root: `mise run //crates/admin-ui/web:<task>`.
+
+[tasks.install]
+description = "Install admin UI dependencies"
+run = "bun install --frozen-lockfile"
+
+[tasks.dev]
+description = "Run the admin UI dev server"
+depends = ["install"]
+run = "bun run dev"
+
+[tasks.build]
+description = "Build the admin UI"
+depends = ["install"]
+run = "bun run build"
+
+[tasks.lint]
+description = "Lint the admin UI"
+depends = ["install"]
+run = "bun run lint"
+
+[tasks.fmt]
+description = "Format the admin UI"
+depends = ["install"]
+run = "bun run fmt"
+
+[tasks.fmt-check]
+description = "Check admin UI formatting without modifying files"
+depends = ["install"]
+run = "bun run fmt:check"
+
+[tasks.test]
+description = "Run admin UI unit tests"
+depends = ["install"]
+run = "bun run test"
+
+[tasks.check]
+description = "Check formatting, lint, test, and build the admin UI"
+# Sequential: a concurrent Vite build starves vitest and trips its 5s test timeouts on CI.
+depends = ["install"]
+run = ["bun run fmt:check", "bun run lint", "bun run test", "bun run build"]
+
+[tasks."e2e:install"]
+description = "Install Playwright Chromium for the end-to-end suite"
+depends = ["install"]
+run = "bun run playwright:install"
+
+[tasks.e2e]
+description = "Run gateway and admin UI end-to-end contract tests"
+depends = ["build", "e2e:install", "//crates/gateway:build"]
+run = "bun run test:e2e"

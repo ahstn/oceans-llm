@@ -124,7 +124,7 @@ Checked on 2026-09-06. The [Artificial Analysis study](https://artificialanalysi
 Run from the repository root:
 
 ```sh
-mise run review-agent-action-check
+mise run //review-agent:check
 mise run lint
 ```
 

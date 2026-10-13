@@ -133,7 +133,7 @@ Start with the least destructive path.
 - run the explicit migrate command against the active config:
 
 ```bash
-mise run gateway-migrate
+mise run //gateway:migrate
 ```
 
 - confirm the database URL points at the intended backend
@@ -152,7 +152,7 @@ Work through these checks in order:
 - confirm the bootstrap admin command against the active config:
 
 ```bash
-mise run gateway-bootstrap-admin
+mise run //gateway:bootstrap-admin
 ```
 
 - confirm the expected first-login rule
@@ -199,15 +199,15 @@ Use the supported purge command instead of deleting request-log tables by hand.
 Preview a purge:
 
 ```bash
-mise run gateway-purge-request-logs-dry-run
-mise run gateway-purge-request-logs-dry-run-prod
+mise run //gateway:purge-request-logs --dry-run
+mise run //gateway:prod:purge-request-logs --dry-run
 ```
 
 Apply it:
 
 ```bash
-mise run gateway-purge-request-logs
-mise run gateway-purge-request-logs-prod
+mise run //gateway:purge-request-logs
+mise run //gateway:prod:purge-request-logs
 ```
 
 Supported windows are `1d`, `3d`, and `7d`; set `RETENTION=1d|3d|7d` before the `mise` task to override the `7d` default. The default admin choice is `7d`; use `1d` or `3d` only when the environment has tight storage requirements and admins are comfortable losing request-detail history quickly.

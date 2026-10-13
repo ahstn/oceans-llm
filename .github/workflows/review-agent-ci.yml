@@ -42,4 +42,4 @@ jobs:
 
       - name: Check review agent action
         # The tests use synthetic credentials and probe the real Linux sandbox.
-        run: mise run review-agent-action-check
+        run: mise run //review-agent:check

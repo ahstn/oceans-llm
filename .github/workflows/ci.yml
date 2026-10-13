@@ -77,7 +77,7 @@ jobs:
         run: mise run //crates/gateway-store:smoke:postgres
 
       - name: Run end-to-end contract tests
-        run: mise run e2e-test
+        run: mise run //ui:e2e
 
       - name: Upload Playwright report and test results
         if: failure()

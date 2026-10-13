@@ -1,44 +1,43 @@
+# Postgres store tasks. From the repo root: `mise run //crates/gateway-store:<task>`.
+# The `db` daemon is declared in the root mise.toml and exports DATABASE_URL.
+
 [tasks.check]
 description = "Compile gateway-store and gateway Postgres targets"
 run = "cargo check -p gateway-store -p gateway --all-targets"
 
 [tasks."postgres:start"]
-description = "Start local Postgres (mise daemon `db`, declared in the root mise.toml)"
-run = "mise -C ../.. daemons start db"
+description = "Start local Postgres (the root `db` daemon)"
+run = "mise daemons start db"
 
 [tasks."postgres:stop"]
 description = "Stop local Postgres"
-run = "mise -C ../.. daemons stop db"
+run = "mise daemons stop db"
 
 [tasks."postgres:status"]
 description = "Show local Postgres daemon status"
-run = "mise -C ../.. daemons status db"
+run = "mise daemons status db"
 
 [tasks."postgres:logs"]
 description = "Show local Postgres daemon logs"
-run = "mise -C ../.. daemons logs db"
+run = "mise daemons logs db"
 
 [tasks."postgres:reset"]
 description = "Delete the local Postgres data directory and start a fresh database"
 run = """
-set -eu
-# The stop command also fails when the supervisor is down, so judge by the reported status.
-mise -C ../.. daemons stop db >/dev/null 2>&1 || true
-db_field() {
-  mise -C ../.. daemons ls --json | node -e 'const d = JSON.parse(require("fs").readFileSync(0, "utf8")).find((x) => x.name === "db"); process.stdout.write(String(d?.[process.argv[1]] ?? ""))' "$1"
-}
-[ "$(db_field status)" = "stopped" ] || { echo "db daemon did not stop; refusing to delete its data" >&2; exit 1; }
-data_dir="$(db_field data_dir)"
-[ -n "$data_dir" ] || { echo "db daemon has no data_dir" >&2; exit 1; }
+# Stop fails when the supervisor is already down, so check the reported pid instead.
+mise daemons stop db || true
+data_dir="$(mise daemons ls --json | node -e '
+  const db = JSON.parse(require("fs").readFileSync(0, "utf8")).find((d) => d.name === "db");
+  if (db?.pid != null || !db?.data_dir) process.exit(1);
+  process.stdout.write(db.data_dir);
+')" || { echo "db daemon is still running or has no data_dir; refusing to delete it" >&2; exit 1; }
 rm -rf "$data_dir"
-mise -C ../.. daemons start db
+mise daemons start db
 """
 
 [tasks."postgres:env"]
 description = "Print env exports for local Postgres URLs"
-run = '''
-printf 'export POSTGRES_URL="%s"\nexport TEST_POSTGRES_URL="%s"\n' "$DATABASE_URL" "$DATABASE_URL"
-'''
+run = '''printf 'export POSTGRES_URL="%s"\nexport TEST_POSTGRES_URL="%s"\n' "$DATABASE_URL" "$DATABASE_URL"'''
 
 [tasks."test:postgres"]
 description = "Run focused Postgres-backed gateway-store tests"
@@ -46,45 +45,21 @@ env = { TEST_POSTGRES_URL = { required = true } }
 run = "cargo test -p gateway-store postgres_"
 
 [tasks."smoke:postgres"]
-description = "Run gateway Postgres smoke checks with explicit CLI commands"
-env = { POSTGRES_URL = { required = true } }
+description = "Migrate, seed, and boot the gateway against Postgres, then probe its health endpoints"
+depends = ["//crates/gateway:build"]
+env = { POSTGRES_URL = { required = true }, GATEWAY_CONFIG = "../../gateway.prod.yaml", OPENAI_API_KEY = "${OPENAI_API_KEY:-test-openai-key}", OPENAI_API_KEY_SECONDARY = "${OPENAI_API_KEY_SECONDARY:-test-openai-key-secondary}" }
 run = """
-set -eu
+gateway="$CARGO_TARGET_DIR/debug/gateway"
+log="${TMPDIR:-/tmp}/gateway-postgres-smoke.log"
 
-export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
-export OPENAI_API_KEY_SECONDARY="${OPENAI_API_KEY_SECONDARY:-test-openai-key-secondary}"
-gateway_port=8080
-gateway_log="${TMPDIR:-/tmp}/gateway-postgres-smoke.log"
-gateway_config="../../gateway.prod.yaml"
+"$gateway" migrate --apply
+"$gateway" seed-config
+"$gateway" bootstrap-admin
+"$gateway" serve --run-migrations false --bootstrap-admin false --seed-config false >"$log" 2>&1 &
+pid=$!
+# The gateway may already have exited; keep the original status and show its log on failure.
+trap 'status=$?; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; [ "$status" -eq 0 ] || cat "$log" >&2; exit "$status"' EXIT
 
-: > "$gateway_log"
-
-cargo run -p gateway --bin gateway -- --config "$gateway_config" migrate --apply
-cargo run -p gateway --bin gateway -- --config "$gateway_config" seed-config
-cargo run -p gateway --bin gateway -- --config "$gateway_config" bootstrap-admin
-
-cargo run -p gateway --bin gateway -- --config "$gateway_config" serve --run-migrations false --bootstrap-admin false --seed-config false >"$gateway_log" 2>&1 &
-gateway_pid=$!
-
-cleanup() {
-  status=$?
-  if [ "$status" -ne 0 ]; then
-    echo "--- gateway smoke log ---" >&2
-    cat "$gateway_log" >&2 || true
-  fi
-  kill "$gateway_pid" >/dev/null 2>&1 || true
-  wait "$gateway_pid" >/dev/null 2>&1 || true
-}
-
-trap cleanup EXIT INT TERM
-
-for _ in $(seq 1 30); do
-  if curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/readyz" >/dev/null; then
-    break
-  fi
-  sleep 1
-done
-
-curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/healthz" >/dev/null
-curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/readyz" >/dev/null
+curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/readyz >/dev/null
+curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null
 """

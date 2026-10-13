@@ -42,7 +42,7 @@ Older `AGENT_ANALYSIS_*` environment variables can override some fields. They co
 
 `mise run dev-stack` refreshes the local demo request and agent-session fixtures, gives platform admins access to calibration data, and starts the report worker. Sign in as the seeded platform admin and open **Observability → Agent Sessions**. The worker processes the queued demo reports. The demo includes a ten-request Jira release session with file operations, six available Jira tools, and two direct MCP calls. It also includes a ten-request repository session with eight read, write, or edit calls. Set `AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED=false` before you start the stack to test the disabled page.
 
-`mise run gateway-seed-local-demo` seeds the same finalized sessions, direct MCP invocation records, and queued analyses. It does not start the report worker or change access settings. Start the gateway with calibration data access or calibrated score access to show the page and process the queue. Restart the gateway after you pull backend changes. Frontend hot reload does not replace the Rust process. Use `mise run gateway-reset-local-demo` to replace old demo reports with the current report schema.
+`mise run //gateway:seed-local-demo` seeds the same finalized sessions, direct MCP invocation records, and queued analyses. It does not start the report worker or change access settings. Start the gateway with calibration data access or calibrated score access to show the page and process the queue. Restart the gateway after you pull backend changes. Frontend hot reload does not replace the Rust process. Use `mise run //gateway:reset-local-demo` to replace old demo reports with the current report schema.
 
 ## Admin Workflow
 
@@ -131,8 +131,8 @@ Finish reasons split normal completion from length or output-limit stops. A leng
 Queue up to 100 retained finalized sessions whose latest report is absent or stale:
 
 ```bash
-mise run gateway-recompute-agent-analysis
-mise run gateway-recompute-agent-analysis-prod
+mise run //gateway:recompute-agent-analysis
+mise run //gateway:prod:recompute-agent-analysis
 ```
 
 Set `LIMIT` to a value from `1` through `1000` to bound one run. To target one retained session directly, run:

@@ -15,7 +15,7 @@ The gateway embeds the snapshot at build time, so a refresh only reaches deploym
 ## Refreshing
 
 ```bash
-mise run sync-model-benchmarks
+mise run //gateway:sync-model-benchmarks
 ```
 
 The task reads OpenRouter's top 200 models by intelligence and then:

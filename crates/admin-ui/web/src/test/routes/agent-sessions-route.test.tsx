@@ -462,7 +462,7 @@ describe('AgentSessionsPage', () => {
     render(<AgentSessionsPage />)
 
     expect(screen.getByText('Tool-call data is not available')).toBeInTheDocument()
-    expect(screen.getByText('mise run gateway-reset-local-demo')).toBeInTheDocument()
+    expect(screen.getByText('mise run //gateway:reset-local-demo')).toBeInTheDocument()
   })
 
   it('opens session diagnostics from the keyboard and labels the current page', async () => {

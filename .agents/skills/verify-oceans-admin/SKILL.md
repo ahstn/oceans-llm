@@ -1,7 +1,7 @@
 ---
 name: verify-oceans-admin
 description: Verify the Oceans LLM admin control plane and backend gateway against the real local stack, seeded demo data, and bounded live providers when required. Use for user-path checks of sign-in, models, API keys, observability, usage costs, spend controls, batches, agent sessions, request logs, MCP registry and tool access, OpenRouter routing, guardrails, and Skills storage.
-compatibility: Requires mise, git, lsof, and Chromium via `mise run e2e-install`; macOS or Linux.
+compatibility: Requires mise, git, lsof, and Chromium via `mise run //ui:e2e:install`; macOS or Linux.
 ---
 
 # Verify Oceans Admin
@@ -66,7 +66,7 @@ Prove the Models path:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive models
 ```
 
-The Models driver runs the idempotent `mise run e2e-install` task to ensure Chromium is available. It then opens the protected `/admin/api-keys` route, captures its redirect to sign-in, signs in as the seeded `admin@local` user, follows the `Models` sidebar link, checks the displayed count against rendered rows and the total count against the read-only admin models response, checks the always-visible `Intelligence Index` against that response, checks every platform-admin `Model info` section, enables the optional `Context window` and `Capabilities` columns, and opens `Client config` for `gpt-6-astra`.
+The Models driver runs the idempotent `mise run //ui:e2e:install` task to ensure Chromium is available. It then opens the protected `/admin/api-keys` route, captures its redirect to sign-in, signs in as the seeded `admin@local` user, follows the `Models` sidebar link, checks the displayed count against rendered rows and the total count against the read-only admin models response, checks the always-visible `Intelligence Index` against that response, checks every platform-admin `Model info` section, enables the optional `Context window` and `Capabilities` columns, and opens `Client config` for `gpt-6-astra`.
 
 Prove the Leaderboard and Agent Harnesses paths together:
 

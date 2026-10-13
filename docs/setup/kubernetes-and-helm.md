@@ -17,7 +17,7 @@ Release tags publish chart version `X.Y.Z` from tag `vX.Y.Z`. The chart `appVers
 Local chart checks live behind `mise`:
 
 ```bash
-mise run helm-check
+mise run //helm:check
 ```
 
 That task updates chart dependencies, runs `helm lint`, and renders the default chart plus every checked-in example under [../../deploy/helm/oceans-llm/examples](../../deploy/helm/oceans-llm/examples).
@@ -160,7 +160,7 @@ Checked-in examples cover:
 Render them locally with:
 
 ```bash
-mise run helm-template
+mise run //helm:template
 ```
 
 ## What This Page Does Not Own

@@ -177,7 +177,7 @@ The right first-access path depends on the runtime shape.
 
 ### Kubernetes Helm deploy
 
-- render the intended values with `mise run helm-template` or `helm template`
+- render the intended values with `mise run //helm:template` or `helm template`
 - confirm required secrets exist before install or are produced by `ExternalSecret`
 - confirm the migration Job succeeds
 - confirm gateway and admin UI pods become ready

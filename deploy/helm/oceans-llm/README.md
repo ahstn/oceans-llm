@@ -87,11 +87,11 @@ The chart pins the [official RustFS chart](https://charts.rustfs.com/) to `1.0.1
 Build a source checkout from its checked-in dependency lock:
 
 ```bash
-mise run helm-dependency-build
-mise run helm-check
+mise run //helm:deps
+mise run //helm:check
 ```
 
-Maintainers use `mise run helm-dependency-update` only when updating the dependency and review both `Chart.yaml` and `Chart.lock`. CI builds the locked dependency before validation and includes it in the packaged Oceans chart.
+Maintainers use `mise run //helm:deps:update` only when updating the dependency and review both `Chart.yaml` and `Chart.lock`. CI builds the locked dependency before validation and includes it in the packaged Oceans chart.
 
 Set `rustfs.storageclass.name` to an existing CSI-backed StorageClass. CSI supplies filesystem storage to RustFS pods; RustFS supplies the S3 API. The chart does not install a CSI driver or define a StorageClass. Admins must select the volume binding mode, reclaim policy, expansion support, and backup process. A topology-bound driver can require `WaitForFirstConsumer` so provisioning follows pod scheduling constraints. See [Kubernetes StorageClasses](https://kubernetes.io/docs/concepts/storage/storage-classes/).
 
@@ -138,7 +138,7 @@ deleted immediately.
 Render the checked-in examples with:
 
 ```bash
-mise run helm-template
+mise run //helm:template
 ```
 
 Example values live in [examples](examples):
@@ -164,5 +164,5 @@ Release tags publish this chart to GHCR:
 ## Validation
 
 ```bash
-mise run helm-check
+mise run //helm:check
 ```

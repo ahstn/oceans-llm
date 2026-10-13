@@ -45,7 +45,7 @@ Install the repo toolchain:
 ```bash
 eval "$(mise activate zsh)"
 mise install
-mise run ui-install
+mise run //ui:install
 ```
 
 Run the local development stack:
@@ -61,37 +61,37 @@ Default local endpoints:
 - active config: `./gateway.yaml`
 - database backend: local libsql or SQLite
 
-`mise run dev-stack` refreshes the local demo dataset on startup and gives platform admins access to calibration data. Sign in with the seeded platform admin and open **Observability → Agent Sessions** to inspect the sample session reports. The demo includes ten-request Jira and repository sessions. The Jira session has six available tools, two direct MCP calls, and file operations. Use `mise run gateway-reset-local-demo` to recreate the complete sample state.
+`mise run dev-stack` refreshes the local demo dataset on startup and gives platform admins access to calibration data. Sign in with the seeded platform admin and open **Observability → Agent Sessions** to inspect the sample session reports. The demo includes ten-request Jira and repository sessions. The Jira session has six available tools, two direct MCP calls, and file operations. Use `mise run //gateway:reset-local-demo` to recreate the complete sample state.
 
 ## Core Commands
 
 - local dev stack:
   - `mise run dev-stack`
 - local gateway:
-  - `mise run gateway-serve`
+  - `mise run //gateway:serve`
 - local explicit migration:
-  - `mise run gateway-migrate`
+  - `mise run //gateway:migrate`
 - local explicit bootstrap admin:
-  - `mise run gateway-bootstrap-admin`
+  - `mise run //gateway:bootstrap-admin`
 - local explicit config seed:
-  - `mise run gateway-seed-config`
+  - `mise run //gateway:seed-config`
 - request-log retention purge:
-  - `mise run gateway-purge-request-logs-dry-run`
-  - `mise run gateway-purge-request-logs`
-  - `mise run gateway-purge-request-logs-dry-run-prod`
-  - `mise run gateway-purge-request-logs-prod`
+  - `mise run //gateway:purge-request-logs --dry-run`
+  - `mise run //gateway:purge-request-logs`
+  - `mise run //gateway:prod:purge-request-logs --dry-run`
+  - `mise run //gateway:prod:purge-request-logs`
 - local-only demo dataset seed:
-  - `mise run gateway-seed-local-demo`
+  - `mise run //gateway:seed-local-demo`
 - local-only demo dataset reset:
-  - `mise run gateway-reset-local-demo`
+  - `mise run //gateway:reset-local-demo`
 - production-shaped local stack:
   - `mise run prod-stack`
 - production-shaped explicit migration:
-  - `mise run gateway-migrate-prod`
+  - `mise run //gateway:prod:migrate`
 - production-shaped explicit bootstrap admin:
-  - `mise run gateway-bootstrap-admin-prod`
+  - `mise run //gateway:prod:bootstrap-admin`
 - production-shaped explicit config seed:
-  - `mise run gateway-seed-config-prod`
+  - `mise run //gateway:prod:seed-config`
 - admin contract generation:
   - `mise run admin-contract-generate`
 - admin contract drift check:
@@ -101,13 +101,13 @@ Default local endpoints:
 - full test:
   - `mise run test`
 - E2E contract suite:
-  - `mise run e2e-test`
+  - `mise run //ui:e2e`
 
 ## Migration Policy
 
 - Fresh databases apply one active `V17` baseline per backend.
 - Databases carrying pre-baseline `V1` through `V16` history must be recreated instead of upgraded in place.
-- Use `mise run gateway-migrate` to apply or inspect the active migration state.
+- Use `mise run //gateway:migrate` to apply or inspect the active migration state.
 
 ## Documentation Map
 
