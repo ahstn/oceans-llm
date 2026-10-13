@@ -272,9 +272,12 @@ try {
     )
   }
   const names = requests[0]?.tools?.map((t) => t.function.name) ?? []
-  for (const name of ['submit_review', 'mcp', 'subagent', 'web_search'])
+  for (const name of ['submit_review', 'intercom', 'subagent', 'web_search'])
     assert(names.includes(name), `Missing tool ${name}: ${names.join(', ')}`)
-  assert(!names.includes('bash') && !names.includes('write') && !names.includes('fetch_content'))
+  assert(
+    !['bash', 'write', 'fetch_content', 'mcp'].some((name) => names.includes(name)),
+    `Unexpected tool: ${names.join(', ')}`,
+  )
   scenario = 'research-boundary'
   const researchStart = requests.length
   await runSdk(request)

@@ -2,6 +2,8 @@
 
 Status: Accepted
 
+> **Amendment note (2026-10-13):** [Built-in MCP, pi-intercom, and advisory review status](#amendment-built-in-mcp-pi-intercom-and-advisory-review-status) replaces `pi-mcp-adapter` and makes failed reviews advisory. The original decision remains below as history.
+
 ## Context
 
 The review action used a committed Rolldown bundle and invoked `pi review` with action-specific flags. Pi does not provide that review command. A bundle also adds a build and freshness check to each source change without being required by a composite action.
@@ -25,3 +27,31 @@ Search uses the action-owned `config/web-search.json`. Prefer anonymous Exa and 
 ## Verification
 
 `review-agent-action-check` covers type checking, unit tests, lint, formatting, and real SDK calls to a local model mock. The self-hosted workflow covers the run lifecycle with a mock Oceans API and publishing disabled. Hosted workflow execution and live provider quality require deployment checks after the change is published.
+
+## Amendment: built-in MCP, pi-intercom, and advisory review status
+
+Date: 2026-10-13
+
+### Decision
+
+Replace `pi-mcp-adapter` with Pi's built-in MCP extension, loaded through `createMcpExtension()`. Load `pi-intercom` in its place alongside `pi-subagents` and `pi-web-access`.
+
+Treat a failed or unavailable review as advisory. The workflow keeps the job green and publishes a neutral `Oceans review` check that names the failed step.
+
+### Implementation
+
+- Built-in MCP reads only the action-owned `mcp.json` in the temporary agent directory, because the review never trusts its working directory. The server registry stays empty.
+- The `pi-intercom` broker lives under the temporary agent directory. Only replies to the review's own messages may start a turn. The worker stops the broker on exit, SIGTERM, and SIGINT.
+- Subagents contact the parent through the `pi-subagents` supervisor channel, so their read-only tool ceiling is unchanged.
+- Review workflow steps continue on error and are gated on their predecessors. The final step creates or updates a check scoped to the pull request.
+
+### Rationale
+
+Pi 1.x ships MCP support, so the adapter duplicated a built-in capability. Review infrastructure failures, such as a revoked provider key, say nothing about whether a pull request can merge.
+
+### Trade-offs and follow-ups
+
+- The action still reports its own failure as an error annotation inside the green job.
+- Checks created with `GITHUB_TOKEN` can appear grouped under another workflow.
+- Dependabot-triggered runs are skipped because they receive no secrets and a read-only token.
+- If `Oceans review` becomes a required check, `neutral` counts as passing.

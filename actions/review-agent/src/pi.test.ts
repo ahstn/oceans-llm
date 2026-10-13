@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { reviewEnvironment } from './pi'
+import { reviewEnvironment, workerError, workerErrorMarker } from './pi'
 import { parseDiffAnchors } from './review-diff'
 
 describe('Pi review boundary', () => {
@@ -9,8 +9,14 @@ describe('Pi review boundary', () => {
     expect(env.NODE_OPTIONS).toBeUndefined()
     expect(env.HOME).toBe('/tmp/isolated-review')
     expect(env.PI_CODING_AGENT_DIR).toBe('/tmp/isolated-review/agent')
-    expect(env.PI_MCP_CONFIG_MODE).toBe('exclusive')
     expect(env.OCEANS_REVIEW_API_KEY).toBe('gateway-test-key')
+  })
+
+  test('reports only the worker terminal error, not extension stderr noise', () => {
+    const stderr = `/bin/sh: 1: npm: not found\n${workerErrorMarker}Pi model error: 401\n`
+    expect(workerError(stderr)).toBe('Pi model error: 401')
+    expect(workerError('/bin/sh: 1: npm: not found\n')).toBeUndefined()
+    expect(workerError(undefined)).toBeUndefined()
   })
 
   test('anchors only changed right-side lines, including multi-line hunks', () => {
