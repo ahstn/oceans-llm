@@ -3766,6 +3766,16 @@ export interface components {
         McpServersPayload: {
             items: components["schemas"]["McpServerView"][];
         };
+        /**
+         * @description Behaviour hints declared by the upstream server. A missing value means the
+         *     server did not declare the hint. Hints are not verified by the gateway.
+         */
+        McpToolAnnotationsView: {
+            destructive_hint?: boolean | null;
+            idempotent_hint?: boolean | null;
+            open_world_hint?: boolean | null;
+            read_only_hint?: boolean | null;
+        };
         McpToolInvocationDetailView: {
             invocation: components["schemas"]["McpToolInvocationSummaryView"];
             payload?: null | components["schemas"]["McpToolInvocationPayloadView"];
@@ -3818,6 +3828,7 @@ export interface components {
             user_id?: string | null;
         };
         McpToolView: {
+            annotations: components["schemas"]["McpToolAnnotationsView"];
             deactivated_at?: string | null;
             description?: string | null;
             display_name: string;
@@ -3826,10 +3837,14 @@ export interface components {
             input_schema: unknown;
             is_active: boolean;
             last_discovered_at: string;
+            /** @description Schema of the tool's structured result, when the upstream declares one. */
+            output_schema?: unknown;
             schema_hash: string;
             /** Format: int64 */
             schema_version: number;
             server_id: string;
+            /** @description Human-readable title declared by the upstream server. */
+            title?: string | null;
             upstream_name: string;
         };
         McpToolsPayload: {

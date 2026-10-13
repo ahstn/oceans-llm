@@ -158,21 +158,32 @@ pub struct ToolsCallResponse {
     pub is_error: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct McpTool {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default)]
     pub input_schema: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
+    /// Behaviour hints such as `readOnlyHint` and `destructiveHint`. Kept as
+    /// the upstream sent them so unknown members survive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NormalizedMcpTool {
     pub name: String,
+    pub title: Option<String>,
     pub description: Option<String>,
     pub input_schema: Value,
+    pub output_schema: Option<Value>,
+    pub annotations: Option<Map<String, Value>>,
     pub schema_hash: String,
 }
 
@@ -582,15 +593,68 @@ pub fn normalize_tools(tools: Vec<McpTool>) -> Result<Vec<NormalizedMcpTool>, Mc
             });
         }
         let input_schema = canonicalize_json(&input_schema);
-        let schema_hash = schema_hash(&input_schema)?;
+        let title = tool
+            .title
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        // Invalid optional members are dropped rather than failing discovery
+        // for every tool on the server.
+        let output_schema = tool
+            .output_schema
+            .filter(Value::is_object)
+            .map(|value| canonicalize_json(&value));
+        let annotations = match tool.annotations.map(|value| canonicalize_json(&value)) {
+            Some(Value::Object(object)) => Some(object),
+            _ => None,
+        };
+        let schema_hash = tool_schema_hash(
+            &input_schema,
+            title.as_deref(),
+            annotations.as_ref(),
+            output_schema.as_ref(),
+        )?;
         normalized.push(NormalizedMcpTool {
             name: name.to_string(),
+            title,
             description: tool.description.map(|value| value.trim().to_string()),
             input_schema,
+            output_schema,
+            annotations,
             schema_hash,
         });
     }
     Ok(normalized)
+}
+
+/// Hashes the parts of a tool definition that clients rely on.
+///
+/// A tool that declares no title, annotations, or output schema hashes its
+/// input schema alone, so hashes recorded before these members were stored
+/// stay the same. Otherwise the hash covers all of them.
+pub fn tool_schema_hash(
+    input_schema: &Value,
+    title: Option<&str>,
+    annotations: Option<&Map<String, Value>>,
+    output_schema: Option<&Value>,
+) -> Result<String, McpClientError> {
+    if title.is_none() && annotations.is_none() && output_schema.is_none() {
+        return schema_hash(input_schema);
+    }
+    let mut envelope = Map::new();
+    envelope.insert("inputSchema".to_string(), input_schema.clone());
+    if let Some(title) = title {
+        envelope.insert("title".to_string(), Value::String(title.to_string()));
+    }
+    if let Some(annotations) = annotations {
+        envelope.insert(
+            "annotations".to_string(),
+            Value::Object(annotations.clone()),
+        );
+    }
+    if let Some(output_schema) = output_schema {
+        envelope.insert("outputSchema".to_string(), output_schema.clone());
+    }
+    schema_hash(&Value::Object(envelope))
 }
 
 pub fn schema_hash(value: &Value) -> Result<String, McpClientError> {
@@ -897,12 +961,104 @@ mod tests {
         );
     }
 
+    fn annotated_tool() -> McpTool {
+        serde_json::from_value(json!({
+            "name": "delete_issue",
+            "title": " Delete issue ",
+            "description": "Deletes an issue",
+            "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}},
+            "outputSchema": {"type": "object", "properties": {"deleted": {"type": "boolean"}}},
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": true,
+                "openWorldHint": false,
+                "x-vendor": "kept"
+            }
+        }))
+        .expect("annotated tool")
+    }
+
+    #[test]
+    fn normalize_keeps_title_annotations_and_output_schema() {
+        let tool = normalize_tools(vec![annotated_tool()])
+            .expect("normalize")
+            .remove(0);
+
+        assert_eq!(tool.title.as_deref(), Some("Delete issue"));
+        assert_eq!(
+            tool.output_schema,
+            Some(json!({"properties": {"deleted": {"type": "boolean"}}, "type": "object"}))
+        );
+        let annotations = tool.annotations.expect("annotations");
+        assert_eq!(annotations["destructiveHint"], json!(true));
+        assert_eq!(annotations["x-vendor"], json!("kept"));
+    }
+
+    #[test]
+    fn tools_without_new_members_keep_the_input_schema_hash() {
+        let tool = normalize_tools(vec![McpTool {
+            name: "search".to_string(),
+            input_schema: json!({"type": "object"}),
+            ..McpTool::default()
+        }])
+        .expect("normalize")
+        .remove(0);
+
+        assert_eq!(
+            tool.schema_hash,
+            schema_hash(&json!({"type": "object"})).expect("hash")
+        );
+    }
+
+    #[test]
+    fn changing_title_annotations_or_output_schema_changes_the_hash() {
+        let baseline = normalize_tools(vec![annotated_tool()]).expect("baseline")[0]
+            .schema_hash
+            .clone();
+        let variants: [fn(&mut McpTool); 4] = [
+            |tool| tool.title = Some("Remove issue".to_string()),
+            |tool| {
+                tool.annotations.as_mut().expect("annotations")["destructiveHint"] = json!(false)
+            },
+            |tool| tool.annotations = None,
+            |tool| tool.output_schema = Some(json!({"type": "object"})),
+        ];
+        for change in variants {
+            let mut tool = annotated_tool();
+            change(&mut tool);
+            let hash = normalize_tools(vec![tool]).expect("variant")[0]
+                .schema_hash
+                .clone();
+            assert_ne!(hash, baseline);
+        }
+    }
+
+    #[test]
+    fn invalid_optional_members_are_dropped() {
+        let tool = normalize_tools(vec![McpTool {
+            name: "search".to_string(),
+            title: Some("  ".to_string()),
+            input_schema: json!({"type": "object"}),
+            output_schema: Some(json!("not object")),
+            annotations: Some(json!(["not", "object"])),
+            ..McpTool::default()
+        }])
+        .expect("normalize")
+        .remove(0);
+
+        assert_eq!(tool.title, None);
+        assert_eq!(tool.output_schema, None);
+        assert_eq!(tool.annotations, None);
+    }
+
     #[test]
     fn rejects_non_object_input_schema() {
         let error = normalize_tools(vec![McpTool {
             name: "bad".to_string(),
             description: None,
             input_schema: json!("not object"),
+            ..McpTool::default()
         }])
         .expect_err("invalid schema");
 
@@ -916,11 +1072,13 @@ mod tests {
                 name: "search".to_string(),
                 description: None,
                 input_schema: json!({"type": "object"}),
+                ..McpTool::default()
             },
             McpTool {
                 name: " search ".to_string(),
                 description: None,
                 input_schema: json!({"type": "object"}),
+                ..McpTool::default()
             },
         ])
         .expect_err("duplicate name");

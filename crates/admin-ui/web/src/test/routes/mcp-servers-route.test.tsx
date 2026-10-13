@@ -73,8 +73,16 @@ const tool: McpToolView = {
   server_id: 'server_1',
   upstream_name: 'create_issue',
   display_name: 'create_issue',
+  title: null,
   description: 'Create issue',
   input_schema: {},
+  output_schema: null,
+  annotations: {
+    read_only_hint: null,
+    destructive_hint: null,
+    idempotent_hint: null,
+    open_world_hint: null,
+  },
   schema_hash: 'sha256:abc123',
   schema_version: 2,
   is_active: false,
@@ -237,6 +245,56 @@ describe('ServersTab', () => {
 
     expect(onAddToToolset).toHaveBeenCalledTimes(1)
     expect(onAddToToolset).toHaveBeenCalledWith(['tool_2'])
+  })
+
+  it('shows declared annotation hints, title, and output schema', async () => {
+    const annotatedTools: McpToolView[] = [
+      {
+        ...activeTool,
+        id: 'tool_read',
+        title: 'Query documentation',
+        output_schema: { type: 'object', properties: { answer: { type: 'string' } } },
+        annotations: {
+          read_only_hint: true,
+          destructive_hint: true,
+          idempotent_hint: true,
+          open_world_hint: false,
+        },
+      },
+      {
+        ...activeTool,
+        id: 'tool_delete',
+        upstream_name: 'delete_page',
+        display_name: 'delete_page',
+        annotations: {
+          read_only_hint: false,
+          destructive_hint: true,
+          idempotent_hint: null,
+          open_world_hint: true,
+        },
+      },
+      { ...tool, id: 'tool_plain', upstream_name: 'plain', display_name: 'plain' },
+    ]
+    getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: annotatedTools } })
+    await renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+    await waitFor(() => expect(screen.getByText('query_docs')).toBeInTheDocument())
+
+    const [readBadges, deleteBadges] = screen.getAllByTestId('mcp-tool-annotations')
+    expect(within(readBadges).getByText('Read-only')).toBeInTheDocument()
+    expect(within(readBadges).getByText('Idempotent')).toBeInTheDocument()
+    expect(within(readBadges).queryByText('Destructive')).not.toBeInTheDocument()
+    expect(within(readBadges).queryByText('Open world')).not.toBeInTheDocument()
+    expect(within(deleteBadges).getByText('Destructive')).toBeInTheDocument()
+    expect(within(deleteBadges).getByText('Open world')).toBeInTheDocument()
+    expect(screen.getAllByTestId('mcp-tool-annotations')).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show query_docs schema' }))
+    expect(screen.getByText('Query documentation')).toBeInTheDocument()
+    expect(screen.getByText('Output schema')).toBeInTheDocument()
+    expect(screen.getByTestId('mcp-tool-output-schema-code')).toHaveTextContent('answer')
   })
 
   it('contains expanded JSON schema overflow inside the tools panel', async () => {

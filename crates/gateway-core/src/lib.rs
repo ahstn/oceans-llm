@@ -67,7 +67,7 @@ pub use domain::{
     McpTokenEstimateConfidence, McpTokenEstimateSource, McpToolGrantRecord,
     McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
     McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-    McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
+    McpToolInvocationRecord, McpToolInvocationStatus, McpToolMetadata, McpToolPolicyResult,
     McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus, McpToolsetToolRecord,
     McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamSecretStorageKind, MembershipRole,

@@ -14659,6 +14659,36 @@
           }
         }
       },
+      "McpToolAnnotationsView": {
+        "type": "object",
+        "description": "Behaviour hints declared by the upstream server. A missing value means the\nserver did not declare the hint. Hints are not verified by the gateway.",
+        "properties": {
+          "destructive_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "idempotent_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "open_world_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "read_only_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
       "McpToolInvocationDetailView": {
         "type": "object",
         "required": [
@@ -14857,6 +14887,7 @@
           "upstream_name",
           "display_name",
           "input_schema",
+          "annotations",
           "schema_hash",
           "schema_version",
           "is_active",
@@ -14864,6 +14895,9 @@
           "last_discovered_at"
         ],
         "properties": {
+          "annotations": {
+            "$ref": "#/components/schemas/McpToolAnnotationsView"
+          },
           "deactivated_at": {
             "type": [
               "string",
@@ -14892,6 +14926,9 @@
           "last_discovered_at": {
             "type": "string"
           },
+          "output_schema": {
+            "description": "Schema of the tool's structured result, when the upstream declares one."
+          },
           "schema_hash": {
             "type": "string"
           },
@@ -14901,6 +14938,13 @@
           },
           "server_id": {
             "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable title declared by the upstream server."
           },
           "upstream_name": {
             "type": "string"

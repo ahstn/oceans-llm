@@ -245,6 +245,11 @@ mod proxy_policy {
                             "result": {"protocolVersion": "2025-06-18", "capabilities": {}, "serverInfo": {"name": "upstream", "version": "1"}},
                         }))
                         .into_response(),
+                        "tools/list" => Json(json!({
+                            "jsonrpc": "2.0", "id": id,
+                            "result": {"tools": [annotated_search_tool(), {"name": "purge", "inputSchema": {"type": "object"}}]},
+                        }))
+                        .into_response(),
                         "resources/read" => Json(json!({
                             "jsonrpc": "2.0", "id": id,
                             "result": {"contents": [{"uri": message["params"]["uri"], "text": SECRET_TEXT}]},
@@ -344,6 +349,7 @@ mod proxy_policy {
                     display_name: "Search".to_string(),
                     description: None,
                     input_schema: json!({"type": "object"}),
+                    metadata: gateway_core::McpToolMetadata::default(),
                     schema_hash: "search-v1".to_string(),
                 }],
             )
@@ -443,6 +449,83 @@ mod proxy_policy {
             .await
             .expect("invocation log")
             .items
+    }
+
+    /// The granted `search` tool as the upstream declares it, including members
+    /// the gateway does not interpret.
+    fn annotated_search_tool() -> Value {
+        json!({
+            "name": "search",
+            "title": "Search notes",
+            "inputSchema": {"type": "object"},
+            "outputSchema": {"type": "object", "properties": {"hits": {"type": "array"}}},
+            "annotations": {"readOnlyHint": true, "openWorldHint": false, "x-extra": 1},
+            "_meta": {"origin": "upstream"},
+        })
+    }
+
+    #[tokio::test]
+    async fn tools_list_keeps_declared_metadata_for_granted_tools() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list"}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
+        assert_eq!(body["result"]["tools"], json!([annotated_search_tool()]));
+    }
+
+    #[tokio::test]
+    async fn discovery_stores_declared_metadata_and_counts_it_as_drift() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        seed_server(&state, &upstream.url, true).await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+
+        gateway_service::McpRegistryService::new(state.store.clone())
+            .refresh_discovery(server.mcp_server_id)
+            .await
+            .expect("discovery");
+
+        let tools = state
+            .store
+            .list_external_mcp_tools(server.mcp_server_id, false)
+            .await
+            .expect("tools");
+        let search = tools
+            .iter()
+            .find(|tool| tool.upstream_name == "search")
+            .expect("search tool");
+        let declared = annotated_search_tool();
+        assert_eq!(search.metadata.title.as_deref(), Some("Search notes"));
+        assert_eq!(
+            search.metadata.annotations,
+            declared["annotations"].as_object().cloned()
+        );
+        assert_eq!(
+            search.metadata.output_schema.as_ref(),
+            Some(&declared["outputSchema"])
+        );
+        // The seeded row had no metadata, so the declared members are drift.
+        assert_ne!(search.schema_hash, "search-v1");
+        assert_eq!(search.schema_version, 2);
+        let purge = tools
+            .iter()
+            .find(|tool| tool.upstream_name == "purge")
+            .expect("purge tool");
+        assert_eq!(purge.metadata, gateway_core::McpToolMetadata::default());
     }
 
     fn read_resource() -> Value {

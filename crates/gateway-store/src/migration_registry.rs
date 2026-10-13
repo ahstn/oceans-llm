@@ -328,6 +328,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V57__mcp_invocation_method.sql"),
         postgres_sql: include_str!("../migrations/postgres/V57__mcp_invocation_method.sql"),
     },
+    MigrationManifest {
+        version: 58,
+        name: "mcp_tool_metadata",
+        checksum: "V58__mcp_tool_metadata.sql",
+        libsql_sql: include_str!("../migrations/V58__mcp_tool_metadata.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V58__mcp_tool_metadata.sql"),
+    },
 ];
 
 #[cfg(test)]

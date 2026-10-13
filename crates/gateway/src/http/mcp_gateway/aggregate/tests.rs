@@ -62,6 +62,64 @@ async fn aggregate_tools_list_serializes_only_discovery_tools() {
     assert_eq!(tools[2]["inputSchema"]["required"], json!(["address"]));
 }
 
+fn search_tool_metadata() -> gateway_core::McpToolMetadata {
+    gateway_core::McpToolMetadata {
+        title: Some("Search repository".to_string()),
+        annotations: Some(Map::from_iter([
+            ("readOnlyHint".to_string(), json!(true)),
+            ("openWorldHint".to_string(), json!(false)),
+        ])),
+        output_schema: Some(json!({"type": "object", "properties": {"hits": {"type": "array"}}})),
+    }
+}
+
+async fn builtin_tool_result(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+    name: &str,
+    arguments: Value,
+) -> Value {
+    let response = call_builtin_tool(
+        state,
+        auth,
+        JsonRpcId::Number(5),
+        name.to_string(),
+        arguments,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 16_384).await.expect("body");
+    let body: Value = serde_json::from_slice(&bytes).expect("JSON-RPC response");
+    body["result"]["structuredContent"].clone()
+}
+
+#[tokio::test]
+async fn describe_and_search_return_declared_tool_metadata() {
+    let (_directory, state) = crate::http::test_support::app_state().await;
+    let auth =
+        seed_authorized_tool(&state, "http://127.0.0.1:9/mcp", ExternalMcpAuthMode::None).await;
+    let expected = search_tool_metadata();
+
+    let described = builtin_tool_result(
+        &state,
+        &auth,
+        "describe_tool",
+        json!({"address": "mcp://repository/tools/search"}),
+    )
+    .await;
+    let tool = &described["tool"];
+    assert_eq!(tool["title"], "Search repository");
+    assert_eq!(tool["annotations"], json!(expected.annotations));
+    assert_eq!(tool["output_schema"], expected.output_schema.unwrap());
+
+    let searched =
+        builtin_tool_result(&state, &auth, "search_tools", json!({"query": "search"})).await;
+    let summary = &searched["items"][0]["tool"];
+    assert_eq!(summary["title"], "Search repository");
+    assert_eq!(summary["annotations"]["readOnlyHint"], true);
+    assert!(summary.get("output_schema").is_none());
+}
+
 #[tokio::test]
 async fn preparation_failure_records_authorized_invocation() {
     // This persisted gateway-auth server has no secret reference. Authorization succeeds,
@@ -559,6 +617,7 @@ async fn seed_authorized_tool(
                 display_name: "Search".to_string(),
                 description: None,
                 input_schema: json!({"type": "object"}),
+                metadata: search_tool_metadata(),
                 schema_hash: "search-v1".to_string(),
             }],
         )

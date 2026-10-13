@@ -64,6 +64,8 @@ Each discovered tool row is collapsed by default. The collapsed row shows:
 
 - selector checkbox
 - tool name
+- hint badges the upstream server declares: **Read-only**, **Destructive**,
+  **Idempotent**, and **Open world**
 - description, truncated when long
 - active/inactive status
 
@@ -71,13 +73,21 @@ Expand a row to inspect:
 
 - stable Oceans tool id
 - upstream tool name
+- display title, when the server declares one
 - schema version
 - persisted JSON input schema
+- output schema, when the server declares one
 
 The JSON schema is the contract that `describe_tool` returns for aggregate MCP
 clients and the schema that direct `tools/call` requests are checked against.
 Schema hashes remain part of the backend drift contract, but the admin UI keeps
 the row focused on the values humans need when selecting tools.
+
+Hint badges come from the tool's `annotations`. They are claims made by the
+upstream server, not checks made by Oceans, so treat them as review aids. A tool
+that declares `readOnlyHint` shows **Read-only** and never **Destructive**,
+because the protocol ignores `destructiveHint` on read-only tools. A tool that
+declares no annotations shows no badges.
 
 When one or more active tools are selected, use **Add to toolset** to move to the
 Toolsets workflow with those tools preselected. Inactive tools remain visible for
@@ -221,12 +231,23 @@ Refresh discovery from the admin UI after adding or editing a server. Discovery:
 
 - initializes Streamable HTTP
 - lists upstream tools
-- stores normalized tool schemas
+- stores normalized tool schemas, plus each tool's `title`, `annotations`, and
+  `outputSchema` when the server declares them
 - updates schema hashes and schema versions
 - marks missing tools inactive
 - records bounded failure summaries
 
 No separate ping health check or discovery-run history UI exists in this slice.
+
+A tool's schema hash covers its input schema, title, annotations, and output
+schema. A change to any of them bumps the schema version and makes `call_tool`
+reject a stale caller-supplied `schema_hash`. A tool with none of the three
+optional members keeps the hash of its input schema alone. Invalid optional
+members, such as a non-object `outputSchema`, are dropped rather than failing
+discovery. For tools discovered before Oceans stored these members, the first
+discovery that captures them updates the hash without bumping the version unless
+the input schema also changed. See
+[Store MCP tool metadata in the schema hash](../adr/2026-10-13-mcp-tool-metadata-and-schema-hash.md).
 
 ## Access
 

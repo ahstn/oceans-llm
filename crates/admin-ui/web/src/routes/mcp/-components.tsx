@@ -246,7 +246,10 @@ function ToolDisclosureRow({
             onChange={onToggleTool}
           />
           <div className="min-w-0">
-            <div className="truncate font-medium">{tool.display_name}</div>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="truncate font-medium">{tool.display_name}</span>
+              <ToolAnnotationBadges tool={tool} />
+            </div>
             {description ? (
               <div className="text-subtle-foreground truncate text-sm">{description}</div>
             ) : null}
@@ -288,6 +291,12 @@ function ToolDisclosureRow({
                 <dt className="text-subtle-foreground text-xs font-medium">Version</dt>
                 <dd className="mt-1">{tool.schema_version}</dd>
               </div>
+              {tool.title ? (
+                <div className="min-w-0 md:col-span-3">
+                  <dt className="text-subtle-foreground text-xs font-medium">Title</dt>
+                  <dd className="mt-1 truncate">{tool.title}</dd>
+                </div>
+              ) : null}
             </dl>
             <div className="mt-4 max-w-full min-w-0">
               <div className="text-subtle-foreground mb-2 text-xs font-medium">JSON schema</div>
@@ -309,10 +318,69 @@ function ToolDisclosureRow({
                 </div>
               )}
             </div>
+            <ToolOutputSchema schema={tool.output_schema} />
           </div>
         </CollapsibleContent>
       </div>
     </Collapsible>
+  )
+}
+
+function ToolOutputSchema({ schema }: { schema: McpToolView['output_schema'] }) {
+  const formatted = schema ? formatToolSchema(schema) : null
+  if (!formatted) {
+    return null
+  }
+  return (
+    <div className="mt-4 max-w-full min-w-0">
+      <div className="text-subtle-foreground mb-2 text-xs font-medium">Output schema</div>
+      <div className="bg-muted max-w-full min-w-0 overflow-hidden rounded-md border">
+        <pre
+          className="max-h-72 max-w-full overflow-x-auto overflow-y-auto p-3 text-xs leading-relaxed"
+          data-testid="mcp-tool-output-schema-code"
+        >
+          <code className="block min-w-max">{formatted}</code>
+        </pre>
+      </div>
+    </div>
+  )
+}
+
+// Badges show only hints the upstream declared. A destructive hint is
+// meaningless on a read-only tool, so it is hidden there.
+function toolAnnotationBadges(annotations: McpToolView['annotations']) {
+  const badges: { label: string; variant: 'success' | 'destructive' | 'outline' }[] = []
+  if (annotations.read_only_hint === true) {
+    badges.push({ label: 'Read-only', variant: 'success' })
+  } else if (annotations.destructive_hint === true) {
+    badges.push({ label: 'Destructive', variant: 'destructive' })
+  }
+  if (annotations.idempotent_hint === true) {
+    badges.push({ label: 'Idempotent', variant: 'outline' })
+  }
+  if (annotations.open_world_hint === true) {
+    badges.push({ label: 'Open world', variant: 'outline' })
+  }
+  return badges
+}
+
+function ToolAnnotationBadges({ tool }: { tool: McpToolView }) {
+  const badges = toolAnnotationBadges(tool.annotations)
+  if (badges.length === 0) {
+    return null
+  }
+  return (
+    <span
+      className="flex flex-wrap items-center gap-1"
+      data-testid="mcp-tool-annotations"
+      title="Hints declared by the upstream server"
+    >
+      {badges.map((badge) => (
+        <Badge key={badge.label} variant={badge.variant}>
+          {badge.label}
+        </Badge>
+      ))}
+    </span>
   )
 }
 

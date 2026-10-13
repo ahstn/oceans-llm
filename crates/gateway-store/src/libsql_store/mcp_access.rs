@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 
+use super::mcp_registry::decode_tool_metadata;
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
 
 const TOOLSET_COLUMNS: &str = "toolset_id, toolset_key, display_name, description, status, created_at, updated_at, disabled_at";
-const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at";
+const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, t.title, t.annotations_json, t.output_schema_json";
+/// Number of columns in `TOOL_COLUMNS`; server columns follow them.
+const TOOL_COLUMN_COUNT: usize = 15;
 const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at";
 
 fn decode_toolset(row: &libsql::Row) -> Result<McpToolsetRecord, StoreError> {
@@ -81,6 +84,7 @@ fn decode_tool(row: &libsql::Row) -> Result<ExternalMcpToolRecord, StoreError> {
         description: row.get(4).map_err(to_query_error)?,
         input_schema: serde_json::from_str(&input_schema_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        metadata: decode_tool_metadata(row, 12)?,
         schema_hash: row.get(6).map_err(to_query_error)?,
         schema_version: row.get(7).map_err(to_query_error)?,
         is_active: is_active == 1,
@@ -153,7 +157,7 @@ fn decode_server_at(
 fn decode_catalog_tool(row: &libsql::Row) -> Result<McpCatalogToolRecord, StoreError> {
     Ok(McpCatalogToolRecord {
         tool: decode_tool(row)?,
-        server: decode_server_at(row, 12)?,
+        server: decode_server_at(row, TOOL_COLUMN_COUNT)?,
     })
 }
 

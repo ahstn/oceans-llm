@@ -1655,12 +1655,32 @@ pub struct ExternalMcpToolRecord {
     pub display_name: String,
     pub description: Option<String>,
     pub input_schema: Value,
+    #[serde(default)]
+    pub metadata: McpToolMetadata,
     pub schema_hash: String,
     pub schema_version: i64,
     pub is_active: bool,
     pub first_discovered_at: OffsetDateTime,
     pub last_discovered_at: OffsetDateTime,
     pub deactivated_at: Option<OffsetDateTime>,
+}
+
+/// Optional members of an upstream MCP tool definition, stored as declared.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct McpToolMetadata {
+    pub title: Option<String>,
+    /// Behaviour hints such as `readOnlyHint`, kept with their upstream names.
+    pub annotations: Option<Map<String, Value>>,
+    pub output_schema: Option<Value>,
+}
+
+impl McpToolMetadata {
+    /// Reads a boolean hint such as `readOnlyHint`. Absent or non-boolean
+    /// values return `None`, so callers can apply the protocol defaults.
+    #[must_use]
+    pub fn hint(&self, name: &str) -> Option<bool> {
+        self.annotations.as_ref()?.get(name)?.as_bool()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1825,6 +1845,7 @@ pub struct UpsertExternalMcpToolRecord {
     pub display_name: String,
     pub description: Option<String>,
     pub input_schema: Value,
+    pub metadata: McpToolMetadata,
     pub schema_hash: String,
 }
 
