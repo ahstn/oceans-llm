@@ -74,4 +74,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Test CLI and bundle behavior
+        # Git Bash on Windows rewrites a leading `//` argument as a path.
+        env:
+          MSYS_NO_PATHCONV: "1"
         run: mise run //cli:test
