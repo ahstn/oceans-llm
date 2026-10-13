@@ -153,6 +153,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Two PRs can share a head SHA; each owns the check tagged with its number.
+          CHECK_EXTERNAL_ID: pull/${{ github.event.pull_request.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           OUTCOMES: |
             credential check=${{ steps.credential.outcome }}
@@ -178,16 +180,16 @@ jobs:
             summary="The automated review did not complete. This does not block merging; see the [workflow run](${RUN_URL}) for details."
             echo "::warning::Oceans review skipped because ${failed:-a workflow step} failed"
           fi
-          # Update this workflow's check on reruns instead of adding duplicates.
-          check_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=Oceans%20review" \
-            --jq '[.check_runs[] | select(.app.slug == "github-actions")][0].id // empty')" || check_id=""
+          # Update this PR's check on reruns instead of adding duplicates.
+          check_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=Oceans%20review&filter=all" \
+            --jq "[.check_runs[] | select(.app.slug == \"github-actions\" and .external_id == \"${CHECK_EXTERNAL_ID}\")][0].id // empty")" || check_id=""
           if [[ -n "$check_id" ]]; then
             request=(--method PATCH "repos/${GITHUB_REPOSITORY}/check-runs/${check_id}")
           else
             request=(--method POST "repos/${GITHUB_REPOSITORY}/check-runs" -f head_sha="$HEAD_SHA")
           fi
           # Failing to publish the advisory check must not fail the job.
-          gh api "${request[@]}" --silent -f name="Oceans review" \
+          gh api "${request[@]}" --silent -f name="Oceans review" -f external_id="$CHECK_EXTERNAL_ID" \
             -f status=completed -f conclusion="$conclusion" -f details_url="$RUN_URL" \
             -f "output[title]=$title" -f "output[summary]=$summary" \
             || echo "::warning::Could not publish the Oceans review check"
