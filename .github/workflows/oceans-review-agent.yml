@@ -95,7 +95,7 @@ jobs:
         continue-on-error: true
         run: |
           mise exec -- cargo build -p gateway --bin gateway
-          mise run review-agent-action-install
+          mise run //review-agent:install
 
       - name: Start real Oceans control plane
         id: oceans

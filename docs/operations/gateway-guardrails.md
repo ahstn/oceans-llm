@@ -244,7 +244,7 @@ The load budgets are release gates, not sizing promises for every deployment:
 Release checklist:
 
 1. Run `mise run guardrail-release-gate`.
-2. Run the repository checks: `mise run rust-fmt-check`, `mise run rust-lint`, `mise run rust-test`, `mise run admin-contract-check`, `mise run harness-integration-typecheck`, `mise run test`, `mise run lint`, `mise run build`, and `mise run //docs:build`.
+2. Run the repository checks: `mise run rust-fmt-check`, `mise run rust-lint`, `mise run rust-test`, `mise run admin-contract-check`, `mise run //harness:typecheck`, `mise run test`, `mise run lint`, `mise run build`, and `mise run //docs:build`.
 3. Confirm every configured inference route, direct MCP route, aggregate MCP route, and first-party harness appears in the matrix. Do not approve a new route without a deny-before-side-effect fixture.
 4. Confirm default decision records, logs, API responses, and UI output contain hashes and identifiers but no raw prompt, command, argument, result, credential, or managed-service token.
 5. Confirm the production-shaped local stack lets the `audit-fast` route reach the provider for the same managed intervention that the `fast` deny route blocks.

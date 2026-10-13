@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-chart_dir="deploy/helm/oceans-llm"
+chart_dir="$(dirname "$0")/oceans-llm"
 check_dir="$(mktemp -d)"
 trap 'rm -rf "$check_dir"' EXIT
 

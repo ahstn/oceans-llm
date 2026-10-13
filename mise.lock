@@ -34,6 +34,40 @@ url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_
 url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/384924893"
 provenance = "github-attestations"
 
+[[tools."aqua:taiki-e/cargo-llvm-cov"]]
+version = "0.8.7"
+backend = "aqua:taiki-e/cargo-llvm-cov"
+
+[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64"]
+checksum = "sha256:9a75fe29538d3800b3da57f6f6efb64cba5c720a257bf0cb8b51f39d495a9168"
+url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.8.7/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/418861574"
+provenance = "github-attestations"
+
+[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64-baseline"]
+checksum = "sha256:9a75fe29538d3800b3da57f6f6efb64cba5c720a257bf0cb8b51f39d495a9168"
+url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.8.7/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/418861574"
+provenance = "github-attestations"
+
+[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64-musl"]
+checksum = "sha256:967b5cc996c29d8baa52bbb4595ef1f53af35255af8e2036ddbc6468d7b523c7"
+url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.8.7/cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/418861752"
+provenance = "github-attestations"
+
+[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:967b5cc996c29d8baa52bbb4595ef1f53af35255af8e2036ddbc6468d7b523c7"
+url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.8.7/cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/418861752"
+provenance = "github-attestations"
+
+[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.macos-arm64"]
+checksum = "sha256:3efee732ed7e9a653e20d96c930e0ec799901289cce90f46bb20f627e2c0d2e9"
+url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.8.7/cargo-llvm-cov-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/418861557"
+provenance = "github-attestations"
+
 [[tools.bun]]
 version = "1.4.2"
 backend = "core:bun"
@@ -126,10 +160,6 @@ url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.6/cargo-
 url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/568874942"
 provenance = "github-attestations"
 
-[[tools."cargo:cargo-llvm-cov"]]
-version = "0.8.7"
-backend = "cargo:cargo-llvm-cov"
-
 [[tools.cocogitto]]
 version = "7.0.0"
 backend = "aqua:cocogitto/cocogitto"
@@ -198,14 +228,14 @@ version = "2.13.1"
 backend = "aqua:orhun/git-cliff"
 
 [tools.git-cliff."platforms.linux-x64"]
-checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
-url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405850671"
+checksum = "sha256:9a1263f24e59a2f508c7b3d3283c9dea94a8bf697f96dbc18cc783cac6284546"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405850439"
 
 [tools.git-cliff."platforms.linux-x64-baseline"]
-checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
-url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405850671"
+checksum = "sha256:9a1263f24e59a2f508c7b3d3283c9dea94a8bf697f96dbc18cc783cac6284546"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405850439"
 
 [tools.git-cliff."platforms.linux-x64-musl"]
 checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
@@ -270,34 +300,9 @@ url = "https://unofficial-builds.nodejs.org/download/release/v24.20.0/node-v24.2
 checksum = "sha256:40e5607e5ecb3db9192723776da2d75d966260fc74a7a9e731c1bd67dda96bc8"
 url = "https://nodejs.org/dist/v24.20.0/node-v24.20.0-darwin-arm64.tar.gz"
 
-[[tools.opentofu]]
-version = "1.12.6"
-backend = "aqua:opentofu/opentofu"
-
-[tools.opentofu."platforms.linux-x64"]
-checksum = "sha256:50a6106fa4de523d09c87af85f3db1dd47535fc005727fdca6852146476b88ec"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.12.6/tofu_1.12.6_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/opentofu/opentofu/releases/assets/520762723"
-
-[tools.opentofu."platforms.linux-x64-baseline"]
-checksum = "sha256:50a6106fa4de523d09c87af85f3db1dd47535fc005727fdca6852146476b88ec"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.12.6/tofu_1.12.6_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/opentofu/opentofu/releases/assets/520762723"
-
-[tools.opentofu."platforms.linux-x64-musl"]
-checksum = "sha256:50a6106fa4de523d09c87af85f3db1dd47535fc005727fdca6852146476b88ec"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.12.6/tofu_1.12.6_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/opentofu/opentofu/releases/assets/520762723"
-
-[tools.opentofu."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:50a6106fa4de523d09c87af85f3db1dd47535fc005727fdca6852146476b88ec"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.12.6/tofu_1.12.6_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/opentofu/opentofu/releases/assets/520762723"
-
-[tools.opentofu."platforms.macos-arm64"]
-checksum = "sha256:f958ec5e511063be9feb180ca015a4cb7977566a9cf6a8550bba8c2a9b5aba74"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.12.6/tofu_1.12.6_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/opentofu/opentofu/releases/assets/520762710"
+[[tools."npm:wrangler"]]
+version = "4.149.0"
+backend = "npm:wrangler"
 
 [[tools.postgres]]
 version = "18.4"
@@ -323,15 +328,15 @@ version = "0.4.13"
 backend = "aqua:j178/prek"
 
 [tools.prek."platforms.linux-x64"]
-checksum = "sha256:15dbf93535fc956a09e0e13e0529f364aff94c9d048f36a41571bb802e096ec0"
-url = "https://github.com/j178/prek/releases/download/v0.4.13/prek-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/j178/prek/releases/assets/508529829"
+checksum = "sha256:db31d0c5be937602002ab21e70ebf07c6566cc4428c9095f04fa546e12e7ccb0"
+url = "https://github.com/j178/prek/releases/download/v0.4.13/prek-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/508529827"
 provenance = "github-attestations"
 
 [tools.prek."platforms.linux-x64-baseline"]
-checksum = "sha256:15dbf93535fc956a09e0e13e0529f364aff94c9d048f36a41571bb802e096ec0"
-url = "https://github.com/j178/prek/releases/download/v0.4.13/prek-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/j178/prek/releases/assets/508529829"
+checksum = "sha256:db31d0c5be937602002ab21e70ebf07c6566cc4428c9095f04fa546e12e7ccb0"
+url = "https://github.com/j178/prek/releases/download/v0.4.13/prek-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/508529827"
 provenance = "github-attestations"
 
 [tools.prek."platforms.linux-x64-musl"]
@@ -351,6 +356,13 @@ checksum = "sha256:776da7aa143b3cb11125f9c6f44ab5af157c176c992b7bfbafc1b155a44ac
 url = "https://github.com/j178/prek/releases/download/v0.4.13/prek-aarch64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/j178/prek/releases/assets/508529745"
 provenance = "github-attestations"
+
+[[tools.rust]]
+version = "1.98.1"
+backend = "core:rust"
+
+[tools.rust.options]
+components = "clippy,llvm-tools,rustfmt"
 
 [[tools.rust]]
 version = "1.98.1"

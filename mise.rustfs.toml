@@ -2,10 +2,6 @@
 # Self-hosting: select `selfhost,rustfs,selfhost-rustfs` in that order.
 min_version = "2026.9.18"
 
-[settings]
-# Setup creates this profile's credentials file. Read it on the next invocation.
-env_cache = false
-
 [tools]
 rustfs = "1.0.1"
 aws-cli = "2.27.49"
@@ -38,7 +34,6 @@ run = "bash scripts/rustfs-credentials.sh"
 [tasks."rustfs:setup"]
 description = "Create credentials, start RustFS, and create the Skills bucket"
 run = '''
-set -eu
 mise run rustfs:credentials
 # Reload mise after creating the credentials file.
 mise daemons start rustfs
@@ -76,13 +71,14 @@ unset SKILL_S3_TEST_SESSION_TOKEN
 cargo test --locked -p gateway-store --test skill_objects_s3 -- --ignored
 '''
 
-[tasks."rustfs:e2e-cli-build"]
-description = "Build the Oceans CLI for the Skills end-to-end tests"
-depends = ["skills:cli-build"]
-
 [tasks."rustfs:e2e"]
 description = "Verify the Skills UI and CLI against a real gateway and local RustFS"
-depends = ["rustfs:setup", "e2e-install", "e2e-gateway-build", "rustfs:e2e-cli-build"]
+depends = [
+  "rustfs:setup",
+  "//crates/admin-ui/web:e2e:install",
+  "//crates/gateway:build",
+  "//crates/oceans-cli:build",
+]
 run = '''
 # Setup can create the credentials file, so resolve the environment again.
 mise exec --fresh-env -- bash -euc '

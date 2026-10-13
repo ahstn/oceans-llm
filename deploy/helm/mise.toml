@@ -1,0 +1,47 @@
+# Helm chart tasks. From the repo root: `mise run //deploy/helm:<task>`.
+
+[env]
+# A chart-local repository list, so these tasks never edit the user's Helm settings.
+HELM_REPOSITORY_CONFIG = "{{config_root}}/.local/helm/repositories.yaml"
+HELM_REPOSITORY_CACHE = "{{config_root}}/.local/helm/cache"
+
+[tasks.repo]
+description = "Register the chart dependency repository"
+hide = true
+run = "helm repo add --force-update rustfs https://charts.rustfs.com"
+
+[tasks.deps]
+description = "Build chart dependencies from the checked-in lock"
+depends = ["repo"]
+sources = ["oceans-llm/Chart.lock"]
+outputs = ["oceans-llm/charts/*.tgz"]
+run = "helm dependency build oceans-llm --skip-refresh"
+
+[tasks."deps:update"]
+description = "Update chart dependencies and Chart.lock"
+depends = ["repo"]
+run = "helm dependency update oceans-llm"
+
+[tasks.lint]
+description = "Lint the chart"
+depends = ["deps"]
+run = "helm lint oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres"
+
+[tasks.template]
+description = "Render the chart defaults and every example values file"
+depends = ["deps"]
+run = """
+helm template oceans-llm oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres >/dev/null
+for values in oceans-llm/examples/*.yaml; do
+  helm template oceans-llm oceans-llm --values "$values" >/dev/null
+done
+"""
+
+[tasks.skills-check]
+description = "Verify skill storage and optional RustFS chart configuration"
+depends = ["deps"]
+run = "bash check-skills.sh"
+
+[tasks.check]
+description = "Lint and render the chart"
+depends = ["lint", "template", "skills-check"]

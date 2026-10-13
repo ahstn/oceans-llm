@@ -74,4 +74,4 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Test CLI and bundle behavior
-        run: mise run cli-test
+        run: mise run //cli:test

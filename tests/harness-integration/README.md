@@ -42,8 +42,8 @@ From the repository root:
 
 ```sh
 mise install
-mise run harness-integration-typecheck
-mise run harness-integration-test
+mise run //harness:typecheck
+mise run //harness:test
 ```
 
 The install task is cached from `package.json` and `package-lock.json`; lint and typechecking do not reinstall the dependency tree when the lockfile and installed output are unchanged.

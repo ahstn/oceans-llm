@@ -138,8 +138,8 @@ Request-log retention is admin-controlled. The supported retention windows are i
 The default retention window is `7d`. Admins can run the purge command manually before enabling any recurring cleanup:
 
 ```bash
-mise run gateway-purge-request-logs-dry-run
-mise run gateway-purge-request-logs
+mise run //gateway:purge-request-logs --dry-run
+mise run //gateway:purge-request-logs
 ```
 
 Use `--dry-run` first in production-shaped environments. A dry run reports how many parent request-log rows are older than the selected retention cutoff without deleting data.

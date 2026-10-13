@@ -38,4 +38,4 @@ jobs:
           install_args: bun
 
       - name: Check admin UI
-        run: mise run ui-check
+        run: mise run //ui:check

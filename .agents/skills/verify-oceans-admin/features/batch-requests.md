@@ -36,7 +36,7 @@ Preconditions:
 
 ## Gotchas
 
-- Confirming `Cancel batch` can't be undone. The seed only re-creates a batch whose idempotency key is absent, so a cancelled demo batch stays cancelled. Cancel only with operator approval, then restore with `mise run gateway-reset-local-demo`.
+- Confirming `Cancel batch` can't be undone. The seed only re-creates a batch whose idempotency key is absent, so a cancelled demo batch stays cancelled. Cancel only with operator approval, then restore with `mise run //gateway:reset-local-demo`.
 - The queued demo batch keeps the list polling every 5 s. Wait for the expected state, not for network idle.
 - Every row has its own `View` and `Cancel` buttons, so scope clicks to the row that contains the model or batch ID.
 - Below the `md` breakpoint, `batch-mobile-list` replaces the table and the button reads `View responses`.

@@ -30,7 +30,6 @@ run = "npm run docs:preview"
 description = "Create the Cloudflare Pages project for the docs site"
 env = { CLOUDFLARE_ACCOUNT_ID = { required = true }, CLOUDFLARE_API_TOKEN = { required = true } }
 run = """
-set -euo pipefail
 wrangler pages project create "$CLOUDFLARE_PAGES_PROJECT_NAME" \
   --production-branch "$CLOUDFLARE_PAGES_PRODUCTION_BRANCH"
 """
@@ -40,7 +39,6 @@ description = "Build and deploy the docs site to Cloudflare Pages"
 depends = [":build"]
 env = { CLOUDFLARE_ACCOUNT_ID = { required = true }, CLOUDFLARE_API_TOKEN = { required = true } }
 run = """
-set -euo pipefail
 wrangler pages deploy "$CLOUDFLARE_PAGES_BUILD_OUTPUT_DIR" \
   --project-name "$CLOUDFLARE_PAGES_PROJECT_NAME" \
   --branch "${CLOUDFLARE_PAGES_BRANCH:-$CLOUDFLARE_PAGES_PRODUCTION_BRANCH}"
@@ -50,8 +48,6 @@ wrangler pages deploy "$CLOUDFLARE_PAGES_BUILD_OUTPUT_DIR" \
 description = "Register Cloudflare Pages credentials and deployment parameters in GitHub Actions"
 env = { CLOUDFLARE_ACCOUNT_ID = { required = true }, CLOUDFLARE_API_TOKEN = { required = true } }
 run = """
-set -euo pipefail
-
 gh secret set CLOUDFLARE_ACCOUNT_ID --body "$CLOUDFLARE_ACCOUNT_ID"
 gh secret set CLOUDFLARE_API_TOKEN --body "$CLOUDFLARE_API_TOKEN"
 

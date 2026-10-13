@@ -140,6 +140,9 @@
         "crates/gateway-service/src/lib.rs",
         "crates/gateway-store/src/libsql_store/seed.rs",
         "crates/gateway-store/mise.toml",
+        "crates/admin-ui/web/mise.toml",
+        "crates/oceans-cli/mise.toml",
+        "crates/gateway/mise.toml",
         "mise.lock",
         "scripts/local-provider-credential-key.sh"
       ]

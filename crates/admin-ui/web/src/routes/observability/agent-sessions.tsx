@@ -167,7 +167,7 @@ export function AgentSessionsPage() {
               <AlertDescription>
                 The API did not return tool-call or MCP-call counts for some analyzed sessions.
                 Restart the gateway after you update it. For local demo data, run{' '}
-                <code className="font-mono">mise run gateway-reset-local-demo</code>.
+                <code className="font-mono">mise run //gateway:reset-local-demo</code>.
               </AlertDescription>
             </Alert>
           ) : null}

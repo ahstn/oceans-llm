@@ -1,23 +1,46 @@
+#:schema https://mise.jdx.dev/schema/mise.json
+# Repository-wide tools and cross-cutting tasks. Project tasks live next to their code
+# (see config_roots); run them from anywhere with `mise run //<dir>:<task>`, or list
+# everything with `mise tasks ls --all`.
 min_version = "2026.8.2"
 monorepo_root = true
 
 [settings]
+# Required for [daemons].
 experimental = true
-env_shell_expand = true
-env_cache = true
 
 [monorepo]
-config_roots = ["docs", "crates/gateway-store"]
+config_roots = [
+  "actions/review-agent",
+  "crates/admin-ui/web",
+  "crates/gateway",
+  "crates/gateway-store",
+  "crates/oceans-cli",
+  "deploy/helm",
+  "docs",
+  "tests/harness-integration",
+]
+# Keep a single mise.lock at the root for every project.
+lockfile = true
+
+# Short names: `mise run //ui:check` runs `//crates/admin-ui/web:check`.
+[monorepo.path_aliases]
+cli = "crates/oceans-cli"
+gateway = "crates/gateway"
+harness = "tests/harness-integration"
+helm = "deploy/helm"
+review-agent = "actions/review-agent"
+store = "crates/gateway-store"
+ui = "crates/admin-ui/web"
 
 [tools]
-rust = { version = "1.98.1", components = ["rustfmt", "clippy", "llvm-tools-preview"] }
-"cargo:cargo-llvm-cov" = "0.8.7"
+rust = { version = "1.98.1", components = ["rustfmt", "clippy", "llvm-tools"] }
+"aqua:taiki-e/cargo-llvm-cov" = "0.8.7"
 node = "lts"
 bun = "1.4.2"
 postgres = { version = "18", os = ["macos"] }
 gh = "latest"
 helm = "latest"
-opentofu = "latest"
 git-cliff = "latest"
 cocogitto = "latest"
 cargo-dist = "0.33.0"
@@ -40,56 +63,17 @@ version = "18"
 port = "auto"
 options.database = "oceans_llm"
 
+# Local development defaults. Never extend this from a task that can reach real data.
+[task_templates.gateway-local.env]
+OCEANS_API_KEY_SECRET_ENCRYPTION_KEY = "${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
+
+[task_templates.gateway-prod.env]
+GATEWAY_CONFIG = "gateway.prod.yaml"
+POSTGRES_URL = { required = true }
+
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
 run = "mise install"
-
-[tasks.helm-dependency-update]
-description = "Update Helm chart dependencies"
-run = "helm dependency update deploy/helm/oceans-llm"
-
-[tasks.helm-dependency-build]
-description = "Build Helm dependencies from the checked-in lock"
-run = """
-set -eu
-
-helm_temp_dir="$(mktemp -d)"
-trap 'rm -rf "$helm_temp_dir"' EXIT
-
-# Use a private repository list so this task does not change local Helm settings.
-helm repo add oceans-rustfs https://charts.rustfs.com \
-  --repository-config "$helm_temp_dir/repositories.yaml" --repository-cache "$helm_temp_dir"
-helm dependency build deploy/helm/oceans-llm --skip-refresh \
-  --repository-config "$helm_temp_dir/repositories.yaml" --repository-cache "$helm_temp_dir"
-"""
-
-[tasks.helm-lint]
-description = "Lint the Oceans LLM Helm chart"
-depends = ["helm-dependency-build"]
-run = "helm lint deploy/helm/oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres"
-
-[tasks.helm-template]
-description = "Render the Oceans LLM Helm chart examples"
-depends = ["helm-dependency-build"]
-run = """
-set -eu
-
-chart_dir="deploy/helm/oceans-llm"
-
-helm template oceans-llm "$chart_dir" --set database.external.existingSecret.name=oceans-llm-postgres >/dev/null
-for values_file in "$chart_dir"/examples/*.yaml; do
-  helm template oceans-llm "$chart_dir" --values "$values_file" >/dev/null
-done
-"""
-
-[tasks.helm-skills-check]
-description = "Verify skill storage and optional RustFS Helm configuration"
-depends = ["helm-dependency-build"]
-run = "bash scripts/check-skills-helm.sh"
-
-[tasks.helm-check]
-description = "Lint and render the Helm chart"
-depends = ["helm-lint", "helm-template", "helm-skills-check"]
 
 [tasks.fmt]
 description = "Format Rust sources"
@@ -111,29 +95,26 @@ run = "cargo build --workspace"
 description = "Run all Rust workspace tests"
 run = "cargo test --workspace"
 
-[tasks.gateway-config-coverage]
-description = "Require 90% line coverage for gateway configuration production code"
-run = "scripts/check-gateway-config-coverage.sh"
-
 [tasks.rust-check]
 description = "Check formatting, lint, and test the Rust workspace"
 depends = ["rust-fmt-check", "rust-lint", "rust-test"]
 
+[tasks.gateway-config-coverage]
+description = "Require 90% line coverage for gateway configuration production code"
+run = "scripts/check-gateway-config-coverage.sh"
+
 [tasks.admin-contract-generate]
 description = "Generate the checked-in admin OpenAPI artifact and TypeScript contract"
-depends = ["ui-install"]
-run = """
-cargo run -p gateway --bin export_admin_openapi -- crates/gateway/openapi/admin-api.json
-bun run --cwd crates/admin-ui/web generate:admin-api
-"""
+depends = ["//crates/admin-ui/web:install"]
+run = [
+  "cargo run -p gateway --bin export_admin_openapi -- crates/gateway/openapi/admin-api.json",
+  "bun run --cwd crates/admin-ui/web generate:admin-api",
+]
 
 [tasks.admin-contract-check]
 description = "Verify generated admin contract artifacts are up to date"
-depends = ["ui-install"]
-shell = "bash -c"
+depends = ["//crates/admin-ui/web:install"]
 run = """
-set -euo pipefail
-
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
@@ -149,27 +130,23 @@ description = "Run repository formatting checks, linting, and static checks"
 depends = [
   "rust-fmt-check",
   "rust-lint",
-  "ui-fmt-check",
-  "ui-lint",
-  "review-agent-action-typecheck",
-  "review-agent-action-lint",
-  "harness-integration-typecheck",
+  "//crates/admin-ui/web:fmt-check",
+  "//crates/admin-ui/web:lint",
+  "//actions/review-agent:typecheck",
+  "//actions/review-agent:lint",
+  "//tests/harness-integration:typecheck",
 ]
 
 [tasks.build]
 description = "Build Rust crates and admin UI bundle"
-depends = ["rust-build", "ui-build"]
-
-[tasks.run]
-description = "Run `gateway serve`"
-run = 'OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="${OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY:-$(scripts/local-provider-credential-key.sh)}" cargo run -p gateway --bin gateway -- serve'
+depends = ["rust-build", "//crates/admin-ui/web:build"]
 
 [tasks.test]
 description = "Run repository unit tests"
 depends = [
   "rust-test",
-  "ui-test",
-  "review-agent-action-test",
+  "//crates/admin-ui/web:test",
+  "//actions/review-agent:test",
   "copilot-installation-canary-test",
   "e2e-stack-test",
 ]
@@ -178,99 +155,31 @@ depends = [
 description = "Verify E2E cleanup failures retain retry state"
 run = "node --test scripts/start-e2e-stack.test.mjs"
 
-[tasks.gateway-serve]
-description = "Run local `gateway serve` against `gateway.yaml`"
-run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="${OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY:-$(scripts/local-provider-credential-key.sh)}" cargo run -p gateway --bin gateway -- serve'
-
-[tasks.gateway-migrate]
-description = "Run local `gateway migrate --apply` against `gateway.yaml`"
-run = "cargo run -p gateway --bin gateway -- migrate --apply"
-
-[tasks.gateway-bootstrap-admin]
-description = "Run local `gateway bootstrap-admin` against `gateway.yaml`"
-run = "cargo run -p gateway --bin gateway -- bootstrap-admin"
-
-[tasks.gateway-seed-config]
-description = "Run local `gateway seed-config` against `gateway.yaml`"
-run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- seed-config'
-
-[tasks.gateway-purge-request-logs-dry-run]
-description = "Preview request-log purge against `gateway.yaml`; override retention with RETENTION=1d|3d|7d"
-run = 'cargo run -p gateway --bin gateway -- purge-request-logs --retention "${RETENTION:-7d}" --dry-run'
-
-[tasks.gateway-purge-request-logs]
-description = "Purge old request logs against `gateway.yaml`; override retention with RETENTION=1d|3d|7d"
-run = 'cargo run -p gateway --bin gateway -- purge-request-logs --retention "${RETENTION:-7d}"'
-
-[tasks.gateway-recompute-agent-analysis]
-description = "Queue retained agent sessions for analysis against `gateway.yaml`; override batch size with LIMIT"
-run = 'cargo run -p gateway --bin gateway -- recompute-agent-analysis --limit "${LIMIT:-100}"'
-
-[tasks.gateway-recompute-agent-analysis-prod]
-description = "Queue retained agent sessions for analysis against `gateway.prod.yaml`; override batch size with LIMIT"
-env = { POSTGRES_URL = { required = true } }
-run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml recompute-agent-analysis --limit "${LIMIT:-100}"'
-
-[tasks.gateway-purge-request-logs-dry-run-prod]
-description = "Preview request-log purge against `gateway.prod.yaml`; override retention with RETENTION=1d|3d|7d"
-env = { POSTGRES_URL = { required = true } }
-run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-request-logs --retention "${RETENTION:-7d}" --dry-run'
-
-[tasks.gateway-purge-request-logs-prod]
-description = "Purge old request logs against `gateway.prod.yaml`; override retention with RETENTION=1d|3d|7d"
-env = { POSTGRES_URL = { required = true } }
-run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-request-logs --retention "${RETENTION:-7d}"'
-
-[tasks.gateway-seed-local-demo]
-description = "Seed the local-only demo dataset (identity, budgets, API keys, request history, and agent session diagnostics) against `gateway.yaml`"
-run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo'
-
-[tasks."skills:cli-build"]
-description = "Build the Oceans CLI for local Skills workflows"
-run = "cargo build --locked -p oceans-cli --bin oceans"
-
-[tasks."skills:import-bundled"]
-description = "Import curated skills using a user-owned API key and the requested namespace"
-depends = ["skills:cli-build"]
-run = "node scripts/import-bundled-skills.mjs"
-
-[tasks.gateway-reset-local-demo]
-description = "Recreate local `gateway.db` with the local-only demo dataset"
-run = 'rm -f gateway.db && OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo'
-
-[tasks.gateway-serve-prod]
-description = "Run production-shaped local `gateway serve` against `gateway.prod.yaml`"
-env = { POSTGRES_URL = { required = true } }
-run = "cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve"
-
-[tasks.gateway-migrate-prod]
-description = "Run `gateway migrate --apply` against `gateway.prod.yaml`"
-env = { POSTGRES_URL = { required = true } }
-run = "cargo run -p gateway --bin gateway -- --config gateway.prod.yaml migrate --apply"
-
-[tasks.gateway-bootstrap-admin-prod]
-description = "Run `gateway bootstrap-admin` against `gateway.prod.yaml`"
-env = { POSTGRES_URL = { required = true } }
-run = "cargo run -p gateway --bin gateway -- --config gateway.prod.yaml bootstrap-admin"
-
-[tasks.gateway-seed-config-prod]
-description = "Run `gateway seed-config` against `gateway.prod.yaml`"
-env = { POSTGRES_URL = { required = true } }
-run = "cargo run -p gateway --bin gateway -- --config gateway.prod.yaml seed-config"
+[tasks.guardrail-release-gate]
+description = "Run guardrail security, load, harness, and end-to-end release gates"
+depends = [
+  "//crates/admin-ui/web:build",
+  "//crates/admin-ui/web:e2e:install",
+  "//crates/gateway:build",
+  "//tests/harness-integration:install",
+]
+run = [
+  "cargo test -p gateway-guardrails",
+  "cargo test -p gateway-store decision_event_persistence_load_gate_stays_within_release_budget",
+  "npm run test --prefix tests/harness-integration -- guardrails-hook.test.ts",
+  "E2E_GATEWAY_PORT=49380 E2E_UI_PORT=49381 E2E_UPSTREAM_PORT=49382 E2E_BASE_URL=http://127.0.0.1:49380 bun run --cwd crates/admin-ui/web playwright test e2e/guardrails.e2e.ts",
+]
 
 # Stack tasks: GATEWAY_PORT is the gateway listener, UI_PORT the admin UI server the gateway
-# proxies /admin* to. Both default so two worktrees can run side by side with different values.
+# proxies /admin* to. Override both to run two worktrees side by side.
 [tasks.dev-stack]
 description = "Run the local dev stack (gateway + admin UI dev server); override with GATEWAY_PORT and UI_PORT"
-depends = ["ui-install"]
+extends = "gateway-local"
+depends = ["//crates/admin-ui/web:install"]
+env = { GATEWAY_PORT = "${GATEWAY_PORT:-8080}", UI_PORT = "${UI_PORT:-3001}", AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED = "${AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED:-true}" }
 run = """
-set -eu
 trap 'kill $(jobs -p) 2>/dev/null' EXIT
-
-export OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
 export OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="${OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY:-$(scripts/local-provider-credential-key.sh)}"
-export AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED="${AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED:-true}"
-export GATEWAY_PORT="${GATEWAY_PORT:-8080}" UI_PORT="${UI_PORT:-3001}"
 
 cargo run -p gateway --bin gateway -- seed-local-demo
 PORT="$UI_PORT" bun run --cwd crates/admin-ui/web dev &
@@ -279,142 +188,20 @@ PORT="$GATEWAY_PORT" ADMIN_UI_UPSTREAM="http://localhost:$UI_PORT" cargo run -p 
 
 [tasks.prod-stack]
 description = "Run the production-shaped local stack (gateway + admin UI SSR server); override with GATEWAY_PORT and UI_PORT"
-depends = ["ui-install"]
-env = { POSTGRES_URL = { required = true } }
+extends = "gateway-prod"
+depends = ["//crates/admin-ui/web:install"]
+env = { GATEWAY_PORT = "${GATEWAY_PORT:-8080}", UI_PORT = "${UI_PORT:-3001}" }
 run = """
-set -eu
 trap 'kill $(jobs -p) 2>/dev/null' EXIT
-export GATEWAY_PORT="${GATEWAY_PORT:-8080}" UI_PORT="${UI_PORT:-3001}"
 
 PORT="$UI_PORT" bun run --cwd crates/admin-ui/web start &
-PORT="$GATEWAY_PORT" ADMIN_UI_UPSTREAM="http://localhost:$UI_PORT" cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve
+PORT="$GATEWAY_PORT" ADMIN_UI_UPSTREAM="http://localhost:$UI_PORT" cargo run -p gateway --bin gateway -- serve
 """
 
-[tasks.sync-pricing-catalog]
-description = "Refresh the vendored pricing catalog fallback snapshot"
-run = "cargo run -p gateway --bin sync_pricing_catalog"
-
-[tasks.sync-model-benchmarks]
-description = "Upsert vendored Artificial Analysis scores from OpenRouter's top 200 models, excluding :variant IDs"
-run = "cargo run -p gateway --bin sync_model_benchmarks"
-
-[tasks.ui-install]
-description = "Install admin UI dependencies"
-run = "bun install --cwd crates/admin-ui/web --frozen-lockfile"
-
-[tasks.ui-check]
-description = "Check formatting, lint, test, and build the admin UI"
-depends = ["ui-install"]
-run = [
-  { task = "ui-fmt-check" },
-  { task = "ui-lint" },
-  { task = "ui-test" },
-  { task = "ui-build" },
-]
-
-[tasks.ui-dev]
-description = "Run admin UI dev server"
-run = "bun run --cwd crates/admin-ui/web dev"
-
-[tasks.ui-build]
-description = "Build admin UI"
-depends = ["ui-install"]
-run = "bun run --cwd crates/admin-ui/web build"
-
-[tasks.ui-lint]
-description = "Lint admin UI"
-depends = ["ui-install"]
-run = "bun run --cwd crates/admin-ui/web lint"
-
-[tasks.ui-fmt]
-description = "Format admin UI"
-depends = ["ui-install"]
-run = "bun run --cwd crates/admin-ui/web fmt"
-
-[tasks.ui-fmt-check]
-description = "Check admin UI formatting without modifying files"
-depends = ["ui-install"]
-run = "bun run --cwd crates/admin-ui/web fmt:check"
-
-[tasks.ui-test]
-description = "Run admin UI tests"
-depends = ["ui-install"]
-run = "bun run --cwd crates/admin-ui/web test"
-
-[tasks.review-agent-action-install]
-description = "Install review agent action dependencies"
-run = "bun install --cwd actions/review-agent --frozen-lockfile"
-
-[tasks.review-agent-action-test]
-description = "Run review agent action unit tests"
-depends = ["review-agent-action-install"]
-run = "bun run --cwd actions/review-agent test"
-
-[tasks.review-agent-action-typecheck]
-description = "Typecheck the review agent action"
-depends = ["review-agent-action-install"]
-run = "bun run --cwd actions/review-agent typecheck"
-
-[tasks.review-agent-action-check]
-description = "Typecheck, test, lint, format-check, and exercise the real Pi SDK"
-depends = ["review-agent-action-typecheck", "review-agent-action-test", "review-agent-action-lint"]
-run = "bun run --cwd actions/review-agent smoke"
-
-[tasks.review-agent-action-lint]
-description = "Lint and format-check the review agent action"
-depends = ["review-agent-action-install"]
-run = """
-bun run --cwd actions/review-agent lint
-bun run --cwd actions/review-agent fmt:check
-"""
-
-[tasks.e2e-install]
-description = "Install Playwright Chromium for the end-to-end suite"
-depends = ["ui-install"]
-run = "bun run --cwd crates/admin-ui/web playwright:install"
-
-[tasks.e2e-gateway-build]
-description = "Build the gateway binary before Playwright starts the E2E stack"
-run = "cargo build -p gateway --bin gateway"
-
-[tasks.e2e-test]
-description = "Run gateway and admin UI end-to-end contract tests"
-depends = ["ui-build", "e2e-install", "e2e-gateway-build"]
-run = "bun run --cwd crates/admin-ui/web test:e2e"
-
-[tasks.guardrail-release-gate]
-description = "Run guardrail security, load, harness, and end-to-end release gates"
-depends = [
-  "ui-build",
-  "e2e-install",
-  "e2e-gateway-build",
-  "harness-integration-install",
-]
-run = """
-cargo test -p gateway-guardrails
-cargo test -p gateway-store decision_event_persistence_load_gate_stays_within_release_budget
-npm run test --prefix tests/harness-integration -- guardrails-hook.test.ts
-E2E_GATEWAY_PORT=49380 E2E_UI_PORT=49381 E2E_UPSTREAM_PORT=49382 E2E_BASE_URL=http://127.0.0.1:49380 bun run --cwd crates/admin-ui/web playwright test e2e/guardrails.e2e.ts
-"""
-
-[tasks.harness-integration-install]
-description = "Install native coding-harness integration test dependencies"
-sources = [
-  "tests/harness-integration/package.json",
-  "tests/harness-integration/package-lock.json",
-]
-outputs = ["tests/harness-integration/node_modules/.package-lock.json"]
-run = "npm ci --prefix tests/harness-integration"
-
-[tasks.harness-integration-typecheck]
-description = "Typecheck native coding-harness integration tests"
-depends = ["harness-integration-install"]
-run = "npm run typecheck --prefix tests/harness-integration"
-
-[tasks.harness-integration-test]
-description = "Run Pi and OpenCode live integration tests through Oceans LLM Gateway"
-depends = ["harness-integration-install"]
-run = "npm test --prefix tests/harness-integration"
+[tasks."skills:import-bundled"]
+description = "Import curated skills using a user-owned API key and the requested namespace"
+depends = ["//crates/oceans-cli:build"]
+run = "node scripts/import-bundled-skills.mjs"
 
 [tasks.copilot-installation-canary-test]
 description = "Test the GitHub Copilot installation-token canary without external credentials"
@@ -426,12 +213,10 @@ run = "node scripts/copilot-installation-canary.mjs"
 
 [tasks.release]
 description = "Prepare a release and push its source for CI publication"
-depends = ["sync-pricing-catalog"]
+depends = ["//crates/gateway:sync-pricing-catalog"]
 env = { GITHUB_TOKEN = { required = true } }
 run = '''
-set -euo pipefail
-
-mise exec -- cog bump --auto --skip-untracked
+cog bump --auto --skip-untracked
 tag="$(cog --verbose get-version --tag)"
 git push --atomic origin main "$tag"
 '''
@@ -442,13 +227,13 @@ run = "dist generate"
 
 [tasks.dist-check]
 description = "Check generated release CI and lint release workflows"
-run = """
-dist generate --check
-# Check generated shell commands without applying repository shell style rules.
-actionlint -shellcheck= .github/workflows/release.yml
-actionlint .github/workflows/release-product.yml .github/workflows/release-cli-check.yml
-shellcheck scripts/check-cli-release.sh
-"""
+run = [
+  "dist generate --check",
+  # Check generated shell commands without applying repository shell style rules.
+  "actionlint -shellcheck= .github/workflows/release.yml",
+  "actionlint .github/workflows/release-product.yml .github/workflows/release-cli-check.yml",
+  "shellcheck scripts/check-cli-release.sh",
+]
 
 [tasks.dist-plan]
 description = "Show the CLI archives and installers for the current version"
@@ -457,7 +242,3 @@ run = "dist plan"
 [tasks.dist-build]
 description = "Build CLI distribution artifacts for the local platform"
 run = "dist build"
-
-[tasks.cli-test]
-description = "Test the CLI and shared skill bundle behavior"
-run = "mise exec -- cargo test --locked -p oceans-cli -p gateway-skills"

@@ -4,6 +4,7 @@ Use `mise` for all repo tooling and task execution.
 
 ## Mise
 - Tool versions and shared tasks live in [`mise.toml`](/Users/ahstn/git/oceans-llm/mise.toml).
+- Project-specific tasks live in the `mise.toml` of their directory (listed under `[monorepo] config_roots`). Run them as `mise run //<path-or-alias>:<task>`, such as `mise run //ui:check`, and list them with `mise tasks ls --all`. Keep the root file for repo-wide tasks.
 - When code changes are introduced, run linting before handing work off:
   - `mise run lint` for mixed Rust/UI changes.
   - `cargo clippy --workspace --all-targets -- -D warnings` if only Rust changed.

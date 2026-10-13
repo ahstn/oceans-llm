@@ -1,0 +1,25 @@
+# Review agent action tasks. From the repo root: `mise run //actions/review-agent:<task>`.
+
+[tasks.install]
+description = "Install review agent action dependencies"
+run = "bun install --frozen-lockfile"
+
+[tasks.test]
+description = "Run review agent action unit tests"
+depends = ["install"]
+run = "bun run test"
+
+[tasks.typecheck]
+description = "Typecheck the review agent action"
+depends = ["install"]
+run = "bun run typecheck"
+
+[tasks.lint]
+description = "Lint and format-check the review agent action"
+depends = ["install"]
+run = ["bun run lint", "bun run fmt:check"]
+
+[tasks.check]
+description = "Typecheck, test, lint, format-check, and exercise the real Pi SDK"
+depends = ["typecheck", "test", "lint"]
+run = "bun run smoke"

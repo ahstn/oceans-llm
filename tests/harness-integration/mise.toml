@@ -1,9 +1,8 @@
-[tools]
-node = "lts"
+# Native coding-harness integration tests. From the repo root: `mise run //tests/harness-integration:<task>`.
 
 [tasks.install]
 description = "Install native coding-harness integration test dependencies"
-sources = ["package.json", "package-lock.json"]
+sources = ["package-lock.json", "package.json"]
 outputs = ["node_modules/.package-lock.json"]
 run = "npm ci"
 

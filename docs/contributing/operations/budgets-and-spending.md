@@ -205,6 +205,6 @@ When changing this area, run:
 ```bash
 mise run admin-contract-generate
 mise run admin-contract-check
-mise -C docs run check
+mise run //docs:build
 mise run lint
 ```

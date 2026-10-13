@@ -11,7 +11,7 @@ The E2E harness boots three real processes:
 Run it locally with:
 
 ```bash
-mise run e2e-test
+mise run //ui:e2e
 ```
 
 The Skills suite uses native RustFS through `mise -E rustfs run rustfs:e2e`. It removes only the object prefix assigned to that test run. If object cleanup fails, the stack exits with a failure and retains its runtime directory. Use the endpoint, bucket, region, and prefix in `skills-cleanup.txt` to retry cleanup with your local storage credentials. Remove the retained directory only after its object prefix is empty. The retry file contains no credentials.

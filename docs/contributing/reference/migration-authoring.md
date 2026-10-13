@@ -42,9 +42,9 @@ This page is the maintainer checklist for adding migrations after the active `V1
 Use mise tasks instead of ad hoc database commands.
 
 ```bash
-mise run gateway-migrate
-mise run postgres-start
-mise run gateway-migrate-prod
+mise run //gateway:migrate
+mise run //store:postgres:start
+mise run //gateway:prod:migrate
 mise run //crates/gateway-store:test:postgres
 mise run //crates/gateway-store:smoke:postgres
 ```
