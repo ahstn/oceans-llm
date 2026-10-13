@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 // Builds assets/audio/score.wav: the showreel's original score, synthesized offline and cut to
 // the picture. 150 BPM (beat 0.4s, bar 1.6s), so the structural cuts land on downbeats: the
-// match cut into the flight (2.8s), the first deny slam (12.4s), the exit push (18.0s) and the
-// logo (19.6s). Three half bars move the downbeats onto the flight's landings.
+// match cut into the flight (2.8s), the first deny slam (13.6s), the exit push (22.4s) and the
+// logo (24.0s). Half and short bars move the downbeats onto the flight's landings.
 //
 //   0.00–2.80  Converge: free-time slams on Dm and B♭, glass plucks as the tiles spring in, a zip
 //              on the pulses, the hub's water drop, then a snare-roll build over A and a breath.
-//   2.80–12.4  Flight: a half-time groove (Dm B♭ F C Dm B♭ A) with in-key accents on every proof.
-//   12.4–14.0  Stop-time: the groove drops out, each command types into the gap and is denied on
-//              the beat with a slam, under a riser that stretches with the dolly zoom.
-//   14.0–18.4  A fill rides the dive back into the groove (Dm F C B♭) for tool sets and skills.
-//   18.0–18.4  The exit push pulls the whole groove underwater (a closing low-pass).
-//   18.4–19.6  The wall assembles: Csus surfaces through the opening filter under a riser.
-//   19.6–22.2  The mark drops onto D major, the rings ring, a harp run, a bell ripple, fade.
+//   2.80–13.6  Flight: a half-time groove (Dm B♭ F B♭ C Dm B♭ A) with in-key accents on every proof.
+//   13.6–16.4  Stop-time: the groove drops out, each command types into the gap and is denied with
+//              a slam every other beat, under a riser that stretches with the dolly zoom.
+//   16.4–22.8  A fill rides the dive back into the groove (Dm B♭ C F C B♭) for tool sets and skills.
+//   22.4–22.8  The exit push pulls the whole groove underwater (a closing low-pass).
+//   22.8–24.0  The wall assembles: Csus surfaces through the opening filter under a riser.
+//   24.0–26.6  The mark drops onto D major, the rings ring, a harp run, a bell ripple, fade.
 //
 // Deterministic: every noise source is seeded, so re-running reproduces the file exactly.
 // Usage: node scripts/score.mjs (npm run dev, check, render and publish run it first; the WAV is gitignored).
@@ -27,13 +27,13 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'assets/audio/score.wav');
 
-const LEN = 22.2;
+const LEN = 26.6;
 const S16 = 0.1; // one 16th at 150 BPM
 const DROP = 2.8; // match cut into the flight
-const SLAMS = [12.4, 12.8, 13.2]; // Denied stamps down on each command (Frame 2 local + 2.8)
-const EXIT = 18.0; // the exit push
-const STOP = 18.4; // cut to the lockup; the groove stops
-const LOGO = 19.6; // the mark lands
+const SLAMS = [13.6, 14.4, 15.2]; // Denied stamps down on each command, every other beat (Frame 2 local + 2.8)
+const EXIT = 22.4; // the exit push
+const STOP = 22.8; // cut to the lockup; the groove stops
+const LOGO = 24.0; // the mark lands
 const BREATH = 0.045;
 const BREATHS = [DROP, SLAMS[0], LOGO].map((t) => [t - BREATH, t]); // near-silence before each big landing
 const TARGET_LUFS = -15; // the SFX layer adds roughly 1 LU on top
@@ -90,21 +90,24 @@ const CHORD = {
   Csus: { pad: ['C3', 'G3', 'C4', 'D4', 'G4', 'D5'], root: 'C2', arp: ['C4', 'D4', 'G4', 'C5', 'D5'] },
   D: { pad: ['D3', 'A3', 'D4', 'F#4', 'A4', 'E5', 'F#5'], root: 'D2' },
 };
-// Flight bars: [downbeat, chord, 16ths, kind]. Half bars land the next downbeat on the picture;
-// 'pull' drops out after beat 2 so the first command types into the gap, 'stop' is the stop-time
-// bar (denySlams), 'drop' re-enters big. The last bar is one beat long: the exit push.
+// Flight bars: [downbeat, chord, 16ths, kind]. Half and short bars land the next downbeat on the
+// picture; 'pull' drops out for its last beat so the first command types into the gap, 'stop' is
+// the stop-time bar (denySlams), 'drop' re-enters big. The last bar is one beat long: the exit push.
 const BARS = [
   [DROP, 'Dm', 16], // routing
   [4.4, 'Bb', 8], // the cursor clicks Config; the card flips over the barline
-  [5.2, 'F', 16], // client config
-  [6.8, 'C', 16], // "Copied" on the downbeat, then spend
-  [8.4, 'Dm', 16], // the swoop to guardrails
-  [10.0, 'Bb', 16], // the redaction flip
-  [11.6, 'A', 8, 'pull'], // the pan to destructive actions; the dolly starts
-  [SLAMS[0], 'Bb', 16, 'stop'], // three Denied slams
-  [14.0, 'Dm', 16, 'drop'], // the tool set pops in
-  [15.6, 'F', 16], // the crane to skills
-  [17.2, 'C', 8], // "Installed"
+  [5.2, 'F', 16], // client config: the scan, then the tabs page to Pi
+  [6.8, 'Bb', 8], // the tabs page to Claude Code
+  [7.6, 'C', 16], // "Copied" on the downbeat, then spend
+  [9.2, 'Dm', 16], // the swoop to guardrails
+  [10.8, 'Bb', 16], // the redaction flip
+  [12.4, 'A', 12, 'pull'], // the pan to destructive actions; Audit → Deny; the dolly starts
+  [SLAMS[0], 'Bb', 28, 'stop'], // three Denied slams, then the denied card holds
+  [16.4, 'Dm', 16, 'drop'], // the tool set pops in; github.delete_repository is denied
+  [18.0, 'Bb', 16], // the denied call holds in frame
+  [19.6, 'C', 4], // it is flung away
+  [20.0, 'F', 16], // the crane to skills
+  [21.6, 'C', 8], // "Installed"
   [EXIT, 'Bb', 4],
 ];
 const KICK_STEPS = new Set([0, 6, 10]);
@@ -152,7 +155,7 @@ function converge() {
   put(air, riser({ len: 0.8, f0: 350, f1: 8000, from: 'A2', to: 'A4', tone: 0.3, seed: 29 }), DROP - BREATH - 0.8, 0.5);
 }
 
-// 2.8–18.4s: the half-time groove under the flight.
+// 2.8–22.8s: the half-time groove under the flight.
 function groove() {
   BARS.forEach(([t0, name, steps, kind], b) => {
     if (kind === 'stop') return;
@@ -165,7 +168,7 @@ function groove() {
     put(subs, sub({ f: hz(C.root), len, attack: 0.004, release: 0.04 }), t0, 0.32);
     for (let s = 0; s < steps; s++) {
       const t = t0 + s * S16;
-      const out = kind === 'pull' && s >= 4;
+      const out = kind === 'pull' && s >= steps - 4;
       put(drums, HATS[s % 4], t, 0.2 * HAT_VEL[s % 4] * (out ? 0.6 : 1), 0.18);
       if (out) continue;
       const big = s === 0 && (first || kind === 'drop');
@@ -180,25 +183,25 @@ function groove() {
   for (const [t, g] of [
     [DROP, 0.55],
     [4.4, 0.26],
-    [6.8, 0.24],
-    [10.0, 0.3],
-    [14.0, 0.45],
-    [15.6, 0.28],
+    [7.6, 0.24],
+    [10.8, 0.3],
+    [16.4, 0.45],
+    [20.0, 0.28],
     [EXIT, 0.32],
   ])
     put(drums, CRASH, t, g, 0, { rev: 0.12 });
   put(drums, boom({ f0: 140, f1: hz('D1'), decay: 0.6, seed: 30 }), DROP, 0.4);
-  put(drums, boom({ f0: 140, f1: hz('D1'), decay: 0.5, seed: 35 }), 14.0, 0.34);
+  put(drums, boom({ f0: 140, f1: hz('D1'), decay: 0.5, seed: 35 }), 16.4, 0.34);
   // The card flips over the barline into F: a short reverse cymbal pulls into the downbeat.
   put(air, reverseCymbal({ len: 0.4, seed: 36 }), 4.8, 0.3);
   // Open hats lift the back half of the C, B♭ and F bars.
-  for (const t0 of [6.8, 10.0, 15.6]) put(drums, OPEN_HAT, t0 + 14 * S16, 0.16, 0.2);
+  for (const t0 of [7.6, 10.8, 20.0]) put(drums, OPEN_HAT, t0 + 14 * S16, 0.16, 0.2);
 }
 
-// 12.4–14.0s: stop-time under the destructive-actions card. Each command types into the gap and
-// Denied stamps down on the beat, with a slam that grows like the lens jolt (5, 7, 10px) and
+// 13.6–16.4s: stop-time under the destructive-actions card. Each command types into the gap and
+// Denied stamps down every other beat, with a slam that grows like the lens jolt (5, 7, 10px) and
 // stabs a wider B♭ each time. A riser stretches under the dolly zoom and peaks on the last slam;
-// a reverse cymbal and a 16th fill ride the dive back into the groove.
+// the card holds, then a reverse cymbal and a 16th fill ride the dive back into the groove.
 function denySlams() {
   SLAMS.forEach((t, k) => {
     const g = 0.8 + 0.1 * k;
@@ -211,9 +214,9 @@ function denySlams() {
     put(pads, pad({ notes, len: 0.1, attack: 0.002, release: 0.28, voices: 5, detune: 16, cutoff, q: 0.9, seed: 93 + k }), t, 0.46 * g, 0, { rev: 0.6 });
     put(fx, buzz({ f: hz('D3'), len: 0.26, wobble: 0 }), t, 0.16 * g, 0, { rev: 0.2 });
   });
-  put(air, riser({ len: 1.4, f0: 250, f1: 7000, from: 'A2', to: 'Bb4', tone: 0.35, seed: 96 }), SLAMS[2] - 1.4, 0.42);
-  put(air, reverseCymbal({ len: 0.6, seed: 97 }), 13.4, 0.5);
-  for (let k = 0; k < 4; k++) put(drums, ROLL, 13.6 + k * S16, 0.25 + k * 0.1, 0, { rev: 0.2 });
+  put(air, riser({ len: 2.4, f0: 250, f1: 7000, from: 'A2', to: 'Bb4', tone: 0.35, seed: 96 }), SLAMS[2] - 2.4, 0.42);
+  put(air, reverseCymbal({ len: 0.6, seed: 97 }), 15.8, 0.5);
+  for (let k = 0; k < 4; k++) put(drums, ROLL, 16.0 + k * S16, 0.25 + k * 0.1, 0, { rev: 0.2 });
 }
 
 // Key clicks while a command types. GSAP's steps(n) shows character j at j/(n + 1) of the tween;
@@ -259,14 +262,14 @@ function accents() {
   });
   for (const [t, n] of [
     [5.75, 'A5'],
-    [6.22, 'C6'],
-    [6.62, 'F6'],
+    [6.42, 'C6'],
+    [7.22, 'F6'],
   ])
     tick(n, t, 0.14);
-  ok(6.77);
+  ok(7.57);
   // Stop 3, spend: the counter ratchets up its power2.out curve in $12 steps, and "Near limit"
   // lands as a double beep on the frame the fill crosses $120 (80% of the $150 budget).
-  const AMT_AT = 7.75;
+  const AMT_AT = 8.55;
   const AMT_DUR = 0.85;
   const AMT_END = 132;
   const crossAt = (v) => AMT_AT + AMT_DUR * (1 - Math.cbrt(1 - v / AMT_END));
@@ -274,45 +277,46 @@ function accents() {
   for (const t of [crossAt(120), crossAt(120) + 0.1]) put(fx, beep({ f: hz('G6') }), t, 0.12, 0.1, { rev: 0.2 });
   // Stop 4, redaction: the decision pills confirm up B♭maj7.
   for (const [t, n] of [
-    [10.5, 'D6'],
-    [10.56, 'F6'],
-    [10.62, 'A6'],
+    [11.4, 'D6'],
+    [11.46, 'F6'],
+    [11.52, 'A6'],
   ])
     tick(n, t, 0.15);
   // Stop 5, destructive actions: Audit → Deny arms with a low clack, then each command types
   // into the stop-time gap before its slam (denySlams).
-  put(fx, hat({ decay: 0.012, len: 0.08, tone: 2600, seed: 98 }), 11.92, 0.22, 0.1);
-  put(fx, boom({ f0: 240, f1: hz('A2'), pd: 0.015, decay: 0.09, len: 0.35, thud: 0.5, seed: 99 }), 11.92, 0.18);
+  put(fx, hat({ decay: 0.012, len: 0.08, tone: 2600, seed: 98 }), 12.92, 0.22, 0.1);
+  put(fx, boom({ f0: 240, f1: hz('A2'), pd: 0.015, decay: 0.09, len: 0.35, thud: 0.5, seed: 99 }), 12.92, 0.18);
   ['snow sql -q "DROP DATABASE analytics"', 'op vault delete Production', 'aws s3 rb s3://prod-backups --force'].forEach((cmd, i) =>
-    typing(SLAMS[i] - 0.35, cmd.length, 0.3, 3, 0.14),
+    typing(SLAMS[i] - 0.5, cmd.length, 0.42, 3, 0.14),
   );
   // Stop 6, tool sets: the dropped chips sink, the four kept tools tick into the set (the count
-  // goes 1–4 up D minor), and github.delete_repository is denied with the shake's 9 Hz wobble.
-  put(fx, drop({ f0: 900, f1: 320, sweep: 0.45, decay: 0.22, len: 0.9 }), 14.12, 0.07, 0, { rev: 0.4 });
+  // goes 1–4 up D minor), and github.delete_repository is denied with the shake's 9 Hz wobble,
+  // then holds in frame for two bars before it is flung away on the C pickup.
+  put(fx, drop({ f0: 900, f1: 320, sweep: 0.45, decay: 0.22, len: 0.9 }), 16.52, 0.07, 0, { rev: 0.4 });
   for (const [t, n] of [
-    [14.34, 'D5'],
-    [14.41, 'F5'],
-    [14.48, 'A5'],
-    [14.55, 'D6'],
+    [16.74, 'D5'],
+    [16.81, 'F5'],
+    [16.88, 'A5'],
+    [16.95, 'D6'],
   ])
     put(fx, pluck({ f: hz(n), decay: 0.12, bright: 3600 }), t, 0.2, 0.15, { rev: 0.25 });
-  put(fx, buzz({ f: hz('D3'), len: 0.42, wobble: 9.1 }), 14.8, 0.3, 0.2, { rev: 0.2 });
+  put(fx, buzz({ f: hz('D3'), len: 0.42, wobble: 9.1 }), 17.2, 0.3, 0.2, { rev: 0.2 });
   // Stop 7, skills: v4 publishes with a chime, the ring pings, the install command types, and
   // "Installed" gets the success chime as the bundle's files land.
-  put(fx, bell({ f: hz('C6'), ratio: 3.5, index: 1.6, decay: 0.7 }), 16.77, 0.18, -0.1, { rev: 0.4 });
-  put(fx, bell({ f: hz('F6'), ratio: 3.5, index: 1.2, decay: 0.6 }), 16.79, 0.1, -0.1, { rev: 0.4 });
-  tick('A6', 17.1, 0.08);
-  typing(16.9, 'oceans skills install platform/incident-triage --version 4'.length, 0.32, 4, 0.12);
-  ok(17.3);
+  put(fx, bell({ f: hz('C6'), ratio: 3.5, index: 1.6, decay: 0.7 }), 21.17, 0.18, -0.1, { rev: 0.4 });
+  put(fx, bell({ f: hz('F6'), ratio: 3.5, index: 1.2, decay: 0.6 }), 21.19, 0.1, -0.1, { rev: 0.4 });
+  tick('A6', 21.5, 0.08);
+  typing(21.3, 'oceans skills install platform/incident-triage --version 4'.length, 0.32, 4, 0.12);
+  ok(21.7);
   for (const [t, n] of [
-    [17.38, 'E5'],
-    [17.44, 'G5'],
-    [17.5, 'C6'],
+    [21.78, 'E5'],
+    [21.84, 'G5'],
+    [21.9, 'C6'],
   ])
     put(fx, pluck({ f: hz(n), decay: 0.12, bright: 3600 }), t, 0.14, 0.1, { rev: 0.25 });
 }
 
-// 18.4–19.6s: the wall assembles out of the blur while the music surfaces.
+// 22.8–24.0s: the wall assembles out of the blur while the music surfaces.
 function surface() {
   // The cut: a soft sub drop as the groove stops, still underwater.
   put(drums, boom({ f0: 95, f1: hz('C2'), decay: 0.5, thud: 0.3, seed: 31 }), STOP, 0.35);
@@ -335,7 +339,7 @@ function surface() {
   [0.8, 0.9, 0.95, 1.0, 1.05, 1.1].forEach((t, k) => put(drums, k === 5 ? ROLL_CUT : ROLL, STOP + t, 0.2 + k * 0.09, 0, { rev: 0.2 }));
 }
 
-// 19.6–22.2s: the lockup.
+// 24.0–26.6s: the lockup.
 function lockup() {
   // The mark lands like a drop on water: kick, sub boom, crash and the D major chord (Picardy).
   hitKick(LOGO, KICK_BIG, 1);
@@ -479,8 +483,8 @@ const { mix, stems, gains } = master();
 const WINDOWS = [
   ['converge', 0, DROP],
   ['flight', DROP, SLAMS[0]],
-  ['slams', SLAMS[0], 14.0],
-  ['return', 14.0, EXIT],
+  ['slams', SLAMS[0], 16.4],
+  ['return', 16.4, EXIT],
   ['lockup', LOGO, LEN],
 ];
 console.log(`stem loudness, LU relative to the mix in each window\n${'stem'.padEnd(8)}${WINDOWS.map(([n]) => n.padStart(10)).join('')}`);

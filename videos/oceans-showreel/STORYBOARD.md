@@ -1,6 +1,6 @@
 ---
 format: 1920x1080
-duration: 22.2s
+duration: 26.6s
 message: "One governed gateway for every agent, every model — and every dollar."
 arc: Hook (many clients, many models) → Converge (one gateway) → Proof flight (route, connect, cap, redact, deny, govern, share) → Reveal (the whole console) → Lockup + CTA
 audience: platform and engineering leaders adopting AI coding agents
@@ -30,7 +30,7 @@ pure ocean blue: the match cut into the flight.
 
 - status: animated
 - src: compositions/frames/f2-flight.html
-- duration: 15.6s
+- duration: 20.0s
 - transition_in: cut (ocean-blue match)
 - scene: A 3D camera flies across five live admin screens; each of seven landings lifts one proof out of the UI
 - poster: 1.5s
@@ -46,25 +46,30 @@ verb and noun tick on each landing while "every" stays fixed in wave blue.
 2. Orbit, then Connect every agent: a cursor clicks the route row's Config button and the
    camera swings round as the routing card flips over to its back face, the generated
    Client config. A scan line reads the JSON and the gateway base URL lights up; the tabs
-   page OpenCode → Pi → Claude Code (the tab indicator leads, the code pages after it and
-   the file path rolls from ~/.config/opencode/opencode.json to ~/.pi/agent/models.json to
-   ~/.claude/settings.json), then "Copy JSON" presses and flips to "Copied".
+   page OpenCode → Pi → Claude Code, holding two beats on each (the tab indicator leads,
+   the code pages after it and the file path rolls from ~/.config/opencode/opencode.json to
+   ~/.pi/agent/models.json to ~/.claude/settings.json), then "Copy JSON" presses and flips
+   to "Copied".
 3. Whip sweep, then Cap every dollar: the spend-controls plane; Grace's budget counts up to
    $132.00 of $150.00, the bar crosses 80% and the chip flips to "Near limit".
 4. Swoop, then Redact every secret: the guardrails plane; a prompt card's fake Anthropic key
-   glyph-scrambles into [REDACTED:anthropic-api-key] with a "transformed · secret_redaction"
-   decision chip.
+   holds long enough to read, then glyph-scrambles into [REDACTED:anthropic-api-key] with a
+   "transformed · secret_redaction" decision chip.
 5. Pan across the guardrails page, then Deny every delete: the Destructive actions card
-   lifts out and its mode slides from Audit to Deny. An agent types three commands, and
-   each is denied as it lands on the score's hits: snow sql DROP DATABASE (database.snowflake),
+   (1.2x the other cards' type scale) lifts out and its mode slides from Audit to Deny. An
+   agent types three commands at a readable pace, and each is denied on the score's
+   stop-time hits, one every other beat: snow sql DROP DATABASE (database.snowflake),
    op vault delete (secrets.onepassword), aws s3 rb --force (cloud.aws). Each slam stamps
    "Denied", strikes the command through, flashes the row and jolts the lens a little
    harder, while a dolly zoom tightens the perspective around the card. The footer's
    reason code rolls snowflake.drop_database → onepassword.vault_delete →
-   aws.destructive_operation, and the perspective recoils before the dive.
+   aws.destructive_operation, the finished card holds, and the perspective recoils before
+   the dive.
 6. Dive, then Govern every tool: the MCP invocations plane; a cloud of server tools collapses
    into a four-tool "triage" tool set, and a stray github delete_repository call is denied
-   by the saas.github guardrail pack (deny · github.delete_repository).
+   by the saas.github guardrail pack (deny · github.delete_repository). The denied chip
+   docks just above the card's top-right corner, fully in frame and slightly enlarged,
+   under a slow push-in, and holds for about two seconds before it is flung away.
 7. Crane down, tilting over the top of the move, then Share every skill: the Agent Skills
    catalog; incident-triage (platform · Priya Shah) publishes v4: the chip pops in, "Latest"
    slides over and its digit rolls from 3 to 4. Then

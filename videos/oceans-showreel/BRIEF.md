@@ -5,13 +5,13 @@ storyboard: no
 message: "One governed gateway for every agent, every model — and every dollar."
 aspect: 1920x1080
 language: en
-length: 22.2s
+length: 26.6s
 audience: platform and engineering leaders adopting AI coding agents
 ---
 
 ## Intent
 
-A 22-second, unnarrated motion-design showreel that sells Oceans LLM to new users.
+A 26-second, unnarrated motion-design showreel that sells Oceans LLM to new users.
 It should feel like a motion designer's résumé piece, "go all out", while every claim
 stays true to the product: one governed gateway that routes every agent's traffic to
 every model, writes each agent's client config, caps spend, redacts secrets, denies
@@ -21,6 +21,13 @@ The first cut ran 15 seconds with four flight stops (route, cap, redact, govern)
 extension keeps all four and slots in three more where they belong on the camera path:
 client config on the back of the routing card, destructive actions on the guardrails
 page beside redaction, and Agent Skills as a closing stop before the lockup.
+
+A pacing pass then gave the dense stops room to read without slowing the whole film:
+the client-config pages hold two beats each (about 0.75x), the redaction key holds
+before it scrambles (about 0.9x), the destructive-actions card is 1.2x larger and types
+slower with a slam every other beat (about 0.7x), and the denied MCP tool docks fully in
+frame and holds for two seconds before it is flung away. The score's bar map grows with
+the picture, so every hit still lands on its cue.
 
 ## Assets
 

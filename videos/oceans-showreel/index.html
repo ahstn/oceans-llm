@@ -28,62 +28,62 @@
     </style>
   </head>
   <body>
-    <div data-hf-id="hf-kbh8" id="root" data-composition-id="main" data-start="0" data-duration="22.2" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-kbh8" id="root" data-composition-id="main" data-start="0" data-duration="26.6" data-width="1920" data-height="1080">
       <!-- Frame 1 — Converge: agents and providers wire into one gateway; push into the tile. -->
       <div data-hf-id="hf-nsmo" id="f1-converge" class="clip" data-composition-id="f1-converge" data-composition-src="compositions/frames/f1-converge.html" data-start="0" data-duration="2.8" data-track-index="0" data-width="1920" data-height="1080"></div>
       <!-- Frame 2 — Flight: a 3D camera lands on five admin screens; one proof per landing (seven stops). -->
-      <div data-hf-id="hf-tmyx" id="f2-flight" class="clip" data-composition-id="f2-flight" data-composition-src="compositions/frames/f2-flight.html" data-start="2.8" data-duration="15.6" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div data-hf-id="hf-tmyx" id="f2-flight" class="clip" data-composition-id="f2-flight" data-composition-src="compositions/frames/f2-flight.html" data-start="2.8" data-duration="20.0" data-track-index="1" data-width="1920" data-height="1080"></div>
       <!-- Frame 3 — Lockup: the console wall assembles, then the Oceans LLM lockup and CTA. -->
-      <div data-hf-id="hf-a7gs" id="f3-lockup" class="clip" data-composition-id="f3-lockup" data-composition-src="compositions/frames/f3-lockup.html" data-start="18.4" data-duration="3.8" data-track-index="2" data-width="1920" data-height="1080"></div>
+      <div data-hf-id="hf-a7gs" id="f3-lockup" class="clip" data-composition-id="f3-lockup" data-composition-src="compositions/frames/f3-lockup.html" data-start="22.8" data-duration="3.8" data-track-index="2" data-width="1920" data-height="1080"></div>
 
       <!-- Score: original, synthesized by scripts/score.mjs and cut to the frame cues (-15 LUFS, -2 dBFS peak). -->
-      <audio id="score" class="clip" src="assets/audio/score.wav" data-start="0" data-duration="22.2" data-track-index="3" data-volume="1"></audio>
+      <audio id="score" class="clip" src="assets/audio/score.wav" data-start="0" data-duration="26.6" data-track-index="3" data-volume="1"></audio>
 
       <!-- Sound effects (Pixabay library, assets/sfx), one fader. Starts subtract each file's measured lead-in:
            click 0.045s, pop 0.11s, whoosh-tamed peaks 0.16s in, glitch-3 0.28s, sparkle 0.02s. -->
       <hf-audio-group id="sfx" data-label="Sound effects" data-volume="1"></hf-audio-group>
-      <!-- Exit push: the cinematic whoosh peaks on the cut to the lockup (18.4s). -->
-      <audio id="sfx-exit" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-cinematic.mp3" data-start="17.46" data-media-start="1.6" data-duration="1.34" data-track-index="4" data-volume="0.5" data-fade-in="0.05" data-fade-out="0.35"></audio>
-      <!-- Camera moves, each peaking on the move's fastest frame: the card flip (5.13s), whip burst (7.27s),
-           swoop midpoint (9.3s), pan midpoint (11.55s), dive (13.6s), crane midpoint (15.98s), "every" flies up (20.2s).
+      <!-- Exit push: the cinematic whoosh peaks on the cut to the lockup (22.8s). -->
+      <audio id="sfx-exit" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-cinematic.mp3" data-start="21.86" data-media-start="1.6" data-duration="1.34" data-track-index="4" data-volume="0.5" data-fade-in="0.05" data-fade-out="0.35"></audio>
+      <!-- Camera moves, each peaking on the move's fastest frame: the card flip (5.13s), whip burst (8.07s),
+           swoop midpoint (10.1s), pan midpoint (12.55s), dive (16.0s), crane midpoint (20.38s), "every" flies up (24.6s).
            whoosh-tamed.wav is whoosh.mp3 with its noise crests held to -5 dBFS, so the whooshes stay loud
            without tripping the renderer's -1 dBTP trim, which would lower the whole mix:
            ffmpeg -i assets/sfx/whoosh.mp3 -af "aresample=48000,alimiter=limit=0.5623:attack=1:release=5:level=0:latency=1" -acodec pcm_s16le assets/sfx/whoosh-tamed.wav -->
       <audio id="sfx-flip" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="4.97" data-duration="0.57" data-track-index="5" data-volume="0.55"></audio>
-      <audio id="sfx-whip" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="7.11" data-duration="0.57" data-track-index="5" data-volume="0.95"></audio>
-      <audio id="sfx-swoop" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="9.14" data-duration="0.57" data-track-index="5" data-volume="1"></audio>
-      <audio id="sfx-pan" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="11.39" data-duration="0.57" data-track-index="5" data-volume="0.6"></audio>
-      <audio id="sfx-dive" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="13.44" data-duration="0.57" data-track-index="5" data-volume="0.9"></audio>
-      <audio id="sfx-crane" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="15.815" data-duration="0.57" data-track-index="5" data-volume="0.75"></audio>
-      <audio id="sfx-every" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="20.04" data-duration="0.57" data-track-index="5" data-volume="0.85"></audio>
+      <audio id="sfx-whip" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="7.91" data-duration="0.57" data-track-index="5" data-volume="0.95"></audio>
+      <audio id="sfx-swoop" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="9.94" data-duration="0.57" data-track-index="5" data-volume="1"></audio>
+      <audio id="sfx-pan" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="12.39" data-duration="0.57" data-track-index="5" data-volume="0.6"></audio>
+      <audio id="sfx-dive" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="15.84" data-duration="0.57" data-track-index="5" data-volume="0.9"></audio>
+      <audio id="sfx-crane" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="20.215" data-duration="0.57" data-track-index="5" data-volume="0.75"></audio>
+      <audio id="sfx-every" class="clip" data-audio-group="sfx" src="assets/sfx/whoosh-tamed.wav" data-start="24.44" data-duration="0.57" data-track-index="5" data-volume="0.85"></audio>
       <!-- Rail ticks: the verb and noun roll over on each landing. -->
       <audio id="sfx-tick-connect" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="4.755" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
-      <audio id="sfx-tick-cap" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="7.155" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
-      <audio id="sfx-tick-redact" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="9.105" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
-      <audio id="sfx-tick-deny" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="11.255" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
-      <audio id="sfx-tick-govern" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="13.605" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
-      <audio id="sfx-tick-share" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="15.705" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
-      <audio id="sfx-tick-see" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="18.475" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
-      <!-- Pops: the MCP card lifts (13.96s), skill v4 publishes (16.77s), the URL and licence pills land (20.78s, 20.86s). -->
-      <audio id="sfx-pop-card" class="clip" data-audio-group="sfx" src="assets/sfx/pop.mp3" data-start="13.85" data-duration="0.72" data-track-index="7" data-volume="0.6"></audio>
-      <audio id="sfx-pop-version" class="clip" data-audio-group="sfx" src="assets/sfx/pop.mp3" data-start="16.66" data-duration="0.72" data-track-index="7" data-volume="0.45"></audio>
-      <audio id="sfx-pop-url" class="clip" data-audio-group="sfx" src="assets/sfx/pop.mp3" data-start="20.67" data-duration="0.72" data-track-index="7" data-volume="0.55"></audio>
-      <!-- The fake key glyph-scrambles into [REDACTED] (9.92s on). -->
-      <audio id="sfx-scramble" class="clip" data-audio-group="sfx" src="assets/sfx/glitch-3.mp3" data-start="9.64" data-duration="0.7" data-track-index="8" data-volume="0.6" data-fade-out="0.12"></audio>
-      <audio id="sfx-pop-license" class="clip" data-audio-group="sfx" src="assets/sfx/pop.mp3" data-start="20.75" data-duration="0.72" data-track-index="8" data-volume="0.45"></audio>
-      <!-- The sheen crosses the URL (21.4s). -->
-      <audio id="sfx-sheen" class="clip" data-audio-group="sfx" src="assets/sfx/sparkle.mp3" data-start="21.38" data-duration="0.82" data-track-index="9" data-volume="0.18" data-fade-out="0.4"></audio>
-      <!-- UI clicks on the client-config stop: the cursor presses Config (4.73s), the copy button (6.75s),
-           and the two client tabs (6.0s, 6.4s). -->
+      <audio id="sfx-tick-cap" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="7.955" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
+      <audio id="sfx-tick-redact" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="9.905" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
+      <audio id="sfx-tick-deny" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="12.255" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
+      <audio id="sfx-tick-govern" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="16.005" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
+      <audio id="sfx-tick-share" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="20.105" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
+      <audio id="sfx-tick-see" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="22.875" data-duration="0.36" data-track-index="6" data-volume="0.45"></audio>
+      <!-- Pops: the MCP card lifts (16.36s), skill v4 publishes (21.17s), the URL and licence pills land (25.18s, 25.26s). -->
+      <audio id="sfx-pop-card" class="clip" data-audio-group="sfx" src="assets/sfx/pop.mp3" data-start="16.25" data-duration="0.72" data-track-index="7" data-volume="0.6"></audio>
+      <audio id="sfx-pop-version" class="clip" data-audio-group="sfx" src="assets/sfx/pop.mp3" data-start="21.06" data-duration="0.72" data-track-index="7" data-volume="0.45"></audio>
+      <audio id="sfx-pop-url" class="clip" data-audio-group="sfx" src="assets/sfx/pop.mp3" data-start="25.07" data-duration="0.72" data-track-index="7" data-volume="0.55"></audio>
+      <!-- The fake key glyph-scrambles into [REDACTED] (10.82s on). -->
+      <audio id="sfx-scramble" class="clip" data-audio-group="sfx" src="assets/sfx/glitch-3.mp3" data-start="10.54" data-duration="0.7" data-track-index="8" data-volume="0.6" data-fade-out="0.12"></audio>
+      <audio id="sfx-pop-license" class="clip" data-audio-group="sfx" src="assets/sfx/pop.mp3" data-start="25.15" data-duration="0.72" data-track-index="8" data-volume="0.45"></audio>
+      <!-- The sheen crosses the URL (25.8s). -->
+      <audio id="sfx-sheen" class="clip" data-audio-group="sfx" src="assets/sfx/sparkle.mp3" data-start="25.78" data-duration="0.82" data-track-index="9" data-volume="0.18" data-fade-out="0.4"></audio>
+      <!-- UI clicks on the client-config stop: the cursor presses Config (4.73s), the copy button (7.55s),
+           and the two client tabs (6.2s, 7.0s). -->
       <audio id="sfx-click-config" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="4.685" data-duration="0.36" data-track-index="10" data-volume="0.5"></audio>
-      <audio id="sfx-click-copy" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="6.705" data-duration="0.36" data-track-index="10" data-volume="0.45"></audio>
-      <audio id="sfx-click-tab-pi" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="5.955" data-duration="0.36" data-track-index="11" data-volume="0.35"></audio>
-      <audio id="sfx-click-tab-claude" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="6.355" data-duration="0.3" data-track-index="11" data-volume="0.35"></audio>
+      <audio id="sfx-click-copy" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="7.505" data-duration="0.36" data-track-index="10" data-volume="0.45"></audio>
+      <audio id="sfx-click-tab-pi" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="6.155" data-duration="0.36" data-track-index="11" data-volume="0.35"></audio>
+      <audio id="sfx-click-tab-claude" class="clip" data-audio-group="sfx" src="assets/sfx/click.mp3" data-start="6.955" data-duration="0.3" data-track-index="11" data-volume="0.35"></audio>
     </div>
     <script>
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true });
-      tl.set({}, {}, 22.2);
+      tl.set({}, {}, 26.6);
       window.__timelines["main"] = tl;
     </script>
   </body>
