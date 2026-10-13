@@ -136,6 +136,10 @@ where
             .repo
             .sum_usage_cost_for_budget_scope_in_window(scope, window_start, window_end)
             .await?;
+        // An increase only raises the limit, so it is looked up only once the base is spent.
+        if spent < budget.settings.amount_usd {
+            return Ok(());
+        }
         let limit = effective_budget_limit(self.repo.as_ref(), budget, occurred_at).await?;
         if spent >= limit {
             return Err(GatewayError::BudgetExceeded {
@@ -164,6 +168,9 @@ where
             .sum_usage_cost_for_budget_scope_in_window(scope, window_start, window_end)
             .await?;
         let projected = spent.saturating_add(cost_usd);
+        if projected <= budget.settings.amount_usd {
+            return Ok(None);
+        }
         let limit = effective_budget_limit(self.repo.as_ref(), budget, occurred_at).await?;
         if projected > limit {
             return Ok(Some(BudgetOverrun {
@@ -193,6 +200,7 @@ fn budget_window_bounds_utc(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
@@ -216,6 +224,7 @@ mod tests {
         budgets: HashMap<String, BudgetRecord>,
         prior_spend: HashMap<String, Money4>,
         increases: HashMap<Uuid, BudgetIncreaseRecord>,
+        increase_lookups: AtomicUsize,
         inserted_events: Mutex<Vec<UsageLedgerRecord>>,
     }
 
@@ -309,6 +318,7 @@ mod tests {
             budget_id: Uuid,
             at: OffsetDateTime,
         ) -> Result<Option<BudgetIncreaseRecord>, StoreError> {
+            self.increase_lookups.fetch_add(1, Ordering::Relaxed);
             Ok(self
                 .increases
                 .get(&budget_id)
@@ -652,6 +662,38 @@ mod tests {
             .expect("usage recorded");
         assert_eq!(overruns.len(), 1);
         assert_eq!(overruns[0].limit_usd, usd(120));
+    }
+
+    #[tokio::test]
+    async fn increase_is_not_looked_up_while_spend_is_under_the_base_budget() {
+        let user_id = Uuid::new_v4();
+        let user_scope = BudgetScope::User { user_id };
+        let repo = Arc::new(
+            InMemoryBudgetRepo::default()
+                .with_budget(budget(user_scope.clone(), usd(80), true), usd(10))
+                .with_increase(&user_scope, usd(40)),
+        );
+        let guard = BudgetGuard::new(repo.clone());
+        let auth = user_auth(user_id);
+
+        precheck(&guard, &auth, "req_under_base", Uuid::new_v4())
+            .await
+            .expect("under the base budget");
+        let overruns = guard
+            .record_incurred_usage(
+                &auth,
+                &ledger(
+                    &auth,
+                    "req_under_base",
+                    None,
+                    UsagePricingStatus::Priced,
+                    usd(5),
+                ),
+            )
+            .await
+            .expect("usage recorded");
+        assert!(overruns.is_empty());
+        assert_eq!(repo.increase_lookups.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
