@@ -1,8 +1,8 @@
 ---
 format: 1920x1080
-duration: 15s
+duration: 22.2s
 message: "One governed gateway for every agent, every model — and every dollar."
-arc: Hook (many clients, many models) → Converge (one gateway) → Proof flight (route, cap, redact, govern) → Reveal (the whole console) → Lockup + CTA
+arc: Hook (many clients, many models) → Converge (one gateway) → Proof flight (route, connect, cap, redact, deny, govern, share) → Reveal (the whole console) → Lockup + CTA
 audience: platform and engineering leaders adopting AI coding agents
 mode: autonomous
 ---
@@ -30,27 +30,47 @@ pure ocean blue: the match cut into the flight.
 
 - status: animated
 - src: compositions/frames/f2-flight.html
-- duration: 8.4s
+- duration: 15.6s
 - transition_in: cut (ocean-blue match)
-- scene: A 3D camera flies across four live admin screens; each landing lifts one proof out of the UI
+- scene: A 3D camera flies across five live admin screens; each of seven landings lifts one proof out of the UI
 - poster: 1.5s
 - blueprint: camera-journey
-- rules: 3d-camera-flight, depth-of-field-blur, motion-blur-streak (camera-travel carve-out, whip sweep), nudge-curve, vertical-spring-ticker, waterfall-entry, stat-bars-and-fills, counting-dynamic-scale, hacker-flip-3d, spring-pop-entrance
+- rules: 3d-camera-flight, depth-of-field-blur, motion-blur-streak (camera-travel carve-out, whip sweep), nudge-curve, vertical-spring-ticker, waterfall-entry, stat-bars-and-fills, counting-dynamic-scale, hacker-flip-3d, spring-pop-entrance, physics-press-reaction, control-target-sync, press-release-spring, kinetic-beat-slam
 
-The ocean veil lifts as the camera dives onto the first of four real admin captures
+The ocean veil lifts as the camera dives onto the first of five real admin captures
 floating in a dark 3D void. A persistent bottom-left rail reads "[verb] every [noun]."; the
 verb and noun tick on each landing while "every" stays fixed in wave blue.
 1. Route every model: the routing plane; a route card lifts out (claude-sonnet-4-6,
    three provider routes with Priority · Weight bars); a weighted-random highlight hops
    and lands.
-2. Whip sweep, then Cap every dollar: the spend-controls plane; Grace's budget counts up to
+2. Orbit, then Connect every agent: a cursor clicks the route row's Config button and the
+   camera swings round as the routing card flips over to its back face, the generated
+   Client config. A scan line reads the JSON and the gateway base URL lights up; the tabs
+   page OpenCode → Pi → Claude Code (the tab indicator leads, the code pages after it and
+   the file path rolls from ~/.config/opencode/opencode.json to ~/.pi/agent/models.json to
+   ~/.claude/settings.json), then "Copy JSON" presses and flips to "Copied".
+3. Whip sweep, then Cap every dollar: the spend-controls plane; Grace's budget counts up to
    $132.00 of $150.00, the bar crosses 80% and the chip flips to "Near limit".
-3. Swoop, then Redact every secret: the guardrails plane; a prompt card's fake Anthropic key
+4. Swoop, then Redact every secret: the guardrails plane; a prompt card's fake Anthropic key
    glyph-scrambles into [REDACTED:anthropic-api-key] with a "transformed · secret_redaction"
    decision chip.
-4. Dive, then Govern every tool: the MCP invocations plane; a cloud of server tools collapses
+5. Pan across the guardrails page, then Deny every delete: the Destructive actions card
+   lifts out and its mode slides from Audit to Deny. An agent types three commands, and
+   each is denied as it lands on the score's hits: snow sql DROP DATABASE (database.snowflake),
+   op vault delete (secrets.onepassword), aws s3 rb --force (cloud.aws). Each slam stamps
+   "Denied", strikes the command through, flashes the row and jolts the lens a little
+   harder, while a dolly zoom tightens the perspective around the card. The footer's
+   reason code rolls snowflake.drop_database → onepassword.vault_delete →
+   aws.destructive_operation, and the perspective recoils before the dive.
+6. Dive, then Govern every tool: the MCP invocations plane; a cloud of server tools collapses
    into a four-tool "triage" tool set, and a stray github delete_repository call is denied
    by the saas.github guardrail pack (deny · github.delete_repository).
+7. Crane down, tilting over the top of the move, then Share every skill: the Agent Skills
+   catalog; incident-triage (platform · Priya Shah) publishes v4: the chip pops in, "Latest"
+   slides over and its digit rolls from 3 to 4. Then
+   `oceans skills install platform/incident-triage --version 4` types out, the CLI confirms
+   "Installed .agents/skills/incident-triage", and the bundle's files land (SKILL.md,
+   references/checklist.md, .oceans-skill-lock.json).
 The camera then pushes past the last plane into blur: hard cut.
 
 ## Frame 3 — Lockup

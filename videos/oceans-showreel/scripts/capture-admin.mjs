@@ -37,6 +37,8 @@ const SETS = {
     { name: 'batches', path: '/admin/batches' },
   ],
   profile: [{ name: 'profile', path: '/admin/profile' }],
+  // Needs a Skills-enabled stack (OCEANS_VERIFY_SKILLS=true) with a seeded catalog.
+  skills: [{ name: 'skills', path: '/admin/skills' }],
   // Open dialogs and sheets so the flight stops land on a single, legible detail.
   refined: [
     { name: 'model-routing-opus', path: '/admin/models', prepare: (page) => openModelRouting(page, 'claude-opus-4-7') },
