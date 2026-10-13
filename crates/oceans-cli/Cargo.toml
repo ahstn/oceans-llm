@@ -1,6 +1,6 @@
 [package]
 name = "oceans-cli"
-version = "0.37.0"
+version = "0.38.0"
 edition = "2024"
 description = "Command-line client for Oceans LLM"
 repository = "https://github.com/ahstn/oceans-llm"

@@ -6,6 +6,640 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.38.0] - 2026-10-13
+### :rocket: New features
+- *(verify-skill)* Shared proof envelope with verdict-checking evidence and PR report by @ahstn
+- *(admin-ui)* Reorder agent extensions and rename skills to agent skills by @ahstn
+- *(admin-ui)* Group agent extensions in the sidebar by @ahstn in [#419](https://github.com/ahstn/oceans-llm/pull/419)
+- *(verify-skill)* Route main's new pages and add Profile and Agent Plugins recipes by @claude
+- *(verify-skill)* Add diff-driven plan command, portability fixes, and refreshed feature map by @ahstn in [#399](https://github.com/ahstn/oceans-llm/pull/399)
+- *(admin-ui)* Add guardrails page design candidates by @claude
+- *(admin-ui)* Adopt Pulse guardrails layout with a YAML config drafter by @claude
+- *(admin-ui)* Add guardrail settings mocks by @claude
+- *(admin-ui)* Redesign guardrails page and add settings mocks by @ahstn in [#425](https://github.com/ahstn/oceans-llm/pull/425)
+- *(admin-ui)* Promote area cards to a Guardrail Settings page by @claude
+- *(guardrails)* Redact secrets from prompts and request logs by @ahstn in [#391](https://github.com/ahstn/oceans-llm/pull/391)
+- *(spend-controls)* Add temporary budget increases by @ahstn in [#428](https://github.com/ahstn/oceans-llm/pull/428)
+
+### :bug: Bug fixes
+- *(verify-skill)* Check every target when evidence mixes legacy and envelope proofs by @claude
+- *(verify-skill)* Address Codex review on the main merge by @claude
+- *(verify-skill)* Action #399 proof review findings by @claude
+- *(verify-skill)* Plan both sides of renames and correct two recipes by @claude
+- *(verify-skill)* Close remaining proof-freshness gaps by @claude
+- *(verify-skill)* Plan the live canary for gateway.yaml and keep record manual-only by @claude
+- *(verify-skill)* Refuse launch with an external GATEWAY_CONFIG by @claude
+- *(verify-skill)* Reject unknown report args and widen two routes by @claude
+- *(guardrails)* Tighten secret redaction coverage from review by @ahstn
+- *(guardrails)* Scan media-shaped fields unless they hold base64 by @ahstn
+- *(guardrails)* Catch escaped tokens and default-tier password assignments by @claude
+- *(guardrails)* Address Codex review on escaped tabs and GitHub tokens by @claude
+- *(guardrails)* Redact secrets in JSON object keys by @claude
+- *(admin-ui)* Clarify guardrail YAML excerpts, page-local metrics and payload storage by @claude
+- *(admin-ui)* Quote YAML list values in guardrail config drafts by @claude
+- *(admin-ui)* Tighten guardrail drafter output and status labels by @claude
+- *(batches)* Persist redacted batch requests before failure paths by @ahstn
+- *(admin-ui)* Add an evaluator filter field and drop page-local sorting by @claude
+- *(mcp)* Log MCP invocations through the configured payload policy by @claude
+- *(guardrails)* Stop secret-assignment matching tokenizer-style names; detect Slack workflow tokens by @claude
+- *(guardrails)* Redact Decisions requests and keep explicit overrides by @claude
+- *(guardrails)* Show the filterable evaluator id and correct ADR wording by @claude
+- *(guardrails)* Redact quoted, JSON-field and Slack rotating secrets by @claude
+- *(guardrails)* Close JWT, data-URI, undo and log-metadata gaps by @claude
+- *(batches)* Redact requests of batches cancelled while queued by @claude
+- *(guardrails)* Retryable batch redaction and narrower placeholders by @claude
+- *(guardrails)* Match whole placeholder shapes and speed up queued-batch cancel by @claude
+- *(guardrails)* Validate media descriptors, scope EXAMPLE to AWS, redact stale submissions by @claude
+- *(guardrails)* JSON unicode escapes, %NAME% shape, keep stream-buffer overrides in YAML by @claude
+- *(guardrails)* Anchor placeholder shapes, require a media type for base64 data by @claude
+- *(guardrails)* Tighter b64_json skip, closer terminators, private-key spellings, doc fixes by @claude
+- *(guardrails)* Anchor own placeholders, defer batch decision writes, accept ) by @claude
+- *(admin-ui)* Unpin page-made override fields that match a new default by @claude
+- *(guardrails)* Bound assignment names on the left, require image signatures for b64_json by @claude
+- *(guardrails)* Resume assignment scans at the secret, keep array field names, store transforms after submit by @claude
+- *(guardrails)* Scan data-URI headers, keep field names through nested arrays, match acronym-cased names, write redaction decisions in the background by @claude
+- *(guardrails)* Free the redacted batch copy before submitting, match escaped-slash URIs, keep pack order by @claude
+- *(admin-ui)* Flatten guardrail page cards and drop effective policies panel by @ahstn
+- *(guardrails)* Stop background decision writes after a stall, lock dashboard filters while navigating by @ahstn
+- *(guardrails)* Require a provider media envelope, stop writes on store errors, lock text filters by @ahstn
+- *(admin-ui)* Pass SSR redirects through the admin UI proxy by @ahstn
+- *(verify-skill)* Match models pager and token-based harness icon fill by @ahstn
+- *(admin-ui)* Proxy the admin base path with a trailing slash by @ahstn
+- *(admin-ui)* Pass SSR redirects through the proxy and update verify drivers by @ahstn in [#429](https://github.com/ahstn/oceans-llm/pull/429)
+- *(spend-controls)* Address PR review findings by @ahstn
+- *(gateway-store)* Serialize concurrent Postgres budget increase creates by @ahstn
+- *(spend-controls)* Make budget increases race-safe and non-retroactive by @ahstn
+- *(spend-controls)* Revalidate budget settings under the increase lock by @ahstn
+- *(spend-controls)* Include hard_limit in the increase basis check by @ahstn
+- *(spend-controls)* Reject out-of-order increases and show increases on the profile meter by @ahstn
+- *(review-agent)* Harden advisory status reporting and broker cleanup by @ahstn
+- *(review-agent)* Scope advisory check to its PR and keep ADR history by @ahstn
+
+### Changed
+- Merge origin/main into claude/verify-skill-portability-map by @claude
+- *(verify-skill)* Match sign-in landing and Connections navigation to main by @claude
+- *(deps)* Bump jdx/mise-action from 5.0.0 to 5.1.1 by @ahstn in [#420](https://github.com/ahstn/oceans-llm/pull/420)
+- *(deps)* Bump uuid by @dependabot[bot]
+- *(deps)* Bump uuid from 1.26.1 to 1.27.0 in the utilities group across 1 directory by @ahstn in [#417](https://github.com/ahstn/oceans-llm/pull/417)
+- *(deps)* Bump tokio by @dependabot[bot]
+- *(deps)* Bump tokio from 1.53.1 to 1.53.2 in the async-runtime group across 1 directory by @ahstn in [#416](https://github.com/ahstn/oceans-llm/pull/416)
+- Merge remote-tracking branch 'origin/main' into claude/verify-skill-portability-map by @claude
+- *(deps)* Bump rustls from 0.23.43 to 0.23.45 by @ahstn in [#423](https://github.com/ahstn/oceans-llm/pull/423)
+- *(deps-dev)* Bump source-map-js from 1.2.1 to 1.2.2 in /docs by @ahstn in [#421](https://github.com/ahstn/oceans-llm/pull/421)
+- *(deps)* Bump @vue/server-renderer and vue in /docs by @ahstn in [#422](https://github.com/ahstn/oceans-llm/pull/422)
+- *(mcp)* Explain personas and client harnesses with diagram by @ahstn in [#427](https://github.com/ahstn/oceans-llm/pull/427)
+- Merge origin/main into codex/ci-cli-release-binaries by @ahstn
+- Merge remote-tracking branch 'origin/main' into claude/api-token-redaction-048dfc by @claude
+- *(admin-ui)* Address React Doctor findings in guardrails UI by @claude
+- *(config)* Enable audit-mode guardrails by default in shipped configs by @ahstn
+- *(verify-skill)* Note that /admin/ now redirects to sign-in by @ahstn
+- *(spend-controls)* Clarify increase supersession and conflict wording by @ahstn
+- *(spend-controls)* Skip increase lookups while spend is under the base budget by @ahstn
+- *(admin-ui)* Move formatIncreaseLastDay into lib/format by @ahstn
+
+
+
+
+
+### New Contributors
+- @claude made their first contribution
+## [0.37.0] - 2026-10-05
+### :rocket: New features
+- *(cli)* Add self-service Copilot token setup by @ahstn in [#413](https://github.com/ahstn/oceans-llm/pull/413)
+- *(admin-ui)* Add cost, cache hits, tool usage and filters to request logs by @ahstn in [#414](https://github.com/ahstn/oceans-llm/pull/414)
+
+### :bug: Bug fixes
+- *(config)* Redact invalid UTF-8 environment values by @ahstn in [#412](https://github.com/ahstn/oceans-llm/pull/412)
+- *(gateway)* Record payload policy on demo seed history logs by @ahstn
+- *(admin-ui)* Merge request-log filter patches into the latest URL search by @ahstn
+- *(gateway)* Count distinct tools and skip ambiguous usage on request logs by @ahstn
+
+### Changed
+- *(gateway)* Move request log handlers into an observability submodule by @ahstn
+- *(version)* V0.37.0 by @ahstn
+
+
+
+
+## [0.36.0] - 2026-10-04
+### :rocket: New features
+- *(models)* Add sourced benchmark scores by @ahstn
+- *(models)* Add Artificial Analysis benchmark scores via OpenRouter snapshot by @ahstn in [#389](https://github.com/ahstn/oceans-llm/pull/389)
+- *(skills)* Show upstream attribution metadata by @ahstn
+- *(skills)* Simplify details and add curated local imports by @ahstn
+- *(skills)* Add catalog search and simplify version details by @ahstn
+- *(skills)* Add authenticated skill storage and CLI by @ahstn in [#407](https://github.com/ahstn/oceans-llm/pull/407)
+- *(admin-ui)* Show Intelligence Index and balance model columns by @ahstn
+- *(routing)* Add shared session affinity and model routing policies by @ahstn in [#411](https://github.com/ahstn/oceans-llm/pull/411)
+
+### :bug: Bug fixes
+- *(models)* Address review feedback and add format checks to lint by @ahstn
+- *(models)* Expose benchmark match kind as a closed enum in the admin contract by @ahstn
+- *(models)* Satisfy React Doctor and address docs and parser review feedback by @ahstn
+- *(models)* Keep score timestamps when only model metadata changes by @ahstn
+- *(models)* Expose benchmark metric keys as a closed enum in the admin contract by @ahstn
+- *(skills)* Preserve reads after upload limits change by @ahstn
+- *(skills)* Address upload safety and deployment review findings by @ahstn
+- *(routing)* Exclude providers without runtime identities by @ahstn
+- *(admin-ui)* Address model table review feedback by @ahstn
+- *(routing)* Scope continuation checks to Responses by @ahstn
+
+### Changed
+- *(models)* Source benchmark scores from vendored OpenRouter snapshot by @ahstn
+- Merge origin/main into feat/model-benchmark-scores by @ahstn
+- Merge branch 'main' of github.com:ahstn/oceans-llm into benchmark-openrouter-rework by @ahstn
+- *(deps)* Bump jdx/mise-action from 4.3.0 to 5.0.0 by @ahstn in [#403](https://github.com/ahstn/oceans-llm/pull/403)
+- *(deps)* Bump the utilities group across 1 directory with 2 updates by @ahstn in [#397](https://github.com/ahstn/oceans-llm/pull/397)
+- *(deps)* Bump undici and @earendil-works/pi-coding-agent by @dependabot[bot]
+- *(deps)* Bump undici and @earendil-works/pi-coding-agent in /tests/harness-integration by @ahstn in [#401](https://github.com/ahstn/oceans-llm/pull/401)
+- *(deps)* Bump aws-sigv4 by @dependabot[bot]
+- *(deps)* Bump aws-sigv4 from 1.5.3 to 1.6.0 in the aws-sdk group across 1 directory by @ahstn in [#405](https://github.com/ahstn/oceans-llm/pull/405)
+- *(providers)* Note possible Copilot CLI org policy requirement for GitHub App auth by @ahstn in [#410](https://github.com/ahstn/oceans-llm/pull/410)
+- *(admin-ui)* Isolate model list empty state by @ahstn
+- *(version)* V0.36.0 by @ahstn
+
+
+
+
+## [0.35.0] - 2026-10-03
+### :rocket: New features
+- *(admin-ui)* Enforce shadcn design tokens with @shadcn/lint by @ahstn in [#402](https://github.com/ahstn/oceans-llm/pull/402)
+- *(deploy)* Use OpenRouter latest-alias models in selfhost config by @ahstn
+- *(deploy)* Add idempotent selfhost-expose task for tailscale serve by @ahstn
+- *(deploy)* Self-host with mise daemons and replace dev pitchfork postgres by @ahstn in [#404](https://github.com/ahstn/oceans-llm/pull/404)
+- *(gateway)* Enrich /v1/models with catalog metadata and client hints by @ahstn
+- *(gateway)* Advertise supported_endpoint_types on /v1/models for omp proxy discovery by @ahstn
+- *(gateway)* Mark decision models with a decisions output modality on /v1/models by @ahstn
+- *(gateway)* Enrich /v1/models with model metadata and client hints by @ahstn in [#406](https://github.com/ahstn/oceans-llm/pull/406)
+
+### :bug: Bug fixes
+- *(deploy)* Grant selfhost models to the seeded gateway key by @ahstn
+- *(deploy)* Deploy fetched remote branch instead of stale local ref by @ahstn
+- *(deploy)* Clarify selfhost-expose failure hint by @ahstn
+- *(deploy)* Address review findings on selfhost reset, tag selection, docs by @ahstn
+- *(gateway)* Align /v1/models capabilities and hints with request enforcement by @ahstn
+- *(gateway)* Gate /v1/models Anthropic features on every routable route by @ahstn
+
+### Changed
+- *(deploy)* List Postgres build dependencies for self-hosting by @ahstn
+- *(deploy)* Drop redundant guards from selfhost tasks by @ahstn
+- Merge remote-tracking branch 'origin/main' into claude/models-endpoint-response-f0de50 by @ahstn
+- *(version)* V0.35.0 by @ahstn
+
+
+
+
+## [0.34.0] - 2026-09-27
+### :rocket: New features
+- *(admin-ui)* Add profile landing page with budget, keys and usage by @ahstn in [#398](https://github.com/ahstn/oceans-llm/pull/398)
+
+### :bug: Bug fixes
+- *(admin-ui)* Address profile review feedback and react-doctor warnings by @ahstn
+- *(admin-ui)* Cap profile avatar size, accept create=true string, add profile evidence target by @ahstn
+- *(admin-ui)* Only link profile keys to manage dialogs for key managers by @ahstn
+- *(profile)* Flag unpriced usage cost and align charts to the history window by @ahstn
+- *(admin-ui)* Keep heatmap weekday rows aligned when history starts mid-week by @ahstn
+- *(admin-ui)* Keep boolean deep-link flags through sign-in and drop team budget claim by @ahstn
+- *(admin-ui)* Label the profile headline window by @ahstn
+
+### Changed
+- *(adr)* Clarify router paths and harness history retention for profile page by @ahstn
+- *(gateway)* Batch-load API key model grants when listing keys by @ahstn
+- *(gateway)* Serve profile keys from a summary-only query and chunk grant lookups by @ahstn
+- *(gateway)* Serve profile keys as a slim view without owner lookups by @ahstn
+- *(gateway)* Fold long-tail profile models into a daily other row by @ahstn
+- *(version)* V0.34.0 by @ahstn
+
+
+
+
+## [0.33.1] - 2026-09-24
+### :bug: Bug fixes
+- *(admin-ui)* Run image on bun 1.4.2 and source version from mise by @ahstn in [#396](https://github.com/ahstn/oceans-llm/pull/396)
+
+### Changed
+- Pass BUN_VERSION in local SSO commands and document bun 1.4.2 by @ahstn
+- *(version)* V0.33.1 by @ahstn
+
+
+
+
+## [0.33.0] - 2026-09-24
+### :rocket: New features
+- *(typesafe)* Typesafe provider and decisions api shape by @ahstn
+- *(gateway)* Add System One Decisions API by @ahstn in [#387](https://github.com/ahstn/oceans-llm/pull/387)
+- *(usage-costs)* Add cache efficiency and model mix, fix cache totals by @ahstn
+- *(usage-costs)* Refine breakdown rows, hit-rate colours and copy by @ahstn
+- *(usage-costs)* Add cache efficiency and model mix, fix cache stats by @ahstn in [#394](https://github.com/ahstn/oceans-llm/pull/394)
+
+### :bug: Bug fixes
+- *(vertex)* Reject upstream redirects by @ahstn
+- *(vertex)* Constrain batch resource URLs by @ahstn in [#386](https://github.com/ahstn/oceans-llm/pull/386)
+- *(gateway)* Validate Decisions provider contracts by @ahstn
+- *(gateway)* Update route planner for rand 0.10 by @ahstn
+- *(gateway)* Harden Decisions provider validation by @ahstn
+- *(gateway)* Constrain Decisions route capabilities by @ahstn
+- *(ci)* Resolve large error lint and Docker update paths by @ahstn in [#392](https://github.com/ahstn/oceans-llm/pull/392)
+- *(admin-ui)* Layer the form font reset and align usage cost controls by @ahstn
+- *(usage-costs)* Drop zero-token series and match cache detail to hit rate by @ahstn
+
+### Changed
+- *(typesafe)* Document Decisions API by @ahstn
+- *(deps)* Bump aws-smithy-runtime-api from 1.15.0 to 1.16.2 by @dependabot[bot]
+- Ignore codex security scans by @ahstn
+- *(deps)* Bump clap from 4.6.6 to 4.6.7 by @ahstn in [#375](https://github.com/ahstn/oceans-llm/pull/375)
+- *(deps)* Bump jsonwebtoken from 11.0.0 to 11.1.0 by @ahstn in [#376](https://github.com/ahstn/oceans-llm/pull/376)
+- *(deps)* Bump docker/setup-buildx-action from 4.3.0 to 4.4.1 by @ahstn in [#379](https://github.com/ahstn/oceans-llm/pull/379)
+- *(deps)* Bump docker/build-push-action from 7.3.0 to 7.4.0 by @ahstn in [#382](https://github.com/ahstn/oceans-llm/pull/382)
+- *(deps)* Bump docker/setup-qemu-action from 4.3.0 to 4.4.0 by @ahstn in [#381](https://github.com/ahstn/oceans-llm/pull/381)
+- *(deps)* Bump reqwest from 0.13.4 to 0.13.5 by @ahstn in [#348](https://github.com/ahstn/oceans-llm/pull/348)
+- *(deps)* Update web packages and dependabot groups by @ahstn in [#385](https://github.com/ahstn/oceans-llm/pull/385)
+- Merge remote-tracking branch 'origin/main' into feat/typesafe by @ahstn
+- *(admin)* Avoid unrelated models complexity gate by @ahstn
+- *(deps)* Bump aws-smithy-runtime-api in the aws-sdk group by @dependabot[bot]
+- *(deps)* Bump aws-smithy-runtime-api from 1.16.2 to 1.17.0 in the aws-sdk group by @ahstn in [#393](https://github.com/ahstn/oceans-llm/pull/393)
+- *(version)* V0.33.0 by @ahstn
+
+
+
+
+
+### New Contributors
+- @dependabot[bot] made their first contribution
+## [0.32.0] - 2026-09-10
+### :rocket: New features
+- *(review-agent)* Run source action with Pi SDK and extensions by @ahstn
+- *(review-agent)* Prefer anonymous search providers by @ahstn
+- *(review-agent)* Make Oceans reporting optional by @ahstn
+- *(review-agent)* Run source action with Pi SDK and search routing by @ahstn in [#339](https://github.com/ahstn/oceans-llm/pull/339)
+- *(models)* Expose authenticated cached model metadata by @ahstn in [#340](https://github.com/ahstn/oceans-llm/pull/340)
+
+### :bug: Bug fixes
+- *(review-agent)* Report Pi provider errors by @ahstn
+- *(review-agent)* Resolve Oceans credential from environment by @ahstn
+- *(review-agent)* Isolate reviews and correct runtime metadata by @ahstn
+- *(review-agent)* Enable Ubuntu Bubblewrap profile by @ahstn
+- *(review-agent)* Supply verified sandbox profile on Noble by @ahstn
+- *(review-agent)* Tighten multi-axis review guidance by @ahstn
+- *(review-agent)* Address verified review findings by @ahstn
+- *(review-agent)* Constrain research and resolve selected model limits by @ahstn
+- *(review-agent)* Check publication head and bound degradation labels by @ahstn
+- *(models)* Preserve cache upgrades and bound metadata lookups by @ahstn
+- *(models)* Cache discovery snapshots and align route eligibility by @ahstn
+- *(gateway)* Address inference limits and stream review findings by @ahstn
+- *(gateway)* Raise request limits and improve failure diagnostics by @ahstn in [#341](https://github.com/ahstn/oceans-llm/pull/341)
+
+### Changed
+- *(review-agent)* Record live validation and workflow trust by @ahstn
+- *(review-agent)* Align cancellation description by @ahstn
+- *(models)* Separate catalog resolution from route policy by @ahstn
+- Merge main into model metadata branch by @ahstn
+- *(version)* V0.32.0 by @ahstn
+
+
+
+
+## [0.31.0] - 2026-09-06
+### :rocket: New features
+- *(admin-ui)* Redesign MCP registry and tool set workbench by @ahstn
+- *(mcp)* Add registry and tool set workbench with safer gateway handling by @ahstn in [#338](https://github.com/ahstn/oceans-llm/pull/338)
+
+### :bug: Bug fixes
+- *(admin-ui)* Address code block review feedback by @ahstn
+- *(admin-ui)* Show code copy failures by @ahstn
+- *(providers)* Enforce Responses routing policy and accept tool history by @ahstn
+- *(client-config)* Select Responses for compatible routes by @ahstn
+- *(providers)* Preserve Anthropic cache blocks and translate Chat controls by @ahstn
+- *(providers)* Cache AWS credentials and harden stream handling by @ahstn
+- *(providers)* Retain valid credentials after refresh failure by @ahstn
+- *(providers)* Correct API compatibility and stream handling by @ahstn in [#333](https://github.com/ahstn/oceans-llm/pull/333)
+- *(budgets)* Preserve inheritance and batch budget queries by @ahstn in [#335](https://github.com/ahstn/oceans-llm/pull/335)
+- *(admin-ui)* Wrap client harness selector in narrow dialogs by @ahstn
+- *(admin-ui)* Improve client config dialog by @ahstn in [#332](https://github.com/ahstn/oceans-llm/pull/332)
+- *(gateway)* Redact invalid secret references by @ahstn
+- *(config)* Address verified PR review findings by @ahstn
+- *(mcp)* Harden transport boundaries and simplify invocation handling by @ahstn
+- *(mcp)* Close verification gaps and add live canaries by @ahstn
+- *(mcp)* Address verified PR review findings by @ahstn
+
+### Changed
+- Merge remote-tracking branch 'origin/main' into fix/claude-config by @ahstn
+- Merge branch 'main' into codex/budget-reconciliation-batching by @ahstn
+- Merge origin/main into fix/claude-config by @ahstn
+- *(rust)* Simplify inference flows and strengthen boundary tests by @ahstn
+- *(gateway)* Split configuration module by @ahstn
+- *(gateway)* Make config dependencies explicit by @ahstn
+- *(config)* Merge modular validation and preserve current behavior by @ahstn in [#291](https://github.com/ahstn/oceans-llm/pull/291)
+- *(rust)* Simplify inference and modularize configuration validation by @ahstn in [#337](https://github.com/ahstn/oceans-llm/pull/337)
+- Merge origin/main into MCP workbench branch by @ahstn
+- *(version)* V0.31.0 by @ahstn
+
+
+
+
+## [0.30.0] - 2026-09-03
+### :rocket: New features
+- *(providers)* Gemini 3 thinking support and vertex adapter restructure by @ahstn in [#331](https://github.com/ahstn/oceans-llm/pull/331)
+
+### :bug: Bug fixes
+- *(codex)* Align reasoning effort wire value by @ahstn
+- *(codex)* Omit unknown reasoning effort by @ahstn in [#330](https://github.com/ahstn/oceans-llm/pull/330)
+- *(admin-ui)* Improve client config dialog by @ahstn
+- *(vertex)* Address PR review findings by @ahstn
+- *(vertex)* Follow Gemini 3.7+ API conventions from the official guides by @ahstn
+- *(vertex)* Per-model embedding batching, token-weighted budget, refusal finish reason by @ahstn
+- *(vertex)* Accept string image_url, Gemini 2.5 minimal, two-pass thinking inference by @ahstn
+- *(vertex)* Enforce Gemini 3.6+ sampling rules on the merged generationConfig by @ahstn
+- *(vertex)* Pi `off` sends `none` for Gemini; embedding batches bounded by bytes by @ahstn
+- *(vertex)* Gemini stream closed before finishReason is a premature EOF by @ahstn
+- *(vertex)* Count the repeated embedding title against the batch token budget by @ahstn
+- *(client-config)* Mirror GeminiModel generations and rank model aliases first by @ahstn
+
+### Changed
+- *(dev)* Configure rust analyzer worktree builds by @ahstn
+- Remove pr screenshots by @ahstn
+- Merge remote-tracking branch 'origin/main' into feat/gemini-vertex by @ahstn
+- *(vertex)* Document the shared 4096 max_tokens default for Anthropic-on-Vertex by @ahstn
+- *(version)* V0.30.0 by @ahstn
+
+
+
+
+## [0.29.0] - 2026-09-03
+### :rocket: New features
+- *(gateway)* Enforce model reasoning effort ceilings by @ahstn
+- *(gateway)* Enforce reasoning effort ceilings by @ahstn in [#320](https://github.com/ahstn/oceans-llm/pull/320)
+- *(admin-ui)* Surface budget sources and shared amount validation in spend candidates by @ahstn
+- *(admin-ui)* Redesign spend controls as a filtered, paged budget ledger by @ahstn in [#327](https://github.com/ahstn/oceans-llm/pull/327)
+- *(providers)* Add anthropic_compat adapter and opencode zen support by @ahstn in [#329](https://github.com/ahstn/oceans-llm/pull/329)
+
+### :bug: Bug fixes
+- *(gateway)* Close reasoning effort policy bypasses by @ahstn
+- *(vertex)* Preserve validated Claude effort by @ahstn
+- *(budgets)* Address review findings on stream accounting and amount handling by @ahstn
+- *(budgets)* Record incurred spend past hard caps and harden budget seeding by @ahstn in [#322](https://github.com/ahstn/oceans-llm/pull/322)
+- *(admin-ui)* Address spend controls review findings by @ahstn
+- *(providers)* Address review findings on stream termination, image inputs, and limits by @ahstn
+
+### Changed
+- Origin/main into feat/review-budget-controls (renumber budget source migration to V51) by @ahstn
+- Merge remote-tracking branch 'origin/main' into feat/budget-ui by @ahstn
+- *(admin-ui)* Split spend controls into cohesive modules by @ahstn
+- *(pricing)* Updating model catalog by @ahstn
+- *(version)* V0.29.0 by @ahstn
+
+
+
+
+## [0.28.0] - 2026-09-02
+### :rocket: New features
+- *(oxc)* Additional updates by @ahstn
+- *(admin)* Add Oh My Pi harness icon by @ahstn
+- *(observability)* Track agent harness usage by @ahstn in [#315](https://github.com/ahstn/oceans-llm/pull/315)
+- *(guardrails)* Cover destructive command gaps by @ahstn
+- *(guardrails)* Expand deterministic tool coverage by @ahstn in [#317](https://github.com/ahstn/oceans-llm/pull/317)
+- *(gateway)* Drive listener and admin UI ports from env by @ahstn
+- *(admin-ui)* Redesign usage costs as a spend dashboard by @ahstn in [#319](https://github.com/ahstn/oceans-llm/pull/319)
+
+### :bug: Bug fixes
+- *(ui)* Address stricter lint findings by @ahstn
+- *(ui)* Address review feedback by @ahstn
+- *(ui)* Combine entity tag sanitization pass by @ahstn
+- *(ui)* Address stricter Oxlint findings by @ahstn in [#314](https://github.com/ahstn/oceans-llm/pull/314)
+- *(observability)* Address leaderboard review findings by @ahstn
+- *(guardrails)* Detect piped PostgreSQL input by @ahstn
+- *(guardrails)* Address review findings by @ahstn
+- *(guardrails)* Avoid safe command false positives by @ahstn
+- *(guardrails)* Match suffixed truncate sizes by @ahstn
+- *(guardrails)* Close parser coverage gaps by @ahstn
+- *(budgets)* Record incurred spend past hard caps and harden budget seeding by @ahstn
+- *(admin-ui)* Address usage costs review findings by @ahstn
+- *(providers)* Preserve Anthropic message continuations by @ahstn
+- *(providers)* Preserve mixed Anthropic tool history by @ahstn
+- *(providers)* Normalize Anthropic tool result aliases by @ahstn
+- *(providers)* Address Anthropic review findings by @ahstn
+- *(providers)* Validate Anthropic tool results by @ahstn
+- *(providers)* Repair Anthropic message compatibility by @ahstn in [#318](https://github.com/ahstn/oceans-llm/pull/318)
+- *(ci)* Resolve usage costs check failures by @ahstn
+- *(e2e)* Isolate agent session retries by @ahstn
+
+### Changed
+- *(deps)* Prune and update Rust dependencies by @ahstn
+- *(ui)* Add type-aware Oxlint backend by @ahstn
+- *(deps)* Prune and update workspace dependencies by @ahstn in [#313](https://github.com/ahstn/oceans-llm/pull/313)
+- *(ui)* Enforce function length limit by @ahstn
+- *(agents)* Remove redundant mise activation by @ahstn
+- Make guardrails setup user-facing by @ahstn
+- Refresh project and deployment guidance by @ahstn
+- *(guardrails)* Split core matchers and tests by @ahstn
+- Incorporate expanded guardrail coverage by @ahstn
+- Clarify model routing and trace export by @ahstn
+- *(admin-ui)* Spend controls redesign candidates (ledger, cards, workbench) by @ahstn
+- Improve user-facing gateway guidance by @ahstn in [#316](https://github.com/ahstn/oceans-llm/pull/316)
+- Merge branch 'main' into fix/anth-api by @ahstn
+- Merge remote-tracking branch 'origin/main' into feat/usage-costs-overhaul by @ahstn
+- *(pricing)* Updating model catalog by @ahstn
+- *(version)* V0.28.0 by @ahstn
+
+
+
+
+## [0.27.0] - 2026-08-29
+### :rocket: New features
+- Deliver gateway guardrails by @ahstn
+- *(verification)* Add live LLM canaries by @ahstn in [#310](https://github.com/ahstn/oceans-llm/pull/310)
+- *(gateway)* Deliver guardrails across inference and tools by @ahstn in [#305](https://github.com/ahstn/oceans-llm/pull/305)
+- *(copilot)* Add encrypted per-user authentication by @ahstn in [#311](https://github.com/ahstn/oceans-llm/pull/311)
+
+### :bug: Bug fixes
+- *(admin)* Address verification review findings by @ahstn
+- *(admin)* Complete verification prerequisites by @ahstn
+- *(copilot)* Address authentication review findings by @ahstn
+- Address guardrail review findings by @ahstn
+- Preserve guarded response and harness safety by @ahstn
+- Harden managed transforms and shell confinement by @ahstn
+- Close remaining guardrail bypasses by @ahstn
+- Guard legacy and conditional shell calls by @ahstn
+- Inspect commands passed through eval by @ahstn
+- Close guardrail lifecycle gaps by @ahstn
+- Preserve independent guarded stream choices by @ahstn
+- Inspect env split-string commands by @ahstn
+- Support file-backed guardrail credentials by @ahstn
+- Parse command wrapper options by @ahstn
+- Inspect commands executed through xargs by @ahstn
+- Inspect commands executed through timeout by @ahstn
+- Reject malformed guarded SSE events by @ahstn
+- Isolate guarded stream output items by @ahstn
+- Inspect MCP command tools with core packs by @ahstn
+- Reject malformed guarded MCP SSE by @ahstn
+- Enforce guardrails for batch inference by @ahstn
+- Finalize prompt denial telemetry by @ahstn
+- Inspect model refusal text by @ahstn
+- Isolate Anthropic stream blocks by @ahstn
+- Sync guardrail route filters by @ahstn
+- Close guardrail enforcement gaps by @ahstn
+- Inspect guarded stream edge cases by @ahstn
+- Harden destructive command parsing by @ahstn
+- *(guardrails)* Close policy bypasses by @ahstn
+- *(guardrails)* Bound MCP buffering and stabilise tool deltas
+- *(guardrails)* Close remaining enforcement gaps by @ahstn
+- *(guardrails)* Expand AWS destructive coverage by @ahstn
+- *(copilot)* Isolate token drafts and local keys by @ahstn
+- *(copilot)* Close credential lifecycle races by @ahstn
+- *(copilot)* Create local credential key atomically by @ahstn
+
+### Changed
+- *(admin)* Maintain verification skill by @ahstn in [#309](https://github.com/ahstn/oceans-llm/pull/309)
+- *(copilot)* Harden credential boundaries by @ahstn
+- *(copilot)* Isolate user credential workflows by @ahstn
+- Bring feat/guardrails up to date with main
+- Merge main into Copilot user authentication by @ahstn
+- *(copilot)* Update copilot docs by @ahstn
+- Fix Vale wording findings by @ahstn in [#312](https://github.com/ahstn/oceans-llm/pull/312)
+- *(pricing)* Updating model catalog by @ahstn
+- *(version)* V0.27.0 by @ahstn
+
+
+
+
+
+### New Contributors
+- @ made their first contribution
+## [0.26.0] - 2026-08-28
+### :rocket: New features
+- *(observability)* Trace HTTP server and provider calls by @ahstn
+- *(observability)* Trace LLM request phases by @ahstn
+- *(observability)* Trace provider stream lifecycle by @ahstn
+- *(observability)* Expand LLM request tracing by @ahstn in [#308](https://github.com/ahstn/oceans-llm/pull/308)
+
+### :bug: Bug fixes
+- *(admin-ui)* Restore agent session navigation by @ahstn in [#307](https://github.com/ahstn/oceans-llm/pull/307)
+- *(observability)* Correct trace lifecycle gaps by @ahstn
+- *(observability)* Finalize terminal streams eagerly by @ahstn
+- *(observability)* Preserve trailing stream usage by @ahstn
+
+### Changed
+- *(observability)* Harden trace metadata by @ahstn
+- *(pricing)* Updating model catalog by @ahstn
+- *(version)* V0.26.0 by @ahstn
+
+
+
+
+## [0.25.0] - 2026-08-25
+### :rocket: New features
+- *(batch)* Add durable asynchronous batch APIs by @ahstn in [#292](https://github.com/ahstn/oceans-llm/pull/292)
+
+### :bug: Bug fixes
+- *(batch)* Address review findings by @ahstn
+- *(batch)* Preserve cancellation and table access by @ahstn
+- *(batch)* Retain partial usage evidence by @ahstn
+- *(batch)* Retain terminal results and route headers by @ahstn
+- *(batch)* Reject invalid uploads and stale details by @ahstn
+- *(batch)* Enforce budgets and item accounting by @ahstn
+- *(batch)* Aggregate local pricing before rounding by @ahstn
+- *(batch)* Retain spend and recover staging by @ahstn
+- *(batch)* Reconcile cancellation races by @ahstn
+- *(batch)* Finalize all provider terminal states by @ahstn
+- *(batch)* Snapshot pricing and retain aggregate usage by @ahstn
+- *(observability)* Preserve agent session analysis data by @ahstn
+- *(observability)* Enforce request payload size policy by @ahstn
+- *(observability)* Address agent analysis review findings by @ahstn
+- *(observability)* Resolve PR review findings by @ahstn
+- *(observability)* Preserve switch metric compatibility by @ahstn
+- *(observability)* Retain unknown tool inventory notice by @ahstn
+- *(observability)* Distinguish unknown tool inventories by @ahstn
+- *(observability)* Bound Responses instructions by @ahstn
+- *(observability)* Bound function call outputs by @ahstn
+- *(observability)* Bound embedding input arrays by @ahstn
+- *(observability)* Bound replayed tool arguments by @ahstn
+- *(observability)* Preserve agent session analysis diagnostics by @ahstn in [#306](https://github.com/ahstn/oceans-llm/pull/306)
+
+### Changed
+- Merge latest origin/main by @ahstn
+- *(observability)* Split request logging modules by @ahstn
+- *(observability)* Bound embedding array scans by @ahstn
+- *(pricing)* Updating model catalog by @ahstn
+- *(version)* V0.25.0 by @ahstn
+
+
+
+
+## [0.24.0] - 2026-08-16
+### :rocket: New features
+- *(auth)* Add configurable API key actions by @ahstn
+- *(auth)* Add configurable page permissions by @ahstn in [#263](https://github.com/ahstn/oceans-llm/pull/263)
+- *(gateway)* Add durable batch API support by @ahstn
+- *(admin)* Add batch request management by @ahstn
+- Seed multi-request agent analysis by @ahstn
+- Expand agent session observability by @ahstn
+- Show session tool and MCP calls by @ahstn
+- Complete agent session analysis cutover by @ahstn
+- Show harness icons in agent sessions by @ahstn
+- *(observability)* Expand agent session diagnostics by @ahstn
+- *(analysis)* Add outcome-aware session diagnostics by @ahstn
+- *(observability)* Add agent task efficiency analysis by @ahstn in [#256](https://github.com/ahstn/oceans-llm/pull/256)
+
+### :bug: Bug fixes
+- *(admin-ui)* Avoid iterator helper dependency by @ahstn
+- *(auth)* Address permission review findings by @ahstn
+- *(release)* Additional fixes by @ahstn
+- *(auth)* Align batch access with request logs by @ahstn
+- *(batch)* Harden async batch processing by @ahstn
+- *(observability)* Address initial review findings by @ahstn
+- Address agent analysis review feedback by @ahstn
+- Preserve passive analysis invariants by @ahstn
+- Align local demo seed models by @ahstn
+- Activate local agent task demo by @ahstn
+- Correlate direct MCP session calls by @ahstn
+- Compact session date filter by @ahstn
+- *(analysis)* Complete diagnostics correctness audit by @ahstn
+- *(observability)* Harden agent session analysis by @ahstn
+- *(observability)* Correct analysis failure handling by @ahstn
+- *(agent-analysis)* Address review findings by @ahstn
+- *(ci)* Make agent session demo tests hermetic by @ahstn
+
+### Changed
+- *(auth)* Plan configurable page permissions by @ahstn
+- *(auth)* Refine permissions plan review by @ahstn
+- Update project files by @ahstn
+- Clarify agent session calibration by @ahstn
+- *(sessions)* Remove gap from nested  content by @ahstn
+- *(sessions)* Small tweaks by @ahstn
+- Merge authoritative cache accounting by @ahstn
+- Merge origin/main by @ahstn
+- Merge latest origin/main by @ahstn
+- *(agent-analysis)* Simplify session analysis architecture by @ahstn
+- *(version)* V0.24.0 by @ahstn
+
+
+
+
+## [0.23.0] - 2026-08-16
+### :rocket: New features
+- *(gateway-providers)* Add GitHub Copilot provider support by @ahstn in [#285](https://github.com/ahstn/oceans-llm/pull/285)
+- *(copilot)* Harden direct provider support by @ahstn in [#290](https://github.com/ahstn/oceans-llm/pull/290)
+
+### :bug: Bug fixes
+- *(release)* Partial release fixes by @ahstn
+- *(gateway-providers)* Address PR review findings and simplify Copilot provider by @ahstn
+- *(gateway-providers)* Improve Copilot routing robustness and error handling by @ahstn
+- *(gateway-providers)* Address Copilot review findings by @ahstn
+- *(vertex)* Harden media URL handling by @ahstn
+- *(vertex)* Address review findings by @ahstn
+- *(vertex)* Cover late media review gaps by @ahstn
+- *(vertex)* Support remote video URLs by @ahstn in [#289](https://github.com/ahstn/oceans-llm/pull/289)
+- *(copilot)* Address provider review findings by @ahstn
+- *(copilot)* Bound canary auth and billing windows by @ahstn
+
+### Changed
+- Merge remote-tracking branch 'origin/main' into feat/github-provider by @ahstn
+- *(vertex)* Split provider into modules by @ahstn
+- *(version)* V0.23.0 by @ahstn
+
+
+
+
 ## [0.22.0] - 2026-08-15
 ### :rocket: New features
 - *(observability)* Account for prompt cache usage by @ahstn in [#283](https://github.com/ahstn/oceans-llm/pull/283)
@@ -29,7 +663,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(vertex)* Harden tool result name mapping, parallel grouping, and stream completion by @ahstn
 - *(housekeeping)* Remove repo bloat and left over files by @ahstn
 - *(deps)* Minor mise and bun version updates by @ahstn
-- *(pricing)* Updating model catalog
+- *(pricing)* Updating model catalog by @ahstn
+- *(version)* V0.22.0 by @ahstn
 
 
 
@@ -655,6 +1290,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.38.0]: https://github.com/ahstn/oceans-llm/compare/v0.37.0...v0.38.0
+[0.37.0]: https://github.com/ahstn/oceans-llm/compare/v0.36.0...v0.37.0
+[0.36.0]: https://github.com/ahstn/oceans-llm/compare/v0.35.0...v0.36.0
+[0.35.0]: https://github.com/ahstn/oceans-llm/compare/v0.34.0...v0.35.0
+[0.34.0]: https://github.com/ahstn/oceans-llm/compare/v0.33.1...v0.34.0
+[0.33.1]: https://github.com/ahstn/oceans-llm/compare/v0.33.0...v0.33.1
+[0.33.0]: https://github.com/ahstn/oceans-llm/compare/v0.32.0...v0.33.0
+[0.32.0]: https://github.com/ahstn/oceans-llm/compare/v0.31.0...v0.32.0
+[0.31.0]: https://github.com/ahstn/oceans-llm/compare/v0.30.0...v0.31.0
+[0.30.0]: https://github.com/ahstn/oceans-llm/compare/v0.29.0...v0.30.0
+[0.29.0]: https://github.com/ahstn/oceans-llm/compare/v0.28.0...v0.29.0
+[0.28.0]: https://github.com/ahstn/oceans-llm/compare/v0.27.0...v0.28.0
+[0.27.0]: https://github.com/ahstn/oceans-llm/compare/v0.26.0...v0.27.0
+[0.26.0]: https://github.com/ahstn/oceans-llm/compare/v0.25.0...v0.26.0
+[0.25.0]: https://github.com/ahstn/oceans-llm/compare/v0.24.0...v0.25.0
+[0.24.0]: https://github.com/ahstn/oceans-llm/compare/v0.23.0...v0.24.0
+[0.23.0]: https://github.com/ahstn/oceans-llm/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/ahstn/oceans-llm/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/ahstn/oceans-llm/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/ahstn/oceans-llm/compare/v0.20.0...v0.20.1
