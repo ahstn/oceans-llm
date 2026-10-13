@@ -3,6 +3,3 @@
   with:
     install_args: rust
     cache: false
-- name: Verify the build toolchain
-  shell: bash
-  run: mise exec -- rustc --version

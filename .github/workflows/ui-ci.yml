@@ -2,6 +2,11 @@ name: ui-ci
 
 on:
   pull_request:
+    paths:
+      - "crates/admin-ui/web/**"
+      - ".github/workflows/ui-ci.yml"
+      - "mise.toml"
+      - "mise.lock"
   push:
     branches: ["main"]
 
@@ -13,7 +18,6 @@ permissions:
   contents: read
 
 env:
-  MISE_EXPERIMENTAL: true
   MISE_TASK_RUN_AUTO_INSTALL: "false"
 
 jobs:

@@ -15,7 +15,7 @@ Replace `ACTION_COMMIT_SHA` with a reviewed commit of this repository that conta
 ```yaml
 name: Oceans review
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
@@ -40,7 +40,7 @@ jobs:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
 ```
 
-Set `dry-run` to `false` to publish. Dry runs still call the model and, by default, record the run in Oceans. See `action.yml` for all inputs. The action source runs from `github.action_path`; the reviewed repository defaults to `GITHUB_WORKSPACE`. Set `review-workspace` when the PR is checked out separately from the trusted runtime. The workflow must be on the default branch before GitHub can trigger it. Never execute tasks, install dependencies, or load actions from the PR checkout in this credentialed job.
+Set `dry-run` to `false` to publish. Dry runs still call the model and, by default, record the run in Oceans. See `action.yml` for all inputs. The action source runs from `github.action_path`; the reviewed repository defaults to `GITHUB_WORKSPACE`. Set `review-workspace` when the PR is checked out separately from the trusted runtime. Never execute tasks, install dependencies, or load actions from the PR checkout in this credentialed job.
 
 ### Reviews without Oceans reporting
 
@@ -132,11 +132,11 @@ The action check installs from the lockfile, typechecks, runs unit tests, applie
 
 The SDK smoke checks extension tool registration, resolved bearer credentials, provider error reporting, valid and invalid result handling, and foreground delegation. A separate search smoke exercises the installed package's quota fallback from anonymous Exa to Parallel MCP and verifies that authentication errors remain visible. Both checks are deterministic and do not prove live model quality or external MCP/search connectivity. The manual self-hosted smoke exercises the action lifecycle against a mock Oceans API with GitHub publishing disabled.
 
-The repository's `oceans-review-agent.yml` workflow uses `pull_request_target` for same-repository PR creation, updates, reopening, and transition to ready. It checks out the trusted workflow revision for executable code and a separate PR checkout as review data. A new update cancels an in-progress review for the same PR. SIGINT and SIGTERM trigger a best-effort cancelled run report. Forced runner termination cannot guarantee a final report. Drafts are skipped by both the action and backend. It builds a temporary real gateway, creates a service account with an explicit `openai/gpt-5.6-luna` grant and a $2 daily hard budget, and routes Pi through Oceans to OpenRouter using the repository's `OPENROUTER_API_KEY` secret. It posts a managed summary and up to ten inline findings. Each job has a new database and budget; these limits are not a repository-wide spending cap.
+The repository's `oceans-review-agent.yml` workflow uses `pull_request` for same-repository PR creation, updates, reopening, and transition to ready. Fork PRs are skipped, so the job receives secrets without `pull_request_target`. It runs the PR's own workflow and action code and keeps a separate PR-head checkout as review data. A new update cancels an in-progress review for the same PR. SIGINT and SIGTERM trigger a best-effort cancelled run report. Forced runner termination cannot guarantee a final report. Drafts are skipped by both the action and backend. It builds a temporary real gateway, creates a service account with an explicit `openai/gpt-5.6-luna` grant and a $2 daily hard budget, and routes Pi through Oceans to OpenRouter using the repository's `OPENROUTER_API_KEY` secret. It posts a managed summary and up to ten inline findings. Each job has a new database and budget; these limits are not a repository-wide spending cap.
 
 The workflow verifies the persisted review status, reviewed commit, published comment ID, successful OpenRouter requests, and returned token usage. It uploads only sanitized evidence, then removes the temporary database and credentials. The gateway is temporary because this repository has no configured external Oceans instance; review summaries remain on GitHub, while full control-plane history does not persist between jobs.
 
-The privileged workflow does not test PR-head executable code. The separate `review-agent-ci.yml` workflow tests the changed action with synthetic credentials and read-only GitHub permissions, including real Linux sandbox checks. Local macOS SDK checks use only synthetic credentials without Bubblewrap; Linux-only sandbox and lifecycle checks run in CI. The smoke scripts are permanent regression coverage, not disposable live-validation scripts.
+The separate `review-agent-ci.yml` workflow tests the changed action with synthetic credentials and read-only GitHub permissions, including real Linux sandbox checks. Local macOS SDK checks use only synthetic credentials without Bubblewrap; Linux-only sandbox and lifecycle checks run in CI. The smoke scripts are permanent regression coverage, not disposable live-validation scripts.
 
 Before sandbox hardening, the live run on [PR #339, commit `193a099b`](https://github.com/ahstn/oceans-llm/actions/runs/34055604877) passed with 13 successful OpenRouter requests, nonzero token usage, a published summary, and one inline finding. This proves the model, control-plane, and publishing path for that run; it does not prove review accuracy or every optional search provider.
 

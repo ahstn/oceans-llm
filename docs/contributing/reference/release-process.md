@@ -79,7 +79,7 @@ The pushed `vX.Y.Z` tag starts [release.yml](../../../.github/workflows/release.
 - Packages the `oceans` executable for Linux x86-64 and ARM64, macOS Intel and Apple Silicon, and Windows x86-64.
 - Creates `.tar.gz` archives for Unix targets and `.zip` archives for Windows, with SHA-256 checksums and provenance attestations.
 - Creates shell and PowerShell installers. The archives include the license, README, and changelog.
-- Checks each archive checksum, runs its version and help commands, and tests the CLI and shared bundle code on each target operating system.
+- Runs each archived executable's version and help commands on each target operating system. CLI and bundle tests run before merge in `cli-ci.yml` and `ci.yml`.
 - Builds and publishes the gateway image for `linux/amd64`.
 - Builds and publishes the admin UI image for `linux/amd64` and `linux/arm64`.
 - Adds provenance attestations to both images.
@@ -90,7 +90,7 @@ Linux binaries are built on Ubuntu 22.04 runners. Check the cargo-dist linkage r
 
 Prerelease tags produce GitHub prereleases and versioned container images. They do not update the container `latest` tags.
 
-The generated release workflow also builds and checks CLI artifacts on pull requests. It stores them as workflow artifacts and does not publish images, charts, or GitHub releases for pull requests.
+On pull requests the generated release workflow only runs `dist plan`. It does not build CLI artifacts or publish images, charts, or GitHub releases.
 
 The workflow publishes the Helm chart to:
 

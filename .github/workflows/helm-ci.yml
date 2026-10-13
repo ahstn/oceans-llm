@@ -25,7 +25,6 @@ permissions:
   contents: read
 
 env:
-  MISE_EXPERIMENTAL: true
   MISE_TASK_RUN_AUTO_INSTALL: "false"
 
 jobs:

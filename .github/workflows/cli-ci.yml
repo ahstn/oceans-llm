@@ -1,0 +1,79 @@
+name: cli-ci
+
+# ci.yml already tests every crate on Linux. This adds the platforms the CLI
+# ships to, and only runs when the CLI or its bundle crate can have changed.
+on:
+  pull_request:
+    paths:
+      - "crates/oceans-cli/**"
+      - "crates/gateway-skills/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "mise.toml"
+      - "mise.lock"
+      - ".github/workflows/cli-ci.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "crates/oceans-cli/**"
+      - "crates/gateway-skills/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "mise.toml"
+      - "mise.lock"
+      - ".github/workflows/cli-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup mise and Rust
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: rust
+
+      # The shared rust-cache action passes relative paths, which macOS's BSD
+      # realpath cannot produce and which cannot cross drives on Windows.
+      - name: Locate Cargo artifact directories
+        id: directories
+        run: |
+          {
+            echo "paths<<EOF"
+            mise exec -- cargo metadata --format-version 1 --no-deps | jq -r '.target_directory, .build_directory'
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cmd-format: mise exec -- {0}
+          cache-targets: "false"
+          cache-directories: ${{ steps.directories.outputs.paths }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Test CLI and bundle behavior
+        run: mise run cli-test
