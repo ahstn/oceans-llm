@@ -1,0 +1,35 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_3b32b30557497d::t_6731ec6bdf71cc 59-64
+videos/oceans-showreel/STORYBOARD.md
+  s_3b32b30557497d::t_557034097524aa 1-75
+videos/oceans-showreel/assets/fx/dust-mist.svg
+  s_3b32b30557497d::t_6029805b62c9ec 1
+videos/oceans-showreel/assets/fx/dust-wave.svg
+  s_3b32b30557497d::t_42e4155b04b53b 1
+videos/oceans-showreel/compositions/frames/f1-converge.html
+  s_3b32b30557497d::t_8fa4aef1b26d03 1-330
+videos/oceans-showreel/index.html
+  s_3b32b30557497d::t_cfbf10f2228ff3 1,4-5,19,22-26,31-66,69,71
+videos/oceans-showreel/scripts/capture-admin.mjs
+  s_3b32b30557497d::t_ce7db3a17550b4 40-67,107-114
+videos/oceans-showreel/scripts/contact-sheet.mjs
+  s_3b32b30557497d::t_22311afaafbee7 3,33-35,39,44
+videos/oceans-showreel/scripts/score-dsp.mjs
+  s_3b32b30557497d::t_e01be669990ee9 1-610
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4952aaf972f2748a1767e1665f7ce0c9ee8f3d5d",
+  "prompts": {},
+  "sessions": {
+    "s_3b32b30557497d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e359a70d-e18a-4bde-907a-1ca2dceb98fc",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
