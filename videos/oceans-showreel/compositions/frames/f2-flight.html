@@ -1,0 +1,1110 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    @font-face {
+      font-family: "Geist";
+      src: url("../../assets/fonts/geist-latin-wght-normal.woff2") format("woff2");
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: "JetBrains Mono";
+      /* Official JetBrains Mono 2.304 webfont. Rules that use it turn ligatures off, so it renders as JetBrains Mono NL. */
+      src: url("../../assets/fonts/jetbrains-mono-regular.woff2") format("woff2");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: "Geist", sans-serif;
+      font-weight: 500;
+      color: oklch(0.985 0.004 226);
+      --f2-fg: oklch(0.985 0.004 226);
+      --f2-mfg: oklch(0.708 0.018 230);
+      --f2-card-bg: oklch(0.205 0.016 238);
+      --f2-secondary: oklch(0.274 0.016 238);
+      --f2-muted: oklch(0.269 0.014 238);
+      --f2-border: oklch(0.985 0.004 226 / 10%);
+      --f2-border-strong: oklch(0.985 0.004 226 / 16%);
+      --f2-primary: oklch(0.513 0.112 237.173);
+      --f2-warn: oklch(0.769 0.156 77.727);
+      --f2-warn-soft: color-mix(in oklch, oklch(0.769 0.156 77.727) 24%, transparent);
+      --f2-destr: oklch(0.704 0.191 22.216);
+      --f2-wave: #0b83ad;
+      --f2-mist: #b7dde4;
+    }
+    #f2-bg {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 70% 70% at 50% 45%, oklch(0.18 0.02 238) 0%, oklch(0.145 0.012 238) 55%, oklch(0.115 0.01 238) 100%);
+    }
+    #f2-stage {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+    #f2-fx {
+      position: absolute;
+      width: 0;
+      height: 0;
+    }
+    #f2-optics {
+      position: absolute;
+      inset: 0;
+      filter: url(#f2-mb);
+    }
+    #f2-lens {
+      position: absolute;
+      inset: 0;
+      perspective: 1000px;
+      perspective-origin: 50% 50%;
+    }
+    .f2-rig {
+      position: absolute;
+      inset: 0;
+      transform-style: preserve-3d;
+    }
+    .f2-plane {
+      position: absolute;
+      left: 160px;
+      top: 90px;
+      width: 1600px;
+      height: 900px;
+      transform-style: preserve-3d;
+    }
+    .f2-surface {
+      position: absolute;
+      inset: 0;
+      transform: translateZ(0px);
+    }
+    .f2-shot {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1600px;
+      height: 900px;
+      display: block;
+      border-radius: 12px;
+      box-shadow: 0 0 0 1px oklch(1 0 0 / 9%);
+      filter: blur(calc(var(--f2-dof) * 1px)) brightness(var(--f2-dim));
+    }
+    .f2-cast {
+      position: absolute;
+      border-radius: 40px;
+      background: oklch(0.07 0.01 238 / 0.8);
+      box-shadow: 0 0 60px 34px oklch(0.07 0.01 238 / 0.8);
+      opacity: 0;
+    }
+    .f2-hl {
+      position: absolute;
+      border-radius: 10px;
+      box-shadow: 0 0 0 2px var(--f2-wave), 0 0 30px 2px oklch(0.62 0.12 228 / 0.5);
+      opacity: 0;
+    }
+    .f2-ghost {
+      position: absolute;
+      border-radius: 6px;
+      background-repeat: no-repeat;
+      background-size: 1600px 900px;
+      box-shadow: 0 16px 34px oklch(0 0 0 / 0.5);
+      backface-visibility: hidden;
+      opacity: 0;
+    }
+    .f2-wpos {
+      position: absolute;
+      transform-style: preserve-3d;
+    }
+    .f2-card {
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform-origin: 0 0;
+      border-radius: 16px;
+      background: var(--f2-card-bg);
+      box-shadow: inset 0 0 0 1px var(--f2-border), inset 0 1px 0 oklch(1 0 0 / 6%);
+      overflow: hidden;
+      backface-visibility: hidden;
+      opacity: 0;
+    }
+    .f2-card-pop {
+      transform-origin: 50% 50%;
+    }
+    .f2-abs {
+      position: absolute;
+      white-space: nowrap;
+    }
+    .f2-mono {
+      font-family: "JetBrains Mono", monospace;
+      font-variant-ligatures: none;
+      font-weight: 400;
+    }
+    .f2-mut {
+      color: var(--f2-mfg);
+    }
+    .f2-fgc {
+      color: var(--f2-fg);
+    }
+    .f2-lbl {
+      font-size: 15px;
+      line-height: 20px;
+    }
+    .f2-rule {
+      position: absolute;
+      left: 28px;
+      right: 28px;
+      height: 1px;
+      background: var(--f2-border);
+    }
+    .f2-ibox {
+      position: absolute;
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: var(--f2-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--f2-fg);
+    }
+    .f2-ibox-plain {
+      background: none;
+      width: 40px;
+      height: 40px;
+    }
+    .f2-ico-24 { width: 24px; height: 24px; display: block; }
+    .f2-ico-26 { width: 26px; height: 26px; display: block; }
+    .f2-ico-34 { width: 34px; height: 34px; display: block; }
+    .f2-ico-18 { width: 18px; height: 18px; display: block; flex: none; }
+    .f2-pill {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 13px;
+      line-height: 24px;
+      white-space: nowrap;
+    }
+    .f2-pill-sec { background: var(--f2-secondary); color: var(--f2-fg); }
+    .f2-pill-out { box-shadow: inset 0 0 0 1px var(--f2-border-strong); color: var(--f2-mfg); }
+    .f2-pill-warn { background: var(--f2-warn-soft); color: var(--f2-warn); }
+    .f2-pill-deny { background: oklch(0.704 0.191 22.216 / 0.2); color: var(--f2-destr); }
+    .f2-pills {
+      display: flex;
+      gap: 8px;
+    }
+    .f2-pills .f2-pill {
+      height: 28px;
+      line-height: 28px;
+      padding: 0 12px;
+      font-size: 14px;
+    }
+    .f2-track {
+      position: absolute;
+      border-radius: 4px;
+      background: var(--f2-muted);
+      overflow: hidden;
+    }
+    .f2-fill {
+      position: absolute;
+      inset: 0;
+      border-radius: 4px;
+      background: var(--f2-primary);
+      transform-origin: 0 50%;
+      transform: scaleX(0);
+    }
+    /* Stop 1 */
+    .f2-c1-model { height: 52px; line-height: 52px; font-size: 26px; }
+    .f2-c1-policy { text-align: right; font-size: 20px; line-height: 28px; }
+    .f2-sel {
+      position: absolute;
+      left: 14px;
+      width: 892px;
+      height: 64px;
+      border-radius: 12px;
+      box-shadow: inset 0 0 0 2px var(--f2-wave);
+      background: oklch(0.6 0.11 230 / 0.09);
+      opacity: 0;
+    }
+    .f2-ping { background: none; }
+    .f2-row {
+      position: absolute;
+      left: 0;
+      width: 920px;
+      height: 72px;
+      opacity: 0;
+    }
+    .f2-row-in { position: absolute; inset: 0; }
+    .f2-rname { display: flex; align-items: center; gap: 10px; height: 28px; font-size: 20px; }
+    .f2-rid { font-size: 15px; line-height: 20px; }
+    .f2-pw { font-size: 14px; line-height: 18px; }
+    .f2-pct { text-align: right; font-size: 24px; line-height: 32px; font-variant-numeric: tabular-nums; }
+    /* Stop 2 */
+    .f2-avatar {
+      position: absolute;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: #006f9f;
+      color: var(--f2-fg);
+      font-size: 24px;
+      line-height: 52px;
+      text-align: center;
+    }
+    .f2-c2-name { font-size: 22px; line-height: 28px; }
+    .f2-c2-mail { font-size: 16px; line-height: 22px; }
+    .f2-status {
+      position: absolute;
+      width: 132px;
+      height: 32px;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .f2-status-bg { position: absolute; inset: 0; background: var(--f2-secondary); }
+    .f2-status-warn { background: var(--f2-warn-soft); opacity: 0; }
+    .f2-status-mask { position: absolute; inset: 0; overflow: hidden; }
+    #f2-c2-status div { height: 32px; line-height: 32px; text-align: center; font-size: 15px; color: var(--f2-fg); }
+    #f2-c2-status .f2-warn-t { color: var(--f2-warn); }
+    .f2-status-ping {
+      position: absolute;
+      width: 132px;
+      height: 32px;
+      border-radius: 999px;
+      box-shadow: 0 0 0 2px var(--f2-warn);
+      opacity: 0;
+    }
+    .f2-c2-lbl { font-size: 16px; line-height: 22px; }
+    .f2-c2-amtrow { display: flex; align-items: baseline; gap: 12px; }
+    .f2-c2-amt { font-size: 48px; line-height: 56px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+    .f2-c2-of { font-size: 20px; }
+    .f2-track-lg { border-radius: 5px; }
+    .f2-fillwrap { position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(0); }
+    .f2-fill-l { position: absolute; inset: 0; border-radius: 5px; }
+    .f2-fill-low { background: oklch(0.708 0.018 230 / 0.6); }
+    .f2-fill-pri { background: var(--f2-primary); opacity: 0; }
+    .f2-fill-warn { background: var(--f2-warn); opacity: 0; }
+    .f2-tick { position: absolute; width: 2px; height: 22px; border-radius: 1px; background: oklch(0.985 0.004 226 / 45%); }
+    .f2-tick-l { text-align: center; font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
+    /* Stop 3 */
+    .f2-c3-head { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+    .f2-c3-head .f2-pill { height: 28px; padding: 0 12px; font-size: 14px; }
+    .f2-c3-tag { display: flex; align-items: center; gap: 8px; font-size: 15px; line-height: 24px; }
+    .f2-c3-msg { font-size: 22px; line-height: 30px; }
+    .f2-c3-env { font-size: 28px; line-height: 44px; color: oklch(0.985 0.004 226 / 80%); }
+    .f2-band { position: absolute; border-radius: 9px; }
+    .f2-band-red { background: oklch(0.704 0.191 22.216 / 0.16); box-shadow: inset 0 0 0 1px oklch(0.704 0.191 22.216 / 0.4); }
+    .f2-band-wave { background: oklch(0.6 0.11 230 / 0.16); box-shadow: inset 0 0 0 1px oklch(0.6 0.11 230 / 0.45); opacity: 0; }
+    .f2-keyline { position: absolute; width: 900px; height: 44px; }
+    .f2-cell {
+      position: absolute;
+      top: 0;
+      width: 16.8px;
+      height: 44px;
+      perspective: 160px;
+    }
+    .f2-g {
+      position: absolute;
+      inset: 0;
+      text-align: center;
+      font-family: "JetBrains Mono", monospace;
+      font-variant-ligatures: none;
+      font-weight: 400;
+      font-size: 28px;
+      line-height: 44px;
+      transform-origin: 50% 100%;
+      backface-visibility: hidden;
+    }
+    .f2-g-old { color: var(--f2-destr); }
+    .f2-g-fl { color: var(--f2-wave); opacity: 0; }
+    .f2-g-new { color: var(--f2-mist); opacity: 0; }
+    /* Stop 4 */
+    .f2-c4-name { font-size: 26px; line-height: 32px; }
+    .f2-c4-count { display: flex; align-items: flex-end; font-size: 16px; line-height: 22px; font-variant-numeric: tabular-nums; }
+    .f2-dmask { display: inline-block; height: 22px; overflow: hidden; }
+    .f2-dstrip { display: block; }
+    .f2-dstrip span { display: block; height: 22px; line-height: 22px; }
+    .f2-slot {
+      position: absolute;
+      border-radius: 12px;
+      border: 1.5px dashed oklch(0.985 0.004 226 / 16%);
+    }
+    .f2-c4-foot { display: flex; align-items: center; gap: 10px; font-size: 16px; line-height: 24px; }
+    .f2-c4-flash {
+      position: absolute;
+      inset: 0;
+      border-radius: 16px;
+      box-shadow: inset 0 0 0 2px var(--f2-destr), inset 0 0 40px oklch(0.704 0.191 22.216 / 0.25);
+      opacity: 0;
+    }
+    .f2-chipg {
+      position: absolute;
+      left: 0;
+      top: 0;
+      backface-visibility: hidden;
+      opacity: 0;
+    }
+    .f2-chip {
+      position: relative;
+      height: 40px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      border-radius: 10px;
+      background: oklch(0.24 0.016 238);
+      box-shadow: inset 0 0 0 1px oklch(1 0 0 / 12%), 0 10px 24px oklch(0 0 0 / 0.35);
+      font-family: "JetBrains Mono", monospace;
+      font-variant-ligatures: none;
+      font-weight: 400;
+      font-size: 18px;
+      line-height: 40px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .f2-srv, .f2-tool { position: relative; }
+    .f2-srv { color: var(--f2-mfg); }
+    .f2-chip-red {
+      position: absolute;
+      inset: 0;
+      border-radius: 10px;
+      background: oklch(0.704 0.191 22.216 / 0.2);
+      box-shadow: inset 0 0 0 1.5px var(--f2-destr);
+      opacity: 0;
+    }
+    .f2-denyrow { position: absolute; left: 0; top: 50px; display: flex; gap: 8px; }
+    .f2-denyrow .f2-pill { height: 28px; line-height: 28px; padding: 0 12px; font-size: 14px; opacity: 0; }
+    .f2-dust {
+      position: absolute;
+      left: 960px;
+      top: 540px;
+      background-position: center;
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
+    }
+    .f2-dust-wave { background-image: url("../../assets/fx/dust-wave.svg"); }
+    .f2-dust-mist { background-image: url("../../assets/fx/dust-mist.svg"); }
+    /* HUD */
+    #f2-hud {
+      position: absolute;
+      inset: 0;
+    }
+    /* Scrim colours are written as rgba (rgb(2 4 5) = oklch(0.1 0.01 238), rgb(2 6 8) =
+       oklch(0.115 0.012 238)) so the layout audit scores their real alpha; the caption pool is
+       boxed to the ellipse it paints so it only counts as covering what it actually darkens. */
+    #f2-vignette {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 80% at 50% 45%, rgba(2, 4, 5, 0) 60%, rgba(2, 4, 5, 0.5) 100%);
+    }
+    #f2-pool {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 1060px;
+      height: 400px;
+      background: radial-gradient(ellipse 1060px 400px at 0% 100%, rgba(2, 6, 8, 0.86) 0%, rgba(2, 6, 8, 0.55) 45%, rgba(2, 6, 8, 0) 100%);
+    }
+    #f2-kicker {
+      position: absolute;
+      left: 124px;
+      top: 750px;
+      height: 26px;
+      overflow: hidden;
+    }
+    #f2-kick-rise { opacity: 0; }
+    .f2-kick {
+      height: 26px;
+      line-height: 26px;
+      font-family: "JetBrains Mono", monospace;
+      font-variant-ligatures: none;
+      font-weight: 400;
+      font-size: 20px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--f2-mfg);
+      white-space: nowrap;
+    }
+    .f2-kn { color: var(--f2-wave); margin-right: 0.9em; }
+    #f2-rail {
+      position: absolute;
+      left: 120px;
+      top: 790px;
+      height: 80px;
+      overflow: hidden;
+    }
+    #f2-rail-rise { opacity: 0; }
+    .f2-line {
+      height: 80px;
+      line-height: 80px;
+      font-size: 64px;
+      letter-spacing: -0.03em;
+      white-space: nowrap;
+      color: var(--f2-fg);
+    }
+    .f2-every { color: var(--f2-wave); }
+    #f2-veil {
+      position: absolute;
+      inset: 0;
+    }
+    #f2-veil-fill {
+      position: absolute;
+      inset: 0;
+      background: #0a6192;
+      opacity: 1;
+    }
+  </style>
+
+  <div id="root" data-composition-id="f2-flight" data-width="1920" data-height="1080">
+    <div id="f2-bg" class="clip" data-start="0" data-duration="8.4" data-track-index="0"></div>
+
+    <div id="f2-stage" class="clip" data-start="0" data-duration="8.4" data-track-index="1">
+      <svg id="f2-fx" width="0" height="0" aria-hidden="true" focusable="false">
+        <filter id="f2-mb" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+          <feGaussianBlur id="f2-mbg" stdDeviation="20 20" />
+        </filter>
+      </svg>
+      <div id="f2-optics">
+        <div id="f2-lens">
+          <div id="f2-drift" class="f2-rig">
+            <div id="f2-cam" class="f2-rig" style="transform:translate3d(0px,-60px,-2400px)">
+              <div id="f2-pitch" class="f2-rig" style="transform:rotateX(30deg)">
+                <div id="f2-yaw" class="f2-rig" style="transform:rotateY(-26deg)">
+                  <div id="f2-world" class="f2-rig" style="transform:translate3d(-180px,84px,-150px)" data-layout-allow-overflow>
+      <div class="f2-plane" id="f2-p-models" style="transform:translate3d(0px,0px,0px) rotateY(0deg);--f2-dof:8;--f2-dim:0.5">
+        <div class="f2-surface"><img class="f2-shot" src="../../assets/planes/models.jpg" alt="" /><div class="f2-cast" id="f2-cast-0" style="left:558px;top:272px;width:844px;height:260px"></div><div class="f2-hl" id="f2-hl-0" style="left:290px;top:546px;width:1266px;height:71px"></div></div><div class="f2-ghost" id="f2-ghost-0" style="left:296px;top:552px;width:1254px;height:59px;background-image:url(../../assets/planes/models.jpg);background-position:-296px -552px"></div>
+        <div class="f2-wpos" style="left:520px;top:196px;width:920px;height:340px">
+          <div class="f2-card" id="f2-card-0" style="width:920px;height:340px">
+            <div class="f2-ibox f2-ibox-plain" style="left:26px;top:28px"><svg class="f2-ico-34" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" fill-rule="nonzero"></path></svg></div>
+            <div class="f2-abs f2-mono f2-c1-model" style="left:80px;top:24px">claude-sonnet-4.6</div>
+            <div class="f2-abs f2-c1-policy" style="right:28px;top:22px"><div class="f2-mut f2-lbl">Selection policy</div><div>Weighted random</div></div>
+            <div class="f2-rule" style="top:90px"></div>
+            <div class="f2-sel" id="f2-c1-sel" style="top:102px"></div>
+            <div class="f2-sel f2-ping" id="f2-c1-ping" style="top:102px"></div>
+            <div class="f2-row" id="f2-c1-row-0" style="top:98px">
+              <div class="f2-row-in">
+                <div class="f2-ibox" style="left:28px;top:14px"><svg class="f2-ico-26" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M6.763 11.212c0 .296.032.535.088.71.064.176.144.368.256.576.04.063.056.127.056.183 0 .08-.048.16-.152.24l-.503.335a.383.383 0 01-.208.072c-.08 0-.16-.04-.239-.112a2.47 2.47 0 01-.287-.375 6.18 6.18 0 01-.248-.471c-.622.734-1.405 1.101-2.347 1.101-.67 0-1.205-.191-1.596-.574-.39-.384-.59-.894-.59-1.533 0-.678.24-1.23.726-1.644.487-.415 1.133-.623 1.955-.623.272 0 .551.024.846.064.296.04.6.104.918.176v-.583c0-.607-.127-1.03-.375-1.277-.255-.248-.686-.367-1.3-.367-.28 0-.568.031-.863.103-.295.072-.583.16-.862.272a2.4 2.4 0 01-.28.104.488.488 0 01-.127.023c-.112 0-.168-.08-.168-.247v-.391c0-.128.016-.224.056-.28a.597.597 0 01.224-.167 4.577 4.577 0 011.005-.36 4.84 4.84 0 011.246-.151c.95 0 1.644.216 2.091.647.44.43.662 1.085.662 1.963v2.586h.016zm-3.24 1.214c.263 0 .534-.048.822-.144a1.78 1.78 0 00.758-.51 1.27 1.27 0 00.272-.512c.047-.191.08-.423.08-.694v-.335a6.66 6.66 0 00-.735-.136 6.02 6.02 0 00-.75-.048c-.535 0-.926.104-1.19.32-.263.215-.39.518-.39.917 0 .375.095.655.295.846.191.2.47.296.838.296zm6.41.862c-.144 0-.24-.024-.304-.08-.064-.048-.12-.16-.168-.311L7.586 6.726a1.398 1.398 0 01-.072-.32c0-.128.064-.2.191-.2h.783c.151 0 .255.025.31.08.065.048.113.16.16.312l1.342 5.284 1.245-5.284c.04-.16.088-.264.151-.312a.549.549 0 01.32-.08h.638c.152 0 .256.025.32.08.063.048.12.16.151.312l1.261 5.348 1.381-5.348c.048-.16.104-.264.16-.312a.52.52 0 01.311-.08h.743c.127 0 .2.065.2.2 0 .04-.009.08-.017.128a1.137 1.137 0 01-.056.2l-1.923 6.17c-.048.16-.104.263-.168.311a.51.51 0 01-.303.08h-.687c-.15 0-.255-.024-.32-.08-.063-.056-.119-.16-.15-.32L12.32 7.747l-1.23 5.14c-.04.16-.087.264-.15.32-.065.056-.177.08-.32.08l-.686.001zm10.256.215c-.415 0-.83-.048-1.229-.143-.399-.096-.71-.2-.918-.32-.128-.071-.215-.151-.247-.223a.563.563 0 01-.048-.224v-.407c0-.167.064-.247.183-.247.048 0 .096.008.144.024.048.016.12.048.2.08.271.12.566.215.878.279.32.064.63.096.95.096.502 0 .894-.088 1.165-.264a.86.86 0 00.415-.758.777.777 0 00-.215-.559c-.144-.151-.416-.287-.807-.415l-1.157-.36c-.583-.183-1.014-.454-1.277-.813a1.902 1.902 0 01-.4-1.158c0-.335.073-.63.216-.886.144-.255.335-.479.575-.654.24-.184.51-.32.83-.415.32-.096.655-.136 1.006-.136.175 0 .36.008.535.032.183.024.35.056.518.088.16.04.312.08.455.127.144.048.256.096.336.144a.69.69 0 01.24.2.43.43 0 01.071.263v.375c0 .168-.064.256-.184.256a.83.83 0 01-.303-.096 3.652 3.652 0 00-1.532-.311c-.455 0-.815.071-1.062.223-.248.152-.375.383-.375.71 0 .224.08.416.24.567.16.152.454.304.877.44l1.134.358c.574.184.99.44 1.237.767.247.327.367.702.367 1.117 0 .343-.072.655-.207.926a2.157 2.157 0 01-.583.703c-.248.2-.543.343-.886.447-.36.111-.734.167-1.142.167z"></path><path d="M.378 15.475c3.384 1.963 7.56 3.153 11.877 3.153 2.914 0 6.114-.607 9.06-1.852.44-.2.814.287.383.607-2.626 1.94-6.442 2.969-9.722 2.969-4.598 0-8.74-1.7-11.87-4.526-.247-.223-.024-.527.272-.351zm23.531-.2c.287.36-.08 2.826-1.485 4.007-.215.184-.423.088-.327-.151l.175-.439c.343-.88.802-2.198.52-2.555-.336-.43-2.22-.207-3.074-.103-.255.032-.295-.192-.063-.36 1.5-1.053 3.967-.75 4.254-.399z" fill="#F90"></path></svg></div>
+                <div class="f2-abs f2-rname" style="left:88px;top:10px"><span>Bedrock</span><span class="f2-pill f2-pill-sec">Enabled</span></div>
+                <div class="f2-abs f2-mono f2-mut f2-rid" style="left:88px;top:42px">us.anthropic.claude-sonnet-4-6-v1:0</div>
+                <div class="f2-abs f2-mut f2-pw" style="left:600px;top:13px">Priority 10 · Weight 7</div>
+                <div class="f2-track" style="left:600px;top:42px;width:200px;height:8px"><div class="f2-fill" id="f2-c1-bar-0"></div></div>
+                <div class="f2-abs f2-pct" style="left:800px;top:19px;width:92px"><span id="f2-c1-pct-0">0</span>%</div>
+              </div>
+            </div>
+            <div class="f2-row" id="f2-c1-row-1" style="top:170px">
+              <div class="f2-row-in">
+                <div class="f2-ibox" style="left:28px;top:14px"><svg class="f2-ico-26" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M11.995 20.216a1.892 1.892 0 100 3.785 1.892 1.892 0 000-3.785zm0 2.806a.927.927 0 11.927-.914.914.914 0 01-.927.914z" fill="#4285F4"></path><path clip-rule="evenodd" d="M21.687 14.144c.237.038.452.16.605.344a.978.978 0 01-.18 1.3l-8.24 6.082a1.892 1.892 0 00-1.147-1.508l8.28-6.08a.991.991 0 01.682-.138z" fill="#669DF6" fill-rule="evenodd"></path><path clip-rule="evenodd" d="M10.122 21.842l-8.217-6.066a.952.952 0 01-.206-1.287.978.978 0 011.287-.206l8.28 6.08a1.893 1.893 0 00-1.144 1.479z" fill="#AECBFA" fill-rule="evenodd"></path><path d="M4.273 4.475a.978.978 0 01-.965-.965V1.09a.978.978 0 111.943 0v2.42a.978.978 0 01-.978.965zM4.247 13.034a.978.978 0 100-1.956.978.978 0 000 1.956zM4.247 10.19a.978.978 0 100-1.956.978.978 0 000 1.956zM4.247 7.332a.978.978 0 100-1.956.978.978 0 000 1.956z" fill="#AECBFA"></path><path d="M19.718 7.307a.978.978 0 01-.965-.979v-2.42a.965.965 0 011.93 0v2.42a.964.964 0 01-.965.979zM19.743 13.047a.978.978 0 100-1.956.978.978 0 000 1.956zM19.743 10.151a.978.978 0 100-1.956.978.978 0 000 1.956zM19.743 2.068a.978.978 0 100-1.956.978.978 0 000 1.956z" fill="#4285F4"></path><path d="M11.995 15.917a.978.978 0 01-.965-.965v-2.459a.978.978 0 011.943 0v2.433a.976.976 0 01-.978.991zM11.995 18.762a.978.978 0 100-1.956.978.978 0 000 1.956zM11.995 10.64a.978.978 0 100-1.956.978.978 0 000 1.956zM11.995 7.783a.978.978 0 100-1.956.978.978 0 000 1.956z" fill="#669DF6"></path><path d="M15.856 10.177a.978.978 0 01-.965-.965v-2.42a.977.977 0 011.702-.763.979.979 0 01.241.763v2.42a.978.978 0 01-.978.965zM15.869 4.913a.978.978 0 100-1.956.978.978 0 000 1.956zM15.869 15.853a.978.978 0 100-1.956.978.978 0 000 1.956zM15.869 12.996a.978.978 0 100-1.956.978.978 0 000 1.956z" fill="#4285F4"></path><path d="M8.121 15.853a.978.978 0 100-1.956.978.978 0 000 1.956zM8.121 7.783a.978.978 0 100-1.956.978.978 0 000 1.956zM8.121 4.913a.978.978 0 100-1.957.978.978 0 000 1.957zM8.134 12.996a.978.978 0 01-.978-.94V9.611a.965.965 0 011.93 0v2.445a.966.966 0 01-.952.94z" fill="#AECBFA"></path></svg></div>
+                <div class="f2-abs f2-rname" style="left:88px;top:10px"><span>Vertex AI</span><span class="f2-pill f2-pill-sec">Enabled</span></div>
+                <div class="f2-abs f2-mono f2-mut f2-rid" style="left:88px;top:42px">anthropic/claude-sonnet-4-6</div>
+                <div class="f2-abs f2-mut f2-pw" style="left:600px;top:13px">Priority 10 · Weight 3</div>
+                <div class="f2-track" style="left:600px;top:42px;width:200px;height:8px"><div class="f2-fill" id="f2-c1-bar-1"></div></div>
+                <div class="f2-abs f2-pct" style="left:800px;top:19px;width:92px"><span id="f2-c1-pct-1">0</span>%</div>
+              </div>
+            </div>
+            <div class="f2-row" id="f2-c1-row-2" style="top:242px">
+              <div class="f2-row-in" style="opacity:0.45">
+                <div class="f2-ibox" style="left:28px;top:14px"><svg class="f2-ico-26" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M18.654 3.87a5.087 5.087 0 110 10.174L23.7 19.09c.64.641.187 1.737-.72 1.737H8.48a8.479 8.479 0 010-16.958h10.175zM8.479 7.26a5.087 5.087 0 100 10.176 5.087 5.087 0 000-10.175z"></path></svg></div>
+                <div class="f2-abs f2-rname" style="left:88px;top:10px"><span>OpenRouter</span><span class="f2-pill f2-pill-out">Fallback</span></div>
+                <div class="f2-abs f2-mono f2-mut f2-rid" style="left:88px;top:42px">anthropic/claude-sonnet-4.6</div>
+                <div class="f2-abs f2-mut f2-pw" style="left:600px;top:13px">Priority 20 · Weight 1</div>
+                <div class="f2-track" style="left:600px;top:42px;width:200px;height:8px"><div class="f2-fill" id="f2-c1-bar-2"></div></div>
+                <div class="f2-abs f2-pct" style="left:800px;top:19px;width:92px"><span class="f2-mut">—</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="f2-plane" id="f2-p-spend" style="transform:translate3d(2300px,-120px,-250px) rotateY(-6deg);--f2-dof:8;--f2-dim:0.5">
+        <div class="f2-surface"><img class="f2-shot" src="../../assets/planes/spend-controls.jpg" alt="" /><div class="f2-cast" id="f2-cast-1" style="left:598px;top:406px;width:784px;height:182px"></div><div class="f2-hl" id="f2-hl-1" style="left:290px;top:626px;width:1266px;height:76px"></div></div><div class="f2-ghost" id="f2-ghost-1" style="left:296px;top:632px;width:1254px;height:64px;background-image:url(../../assets/planes/spend-controls.jpg);background-position:-296px -632px"></div>
+        <div class="f2-wpos" style="left:560px;top:330px;width:860px;height:262px">
+          <div class="f2-card" id="f2-card-1" style="width:860px;height:262px">
+            <div class="f2-avatar" style="left:28px;top:24px">G</div>
+            <div class="f2-abs f2-c2-name" style="left:96px;top:24px">Grace Applied Engineer</div>
+            <div class="f2-abs f2-mut f2-c2-mail" style="left:96px;top:53px">grace@applied.local · Applied AI</div>
+            <div class="f2-status" style="left:700px;top:34px">
+              <div class="f2-status-bg"></div>
+              <div class="f2-status-bg f2-status-warn" id="f2-c2-warnbg"></div>
+              <div class="f2-status-mask"><div id="f2-c2-status"><div>Low usage</div><div>On track</div><div class="f2-warn-t">Near limit</div></div></div>
+            </div>
+            <div class="f2-status-ping" id="f2-c2-ping" style="left:700px;top:34px"></div>
+            <div class="f2-abs f2-mut f2-c2-lbl" style="left:28px;top:118px">Current spend</div>
+            <div class="f2-abs f2-c2-amtrow" style="right:28px;top:96px"><span class="f2-c2-amt">$<span id="f2-c2-amt">0</span>.00</span><span class="f2-mut f2-c2-of">of $150.00</span></div>
+            <div class="f2-track f2-track-lg" style="left:28px;top:170px;width:804px;height:10px">
+              <div class="f2-fillwrap" id="f2-c2-fill">
+                <div class="f2-fill-l f2-fill-low"></div>
+                <div class="f2-fill-l f2-fill-pri" id="f2-c2-fpri"></div>
+                <div class="f2-fill-l f2-fill-warn" id="f2-c2-fwarn"></div>
+              </div>
+            </div>
+            <div class="f2-tick" style="left:670.2px;top:164px"></div>
+            <div class="f2-abs f2-mut f2-tick-l" style="left:641.2px;top:190px;width:60px">80%</div>
+            <div class="f2-abs f2-pills" style="left:28px;top:206px"><span class="f2-pill f2-pill-out">Monthly</span><span class="f2-pill f2-pill-out">Config (user)</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="f2-plane" id="f2-p-guard" style="transform:translate3d(1250px,1750px,-1300px) rotateY(7deg);--f2-dof:8;--f2-dim:0.5">
+        <div class="f2-surface"><img class="f2-shot" src="../../assets/planes/guardrails-settings.jpg" alt="" /><div class="f2-cast" id="f2-cast-2" style="left:508px;top:428px;width:824px;height:190px"></div><div class="f2-hl" id="f2-hl-2" style="left:712px;top:195px;width:424px;height:123px"></div></div><div class="f2-ghost" id="f2-ghost-2" style="left:718px;top:201px;width:412px;height:111px;background-image:url(../../assets/planes/guardrails-settings.jpg);background-position:-718px -201px"></div>
+        <div class="f2-wpos" style="left:470px;top:352px;width:900px;height:270px">
+          <div class="f2-card" id="f2-card-2" style="width:900px;height:270px">
+            <div class="f2-abs f2-c3-head" style="left:28px;top:24px"><span class="f2-pill f2-pill-sec">Prompt</span><span class="f2-mut">user message</span></div>
+            <div class="f2-abs f2-mut f2-c3-tag" style="right:28px;top:26px"><svg class="f2-ico-18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l7.4 2.9v5.6c0 4.5-3 8.3-7.4 9.9-4.4-1.6-7.4-5.4-7.4-9.9V5.7z"/><path d="M8.9 12.1l2.2 2.2 4-4.3"/></svg><span>Guardrails</span></div>
+            <div class="f2-abs f2-c3-msg" style="left:28px;top:72px">Why does the deploy fail? My .env:</div>
+            <div class="f2-band f2-band-red" id="f2-c3-bred" style="left:323.4px;top:114px;width:484.4px;height:48px"></div>
+            <div class="f2-band f2-band-wave" id="f2-c3-bwave" style="left:323.4px;top:114px;width:484.4px;height:48px"></div>
+            <div class="f2-abs f2-mono f2-c3-env" style="left:28px;top:116px">ANTHROPIC_API_KEY=</div>
+            <div class="f2-keyline" style="left:0px;top:116px"><span class="f2-cell" style="left:330.4px"><span class="f2-g f2-g-old" id="f2-k0o">s</span><span class="f2-g f2-g-fl" id="f2-k0a">{</span><span class="f2-g f2-g-fl" id="f2-k0b">}</span><span class="f2-g f2-g-new" id="f2-k0n">[</span></span><span class="f2-cell" style="left:347.2px"><span class="f2-g f2-g-old" id="f2-k1o">k</span><span class="f2-g f2-g-fl" id="f2-k1a">?</span><span class="f2-g f2-g-fl" id="f2-k1b">$</span><span class="f2-g f2-g-new" id="f2-k1n">R</span></span><span class="f2-cell" style="left:364px"><span class="f2-g f2-g-old" id="f2-k2o">-</span><span class="f2-g f2-g-fl" id="f2-k2a">@</span><span class="f2-g f2-g-fl" id="f2-k2b">0</span><span class="f2-g f2-g-new" id="f2-k2n">E</span></span><span class="f2-cell" style="left:380.8px"><span class="f2-g f2-g-old" id="f2-k3o">a</span><span class="f2-g f2-g-fl" id="f2-k3a">2</span><span class="f2-g f2-g-fl" id="f2-k3b">3</span><span class="f2-g f2-g-new" id="f2-k3n">D</span></span><span class="f2-cell" style="left:397.6px"><span class="f2-g f2-g-old" id="f2-k4o">n</span><span class="f2-g f2-g-fl" id="f2-k4a">4</span><span class="f2-g f2-g-fl" id="f2-k4b">6</span><span class="f2-g f2-g-new" id="f2-k4n">A</span></span><span class="f2-cell" style="left:414.4px"><span class="f2-g f2-g-old" id="f2-k5o">t</span><span class="f2-g f2-g-fl" id="f2-k5a">7</span><span class="f2-g f2-g-fl" id="f2-k5b">8</span><span class="f2-g f2-g-new" id="f2-k5n">C</span></span><span class="f2-cell" style="left:431.2px"><span class="f2-g f2-g-old" id="f2-k6o">-</span><span class="f2-g f2-g-fl" id="f2-k6a">A</span><span class="f2-g f2-g-fl" id="f2-k6b">B</span><span class="f2-g f2-g-new" id="f2-k6n">T</span></span><span class="f2-cell" style="left:448px"><span class="f2-g f2-g-old" id="f2-k7o">a</span><span class="f2-g f2-g-fl" id="f2-k7a">C</span><span class="f2-g f2-g-fl" id="f2-k7b">E</span><span class="f2-g f2-g-new" id="f2-k7n">E</span></span><span class="f2-cell" style="left:464.8px"><span class="f2-g f2-g-old" id="f2-k8o">p</span><span class="f2-g f2-g-fl" id="f2-k8a">F</span><span class="f2-g f2-g-fl" id="f2-k8b">X</span><span class="f2-g f2-g-new" id="f2-k8n">D</span></span><span class="f2-cell" style="left:481.6px"><span class="f2-g f2-g-old" id="f2-k9o">i</span><span class="f2-g f2-g-fl" id="f2-k9a">Y</span><span class="f2-g f2-g-fl" id="f2-k9b">#</span><span class="f2-g f2-g-new" id="f2-k9n">:</span></span><span class="f2-cell" style="left:498.4px"><span class="f2-g f2-g-old" id="f2-k10o">0</span><span class="f2-g f2-g-fl" id="f2-k10a">%</span><span class="f2-g f2-g-fl" id="f2-k10b">*</span><span class="f2-g f2-g-new" id="f2-k10n">a</span></span><span class="f2-cell" style="left:515.2px"><span class="f2-g f2-g-old" id="f2-k11o">3</span><span class="f2-g f2-g-fl" id="f2-k11a">=</span><span class="f2-g f2-g-fl" id="f2-k11b">/</span><span class="f2-g f2-g-new" id="f2-k11n">n</span></span><span class="f2-cell" style="left:532px"><span class="f2-g f2-g-old" id="f2-k12o">-</span><span class="f2-g f2-g-fl" id="f2-k12a">\</span><span class="f2-g f2-g-fl" id="f2-k12b">{</span><span class="f2-g f2-g-new" id="f2-k12n">t</span></span><span class="f2-cell" style="left:548.8px"><span class="f2-g f2-g-old" id="f2-k13o">E</span><span class="f2-g f2-g-fl" id="f2-k13a">}</span><span class="f2-g f2-g-fl" id="f2-k13b">?</span><span class="f2-g f2-g-new" id="f2-k13n">h</span></span><span class="f2-cell" style="left:565.6px"><span class="f2-g f2-g-old" id="f2-k14o">X</span><span class="f2-g f2-g-fl" id="f2-k14a">$</span><span class="f2-g f2-g-fl" id="f2-k14b">@</span><span class="f2-g f2-g-new" id="f2-k14n">r</span></span><span class="f2-cell" style="left:582.4px"><span class="f2-g f2-g-old" id="f2-k15o">A</span><span class="f2-g f2-g-fl" id="f2-k15a">0</span><span class="f2-g f2-g-fl" id="f2-k15b">2</span><span class="f2-g f2-g-new" id="f2-k15n">o</span></span><span class="f2-cell" style="left:599.2px"><span class="f2-g f2-g-old" id="f2-k16o">M</span><span class="f2-g f2-g-fl" id="f2-k16a">3</span><span class="f2-g f2-g-fl" id="f2-k16b">4</span><span class="f2-g f2-g-new" id="f2-k16n">p</span></span><span class="f2-cell" style="left:616px"><span class="f2-g f2-g-old" id="f2-k17o">P</span><span class="f2-g f2-g-fl" id="f2-k17a">6</span><span class="f2-g f2-g-fl" id="f2-k17b">7</span><span class="f2-g f2-g-new" id="f2-k17n">i</span></span><span class="f2-cell" style="left:632.8px"><span class="f2-g f2-g-old" id="f2-k18o">L</span><span class="f2-g f2-g-fl" id="f2-k18a">8</span><span class="f2-g f2-g-fl" id="f2-k18b">9</span><span class="f2-g f2-g-new" id="f2-k18n">c</span></span><span class="f2-cell" style="left:649.6px"><span class="f2-g f2-g-old" id="f2-k19o">E</span><span class="f2-g f2-g-fl" id="f2-k19a">B</span><span class="f2-g f2-g-fl" id="f2-k19b">C</span><span class="f2-g f2-g-new" id="f2-k19n">-</span></span><span class="f2-cell" style="left:666.4px"><span class="f2-g f2-g-old" id="f2-k20o">-</span><span class="f2-g f2-g-fl" id="f2-k20a">D</span><span class="f2-g f2-g-fl" id="f2-k20b">F</span><span class="f2-g f2-g-new" id="f2-k20n">a</span></span><span class="f2-cell" style="left:683.2px"><span class="f2-g f2-g-old" id="f2-k21o">k</span><span class="f2-g f2-g-fl" id="f2-k21a">X</span><span class="f2-g f2-g-fl" id="f2-k21b">Y</span><span class="f2-g f2-g-new" id="f2-k21n">p</span></span><span class="f2-cell" style="left:700px"><span class="f2-g f2-g-old" id="f2-k22o">3</span><span class="f2-g f2-g-fl" id="f2-k22a">#</span><span class="f2-g f2-g-fl" id="f2-k22b">%</span><span class="f2-g f2-g-new" id="f2-k22n">i</span></span><span class="f2-cell" style="left:716.8px"><span class="f2-g f2-g-old" id="f2-k23o">Y</span><span class="f2-g f2-g-fl" id="f2-k23a">*</span><span class="f2-g f2-g-fl" id="f2-k23b">=</span><span class="f2-g f2-g-new" id="f2-k23n">-</span></span><span class="f2-cell" style="left:733.6px"><span class="f2-g f2-g-old" id="f2-k24o">x</span><span class="f2-g f2-g-fl" id="f2-k24a">/</span><span class="f2-g f2-g-fl" id="f2-k24b">\</span><span class="f2-g f2-g-new" id="f2-k24n">k</span></span><span class="f2-cell" style="left:750.4px"><span class="f2-g f2-g-old" id="f2-k25o">9</span><span class="f2-g f2-g-fl" id="f2-k25a">{</span><span class="f2-g f2-g-fl" id="f2-k25b">}</span><span class="f2-g f2-g-new" id="f2-k25n">e</span></span><span class="f2-cell" style="left:767.2px"><span class="f2-g f2-g-old" id="f2-k26o">m</span><span class="f2-g f2-g-fl" id="f2-k26a">?</span><span class="f2-g f2-g-fl" id="f2-k26b">$</span><span class="f2-g f2-g-new" id="f2-k26n">y</span></span><span class="f2-cell" style="left:784px"><span class="f2-g f2-g-old" id="f2-k27o">Q</span><span class="f2-g f2-g-fl" id="f2-k27a">@</span><span class="f2-g f2-g-fl" id="f2-k27b">0</span><span class="f2-g f2-g-new" id="f2-k27n">]</span></span></div>
+            <div class="f2-abs f2-pills" style="left:28px;top:204px"><span class="f2-pill f2-pill-warn" id="f2-c3-p0">Transformed</span><span class="f2-pill f2-pill-out f2-mono" id="f2-c3-p1">secret_redaction</span><span class="f2-pill f2-pill-out f2-mono" id="f2-c3-p2">provider_tokens</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="f2-plane" id="f2-p-mcp" style="transform:translate3d(2900px,2500px,-2600px) rotateY(-5deg);--f2-dof:8;--f2-dim:0.5">
+        <div class="f2-surface"><img class="f2-shot" src="../../assets/planes/mcp-invocations.jpg" alt="" /><div class="f2-cast" id="f2-cast-3" style="left:638px;top:346px;width:704px;height:270px"></div></div>
+        <div class="f2-wpos" style="left:600px;top:270px;width:780px;height:350px">
+          <div class="f2-card f2-card-pop" id="f2-card-3" style="width:780px;height:350px">
+            <div class="f2-ibox" style="left:28px;top:23px"><svg class="f2-ico-24" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M15.688 2.343a2.588 2.588 0 00-3.61 0l-9.626 9.44a.863.863 0 01-1.203 0 .823.823 0 010-1.18l9.626-9.44a4.313 4.313 0 016.016 0 4.116 4.116 0 011.204 3.54 4.3 4.3 0 013.609 1.18l.05.05a4.115 4.115 0 010 5.9l-8.706 8.537a.274.274 0 000 .393l1.788 1.754a.823.823 0 010 1.18.863.863 0 01-1.203 0l-1.788-1.753a1.92 1.92 0 010-2.754l8.706-8.538a2.47 2.47 0 000-3.54l-.05-.049a2.588 2.588 0 00-3.607-.003l-7.172 7.034-.002.002-.098.097a.863.863 0 01-1.204 0 .823.823 0 010-1.18l7.273-7.133a2.47 2.47 0 00-.003-3.537z"></path><path d="M14.485 4.703a.823.823 0 000-1.18.863.863 0 00-1.204 0l-7.119 6.982a4.115 4.115 0 000 5.9 4.314 4.314 0 006.016 0l7.12-6.982a.823.823 0 000-1.18.863.863 0 00-1.204 0l-7.119 6.982a2.588 2.588 0 01-3.61 0 2.47 2.47 0 010-3.54l7.12-6.982z"></path></svg></div>
+            <div class="f2-abs f2-mut f2-lbl" style="left:86px;top:22px">Tool set</div>
+            <div class="f2-abs f2-c4-name" style="left:86px;top:42px">triage</div>
+            <div class="f2-abs f2-c4-count" style="right:28px;top:38px"><span class="f2-dmask"><span class="f2-dstrip" id="f2-c4-n"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span></span></span><span class="f2-mut">&nbsp;of 38 tools</span></div>
+            <div class="f2-rule" style="top:90px"></div><div class="f2-slot" style="left:28px;top:110px;width:354px;height:58px"></div><div class="f2-slot" style="left:398px;top:110px;width:354px;height:58px"></div><div class="f2-slot" style="left:28px;top:184px;width:354px;height:58px"></div><div class="f2-slot" style="left:398px;top:184px;width:354px;height:58px"></div>
+            <div class="f2-rule" style="top:266px"></div>
+            <div class="f2-abs f2-mut f2-c4-foot" style="left:28px;top:290px"><svg class="f2-ico-18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l7.4 2.9v5.6c0 4.5-3 8.3-7.4 9.9-4.4-1.6-7.4-5.4-7.4-9.9V5.7z"/><path d="M8.9 12.1l2.2 2.2 4-4.3"/></svg><span><span class="f2-mono f2-fgc">tools/call</span> outside the set is rejected before upstream.</span></div>
+            <div class="f2-c4-flash" id="f2-c4-flash"></div>
+          </div>
+          <div class="f2-chipg" id="f2-chip-0" style="width:226.4px"><div class="f2-chip" style="width:226.4px"><span class="f2-srv">github.</span><span class="f2-tool">search_code</span></div></div>
+          <div class="f2-chipg" id="f2-chip-1" style="width:204.8px"><div class="f2-chip" style="width:204.8px"><span class="f2-srv">sentry.</span><span class="f2-tool">get_issue</span></div></div>
+          <div class="f2-chipg" id="f2-chip-2" style="width:237.2px"><div class="f2-chip" style="width:237.2px"><span class="f2-srv">github.</span><span class="f2-tool">create_issue</span></div></div>
+          <div class="f2-chipg" id="f2-chip-3" style="width:237.2px"><div class="f2-chip" style="width:237.2px"><span class="f2-srv">linear.</span><span class="f2-tool">create_issue</span></div></div>
+          <div class="f2-chipg" id="f2-chip-4" style="width:291.2px"><div class="f2-chip" style="width:291.2px"><div class="f2-chip-red" id="f2-chip-red"></div><span class="f2-srv">github.</span><span class="f2-tool">delete_repository</span></div><div class="f2-denyrow"><span class="f2-pill f2-pill-deny" id="f2-deny">Deny</span><span class="f2-pill f2-pill-out f2-mono" id="f2-pack">saas.github</span></div></div>
+          <div class="f2-chipg" id="f2-chip-5" style="width:226.4px"><div class="f2-chip" style="width:226.4px"><span class="f2-srv">slack.</span><span class="f2-tool">post_message</span></div></div>
+          <div class="f2-chipg" id="f2-chip-6" style="width:302px"><div class="f2-chip" style="width:302px"><span class="f2-srv">github.</span><span class="f2-tool">merge_pull_request</span></div></div>
+          <div class="f2-chipg" id="f2-chip-7" style="width:172.4px"><div class="f2-chip" style="width:172.4px"><span class="f2-srv">notion.</span><span class="f2-tool">search</span></div></div>
+          <div class="f2-chipg" id="f2-chip-8" style="width:258.8px"><div class="f2-chip" style="width:258.8px"><span class="f2-srv">jira.</span><span class="f2-tool">transition_issue</span></div></div>
+          <div class="f2-chipg" id="f2-chip-9" style="width:237.2px"><div class="f2-chip" style="width:237.2px"><span class="f2-srv">linear.</span><span class="f2-tool">update_issue</span></div></div>
+          <div class="f2-chipg" id="f2-chip-10" style="width:248px"><div class="f2-chip" style="width:248px"><span class="f2-srv">sentry.</span><span class="f2-tool">resolve_issue</span></div></div>
+          <div class="f2-chipg" id="f2-chip-11" style="width:183.2px"><div class="f2-chip" style="width:183.2px"><span class="f2-srv">postgres.</span><span class="f2-tool">query</span></div></div>
+        </div>
+      </div>
+      <div class="f2-plane" id="f2-p-fa" style="transform:translate3d(-2500px,-1000px,-2100px) rotateY(16deg);--f2-dof:12;--f2-dim:0.35">
+        <div class="f2-surface"><img class="f2-shot" src="../../assets/wall/request-logs.jpg" alt="" /></div>
+      </div>
+      <div class="f2-plane" id="f2-p-fb" style="transform:translate3d(4500px,800px,-2300px) rotateY(-18deg);--f2-dof:12;--f2-dim:0.35">
+        <div class="f2-surface"><img class="f2-shot" src="../../assets/wall/usage-costs.jpg" alt="" /></div>
+      </div>
+      <div class="f2-plane" id="f2-p-fc" style="transform:translate3d(-1800px,600px,-3000px) rotateY(14deg);--f2-dof:12;--f2-dim:0.35">
+        <div class="f2-surface"><img class="f2-shot" src="../../assets/wall/agent-harnesses.jpg" alt="" /></div>
+      </div>
+      <div class="f2-plane" id="f2-p-fd" style="transform:translate3d(5000px,3400px,-4300px) rotateY(-14deg);--f2-dof:12;--f2-dim:0.35;visibility:hidden">
+        <div class="f2-surface"><img class="f2-shot" src="../../assets/wall/leaderboard.jpg" alt="" /></div>
+      </div>
+      <div class="f2-dust f2-dust-wave" style="width:22px;height:22px;margin:-11px 0 0 -11px;opacity:0.211;transform:translate3d(3935px,-941px,-2953px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:22px;height:22px;margin:-11px 0 0 -11px;opacity:0.204;transform:translate3d(142px,1700px,-2768px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:27px;height:27px;margin:-13.5px 0 0 -13.5px;opacity:0.121;transform:translate3d(2465px,2752px,-3177px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:28px;height:28px;margin:-14px 0 0 -14px;opacity:0.177;transform:translate3d(934px,3478px,-4386px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:21px;height:21px;margin:-10.5px 0 0 -10.5px;opacity:0.193;transform:translate3d(4013px,4102px,-3749px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:12px;height:12px;margin:-6px 0 0 -6px;opacity:0.232;transform:translate3d(1426px,-446px,-3133px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0.204;transform:translate3d(39px,603px,-2711px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:23px;height:23px;margin:-11.5px 0 0 -11.5px;opacity:0.188;transform:translate3d(4827px,2274px,-4678px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:28px;height:28px;margin:-14px 0 0 -14px;opacity:0.194;transform:translate3d(-1021px,1234px,-3738px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:24px;height:24px;margin:-12px 0 0 -12px;opacity:0.249;transform:translate3d(1628px,3603px,-3095px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:22px;height:22px;margin:-11px 0 0 -11px;opacity:0.268;transform:translate3d(4535px,3156px,-2850px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:24px;height:24px;margin:-12px 0 0 -12px;opacity:0.158;transform:translate3d(5039px,1222px,-4502px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:8px;height:8px;margin:-4px 0 0 -4px;opacity:0.132;transform:translate3d(2763px,3618px,-4137px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:11px;height:11px;margin:-5.5px 0 0 -5.5px;opacity:0.170;transform:translate3d(1256px,3148px,-3478px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:21px;height:21px;margin:-10.5px 0 0 -10.5px;opacity:0.172;transform:translate3d(5581px,2208px,-2936px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:12px;height:12px;margin:-6px 0 0 -6px;opacity:0.275;transform:translate3d(-1011px,331px,-3613px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:10px;height:10px;margin:-5px 0 0 -5px;opacity:0.288;transform:translate3d(425px,-1530px,-4653px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:23px;height:23px;margin:-11.5px 0 0 -11.5px;opacity:0.200;transform:translate3d(4271px,1922px,-2767px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:8px;height:8px;margin:-4px 0 0 -4px;opacity:0.159;transform:translate3d(-251px,2056px,-3698px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:14px;height:14px;margin:-7px 0 0 -7px;opacity:0.271;transform:translate3d(505px,1395px,-2771px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:22px;height:22px;margin:-11px 0 0 -11px;opacity:0.276;transform:translate3d(-1161px,577px,-4650px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:16px;height:16px;margin:-8px 0 0 -8px;opacity:0.320;transform:translate3d(3357px,143px,-3473px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:18px;height:18px;margin:-9px 0 0 -9px;opacity:0.183;transform:translate3d(1891px,1972px,-3685px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:19px;height:19px;margin:-9.5px 0 0 -9.5px;opacity:0.216;transform:translate3d(-444px,-1774px,-4249px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:17px;height:17px;margin:-8.5px 0 0 -8.5px;opacity:0.203;transform:translate3d(-2324px,3710px,-3667px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0.262;transform:translate3d(742px,3212px,-4074px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:10px;height:10px;margin:-5px 0 0 -5px;opacity:0.229;transform:translate3d(3245px,463px,-2564px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:22px;height:22px;margin:-11px 0 0 -11px;opacity:0.212;transform:translate3d(-1809px,1774px,-4792px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:10px;height:10px;margin:-5px 0 0 -5px;opacity:0.124;transform:translate3d(-84px,-1745px,-3798px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:22px;height:22px;margin:-11px 0 0 -11px;opacity:0.270;transform:translate3d(5px,4027px,-3128px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:9px;height:9px;margin:-4.5px 0 0 -4.5px;opacity:0.147;transform:translate3d(1005px,983px,-4705px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:11px;height:11px;margin:-5.5px 0 0 -5.5px;opacity:0.234;transform:translate3d(5246px,-1599px,-4023px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:21px;height:21px;margin:-10.5px 0 0 -10.5px;opacity:0.233;transform:translate3d(4598px,3899px,-3025px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:18px;height:18px;margin:-9px 0 0 -9px;opacity:0.135;transform:translate3d(438px,-1177px,-3372px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0.301;transform:translate3d(3301px,667px,-2674px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:20px;height:20px;margin:-10px 0 0 -10px;opacity:0.304;transform:translate3d(-404px,1977px,-3982px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:9px;height:9px;margin:-4.5px 0 0 -4.5px;opacity:0.187;transform:translate3d(2087px,1684px,-4156px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:19px;height:19px;margin:-9.5px 0 0 -9.5px;opacity:0.141;transform:translate3d(-953px,1943px,-3601px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:21px;height:21px;margin:-10.5px 0 0 -10.5px;opacity:0.277;transform:translate3d(4454px,2569px,-3696px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:29px;height:29px;margin:-14.5px 0 0 -14.5px;opacity:0.195;transform:translate3d(1639px,683px,-3488px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:16px;height:16px;margin:-8px 0 0 -8px;opacity:0.141;transform:translate3d(4512px,2846px,-2241px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:28px;height:28px;margin:-14px 0 0 -14px;opacity:0.218;transform:translate3d(3565px,-1202px,-2878px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:19px;height:19px;margin:-9.5px 0 0 -9.5px;opacity:0.150;transform:translate3d(3753px,777px,-4774px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:20px;height:20px;margin:-10px 0 0 -10px;opacity:0.311;transform:translate3d(-2093px,-443px,-3809px)"></div>
+      <div class="f2-dust f2-dust-wave" style="width:11px;height:11px;margin:-5.5px 0 0 -5.5px;opacity:0.326;transform:translate3d(3334px,4372px,-2607px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:30px;height:30px;margin:-15px 0 0 -15px;opacity:0.267;transform:translate3d(4947px,3481px,-3679px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:28px;height:28px;margin:-14px 0 0 -14px;opacity:0.230;transform:translate3d(3124px,1699px,-3712px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:23px;height:23px;margin:-11.5px 0 0 -11.5px;opacity:0.257;transform:translate3d(4915px,-1666px,-4549px)"></div>
+      <div class="f2-dust f2-dust-mist" style="width:24px;height:24px;margin:-12px 0 0 -12px;opacity:0.334;transform:translate3d(-1582px,1455px,-3676px)"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="f2-hud" class="clip" data-start="0" data-duration="8.4" data-track-index="2">
+      <div id="f2-vignette"></div>
+      <div id="f2-pool"></div>
+      <div id="f2-kicker"><div id="f2-kick-rise" data-layout-allow-overflow><div id="f2-kick-strip"><div class="f2-kick" data-layout-allow-occlusion><span class="f2-kn" data-layout-allow-occlusion>01</span>Model routing</div><div class="f2-kick" data-layout-allow-occlusion><span class="f2-kn" data-layout-allow-occlusion>02</span>Spend controls</div><div class="f2-kick" data-layout-allow-occlusion><span class="f2-kn" data-layout-allow-occlusion>03</span>Guardrails</div><div class="f2-kick" data-layout-allow-occlusion><span class="f2-kn" data-layout-allow-occlusion>04</span>MCP tool sets</div></div></div></div>
+      <div id="f2-rail"><div id="f2-rail-rise" data-layout-allow-overflow><div id="f2-rail-strip"><div class="f2-line" data-layout-allow-occlusion>Route <span class="f2-every" data-layout-allow-occlusion>every</span> model.</div><div class="f2-line" data-layout-allow-occlusion>Cap <span class="f2-every" data-layout-allow-occlusion>every</span> dollar.</div><div class="f2-line" data-layout-allow-occlusion>Redact <span class="f2-every" data-layout-allow-occlusion>every</span> secret.</div><div class="f2-line" data-layout-allow-occlusion>Govern <span class="f2-every" data-layout-allow-occlusion>every</span> tool.</div></div></div></div>
+    </div>
+
+    <div id="f2-veil" class="clip" data-start="0" data-duration="8.4" data-track-index="3"><div id="f2-veil-fill"></div></div>
+  </div>
+
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#f2-cam", {"x":0,"y":-60,"z":-2400}, {"x":180,"y":-130,"z":0,"duration":0.7,"ease":"power4.out"}, 0);
+      tl.fromTo("#f2-pitch", {"rotationX":30}, {"rotationX":5,"duration":0.7,"ease":"power4.out"}, 0);
+      tl.fromTo("#f2-yaw", {"rotationY":-26}, {"rotationY":-6,"duration":0.7,"ease":"power4.out"}, 0);
+      tl.fromTo("#f2-world", {"x":-180,"y":84,"z":-150}, {"x":-180,"y":84,"z":-150,"duration":0.7,"ease":"power4.out"}, 0);
+      tl.fromTo("#f2-mbg", {"attr":{"stdDeviation":"20 20"}}, {"attr":{"stdDeviation":"0 0"},"duration":0.6,"ease":"power3.out"}, 0);
+      tl.fromTo("#f2-p-models", {"--f2-dof":8,"--f2-dim":0.5}, {"--f2-dof":0,"--f2-dim":1,"duration":0.48,"ease":"power2.out"}, 0);
+      tl.fromTo("#f2-veil-fill", {"opacity":1}, {"opacity":0,"duration":0.35,"ease":"power2.out"}, 0);
+      tl.set("#f2-p-fb", {"visibility":"hidden"}, 0.133);
+      tl.set("#f2-p-fd", {"visibility":"visible"}, 0.2);
+      tl.set("#f2-kick-rise", {"opacity":1}, 0.26);
+      tl.fromTo("#f2-kick-rise", {"y":34}, {"y":0,"duration":0.12,"ease":"power4.out"}, 0.26);
+      tl.set("#f2-rail-rise", {"opacity":1}, 0.32);
+      tl.fromTo("#f2-rail-rise", {"y":70}, {"y":0,"duration":0.18,"ease":"power4.out"}, 0.32);
+      tl.fromTo("#f2-hl-0", {"opacity":0,"scale":1.04}, {"opacity":1,"scale":1,"duration":0.12,"ease":"power2.out"}, 0.35);
+      tl.set("#f2-ghost-0", {"opacity":1}, 0.42);
+      tl.fromTo("#f2-ghost-0", {"z":2,"scale":1}, {"z":30,"scale":1.015,"duration":0.15,"ease":"power2.out"}, 0.42);
+      tl.set("#f2-card-0", {"x":-224,"y":317.35,"z":36,"scale":1.363,"clipPath":"inset(28.36px 0px 268.36px 0px round 16px)"}, 0.43);
+      tl.fromTo("#f2-card-0", {"opacity":0}, {"opacity":1,"duration":0.08,"ease":"power1.out"}, 0.45);
+      tl.fromTo("#f2-p-models", {"--f2-dof":0,"--f2-dim":1}, {"--f2-dof":3,"--f2-dim":0.55,"duration":0.45,"ease":"power2.out","immediateRender":false}, 0.48);
+      tl.fromTo("#f2-cast-0", {"opacity":0}, {"opacity":1,"duration":0.45,"ease":"power2.out"}, 0.48);
+      tl.fromTo("#f2-card-0", {"x":-224,"y":317.35,"z":36,"scale":1.363,"clipPath":"inset(28.36px 0px 268.36px 0px round 16px)"}, {"x":0,"y":0,"z":150,"scale":1,"clipPath":"inset(0px 0px 0px 0px round 16px)","duration":0.45,"ease":"power3.out","immediateRender":false}, 0.48);
+      tl.fromTo("#f2-drift", {"x":0,"y":0,"z":0,"rotationY":0}, {"x":-6,"y":4,"z":8,"rotationY":0.35,"duration":1.4,"ease":"sine.inOut"}, 0.5);
+      tl.fromTo("#f2-ghost-0", {"opacity":1}, {"opacity":0,"duration":0.12,"ease":"none","immediateRender":false}, 0.5);
+      tl.fromTo("#f2-hl-0", {"opacity":1}, {"opacity":0,"duration":0.2,"ease":"power1.in","immediateRender":false}, 0.55);
+      tl.set("#f2-optics", {"filter":"none"}, 0.6);
+      tl.set("#f2-c1-row-0", {"opacity":1}, 0.6);
+      tl.fromTo("#f2-c1-row-0", {"y":40}, {"y":0,"duration":0.12,"ease":"power4.out"}, 0.6);
+      tl.set("#f2-c1-row-1", {"opacity":1}, 0.66);
+      tl.fromTo("#f2-c1-row-1", {"y":40}, {"y":0,"duration":0.12,"ease":"power4.out"}, 0.66);
+      tl.set("#f2-c1-row-2", {"opacity":1}, 0.72);
+      tl.fromTo("#f2-c1-row-2", {"y":40}, {"y":0,"duration":0.12,"ease":"power4.out"}, 0.72);
+      tl.fromTo("#f2-c1-bar-0", {"scaleX":0}, {"scaleX":0.7,"duration":0.6,"ease":"power2.out"}, 0.85);
+      tl.fromTo("#f2-c1-pct-0", {"innerText":0}, {"innerText":70,"snap":{"innerText":1},"duration":0.6,"ease":"power2.out"}, 0.85);
+      tl.fromTo("#f2-c1-bar-1", {"scaleX":0}, {"scaleX":0.3,"duration":0.6,"ease":"power2.out"}, 0.85);
+      tl.fromTo("#f2-c1-pct-1", {"innerText":0}, {"innerText":30,"snap":{"innerText":1},"duration":0.6,"ease":"power2.out"}, 0.85);
+      tl.fromTo("#f2-c1-sel", {"opacity":0,"scale":1.03}, {"opacity":1,"scale":1,"duration":0.12,"ease":"power3.out"}, 1.12);
+      tl.fromTo("#f2-c1-sel", {"y":0}, {"y":72,"duration":0.12,"ease":"power3.out","immediateRender":false}, 1.3);
+      tl.fromTo("#f2-c1-sel", {"y":72}, {"y":0,"duration":0.12,"ease":"power3.out","immediateRender":false}, 1.48);
+      tl.fromTo("#f2-c1-ping", {"opacity":0.8,"scale":1}, {"opacity":0,"scale":1.035,"duration":0.4,"ease":"power2.out","immediateRender":false}, 1.62);
+      tl.fromTo("#f2-cam", {"x":180,"y":-130,"z":0}, {"x":180,"y":-129,"z":0,"duration":0.12,"ease":"power3.in","immediateRender":false}, 1.9);
+      tl.fromTo("#f2-pitch", {"rotationX":5}, {"rotationX":4.8,"duration":0.12,"ease":"power3.in","immediateRender":false}, 1.9);
+      tl.fromTo("#f2-yaw", {"rotationY":-6}, {"rotationY":-4.3,"duration":0.12,"ease":"power3.in","immediateRender":false}, 1.9);
+      tl.fromTo("#f2-world", {"x":-180,"y":84,"z":-150}, {"x":-409.33,"y":86.5,"z":-126.9,"duration":0.12,"ease":"power3.in","immediateRender":false}, 1.9);
+      tl.set("#f2-optics", {"filter":"url(#f2-mb)"}, 1.9);
+      tl.fromTo("#f2-mbg", {"attr":{"stdDeviation":"0 0"}}, {"attr":{"stdDeviation":"22 0"},"duration":0.12,"ease":"power3.in","immediateRender":false}, 1.9);
+      tl.fromTo("#f2-p-models", {"--f2-dof":3,"--f2-dim":0.55}, {"--f2-dof":8,"--f2-dim":0.45,"duration":0.5,"ease":"power2.in","immediateRender":false}, 1.9);
+      tl.fromTo("#f2-card-0", {"opacity":1}, {"opacity":0.4,"duration":0.4,"ease":"power2.in","immediateRender":false}, 1.9);
+      tl.set("#f2-p-fb", {"visibility":"visible"}, 1.933);
+      tl.fromTo("#f2-kick-strip", {"y":0}, {"y":-26,"duration":0.5,"ease":"back.out(1.4)"}, 1.96);
+      tl.fromTo("#f2-p-spend", {"--f2-dof":8,"--f2-dim":0.5}, {"--f2-dof":0,"--f2-dim":1,"duration":0.38,"ease":"power2.out"}, 2);
+      tl.fromTo("#f2-rail-strip", {"y":0}, {"y":-80,"duration":0.5,"ease":"back.out(1.4)"}, 2);
+      tl.fromTo("#f2-cam", {"x":180,"y":-129,"z":0}, {"x":180,"y":-122.5,"z":0,"duration":0.1,"ease":"none","immediateRender":false}, 2.02);
+      tl.fromTo("#f2-pitch", {"rotationX":4.8}, {"rotationX":3.5,"duration":0.1,"ease":"none","immediateRender":false}, 2.02);
+      tl.fromTo("#f2-yaw", {"rotationY":-4.3}, {"rotationY":6.75,"duration":0.1,"ease":"none","immediateRender":false}, 2.02);
+      tl.fromTo("#f2-world", {"x":-409.33,"y":86.5,"z":-126.9}, {"x":-1899.96,"y":102.75,"z":23.22,"duration":0.1,"ease":"none","immediateRender":false}, 2.02);
+      tl.fromTo("#f2-cam", {"x":180,"y":-122.5,"z":0}, {"x":180,"y":-120,"z":0,"duration":0.35,"ease":"power4.out","immediateRender":false}, 2.12);
+      tl.fromTo("#f2-pitch", {"rotationX":3.5}, {"rotationX":3,"duration":0.35,"ease":"power4.out","immediateRender":false}, 2.12);
+      tl.fromTo("#f2-yaw", {"rotationY":6.75}, {"rotationY":11,"duration":0.35,"ease":"power4.out","immediateRender":false}, 2.12);
+      tl.fromTo("#f2-world", {"x":-1899.96,"y":102.75,"z":23.22}, {"x":-2473.28,"y":109,"z":80.96,"duration":0.35,"ease":"power4.out","immediateRender":false}, 2.12);
+      tl.fromTo("#f2-mbg", {"attr":{"stdDeviation":"22 0"}}, {"attr":{"stdDeviation":"0 0"},"duration":0.35,"ease":"power4.out","immediateRender":false}, 2.12);
+      tl.set("#f2-p-models", {"visibility":"hidden"}, 2.233);
+      tl.set("#f2-p-fa", {"visibility":"hidden"}, 2.233);
+      tl.fromTo("#f2-hl-1", {"opacity":0,"scale":1.04}, {"opacity":1,"scale":1,"duration":0.12,"ease":"power2.out"}, 2.25);
+      tl.set("#f2-ghost-1", {"opacity":1}, 2.32);
+      tl.fromTo("#f2-ghost-1", {"z":2,"scale":1}, {"z":30,"scale":1.015,"duration":0.15,"ease":"power2.out"}, 2.32);
+      tl.set("#f2-card-1", {"x":-264,"y":261.09,"z":36,"scale":1.458,"clipPath":"inset(28.05px 0px 190.05px 0px round 16px)"}, 2.33);
+      tl.fromTo("#f2-card-1", {"opacity":0}, {"opacity":1,"duration":0.08,"ease":"power1.out"}, 2.35);
+      tl.set("#f2-p-fc", {"visibility":"hidden"}, 2.367);
+      tl.fromTo("#f2-p-spend", {"--f2-dof":0,"--f2-dim":1}, {"--f2-dof":3,"--f2-dim":0.55,"duration":0.45,"ease":"power2.out","immediateRender":false}, 2.38);
+      tl.fromTo("#f2-cast-1", {"opacity":0}, {"opacity":1,"duration":0.45,"ease":"power2.out"}, 2.38);
+      tl.fromTo("#f2-card-1", {"x":-264,"y":261.09,"z":36,"scale":1.458,"clipPath":"inset(28.05px 0px 190.05px 0px round 16px)"}, {"x":0,"y":0,"z":150,"scale":1,"clipPath":"inset(0px 0px 0px 0px round 16px)","duration":0.45,"ease":"power3.out","immediateRender":false}, 2.38);
+      tl.fromTo("#f2-drift", {"x":-6,"y":4,"z":8,"rotationY":0.35}, {"x":5,"y":-3,"z":0,"rotationY":-0.3,"duration":1.35,"ease":"sine.inOut","immediateRender":false}, 2.4);
+      tl.fromTo("#f2-ghost-1", {"opacity":1}, {"opacity":0,"duration":0.12,"ease":"none","immediateRender":false}, 2.4);
+      tl.fromTo("#f2-hl-1", {"opacity":1}, {"opacity":0,"duration":0.2,"ease":"power1.in","immediateRender":false}, 2.45);
+      tl.set("#f2-optics", {"filter":"none"}, 2.47);
+      tl.fromTo("#f2-c2-amt", {"innerText":0}, {"innerText":132,"snap":{"innerText":1},"duration":0.85,"ease":"power2.out"}, 2.55);
+      tl.fromTo("#f2-c2-fill", {"scaleX":0}, {"scaleX":0.88,"duration":0.85,"ease":"power2.out"}, 2.55);
+      tl.set("#f2-c2-fpri", {"opacity":1}, 2.62);
+      tl.fromTo("#f2-c2-status", {"y":0}, {"y":-32,"duration":0.39,"ease":"back.out(1.4)"}, 2.62);
+      tl.set("#f2-c2-fwarn", {"opacity":1}, 3.018);
+      tl.fromTo("#f2-c2-status", {"y":-32}, {"y":-64,"duration":0.4,"ease":"back.out(1.4)","immediateRender":false}, 3.018);
+      tl.fromTo("#f2-c2-warnbg", {"opacity":0}, {"opacity":1,"duration":0.15,"ease":"none"}, 3.018);
+      tl.fromTo("#f2-c2-ping", {"opacity":0.9,"scale":1}, {"opacity":0,"scale":1.25,"duration":0.45,"ease":"power2.out","immediateRender":false}, 3.018);
+      tl.set("#f2-p-fc", {"visibility":"visible"}, 3.7);
+      tl.fromTo("#f2-cam", {"x":180,"y":-120}, {"x":170,"y":-120,"duration":0.7,"ease":"power2.inOut","immediateRender":false}, 3.75);
+      tl.fromTo("#f2-pitch", {"rotationX":3}, {"rotationX":6,"duration":0.7,"ease":"power2.inOut","immediateRender":false}, 3.75);
+      tl.fromTo("#f2-yaw", {"rotationY":11}, {"rotationY":-10,"duration":0.7,"ease":"power2.inOut","immediateRender":false}, 3.75);
+      tl.fromTo("#f2-world", {"x":-2473.28,"y":109,"z":80.96}, {"x":-1387.39,"y":-1787,"z":1165.74,"duration":0.7,"ease":"power2.inOut","immediateRender":false}, 3.75);
+      tl.fromTo("#f2-cam", {"z":0}, {"z":-650,"duration":0.35,"ease":"sine.inOut","immediateRender":false}, 3.75);
+      tl.set("#f2-optics", {"filter":"url(#f2-mb)"}, 3.75);
+      tl.fromTo("#f2-mbg", {"attr":{"stdDeviation":"0 0"}}, {"attr":{"stdDeviation":"4 14"},"duration":0.35,"ease":"sine.inOut","immediateRender":false}, 3.75);
+      tl.fromTo("#f2-p-spend", {"--f2-dof":3,"--f2-dim":0.55}, {"--f2-dof":8,"--f2-dim":0.45,"duration":0.5,"ease":"power2.in","immediateRender":false}, 3.75);
+      tl.fromTo("#f2-card-1", {"opacity":1}, {"opacity":0.4,"duration":0.4,"ease":"power2.in","immediateRender":false}, 3.75);
+      tl.fromTo("#f2-kick-strip", {"y":-26}, {"y":-52,"duration":0.5,"ease":"back.out(1.4)","immediateRender":false}, 3.91);
+      tl.set("#f2-p-models", {"visibility":"visible"}, 3.933);
+      tl.fromTo("#f2-p-guard", {"--f2-dof":8,"--f2-dim":0.5}, {"--f2-dof":0,"--f2-dim":1,"duration":0.43,"ease":"power2.out"}, 3.95);
+      tl.fromTo("#f2-rail-strip", {"y":-80}, {"y":-160,"duration":0.5,"ease":"back.out(1.4)","immediateRender":false}, 3.95);
+      tl.set("#f2-p-fa", {"visibility":"visible"}, 3.967);
+      tl.fromTo("#f2-cam", {"z":-650}, {"z":0,"duration":0.35,"ease":"sine.inOut","immediateRender":false}, 4.1);
+      tl.fromTo("#f2-mbg", {"attr":{"stdDeviation":"4 14"}}, {"attr":{"stdDeviation":"0 0"},"duration":0.35,"ease":"sine.inOut","immediateRender":false}, 4.1);
+      tl.set("#f2-p-models", {"visibility":"hidden"}, 4.233);
+      tl.set("#f2-p-spend", {"visibility":"hidden"}, 4.233);
+      tl.fromTo("#f2-hl-2", {"opacity":0,"scale":1.04}, {"opacity":1,"scale":1,"duration":0.12,"ease":"power2.out"}, 4.25);
+      tl.set("#f2-ghost-2", {"opacity":1}, 4.32);
+      tl.fromTo("#f2-ghost-2", {"z":2,"scale":1}, {"z":30,"scale":1.015,"duration":0.15,"ease":"power2.out"}, 4.32);
+      tl.set("#f2-card-2", {"x":248,"y":-157.3,"z":36,"scale":0.458,"clipPath":"inset(13.76px 0px 13.76px 0px round 16px)"}, 4.33);
+      tl.fromTo("#f2-card-2", {"opacity":0}, {"opacity":1,"duration":0.08,"ease":"power1.out"}, 4.35);
+      tl.fromTo("#f2-p-guard", {"--f2-dof":0,"--f2-dim":1}, {"--f2-dof":3,"--f2-dim":0.55,"duration":0.45,"ease":"power2.out","immediateRender":false}, 4.38);
+      tl.fromTo("#f2-cast-2", {"opacity":0}, {"opacity":1,"duration":0.45,"ease":"power2.out"}, 4.38);
+      tl.fromTo("#f2-card-2", {"x":248,"y":-157.3,"z":36,"scale":0.458,"clipPath":"inset(13.76px 0px 13.76px 0px round 16px)"}, {"x":0,"y":0,"z":150,"scale":1,"clipPath":"inset(0px 0px 0px 0px round 16px)","duration":0.45,"ease":"power3.out","immediateRender":false}, 4.38);
+      tl.fromTo("#f2-drift", {"x":5,"y":-3,"z":0,"rotationY":-0.3}, {"x":-4,"y":5,"z":8,"rotationY":0.3,"duration":1.55,"ease":"sine.inOut","immediateRender":false}, 4.4);
+      tl.fromTo("#f2-ghost-2", {"opacity":1}, {"opacity":0,"duration":0.12,"ease":"none","immediateRender":false}, 4.4);
+      tl.set("#f2-p-fa", {"visibility":"hidden"}, 4.433);
+      tl.set("#f2-p-fb", {"visibility":"hidden"}, 4.433);
+      tl.set("#f2-optics", {"filter":"none"}, 4.45);
+      tl.fromTo("#f2-hl-2", {"opacity":1}, {"opacity":0,"duration":0.2,"ease":"power1.in","immediateRender":false}, 4.45);
+      tl.fromTo("#f2-k0o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.72);
+      tl.fromTo("#f2-k1o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.732);
+      tl.fromTo("#f2-k2o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.744);
+      tl.fromTo("#f2-k3o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.756);
+      tl.fromTo("#f2-c3-bred", {"opacity":1}, {"opacity":0,"duration":0.45,"ease":"power1.inOut"}, 4.76);
+      tl.fromTo("#f2-c3-bwave", {"opacity":0}, {"opacity":1,"duration":0.45,"ease":"power1.inOut"}, 4.76);
+      tl.fromTo("#f2-k4o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.768);
+      tl.fromTo("#f2-k5o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.78);
+      tl.fromTo("#f2-k6o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.792);
+      tl.fromTo("#f2-k7o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.804);
+      tl.fromTo("#f2-k8o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.816);
+      tl.set("#f2-k0o", {"opacity":0}, 4.82);
+      tl.set("#f2-k0a", {"opacity":1}, 4.82);
+      tl.fromTo("#f2-k9o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.828);
+      tl.set("#f2-k1o", {"opacity":0}, 4.832);
+      tl.set("#f2-k1a", {"opacity":1}, 4.832);
+      tl.fromTo("#f2-k10o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.84);
+      tl.set("#f2-k2o", {"opacity":0}, 4.844);
+      tl.set("#f2-k2a", {"opacity":1}, 4.844);
+      tl.fromTo("#f2-k11o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.852);
+      tl.set("#f2-k3o", {"opacity":0}, 4.856);
+      tl.set("#f2-k3a", {"opacity":1}, 4.856);
+      tl.fromTo("#f2-k12o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.864);
+      tl.set("#f2-k4o", {"opacity":0}, 4.868);
+      tl.set("#f2-k4a", {"opacity":1}, 4.868);
+      tl.fromTo("#f2-k13o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.876);
+      tl.set("#f2-k0a", {"opacity":0}, 4.88);
+      tl.set("#f2-k0b", {"opacity":1}, 4.88);
+      tl.set("#f2-k5o", {"opacity":0}, 4.88);
+      tl.set("#f2-k5a", {"opacity":1}, 4.88);
+      tl.fromTo("#f2-k14o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.888);
+      tl.set("#f2-k1a", {"opacity":0}, 4.892);
+      tl.set("#f2-k1b", {"opacity":1}, 4.892);
+      tl.set("#f2-k6o", {"opacity":0}, 4.892);
+      tl.set("#f2-k6a", {"opacity":1}, 4.892);
+      tl.fromTo("#f2-k15o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.9);
+      tl.set("#f2-k2a", {"opacity":0}, 4.904);
+      tl.set("#f2-k2b", {"opacity":1}, 4.904);
+      tl.set("#f2-k7o", {"opacity":0}, 4.904);
+      tl.set("#f2-k7a", {"opacity":1}, 4.904);
+      tl.fromTo("#f2-k16o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.912);
+      tl.set("#f2-k3a", {"opacity":0}, 4.916);
+      tl.set("#f2-k3b", {"opacity":1}, 4.916);
+      tl.set("#f2-k8o", {"opacity":0}, 4.916);
+      tl.set("#f2-k8a", {"opacity":1}, 4.916);
+      tl.fromTo("#f2-k17o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.924);
+      tl.set("#f2-k4a", {"opacity":0}, 4.928);
+      tl.set("#f2-k4b", {"opacity":1}, 4.928);
+      tl.set("#f2-k9o", {"opacity":0}, 4.928);
+      tl.set("#f2-k9a", {"opacity":1}, 4.928);
+      tl.fromTo("#f2-k18o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.936);
+      tl.set("#f2-k0b", {"opacity":0}, 4.94);
+      tl.set("#f2-k0n", {"opacity":1}, 4.94);
+      tl.fromTo("#f2-k0n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 4.94);
+      tl.set("#f2-k5a", {"opacity":0}, 4.94);
+      tl.set("#f2-k5b", {"opacity":1}, 4.94);
+      tl.set("#f2-k10o", {"opacity":0}, 4.94);
+      tl.set("#f2-k10a", {"opacity":1}, 4.94);
+      tl.fromTo("#f2-k19o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.948);
+      tl.set("#f2-k1b", {"opacity":0}, 4.952);
+      tl.set("#f2-k1n", {"opacity":1}, 4.952);
+      tl.fromTo("#f2-k1n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 4.952);
+      tl.set("#f2-k6a", {"opacity":0}, 4.952);
+      tl.set("#f2-k6b", {"opacity":1}, 4.952);
+      tl.set("#f2-k11o", {"opacity":0}, 4.952);
+      tl.set("#f2-k11a", {"opacity":1}, 4.952);
+      tl.fromTo("#f2-k20o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.96);
+      tl.set("#f2-k2b", {"opacity":0}, 4.964);
+      tl.set("#f2-k2n", {"opacity":1}, 4.964);
+      tl.fromTo("#f2-k2n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 4.964);
+      tl.set("#f2-k7a", {"opacity":0}, 4.964);
+      tl.set("#f2-k7b", {"opacity":1}, 4.964);
+      tl.set("#f2-k12o", {"opacity":0}, 4.964);
+      tl.set("#f2-k12a", {"opacity":1}, 4.964);
+      tl.fromTo("#f2-k21o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.972);
+      tl.set("#f2-k3b", {"opacity":0}, 4.976);
+      tl.set("#f2-k3n", {"opacity":1}, 4.976);
+      tl.fromTo("#f2-k3n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 4.976);
+      tl.set("#f2-k8a", {"opacity":0}, 4.976);
+      tl.set("#f2-k8b", {"opacity":1}, 4.976);
+      tl.set("#f2-k13o", {"opacity":0}, 4.976);
+      tl.set("#f2-k13a", {"opacity":1}, 4.976);
+      tl.fromTo("#f2-k22o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.984);
+      tl.set("#f2-k4b", {"opacity":0}, 4.988);
+      tl.set("#f2-k4n", {"opacity":1}, 4.988);
+      tl.fromTo("#f2-k4n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 4.988);
+      tl.set("#f2-k9a", {"opacity":0}, 4.988);
+      tl.set("#f2-k9b", {"opacity":1}, 4.988);
+      tl.set("#f2-k14o", {"opacity":0}, 4.988);
+      tl.set("#f2-k14a", {"opacity":1}, 4.988);
+      tl.fromTo("#f2-k23o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 4.996);
+      tl.set("#f2-k5b", {"opacity":0}, 5);
+      tl.set("#f2-k5n", {"opacity":1}, 5);
+      tl.fromTo("#f2-k5n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5);
+      tl.set("#f2-k10a", {"opacity":0}, 5);
+      tl.set("#f2-k10b", {"opacity":1}, 5);
+      tl.set("#f2-k15o", {"opacity":0}, 5);
+      tl.set("#f2-k15a", {"opacity":1}, 5);
+      tl.fromTo("#f2-k24o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 5.008);
+      tl.set("#f2-k6b", {"opacity":0}, 5.012);
+      tl.set("#f2-k6n", {"opacity":1}, 5.012);
+      tl.fromTo("#f2-k6n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.012);
+      tl.set("#f2-k11a", {"opacity":0}, 5.012);
+      tl.set("#f2-k11b", {"opacity":1}, 5.012);
+      tl.set("#f2-k16o", {"opacity":0}, 5.012);
+      tl.set("#f2-k16a", {"opacity":1}, 5.012);
+      tl.fromTo("#f2-k25o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 5.02);
+      tl.set("#f2-k7b", {"opacity":0}, 5.024);
+      tl.set("#f2-k7n", {"opacity":1}, 5.024);
+      tl.fromTo("#f2-k7n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.024);
+      tl.set("#f2-k12a", {"opacity":0}, 5.024);
+      tl.set("#f2-k12b", {"opacity":1}, 5.024);
+      tl.set("#f2-k17o", {"opacity":0}, 5.024);
+      tl.set("#f2-k17a", {"opacity":1}, 5.024);
+      tl.fromTo("#f2-k26o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 5.032);
+      tl.set("#f2-k8b", {"opacity":0}, 5.036);
+      tl.set("#f2-k8n", {"opacity":1}, 5.036);
+      tl.fromTo("#f2-k8n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.036);
+      tl.set("#f2-k13a", {"opacity":0}, 5.036);
+      tl.set("#f2-k13b", {"opacity":1}, 5.036);
+      tl.set("#f2-k18o", {"opacity":0}, 5.036);
+      tl.set("#f2-k18a", {"opacity":1}, 5.036);
+      tl.fromTo("#f2-k27o", {"rotationX":0}, {"rotationX":90,"duration":0.1,"ease":"power2.in"}, 5.044);
+      tl.set("#f2-k9b", {"opacity":0}, 5.048);
+      tl.set("#f2-k9n", {"opacity":1}, 5.048);
+      tl.fromTo("#f2-k9n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.048);
+      tl.set("#f2-k14a", {"opacity":0}, 5.048);
+      tl.set("#f2-k14b", {"opacity":1}, 5.048);
+      tl.set("#f2-k19o", {"opacity":0}, 5.048);
+      tl.set("#f2-k19a", {"opacity":1}, 5.048);
+      tl.set("#f2-k10b", {"opacity":0}, 5.06);
+      tl.set("#f2-k10n", {"opacity":1}, 5.06);
+      tl.fromTo("#f2-k10n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.06);
+      tl.set("#f2-k15a", {"opacity":0}, 5.06);
+      tl.set("#f2-k15b", {"opacity":1}, 5.06);
+      tl.set("#f2-k20o", {"opacity":0}, 5.06);
+      tl.set("#f2-k20a", {"opacity":1}, 5.06);
+      tl.set("#f2-k11b", {"opacity":0}, 5.072);
+      tl.set("#f2-k11n", {"opacity":1}, 5.072);
+      tl.fromTo("#f2-k11n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.072);
+      tl.set("#f2-k16a", {"opacity":0}, 5.072);
+      tl.set("#f2-k16b", {"opacity":1}, 5.072);
+      tl.set("#f2-k21o", {"opacity":0}, 5.072);
+      tl.set("#f2-k21a", {"opacity":1}, 5.072);
+      tl.set("#f2-k12b", {"opacity":0}, 5.084);
+      tl.set("#f2-k12n", {"opacity":1}, 5.084);
+      tl.fromTo("#f2-k12n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.084);
+      tl.set("#f2-k17a", {"opacity":0}, 5.084);
+      tl.set("#f2-k17b", {"opacity":1}, 5.084);
+      tl.set("#f2-k22o", {"opacity":0}, 5.084);
+      tl.set("#f2-k22a", {"opacity":1}, 5.084);
+      tl.set("#f2-k13b", {"opacity":0}, 5.096);
+      tl.set("#f2-k13n", {"opacity":1}, 5.096);
+      tl.fromTo("#f2-k13n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.096);
+      tl.set("#f2-k18a", {"opacity":0}, 5.096);
+      tl.set("#f2-k18b", {"opacity":1}, 5.096);
+      tl.set("#f2-k23o", {"opacity":0}, 5.096);
+      tl.set("#f2-k23a", {"opacity":1}, 5.096);
+      tl.set("#f2-k14b", {"opacity":0}, 5.108);
+      tl.set("#f2-k14n", {"opacity":1}, 5.108);
+      tl.fromTo("#f2-k14n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.108);
+      tl.set("#f2-k19a", {"opacity":0}, 5.108);
+      tl.set("#f2-k19b", {"opacity":1}, 5.108);
+      tl.set("#f2-k24o", {"opacity":0}, 5.108);
+      tl.set("#f2-k24a", {"opacity":1}, 5.108);
+      tl.set("#f2-k15b", {"opacity":0}, 5.12);
+      tl.set("#f2-k15n", {"opacity":1}, 5.12);
+      tl.fromTo("#f2-k15n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.12);
+      tl.set("#f2-k20a", {"opacity":0}, 5.12);
+      tl.set("#f2-k20b", {"opacity":1}, 5.12);
+      tl.set("#f2-k25o", {"opacity":0}, 5.12);
+      tl.set("#f2-k25a", {"opacity":1}, 5.12);
+      tl.set("#f2-k16b", {"opacity":0}, 5.132);
+      tl.set("#f2-k16n", {"opacity":1}, 5.132);
+      tl.fromTo("#f2-k16n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.132);
+      tl.set("#f2-k21a", {"opacity":0}, 5.132);
+      tl.set("#f2-k21b", {"opacity":1}, 5.132);
+      tl.set("#f2-k26o", {"opacity":0}, 5.132);
+      tl.set("#f2-k26a", {"opacity":1}, 5.132);
+      tl.set("#f2-k17b", {"opacity":0}, 5.144);
+      tl.set("#f2-k17n", {"opacity":1}, 5.144);
+      tl.fromTo("#f2-k17n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.144);
+      tl.set("#f2-k22a", {"opacity":0}, 5.144);
+      tl.set("#f2-k22b", {"opacity":1}, 5.144);
+      tl.set("#f2-k27o", {"opacity":0}, 5.144);
+      tl.set("#f2-k27a", {"opacity":1}, 5.144);
+      tl.set("#f2-k18b", {"opacity":0}, 5.156);
+      tl.set("#f2-k18n", {"opacity":1}, 5.156);
+      tl.fromTo("#f2-k18n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.156);
+      tl.set("#f2-k23a", {"opacity":0}, 5.156);
+      tl.set("#f2-k23b", {"opacity":1}, 5.156);
+      tl.set("#f2-k19b", {"opacity":0}, 5.168);
+      tl.set("#f2-k19n", {"opacity":1}, 5.168);
+      tl.fromTo("#f2-k19n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.168);
+      tl.set("#f2-k24a", {"opacity":0}, 5.168);
+      tl.set("#f2-k24b", {"opacity":1}, 5.168);
+      tl.set("#f2-k20b", {"opacity":0}, 5.18);
+      tl.set("#f2-k20n", {"opacity":1}, 5.18);
+      tl.fromTo("#f2-k20n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.18);
+      tl.set("#f2-k25a", {"opacity":0}, 5.18);
+      tl.set("#f2-k25b", {"opacity":1}, 5.18);
+      tl.set("#f2-k21b", {"opacity":0}, 5.192);
+      tl.set("#f2-k21n", {"opacity":1}, 5.192);
+      tl.fromTo("#f2-k21n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.192);
+      tl.set("#f2-k26a", {"opacity":0}, 5.192);
+      tl.set("#f2-k26b", {"opacity":1}, 5.192);
+      tl.set("#f2-k22b", {"opacity":0}, 5.204);
+      tl.set("#f2-k22n", {"opacity":1}, 5.204);
+      tl.fromTo("#f2-k22n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.204);
+      tl.set("#f2-k27a", {"opacity":0}, 5.204);
+      tl.set("#f2-k27b", {"opacity":1}, 5.204);
+      tl.set("#f2-k23b", {"opacity":0}, 5.216);
+      tl.set("#f2-k23n", {"opacity":1}, 5.216);
+      tl.fromTo("#f2-k23n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.216);
+      tl.set("#f2-k24b", {"opacity":0}, 5.228);
+      tl.set("#f2-k24n", {"opacity":1}, 5.228);
+      tl.fromTo("#f2-k24n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.228);
+      tl.set("#f2-k25b", {"opacity":0}, 5.24);
+      tl.set("#f2-k25n", {"opacity":1}, 5.24);
+      tl.fromTo("#f2-k25n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.24);
+      tl.set("#f2-k26b", {"opacity":0}, 5.252);
+      tl.set("#f2-k26n", {"opacity":1}, 5.252);
+      tl.fromTo("#f2-k26n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.252);
+      tl.set("#f2-k27b", {"opacity":0}, 5.264);
+      tl.set("#f2-k27n", {"opacity":1}, 5.264);
+      tl.fromTo("#f2-k27n", {"rotationX":-90}, {"rotationX":0,"duration":0.12,"ease":"power3.out"}, 5.264);
+      tl.fromTo("#f2-c3-p0", {"opacity":0,"y":14}, {"opacity":1,"y":0,"duration":0.4,"ease":"power3.out"}, 5.3);
+      tl.fromTo("#f2-c3-p1", {"opacity":0,"y":14}, {"opacity":1,"y":0,"duration":0.4,"ease":"power3.out"}, 5.36);
+      tl.fromTo("#f2-c3-p2", {"opacity":0,"y":14}, {"opacity":1,"y":0,"duration":0.4,"ease":"power3.out"}, 5.42);
+      tl.set("#f2-p-fb", {"visibility":"visible"}, 5.9);
+      tl.fromTo("#f2-cam", {"x":170,"y":-120,"z":0}, {"x":170,"y":-130,"z":0,"duration":0.55,"ease":"power4.out","immediateRender":false}, 5.95);
+      tl.fromTo("#f2-pitch", {"rotationX":6}, {"rotationX":4,"duration":0.55,"ease":"power4.out","immediateRender":false}, 5.95);
+      tl.fromTo("#f2-yaw", {"rotationY":-10}, {"rotationY":9,"duration":0.55,"ease":"power4.out","immediateRender":false}, 5.95);
+      tl.fromTo("#f2-world", {"x":-1387.39,"y":-1787,"z":1165.74}, {"x":-3076.2,"y":-2495,"z":2434.01,"duration":0.55,"ease":"power4.out","immediateRender":false}, 5.95);
+      tl.set("#f2-optics", {"filter":"url(#f2-mb)"}, 5.95);
+      tl.fromTo("#f2-mbg", {"attr":{"stdDeviation":"0 0"}}, {"attr":{"stdDeviation":"14 14"},"duration":0.1,"ease":"power2.in","immediateRender":false}, 5.95);
+      tl.fromTo("#f2-p-guard", {"--f2-dof":3,"--f2-dim":0.55}, {"--f2-dof":8,"--f2-dim":0.45,"duration":0.4,"ease":"power2.in","immediateRender":false}, 5.95);
+      tl.fromTo("#f2-chip-0", {"x":-148.4,"y":45.5,"z":420,"rotationX":18,"rotationY":-40,"rotation":6}, {"x":-134.4,"y":36.5,"z":420,"rotationX":14.4,"rotationY":-34,"rotation":6,"duration":0.509,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-chip-1", {"x":704.13,"y":260.4,"z":360,"rotationX":-25,"rotationY":53,"rotation":-11}, {"x":690.13,"y":251.4,"z":360,"rotationX":-20,"rotationY":45.05,"rotation":-11,"duration":0.579,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-chip-2", {"x":-165.03,"y":369.76,"z":400,"rotationX":32,"rotationY":-40,"rotation":16}, {"x":-151.03,"y":360.76,"z":400,"rotationX":25.6,"rotationY":-34,"rotation":16,"duration":0.649,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-chip-3", {"x":542.29,"y":-16.05,"z":380,"rotationX":-22,"rotationY":53,"rotation":-9}, {"x":528.29,"y":-25.05,"z":380,"rotationX":-17.6,"rotationY":45.05,"rotation":-9,"duration":0.719,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-chip-4", {"x":683.87,"y":103.36,"z":300,"rotationX":29,"rotationY":-40,"rotation":14}, {"x":669.87,"y":94.36,"z":300,"rotationX":23.2,"rotationY":-34,"rotation":14,"duration":0.999,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-chip-5", {"x":-433.83,"y":136.82,"z":240,"rotationX":-19,"rotationY":53,"rotation":-7}, {"x":-447.83,"y":127.82,"z":240,"rotationX":-15.2,"rotationY":45.05,"rotation":-7,"duration":0.569,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-chip-6", {"x":221.35,"y":433.06,"z":420,"rotationX":26,"rotationY":-40,"rotation":12}, {"x":235.35,"y":424.06,"z":420,"rotationX":20.8,"rotationY":-34,"rotation":12,"duration":0.604,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-chip-7", {"x":186.45,"y":-152.14,"z":160,"rotationX":-33,"rotationY":53,"rotation":-17}, {"x":172.45,"y":-161.14,"z":160,"rotationX":-26.4,"rotationY":45.05,"rotation":-17,"duration":0.639,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-chip-8", {"x":-456.4,"y":287.55,"z":200,"rotationX":23,"rotationY":-40,"rotation":10}, {"x":-442.4,"y":278.55,"z":200,"rotationX":18.4,"rotationY":-34,"rotation":10,"duration":0.674,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-chip-9", {"x":758.99,"y":407.73,"z":320,"rotationX":-30,"rotationY":53,"rotation":-15}, {"x":744.99,"y":398.73,"z":320,"rotationX":-24,"rotationY":45.05,"rotation":-15,"duration":0.709,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-chip-10", {"x":567.11,"y":533.04,"z":260,"rotationX":20,"rotationY":-40,"rotation":8}, {"x":581.11,"y":524.04,"z":260,"rotationX":16,"rotationY":-34,"rotation":8,"duration":0.744,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-chip-11", {"x":55.72,"y":524.56,"z":120,"rotationX":-27,"rotationY":53,"rotation":-13}, {"x":41.72,"y":515.56,"z":120,"rotationX":-21.6,"rotationY":45.05,"rotation":-13,"duration":0.779,"ease":"none"}, 5.95);
+      tl.fromTo("#f2-card-2", {"opacity":1}, {"opacity":0.4,"duration":0.4,"ease":"power2.in","immediateRender":false}, 5.95);
+      tl.fromTo("#f2-p-mcp", {"--f2-dof":8,"--f2-dim":0.5}, {"--f2-dof":0,"--f2-dim":1,"duration":0.36,"ease":"power2.out"}, 5.98);
+      tl.fromTo("#f2-chip-0", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 5.98);
+      tl.fromTo("#f2-chip-1", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 5.995);
+      tl.fromTo("#f2-kick-strip", {"y":-52}, {"y":-78,"duration":0.5,"ease":"back.out(1.4)","immediateRender":false}, 6.01);
+      tl.fromTo("#f2-chip-2", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 6.01);
+      tl.fromTo("#f2-chip-3", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 6.025);
+      tl.fromTo("#f2-chip-4", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 6.04);
+      tl.fromTo("#f2-mbg", {"attr":{"stdDeviation":"14 14"}}, {"attr":{"stdDeviation":"0 0"},"duration":0.45,"ease":"power3.out","immediateRender":false}, 6.05);
+      tl.fromTo("#f2-rail-strip", {"y":-160}, {"y":-240,"duration":0.5,"ease":"back.out(1.4)","immediateRender":false}, 6.05);
+      tl.fromTo("#f2-chip-5", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 6.055);
+      tl.fromTo("#f2-chip-6", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 6.07);
+      tl.fromTo("#f2-chip-7", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 6.085);
+      tl.fromTo("#f2-chip-8", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 6.1);
+      tl.fromTo("#f2-chip-9", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 6.115);
+      tl.fromTo("#f2-chip-10", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 6.13);
+      tl.set("#f2-p-fc", {"visibility":"hidden"}, 6.133);
+      tl.fromTo("#f2-chip-11", {"opacity":0}, {"opacity":1,"duration":0.25,"ease":"none","immediateRender":false}, 6.145);
+      tl.set("#f2-p-guard", {"visibility":"hidden"}, 6.167);
+      tl.set("#f2-p-fb", {"visibility":"hidden"}, 6.2);
+      tl.fromTo("#f2-p-mcp", {"--f2-dof":0,"--f2-dim":1}, {"--f2-dof":3,"--f2-dim":0.55,"duration":0.45,"ease":"power2.out","immediateRender":false}, 6.36);
+      tl.fromTo("#f2-cast-3", {"opacity":0}, {"opacity":1,"duration":0.5,"ease":"power2.out"}, 6.36);
+      tl.fromTo("#f2-card-3", {"opacity":0,"y":28,"z":150,"scale":0.97}, {"opacity":1,"y":0,"z":150,"scale":1,"duration":0.5,"ease":"power3.out"}, 6.36);
+      tl.fromTo("#f2-drift", {"x":-4,"y":5,"z":8,"rotationY":0.3}, {"x":6,"y":-4,"z":0,"rotationY":-0.25,"duration":1.55,"ease":"sine.inOut","immediateRender":false}, 6.45);
+      tl.fromTo("#f2-chip-0", {"x":-134.4,"y":36.5,"z":420,"rotationX":14.4,"rotationY":-34,"rotation":6}, {"x":38,"y":119,"z":152,"rotationX":0,"rotationY":0,"rotation":0,"duration":0.6,"ease":"power3.out","immediateRender":false}, 6.46);
+      tl.set("#f2-optics", {"filter":"none"}, 6.5);
+      tl.fromTo("#f2-chip-5", {"x":-447.83,"y":127.82,"z":240,"rotationX":-15.2,"rotationY":45.05,"rotation":-7,"scale":1}, {"x":-505.8,"y":125.65,"z":12,"rotationY":58.565,"scale":0.9,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.52);
+      tl.fromTo("#f2-chip-5", {"opacity":1}, {"opacity":0,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.52);
+      tl.fromTo("#f2-chip-1", {"x":690.13,"y":251.4,"z":360,"rotationX":-20,"rotationY":45.05,"rotation":-11}, {"x":408,"y":119,"z":152,"rotationX":0,"rotationY":0,"rotation":0,"duration":0.6,"ease":"power3.out","immediateRender":false}, 6.53);
+      tl.fromTo("#f2-chip-6", {"x":235.35,"y":424.06,"z":420,"rotationX":20.8,"rotationY":-34,"rotation":12,"scale":1}, {"x":235.06,"y":445.58,"z":160,"rotationY":-44.2,"scale":0.9,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.555);
+      tl.fromTo("#f2-chip-6", {"opacity":1}, {"opacity":0,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.555);
+      tl.fromTo("#f2-chip-7", {"x":172.45,"y":-161.14,"z":160,"rotationX":-26.4,"rotationY":45.05,"rotation":-17,"scale":1}, {"x":161.94,"y":-186.43,"z":12,"rotationY":58.565,"scale":0.9,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.59);
+      tl.fromTo("#f2-chip-7", {"opacity":1}, {"opacity":0,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.59);
+      tl.fromTo("#f2-chip-2", {"x":-151.03,"y":360.76,"z":400,"rotationX":25.6,"rotationY":-34,"rotation":16}, {"x":38,"y":193,"z":152,"rotationX":0,"rotationY":0,"rotation":0,"duration":0.6,"ease":"power3.out","immediateRender":false}, 6.6);
+      tl.fromTo("#f2-chip-8", {"x":-442.4,"y":278.55,"z":200,"rotationX":18.4,"rotationY":-34,"rotation":10,"scale":1}, {"x":-498.64,"y":288.43,"z":12,"rotationY":-44.2,"scale":0.9,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.625);
+      tl.fromTo("#f2-chip-8", {"opacity":1}, {"opacity":0,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.625);
+      tl.fromTo("#f2-chip-9", {"x":744.99,"y":398.73,"z":320,"rotationX":-24,"rotationY":45.05,"rotation":-15,"scale":1}, {"x":782.88,"y":418.23,"z":60,"rotationY":58.565,"scale":0.9,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.66);
+      tl.fromTo("#f2-chip-9", {"opacity":1}, {"opacity":0,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.66);
+      tl.fromTo("#f2-chip-3", {"x":528.29,"y":-25.05,"z":380,"rotationX":-17.6,"rotationY":45.05,"rotation":-9}, {"x":408,"y":193,"z":152,"rotationX":0,"rotationY":0,"rotation":0,"duration":0.6,"ease":"power3.out","immediateRender":false}, 6.67);
+      tl.fromTo("#f2-chip-10", {"x":581.11,"y":524.04,"z":260,"rotationX":16,"rotationY":-34,"rotation":8,"scale":1}, {"x":606.32,"y":553.56,"z":12,"rotationY":-44.2,"scale":0.9,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.695);
+      tl.fromTo("#f2-chip-10", {"opacity":1}, {"opacity":0,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.695);
+      tl.fromTo("#f2-chip-11", {"x":41.72,"y":515.56,"z":120,"rotationX":-21.6,"rotationY":45.05,"rotation":-13,"scale":1}, {"x":21.19,"y":544.4,"z":12,"rotationY":58.565,"scale":0.9,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.73);
+      tl.fromTo("#f2-chip-11", {"opacity":1}, {"opacity":0,"duration":0.6,"ease":"power2.in","immediateRender":false}, 6.73);
+      tl.fromTo("#f2-c4-n", {"y":0}, {"y":-22,"duration":0.06,"ease":"power2.out"}, 6.74);
+      tl.fromTo("#f2-c4-n", {"y":-22}, {"y":-44,"duration":0.06,"ease":"power2.out","immediateRender":false}, 6.81);
+      tl.fromTo("#f2-c4-n", {"y":-44}, {"y":-66,"duration":0.06,"ease":"power2.out","immediateRender":false}, 6.88);
+      tl.fromTo("#f2-c4-n", {"y":-66}, {"y":-88,"duration":0.06,"ease":"power2.out","immediateRender":false}, 6.95);
+      tl.fromTo("#f2-chip-4", {"x":669.87,"y":94.36,"z":300,"rotationX":23.2,"rotationY":-34,"rotation":14}, {"x":430,"y":-128,"z":236,"rotationX":0,"rotationY":0,"rotation":0,"duration":0.3,"ease":"power3.out","immediateRender":false}, 6.95);
+      tl.fromTo("#f2-chip-red", {"opacity":0}, {"opacity":1,"duration":0.12,"ease":"none"}, 7.19);
+      tl.fromTo("#f2-c4-flash", {"opacity":0}, {"opacity":1,"duration":0.08,"ease":"none"}, 7.2);
+      tl.fromTo("#f2-deny", {"opacity":0,"y":10}, {"opacity":1,"y":0,"duration":0.4,"ease":"power3.out"}, 7.22);
+      tl.fromTo("#f2-chip-4", {"x":430}, {"x":442,"duration":0.055,"ease":"sine.inOut","immediateRender":false}, 7.25);
+      tl.fromTo("#f2-c4-flash", {"opacity":1}, {"opacity":0,"duration":0.4,"ease":"power2.out","immediateRender":false}, 7.28);
+      tl.fromTo("#f2-pack", {"opacity":0,"y":10}, {"opacity":1,"y":0,"duration":0.4,"ease":"power3.out"}, 7.28);
+      tl.fromTo("#f2-chip-4", {"x":442}, {"x":421,"duration":0.055,"ease":"sine.inOut","immediateRender":false}, 7.305);
+      tl.fromTo("#f2-chip-4", {"x":421}, {"x":435,"duration":0.055,"ease":"sine.inOut","immediateRender":false}, 7.36);
+      tl.fromTo("#f2-chip-4", {"x":435}, {"x":430,"duration":0.055,"ease":"sine.inOut","immediateRender":false}, 7.415);
+      tl.fromTo("#f2-chip-4", {"x":430,"y":-128,"z":236,"rotationX":0,"rotationY":0,"rotation":0}, {"x":860,"y":-470,"z":120,"rotationX":-48,"rotationY":20,"rotation":26,"duration":0.5,"ease":"power2.in","immediateRender":false}, 7.62);
+      tl.fromTo("#f2-chip-4", {"opacity":1}, {"opacity":0,"duration":0.5,"ease":"power2.in","immediateRender":false}, 7.62);
+      tl.fromTo("#f2-cam", {"z":0}, {"z":420,"duration":0.4,"ease":"power2.in","immediateRender":false}, 8);
+      tl.set("#f2-optics", {"filter":"url(#f2-mb)"}, 8);
+      tl.fromTo("#f2-mbg", {"attr":{"stdDeviation":"0 0"}}, {"attr":{"stdDeviation":"24 24"},"duration":0.4,"ease":"power2.in","immediateRender":false}, 8);
+      tl.fromTo("#f2-p-mcp", {"--f2-dof":3,"--f2-dim":0.55}, {"--f2-dof":8,"--f2-dim":0.45,"duration":0.4,"ease":"power2.in","immediateRender":false}, 8);
+      tl.fromTo("#f2-kicker", {"opacity":1}, {"opacity":0,"duration":0.25,"ease":"power1.in"}, 8.05);
+
+      tl.set({}, {}, 8.4);
+      window.__timelines['f2-flight'] = tl;
+    })();
+  </script>
+</template>

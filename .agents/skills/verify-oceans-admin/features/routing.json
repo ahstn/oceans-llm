@@ -57,6 +57,12 @@
       ]
     },
     {
+      "reason": "HyperFrames marketing videos; rendered offline, no admin or gateway runtime surface",
+      "paths": [
+        "videos/**"
+      ]
+    },
+    {
       "reason": "agent harness and repository wiring",
       "paths": [
         ".claude/skills/**",
