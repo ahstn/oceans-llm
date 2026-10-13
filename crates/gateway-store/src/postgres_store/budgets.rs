@@ -34,6 +34,29 @@ impl BudgetRepository for PostgresStore {
         super::budget_batch::sum_usage_cost_by_budget_scope(self, windows).await
     }
 
+    async fn get_active_budget_increase(
+        &self,
+        budget_id: Uuid,
+        at: OffsetDateTime,
+    ) -> Result<Option<gateway_core::BudgetIncreaseRecord>, StoreError> {
+        super::budget_increases::get_active_budget_increase(self, budget_id, at).await
+    }
+
+    async fn list_active_budget_increases(
+        &self,
+        at: OffsetDateTime,
+    ) -> Result<Vec<gateway_core::BudgetIncreaseRecord>, StoreError> {
+        super::budget_increases::list_active_budget_increases(self, at).await
+    }
+
+    async fn create_budget_increase(
+        &self,
+        increase: &gateway_core::BudgetIncreaseRecord,
+        basis: &gateway_core::BudgetIncreaseBasis,
+    ) -> Result<(), StoreError> {
+        super::budget_increases::create_budget_increase(self, increase, basis).await
+    }
+
     async fn get_active_budget_by_scope(
         &self,
         scope: &BudgetScope,

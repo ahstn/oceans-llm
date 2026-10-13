@@ -17,6 +17,22 @@ const sharedPages = [
   'service_accounts',
 ]
 
+// Team admins also get Spend Controls by default, scoped to their own team. The stack
+// leaves agent analysis off for team admins, so `agent_sessions` is filtered out.
+const teamAdminPages = [
+  'api_keys',
+  'models',
+  'usage_costs',
+  'spend_controls',
+  'leaderboard',
+  'agent_harnesses',
+  'request_logs',
+  'mcp_invocations',
+  'teams',
+  'users',
+  'service_accounts',
+]
+
 const userActions = ['create_api_key', 'update_api_key', 'revoke_api_key']
 const teamAdminActions = [...userActions, 'reveal_api_key']
 
@@ -324,7 +340,7 @@ async function expectSessionPermissions(
   }
   expect(body.data.permissions).toEqual({
     group,
-    pages: sharedPages,
+    pages: group === 'team_admins' ? teamAdminPages : sharedPages,
     actions: group === 'team_admins' ? teamAdminActions : userActions,
     default_page: 'usage_costs',
   })

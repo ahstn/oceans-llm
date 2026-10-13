@@ -861,6 +861,29 @@ impl BudgetRepository for AnyStore {
         )
     }
 
+    async fn get_active_budget_increase(
+        &self,
+        budget_id: uuid::Uuid,
+        at: OffsetDateTime,
+    ) -> Result<Option<gateway_core::BudgetIncreaseRecord>, StoreError> {
+        dispatch_store!(self, get_active_budget_increase(budget_id, at))
+    }
+
+    async fn list_active_budget_increases(
+        &self,
+        at: OffsetDateTime,
+    ) -> Result<Vec<gateway_core::BudgetIncreaseRecord>, StoreError> {
+        dispatch_store!(self, list_active_budget_increases(at))
+    }
+
+    async fn create_budget_increase(
+        &self,
+        increase: &gateway_core::BudgetIncreaseRecord,
+        basis: &gateway_core::BudgetIncreaseBasis,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, create_budget_increase(increase, basis))
+    }
+
     async fn get_usage_ledger_by_request_and_scope(
         &self,
         request_id: &str,

@@ -19,7 +19,10 @@ use crate::{
         ProviderBatchRequest, ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchState,
         ProviderBatchSubmission,
     },
-    budgets::{BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource},
+    budgets::{
+        BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetRecord, BudgetScope, BudgetScopeKind,
+        BudgetSettings, BudgetSource,
+    },
     domain::{
         ApiKeyModelGrantMode, ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
         BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord,
@@ -455,6 +458,42 @@ pub trait BudgetRepository: Send + Sync {
         source: &BudgetSource,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
+    /// The increase applied to `budget_id` at `at`, if any. Supersession takes effect
+    /// from its own timestamp, so an earlier `at` still sees the increase it replaced. Repositories without
+    /// increase storage report none so enforcement falls back to the base limit.
+    async fn get_active_budget_increase(
+        &self,
+        budget_id: Uuid,
+        at: OffsetDateTime,
+    ) -> Result<Option<BudgetIncreaseRecord>, StoreError> {
+        let _ = (budget_id, at);
+        Ok(None)
+    }
+    async fn list_active_budget_increases(
+        &self,
+        at: OffsetDateTime,
+    ) -> Result<Vec<BudgetIncreaseRecord>, StoreError> {
+        let _ = at;
+        Err(StoreError::Unexpected(
+            "list_active_budget_increases is not implemented for this repository".to_string(),
+        ))
+    }
+    /// Supersede any increase still active for the budget at `increase.starts_at`,
+    /// then insert `increase`, in one transaction serialized per budget.
+    ///
+    /// `basis` is what the caller checked eligibility against. If the budget is no longer
+    /// active, its settings changed, or a different increase is active by the time the
+    /// budget is locked, nothing is written and `StoreError::Conflict` is returned.
+    async fn create_budget_increase(
+        &self,
+        increase: &BudgetIncreaseRecord,
+        basis: &BudgetIncreaseBasis,
+    ) -> Result<(), StoreError> {
+        let _ = (increase, basis);
+        Err(StoreError::Unexpected(
+            "create_budget_increase is not implemented for this repository".to_string(),
+        ))
+    }
     async fn get_usage_ledger_by_request_and_scope(
         &self,
         request_id: &str,

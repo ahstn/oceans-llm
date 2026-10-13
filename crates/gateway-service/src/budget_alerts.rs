@@ -11,7 +11,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::budget_scopes::applicable_budget_scopes;
+use crate::budget_scopes::{applicable_budget_scopes, effective_budget_limit};
 
 pub const BUDGET_ALERT_THRESHOLD_BPS: i32 = 2_000;
 
@@ -120,11 +120,16 @@ where
                     )
                 })?;
             let owner = self.resolve_budget_owner(&budget).await?;
+            let budget_amount = if alert_possible_against_base(&budget, spent_after) {
+                effective_budget_limit(self.repo.as_ref(), &budget, ledger.occurred_at).await?
+            } else {
+                budget.settings.amount_usd
+            };
             self.create_alert_if_needed(AlertEvaluation {
                 owner,
                 budget_id: budget.budget_id,
                 cadence: budget.settings.cadence,
-                budget_amount: budget.settings.amount_usd,
+                budget_amount,
                 occurred_at: ledger.occurred_at,
                 spent_before,
                 spent_after,
@@ -142,11 +147,12 @@ where
         occurred_at: OffsetDateTime,
     ) -> Result<(), GatewayError> {
         let owner = self.resolve_budget_owner(budget).await?;
+        let budget_amount = effective_budget_limit(self.repo.as_ref(), budget, occurred_at).await?;
         self.create_alert_if_needed(AlertEvaluation {
             owner,
             budget_id: budget.budget_id,
             cadence: budget.settings.cadence,
-            budget_amount: budget.settings.amount_usd,
+            budget_amount,
             occurred_at,
             spent_before: current_spend,
             spent_after: current_spend,
@@ -425,10 +431,57 @@ fn render_budget_alert_email(task: &BudgetAlertDispatchTask) -> Result<String, G
     ))
 }
 
+/// Whether `spent` reaches the alert threshold against the base budget. An increase only
+/// raises the limit, so when this is false no alert can fire and the increase lookup is skipped.
+fn alert_possible_against_base(budget: &BudgetRecord, spent: Money4) -> bool {
+    let base = budget.settings.amount_usd;
+    is_at_or_below_threshold(remaining_budget_floor_zero(base, spent), base)
+}
+
 #[cfg(test)]
 mod tests {
-    use gateway_core::{BudgetModelSelector, BudgetScope};
+    use gateway_core::{
+        BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetScope, BudgetSettings,
+        BudgetSource, Money4,
+    };
+    use time::OffsetDateTime;
     use uuid::Uuid;
+
+    use super::alert_possible_against_base;
+
+    #[test]
+    fn alert_is_only_possible_once_spend_reaches_the_base_threshold() {
+        let scope = BudgetScope::User {
+            user_id: Uuid::new_v4(),
+        };
+        let budget = BudgetRecord {
+            budget_id: Uuid::new_v4(),
+            scope_key: scope.scope_key(),
+            scope,
+            settings: BudgetSettings {
+                cadence: BudgetCadence::Monthly,
+                amount_usd: Money4::from_scaled(1_000_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            source: BudgetSource::manual(),
+            is_active: true,
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+        };
+        assert!(!alert_possible_against_base(
+            &budget,
+            Money4::from_scaled(790_000)
+        ));
+        assert!(alert_possible_against_base(
+            &budget,
+            Money4::from_scaled(800_000)
+        ));
+        assert!(alert_possible_against_base(
+            &budget,
+            Money4::from_scaled(1_200_000)
+        ));
+    }
 
     #[test]
     fn user_model_scope_keys_are_canonical() {

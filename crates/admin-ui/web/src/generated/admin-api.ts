@@ -884,6 +884,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/spend/budgets/increases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_budget_increase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/spend/focus.csv": {
         parameters: {
             query?: never;
@@ -2637,6 +2653,19 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        /**
+         * @description How long a budget increase lasts from the moment it is created.
+         * @enum {string}
+         */
+        BudgetIncreasePeriod: "end_of_month" | "seven_days";
+        BudgetIncreaseView: {
+            amount_usd: string;
+            /** Format: int64 */
+            amount_usd_10000: number;
+            budget_increase_id: string;
+            expires_at: string;
+            starts_at: string;
+        };
         BudgetScopeRequest: components["schemas"]["BudgetUserScopeRequest"] | components["schemas"]["BudgetServiceAccountScopeRequest"] | components["schemas"]["BudgetUserModelByModelScopeRequest"] | components["schemas"]["BudgetUserModelByUpstreamModelScopeRequest"];
         BudgetScopeView: components["schemas"]["BudgetUserScopeView"] | components["schemas"]["BudgetServiceAccountScopeView"] | components["schemas"]["BudgetUserModelByModelScopeView"] | components["schemas"]["BudgetUserModelByUpstreamModelScopeView"];
         /** @enum {string} */
@@ -2748,6 +2777,22 @@ export interface components {
         CreateBatchRequestItem: {
             body: unknown;
             custom_id: string;
+        };
+        CreateBudgetIncreaseRequest: {
+            /** @description Amount added to the base budget, at most three times the base amount. */
+            amount_usd: string;
+            period: components["schemas"]["BudgetIncreasePeriod"];
+            user_id: string;
+        };
+        CreateBudgetIncreaseResultView: {
+            budget: components["schemas"]["BudgetSettingsView"];
+            budget_id: string;
+            /** Format: int64 */
+            current_window_spend_usd_10000: number;
+            /** Format: int64 */
+            effective_amount_usd_10000: number;
+            increase: components["schemas"]["BudgetIncreaseView"];
+            user_id: string;
         };
         CreateMcpServerRequest: {
             auth_config?: {
@@ -3009,6 +3054,19 @@ export interface components {
             data: {
                 api_key: components["schemas"]["AdminApiKeyView"];
                 raw_key: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_CreateBudgetIncreaseResultView: {
+            data: {
+                budget: components["schemas"]["BudgetSettingsView"];
+                budget_id: string;
+                /** Format: int64 */
+                current_window_spend_usd_10000: number;
+                /** Format: int64 */
+                effective_amount_usd_10000: number;
+                increase: components["schemas"]["BudgetIncreaseView"];
+                user_id: string;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -3809,6 +3867,7 @@ export interface components {
             status: string;
         };
         MyProfileBudgetView: {
+            active_increase?: null | components["schemas"]["BudgetIncreaseView"];
             period_end: string;
             /** @description Current budget period; spend resets at `period_end`. */
             period_start: string;
@@ -4341,6 +4400,7 @@ export interface components {
             user_id: string;
         };
         SpendBudgetUserView: {
+            active_increase?: null | components["schemas"]["BudgetIncreaseView"];
             alert_email_ready: boolean;
             alert_recipient_summary: string;
             budget?: null | components["schemas"]["BudgetSettingsView"];
@@ -6380,6 +6440,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_DeactivateBudgetResultView"];
+                };
+            };
+        };
+    };
+    create_budget_increase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBudgetIncreaseRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_CreateBudgetIncreaseResultView"];
                 };
             };
         };

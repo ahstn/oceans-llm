@@ -221,7 +221,8 @@ export type BudgetStatus = {
 
 export function budgetStatus(budget: MyProfileBudgetView): BudgetStatus {
   const spent = budget.spent_usd_10000
-  const limit = budget.settings.amount_usd_10000
+  // Matches enforcement: an active temporary increase is added to the budget.
+  const limit = budget.settings.amount_usd_10000 + (budget.active_increase?.amount_usd_10000 ?? 0)
   const ratio = limit > 0 ? spent / limit : 0
   return {
     spent,

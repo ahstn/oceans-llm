@@ -314,6 +314,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V55__request_log_invoked_distinct_tool_count.sql"
         ),
     },
+    MigrationManifest {
+        version: 56,
+        name: "budget_increases",
+        checksum: "V56__budget_increases.sql",
+        libsql_sql: include_str!("../migrations/V56__budget_increases.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V56__budget_increases.sql"),
+    },
 ];
 
 #[cfg(test)]

@@ -432,7 +432,13 @@
         "crates/gateway/src/http/spend_budget_listing.rs",
         "crates/gateway-service/src/budget_*.rs",
         "crates/gateway-store/src/libsql_store/budget*.rs",
-        "crates/gateway-store/src/budget_batch.rs"
+        "crates/gateway-store/src/budget_batch.rs",
+        "crates/gateway/src/http/spend_budget_increases.rs",
+        "crates/gateway/src/http/spend_budget_increases/**",
+        "crates/gateway/src/local_demo_seed/budget_pressure.rs",
+        "crates/gateway-store/src/budget_increases.rs",
+        "crates/gateway-store/src/postgres_store/budget*.rs",
+        "crates/gateway-store/migrations/**/V56__budget_increases.sql"
       ]
     },
     {

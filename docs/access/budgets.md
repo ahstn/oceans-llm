@@ -78,24 +78,29 @@ Deactivating an inherited budget through the admin API or UI is also a manual ov
 
 ## Configure In The Admin UI
 
-Open `/admin/spend-controls`.
+Open `/admin/spend-controls`. A summary strip at the top shows total spend against budgets, how many owners have a budget, and how many are over budget or near their limit. Below it, the Budgets card has one tab per budget scope:
 
-The page has three budget sections:
+- `Users`: user budgets, one row per user
+- `Service accounts`: service-account budgets
+- `Model budgets`: user model budgets
 
-- User Budgets
-- Service Account Budgets
-- User Model Budgets
+![Spend Controls Users tab, with usage bars, status badges, and the Increase budget, Configure, and Remove row actions](../public/images/spend-controls-budgets.png)
 
-Use User Budgets for normal human access. Choose the user, cadence, amount, timezone, and whether the budget is hard or soft.
+Each row shows the budget amount, cadence, hard-limit flag, and source. The usage bar fills against the effective limit, which includes any active [temporary increase](#temporary-budget-increases). Status reads `On track`, `Near limit`, `Over budget`, or `No budget`.
 
-Use Service Account Budgets before activating automation credentials. Choose the service account and the same budget controls. Active service-account API keys require this budget.
+The `Users` tab has a search box, filters, and a sort order. By default, the `Hide quiet users` filter is on and the list is sorted by spend, from high to low.
 
-Use User Model Budgets when one user needs a lower or separate limit for a specific model. Choose the user, then choose either:
+Use `Configure` on a row to create or edit that budget. Choose the cadence, amount, timezone, and whether the budget is hard or soft. Use `Remove` to deactivate it.
 
-- a gateway model from the model selector, when the gateway model id is known
-- the exact trimmed upstream model name only for fallback cases where no gateway model id is available
+- Use the `Users` tab for normal human access.
+- Use the `Service accounts` tab before activating automation credentials. Active service-account API keys require this budget.
+- Use the `Model budgets` tab when one user needs a lower or separate limit for a specific model. Under `Add model budget`, choose the user, then choose either:
+  - a gateway model from the model selector, when the gateway model id is known
+  - the exact trimmed upstream model name, only as a fallback when no gateway model id is available
 
-Then set cadence, amount, timezone, and hard-limit behavior.
+  Then set the cadence, amount, timezone, and hard-limit behavior.
+
+The `Alert history` card below the budgets lists recent threshold alerts and their delivery outcomes.
 
 ## Configure With The Admin API
 
@@ -312,6 +317,40 @@ Spend reporting and export live outside the budget setup page:
 - `GET /api/v1/admin/spend/report`
 - `GET /api/v1/admin/spend/focus.csv`
 - `GET /api/v1/me/spend/focus.csv`
+
+## Temporary Budget Increases
+
+A user budget can be raised for a limited time, without editing the budget, once spend is within 15% of the limit.
+
+- Who: platform admins for any user, and team owners or admins for members of their own team.
+- When: current-window spend is at least 85% of the effective limit. Users already over their limit qualify.
+- How much: more than `0` and at most 3× the base budget. The UI offers prefills at 50%, 100%, 150%, and 200% of the base budget.
+- How long: until the end of the calendar month in UTC (the default), or for 7 days.
+
+The increase adds to the base budget for both hard-limit enforcement and threshold alerts. Each budget has at most one active increase. A new increase supersedes the current one; it does not stack on top of it. If another admin increases, edits or removes the same budget while your dialog is open, your request is rejected so you can reload and check the new limit. Increases cannot be revoked. Each increase stays in effect until it expires or a newer increase supersedes it.
+
+In `/admin/spend-controls`, every user row has an `Increase budget` button. It is enabled only when both the threshold and the permission rules are met. Otherwise it stays disabled, and a tooltip explains why. The button opens a dialog where the admin picks the period and the amount:
+
+![Increase budget dialog with End of month and 7 days periods, prefill buttons at 50% to 200% of the budget, and the 3x cap](../public/images/spend-controls-increase-dialog.png)
+
+After the increase is saved, the row shows a `+$75.00 until Oct 19` badge, and the usage bar measures against the raised limit. The user's budget meter on `/admin/profile` also uses the raised limit and notes the increase and its last day.
+
+Team admins see a read-only version of the page that is limited to their own team. There they can increase budgets but cannot configure or remove them:
+
+![Spend Controls as a Research team admin, showing only Research members and no Configure or Remove actions](../public/images/spend-controls-team-admin.png)
+
+```bash
+curl -sS -X POST "$OCEANS_BASE_URL/api/v1/admin/spend/budgets/increases" \
+  -H "content-type: application/json" \
+  -H "cookie: $OCEANS_ADMIN_SESSION_COOKIE" \
+  --data '{
+    "user_id": "00000000-0000-0000-0000-000000000000",
+    "amount_usd": "75.0000",
+    "period": "end_of_month"
+  }'
+```
+
+`period` is `end_of_month` or `seven_days`. The budget list returns each user's active increase as `active_increase`.
 
 ## Embedding Spend
 

@@ -16,6 +16,7 @@ mod any_store_review_agent;
 mod any_store_routing;
 mod any_store_skills;
 mod budget_batch;
+mod budget_increases;
 mod libsql_store;
 mod migrate;
 mod migration_registry;
@@ -42,6 +43,9 @@ pub(crate) use migrate::{MigrationTestHook, run_migrations_with_options_for_test
 
 #[cfg(test)]
 mod agent_analysis_tests;
+
+#[cfg(test)]
+mod budget_increase_tests;
 
 #[cfg(test)]
 mod budget_reconciliation_tests;

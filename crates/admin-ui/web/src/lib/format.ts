@@ -21,3 +21,14 @@ const PRECISE_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
 export function formatUsd10000Precise(amountUsd10000: number) {
   return PRECISE_CURRENCY_FORMATTER.format(amountUsd10000 / 10_000)
 }
+
+const EXPIRY_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+})
+
+/** The last day a temporary budget increase is in effect; expiry is the exclusive boundary. */
+export function formatIncreaseLastDay(expiresAt: Date | string) {
+  return EXPIRY_FORMATTER.format(new Date(new Date(expiresAt).getTime() - 1))
+}

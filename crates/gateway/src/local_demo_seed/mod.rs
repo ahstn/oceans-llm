@@ -18,6 +18,7 @@ use uuid::Uuid;
 mod agent_analysis;
 mod agent_session_fixtures;
 mod api_keys;
+mod budget_pressure;
 mod history;
 mod models;
 mod teams;
@@ -251,6 +252,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
     let demo_request_ids = local_demo_request_fixtures()
         .map(|fixture| fixture.request_id.to_string())
         .chain(history::history_request_ids())
+        .chain(budget_pressure::budget_pressure_request_ids())
         .collect::<Vec<_>>();
     store
         .delete_request_logs_by_request_ids(&demo_request_ids)
@@ -525,6 +527,10 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
         .get("locdemoalice1")
         .ok_or_else(|| anyhow::anyhow!("missing Alice demo API key for batch seed"))?;
     seed_demo_batches(store, user_batch_key, now).await?;
+
+    // Last, so the top-ups account for every other row in the current budget window.
+    budget_pressure::seed_demo_budget_pressure(store, &api_keys, &user_team_ids, &model_ids, now)
+        .await?;
 
     Ok(raw_keys)
 }
@@ -942,10 +948,10 @@ fn pricing_provider_id_for_demo_provider(provider_key: &str) -> Option<&'static 
 #[cfg(test)]
 mod tests {
     use gateway_core::{
-        AgentSessionTraceRepository, AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4,
-        ProviderCapabilities, RouteCompatibility, SeedApiKey, SeedBudget, SeedModel,
-        SeedModelRoute, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
-        hash_gateway_key_secret,
+        AgentSessionTraceRepository, AuthMode, BudgetCadence, BudgetScope, GlobalRole,
+        MembershipRole, Money4, ProviderCapabilities, RouteCompatibility, SeedApiKey, SeedBudget,
+        SeedModel, SeedModelRoute, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+        SeedUserMembership, hash_gateway_key_secret,
     };
     use gateway_service::{GatewayService, WeightedRoutePlanner};
     use gateway_store::{AnyStore, StoreConnectionOptions};
@@ -1101,6 +1107,80 @@ mod tests {
             demo_agent_harness(seven_day_fixtures[0]),
             ("mastra/1.0.0 (local demo)", "mastra", "Mastra")
         );
+    }
+
+    #[tokio::test]
+    async fn budget_pressure_tops_up_spend_to_each_target_on_every_reseed() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let options = StoreConnectionOptions::Libsql {
+            path: directory.path().join("gateway.db"),
+        };
+        crate::maybe_run_migrations(&options, true)
+            .await
+            .expect("migrations");
+        let store = AnyStore::connect(&options).await.expect("store");
+        let mut prerequisites = demo_seed_prerequisites();
+        for user in &mut prerequisites.users {
+            if budget_pressure::BUDGET_PRESSURE_TARGETS
+                .iter()
+                .any(|target| target.email == user.email)
+            {
+                user.budget = Some(SeedBudget {
+                    cadence: BudgetCadence::Monthly,
+                    amount_usd: Money4::from_scaled(1_500_000),
+                    hard_limit: true,
+                    timezone: "UTC".to_string(),
+                });
+            }
+        }
+        store
+            .seed_from_inputs(
+                &prerequisites.providers,
+                &prerequisites.models,
+                &prerequisites.api_keys,
+                &prerequisites.service_accounts,
+                &[],
+                &[],
+                &prerequisites.teams,
+                &prerequisites.users,
+            )
+            .await
+            .expect("seed config");
+        seed_local_demo_data(&store).await.expect("seed demo data");
+        seed_local_demo_data(&store)
+            .await
+            .expect("reseed demo data");
+
+        let now = OffsetDateTime::now_utc();
+        for target in budget_pressure::BUDGET_PRESSURE_TARGETS {
+            let user = store
+                .get_user_by_email_normalized(target.email)
+                .await
+                .expect("load user")
+                .expect("user");
+            let budget = store
+                .get_active_budget_by_scope(&BudgetScope::User {
+                    user_id: user.user_id,
+                })
+                .await
+                .expect("load budget")
+                .expect("budget");
+            let window = gateway_core::budget_window_utc(budget.settings.cadence, now);
+            let spent = store
+                .sum_usage_cost_for_budget_scope_in_window(
+                    &budget.scope,
+                    window.period_start,
+                    window.observed_end,
+                )
+                .await
+                .expect("sum spend");
+            assert_eq!(
+                spent.as_scaled_i64(),
+                1_500_000 * target.percent_of_limit / 100,
+                "{}",
+                target.email
+            );
+        }
     }
 
     #[tokio::test]

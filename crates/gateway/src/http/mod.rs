@@ -26,6 +26,7 @@ pub mod response_cache;
 pub mod review_agent;
 pub mod skills;
 pub mod spend;
+pub mod spend_budget_increases;
 mod spend_budget_listing;
 pub mod state;
 #[cfg(test)]
@@ -47,7 +48,7 @@ use tower_http::{
 use self::{
     api_keys::*, batches::*, guardrails::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*,
     mcp_registry::*, models::*, observability::*, profile::*, provider_credentials::*,
-    review_agent::*, spend::*, state::AppState,
+    review_agent::*, spend::*, spend_budget_increases::*, state::AppState,
 };
 
 pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
@@ -234,6 +235,10 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/spend/budgets/deactivate",
             post(deactivate_budget),
+        )
+        .route(
+            "/api/v1/admin/spend/budgets/increases",
+            post(create_budget_increase),
         )
         .route(
             "/api/v1/admin/spend/budget-alerts",

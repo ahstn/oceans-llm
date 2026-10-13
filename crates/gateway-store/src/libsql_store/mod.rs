@@ -3,6 +3,7 @@ mod api_keys;
 mod batches;
 mod budget_alerts;
 mod budget_batch;
+mod budget_increases;
 mod budgets;
 mod guardrail_decisions;
 mod identity;

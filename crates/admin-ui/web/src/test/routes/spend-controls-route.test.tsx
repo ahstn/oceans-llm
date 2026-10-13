@@ -1,6 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TooltipProvider } from '@/components/ui/tooltip'
+import {
+  amountInputValue,
+  increaseExpiresAt,
+  increasePresets,
+  validateIncreaseAmount,
+} from '@/routes/spend-controls/-budget-increase-model'
+
 import {
   INHERITED_BUDGET_WARNING,
   INVALID_BUDGET_AMOUNT_MESSAGE,
@@ -8,11 +16,13 @@ import {
 } from '@/routes/spend-controls/-budget-model'
 import { USER_PAGE_SIZE } from '@/routes/spend-controls/-user-list'
 import { SpendControlsPage } from '@/routes/spend-controls'
-import type { SpendBudgetUserView, SpendBudgetsView } from '@/types/api'
+import type { AuthSessionView, SpendBudgetUserView, SpendBudgetsView } from '@/types/api'
+import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 
-const { routeMock, saveBudgetMock, toastErrorMock } = vi.hoisted(() => ({
-  routeMock: { useLoaderData: vi.fn() },
+const { routeMock, saveBudgetMock, increaseBudgetMock, toastErrorMock } = vi.hoisted(() => ({
+  routeMock: { useLoaderData: vi.fn(), useRouteContext: vi.fn() },
   saveBudgetMock: vi.fn(),
+  increaseBudgetMock: vi.fn(),
   toastErrorMock: vi.fn(),
 }))
 
@@ -34,6 +44,7 @@ vi.mock('@/server/admin-data.functions', () => ({
   getBudgetAlertHistory: vi.fn(),
   getModels: vi.fn(),
   getSpendBudgets: vi.fn(),
+  increaseBudget: (...args: unknown[]) => increaseBudgetMock(...args),
   removeBudget: vi.fn(),
   saveBudget: (...args: unknown[]) => saveBudgetMock(...args),
 }))
@@ -54,6 +65,7 @@ function user(index: number, overrides: Partial<SpendBudgetUserView> = {}): Spen
     budget: null,
     budget_source: null,
     current_window_spend_usd_10000: 0,
+    active_increase: null,
     alert_email_ready: true,
     alert_recipient_summary: `user${index}@example.com`,
     ...overrides,
@@ -172,13 +184,60 @@ const models = [
   },
 ]
 
-function renderPage(data: SpendBudgetsView = budgets) {
+function renderPage(
+  data: SpendBudgetsView = budgets,
+  session: AuthSessionView = platformAdminSession(),
+) {
+  const isPlatformAdmin = session.user.global_role === 'platform_admin'
   routeMock.useLoaderData.mockReturnValue({
     budgets: { data },
-    alerts: { data: { items: [], page: 1, page_size: 10, total: 0 } },
+    alerts: isPlatformAdmin ? { data: { items: [], page: 1, page_size: 10, total: 0 } } : null,
     models,
   })
-  render(<SpendControlsPage />)
+  routeMock.useRouteContext.mockReturnValue({ session })
+  render(
+    <TooltipProvider>
+      <SpendControlsPage />
+    </TooltipProvider>,
+  )
+}
+
+const monthlyHundred = {
+  cadence: 'monthly',
+  amount_usd: '100.0000',
+  amount_usd_10000: 1_000_000,
+  hard_limit: true,
+  timezone: 'UTC',
+}
+
+/** $90 of $100: inside the 15% increase window. */
+function nearLimitUser(index: number, overrides: Partial<SpendBudgetUserView> = {}) {
+  return user(index, {
+    name: `Near Limit ${index}`,
+    team_id: 'team-1',
+    team_name: 'Research',
+    budget: monthlyHundred,
+    budget_source: { kind: 'manual', key: null },
+    current_window_spend_usd_10000: 900_000,
+    ...overrides,
+  })
+}
+
+function teamAdminSession(): AuthSessionView {
+  return {
+    ...regularUserSession(['spend_controls']),
+    team_id: 'team-1',
+    team_role: 'admin',
+  }
+}
+
+function increaseButton(rowName: string) {
+  const row = screen.getByRole('row', { name: new RegExp(rowName) })
+  return within(row).getByRole('button', { name: 'Increase budget' })
+}
+
+function usersOnly(users: SpendBudgetUserView[]): SpendBudgetsView {
+  return { users, service_accounts: [], user_model_budgets: [] }
 }
 
 // Radix tabs activate on pointer down, not click.
@@ -211,7 +270,9 @@ describe('SpendControlsPage', () => {
       Element.prototype.scrollIntoView = () => {}
     }
     routeMock.useLoaderData.mockReset()
+    routeMock.useRouteContext.mockReset()
     saveBudgetMock.mockReset()
+    increaseBudgetMock.mockReset()
     toastErrorMock.mockReset()
   })
 
@@ -396,6 +457,142 @@ describe('SpendControlsPage', () => {
 
     expect(saveBudgetMock).not.toHaveBeenCalled()
     expect(toastErrorMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('budget increases', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+    routeMock.useLoaderData.mockReset()
+    routeMock.useRouteContext.mockReset()
+    increaseBudgetMock.mockReset()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('shows the button on every row but enables it only within 15% of the limit', () => {
+    const atThreshold = nearLimitUser(4, {
+      name: 'At Threshold',
+      current_window_spend_usd_10000: 850_000,
+    })
+    const overBudget = nearLimitUser(5, {
+      name: 'Over Budget',
+      current_window_spend_usd_10000: 1_200_000,
+    })
+    const underThreshold = nearLimitUser(6, {
+      name: 'Under Threshold',
+      current_window_spend_usd_10000: 840_000,
+    })
+    renderPage(usersOnly([atThreshold, overBudget, underThreshold, unbudgeted]))
+
+    expect(increaseButton('At Threshold')).toBeEnabled()
+    expect(increaseButton('Over Budget')).toBeEnabled()
+    expect(increaseButton('Under Threshold')).toBeDisabled()
+    expect(increaseButton('No Budget')).toBeDisabled()
+  })
+
+  it('lets team admins increase only their own team members, read-only otherwise', () => {
+    const ownTeam = nearLimitUser(4, { name: 'Own Team' })
+    const otherTeam = nearLimitUser(5, {
+      name: 'Other Team',
+      team_id: 'team-2',
+      team_name: 'Applied',
+    })
+    renderPage(usersOnly([ownTeam, otherTeam]), teamAdminSession())
+
+    expect(increaseButton('Own Team')).toBeEnabled()
+    expect(increaseButton('Other Team')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /Configure/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Alert history')).not.toBeInTheDocument()
+  })
+
+  it('keeps the button disabled for team members', () => {
+    renderPage(usersOnly([nearLimitUser(4, { name: 'Own Team' })]), regularUserSession())
+
+    expect(increaseButton('Own Team')).toBeDisabled()
+  })
+
+  it('prefills presets, caps the amount at 3x, and submits the chosen period', async () => {
+    increaseBudgetMock.mockResolvedValue({ data: {} })
+    renderPage(usersOnly([nearLimitUser(4, { name: 'Own Team' })]))
+
+    fireEvent.click(increaseButton('Own Team'))
+    const dialog = await screen.findByRole('dialog')
+    const presets = within(within(dialog).getByRole('group', { name: 'Prefill amount' }))
+      .getAllByRole('button')
+      .map((button) => button.textContent)
+    expect(presets).toEqual(['$50.00', '$100.00', '$150.00', '$200.00'])
+    expect(within(dialog).getByRole('radio', { name: 'End of month' })).toBeChecked()
+
+    const amount = within(dialog).getByLabelText('Increase amount (USD)')
+    fireEvent.change(amount, { target: { value: '300.01' } })
+    expect(within(dialog).getByText(/cannot exceed \$300\.00/)).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Increase budget' }))
+    expect(increaseBudgetMock).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Prefill 150% of the budget' }))
+    expect(amount).toHaveValue(150)
+    fireEvent.click(within(dialog).getByRole('radio', { name: '7 days' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Increase budget' }))
+
+    await waitFor(() =>
+      expect(increaseBudgetMock).toHaveBeenCalledWith({
+        data: { user_id: 'user_4', amount_usd: '150.0000', period: 'seven_days' },
+      }),
+    )
+  })
+
+  it('counts an active increase toward the limit and labels it', () => {
+    renderPage(
+      usersOnly([
+        nearLimitUser(4, {
+          name: 'Increased',
+          active_increase: {
+            budget_increase_id: 'increase_1',
+            amount_usd: '50.0000',
+            amount_usd_10000: 500_000,
+            starts_at: '2026-10-10T00:00:00Z',
+            expires_at: '2026-11-01T00:00:00Z',
+          },
+        }),
+      ]),
+    )
+
+    const row = screen.getByRole('row', { name: /Increased/ })
+    expect(within(row).getByText('+$50.00 until Oct 31')).toBeInTheDocument()
+    expect(within(row).getByText('of $150.00')).toBeInTheDocument()
+    // $90 of $150 is 60%: no longer inside the increase window.
+    expect(increaseButton('Increased')).toBeDisabled()
+  })
+})
+
+describe('budget increase model', () => {
+  it('derives presets and input values from the base budget', () => {
+    expect(increasePresets(1_500_000).map((preset) => preset.amount10000)).toEqual([
+      750_000, 1_500_000, 2_250_000, 3_000_000,
+    ])
+    expect(amountInputValue(750_000)).toBe('75')
+    expect(amountInputValue(1_125_000)).toBe('112.5')
+    expect(amountInputValue(1)).toBe('0.0001')
+  })
+
+  it('accepts up to three times the base budget', () => {
+    expect(validateIncreaseAmount('450', 1_500_000)).toEqual({
+      ok: true,
+      amountUsd: '450.0000',
+      amount10000: 4_500_000,
+    })
+    expect(validateIncreaseAmount('450.0001', 1_500_000).ok).toBe(false)
+    expect(validateIncreaseAmount('0', 1_500_000).ok).toBe(false)
+    expect(validateIncreaseAmount('-5', 1_500_000).ok).toBe(false)
+  })
+
+  it('expires at the next UTC month boundary or seven days out', () => {
+    const now = new Date('2026-12-15T18:30:00Z')
+    expect(increaseExpiresAt('end_of_month', now).toISOString()).toBe('2027-01-01T00:00:00.000Z')
+    expect(increaseExpiresAt('seven_days', now).toISOString()).toBe('2026-12-22T18:30:00.000Z')
   })
 })
 

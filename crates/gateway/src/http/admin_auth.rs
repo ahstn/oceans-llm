@@ -3,6 +3,7 @@ use gateway_core::{
     AuthError, GatewayError, GlobalRole, IdentityRepository, MembershipRole, UserRecord, UserStatus,
 };
 
+use crate::config::{AdminPage, AdminPermissionGroup};
 use crate::http::{error::AppError, identity::resolve_session_user, state::AppState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +35,37 @@ pub(crate) async fn require_admin_data_scope(
         return Err(insufficient_privileges());
     }
     Ok(AdminDataScope::Team(membership.team_id))
+}
+
+/// Spend Controls is open to platform admins and, when the `team_admins`
+/// permission group includes the page, to owners/admins of a team.
+/// Returns the actor so writes can record who made them.
+pub(crate) async fn require_spend_controls_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(UserRecord, AdminDataScope), AppError> {
+    let current_user = require_active_session(state, headers).await?;
+    if current_user.global_role == GlobalRole::PlatformAdmin {
+        return Ok((current_user, AdminDataScope::Platform));
+    }
+    let membership = state
+        .store
+        .get_team_membership_for_user(current_user.user_id)
+        .await?
+        .ok_or_else(insufficient_privileges)?;
+    let team_admin = matches!(
+        membership.role,
+        MembershipRole::Owner | MembershipRole::Admin
+    );
+    let page_granted = state
+        .admin_permissions
+        .for_group(AdminPermissionGroup::TeamAdmins)
+        .pages
+        .contains(&AdminPage::SpendControls);
+    if !(team_admin && page_granted) {
+        return Err(insufficient_privileges());
+    }
+    Ok((current_user, AdminDataScope::Team(membership.team_id)))
 }
 
 pub(crate) async fn require_agent_analysis_scope(

@@ -31,7 +31,8 @@ permissions:
       - revoke_api_key
     default_page: usage_costs
   team_admins:
-    pages: []
+    pages:
+      - spend_controls
     actions:
       - reveal_api_key
     default_page: usage_costs
@@ -189,6 +190,11 @@ users:
     membership:
       team: research
       role: member
+    budget:
+      cadence: monthly
+      amount_usd: "150.0000"
+      hard_limit: true
+      timezone: UTC
 
   - name: Faye Research Scientist
     email: faye@research.local
@@ -205,6 +211,11 @@ users:
     membership:
       team: research
       role: member
+    budget:
+      cadence: monthly
+      amount_usd: "200.0000"
+      hard_limit: true
+      timezone: UTC
 
   - name: Hugo Research Analyst
     email: hugo@research.local
@@ -245,6 +256,11 @@ users:
     membership:
       team: applied-ai
       role: member
+    budget:
+      cadence: monthly
+      amount_usd: "150.0000"
+      hard_limit: false
+      timezone: UTC
 
   - name: Heidi Applied Analyst
     email: heidi@applied.local
@@ -253,6 +269,11 @@ users:
     membership:
       team: applied-ai
       role: member
+    budget:
+      cadence: weekly
+      amount_usd: "40.0000"
+      hard_limit: true
+      timezone: UTC
 
   - name: Ivan Operations Lead
     email: ivan@operations.local
@@ -269,6 +290,11 @@ users:
     membership:
       team: operations
       role: member
+    budget:
+      cadence: monthly
+      amount_usd: "100.0000"
+      hard_limit: true
+      timezone: UTC
 
   - name: Mallory Operations Engineer
     email: mallory@operations.local

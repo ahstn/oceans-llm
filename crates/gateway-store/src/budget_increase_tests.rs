@@ -1,0 +1,309 @@
+use crate::tests::{create_postgres_test_database, drop_postgres_test_database};
+use crate::{
+    GatewayStore, LibsqlStore, PostgresStore, StoreConnectionOptions, run_migrations,
+    run_migrations_with_options,
+};
+use futures_util::future::join_all;
+use gateway_core::{
+    AuthMode, BudgetCadence, BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetRecord,
+    BudgetRepository, BudgetScope, BudgetSettings, GlobalRole, Money4, StoreError, UserStatus,
+};
+use serial_test::serial;
+use tempfile::tempdir;
+use time::{Duration, OffsetDateTime};
+use uuid::Uuid;
+
+#[tokio::test]
+#[serial]
+async fn libsql_budget_increases_supersede_and_expire() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("gateway.db");
+    run_migrations(&db_path).await.expect("migrations");
+    let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+        .await
+        .expect("store");
+    exercise_budget_increases(&store).await;
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_budget_increases_supersede_and_expire() {
+    let Some(test_db) = create_postgres_test_database().await else {
+        eprintln!("skipping postgres budget increase test: TEST_POSTGRES_URL is not set");
+        return;
+    };
+    run_migrations_with_options(&StoreConnectionOptions::Postgres {
+        url: test_db.database_url.clone(),
+        max_connections: 4,
+    })
+    .await
+    .expect("migrations");
+    let store = PostgresStore::connect(&test_db.database_url, 4)
+        .await
+        .expect("store");
+    exercise_budget_increases(&store).await;
+    drop(store);
+    drop_postgres_test_database(&test_db).await;
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_concurrent_budget_increases_admit_one_create() {
+    let Some(test_db) = create_postgres_test_database().await else {
+        eprintln!("skipping postgres budget increase test: TEST_POSTGRES_URL is not set");
+        return;
+    };
+    run_migrations_with_options(&StoreConnectionOptions::Postgres {
+        url: test_db.database_url.clone(),
+        max_connections: 8,
+    })
+    .await
+    .expect("migrations");
+    let store = PostgresStore::connect(&test_db.database_url, 8)
+        .await
+        .expect("store");
+    let (user_id, budget, at) = create_user_budget(&store).await;
+
+    // Every request checked eligibility with no increase active. Creates are serialized
+    // per budget, so the first wins and the rest see a changed active increase.
+    let increases = (1..=8)
+        .map(|n| BudgetIncreaseRecord {
+            budget_increase_id: Uuid::new_v4(),
+            budget_id: budget.budget_id,
+            scope_key: budget.scope_key.clone(),
+            amount_usd: Money4::from_scaled(n * 10_000),
+            starts_at: at,
+            expires_at: at + Duration::days(7),
+            created_by_user_id: Some(user_id),
+            created_at: at,
+        })
+        .collect::<Vec<_>>();
+    let no_increase = BudgetIncreaseBasis {
+        settings: budget.settings.clone(),
+        active_increase_id: None,
+    };
+    let results = join_all(
+        increases
+            .iter()
+            .map(|increase| store.create_budget_increase(increase, &no_increase)),
+    )
+    .await;
+    let created = results.iter().filter(|result| result.is_ok()).count();
+    assert_eq!(created, 1);
+    assert!(
+        results
+            .iter()
+            .all(|result| matches!(result, Ok(()) | Err(StoreError::Conflict(_))))
+    );
+
+    let active: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM budget_increases WHERE budget_id = $1 AND superseded_at IS NULL",
+    )
+    .bind(budget.budget_id.to_string())
+    .fetch_one(store.pool())
+    .await
+    .expect("count");
+    assert_eq!(active, 1);
+
+    drop(store);
+    drop_postgres_test_database(&test_db).await;
+}
+
+async fn create_user_budget<S: GatewayStore + ?Sized>(
+    store: &S,
+) -> (Uuid, BudgetRecord, OffsetDateTime) {
+    let user = store
+        .create_identity_user(
+            "User",
+            "user@example.com",
+            "user@example.com",
+            GlobalRole::User,
+            AuthMode::Password,
+            UserStatus::Active,
+        )
+        .await
+        .expect("user");
+    let at = OffsetDateTime::from_unix_timestamp(1_773_486_600).expect("timestamp");
+    let budget = store
+        .upsert_active_budget(
+            &BudgetScope::User {
+                user_id: user.user_id,
+            },
+            &BudgetSettings {
+                cadence: BudgetCadence::Monthly,
+                amount_usd: Money4::from_scaled(1_500_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            at,
+        )
+        .await
+        .expect("budget");
+    (user.user_id, budget, at)
+}
+
+async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
+    let (user_id, budget, at) = create_user_budget(store).await;
+    let increase = |amount: i64, starts_at: OffsetDateTime, days: i64| BudgetIncreaseRecord {
+        budget_increase_id: Uuid::new_v4(),
+        budget_id: budget.budget_id,
+        scope_key: budget.scope_key.clone(),
+        amount_usd: Money4::from_scaled(amount),
+        starts_at,
+        expires_at: starts_at + Duration::days(days),
+        created_by_user_id: Some(user_id),
+        created_at: starts_at,
+    };
+    let basis =
+        |settings: &BudgetSettings, active: Option<&BudgetIncreaseRecord>| BudgetIncreaseBasis {
+            settings: settings.clone(),
+            active_increase_id: active.map(|increase| increase.budget_increase_id),
+        };
+    let settings = budget.settings.clone();
+
+    assert!(
+        store
+            .get_active_budget_increase(budget.budget_id, at)
+            .await
+            .expect("no increase")
+            .is_none()
+    );
+
+    let first = increase(750_000, at, 7);
+    store
+        .create_budget_increase(&first, &basis(&settings, None))
+        .await
+        .expect("first");
+    let active = store
+        .get_active_budget_increase(budget.budget_id, at + Duration::hours(1))
+        .await
+        .expect("active")
+        .expect("first is active");
+    assert_eq!(active, first);
+
+    // A later increase replaces the earlier one rather than stacking on it.
+    let second = increase(1_500_000, at + Duration::days(1), 3);
+    store
+        .create_budget_increase(&second, &basis(&settings, Some(&first)))
+        .await
+        .expect("second");
+    let listed = store
+        .list_active_budget_increases(at + Duration::days(2))
+        .await
+        .expect("list");
+    assert_eq!(listed, vec![second.clone()]);
+    // Supersession is not retroactive: usage that occurred before the second increase
+    // started is still evaluated against the first.
+    assert_eq!(
+        store
+            .list_active_budget_increases(at + Duration::hours(1))
+            .await
+            .expect("list before second"),
+        vec![first.clone()]
+    );
+    assert_eq!(
+        store
+            .get_active_budget_increase(budget.budget_id, second.starts_at)
+            .await
+            .expect("active at second start"),
+        Some(second.clone())
+    );
+
+    // A request that read `first` before `second` committed, but reached the store after,
+    // is rejected rather than superseding the newer increase.
+    let out_of_order = increase(250_000, at + Duration::hours(12), 3);
+    assert!(matches!(
+        store
+            .create_budget_increase(&out_of_order, &basis(&settings, Some(&first)))
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+    assert_eq!(
+        store
+            .get_active_budget_increase(budget.budget_id, second.starts_at)
+            .await
+            .expect("second still active"),
+        Some(second.clone())
+    );
+
+    // A caller that checked eligibility against a stale active increase is rejected.
+    let stale = increase(250_000, at + Duration::days(2), 3);
+    assert!(matches!(
+        store
+            .create_budget_increase(&stale, &basis(&settings, None))
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+    assert_eq!(
+        store
+            .list_active_budget_increases(at + Duration::days(2))
+            .await
+            .expect("list after stale"),
+        vec![second.clone()]
+    );
+
+    // Expiry is exclusive.
+    assert!(
+        store
+            .get_active_budget_increase(budget.budget_id, second.expires_at)
+            .await
+            .expect("expired")
+            .is_none()
+    );
+
+    let invalid = BudgetIncreaseRecord {
+        amount_usd: Money4::ZERO,
+        ..increase(0, at + Duration::days(10), 1)
+    };
+    assert!(
+        store
+            .create_budget_increase(&invalid, &basis(&settings, None))
+            .await
+            .is_err()
+    );
+
+    // A budget edited after the caller read it invalidates the cap and threshold checks.
+    let edited_at = at + Duration::days(11);
+    let edited = BudgetSettings {
+        amount_usd: Money4::from_scaled(500_000),
+        ..settings.clone()
+    };
+    store
+        .upsert_active_budget(&budget.scope, &edited, edited_at)
+        .await
+        .expect("edit budget");
+    let after_edit = increase(250_000, edited_at, 3);
+    assert!(matches!(
+        store
+            .create_budget_increase(&after_edit, &basis(&settings, None))
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+    let soft_limit = BudgetSettings {
+        hard_limit: false,
+        ..edited.clone()
+    };
+    assert!(matches!(
+        store
+            .create_budget_increase(&after_edit, &basis(&soft_limit, None))
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+    store
+        .create_budget_increase(&after_edit, &basis(&edited, None))
+        .await
+        .expect("increase against edited budget");
+
+    // A deactivated budget cannot receive an increase.
+    store
+        .deactivate_active_budget(&budget.scope, edited_at)
+        .await
+        .expect("deactivate budget");
+    let after_deactivate = increase(250_000, edited_at + Duration::hours(1), 3);
+    assert!(matches!(
+        store
+            .create_budget_increase(&after_deactivate, &basis(&edited, Some(&after_edit)))
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+}
