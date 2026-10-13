@@ -90,14 +90,14 @@ pub(super) async fn create_budget_increase(
     };
     drop(rows);
     let starts_at = increase.starts_at.unix_timestamp();
+    // Compare against the increase the UPDATE below would supersede, not the one in
+    // effect at `starts_at`: a later increase that committed first must cause a conflict.
     let mut rows = tx
         .query(
-            &format!(
-                "SELECT budget_increase_id FROM budget_increases
-                 WHERE budget_id = ?1 AND {APPLIES_AT_2}
-                 ORDER BY created_at DESC, budget_increase_id DESC
-                 LIMIT 1"
-            ),
+            "SELECT budget_increase_id FROM budget_increases
+             WHERE budget_id = ?1 AND superseded_at IS NULL AND expires_at > ?2
+             ORDER BY created_at DESC, budget_increase_id DESC
+             LIMIT 1",
             libsql::params![increase.budget_id.to_string(), starts_at],
         )
         .await

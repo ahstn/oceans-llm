@@ -333,7 +333,7 @@ In `/admin/spend-controls`, every user row has an `Increase budget` button. It i
 
 ![Increase budget dialog with End of month and 7 days periods, prefill buttons at 50% to 200% of the budget, and the 3x cap](../public/images/spend-controls-increase-dialog.png)
 
-After the increase is saved, the row shows a `+$75.00 until Oct 19` badge, and the usage bar measures against the raised limit.
+After the increase is saved, the row shows a `+$75.00 until Oct 19` badge, and the usage bar measures against the raised limit. The user's budget meter on `/admin/profile` also uses the raised limit and notes the increase and its last day.
 
 Team admins see a read-only version of the page that is limited to their own team. There they can increase budgets but cannot configure or remove them:
 

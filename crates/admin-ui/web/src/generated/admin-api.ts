@@ -3858,6 +3858,7 @@ export interface components {
             status: string;
         };
         MyProfileBudgetView: {
+            active_increase?: null | components["schemas"]["BudgetIncreaseView"];
             period_end: string;
             /** @description Current budget period; spend resets at `period_end`. */
             period_start: string;

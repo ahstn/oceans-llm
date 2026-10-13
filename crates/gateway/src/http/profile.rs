@@ -16,10 +16,14 @@ use uuid::Uuid;
 
 use crate::http::{
     admin_auth::require_authenticated_session,
-    admin_contract::{BudgetSettingsView, BudgetSourceView, Envelope, envelope, format_timestamp},
+    admin_contract::{
+        BudgetIncreaseView, BudgetSettingsView, BudgetSourceView, Envelope, envelope,
+        format_timestamp,
+    },
     api_keys::ApiKeyModelGrantModeView,
     error::AppError,
     spend::{budget_source_to_view, budget_to_settings_view},
+    spend_budget_increases::budget_increase_to_view,
     state::AppState,
 };
 
@@ -46,6 +50,9 @@ pub struct MyProfileBudgetView {
     pub period_start: String,
     pub period_end: String,
     pub spent_usd_10000: i64,
+    /// Temporary amount added to `settings` until `expires_at`. Enforcement uses
+    /// `settings.amount_usd_10000 + active_increase.amount_usd_10000`.
+    pub active_increase: Option<BudgetIncreaseView>,
 }
 
 /// Usage for one UTC day. `day` is an ISO date (`YYYY-MM-DD`).
@@ -169,12 +176,17 @@ async fn load_budget(
         .store
         .sum_usage_cost_for_budget_scope_in_window(&scope, window.period_start, window.observed_end)
         .await?;
+    let active_increase = state
+        .store
+        .get_active_budget_increase(budget.budget_id, now)
+        .await?;
     Ok(Some(MyProfileBudgetView {
         settings: budget_to_settings_view(&budget),
         source: budget_source_to_view(&budget.source),
         period_start: format_timestamp(window.period_start),
         period_end: format_timestamp(window.period_end),
         spent_usd_10000: spent.as_scaled_i64(),
+        active_increase: active_increase.as_ref().map(budget_increase_to_view),
     }))
 }
 

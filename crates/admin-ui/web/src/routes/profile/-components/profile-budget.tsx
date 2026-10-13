@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { formatUsd10000 } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { formatIncreaseLastDay } from '@/routes/spend-controls/-budget-increase-model'
 import type { MyProfileBudgetView } from '@/types/api'
 
 import { budgetStatus, PERCENT_FORMATTER, type BudgetStatus } from './profile-data'
@@ -92,6 +93,12 @@ export function BudgetMeter({
         </span>
         <span>Resets {formatResetsAt(budget)}</span>
       </div>
+      {budget.active_increase ? (
+        <p data-testid="budget-increase" className="text-muted-foreground text-xs tabular-nums">
+          Includes a temporary {formatUsd10000(budget.active_increase.amount_usd_10000)} increase
+          through {formatIncreaseLastDay(budget.active_increase.expires_at)} (UTC).
+        </p>
+      ) : null}
     </div>
   )
 }

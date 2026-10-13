@@ -82,12 +82,14 @@ pub(super) async fn create_budget_increase(
     })
     .transpose()?;
     let starts_at = increase.starts_at.unix_timestamp();
-    let active: Option<String> = sqlx::query_scalar(&format!(
+    // Compare against the increase the UPDATE below would supersede, not the one in
+    // effect at `starts_at`: a later increase that committed first must cause a conflict.
+    let active: Option<String> = sqlx::query_scalar(
         "SELECT budget_increase_id FROM budget_increases
-         WHERE budget_id = $1 AND {APPLIES_AT_2}
+         WHERE budget_id = $1 AND superseded_at IS NULL AND expires_at > $2
          ORDER BY created_at DESC, budget_increase_id DESC
-         LIMIT 1"
-    ))
+         LIMIT 1",
+    )
     .bind(increase.budget_id.to_string())
     .bind(starts_at)
     .fetch_optional(&mut *tx)

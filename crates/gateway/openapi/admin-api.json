@@ -15038,6 +15038,17 @@
           "spent_usd_10000"
         ],
         "properties": {
+          "active_increase": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BudgetIncreaseView",
+                "description": "Temporary amount added to `settings` until `expires_at`. Enforcement uses\n`settings.amount_usd_10000 + active_increase.amount_usd_10000`."
+              }
+            ]
+          },
           "period_end": {
             "type": "string"
           },

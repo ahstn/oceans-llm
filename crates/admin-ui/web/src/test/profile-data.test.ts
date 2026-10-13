@@ -143,4 +143,25 @@ describe('profile data', () => {
       remaining: 0,
     })
   })
+
+  it('adds an active temporary increase to the limit', () => {
+    const budget = profileView().budget!
+    const increased = {
+      ...budget,
+      spent_usd_10000: 1_200_000,
+      active_increase: {
+        budget_increase_id: 'increase-1',
+        amount_usd: '50.0000',
+        amount_usd_10000: 500_000,
+        starts_at: '2026-09-22T00:00:00Z',
+        expires_at: '2026-09-29T00:00:00Z',
+      },
+    }
+    expect(budgetStatus(increased)).toMatchObject({
+      limit: 1_500_000,
+      ratio: 0.8,
+      tone: 'warning',
+      remaining: 300_000,
+    })
+  })
 })

@@ -209,6 +209,23 @@ async fn exercise_budget_increases<S: GatewayStore + ?Sized>(store: &S) {
         Some(second.clone())
     );
 
+    // A request that read `first` before `second` committed, but reached the store after,
+    // is rejected rather than superseding the newer increase.
+    let out_of_order = increase(250_000, at + Duration::hours(12), 3);
+    assert!(matches!(
+        store
+            .create_budget_increase(&out_of_order, &basis(&settings, Some(&first)))
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+    assert_eq!(
+        store
+            .get_active_budget_increase(budget.budget_id, second.starts_at)
+            .await
+            .expect("second still active"),
+        Some(second.clone())
+    );
+
     // A caller that checked eligibility against a stale active increase is rejected.
     let stale = increase(250_000, at + Duration::days(2), 3);
     assert!(matches!(

@@ -38,9 +38,11 @@ try {
   const api = await (await page.request.get(`${baseURL}/api/v1/me/profile`)).json()
   const profile = api.data ?? api
   const spent = usd(profile.budget?.spent_usd_10000 ?? 0)
-  const limit = usd(profile.budget?.settings?.amount_usd_10000 ?? 0)
+  // An active temporary increase is added to the budget, as enforcement does.
+  const increase10000 = profile.budget?.active_increase?.amount_usd_10000 ?? 0
+  const limit = usd((profile.budget?.settings?.amount_usd_10000 ?? 0) + increase10000)
   const activeDays = profile.days.filter((day) => day.request_count > 0).length
-  details.api = { spent, limit, activeDays, days: profile.days.length }
+  details.api = { spent, limit, increase: increase10000 ? usd(increase10000) : null, activeDays, days: profile.days.length }
   if (activeDays < 100) throw new Error(`Expected months of seeded history, found ${activeDays} active days.`)
   proof.pass('seeded-history-present', { observed: activeDays, expected: '>= 100 active days' })
 
@@ -53,6 +55,13 @@ try {
     throw new Error(`Budget meter "${meterText}" does not show ${spent} of ${limit}.`)
   }
   proof.pass('budget-meter-matches-api', { observed: meterText.trim(), expected: `${spent} of ${limit}` })
+  if (increase10000) {
+    const note = (await page.getByTestId('budget-increase').textContent()) ?? ''
+    if (!note.includes(usd(increase10000))) {
+      throw new Error(`Budget increase note "${note}" does not show ${usd(increase10000)}.`)
+    }
+    proof.pass('budget-increase-note-matches-api', { observed: note.trim(), expected: usd(increase10000) })
+  }
   await page.getByTestId('profile-headlines').waitFor()
   await page.locator('header', { hasText: 'Welcome back' }).getByRole('link', { name: 'Manage keys' }).waitFor()
   await settleCharts(page)
