@@ -17,6 +17,7 @@ concurrency:
 
 env:
   MISE_TASK_RUN_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
   REVIEW_MODEL_ID: openai/gpt-5.6-luna
 
 jobs:

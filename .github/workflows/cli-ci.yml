@@ -32,6 +32,7 @@ permissions:
 
 env:
   MISE_TASK_RUN_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
 
 jobs:
   test:
@@ -61,11 +62,8 @@ jobs:
       - name: Locate Cargo artifact directories
         id: directories
         run: |
-          {
-            echo "paths<<EOF"
-            mise exec -- cargo metadata --format-version 1 --no-deps | jq -r '.target_directory, .build_directory'
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          paths="$(mise exec -- cargo metadata --format-version 1 --no-deps | jq -r '.target_directory, .build_directory')"
+          printf 'paths<<EOF\n%s\nEOF\n' "$paths" >> "$GITHUB_OUTPUT"
 
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

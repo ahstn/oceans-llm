@@ -23,7 +23,7 @@ The command creates the version commit and tag, then pushes them. The pushed tag
 - [cliff.toml](../../../cliff.toml) defines changelog content and layout.
 - [release.yml](../../../.github/workflows/release.yml) builds and publishes release artifacts.
 - [dist-workspace.toml](../../../dist-workspace.toml) configures CLI targets, archives, installers, and publication gates.
-- [release-cli-check.yml](../../../.github/workflows/release-cli-check.yml) checks packaged binaries and tests CLI behavior on each target operating system.
+- [release-cli-check.yml](../../../.github/workflows/release-cli-check.yml) runs the packaged binaries on each target operating system. CLI behavior is tested before merge by `cli-ci.yml` and `ci.yml`.
 - [release-product.yml](../../../.github/workflows/release-product.yml) publishes container images and the Helm chart.
 - [Helm chart](../../../deploy/helm/oceans-llm/README.md) defines the Kubernetes package.
 

@@ -2,6 +2,8 @@ name: ci
 
 on:
   pull_request:
+    # No status checks are required on main. If ci / check becomes required,
+    # drop this filter or docs-only PRs will wait on a check that never runs.
     paths-ignore:
       - "docs/**"
   push:
@@ -16,6 +18,7 @@ permissions:
 
 env:
   MISE_TASK_RUN_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
   POSTGRES_CONNECTION: postgres://oceans:oceans@localhost:5432/oceans_llm_ci
 
 jobs:

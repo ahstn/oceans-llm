@@ -18,6 +18,7 @@ concurrency:
 
 env:
   MISE_TASK_RUN_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
 
 jobs:
   review-agent-smoke:
