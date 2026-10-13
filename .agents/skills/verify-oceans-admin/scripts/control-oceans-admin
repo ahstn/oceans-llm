@@ -21,7 +21,8 @@ lock_dir="$state_base/checkout-$checkout_key.lock"
 
 resolve_mise() {
   local mise_bin
-  mise_bin="${MISE_BIN:-$(command -v mise 2>/dev/null || true)}"
+  # `type -P` skips the `mise` shell function that activation defines.
+  mise_bin="${MISE_BIN:-$(type -P mise 2>/dev/null || true)}"
   [[ -n "$mise_bin" ]] || mise_bin="$HOME/.local/bin/mise"
   [[ -x "$mise_bin" ]] || {
     echo "mise is required. Install it (https://mise.jdx.dev) or set MISE_BIN to its path." >&2
@@ -67,8 +68,11 @@ require_command() {
 require_command lsof
 
 activate_mise() {
+  declare -F _mise_hook >/dev/null && return 0
   local mise_bin
-  mise_bin="$(resolve_mise)"
+  # Exit explicitly: callers in an `||` list suspend `set -e`, and evaluating an
+  # empty command would loop through mise's command_not_found_handle.
+  mise_bin="$(resolve_mise)" || exit 1
   eval "$("$mise_bin" activate bash)"
 }
 
