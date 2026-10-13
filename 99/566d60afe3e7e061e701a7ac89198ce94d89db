@@ -1,0 +1,19 @@
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  s_3481ab0ee8ba20::t_90ce6525d2a348 24-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "99566d60afe3e7e061e701a7ac89198ce94d89db",
+  "prompts": {},
+  "sessions": {
+    "s_3481ab0ee8ba20": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7fb79b16-a96d-4309-a8a3-f712773fbc55",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
