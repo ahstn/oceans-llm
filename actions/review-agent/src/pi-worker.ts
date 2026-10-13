@@ -18,11 +18,17 @@ function stopIntercomBroker() {
   }
 }
 
-// Cancellation and the review timeout terminate the worker with SIGTERM.
-process.once('SIGTERM', () => {
-  stopIntercomBroker()
-  process.exit(143)
-})
+// Cancellation and the review timeout send SIGTERM; Ctrl-C on a local run
+// sends SIGINT. Exit with the conventional 128 + signal status.
+for (const [signal, status] of [
+  ['SIGTERM', 143],
+  ['SIGINT', 130],
+] as const) {
+  process.once(signal, () => {
+    stopIntercomBroker()
+    process.exit(status)
+  })
+}
 
 try {
   const [requestPath, resultPath] = process.argv.slice(2)

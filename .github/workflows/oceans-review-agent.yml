@@ -20,7 +20,12 @@ env:
 
 jobs:
   review:
-    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    # Dependabot-triggered runs get a read-only token and no secrets, so they
+    # can neither review nor publish the advisory check.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -39,8 +44,9 @@ jobs:
           persist-credentials: false
 
       # A failed review is advisory: it does not mean the PR is broken or
-      # unmergeable. Review steps continue on error and are gated on their
-      # predecessors; the final step reports a neutral "Oceans review" check.
+      # unmergeable. Steps after checkout continue on error and are gated on
+      # their predecessors; the final step reports a neutral "Oceans review"
+      # check.
 
       # Validate the key before the Rust build so a revoked or deleted key fails
       # in seconds. OpenRouter answers 401 "User not found." for unknown keys.
@@ -55,10 +61,14 @@ jobs:
             exit 1
           fi
           body="$(mktemp)"
-          status="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' \
+          # curl reports 000 when the request fails or exceeds --max-time.
+          status="$(curl --silent --show-error --max-time 30 --output "$body" --write-out '%{http_code}' \
             --config - https://openrouter.ai/api/v1/key \
-            <<< "header = \"Authorization: Bearer ${OPENROUTER_API_KEY}\"")"
-          if [[ "$status" != "200" ]]; then
+            <<< "header = \"Authorization: Bearer ${OPENROUTER_API_KEY}\"")" || true
+          if [[ "$status" == "000" ]]; then
+            echo "::warning::Could not reach OpenRouter to check OPENROUTER_API_KEY"
+            exit 1
+          elif [[ "$status" != "200" ]]; then
             echo "::warning::OpenRouter rejected OPENROUTER_API_KEY (HTTP $status): $(jq -r '.error.message // "unknown error"' "$body")"
             exit 1
           fi
@@ -72,8 +82,10 @@ jobs:
         with:
           install_args: rust bun node
 
+      # The build works without a cache, so a cache failure is not reported.
       - name: Cache Cargo artifacts
         if: steps.setup.outcome == 'success'
+        continue-on-error: true
         uses: ./.github/actions/rust-cache
 
       - name: Build temporary control plane and install action dependencies
@@ -134,6 +146,7 @@ jobs:
           name: review-agent-evidence
           path: ${{ runner.temp }}/oceans-review-gateway/evidence.json
           if-no-files-found: ignore
+        continue-on-error: true
 
       - name: Report review status
         if: ${{ !cancelled() }}
@@ -149,18 +162,33 @@ jobs:
             review=${{ steps.review.outcome }}
             result verification=${{ steps.verify.outcome }}
         run: |
-          conclusion=success title="Review completed" summary="Pi reviewed this pull request."
-          while IFS='=' read -r step outcome; do
-            if [[ "$outcome" == failure ]]; then
-              conclusion=neutral
-              title="Review unavailable: ${step} failed"
-              summary="The automated review did not complete. This does not block merging; see the [workflow run](${RUN_URL}) for details."
-              echo "::warning::Oceans review skipped because ${step} failed"
-              break
-            fi
+          declare -A outcome
+          failed=""
+          while IFS='=' read -r step result; do
+            [[ -n "$step" ]] || continue
+            outcome[$step]="$result"
+            [[ -n "$failed" || "$result" != failure ]] || failed="$step"
           done <<< "$OUTCOMES"
-          gh api "repos/${GITHUB_REPOSITORY}/check-runs" --silent \
-            -f name="Oceans review" -f head_sha="$HEAD_SHA" \
+          # Anything short of a verified review is neutral, including failures
+          # in steps that are not listed, such as checkout.
+          if [[ "${outcome[review]}" == success && "${outcome[result verification]}" == success ]]; then
+            conclusion=success title="Review completed" summary="Pi reviewed this pull request."
+          else
+            conclusion=neutral title="Review unavailable: ${failed:-a workflow step} failed"
+            summary="The automated review did not complete. This does not block merging; see the [workflow run](${RUN_URL}) for details."
+            echo "::warning::Oceans review skipped because ${failed:-a workflow step} failed"
+          fi
+          # Update this workflow's check on reruns instead of adding duplicates.
+          check_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=Oceans%20review" \
+            --jq '[.check_runs[] | select(.app.slug == "github-actions")][0].id // empty')" || check_id=""
+          if [[ -n "$check_id" ]]; then
+            request=(--method PATCH "repos/${GITHUB_REPOSITORY}/check-runs/${check_id}")
+          else
+            request=(--method POST "repos/${GITHUB_REPOSITORY}/check-runs" -f head_sha="$HEAD_SHA")
+          fi
+          # Failing to publish the advisory check must not fail the job.
+          gh api "${request[@]}" --silent -f name="Oceans review" \
             -f status=completed -f conclusion="$conclusion" -f details_url="$RUN_URL" \
-            -f "output[title]=$title" -f "output[summary]=$summary"
+            -f "output[title]=$title" -f "output[summary]=$summary" \
+            || echo "::warning::Could not publish the Oceans review check"
           echo "### ${title}" >> "$GITHUB_STEP_SUMMARY"
