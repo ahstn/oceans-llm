@@ -36,7 +36,14 @@ run = "bun run test"
 
 [tasks.check]
 description = "Check formatting, lint, test, and build the admin UI"
-depends = ["fmt-check", "lint", "test", "build"]
+# Sequential: a concurrent Vite build starves vitest and trips its 5s test timeouts on CI.
+depends = ["install"]
+run = [
+  { task = "fmt-check" },
+  { task = "lint" },
+  { task = "test" },
+  { task = "build" },
+]
 
 [tasks."e2e:install"]
 description = "Install Playwright Chromium for the end-to-end suite"
