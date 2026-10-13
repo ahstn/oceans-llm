@@ -1,0 +1,103 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_80be2f6b7622ec::t_f28c3c0fba8387 4,69
+.agents/skills/verify-oceans-admin/features/batch-requests.md
+  s_80be2f6b7622ec::t_1ed679d9fe055b 39
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_80be2f6b7622ec::t_b8e5f9f2e32e55 143-145
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  s_80be2f6b7622ec::t_badab2795a0b47 490,492
+.github/workflows/ci.yml
+  s_80be2f6b7622ec::t_3882d42d0822c2 80
+.github/workflows/cli-ci.yml
+  s_80be2f6b7622ec::t_3afd2fb3c4575a 77
+.github/workflows/helm-ci.yml
+  s_80be2f6b7622ec::t_187fc53a5628d7 6,13,46
+.github/workflows/oceans-review-agent.yml
+  s_80be2f6b7622ec::t_5d536146cf0d29 98
+.github/workflows/release-product.yml
+  s_80be2f6b7622ec::t_e33482a2c3fa26 138
+.github/workflows/review-agent-ci.yml
+  s_80be2f6b7622ec::t_61040fd6300e6c 45
+.github/workflows/review-agent-self-hosted-smoke.yml
+  s_80be2f6b7622ec::t_2d687d72bc19ee 49
+.github/workflows/ui-ci.yml
+  s_80be2f6b7622ec::t_a732b806da75d9 41
+AGENTS.md
+  s_80be2f6b7622ec::t_ccce22170678cb 7
+CONTRIBUTING.md
+  s_80be2f6b7622ec::t_a5c3069c109331 21,32,34,36-40,126
+README.md
+  s_80be2f6b7622ec::t_13b61c10d72d74 48,64,71,73,75,77,79-82,84,86,90,92,94,104,110
+actions/review-agent/README.md
+  s_80be2f6b7622ec::t_e0301b6059a866 127
+actions/review-agent/mise.toml
+  s_80be2f6b7622ec::t_f98ef77c32cb95 1-25
+crates/admin-ui/web/mise.toml
+  s_80be2f6b7622ec::t_f28ade475969fe 1-49
+crates/admin-ui/web/src/routes/observability/agent-sessions.tsx
+  s_80be2f6b7622ec::t_842cb52fdb8a9d 170
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  s_80be2f6b7622ec::t_339977f384b7bd 465
+crates/gateway-store/mise.toml
+  s_80be2f6b7622ec::t_c52f41a8299582 1-3,9-10,14,18,22,27-33,35,40,48-50,52-53,55-59,61-62
+crates/gateway/mise.toml
+  s_80be2f6b7622ec::t_debdfeab0fd1e5 1-98
+deploy/helm/check-skills.sh
+  s_80be2f6b7622ec::t_ac8a3cab2d427f 4
+deploy/helm/mise.toml
+  s_80be2f6b7622ec::t_58bf4d77422d48 1-47
+deploy/helm/oceans-llm/README.md
+  s_80be2f6b7622ec::t_bec0cee94a207b 90-91,94,141,167
+docs/adr/2026-10-13-mise-monorepo-task-layout.md
+  s_80be2f6b7622ec::t_cc9a42d3efd95c 1-54
+docs/configuration/configuration-reference.md
+  s_80be2f6b7622ec::t_f233e35f7a6554 160
+docs/contributing/operations/budgets-and-spending.md
+  s_80be2f6b7622ec::t_745c083d473adf 208
+docs/contributing/reference/e2e-contract-tests.md
+  s_80be2f6b7622ec::t_01025f4711c7d1 14
+docs/contributing/reference/migration-authoring.md
+  s_80be2f6b7622ec::t_524fa7c96ffff1 45-47
+docs/contributing/reference/model-benchmark-snapshot.md
+  s_80be2f6b7622ec::t_ad86cb75e2286e 18
+docs/operations/agent-session-analysis.md
+  s_80be2f6b7622ec::t_781641a8500117 45,134-135
+docs/operations/gateway-guardrails.md
+  s_80be2f6b7622ec::t_3f69848680d9c1 247
+docs/operations/observability-and-request-logs.md
+  s_80be2f6b7622ec::t_04976038b5cf89 141-142
+docs/operations/operator-runbooks.md
+  s_80be2f6b7622ec::t_e44b7dbc612daa 136,155,202-203,209-210
+docs/setup/kubernetes-and-helm.md
+  s_80be2f6b7622ec::t_ec272fea049437 20,163
+docs/setup/runtime-bootstrap-and-access.md
+  s_80be2f6b7622ec::t_95d34f9754d686 180
+mise.lock
+  s_80be2f6b7622ec::t_1221badad3849e 37-70,231-233,236-238,303-305,331-333,337-339,364-370
+mise.rustfs.toml
+  s_80be2f6b7622ec::t_c1585a96ff840a 76-81
+mise.selfhost.toml
+  s_80be2f6b7622ec::t_733d67c9259291 74,96
+mise.toml
+  s_80be2f6b7622ec::t_45b6d25e5e5a3e 1-4,9,13-34,37-38,66-73,102-105,108-112,116,133-137,142,148-149,158-171,174,177-179,191-193,198,201-204,216,219,230-236
+tests/harness-integration/README.md
+  s_80be2f6b7622ec::t_e03064b77107a6 45-46
+tests/harness-integration/mise.toml
+  s_80be2f6b7622ec::t_60a80a48d8bf1f 1,5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6386259d5b1b412e7179d1acf95f534d6aa2909",
+  "prompts": {},
+  "sessions": {
+    "s_80be2f6b7622ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fd50a3-7260-4e1c-bdf2-41488101b953",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
