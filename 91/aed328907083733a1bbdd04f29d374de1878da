@@ -1,0 +1,21 @@
+.agents/skills/verify-oceans-admin/features/skills.md
+  s_7bfdb81e134c1f::t_31c5a197dc1c7c 8,21,51
+.agents/skills/verify-oceans-admin/scripts/drive-skills.mjs
+  s_7bfdb81e134c1f::t_baecdcbf69a5c9 59,62,75-76,81,284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "91aed328907083733a1bbdd04f29d374de1878da",
+  "prompts": {},
+  "sessions": {
+    "s_7bfdb81e134c1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08b05fe1-ae2d-42d6-aaa5-5d4a394001d9",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
