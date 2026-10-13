@@ -121,6 +121,71 @@ async fn describe_and_search_return_declared_tool_metadata() {
 }
 
 #[tokio::test]
+async fn missing_oauth_credential_returns_the_connect_url() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    state.mcp_oauth_runtime = Arc::new(gateway_service::McpOauthRuntime::new(
+        Some("https://gateway.example".to_string()),
+        vec![gateway_service::McpOauthProvider {
+            key: "google".to_string(),
+            client_id: "provider-client".to_string(),
+            client_secret: "provider-client-secret".to_string(),
+            authorization_url: "https://accounts.example/authorize".to_string(),
+            token_url: "https://accounts.example/token".to_string(),
+        }],
+    ));
+    let auth_config = serde_json::from_value(json!({
+        "provider_key": "google",
+        "resource": "https://drive.example/mcp",
+        "scopes": ["https://www.googleapis.com/auth/drive.readonly"],
+    }))
+    .expect("auth config");
+    let auth = seed_authorized_tool_with_config(
+        &state,
+        "https://drive.example/mcp",
+        ExternalMcpAuthMode::OauthObo,
+        auth_config,
+    )
+    .await;
+    let connect_url = "https://gateway.example/admin/account/connections?connect=repository";
+
+    let response = call_catalog_tool(
+        &state,
+        &auth,
+        JsonRpcId::Number(9),
+        CallMcpToolInput {
+            address: "mcp://repository/tools/search".to_string(),
+            arguments: json!({}),
+            schema_hash: None,
+        },
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 16_384).await.expect("body");
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(!text.contains("provider-client-secret"));
+    assert!(!text.contains(&auth.public_id));
+    let body: Value = serde_json::from_slice(&bytes).expect("JSON-RPC response");
+    let result = &body["result"];
+    assert_eq!(result["isError"], true);
+    assert_eq!(
+        result["content"][0]["text"],
+        format!(
+            "MCP credential is required for server `repository`. Connect your account at {connect_url}, then retry the call."
+        )
+    );
+    assert_eq!(
+        result["structuredContent"],
+        json!({
+            "address": "mcp://repository/tools/search",
+            "server_key": "repository",
+            "connect_url": connect_url,
+            "error_code": "credential_required",
+        })
+    );
+}
+
+#[tokio::test]
 async fn preparation_failure_records_authorized_invocation() {
     // This persisted gateway-auth server has no secret reference. Authorization succeeds,
     // then upstream preparation fails before an HTTP client or request can be created.
@@ -556,6 +621,15 @@ async fn seed_authorized_tool(
     server_url: &str,
     auth_mode: ExternalMcpAuthMode,
 ) -> AuthenticatedApiKey {
+    seed_authorized_tool_with_config(state, server_url, auth_mode, Map::new()).await
+}
+
+async fn seed_authorized_tool_with_config(
+    state: &AppState,
+    server_url: &str,
+    auth_mode: ExternalMcpAuthMode,
+    auth_config: Map<String, Value>,
+) -> AuthenticatedApiKey {
     let store = &state.store;
     let now = OffsetDateTime::now_utc();
     let user = store
@@ -591,7 +665,7 @@ async fn seed_authorized_tool(
             transport: ExternalMcpTransport::StreamableHttp,
             server_url: server_url.to_string(),
             auth_mode,
-            auth_config: Map::new(),
+            auth_config,
             timeout_ms: 2_000,
             created_at: now,
         })

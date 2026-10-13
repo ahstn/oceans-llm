@@ -19,6 +19,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::{
+    credentials::upstream_auth_error_response,
     guarded_outcome_log_fields,
     guardrails::{enforce_direct_mcp_result, guardrail_decision_metadata},
     json_rpc::{GovernedMcpMethod, mcp_jsonrpc_error_response},
@@ -128,7 +129,7 @@ pub(super) async fn handle_governed_request(
                     ),
                 )
                 .await;
-            return mcp_error_response(error);
+            return upstream_auth_error_response(state, auth, &server, error);
         }
     };
 
@@ -198,9 +199,12 @@ pub(super) async fn proxy_lifecycle(
 ) -> Response<Body> {
     let gateway = McpGatewayService::new(state.store.clone())
         .with_oauth_runtime(state.mcp_oauth_runtime.clone());
-    let upstream = match gateway.prepare_upstream_for_auth(auth, server).await {
+    let upstream = match gateway
+        .prepare_upstream_for_auth(auth, server.clone())
+        .await
+    {
         Ok(upstream) => upstream,
-        Err(error) => return mcp_error_response(error),
+        Err(error) => return upstream_auth_error_response(state, auth, &server, error),
     };
     match proxy_upstream(
         &state.mcp_http_client,

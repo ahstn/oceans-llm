@@ -398,6 +398,37 @@ fn normalize_connection_redirect(value: Option<&str>) -> String {
         .to_string()
 }
 
+/// Absolute URL of the workspace connections page that starts the OAuth flow
+/// for `server_key`. Returns `None` unless the caller can connect the server
+/// themselves: it must use user OAuth, its provider must be configured, and a
+/// public base URL must be set.
+pub(crate) fn connection_page_url(
+    state: &AppState,
+    server: &gateway_core::ExternalMcpServerRecord,
+) -> Option<String> {
+    if server.status != ExternalMcpServerStatus::Active
+        || server.auth_mode != ExternalMcpAuthMode::OauthObo
+    {
+        return None;
+    }
+    let config = mcp_oauth_server_config(&server.auth_config).ok()?;
+    let runtime = &state.mcp_oauth_runtime;
+    if runtime
+        .connection_unavailable_reason(&config.provider_key)
+        .is_some()
+    {
+        return None;
+    }
+    let mut url = url::Url::parse(&format!(
+        "{}{DEFAULT_CONNECTION_REDIRECT}",
+        runtime.public_base_url()?
+    ))
+    .ok()?;
+    url.query_pairs_mut()
+        .append_pair("connect", &server.server_key);
+    Some(url.to_string())
+}
+
 fn connection_success_redirect(redirect_to: &str) -> Response {
     let separator = if redirect_to.contains('?') { '&' } else { '?' };
     Redirect::temporary(&format!("{redirect_to}{separator}oauth=connected")).into_response()

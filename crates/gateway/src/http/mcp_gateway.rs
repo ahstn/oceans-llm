@@ -1,4 +1,5 @@
 mod aggregate;
+mod credentials;
 mod guardrails;
 mod json_rpc;
 mod methods;
@@ -16,6 +17,7 @@ use axum::{
     },
     response::IntoResponse,
 };
+use credentials::{tool_call_auth_error_response, upstream_auth_error_response};
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpToolInvocationStatus,
     McpToolPolicyResult, OpenAiErrorEnvelope, ProviderError, auth::extract_bearer_token,
@@ -165,7 +167,9 @@ async fn dispatch_mcp_request(
                 .await
             {
                 Ok(upstream) => upstream,
-                Err(error) => return mcp_error_response(error),
+                Err(error) => {
+                    return upstream_auth_error_response(state, auth, &server, error);
+                }
             };
             let outcome = proxy_tools_list(
                 &state.mcp_http_client,
@@ -417,7 +421,7 @@ async fn handle_tools_call(
                     ),
                 )
                 .await;
-            return mcp_error_response(error);
+            return tool_call_auth_error_response(state, auth, &server, id.as_ref(), error);
         }
     };
     let outcome =

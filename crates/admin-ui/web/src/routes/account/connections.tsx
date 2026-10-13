@@ -1,5 +1,5 @@
-import { useEffect, useState, useTransition } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { useEffect, useRef, useState, useTransition } from 'react'
+import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -14,8 +14,12 @@ import {
 import type { McpOauthConnectionView } from '@/types/api'
 
 type ConnectionsSearch = {
+  /** Server key from an MCP `connect_url`; starts the OAuth flow on load. */
+  connect?: string
   oauth?: string
   oauth_error?: string
+  /** Server ID the OAuth callback returned from. */
+  server?: string
 }
 
 const utcTimestampFormatter = new Intl.DateTimeFormat('en-US', {
@@ -26,8 +30,10 @@ const utcTimestampFormatter = new Intl.DateTimeFormat('en-US', {
 
 export const Route = createFileRoute('/account/connections')({
   validateSearch: (search: Record<string, unknown>): ConnectionsSearch => ({
+    connect: typeof search.connect === 'string' ? search.connect : undefined,
     oauth: typeof search.oauth === 'string' ? search.oauth : undefined,
     oauth_error: typeof search.oauth_error === 'string' ? search.oauth_error : undefined,
+    server: typeof search.server === 'string' ? search.server : undefined,
   }),
   loader: () => getMcpOauthConnections(),
   component: ConnectionsPage,
@@ -44,11 +50,16 @@ export function ConnectionsPage() {
 
   useEffect(() => {
     if (search.oauth === 'connected') {
-      toast.success('Google Workspace connection saved')
+      const connection = connections.find((item) => item.server_id === search.server)
+      toast.success(
+        connection ? `${connection.display_name} connected` : 'Google Workspace connection saved',
+      )
     } else if (search.oauth_error) {
       toast.error(connectionErrorMessage(search.oauth_error))
     }
-  }, [search.oauth, search.oauth_error])
+  }, [connections, search.oauth, search.oauth_error, search.server])
+
+  useConnectRequest(search.connect, connections, connect)
 
   function connect(connection: McpOauthConnectionView) {
     setPendingServerId(connection.server_id)
@@ -163,6 +174,42 @@ export function ConnectionsPage() {
       )}
     </div>
   )
+}
+
+/**
+ * Starts the OAuth flow for the server named by `?connect=`, the link MCP
+ * clients receive with `credential_required` and `credential_expired` errors.
+ * The parameter is dropped first so a reload or the OAuth return does not
+ * start the flow again.
+ */
+function useConnectRequest(
+  serverKey: string | undefined,
+  connections: McpOauthConnectionView[],
+  connect: (connection: McpOauthConnectionView) => void,
+) {
+  const navigate = useNavigate()
+  const handledKey = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!serverKey || handledKey.current === serverKey) return
+    handledKey.current = serverKey
+    void navigate({
+      to: '/account/connections',
+      search: (previous: ConnectionsSearch) => ({ ...previous, connect: undefined }),
+      replace: true,
+    })
+
+    const connection = connections.find((item) => item.server_key === serverKey)
+    if (!connection) {
+      toast.error(`No workspace connection is available for MCP server ${serverKey}.`)
+    } else if (connection.availability_error) {
+      toast.error(connection.availability_error)
+    } else if (connection.status === 'connected') {
+      toast.info(`${connection.display_name} is already connected`)
+    } else {
+      connect(connection)
+    }
+  }, [serverKey, connections, connect, navigate])
 }
 
 function formatStatus(status: McpOauthConnectionView['status']) {

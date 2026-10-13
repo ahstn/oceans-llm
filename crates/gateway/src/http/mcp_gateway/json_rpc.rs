@@ -214,6 +214,20 @@ pub(super) fn mcp_jsonrpc_error_response(
     response
 }
 
+/// A JSON-RPC success response that echoes the request id as sent.
+pub(super) fn mcp_jsonrpc_result_response(id: Option<&Value>, result: Value) -> Response<Body> {
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": id.cloned().unwrap_or(Value::Null),
+        "result": result,
+    });
+    let mut response = (StatusCode::OK, Json(body)).into_response();
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    response
+}
+
 pub(super) fn mcp_request_id(id: &Option<Value>) -> String {
     id.as_ref()
         .map(|value| match value {
