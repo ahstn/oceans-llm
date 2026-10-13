@@ -21,7 +21,8 @@ lock_dir="$state_base/checkout-$checkout_key.lock"
 
 resolve_mise() {
   local mise_bin
-  # `type -P` skips the `mise` shell function that activation defines.
+  # `type -P` skips the `mise` shell function that activate_mise defines; `command -v`
+  # would return the bare name and make a second activation evaluate an empty command.
   mise_bin="${MISE_BIN:-$(type -P mise 2>/dev/null || true)}"
   [[ -n "$mise_bin" ]] || mise_bin="$HOME/.local/bin/mise"
   [[ -x "$mise_bin" ]] || {
