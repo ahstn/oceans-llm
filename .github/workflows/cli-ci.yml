@@ -62,7 +62,7 @@ jobs:
       - name: Locate Cargo artifact directories
         id: directories
         run: |
-          paths="$(mise exec -- cargo metadata --format-version 1 --no-deps | jq -r '.target_directory, .build_directory')"
+          paths="$(mise exec -- cargo metadata --format-version 1 --no-deps | jq -r '.target_directory, (.build_directory // empty)')"
           printf 'paths<<EOF\n%s\nEOF\n' "$paths" >> "$GITHUB_OUTPUT"
 
       - name: Cache Cargo artifacts

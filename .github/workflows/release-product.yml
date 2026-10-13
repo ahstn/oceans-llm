@@ -133,9 +133,9 @@ jobs:
           install_args: helm
           cache: false
 
-      # helm-ci already lints and renders the chart before it reaches main.
-      - name: Build chart dependencies
-        run: mise run helm-dependency-build
+      # A tag can point at a commit helm-ci never checked, so validate here too.
+      - name: Lint and render the chart
+        run: mise run helm-check
 
       - name: Package and push Helm chart
         env:
